@@ -100,6 +100,11 @@ variety: chunk-list walk with halfword swaps, entity visibility bit test, pointe
 string compare against an image name, character state flags, orb-map pan/zoom floats, a constructor, a profiler slot
 with a 64-bit mask, a max over packed sizes, a running-sum threshold search, and global float pairs.
 
+The second batch (same day, `leaf_batch2.cpp`): 11 leaf functions of 40-130 instructions: a table relocation, a name
+lookup in the global FNV hash table (chained buckets, caller key check), a render state mask merge, two constructors,
+a ring buffer push, a curve blend weighted by `f1`, a page slot clear with the manager's list update, an 80-byte
+element copy, glyph appends, a weighted pick returning in `f1` (the test compares `f1` for it). 24 of 24 equal.
+
 ## Any title
 
 `titles/<title>/pipeline.json` is all the pipeline needs: image, image base, generated code, port sources, bind

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 744" width="1000" height="744" font-family="sans-serif"><rect width="1000" height="744" fill="#0d1117"/><g transform="translate(0,0)"><text x="0" y="25" font-size="16" fill="#c9d1d9" font-weight="600">crackdown: functions native: 2.1% (856/41,219)</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 744" width="1000" height="744" font-family="sans-serif"><rect width="1000" height="744" fill="#0d1117"/><g transform="translate(0,0)"><text x="0" y="25" font-size="16" fill="#c9d1d9" font-weight="600">crackdown: functions native: 2.1% (867/41,219)</text>
 <rect x="0" y="34" width="495" height="260" fill="#0d1117"/>
 <a href="https://gaetanvigner.github.io/Any360/progress.html#crackdown"><g class="blk"><title>code 82Bxxxxx: 6,646 (0% N/V/L) [16 per square]</title>
 <rect x="0.00" y="34.00" width="6.61" height="6.48" fill="#6e7681"/>
@@ -2577,11 +2577,10 @@
 <rect x="310.48" y="284.02" width="4.93" height="4.49" fill="#6e7681"/>
 <rect x="315.92" y="284.02" width="4.93" height="4.49" fill="#6e7681"/>
 <rect x="228.99" y="289.01" width="4.93" height="4.49" fill="#6e7681"/>
-<rect x="234.42" y="289.01" width="4.93" height="4.49" fill="#6e7681"/>
 <rect x="229.0" y="164.2" width="92.4" height="129.8" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="233.0" y="177.2" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">code 825xxxxx</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#crackdown"><g class="blk"><title>code 824xxxxx: 3,353 (0% N/V/L) [8 per square]</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#crackdown"><g class="blk"><title>code 824xxxxx: 3,353 (1% N/V/L) [8 per square]</title>
 <rect x="321.35" y="34.00" width="4.45" height="4.39" fill="#2ea043"/>
 <rect x="326.30" y="34.00" width="4.45" height="4.39" fill="#2ea043"/>
 <rect x="331.26" y="34.00" width="4.45" height="4.39" fill="#6e7681"/>
@@ -3001,7 +3000,6 @@
 <rect x="331.26" y="146.52" width="4.45" height="4.39" fill="#6e7681"/>
 <rect x="336.21" y="146.52" width="4.45" height="4.39" fill="#6e7681"/>
 <rect x="341.16" y="146.52" width="4.45" height="4.39" fill="#6e7681"/>
-<rect x="346.12" y="146.52" width="4.45" height="4.39" fill="#6e7681"/>
 <rect x="321.3" y="34.0" width="89.2" height="117.4" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="325.3" y="47.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">code 824xxxx</text>
 </g></a>
@@ -3464,7 +3462,7 @@
 <text x="414.5" y="47.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">code 826xxxx</text>
 </g></a>
 <a href="https://gaetanvigner.github.io/Any360/progress.html#crackdown"><g class="blk"><title>code 827xxxxx: 2,503 (0% N/V/L) [6 per square]</title>
-<rect x="321.35" y="151.41" width="3.83" height="3.75" fill="#6e7681"/>
+<rect x="321.35" y="151.41" width="3.83" height="3.75" fill="#2ea043"/>
 <rect x="325.67" y="151.41" width="3.83" height="3.75" fill="#6e7681"/>
 <rect x="330.00" y="151.41" width="3.83" height="3.75" fill="#6e7681"/>
 <rect x="334.33" y="151.41" width="3.83" height="3.75" fill="#6e7681"/>
