@@ -18,5 +18,25 @@
    }
   },
   "toolkit_done": 3
+ },
+ {
+  "date": "2026-10-31",
+  "titles": {
+   "crackdown": {
+    "functions_native": 327,
+    "functions_verified": 291,
+    "imports_provided": 223,
+    "imports": 248,
+    "passes_native": 1
+   },
+   "simpsons": {
+    "functions_native": 27,
+    "functions_verified": 0,
+    "imports_provided": 270,
+    "imports": 317,
+    "passes_native": 0
+   }
+  },
+  "toolkit_done": 3
  }
 ]

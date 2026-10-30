@@ -1,9 +1,9 @@
 {
- "date": "2026-10-30",
+ "date": "2026-10-31",
  "titles": {
   "crackdown": {
    "functions": 41219,
-   "functions_native": 302,
+   "functions_native": 327,
    "functions_verified": 291,
    "functions_library": 449,
    "instructions": 2667844,
