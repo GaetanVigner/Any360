@@ -60,6 +60,25 @@ Any360's `ANY360_BIND` (planned, `src/any360/bind.h`) is the same macro without 
 4. **Modules by call-graph closure**: a subsystem whose functions only call each other and the libraries (the
    inventory's instruction counts weight the treemap; the call graph from Ghidra gives the closure).
 
+## First run on Crackdown (2026-10-30)
+
+`import` on the 23 MB decrypted image: 41,476 functions seeded (the recompiler's 41,219 plus 257 call targets the
+generated code names as helpers: the XDK's `__savegprlr_N` / `__restfpr_N` register save and restore routines),
+0 failed, auto-analysis 205 s. Two things the first attempt taught, now in `SeedFunctions.java`:
+
+- the save/restore helpers are entered at several points and end in `blr`; Ghidra's "Non-Returning Functions -
+  Discovered" analyzer marked them non-returning and every function that called one was cut after its prologue (an
+  8-byte `sub_826B9C08` instead of the D3D draw function). The analyzer is switched off and the helpers are created as
+  returning functions;
+- functions must be seeded before analysis (`-preScript`), or the analysis finds only the entry-point-reachable code.
+
+`decompile sub_82130000 sub_824A1708 sub_826B9C08 sub_8225AB30` then gives readable C whose control flow matches the
+generated code (the loop of `sub_82130000` calling `param_4` `param_3` times). Left to improve: the helpers appear as
+calls (`helper_82ABDF18()`) whose register effects the decompiler cannot see, so a clean-up pass should treat them as
+prologue/epilogue no-ops (a custom calling convention or a `__savegprlr` signature set); and VMX128 encodings are not
+decoded by the stock `A2ALT` language (log: "Unable to resolve constructor" on vector code), which needs Ghidra's Xenon
+processor extension; until then those functions decompile with gaps and the generated C++ is the reference for them.
+
 ## Any title
 
 `titles/<title>/pipeline.json` is all the pipeline needs: image, image base, generated code, port sources, bind

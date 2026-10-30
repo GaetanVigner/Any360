@@ -85,8 +85,15 @@ def functions_file(cfg):
     addresses = set()
     for path in cfg['generated'].glob('*_recomp.*.cpp'):
         addresses |= {int(a, 16) for a in re.findall(r'DEFINE_REX_FUNC\(sub_([0-9A-Fa-f]{8})\)', path.read_text(encoding='utf-8', errors='replace'))}
-    out.write_text(''.join(f'{a:08X} sub_{a:08X}\n' for a in sorted(addresses)), encoding='utf-8')
-    print(f'{len(addresses)} functions -> {out}')
+    # Call targets that are not functions of the generated code: the XDK's register save/restore helpers
+    # (__savegprlr_N, __restfpr_N...), which the codegen emits as helper calls. Seeded as returning functions.
+    helpers = set()
+    for path in cfg['generated'].glob('*_recomp.*.cpp'):
+        helpers |= {int(a, 16) for a in re.findall(r'// bl 0x([0-9a-fA-F]{8})', path.read_text(encoding='utf-8', errors='replace'))}
+    helpers -= addresses
+    out.write_text(''.join(f'{a:08X} sub_{a:08X}\n' for a in sorted(addresses))
+                   + ''.join(f'{a:08X} helper_{a:08X}\n' for a in sorted(helpers)), encoding='utf-8')
+    print(f'{len(addresses)} functions + {len(helpers)} helpers -> {out}')
     return out
 
 
