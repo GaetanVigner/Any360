@@ -1,4 +1,4 @@
-# Crackdown and The Simpsons Game: what each needs from the layer
+# Crackdown and The Simpsons Game: what each needs from Any360
 
 Generated numbers: [coverage/crackdown.md](coverage/crackdown.md), [coverage/simpsons.md](coverage/simpsons.md),
 [coverage/COMPARISON-crackdown-vs-simpsons.md](coverage/COMPARISON-crackdown-vs-simpsons.md) (2026-10-30). Crackdown
@@ -67,12 +67,14 @@ that reads them, tiled and endian-swapped resolve destinations, 20e4 depth with 
 convergence runs) and they match what Crackdown measured. The planned GPU census (DESIGN.md 4.2) runs the same
 `gpu_frame_stats` / draw trace on both builds and gives the first per-feature table.
 
-## What this means for the layer
+## What this means for Any360
 
-1. The kernel and CPU sides are not where a second title costs effort: the layer carries the SDK patch series and the
-   sandbox tests, and the Simpsons title adds saturating VMX goldens and an XMA validation run.
-2. The renderer is. The two projects built different record sources on the same facts; the layer's record model and
-   `HleFrameAbi` are the common form, and the XDK binding by signature is what lets the Crackdown hooks run on the
-   Simpsons XDK build (its project already matched 174 XDK functions by signature).
+1. The kernel and CPU sides are not where a second title costs effort at stage 0: Any360 carries the SDK patch series
+   and the sandbox tests, and the Simpsons title adds saturating VMX goldens and an XMA validation run. At stage 1 the
+   317 imports are the specification of `any360::sys`, and 225 of them are shared.
+2. The renderer is, and so is stage 2: twice the functions to decompile. The two projects built different record
+   sources on the same facts; Any360's record model and `HleFrameAbi` are the common form, and the XDK binding by
+   signature is what lets the Crackdown hooks run on the Simpsons XDK build (its project already matched 174 XDK
+   functions by signature) and what recognises the libraries not to decompile.
 3. The Simpsons repository's vendored SDK fork is the one structural obstacle: its renderer work must become patches on
    the pinned baseline before the two titles can share one series.

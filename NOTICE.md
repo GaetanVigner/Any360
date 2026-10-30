@@ -22,9 +22,10 @@ GPL-3.0) is measured by the tools and cited in the documents; no code from it is
 
 ## No game code or data
 
-The repository never contains code or data of any Xbox 360 title: no executable bytes, no disassembly, no assets, no
+The repository never contains data or binaries of any Xbox 360 title: no executable bytes, no disassembly, no assets, no
 recompiled output. Reports contain counts, guest addresses, hashes, kernel export names and PowerPC instruction
-mnemonics only. The XDK D3D runtime binding (planned) stores hashes of normalised function bytes and role names, not
+mnemonics only. A title's reconstructed source (stage 2 of the design) lives in that title's own repository, under
+the rules decompilation projects follow: no assets, no original binaries, the player's own copy of the game required. The XDK D3D runtime binding (planned) stores hashes of normalised function bytes and role names, not
 the bytes. Anyone running the tools does so against their own copy of a game they own.
 
 ## Trademarks

@@ -25,8 +25,8 @@
 <rect x="330" y="184" width="600" height="14" rx="4" fill="#30363d"/>
 <rect x="330" y="184" width="1.0" height="14" rx="4" fill="#2da44e"/>
 <text x="945" y="195" fill="#c9d1d9">27 / 81,874 (0.0%)</text>
-<text x="20" y="220" fill="#8b949e">layer components done</text>
+<text x="20" y="220" fill="#8b949e">toolkit components done</text>
 <rect x="330" y="210" width="600" height="14" rx="4" fill="#30363d"/>
-<rect x="330" y="210" width="50.0" height="14" rx="4" fill="#2da44e"/>
-<text x="945" y="221" fill="#c9d1d9">2 / 24 (8.3%)</text>
+<rect x="330" y="210" width="46.2" height="14" rx="4" fill="#2da44e"/>
+<text x="945" y="221" fill="#c9d1d9">2 / 26 (7.7%)</text>
 </svg>
