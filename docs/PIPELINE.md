@@ -105,6 +105,21 @@ lookup in the global FNV hash table (chained buckets, caller key check), a rende
 a ring buffer push, a curve blend weighted by `f1`, a page slot clear with the manager's list update, an 80-byte
 element copy, glyph appends, a weighted pick returning in `f1` (the test compares `f1` for it). 24 of 24 equal.
 
+## Batches 3-9 (2026-10-30): 175 more leaf functions, and two lessons from the test
+
+`pipeline/any360.py <title> select` picks the next loop-free leaves (no calls, no MMIO, no VMX, within an instruction
+range, spread over the address areas) and writes their listing; 25 per batch, 199 translations verified in all.
+Two things the comparison taught:
+
+- **The sibling-offset trap.** Two near-identical functions (camera setters) differ by one offset; the translation
+  shared a helper with a single delta and the test caught the wrong store before it shipped. Siblings get their offsets
+  spelled out.
+- **NaN payloads are not game state.** With NaN patterns in the random scenes, the recompiled oracle quiets a
+  signalling NaN on some `lfs` / `stfs` copies (an x86 conversion the console never performed) and not on others
+  (where the compiler folded the round trip), and a NaN-producing addition keeps whichever operand's payload the
+  compiler ordered first. The translations copy float bits as the hardware does, and the test treats two NaNs (as
+  floats, or as the double their 8-byte group forms) as equal. Everything else stays bit-exact.
+
 ## Any title
 
 `titles/<title>/pipeline.json` is all the pipeline needs: image, image base, generated code, port sources, bind

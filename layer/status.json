@@ -146,7 +146,7 @@
    "name": "Decompile + bind + verify pipeline: Ghidra PowerPC output cleaned with recovered types, bound over sub_X, proven against the oracle",
    "state": "in progress",
    "source": "any360: pipeline/any360.py + pipeline/ghidra/*.java (from the Crackdown re/ scripts); crackdown: src/guest_binding.h (103 functions bound by hand)",
-   "note": "two batches done on Crackdown: 24 leaf functions translated (src/decomp/leaf_batch1-2.cpp), each proven equal to the recompiled original on 64 random inputs by tests/decomp_io_tests (r3, f1 and every changed guest word), bound over the originals in the game build"
+   "note": "nine batches done on Crackdown: 199 leaf functions translated (src/decomp/leaf_batch1-9.cpp), each proven equal to the recompiled original on 48 random scenes (r3, f1 and every changed guest word, NaN payloads aside) by tests/decomp_io_tests, bound over the originals in the game build; `select` picks the next batch"
   },
   {
    "area": "stage 2: decompilation",
