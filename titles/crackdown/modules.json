@@ -1,0 +1,8 @@
+{
+ "_comment": "Named address ranges of the Crackdown (v1.0, default.xex) image for the inventory. kind: library = statically linked SDK / middleware, replaced as a unit by Any360 (not decompiled); game = the title's own code (decompiled at stage 2). Evidence: HLE_RENDERER_PLAN.md (D3D runtime range, entry points), src/crt_native.cpp and the __savegprlr helpers at 0x82ABDxxx, the import thunks in generated crackdown_init.cpp (0x82B67xxx). Ranges outside the list are reported by 1 MB area until symbol recovery (stage 2) names them.",
+ "modules": [
+  {"start": "0x826A0000", "end": "0x826D0000", "name": "XDK D3D runtime", "kind": "library"},
+  {"start": "0x82ABD000", "end": "0x82ABE000", "name": "CRT register save/restore helpers", "kind": "library"},
+  {"start": "0x82B67000", "end": "0x82B68000", "name": "kernel import thunks", "kind": "library"}
+ ]
+}

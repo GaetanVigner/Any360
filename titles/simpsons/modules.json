@@ -1,0 +1,8 @@
+{
+ "_comment": "Named address ranges of The Simpsons Game (USA, default.xex) image for the inventory. kind: library = statically linked SDK / middleware, replaced as a unit by Any360; game = the title's own code. Evidence: the port's re/d3d_method_table.md (D3D command-writer handlers sub_82461500..), its crt_native.cpp bindings (0x82A3Cxxx), the import thunks in generated simpsons_init.cpp (0x82CC2xxx). Ranges outside the list are reported by 1 MB area until symbol recovery (stage 2) names them.",
+ "modules": [
+  {"start": "0x82461500", "end": "0x82470000", "name": "XDK D3D command writers", "kind": "library"},
+  {"start": "0x82A3C000", "end": "0x82A3E000", "name": "CRT (string / memory)", "kind": "library"},
+  {"start": "0x82CC2000", "end": "0x82CC3000", "name": "kernel import thunks", "kind": "library"}
+ ]
+}

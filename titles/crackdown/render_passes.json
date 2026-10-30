@@ -1,0 +1,66 @@
+{
+ "_comment": "Render passes of the Crackdown frame (HLE_RENDERER_PLAN.md render pass map) and the native renderer stage each is at; copied from the port's docs/progress/measurements.json. Stages: emulated, records, dry run, native draw, validated, native.",
+ "pass_names": [
+  "early target",
+  "shadow map",
+  "shadow helper a",
+  "shadow helper b",
+  "shadow atlas",
+  "opaque scene",
+  "depth resolve",
+  "normal resolve",
+  "half-res",
+  "screen space",
+  "colour a",
+  "colour b",
+  "query effects a",
+  "query effects b",
+  "light apply",
+  "light pools",
+  "particles",
+  "late draw",
+  "post-processing",
+  "late a",
+  "late b",
+  "late c",
+  "late d",
+  "late e",
+  "late f",
+  "objects a",
+  "objects b",
+  "objects c",
+  "hud"
+ ],
+ "passes": {
+  "shadow atlas": "validated"
+ },
+ "captures": [
+  {
+   "date": "2026-10-25",
+   "capture": 31,
+   "draws_exact_percent": 71.7
+  },
+  {
+   "date": "2026-10-25",
+   "capture": 35,
+   "draws_exact_percent": 87.5
+  },
+  {
+   "date": "2026-10-25",
+   "capture": 37,
+   "draws_exact_percent": 88.9
+  },
+  {
+   "date": "2026-10-28",
+   "capture": 43,
+   "draws_exact_percent": 84.2
+  },
+  {
+   "date": "2026-10-28",
+   "capture": 46,
+   "draws_exact_percent": 86.2,
+   "passes_exact": 12,
+   "passes_native": 0
+  }
+ ]
+}

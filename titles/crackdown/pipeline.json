@@ -1,0 +1,16 @@
+{
+ "_comment": "Where the Crackdown pipeline finds the title (nothing of it is in this repository). image: the decrypted default.xex image (dump_image in the port); project_dir: the Ghidra project; decomp_dir: where decompiled C and bindings are written, inside the title's repository.",
+ "image": "F:/Crackdown/re/image.bin",
+ "image_base": "0x82000000",
+ "generated": "F:/Crackdown/crackdown-xbox360-recompiled/generated/default",
+ "port_src": "F:/Crackdown/crackdown-xbox360-recompiled/src",
+ "golden": "F:/Crackdown/crackdown-xbox360-recompiled/tests/golden",
+ "sdk": "F:/Crackdown/crackdown-xbox360-recompiled/out/rexglue-sdk-src",
+ "bind_macro": "CRACKDOWN_BIND",
+ "ghidra": "C:/Tools/ghidra_12.1.4_PUBLIC",
+ "language": "PowerPC:BE:64:A2ALT-32addr",
+ "project_dir": "F:/Crackdown/re/ghidra-project",
+ "project_name": "crackdown",
+ "decomp_dir": "F:/Crackdown/crackdown-xbox360-recompiled/src/decomp",
+ "verify_command": "powershell -File F:/Crackdown/crackdown-xbox360-recompiled/tools/test.ps1 -Filter guest_d3d_leaf_tests"
+}

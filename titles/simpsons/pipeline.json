@@ -1,0 +1,14 @@
+{
+ "_comment": "Where The Simpsons Game pipeline finds the title (nothing of it is in this repository). image: the decrypted default.xex image is not available here yet (the port's tools/xex_info.py and the ReXGlue codegen produce it from the player's own copy); project_dir and decomp_dir inside the title's checkout. Paths point at the scratch clone used for the coverage reports; replace with the TheSimpsonsGameRewrite checkout.",
+ "image": "F:/Crackdown/TheSimpsonsGameRewrite/simpsons/extracted/default_image.bin",
+ "image_base": "0x82000000",
+ "generated": "C:/Users/Gaetan/AppData/Local/Temp/claude/F--Crackdown/3b16fc3b-412c-464b-9cb5-ee3daaffe8a6/scratchpad/simpsons/repo/simpsons/generated/default",
+ "port_src": "C:/Users/Gaetan/AppData/Local/Temp/claude/F--Crackdown/3b16fc3b-412c-464b-9cb5-ee3daaffe8a6/scratchpad/simpsons/repo/simpsons/src",
+ "sdk": "C:/Users/Gaetan/AppData/Local/Temp/claude/F--Crackdown/3b16fc3b-412c-464b-9cb5-ee3daaffe8a6/scratchpad/simpsons/repo/tools/rexglue-sdk",
+ "bind_macro": "REX_HOOK_RAW",
+ "ghidra": "C:/Tools/ghidra_12.1.4_PUBLIC",
+ "language": "PowerPC:BE:64:A2ALT-32addr",
+ "project_dir": "F:/Crackdown/TheSimpsonsGameRewrite/re/ghidra-project",
+ "project_name": "simpsons",
+ "decomp_dir": "F:/Crackdown/TheSimpsonsGameRewrite/simpsons/src/decomp"
+}

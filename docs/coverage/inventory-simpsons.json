@@ -1,0 +1,369 @@
+{
+ "name": "simpsons",
+ "date": "2026-10-30",
+ "functions": 81874,
+ "instructions": 2938307,
+ "native": 27,
+ "verified": 0,
+ "library": 499,
+ "modules": {
+  "code 829xxxxx": {
+   "kind": "game",
+   "functions": 9610,
+   "instructions": 320385,
+   "native": 2,
+   "verified": 0,
+   "native_instructions": 177
+  },
+  "code 82Axxxxx": {
+   "kind": "game",
+   "functions": 7677,
+   "instructions": 302296,
+   "native": 1,
+   "verified": 0,
+   "native_instructions": 60
+  },
+  "code 828xxxxx": {
+   "kind": "game",
+   "functions": 9026,
+   "instructions": 290234,
+   "native": 1,
+   "verified": 0,
+   "native_instructions": 43
+  },
+  "code 82Bxxxxx": {
+   "kind": "game",
+   "functions": 5101,
+   "instructions": 277193,
+   "native": 2,
+   "verified": 0,
+   "native_instructions": 200
+  },
+  "code 827xxxxx": {
+   "kind": "game",
+   "functions": 9003,
+   "instructions": 270114,
+   "native": 5,
+   "verified": 0,
+   "native_instructions": 146
+  },
+  "code 826xxxxx": {
+   "kind": "game",
+   "functions": 8053,
+   "instructions": 264738,
+   "native": 8,
+   "verified": 0,
+   "native_instructions": 732
+  },
+  "code 823xxxxx": {
+   "kind": "game",
+   "functions": 8302,
+   "instructions": 263273,
+   "native": 2,
+   "verified": 0,
+   "native_instructions": 21
+  },
+  "code 825xxxxx": {
+   "kind": "game",
+   "functions": 4264,
+   "instructions": 260764,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 824xxxxx": {
+   "kind": "game",
+   "functions": 4235,
+   "instructions": 251255,
+   "native": 3,
+   "verified": 0,
+   "native_instructions": 148
+  },
+  "code 82Cxxxxx": {
+   "kind": "game",
+   "functions": 5931,
+   "instructions": 211751,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 822xxxxx": {
+   "kind": "game",
+   "functions": 10170,
+   "instructions": 208106,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "XDK D3D command writers": {
+   "kind": "library",
+   "functions": 342,
+   "instructions": 14973,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "CRT (string / memory)": {
+   "kind": "library",
+   "functions": 64,
+   "instructions": 3005,
+   "native": 3,
+   "verified": 0,
+   "native_instructions": 347
+  },
+  "kernel import thunks": {
+   "kind": "library",
+   "functions": 96,
+   "instructions": 220,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  }
+ },
+ "translated": [
+  {
+   "address": "823462F8",
+   "instructions": 9,
+   "handler": "",
+   "file": "audio.cpp",
+   "purpose": "The RenderWare DAC thread mixes the game's audio and submits XMA work. Decoding runs synchronously on this thread, so raising only the runtime's audio worker and idle decoder thread leaves the actual producer behind under CPU load. Request ",
+   "impl": ""
+  },
+  {
+   "address": "823A0C08",
+   "instructions": 12,
+   "handler": "",
+   "file": "subtitles.cpp",
+   "purpose": "Subtitles setting.  The game keeps its subtitle option in bit 0 of a flags word in its settings object and reads it through sub_823A0C08(settings, 0) wherever subtitles can be drawn. The option starts off and can only be turned on in the op",
+   "impl": ""
+  },
+  {
+   "address": "824324A8",
+   "instructions": 4,
+   "handler": "",
+   "file": "tick_count.cpp",
+   "purpose": "The game's millisecond tick count.  The game clock (sub_82690D60) measures each frame with the tick count in milliseconds and turns it into whole 59.94 Hz vblanks: n = round(ms / 16.683 - carry), 1 to 5, with the carry dropped once it excee",
+   "impl": ""
+  },
+  {
+   "address": "82452018",
+   "instructions": 45,
+   "handler": "",
+   "file": "ring_wait.cpp",
+   "purpose": "The game's Direct3D code waits for the GPU to consume its command ring before reusing command memory (sub_824574B8, looping on the read pointer the GPU writes back). Each loop iteration calls sub_82452018, which on the Xbox 360 paused the h",
+   "impl": ""
+  },
+  {
+   "address": "82453EB0",
+   "instructions": 99,
+   "handler": "",
+   "file": "frame_pacing.cpp",
+   "purpose": "Frame pacing.  The game shipped at 30 fps: its frame scheduler waits two vblanks per frame. The 60 FPS patch (the \"li r4,1\" hand patch in sub_82867A48) makes that one vblank everywhere. Gameplay copes, since its logic runs on real time and ",
+   "impl": ""
+  },
+  {
+   "address": "8268FAA8",
+   "instructions": 16,
+   "handler": "",
+   "file": "physics_step.cpp",
+   "purpose": "Havok physics step at 60 fps.  The game steps its Havok world once per frame in sub_827A55C0: it moves the world's frame time marker on by f1 seconds, then steps the simulation until it reaches the marker. f1 is the game clock's frame time ",
+   "impl": ""
+  },
+  {
+   "address": "82690D60",
+   "instructions": 142,
+   "handler": "",
+   "file": "game_clock.cpp",
+   "purpose": "The game clock in fractional vblanks, for frame rates above 60.  The game clock (sub_82690D60, a method of the clock object in r3, whose +12 holds the previous tick count) measures each frame with the millisecond tick count and counts it in",
+   "impl": ""
+  },
+  {
+   "address": "82691530",
+   "instructions": 3,
+   "handler": "",
+   "file": "freecam.cpp",
+   "purpose": "Free camera and photo mode.  The camera manager (a singleton at 0x82D08B10, built per level) applies the gameplay camera every frame: on the running tick, sub_8269D808 updates the camera directors and pushes viewport 0's pose through sub_82",
+   "impl": ""
+  },
+  {
+   "address": "82691540",
+   "instructions": 56,
+   "handler": "",
+   "file": "freecam.cpp",
+   "purpose": "Free camera and photo mode.  The camera manager (a singleton at 0x82D08B10, built per level) applies the gameplay camera every frame: on the running tick, sub_8269D808 updates the camera directors and pushes viewport 0's pose through sub_82",
+   "impl": ""
+  },
+  {
+   "address": "8269D8F8",
+   "instructions": 179,
+   "handler": "",
+   "file": "freecam.cpp",
+   "purpose": "Free camera and photo mode.  The camera manager (a singleton at 0x82D08B10, built per level) applies the gameplay camera every frame: on the running tick, sub_8269D808 updates the camera directors and pushes viewport 0's pose through sub_82",
+   "impl": ""
+  },
+  {
+   "address": "826B7B70",
+   "instructions": 92,
+   "handler": "",
+   "file": "frame_pacing.cpp",
+   "purpose": "Frame pacing.  The game shipped at 30 fps: its frame scheduler waits two vblanks per frame. The 60 FPS patch (the \"li r4,1\" hand patch in sub_82867A48) makes that one vblank everywhere. Gameplay copes, since its logic runs on real time and ",
+   "impl": ""
+  },
+  {
+   "address": "826B8068",
+   "instructions": 224,
+   "handler": "",
+   "file": "frame_pacing.cpp",
+   "purpose": "Frame pacing.  The game shipped at 30 fps: its frame scheduler waits two vblanks per frame. The 60 FPS patch (the \"li r4,1\" hand patch in sub_82867A48) makes that one vblank everywhere. Gameplay copes, since its logic runs on real time and ",
+   "impl": ""
+  },
+  {
+   "address": "826D5CB0",
+   "instructions": 20,
+   "handler": "",
+   "file": "freecam.cpp",
+   "purpose": "Free camera and photo mode.  The camera manager (a singleton at 0x82D08B10, built per level) applies the gameplay camera every frame: on the running tick, sub_8269D808 updates the camera directors and pushes viewport 0's pose through sub_82",
+   "impl": ""
+  },
+  {
+   "address": "8270A590",
+   "instructions": 42,
+   "handler": "",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82718710",
+   "instructions": 30,
+   "handler": "",
+   "file": "frame_pacing.cpp",
+   "purpose": "Frame pacing.  The game shipped at 30 fps: its frame scheduler waits two vblanks per frame. The 60 FPS patch (the \"li r4,1\" hand patch in sub_82867A48) makes that one vblank everywhere. Gameplay copes, since its logic runs on real time and ",
+   "impl": ""
+  },
+  {
+   "address": "82718788",
+   "instructions": 3,
+   "handler": "",
+   "file": "frame_pacing.cpp",
+   "purpose": "Frame pacing.  The game shipped at 30 fps: its frame scheduler waits two vblanks per frame. The 60 FPS patch (the \"li r4,1\" hand patch in sub_82867A48) makes that one vblank everywhere. Gameplay copes, since its logic runs on real time and ",
+   "impl": ""
+  },
+  {
+   "address": "827A55C0",
+   "instructions": 70,
+   "handler": "",
+   "file": "frame_pacing.cpp",
+   "purpose": "Frame pacing.  The game shipped at 30 fps: its frame scheduler waits two vblanks per frame. The 60 FPS patch (the \"li r4,1\" hand patch in sub_82867A48) makes that one vblank everywhere. Gameplay copes, since its logic runs on real time and ",
+   "impl": ""
+  },
+  {
+   "address": "827C0F78",
+   "instructions": 1,
+   "handler": "",
+   "file": "frame_pacing.cpp",
+   "purpose": "Frame pacing.  The game shipped at 30 fps: its frame scheduler waits two vblanks per frame. The 60 FPS patch (the \"li r4,1\" hand patch in sub_82867A48) makes that one vblank everywhere. Gameplay copes, since its logic runs on real time and ",
+   "impl": ""
+  },
+  {
+   "address": "82867D60",
+   "instructions": 43,
+   "handler": "",
+   "file": "frame_pacing.cpp",
+   "purpose": "Frame pacing.  The game shipped at 30 fps: its frame scheduler waits two vblanks per frame. The 60 FPS patch (the \"li r4,1\" hand patch in sub_82867A48) makes that one vblank everywhere. Gameplay copes, since its logic runs on real time and ",
+   "impl": ""
+  },
+  {
+   "address": "8299EAB8",
+   "instructions": 105,
+   "handler": "",
+   "file": "physics_step.cpp",
+   "purpose": "Havok physics step at 60 fps.  The game steps its Havok world once per frame in sub_827A55C0: it moves the world's frame time marker on by f1 seconds, then steps the simulation until it reaches the marker. f1 is the game clock's frame time ",
+   "impl": ""
+  },
+  {
+   "address": "829ED8D8",
+   "instructions": 72,
+   "handler": "",
+   "file": "physics_step.cpp",
+   "purpose": "Havok physics step at 60 fps.  The game steps its Havok world once per frame in sub_827A55C0: it moves the world's frame time marker on by f1 seconds, then steps the simulation until it reaches the marker. f1 is the game clock's frame time ",
+   "impl": ""
+  },
+  {
+   "address": "82A3C440",
+   "instructions": 40,
+   "handler": "",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A3CD80",
+   "instructions": 265,
+   "handler": "",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A3D1D8",
+   "instructions": 42,
+   "handler": "",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82AA2070",
+   "instructions": 60,
+   "handler": "",
+   "file": "physics_step.cpp",
+   "purpose": "Havok physics step at 60 fps.  The game steps its Havok world once per frame in sub_827A55C0: it moves the world's frame time marker on by f1 seconds, then steps the simulation until it reaches the marker. f1 is the game clock's frame time ",
+   "impl": ""
+  },
+  {
+   "address": "82B74110",
+   "instructions": 197,
+   "handler": "",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82B766A8",
+   "instructions": 3,
+   "handler": "",
+   "file": "freecam.cpp",
+   "purpose": "Free camera and photo mode.  The camera manager (a singleton at 0x82D08B10, built per level) applies the gameplay camera every frame: on the running tick, sub_8269D808 updates the camera directors and pushes viewport 0's pose through sub_82",
+   "impl": ""
+  }
+ ],
+ "translated_by_file": {
+  "frame_pacing": 8,
+  "freecam": 5,
+  "crt_native": 5,
+  "physics_step": 4,
+  "audio": 1,
+  "subtitles": 1,
+  "tick_count": 1,
+  "ring_wait": 1,
+  "game_clock": 1
+ },
+ "imports": {
+  "total": 317,
+  "by_state": {
+   "implemented": 270,
+   "stub": 47
+  },
+  "by_library": {
+   "xam": {
+    "stub": 43,
+    "implemented": 104
+   },
+   "xboxkrnl": {
+    "implemented": 166,
+    "stub": 4
+   }
+  }
+ }
+}

@@ -1,31 +1,194 @@
 {
  "_comment": "Components of Any360 by stage (docs/DESIGN.md section 1) and their state, kept by hand; tools/progress_page.py reads it. States: done (in this repository, usable by a title), in progress, planned, game-specific (stays in the title's repository; listed so the boundary is visible). 'source' is where the component exists today.",
  "components": [
-  {"area": "stage 0: scaffold (ReXGlue)", "name": "Pinned ReXGlue baseline (v0.10.0) and patch application rules", "state": "planned", "source": "crackdown: patches/rexglue-sdk/baseline.env, tools/build-patched-rexruntime.*", "note": "the scaffold stays fast and correct while stages 1-3 are built on it"},
-  {"area": "stage 0: scaffold (ReXGlue)", "name": "SDK patch series: kernel fixes, threading and clock, audio, input, GPU shared, Vulkan, D3D12, codegen (120 patches)", "state": "planned", "source": "crackdown: patches/rexglue-sdk (docs/coverage/patches-crackdown.json)", "note": "candidates for ReXGlue upstream; the codegen patches (0005, 0052, 0095) fix rounding the oracle must get right"},
-  {"area": "stage 0: scaffold (ReXGlue)", "name": "Coverage: imports and instructions a title needs vs what the runtime provides", "state": "done", "source": "any360: tools/coverage.py", "note": "run on Crackdown and The Simpsons Game"},
-  {"area": "stage 0: scaffold (ReXGlue)", "name": "GPU feature census from a running title (PM4 opcodes, shader families, formats, MSAA, memexport, queries)", "state": "planned", "source": "crackdown: patches 0107 (gpu_frame_stats), 0108/0113 (draw trace)", "note": "what the coverage tool cannot see statically"},
-  {"area": "stage 0: scaffold (ReXGlue)", "name": "Patch inventory and progress page", "state": "done", "source": "any360: tools/patch_inventory.py, tools/progress_page.py", "note": ""},
-  {"area": "stage 0: scaffold (ReXGlue)", "name": "Crash mapping: host crash address to guest function and instruction", "state": "planned", "source": "crackdown: tools/verify-address-map.py, src/crash_report.cpp", "note": ""},
-  {"area": "stage 1: native system (any360::sys)", "name": "Threads, synchronisation, APCs, timers with Xbox semantics (~60 imports)", "state": "planned", "source": "to write; reference: rexruntime src/kernel/xboxkrnl_threading.cpp + Crackdown patches 0015-0021, 0026, 0068", "note": "first any360::sys slice (L5)"},
-  {"area": "stage 1: native system (any360::sys)", "name": "Files, saves, DLC: VFS over installed data, STFS / XContent packages (~40 imports)", "state": "planned", "source": "to write; crackdown has src/stfs.cpp, src/xdvdfs.cpp, src/content_*.cpp (game-side today)", "note": "Crackdown's STFS and XDVDFS readers are already native and generic"},
-  {"area": "stage 1: native system (any360::sys)", "name": "Audio: XMA decoder and platform mixer (~20 imports)", "state": "planned", "source": "to write; Simpsons drives XMA contexts through the kernel API", "note": ""},
-  {"area": "stage 1: native system (any360::sys)", "name": "Input, user profiles, offline achievements, UI dialogs, Live offline answers (~100 imports)", "state": "planned", "source": "crackdown: src/achievements_*.cpp, src/user_data.cpp (game-side today)", "note": ""},
-  {"area": "stage 1: native graphics (any360::gfx)", "name": "HLE frame ABI: rex_gpu_hle_submit_frame(const HleFrameAbi*), version 4", "state": "planned", "source": "crackdown: src/hle_frame_abi.h + patch 0129 (rex/graphics/hle_frame.h)", "note": "the contract between records and renderer while the renderer lives in the plugin"},
-  {"area": "stage 1: native graphics (any360::gfx)", "name": "Draw record model: RecordKind, DrawRecord, shared immutable state blocks", "state": "planned", "source": "crackdown: src/hle_records.h", "note": "source-agnostic: filled by XDK hooks (Crackdown) or by a PM4 decode (Simpsons plan)"},
-  {"area": "stage 1: native graphics (any360::gfx)", "name": "PM4 decoder: Xenos packets to state writes, draws, shader loads, bin predication, indirect buffers", "state": "planned", "source": "crackdown: src/pm4_decode.h (+ tests/pm4_decode_tests.cpp)", "note": "header-only, no game knowledge"},
-  {"area": "stage 1: native graphics (any360::gfx)", "name": "Native pass pipeline: records to pipelines, native draw, comparison with the emulated target", "state": "planned", "source": "crackdown: patch 0129 (Vulkan plugin)", "note": "shadow atlas exact for static geometry (2026-10-29); 1 of 29 passes"},
-  {"area": "stage 1: native graphics (any360::gfx)", "name": "Render pass markers and per-pass accounting", "state": "planned", "source": "crackdown: patch 0129 (CommandProcessor::OnHleMarker)", "note": "pass ids and names come from the title"},
-  {"area": "stage 1: native graphics (any360::gfx)", "name": "XDK D3D runtime binding by signature (roles: draw, clear, resolve, RunCommandBuffer, GPR flush, shader bind)", "state": "planned", "source": "crackdown: docs/progress/d3d_entry_points.txt (209 addresses); simpsons: re/d3d_method_table.md (174 signature matches)", "note": "hashes and roles only; makes the hooks portable between titles of the same XDK"},
-  {"area": "stage 2: decompilation", "name": "Symbol recovery: functions, vtables, RTTI class names, call graph, strings, data layout (REA on the decrypted image)", "state": "planned", "source": "crackdown: tools/find-missing-functions.py, guest-graph, re/; simpsons: libtrap + functions_patch.toml", "note": "output is a symbol map (address, name, class, module) kept in the title's repository"},
-  {"area": "stage 2: decompilation", "name": "Library recognition: XDK D3D, Havok, XAudio2, CRT, zlib by signature; replaced, not decompiled", "state": "planned", "source": "to write", "note": "Havok 4.x decompiled once and shared by the titles that ship it"},
-  {"area": "stage 2: decompilation", "name": "Guest sandbox: run recompiled functions outside the game in a lazily committed 4 GB guest space, golden inputs / outputs", "state": "planned", "source": "crackdown: tests/guest_sandbox.h, tests/cmake/guest_sandbox.cmake, tests/golden", "note": "leaf functions today; non-leaf functions and memory snapshots next"},
-  {"area": "stage 2: decompilation", "name": "Decompile + bind + verify pipeline: Ghidra PowerPC output cleaned with recovered types, bound over sub_X, proven against the oracle", "state": "planned", "source": "crackdown: src/guest_binding.h (CRACKDOWN_BIND, 103 functions bound by hand)", "note": "stage 2 progress = verified native functions / total, per module"},
-  {"area": "stage 2: decompilation", "name": "SDK patch guards and ABI equality tests", "state": "planned", "source": "crackdown: tests/sdk_patch_guards_tests.cpp, tests/vulkan_per_draw_tests.cpp", "note": ""},
-  {"area": "stage 3: portable codebase", "name": "Platform layer: SDL3 window / input / audio, file system, clock", "state": "planned", "source": "to write (ReXGlue uses SDL today)", "note": "Windows, Linux / Steam Deck, macOS, Android"},
-  {"area": "stage 3: portable codebase", "name": "Renderer backends beyond Vulkan: Metal via MoltenVK, WebGPU for WebAssembly", "state": "planned", "source": "to write", "note": ""},
-  {"area": "stage 3: portable codebase", "name": "Asset conversion at install: big-endian data to host formats, so no guest memory remains", "state": "planned", "source": "crackdown: launcher installs from ISO (src/content_install.cpp, tools/xiso_extract.py)", "note": "the step that unlocks ARM64 and WebAssembly fully"},
-  {"area": "game-specific", "name": "Render pass hooks and names, import binding table, settings, launcher, achievements, cheats, save compatibility, title updates", "state": "game-specific", "source": "crackdown: src/", "note": "stays in each title's repository"},
-  {"area": "game-specific", "name": "Reconstructed source and symbol map of the title, its goldens", "state": "game-specific", "source": "title repositories (CrackdownRewrite, TheSimpsonsGameRewrite)", "note": "Any360 never holds a title's code or data"}
+  {
+   "area": "stage 0: scaffold (ReXGlue)",
+   "name": "Pinned ReXGlue baseline (v0.10.0) and patch application rules",
+   "state": "planned",
+   "source": "crackdown: patches/rexglue-sdk/baseline.env, tools/build-patched-rexruntime.*",
+   "note": "the scaffold stays fast and correct while stages 1-3 are built on it"
+  },
+  {
+   "area": "stage 0: scaffold (ReXGlue)",
+   "name": "SDK patch series: kernel fixes, threading and clock, audio, input, GPU shared, Vulkan, D3D12, codegen (120 patches)",
+   "state": "planned",
+   "source": "crackdown: patches/rexglue-sdk (docs/coverage/patches-crackdown.json)",
+   "note": "candidates for ReXGlue upstream; the codegen patches (0005, 0052, 0095) fix rounding the oracle must get right"
+  },
+  {
+   "area": "stage 0: scaffold (ReXGlue)",
+   "name": "Coverage and inventory: imports, instructions, every function with its state, the functions already translated",
+   "state": "done",
+   "source": "any360: tools/coverage.py, tools/inventory.py",
+   "note": "run on Crackdown and The Simpsons Game"
+  },
+  {
+   "area": "stage 0: scaffold (ReXGlue)",
+   "name": "Progress page in the AnyPS5 style (treemaps, per-title tabs, interactive function table, history)",
+   "state": "done",
+   "source": "any360: tools/progress_page.py",
+   "note": ""
+  },
+  {
+   "area": "stage 0: scaffold (ReXGlue)",
+   "name": "Patch inventory",
+   "state": "done",
+   "source": "any360: tools/patch_inventory.py",
+   "note": ""
+  },
+  {
+   "area": "stage 0: scaffold (ReXGlue)",
+   "name": "GPU feature census from a running title (PM4 opcodes, shader families, formats, MSAA, memexport, queries)",
+   "state": "planned",
+   "source": "crackdown: patches 0107 (gpu_frame_stats), 0108/0113 (draw trace)",
+   "note": "what the coverage tool cannot see statically"
+  },
+  {
+   "area": "stage 0: scaffold (ReXGlue)",
+   "name": "Crash mapping: host crash address to guest function and instruction",
+   "state": "planned",
+   "source": "crackdown: tools/verify-address-map.py, src/crash_report.cpp",
+   "note": ""
+  },
+  {
+   "area": "stage 1: native system (any360::sys)",
+   "name": "Threads, synchronisation, APCs, timers with Xbox semantics (~60 imports)",
+   "state": "planned",
+   "source": "to write; reference: rexruntime src/kernel/xboxkrnl_threading.cpp + Crackdown patches 0015-0021, 0026, 0068",
+   "note": "first any360::sys slice (L5)"
+  },
+  {
+   "area": "stage 1: native system (any360::sys)",
+   "name": "Files, saves, DLC: VFS over installed data, STFS / XContent packages (~40 imports)",
+   "state": "planned",
+   "source": "to write; crackdown has src/stfs.cpp, src/xdvdfs.cpp, src/content_*.cpp (game-side today)",
+   "note": "Crackdown's STFS and XDVDFS readers are already native and generic"
+  },
+  {
+   "area": "stage 1: native system (any360::sys)",
+   "name": "Audio: XMA decoder and platform mixer (~20 imports)",
+   "state": "planned",
+   "source": "to write; Simpsons drives XMA contexts through the kernel API",
+   "note": ""
+  },
+  {
+   "area": "stage 1: native system (any360::sys)",
+   "name": "Input, user profiles, offline achievements, UI dialogs, Live offline answers (~100 imports)",
+   "state": "planned",
+   "source": "crackdown: src/achievements_*.cpp, src/user_data.cpp (game-side today)",
+   "note": ""
+  },
+  {
+   "area": "stage 1: native graphics (any360::gfx)",
+   "name": "HLE frame ABI: rex_gpu_hle_submit_frame(const HleFrameAbi*), version 4",
+   "state": "planned",
+   "source": "crackdown: src/hle_frame_abi.h + patch 0129 (rex/graphics/hle_frame.h)",
+   "note": "the contract between records and renderer while the renderer lives in the plugin"
+  },
+  {
+   "area": "stage 1: native graphics (any360::gfx)",
+   "name": "Draw record model: RecordKind, DrawRecord, shared immutable state blocks",
+   "state": "planned",
+   "source": "crackdown: src/hle_records.h",
+   "note": "source-agnostic: filled by XDK hooks (Crackdown) or by a PM4 decode (Simpsons plan)"
+  },
+  {
+   "area": "stage 1: native graphics (any360::gfx)",
+   "name": "PM4 decoder: Xenos packets to state writes, draws, shader loads, bin predication, indirect buffers",
+   "state": "planned",
+   "source": "crackdown: src/pm4_decode.h (+ tests/pm4_decode_tests.cpp)",
+   "note": "header-only, no game knowledge"
+  },
+  {
+   "area": "stage 1: native graphics (any360::gfx)",
+   "name": "Native pass pipeline: records to pipelines, native draw, comparison with the emulated target",
+   "state": "planned",
+   "source": "crackdown: patch 0129 (Vulkan plugin)",
+   "note": "shadow atlas exact for static geometry (2026-10-29); 1 of 29 passes"
+  },
+  {
+   "area": "stage 1: native graphics (any360::gfx)",
+   "name": "Render pass markers and per-pass accounting",
+   "state": "planned",
+   "source": "crackdown: patch 0129 (CommandProcessor::OnHleMarker)",
+   "note": "pass ids and names come from the title"
+  },
+  {
+   "area": "stage 1: native graphics (any360::gfx)",
+   "name": "XDK D3D runtime binding by signature (roles: draw, clear, resolve, RunCommandBuffer, GPR flush, shader bind)",
+   "state": "planned",
+   "source": "crackdown: docs/progress/d3d_entry_points.txt (209 addresses); simpsons: re/d3d_method_table.md (174 signature matches)",
+   "note": "hashes and roles only; makes the hooks portable between titles of the same XDK"
+  },
+  {
+   "area": "stage 2: decompilation",
+   "name": "Symbol recovery: functions, vtables, RTTI class names, call graph, strings, data layout (REA on the decrypted image)",
+   "state": "planned",
+   "source": "crackdown: tools/find-missing-functions.py, guest-graph, re/; simpsons: libtrap + functions_patch.toml",
+   "note": "output is a symbol map (address, name, class, module) kept in the title's repository"
+  },
+  {
+   "area": "stage 2: decompilation",
+   "name": "Library recognition: XDK D3D, Havok, XAudio2, CRT, zlib by signature; replaced, not decompiled",
+   "state": "planned",
+   "source": "to write",
+   "note": "Havok 4.x decompiled once and shared by the titles that ship it"
+  },
+  {
+   "area": "stage 2: decompilation",
+   "name": "Guest sandbox: run recompiled functions outside the game in a lazily committed 4 GB guest space, golden inputs / outputs",
+   "state": "planned",
+   "source": "crackdown: tests/guest_sandbox.h, tests/cmake/guest_sandbox.cmake, tests/golden",
+   "note": "leaf functions today; non-leaf functions and memory snapshots next"
+  },
+  {
+   "area": "stage 2: decompilation",
+   "name": "Decompile + bind + verify pipeline: Ghidra PowerPC output cleaned with recovered types, bound over sub_X, proven against the oracle",
+   "state": "in progress",
+   "source": "any360: pipeline/any360.py + pipeline/ghidra/*.java (from the Crackdown re/ scripts); crackdown: src/guest_binding.h (103 functions bound by hand)",
+   "note": "inventory, Ghidra import, decompile and bind steps exist; verify runs the title's sandbox tests; ANY360_BIND and the non-leaf sandbox are next"
+  },
+  {
+   "area": "stage 2: decompilation",
+   "name": "SDK patch guards and ABI equality tests",
+   "state": "planned",
+   "source": "crackdown: tests/sdk_patch_guards_tests.cpp, tests/vulkan_per_draw_tests.cpp",
+   "note": ""
+  },
+  {
+   "area": "stage 3: portable codebase",
+   "name": "Platform layer: SDL3 window / input / audio, file system, clock",
+   "state": "planned",
+   "source": "to write (ReXGlue uses SDL today)",
+   "note": "Windows, Linux / Steam Deck, macOS, Android"
+  },
+  {
+   "area": "stage 3: portable codebase",
+   "name": "Renderer backends beyond Vulkan: Metal via MoltenVK, WebGPU for WebAssembly",
+   "state": "planned",
+   "source": "to write",
+   "note": ""
+  },
+  {
+   "area": "stage 3: portable codebase",
+   "name": "Asset conversion at install: big-endian data to host formats, so no guest memory remains",
+   "state": "planned",
+   "source": "crackdown: launcher installs from ISO (src/content_install.cpp, tools/xiso_extract.py)",
+   "note": "the step that unlocks ARM64 and WebAssembly fully"
+  },
+  {
+   "area": "game-specific",
+   "name": "Render pass hooks and names, import binding table, settings, launcher, achievements, cheats, save compatibility, title updates",
+   "state": "game-specific",
+   "source": "crackdown: src/",
+   "note": "stays in each title's repository"
+  },
+  {
+   "area": "game-specific",
+   "name": "Reconstructed source and symbol map of the title, its goldens",
+   "state": "game-specific",
+   "source": "title repositories (CrackdownRewrite, TheSimpsonsGameRewrite)",
+   "note": "Any360 never holds a title's code or data"
+  }
  ]
 }

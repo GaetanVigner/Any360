@@ -2,31 +2,44 @@
  "date": "2026-10-30",
  "titles": {
   "crackdown": {
-   "imports": 248,
-   "imports_provided": 223,
    "functions": 41219,
    "functions_native": 103,
+   "functions_verified": 291,
+   "functions_library": 449,
    "instructions": 2667844,
+   "imports": 248,
+   "imports_provided": 223,
+   "imports_stub": 25,
    "instructions_handled": 2667844,
-   "mnemonics": 340
+   "instructions_total": 2667844,
+   "mnemonics": 340,
+   "passes": 29,
+   "passes_native": 1,
+   "sdk": "0.10.0"
   },
   "simpsons": {
-   "imports": 317,
-   "imports_provided": 270,
    "functions": 81874,
    "functions_native": 27,
-   "instructions": 2938230,
+   "functions_verified": 0,
+   "functions_library": 499,
+   "instructions": 2938307,
+   "imports": 317,
+   "imports_provided": 270,
+   "imports_stub": 47,
    "instructions_handled": 2938229,
-   "mnemonics": 338
+   "instructions_total": 2938230,
+   "mnemonics": 338,
+   "passes": 0,
+   "passes_native": 0,
+   "sdk": "0.8.0"
   }
  },
- "layer": {
-  "components": 26,
-  "done": 2,
-  "in_progress": 0,
-  "patches_crackdown": {
-   "count": 120,
-   "game_named": 15
+ "toolkit": {
+  "components": 27,
+  "done": 3,
+  "in_progress": 1,
+  "patches": {
+   "crackdown": 120
   }
  }
 }

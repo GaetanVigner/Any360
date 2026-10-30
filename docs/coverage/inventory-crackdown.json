@@ -1,0 +1,970 @@
+{
+ "name": "crackdown",
+ "date": "2026-10-30",
+ "functions": 41219,
+ "instructions": 2667844,
+ "native": 103,
+ "verified": 291,
+ "library": 449,
+ "modules": {
+  "code 82Axxxxx": {
+   "kind": "game",
+   "functions": 4604,
+   "instructions": 265577,
+   "native": 5,
+   "verified": 0,
+   "native_instructions": 178
+  },
+  "code 828xxxxx": {
+   "kind": "game",
+   "functions": 2226,
+   "instructions": 260939,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 827xxxxx": {
+   "kind": "game",
+   "functions": 2503,
+   "instructions": 260475,
+   "native": 2,
+   "verified": 0,
+   "native_instructions": 31
+  },
+  "code 829xxxxx": {
+   "kind": "game",
+   "functions": 3947,
+   "instructions": 260184,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 825xxxxx": {
+   "kind": "game",
+   "functions": 3839,
+   "instructions": 259174,
+   "native": 27,
+   "verified": 0,
+   "native_instructions": 10546
+  },
+  "code 823xxxxx": {
+   "kind": "game",
+   "functions": 3852,
+   "instructions": 257976,
+   "native": 13,
+   "verified": 0,
+   "native_instructions": 1880
+  },
+  "code 824xxxxx": {
+   "kind": "game",
+   "functions": 3353,
+   "instructions": 257848,
+   "native": 13,
+   "verified": 0,
+   "native_instructions": 3699
+  },
+  "code 822xxxxx": {
+   "kind": "game",
+   "functions": 2435,
+   "instructions": 256713,
+   "native": 5,
+   "verified": 0,
+   "native_instructions": 1141
+  },
+  "code 821xxxxx": {
+   "kind": "game",
+   "functions": 3871,
+   "instructions": 210799,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 826xxxxx": {
+   "kind": "game",
+   "functions": 3177,
+   "instructions": 209444,
+   "native": 12,
+   "verified": 0,
+   "native_instructions": 1163
+  },
+  "code 82Bxxxxx": {
+   "kind": "game",
+   "functions": 6646,
+   "instructions": 118058,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "XDK D3D runtime": {
+   "kind": "library",
+   "functions": 742,
+   "instructions": 48557,
+   "native": 24,
+   "verified": 291,
+   "native_instructions": 4846
+  },
+  "CRT register save/restore helpers": {
+   "kind": "library",
+   "functions": 22,
+   "instructions": 2094,
+   "native": 2,
+   "verified": 0,
+   "native_instructions": 412
+  },
+  "kernel import thunks": {
+   "kind": "library",
+   "functions": 2,
+   "instructions": 6,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  }
+ },
+ "translated": [
+  {
+   "address": "8225AB30",
+   "instructions": 349,
+   "handler": "WaveInstanceSetup",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "audio_wave_timeout.cpp"
+  },
+  {
+   "address": "822846A0",
+   "instructions": 69,
+   "handler": "CameraConstructed",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "aspect_render.cpp"
+  },
+  {
+   "address": "82287130",
+   "instructions": 167,
+   "handler": "CameraUpdate",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "nan_guards.cpp"
+  },
+  {
+   "address": "822A38D0",
+   "instructions": 368,
+   "handler": "DamageEntry",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "cheat_hooks.cpp"
+  },
+  {
+   "address": "822ECED0",
+   "instructions": 188,
+   "handler": "JumpLaunch",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "cheat_hooks.cpp"
+  },
+  {
+   "address": "82324938",
+   "instructions": 65,
+   "handler": "TimingUpdate",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "frame_pacing.cpp"
+  },
+  {
+   "address": "823263D8",
+   "instructions": 82,
+   "handler": "FrameTimer",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "frame_pacing.cpp"
+  },
+  {
+   "address": "82326728",
+   "instructions": 67,
+   "handler": "SceneTargetsCreate",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "single_tile_scene.cpp"
+  },
+  {
+   "address": "82351F60",
+   "instructions": 411,
+   "handler": "RenderPass18",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "823597F8",
+   "instructions": 293,
+   "handler": "FireWeaponTracked",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "cheat_hooks.cpp"
+  },
+  {
+   "address": "8235D570",
+   "instructions": 308,
+   "handler": "FireWeaponTracked",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "cheat_hooks.cpp"
+  },
+  {
+   "address": "823819A0",
+   "instructions": 34,
+   "handler": "ApplyLanguage",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "title_language.cpp"
+  },
+  {
+   "address": "82381F28",
+   "instructions": 51,
+   "handler": "MenuStringById",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "main_menu_quit.cpp"
+  },
+  {
+   "address": "823B4F20",
+   "instructions": 107,
+   "handler": "RenderObjects",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "823BA308",
+   "instructions": 56,
+   "handler": "RenderObjects",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "823E9490",
+   "instructions": 154,
+   "handler": "OrbListDescriptorShown",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "orb_map.cpp"
+  },
+  {
+   "address": "823E96F8",
+   "instructions": 27,
+   "handler": "OrbListDescriptorPosition",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "orb_map.cpp"
+  },
+  {
+   "address": "823E9C30",
+   "instructions": 225,
+   "handler": "OrbMinimapProjection",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "orb_map.cpp"
+  },
+  {
+   "address": "824099B8",
+   "instructions": 447,
+   "handler": "RenderHud",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "8240A0B8",
+   "instructions": 255,
+   "handler": "RenderHud",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "8249E808",
+   "instructions": 248,
+   "handler": "EngineTorque",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "cheat_hooks.cpp"
+  },
+  {
+   "address": "824A1708",
+   "instructions": 165,
+   "handler": "VehicleAction",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "vehicle_action_step.cpp"
+  },
+  {
+   "address": "824BB950",
+   "instructions": 152,
+   "handler": "VehicleDamage",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "cheat_hooks.cpp"
+  },
+  {
+   "address": "824C1A10",
+   "instructions": 166,
+   "handler": "VehicleDamage",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "cheat_hooks.cpp"
+  },
+  {
+   "address": "824C9E08",
+   "instructions": 680,
+   "handler": "VehicleDamage",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "cheat_hooks.cpp"
+  },
+  {
+   "address": "824D51B8",
+   "instructions": 315,
+   "handler": "VehicleDamage",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "cheat_hooks.cpp"
+  },
+  {
+   "address": "824EC668",
+   "instructions": 31,
+   "handler": "EntityDestroyed",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "entity_registry.cpp"
+  },
+  {
+   "address": "824EFD98",
+   "instructions": 51,
+   "handler": "OrbConstructed",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "orb_map.cpp"
+  },
+  {
+   "address": "824EFE68",
+   "instructions": 39,
+   "handler": "OrbDestroyed",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "orb_map.cpp"
+  },
+  {
+   "address": "824FC190",
+   "instructions": 661,
+   "handler": "WalkVelocity",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "cheat_hooks.cpp"
+  },
+  {
+   "address": "824FD840",
+   "instructions": 489,
+   "handler": "AimUpdate",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "nan_guards.cpp"
+  },
+  {
+   "address": "8251FA20",
+   "instructions": 50,
+   "handler": "RenderPass1",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "82527AC8",
+   "instructions": 70,
+   "handler": "VehicleDamage",
+   "file": "guest_bindings_tu6.cpp",
+   "purpose": "Which guest function of the Title Update 6 guest each host replacement takes over. The jump height cheat has no binding: its launch velocity is no longer a field the host can scale.",
+   "impl": "cheat_hooks.cpp"
+  },
+  {
+   "address": "8254C568",
+   "instructions": 33,
+   "handler": "FrameDelta",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "frame_pacing.cpp"
+  },
+  {
+   "address": "82568DE0",
+   "instructions": 102,
+   "handler": "RenderPass13",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825A76E0",
+   "instructions": 966,
+   "handler": "PostProcessConstructed",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "single_tile_scene.cpp"
+  },
+  {
+   "address": "825A8AA0",
+   "instructions": 124,
+   "handler": "RenderPass16",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825A8C90",
+   "instructions": 511,
+   "handler": "RenderPass9",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825A9490",
+   "instructions": 254,
+   "handler": "RenderPass15",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825A9A80",
+   "instructions": 104,
+   "handler": "RenderPass25",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825A9C20",
+   "instructions": 52,
+   "handler": "RenderPass6",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825A9CF0",
+   "instructions": 99,
+   "handler": "RenderPass7",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825A9E80",
+   "instructions": 98,
+   "handler": "RenderPass8",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825AA490",
+   "instructions": 285,
+   "handler": "RenderPass20",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825AD5F0",
+   "instructions": 688,
+   "handler": "RenderPass12",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825B1950",
+   "instructions": 251,
+   "handler": "RenderPass24",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825B4718",
+   "instructions": 282,
+   "handler": "RenderPass11",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825B5728",
+   "instructions": 998,
+   "handler": "RenderPass23",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825B7930",
+   "instructions": 785,
+   "handler": "RenderPass21",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825BA9F8",
+   "instructions": 207,
+   "handler": "RenderPass22",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825C80D0",
+   "instructions": 398,
+   "handler": "RenderPass5",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825CB478",
+   "instructions": 79,
+   "handler": "RenderPass17",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825D1EC0",
+   "instructions": 1549,
+   "handler": "RenderPass14",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825D3910",
+   "instructions": 432,
+   "handler": "RenderPass2",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825D8258",
+   "instructions": 915,
+   "handler": "RenderPass10",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825DBD98",
+   "instructions": 637,
+   "handler": "RenderPass3",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825DC790",
+   "instructions": 231,
+   "handler": "RenderPass4",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "825E12F8",
+   "instructions": 346,
+   "handler": "RenderPass19",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "82624A30",
+   "instructions": 35,
+   "handler": "PlayVideo",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "skip_intro.cpp"
+  },
+  {
+   "address": "82627528",
+   "instructions": 30,
+   "handler": "OrbFrontendScreenConstructed",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "orb_map.cpp"
+  },
+  {
+   "address": "82627640",
+   "instructions": 23,
+   "handler": "OrbFrontendScreenDestroyed",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "orb_map.cpp"
+  },
+  {
+   "address": "826400D8",
+   "instructions": 579,
+   "handler": "OrbMapViewConstructed",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "orb_map.cpp"
+  },
+  {
+   "address": "82640A50",
+   "instructions": 179,
+   "handler": "OrbMapViewDestroyed",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "orb_map.cpp"
+  },
+  {
+   "address": "82653FC0",
+   "instructions": 189,
+   "handler": "SequenceFrame",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "skip_intro.cpp"
+  },
+  {
+   "address": "82658560",
+   "instructions": 29,
+   "handler": "MenuPopupDestroyed",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "main_menu_quit.cpp"
+  },
+  {
+   "address": "826586B0",
+   "instructions": 11,
+   "handler": "MenuPopupNo",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "main_menu_quit.cpp"
+  },
+  {
+   "address": "826587F8",
+   "instructions": 39,
+   "handler": "MenuPopupYes",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "main_menu_quit.cpp"
+  },
+  {
+   "address": "82677CB8",
+   "instructions": 29,
+   "handler": "MenuBlockDestroyed",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "main_menu_quit.cpp"
+  },
+  {
+   "address": "82678768",
+   "instructions": 17,
+   "handler": "MenuPopupOpen",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "main_menu_quit.cpp"
+  },
+  {
+   "address": "8269A9D8",
+   "instructions": 3,
+   "handler": "OrbFrontendScreenDestroyed",
+   "file": "guest_bindings_tu6.cpp",
+   "purpose": "Which guest function of the Title Update 6 guest each host replacement takes over. The jump height cheat has no binding: its launch velocity is no longer a field the host can scale.",
+   "impl": "orb_map.cpp"
+  },
+  {
+   "address": "826A6B50",
+   "instructions": 70,
+   "handler": "SimulationUpdate",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "frame_pacing.cpp"
+  },
+  {
+   "address": "826A7698",
+   "instructions": 172,
+   "handler": "FrameLoop",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "frame_pacing.cpp"
+  },
+  {
+   "address": "826A8940",
+   "instructions": 71,
+   "handler": "EngineMovie",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "skip_intro.cpp"
+  },
+  {
+   "address": "826AED90",
+   "instructions": 92,
+   "handler": "D3dCreateRenderTarget",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "single_tile_scene.cpp"
+  },
+  {
+   "address": "826B1150",
+   "instructions": 2,
+   "handler": "PresentInterval",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "frame_pacing.cpp"
+  },
+  {
+   "address": "826B3C48",
+   "instructions": 115,
+   "handler": "D3dSetShaderGprAllocation",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "826B91E0",
+   "instructions": 294,
+   "handler": "D3dBeginVertices",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "826B96D0",
+   "instructions": 333,
+   "handler": "D3dBeginIndexedVertices",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "826B9C08",
+   "instructions": 251,
+   "handler": "D3dDrawVertices",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "826B9FF8",
+   "instructions": 279,
+   "handler": "D3dDrawIndexedVertices",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "826BB408",
+   "instructions": 58,
+   "handler": "D3dRingSegmentSwitch",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "826BB4F0",
+   "instructions": 53,
+   "handler": "GpuFence",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "gpu_fence_wait.cpp"
+  },
+  {
+   "address": "826BBEE0",
+   "instructions": 45,
+   "handler": "GpuPoll",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "gpu_fence_wait.cpp"
+  },
+  {
+   "address": "826BC3D0",
+   "instructions": 99,
+   "handler": "SwapCallback",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "frame_pacing.cpp"
+  },
+  {
+   "address": "826BC568",
+   "instructions": 103,
+   "handler": "SwapPacket",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "frame_pacing.cpp"
+  },
+  {
+   "address": "826BCA98",
+   "instructions": 455,
+   "handler": "SwapBuilder",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "frame_rate.cpp"
+  },
+  {
+   "address": "826BD300",
+   "instructions": 97,
+   "handler": "D3dSetPredication",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "single_tile_scene.cpp"
+  },
+  {
+   "address": "826BD488",
+   "instructions": 364,
+   "handler": "D3dBeginTiling",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "single_tile_scene.cpp"
+  },
+  {
+   "address": "826BDA38",
+   "instructions": 313,
+   "handler": "D3dEndTiling",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "single_tile_scene.cpp"
+  },
+  {
+   "address": "826BE578",
+   "instructions": 897,
+   "handler": "D3dResolve",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "826C04A0",
+   "instructions": 73,
+   "handler": "D3dClear",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "826C3750",
+   "instructions": 400,
+   "handler": "D3dRunCommandBuffer",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "826C3D90",
+   "instructions": 166,
+   "handler": "CommandBufferFixup",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "single_tile_scene.cpp"
+  },
+  {
+   "address": "826C6A50",
+   "instructions": 44,
+   "handler": "D3dBindShaderLiterals",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "single_tile_scene.cpp"
+  },
+  {
+   "address": "8270D160",
+   "instructions": 28,
+   "handler": "RenderHud",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "82743798",
+   "instructions": 3,
+   "handler": "FilterPadState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "achievements_input.cpp"
+  },
+  {
+   "address": "82A49908",
+   "instructions": 21,
+   "handler": "AudioReleaseHandle",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "title_compat.cpp"
+  },
+  {
+   "address": "82A4BEF8",
+   "instructions": 24,
+   "handler": "AudioMixerCallback",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "audio_mixer_priority.cpp"
+  },
+  {
+   "address": "82A4FA70",
+   "instructions": 3,
+   "handler": "AudioResetEvent",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "audio_guest_sync.cpp"
+  },
+  {
+   "address": "82A50000",
+   "instructions": 64,
+   "handler": "AudioBarrier",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "audio_guest_sync.cpp"
+  },
+  {
+   "address": "82AB5F10",
+   "instructions": 66,
+   "handler": "CrtMemmove",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "crt_native.cpp"
+  },
+  {
+   "address": "82ABDE40",
+   "instructions": 161,
+   "handler": "CrtMemset",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "crt_native.cpp"
+  },
+  {
+   "address": "82ABDF90",
+   "instructions": 251,
+   "handler": "CrtMemcpy",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "crt_native.cpp"
+  }
+ ],
+ "translated_by_file": {
+  "guest_bindings_base": 101,
+  "guest_bindings_tu6": 2
+ },
+ "imports": {
+  "total": 248,
+  "by_state": {
+   "implemented": 223,
+   "stub": 25
+  },
+  "by_library": {
+   "xam": {
+    "implemented": 79,
+    "stub": 20
+   },
+   "xboxkrnl": {
+    "implemented": 144,
+    "stub": 5
+   }
+  }
+ }
+}
