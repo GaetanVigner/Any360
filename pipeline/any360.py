@@ -133,6 +133,63 @@ def resolve_targets(cfg, names):
     return sorted(set(targets))
 
 
+def step_select(cfg, args):
+    """Picks the next functions to translate: leaves (no calls, no MMIO, no time base, no VMX / privileged
+    instructions), within an instruction range, loop-free unless --loops, not yet native, spread over the address
+    areas; writes <decomp_dir>/select-<n>.txt (one address per line) and the reference listing of each (the codegen's
+    `// mnemonic` comments and labels) to <decomp_dir>/select-<n>.asm.txt."""
+    done = set()
+    inv = ROOT / 'docs' / 'data' / f'functions-{cfg["title"]}.json'
+    if inv.exists():
+        done = {r[0] for r in json.loads(inv.read_text(encoding='utf-8'))['rows'] if r[2] != 'R'}
+    listed = cfg['decomp_dir'] / 'functions.txt'
+    if listed.exists():
+        done |= {l.split()[0].upper() for l in listed.read_text().splitlines() if l.strip() and not l.startswith('#')}
+    func = re.compile(r'DEFINE_REX_FUNC\(sub_([0-9A-F]{8})\)')
+    mnem = re.compile(r'^\s*// ([a-z][a-z0-9_.]*[+-]?)', re.M)
+    bad = ('(ctx, base);', 'REX_MM_', 'CALL_INDIRECT', 'QUERY_TIMEBASE', 'REX_UNIMPLEMENTED', 'lwarx', 'stwcx', 'mtmsr',
+           'mfmsr', 'dcbz', 'twllei', 'twlgei', 'tdllei', '// tw', '// td', 'mftb')
+    libraries = [(int(m['start'], 16), int(m['end'], 16)) for m in json.loads(
+        (ROOT / 'titles' / cfg['title'] / 'modules.json').read_text(encoding='utf-8'))['modules']] \
+        if (ROOT / 'titles' / cfg['title'] / 'modules.json').exists() else []
+    candidates = []
+    for path in sorted(cfg['generated'].glob('*_recomp.*.cpp')):
+        text = path.read_text(encoding='utf-8', errors='replace')
+        starts = [(m.start(), m.group(1)) for m in func.finditer(text)]
+        for i, (start, address) in enumerate(starts):
+            value = int(address, 16)
+            if address in done or any(s <= value < e for s, e in libraries):
+                continue
+            body = text[start:starts[i + 1][0] if i + 1 < len(starts) else len(text)]
+            if any(b in body for b in bad):
+                continue
+            mnemonics = mnem.findall(body)
+            if not args.min <= len(mnemonics) <= args.max:
+                continue
+            if any(m.rstrip('.+-').startswith(('v', 'lv', 'stv')) or m.endswith('128') for m in mnemonics):
+                continue
+            if not args.loops and 'goto loc_' in body:
+                continue
+            listing = '\n'.join(l.strip() for l in body.splitlines()
+                                if l.strip().startswith(('//', 'loc_')) or 'DEFINE_REX' in l)
+            candidates.append((address, len(mnemonics), listing))
+    # Spread over the address areas: round-robin by 1 MB area, smallest first within each.
+    by_area = {}
+    for c in sorted(candidates, key=lambda c: c[1]):
+        by_area.setdefault(c[0][:3], []).append(c)
+    picked = []
+    while len(picked) < args.count and any(by_area.values()):
+        for area in sorted(by_area):
+            if by_area[area] and len(picked) < args.count:
+                picked.append(by_area[area].pop(0))
+    cfg['decomp_dir'].mkdir(parents=True, exist_ok=True)
+    n = args.batch
+    (cfg['decomp_dir'] / f'select-{n}.txt').write_text(''.join(f'{a}\n' for a, _, _ in picked), encoding='utf-8')
+    (cfg['decomp_dir'] / f'select-{n}.asm.txt').write_text('\n\n'.join(l for _, _, l in picked) + '\n', encoding='utf-8')
+    print(f'{len(candidates)} candidates, picked {len(picked)}: ' + ' '.join(f'{a}({s})' for a, s, _ in picked))
+    print(f'-> {cfg["decomp_dir"] / f"select-{n}.txt"}')
+
+
 def step_decompile(cfg, args):
     targets = resolve_targets(cfg, args.functions)
     raw = cfg['decomp_dir'] / 'raw'
@@ -211,6 +268,12 @@ def main():
     sub.add_parser('functions')
     p = sub.add_parser('import')
     p.add_argument('--no-analysis', action='store_true')
+    p = sub.add_parser('select')
+    p.add_argument('--count', type=int, default=25)
+    p.add_argument('--min', type=int, default=10)
+    p.add_argument('--max', type=int, default=60)
+    p.add_argument('--loops', action='store_true')
+    p.add_argument('--batch', type=int, default=3)
     p = sub.add_parser('decompile')
     p.add_argument('functions', nargs='+')
     p = sub.add_parser('bind')
