@@ -3,7 +3,7 @@
  "date": "2026-10-30",
  "functions": 41219,
  "instructions": 2667844,
- "native": 202,
+ "native": 227,
  "verified": 291,
  "library": 449,
  "modules": {
@@ -11,89 +11,89 @@
    "kind": "game",
    "functions": 4604,
    "instructions": 265577,
-   "native": 13,
+   "native": 15,
    "verified": 0,
-   "native_instructions": 326
+   "native_instructions": 356
   },
   "code 828xxxxx": {
    "kind": "game",
    "functions": 2226,
    "instructions": 260939,
-   "native": 6,
+   "native": 8,
    "verified": 0,
-   "native_instructions": 82
+   "native_instructions": 115
   },
   "code 827xxxxx": {
    "kind": "game",
    "functions": 2503,
    "instructions": 260475,
-   "native": 10,
+   "native": 12,
    "verified": 0,
-   "native_instructions": 172
+   "native_instructions": 202
   },
   "code 829xxxxx": {
    "kind": "game",
    "functions": 3947,
    "instructions": 260184,
-   "native": 9,
+   "native": 11,
    "verified": 0,
-   "native_instructions": 183
+   "native_instructions": 213
   },
   "code 825xxxxx": {
    "kind": "game",
    "functions": 3839,
    "instructions": 259174,
-   "native": 34,
+   "native": 36,
    "verified": 0,
-   "native_instructions": 10678
+   "native_instructions": 10712
   },
   "code 823xxxxx": {
    "kind": "game",
    "functions": 3852,
    "instructions": 257976,
-   "native": 26,
+   "native": 29,
    "verified": 0,
-   "native_instructions": 2262
+   "native_instructions": 2307
   },
   "code 824xxxxx": {
    "kind": "game",
    "functions": 3353,
    "instructions": 257848,
-   "native": 23,
+   "native": 25,
    "verified": 0,
-   "native_instructions": 4081
+   "native_instructions": 4115
   },
   "code 822xxxxx": {
    "kind": "game",
    "functions": 2435,
    "instructions": 256713,
-   "native": 15,
+   "native": 18,
    "verified": 0,
-   "native_instructions": 1302
+   "native_instructions": 1356
   },
   "code 821xxxxx": {
    "kind": "game",
    "functions": 3871,
    "instructions": 210799,
-   "native": 15,
+   "native": 18,
    "verified": 0,
-   "native_instructions": 255
+   "native_instructions": 301
   },
   "code 826xxxxx": {
    "kind": "game",
    "functions": 3177,
    "instructions": 209444,
-   "native": 18,
+   "native": 20,
    "verified": 0,
-   "native_instructions": 1324
+   "native_instructions": 1421
   },
   "code 82Bxxxxx": {
    "kind": "game",
    "functions": 6646,
    "instructions": 118058,
-   "native": 7,
+   "native": 9,
    "verified": 0,
-   "native_instructions": 93
+   "native_instructions": 125
   },
   "XDK D3D runtime": {
    "kind": "library",
@@ -128,6 +128,14 @@
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "decomp/leaf_batch1.cpp"
+  },
+  {
+   "address": "8213E3C8",
+   "instructions": 15,
+   "handler": "decomp::Sub_8213E3C8",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
   },
   {
    "address": "8213F180",
@@ -168,6 +176,22 @@
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "decomp/leaf_batch5.cpp"
+  },
+  {
+   "address": "82185E40",
+   "instructions": 16,
+   "handler": "decomp::Sub_82185E40",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
+   "address": "8218DC98",
+   "instructions": 15,
+   "handler": "decomp::Sub_8218DC98",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
   },
   {
    "address": "821BFCC0",
@@ -250,6 +274,14 @@
    "impl": "decomp/leaf_batch4.cpp"
   },
   {
+   "address": "82213798",
+   "instructions": 18,
+   "handler": "decomp::Sub_82213798",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
    "address": "82258550",
    "instructions": 11,
    "handler": "decomp::Sub_82258550",
@@ -314,6 +346,14 @@
    "impl": "decomp/leaf_batch1.cpp"
   },
   {
+   "address": "822E9A98",
+   "instructions": 17,
+   "handler": "decomp::Sub_822E9A98",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
    "address": "822EB240",
    "instructions": 16,
    "handler": "decomp::Sub_822EB240",
@@ -346,6 +386,14 @@
    "impl": "cheat_hooks.cpp"
   },
   {
+   "address": "822F9FA0",
+   "instructions": 19,
+   "handler": "decomp::Sub_822F9FA0",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
    "address": "822FB238",
    "instructions": 16,
    "handler": "decomp::Sub_822FB238",
@@ -360,6 +408,14 @@
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "decomp/leaf_batch4.cpp"
+  },
+  {
+   "address": "82303670",
+   "instructions": 15,
+   "handler": "decomp::Sub_82303670",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
   },
   {
    "address": "82305158",
@@ -530,6 +586,22 @@
    "impl": "hle_capture.cpp"
   },
   {
+   "address": "823CA8F0",
+   "instructions": 15,
+   "handler": "decomp::Sub_823CA8F0",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
+   "address": "823CAA10",
+   "instructions": 15,
+   "handler": "decomp::Sub_823CAA10",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
    "address": "823E9490",
    "instructions": 154,
    "handler": "OrbListDescriptorShown",
@@ -586,6 +658,14 @@
    "impl": "hle_capture.cpp"
   },
   {
+   "address": "8240B648",
+   "instructions": 16,
+   "handler": "decomp::Sub_8240B648",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
    "address": "82463160",
    "instructions": 94,
    "handler": "decomp::Sub_82463160",
@@ -624,6 +704,14 @@
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "decomp/leaf_batch4.cpp"
+  },
+  {
+   "address": "82476C50",
+   "instructions": 18,
+   "handler": "decomp::Sub_82476C50",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
   },
   {
    "address": "82479668",
@@ -802,12 +890,28 @@
    "impl": ""
   },
   {
+   "address": "82581ED0",
+   "instructions": 17,
+   "handler": "decomp::Sub_82581ED0",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
    "address": "8258AEA8",
    "instructions": 15,
    "handler": "decomp::Sub_8258AEA8",
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "decomp/leaf_batch4.cpp"
+  },
+  {
+   "address": "82597840",
+   "instructions": 17,
+   "handler": "decomp::Sub_82597840",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
   },
   {
    "address": "825A76E0",
@@ -1026,6 +1130,14 @@
    "impl": "decomp/leaf_batch2.cpp"
   },
   {
+   "address": "826011F8",
+   "instructions": 54,
+   "handler": "decomp::Sub_826011F8",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
    "address": "8261BCF8",
    "instructions": 22,
    "handler": "decomp::Sub_8261BCF8",
@@ -1088,6 +1200,14 @@
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "decomp/leaf_batch4.cpp"
+  },
+  {
+   "address": "82652B30",
+   "instructions": 43,
+   "handler": "decomp::Sub_82652B30",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
   },
   {
    "address": "82653FC0",
@@ -1370,6 +1490,22 @@
    "impl": "hle_capture.cpp"
   },
   {
+   "address": "82726F50",
+   "instructions": 15,
+   "handler": "decomp::Sub_82726F50",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
+   "address": "82726FC8",
+   "instructions": 15,
+   "handler": "decomp::Sub_82726FC8",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
    "address": "8272F260",
    "instructions": 45,
    "handler": "decomp::Sub_8272F260",
@@ -1442,6 +1578,14 @@
    "impl": "decomp/leaf_batch4.cpp"
   },
   {
+   "address": "82807698",
+   "instructions": 16,
+   "handler": "decomp::Sub_82807698",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
    "address": "8281B120",
    "instructions": 15,
    "handler": "decomp::Sub_8281B120",
@@ -1464,6 +1608,14 @@
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "decomp/leaf_batch4.cpp"
+  },
+  {
+   "address": "8284D670",
+   "instructions": 17,
+   "handler": "decomp::Sub_8284D670",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
   },
   {
    "address": "8287A968",
@@ -1538,6 +1690,14 @@
    "impl": "decomp/leaf_batch1.cpp"
   },
   {
+   "address": "8298FA58",
+   "instructions": 15,
+   "handler": "decomp::Sub_8298FA58",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
    "address": "82993038",
    "instructions": 10,
    "handler": "decomp::Sub_82993038",
@@ -1552,6 +1712,14 @@
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "decomp/leaf_batch5.cpp"
+  },
+  {
+   "address": "829F0F40",
+   "instructions": 15,
+   "handler": "decomp::Sub_829F0F40",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
   },
   {
    "address": "829F1AD8",
@@ -1642,12 +1810,28 @@
    "impl": "decomp/leaf_batch2.cpp"
   },
   {
+   "address": "82AB52F0",
+   "instructions": 15,
+   "handler": "decomp::Sub_82AB52F0",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
    "address": "82AB5F10",
    "instructions": 66,
    "handler": "CrtMemmove",
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "crt_native.cpp"
+  },
+  {
+   "address": "82AB5FD0",
+   "instructions": 15,
+   "handler": "decomp::Sub_82AB5FD0",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
   },
   {
    "address": "82ABDE40",
@@ -1736,10 +1920,26 @@
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "decomp/leaf_batch1.cpp"
+  },
+  {
+   "address": "82B48FE8",
+   "instructions": 16,
+   "handler": "decomp::Sub_82B48FE8",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
+  },
+  {
+   "address": "82B4A590",
+   "instructions": 16,
+   "handler": "decomp::Sub_82B4A590",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "decomp/leaf_batch6.cpp"
   }
  ],
  "translated_by_file": {
-  "guest_bindings_base": 200,
+  "guest_bindings_base": 225,
   "guest_bindings_tu6": 2
  },
  "imports": {
