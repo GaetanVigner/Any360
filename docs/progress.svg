@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="242" viewBox="0 0 1100 242" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">
+<rect width="100%" height="100%" fill="#161b22"/>
+<text x="20" y="28" fill="#c9d1d9" font-size="16" font-weight="600">Any360: what runs natively, 2026-10-30</text>
+<text x="20" y="64" fill="#8b949e">crackdown: system calls provided</text>
+<rect x="330" y="54" width="600" height="14" rx="4" fill="#30363d"/>
+<rect x="330" y="54" width="539.5" height="14" rx="4" fill="#2da44e"/>
+<text x="945" y="65" fill="#c9d1d9">223 / 248 (89.9%)</text>
+<text x="20" y="90" fill="#8b949e">crackdown: instructions translated</text>
+<rect x="330" y="80" width="600" height="14" rx="4" fill="#30363d"/>
+<rect x="330" y="80" width="600.0" height="14" rx="4" fill="#2da44e"/>
+<text x="945" y="91" fill="#c9d1d9">2,667,844 / 2,667,844 (100.0%)</text>
+<text x="20" y="116" fill="#8b949e">crackdown: functions replaced natively</text>
+<rect x="330" y="106" width="600" height="14" rx="4" fill="#30363d"/>
+<rect x="330" y="106" width="1.5" height="14" rx="4" fill="#2da44e"/>
+<text x="945" y="117" fill="#c9d1d9">103 / 41,219 (0.2%)</text>
+<text x="20" y="142" fill="#8b949e">simpsons: system calls provided</text>
+<rect x="330" y="132" width="600" height="14" rx="4" fill="#30363d"/>
+<rect x="330" y="132" width="511.0" height="14" rx="4" fill="#2da44e"/>
+<text x="945" y="143" fill="#c9d1d9">270 / 317 (85.2%)</text>
+<text x="20" y="168" fill="#8b949e">simpsons: instructions translated</text>
+<rect x="330" y="158" width="600" height="14" rx="4" fill="#30363d"/>
+<rect x="330" y="158" width="600.0" height="14" rx="4" fill="#2da44e"/>
+<text x="945" y="169" fill="#c9d1d9">2,938,229 / 2,938,230 (100.0%)</text>
+<text x="20" y="194" fill="#8b949e">simpsons: functions replaced natively</text>
+<rect x="330" y="184" width="600" height="14" rx="4" fill="#30363d"/>
+<rect x="330" y="184" width="1.0" height="14" rx="4" fill="#2da44e"/>
+<text x="945" y="195" fill="#c9d1d9">27 / 81,874 (0.0%)</text>
+<text x="20" y="220" fill="#8b949e">layer components done</text>
+<rect x="330" y="210" width="600" height="14" rx="4" fill="#30363d"/>
+<rect x="330" y="210" width="50.0" height="14" rx="4" fill="#2da44e"/>
+<text x="945" y="221" fill="#c9d1d9">2 / 24 (8.3%)</text>
+</svg>

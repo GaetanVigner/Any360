@@ -1,0 +1,11 @@
+# Never game code or data: generated recomp output, images, assets
+generated/
+*.xex
+*.xexp
+*.iso
+*.bin
+
+# Local scratch
+__pycache__/
+build/
+*.log

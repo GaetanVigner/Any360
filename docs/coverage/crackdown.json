@@ -1,0 +1,3918 @@
+{
+ "name": "crackdown",
+ "date": "2026-10-30",
+ "sdk": {
+  "path": "F:\\Crackdown\\crackdown-xbox360-recompiled\\out\\rexglue-sdk-src",
+  "version": "0.10.0",
+  "exports_known": 2914,
+  "exports_implemented": 493,
+  "exports_stub": 2406,
+  "instruction_ids": 1842,
+  "instruction_ids_handled": 497
+ },
+ "compare_sdk": {
+  "path": "C:\\Users\\Gaetan\\AppData\\Local\\Temp\\claude\\F--Crackdown\\3b16fc3b-412c-464b-9cb5-ee3daaffe8a6\\scratchpad\\simpsons\\repo\\tools\\rexglue-sdk",
+  "version": "0.8.0"
+ },
+ "imports": [
+  {
+   "name": "DbgBreakPoint",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "DbgPrint",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "ExCreateThread",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "ExGetXConfigSetting",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "ExRegisterTitleTerminateNotification",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "ExTerminateThread",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "HalReturnToFirmware",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "IoDismountVolumeByFileHandle",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeAcquireSpinLockAtRaisedIrql",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeBugCheck",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeBugCheckEx",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeDelayExecutionThread",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeEnableFpuExceptions",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeEnterCriticalRegion",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeGetCurrentProcessType",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeInitializeSemaphore",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeLeaveCriticalRegion",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeLockL2",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeQueryPerformanceFrequency",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeQuerySystemTime",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeRaiseIrqlToDpcLevel",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeReleaseSemaphore",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeReleaseSpinLockFromRaisedIrql",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeResetEvent",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeRestoreFloatingPointState",
+   "library": "xboxkrnl",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "KeResumeThread",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeSaveFloatingPointState",
+   "library": "xboxkrnl",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "KeSetAffinityThread",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeSetBasePriorityThread",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeSetEvent",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeTlsAlloc",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeTlsFree",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeTlsGetValue",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeTlsSetValue",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeUnlockL2",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeWaitForMultipleObjects",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KeWaitForSingleObject",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KfAcquireSpinLock",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KfLowerIrql",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KfReleaseSpinLock",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "KiApcNormalRoutineNop",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "MmAllocatePhysicalMemoryEx",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "MmFreePhysicalMemory",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "MmGetPhysicalAddress",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "MmQueryAddressProtect",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "MmQueryStatistics",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "MmSetAddressProtect",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_WSACloseEvent",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_WSACreateEvent",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_WSAEventSelect",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "NetDll_WSAGetLastError",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_WSAStartup",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_WSAWaitForMultipleEvents",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_XNetConnect",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "NetDll_XNetCreateKey",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "NetDll_XNetGetConnectStatus",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "NetDll_XNetGetTitleXnAddr",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_XNetInAddrToString",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_XNetInAddrToXnAddr",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_XNetQosListen",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_XNetQosLookup",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "NetDll_XNetQosRelease",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_XNetRandom",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_XNetRegisterKey",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "NetDll_XNetServerToInAddr",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "NetDll_XNetStartup",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_XNetUnregisterKey",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "NetDll_XNetXnAddrToInAddr",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll___WSAFDIsSet",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_accept",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_bind",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_closesocket",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_connect",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_getpeername",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "NetDll_getsockname",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "NetDll_getsockopt",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "NetDll_inet_addr",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_ioctlsocket",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_listen",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_recv",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_recvfrom",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_select",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_send",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_sendto",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_setsockopt",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_shutdown",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NetDll_socket",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtAllocateVirtualMemory",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtCancelTimer",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtClearEvent",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtClose",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtCreateEvent",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtCreateFile",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtCreateMutant",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtCreateSemaphore",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtCreateTimer",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtDeviceIoControlFile",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtDuplicateObject",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtFlushBuffersFile",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtFreeVirtualMemory",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtOpenFile",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtQueryDirectoryFile",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtQueryFullAttributesFile",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtQueryInformationFile",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtQueryVirtualMemory",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtQueryVolumeInformationFile",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtReadFile",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtReleaseMutant",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtReleaseSemaphore",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtResumeThread",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtSetEvent",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtSetInformationFile",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtSetTimerEx",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtSuspendThread",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtWaitForMultipleObjectsEx",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtWaitForSingleObjectEx",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "NtWriteFile",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "ObCreateSymbolicLink",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "ObDeleteSymbolicLink",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "ObDereferenceObject",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "ObReferenceObjectByHandle",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlCaptureContext",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlCompareMemoryUlong",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlEnterCriticalSection",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlFillMemoryUlong",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlFreeAnsiString",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlImageXexHeaderField",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlInitAnsiString",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlInitUnicodeString",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlInitializeCriticalSection",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlInitializeCriticalSectionAndSpinCount",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlLeaveCriticalSection",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlMultiByteToUnicodeN",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlNtStatusToDosError",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlRaiseException",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlTimeFieldsToTime",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlTimeToTimeFields",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlTryEnterCriticalSection",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlUnicodeStringToAnsiString",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlUnicodeToMultiByteN",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "RtlUnwind",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "StfsControlDevice",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "StfsCreateDevice",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdCallGraphicsNotificationRoutines",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdEnableDisableClockGating",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdEnableRingBufferRPtrWriteBack",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdGetCurrentDisplayGamma",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdGetCurrentDisplayInformation",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdGetSystemCommandBuffer",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdInitializeEngines",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdInitializeRingBuffer",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdInitializeScalerCommandBuffer",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdIsHSIOTrainingSucceeded",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdPersistDisplay",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdQueryVideoFlags",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdQueryVideoMode",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdRetrainEDRAM",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdRetrainEDRAMWorker",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdSetDisplayMode",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdSetGraphicsInterruptCallback",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdSetSystemCommandBufferGpuIdentifierAddress",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdShutdownEngines",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "VdSwap",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XAudioGetVoiceCategoryVolume",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XAudioGetVoiceCategoryVolumeChangeMask",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XAudioRegisterRenderDriverClient",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XAudioSubmitRenderDriverFrame",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XAudioUnregisterRenderDriverClient",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XGetAVPack",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XGetGameRegion",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XGetLanguage",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XGetVideoMode",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XMACreateContext",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XMAReleaseContext",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XMsgCancelIORequest",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XMsgInProcessCall",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XMsgStartIORequest",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XMsgStartIORequestEx",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XNetLogonGetTitleID",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "XNotifyGetNext",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamAlloc",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamContentClose",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamContentCreateEnumerator",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamContentCreateEx",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamContentDelete",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamContentGetDeviceState",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamContentLaunchImage",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "XamCreateEnumeratorHandle",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamEnumerate",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamFree",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamGetExecutionId",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamGetPrivateEnumStructureFromHandle",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamGetSystemVersion",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamInputGetCapabilities",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamInputGetKeystrokeEx",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamInputGetState",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamInputSetState",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamLoaderLaunchTitle",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamLoaderSetLaunchData",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamLoaderTerminateTitle",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamNotifyCreateListener",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamParseGamerTileKey",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamReadTileToTexture",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamSessionCreateHandle",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamSessionRefObjByHandle",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamShowDeviceSelectorUI",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamShowFriendsUI",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "XamShowGamerCardUIForXUID",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "XamShowMarketplaceUI",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "XamShowMessageBoxUIEx",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamShowSigninUI",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamTaskCloseHandle",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamTaskSchedule",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamTaskShouldExit",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamUserAreUsersFriends",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamUserCheckPrivilege",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamUserCreateAchievementEnumerator",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamUserCreateStatsEnumerator",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "XamUserGetMembershipTierFromXUID",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "XamUserGetName",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamUserGetOnlineCountryFromXUID",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "XamUserGetSigninState",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamUserGetXUID",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamUserReadProfileSettings",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamUserWriteProfileSettings",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamVoiceClose",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamVoiceCreate",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamVoiceHeadsetPresent",
+   "library": "xam",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XamVoiceSubmitPacket",
+   "library": "xam",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "XeCryptBnQwBeSigVerify",
+   "library": "xboxkrnl",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "XeCryptRotSumSha",
+   "library": "xboxkrnl",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "XeCryptSha",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XeKeysConsolePrivateKeySign",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XeKeysConsoleSignatureVerification",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XeKeysGetKey",
+   "library": "xboxkrnl",
+   "state": "stub",
+   "kind": "function",
+   "other_state": "stub"
+  },
+  {
+   "name": "XexCheckExecutablePrivilege",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XexGetModuleHandle",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XexGetModuleSection",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XexGetProcedureAddress",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XexLoadImage",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "XexUnloadImage",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "__C_specific_handler",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "_snwprintf",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "_vscwprintf",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "_vsnprintf",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "sprintf",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "swprintf",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  },
+  {
+   "name": "vswprintf",
+   "library": "xboxkrnl",
+   "state": "implemented",
+   "kind": "function",
+   "other_state": "implemented"
+  }
+ ],
+ "instructions": [
+  {
+   "mnemonic": "addi",
+   "id": "PPC_INST_ADDI",
+   "count": 313453,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lwz",
+   "id": "PPC_INST_LWZ",
+   "count": 287667,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mr",
+   "id": "PPC_INST_MR",
+   "count": 212751,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stw",
+   "id": "PPC_INST_STW",
+   "count": 168614,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "li",
+   "id": "PPC_INST_LI",
+   "count": 161944,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bl",
+   "id": "PPC_INST_BL",
+   "count": 153104,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lis",
+   "id": "PPC_INST_LIS",
+   "count": 104794,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "cmplwi",
+   "id": "PPC_INST_CMPLWI",
+   "count": 97712,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "beq",
+   "id": "PPC_INST_BEQ",
+   "count": 87828,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "b",
+   "id": "PPC_INST_B",
+   "count": 67456,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stfs",
+   "id": "PPC_INST_STFS",
+   "count": 67128,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lfs",
+   "id": "PPC_INST_LFS",
+   "count": 63157,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "rlwinm",
+   "id": "PPC_INST_RLWINM",
+   "count": 62253,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bne",
+   "id": "PPC_INST_BNE",
+   "count": 55177,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "cmpwi",
+   "id": "PPC_INST_CMPWI",
+   "count": 32974,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "std",
+   "id": "PPC_INST_STD",
+   "count": 31753,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "add",
+   "id": "PPC_INST_ADD",
+   "count": 28406,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "ld",
+   "id": "PPC_INST_LD",
+   "count": 28398,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stwu",
+   "id": "PPC_INST_STWU",
+   "count": 28199,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "blr",
+   "id": "PPC_INST_BLR",
+   "count": 27662,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mflr",
+   "id": "PPC_INST_MFLR",
+   "count": 27283,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lbz",
+   "id": "PPC_INST_LBZ",
+   "count": 25602,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "cmplw",
+   "id": "PPC_INST_CMPLW",
+   "count": 25308,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "clrlwi",
+   "id": "PPC_INST_CLRLWI",
+   "count": 23890,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stb",
+   "id": "PPC_INST_STB",
+   "count": 23634,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lvx128",
+   "id": "PPC_INST_LVX128",
+   "count": 22025,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mtctr",
+   "id": "PPC_INST_MTCTR",
+   "count": 21018,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "blt",
+   "id": "PPC_INST_BLT",
+   "count": 20024,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bctrl",
+   "id": "PPC_INST_BCTRL",
+   "count": 18348,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "subf",
+   "id": "PPC_INST_SUBF",
+   "count": 17444,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mtlr",
+   "id": "PPC_INST_MTLR",
+   "count": 16508,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stvx",
+   "id": "PPC_INST_STVX",
+   "count": 14546,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lwzx",
+   "id": "PPC_INST_LWZX",
+   "count": 13892,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lfd",
+   "id": "PPC_INST_LFD",
+   "count": 12591,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bge",
+   "id": "PPC_INST_BGE",
+   "count": 12523,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "cntlzw",
+   "id": "PPC_INST_CNTLZW",
+   "count": 12492,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "ble",
+   "id": "PPC_INST_BLE",
+   "count": 10948,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "ori",
+   "id": "PPC_INST_ORI",
+   "count": 10809,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "sth",
+   "id": "PPC_INST_STH",
+   "count": 10457,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fmuls",
+   "id": "PPC_INST_FMULS",
+   "count": 10279,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "rlwimi",
+   "id": "PPC_INST_RLWIMI",
+   "count": 10027,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fcmpu",
+   "id": "PPC_INST_FCMPU",
+   "count": 8759,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lhz",
+   "id": "PPC_INST_LHZ",
+   "count": 8333,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fmr",
+   "id": "PPC_INST_FMR",
+   "count": 8251,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stfd",
+   "id": "PPC_INST_STFD",
+   "count": 6920,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "or",
+   "id": "PPC_INST_OR",
+   "count": 6887,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "clrlwi.",
+   "id": "PPC_INST_CLRLWI",
+   "count": 6820,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "rlwinm.",
+   "id": "PPC_INST_RLWINM",
+   "count": 6524,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "cmpw",
+   "id": "PPC_INST_CMPW",
+   "count": 6456,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmulfp128",
+   "id": "PPC_INST_VMULFP128",
+   "count": 6065,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vspltw",
+   "id": "PPC_INST_VSPLTW",
+   "count": 6028,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "srawi",
+   "id": "PPC_INST_SRAWI",
+   "count": 5779,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fsubs",
+   "id": "PPC_INST_FSUBS",
+   "count": 5706,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "frsp",
+   "id": "PPC_INST_FRSP",
+   "count": 5178,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fcfid",
+   "id": "PPC_INST_FCFID",
+   "count": 5078,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bgt",
+   "id": "PPC_INST_BGT",
+   "count": 4982,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fadds",
+   "id": "PPC_INST_FADDS",
+   "count": 4544,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stwx",
+   "id": "PPC_INST_STWX",
+   "count": 4486,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lvlx",
+   "id": "PPC_INST_LVLX",
+   "count": 4303,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmaddfp",
+   "id": "PPC_INST_VMADDFP",
+   "count": 3701,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "rotlwi",
+   "id": "PPC_INST_ROTLWI",
+   "count": 3656,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "xori",
+   "id": "PPC_INST_XORI",
+   "count": 3651,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "addic.",
+   "id": "PPC_INST_ADDIC",
+   "count": 3642,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mulli",
+   "id": "PPC_INST_MULLI",
+   "count": 3536,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stvx128",
+   "id": "PPC_INST_STVX128",
+   "count": 3396,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fmadds",
+   "id": "PPC_INST_FMADDS",
+   "count": 3348,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fadd",
+   "id": "PPC_INST_FADD",
+   "count": 2985,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmsum3fp128",
+   "id": "PPC_INST_VMSUM3FP128",
+   "count": 2808,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mr.",
+   "id": "PPC_INST_MR",
+   "count": 2544,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vpermwi128",
+   "id": "PPC_INST_VPERMWI128",
+   "count": 2431,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fdivs",
+   "id": "PPC_INST_FDIVS",
+   "count": 2310,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vsubfp",
+   "id": "PPC_INST_VSUBFP",
+   "count": 2286,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mullw",
+   "id": "PPC_INST_MULLW",
+   "count": 2245,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "extsb",
+   "id": "PPC_INST_EXTSB",
+   "count": 2230,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vor",
+   "id": "PPC_INST_VOR",
+   "count": 2216,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmrghw",
+   "id": "PPC_INST_VMRGHW",
+   "count": 1981,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmsum4fp128",
+   "id": "PPC_INST_VMSUM4FP128",
+   "count": 1953,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "slw",
+   "id": "PPC_INST_SLW",
+   "count": 1951,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "oris",
+   "id": "PPC_INST_ORIS",
+   "count": 1756,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vrlimi128",
+   "id": "PPC_INST_VRLIMI128",
+   "count": 1692,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "extsw",
+   "id": "PPC_INST_EXTSW",
+   "count": 1679,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stvewx",
+   "id": "PPC_INST_STVEWX",
+   "count": 1633,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "and",
+   "id": "PPC_INST_AND",
+   "count": 1577,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "clrldi",
+   "id": "PPC_INST_CLRLDI",
+   "count": 1545,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "beqlr",
+   "id": "PPC_INST_BEQLR",
+   "count": 1439,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vaddfp",
+   "id": "PPC_INST_VADDFP",
+   "count": 1412,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stfiwx",
+   "id": "PPC_INST_STFIWX",
+   "count": 1368,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "extsh",
+   "id": "PPC_INST_EXTSH",
+   "count": 1360,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "subfe",
+   "id": "PPC_INST_SUBFE",
+   "count": 1357,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bdnz",
+   "id": "PPC_INST_BDNZ",
+   "count": 1355,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lfsx",
+   "id": "PPC_INST_LFSX",
+   "count": 1343,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bctr",
+   "id": "PPC_INST_BCTR",
+   "count": 1319,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fneg",
+   "id": "PPC_INST_FNEG",
+   "count": 1294,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "subfic",
+   "id": "PPC_INST_SUBFIC",
+   "count": 1256,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "srw",
+   "id": "PPC_INST_SRW",
+   "count": 1219,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mulhw",
+   "id": "PPC_INST_MULHW",
+   "count": 1195,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lbzx",
+   "id": "PPC_INST_LBZX",
+   "count": 1180,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stbx",
+   "id": "PPC_INST_STBX",
+   "count": 1132,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stfsx",
+   "id": "PPC_INST_STFSX",
+   "count": 1044,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "rldicr",
+   "id": "PPC_INST_RLDICR",
+   "count": 999,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vnmsubfp",
+   "id": "PPC_INST_VNMSUBFP",
+   "count": 985,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "subfc",
+   "id": "PPC_INST_SUBFC",
+   "count": 981,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fsqrts",
+   "id": "PPC_INST_FSQRTS",
+   "count": 955,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcfsx",
+   "id": "PPC_INST_VCFSX",
+   "count": 933,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fctiwz",
+   "id": "PPC_INST_FCTIWZ",
+   "count": 923,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vspltisw",
+   "id": "PPC_INST_VSPLTISW",
+   "count": 888,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "rldicl",
+   "id": "PPC_INST_RLDICL",
+   "count": 799,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fctidz",
+   "id": "PPC_INST_FCTIDZ",
+   "count": 792,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "andi.",
+   "id": "PPC_INST_ANDI",
+   "count": 785,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vsldoi",
+   "id": "PPC_INST_VSLDOI",
+   "count": 770,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vxor",
+   "id": "PPC_INST_VXOR",
+   "count": 720,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vsel",
+   "id": "PPC_INST_VSEL",
+   "count": 716,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmrglw",
+   "id": "PPC_INST_VMRGLW",
+   "count": 685,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "addis",
+   "id": "PPC_INST_ADDIS",
+   "count": 684,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "xor",
+   "id": "PPC_INST_XOR",
+   "count": 663,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fabs",
+   "id": "PPC_INST_FABS",
+   "count": 658,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "twllei",
+   "id": "PPC_INST_TWLLEI",
+   "count": 646,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "andc",
+   "id": "PPC_INST_ANDC",
+   "count": 631,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vor128",
+   "id": "PPC_INST_VOR128",
+   "count": 607,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vrsqrtefp",
+   "id": "PPC_INST_VRSQRTEFP",
+   "count": 586,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mftb",
+   "id": "PPC_INST_MFTB",
+   "count": 576,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fsel",
+   "id": "PPC_INST_FSEL",
+   "count": 553,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "divwu",
+   "id": "PPC_INST_DIVWU",
+   "count": 550,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "addze",
+   "id": "PPC_INST_ADDZE",
+   "count": 535,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fmsubs",
+   "id": "PPC_INST_FMSUBS",
+   "count": 518,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fmul",
+   "id": "PPC_INST_FMUL",
+   "count": 517,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpeqfp",
+   "id": "PPC_INST_VCMPEQFP",
+   "count": 513,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vperm",
+   "id": "PPC_INST_VPERM",
+   "count": 483,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "not",
+   "id": "PPC_INST_NOT",
+   "count": 466,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bnelr",
+   "id": "PPC_INST_BNELR",
+   "count": 445,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lvrx",
+   "id": "PPC_INST_LVRX",
+   "count": 399,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lhzx",
+   "id": "PPC_INST_LHZX",
+   "count": 384,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vaddfp128",
+   "id": "PPC_INST_VADDFP128",
+   "count": 377,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "srd",
+   "id": "PPC_INST_SRD",
+   "count": 374,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "subf.",
+   "id": "PPC_INST_SUBF",
+   "count": 361,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vsubfp128",
+   "id": "PPC_INST_VSUBFP128",
+   "count": 338,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fnmsubs",
+   "id": "PPC_INST_FNMSUBS",
+   "count": 337,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vupkd3d128",
+   "id": "PPC_INST_VUPKD3D128",
+   "count": 320,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "cmpldi",
+   "id": "PPC_INST_CMPLDI",
+   "count": 290,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "divw",
+   "id": "PPC_INST_DIVW",
+   "count": 276,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "sthx",
+   "id": "PPC_INST_STHX",
+   "count": 274,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "and.",
+   "id": "PPC_INST_AND",
+   "count": 246,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "neg",
+   "id": "PPC_INST_NEG",
+   "count": 242,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vspltw128",
+   "id": "PPC_INST_VSPLTW128",
+   "count": 231,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mtmsrd",
+   "id": "PPC_INST_MTMSRD",
+   "count": 213,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmaddcfp128",
+   "id": "PPC_INST_VMADDCFP128",
+   "count": 204,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lha",
+   "id": "PPC_INST_LHA",
+   "count": 199,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vadduwm",
+   "id": "PPC_INST_VADDUWM",
+   "count": 196,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vupkhsh",
+   "id": "PPC_INST_VUPKHSH",
+   "count": 182,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lvx",
+   "id": "PPC_INST_LVX",
+   "count": 180,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vpkd3d128",
+   "id": "PPC_INST_VPKD3D128",
+   "count": 178,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "cmpld",
+   "id": "PPC_INST_CMPLD",
+   "count": 173,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "twlgei",
+   "id": "PPC_INST_TWLGEI",
+   "count": 170,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vand",
+   "id": "PPC_INST_VAND",
+   "count": 166,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcfux",
+   "id": "PPC_INST_VCFUX",
+   "count": 163,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "srad",
+   "id": "PPC_INST_SRAD",
+   "count": 152,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmaddfp128",
+   "id": "PPC_INST_VMADDFP128",
+   "count": 148,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "extsh.",
+   "id": "PPC_INST_EXTSH",
+   "count": 145,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lwa",
+   "id": "PPC_INST_LWA",
+   "count": 142,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vrefp",
+   "id": "PPC_INST_VREFP",
+   "count": 141,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "ldx",
+   "id": "PPC_INST_LDX",
+   "count": 137,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stvrx",
+   "id": "PPC_INST_STVRX",
+   "count": 135,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vspltisb",
+   "id": "PPC_INST_VSPLTISB",
+   "count": 134,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "sld",
+   "id": "PPC_INST_SLD",
+   "count": 129,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mulhwu",
+   "id": "PPC_INST_MULHWU",
+   "count": 129,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "extsb.",
+   "id": "PPC_INST_EXTSB",
+   "count": 127,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stvlx",
+   "id": "PPC_INST_STVLX",
+   "count": 127,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "blelr",
+   "id": "PPC_INST_BLELR",
+   "count": 120,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vsplth",
+   "id": "PPC_INST_VSPLTH",
+   "count": 120,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpeqfp128",
+   "id": "PPC_INST_VCMPEQFP128",
+   "count": 119,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stvehx",
+   "id": "PPC_INST_STVEHX",
+   "count": 118,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vsr",
+   "id": "PPC_INST_VSR",
+   "count": 112,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stwcx.",
+   "id": "PPC_INST_STWCX",
+   "count": 111,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "srawi.",
+   "id": "PPC_INST_SRAWI",
+   "count": 111,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vminfp",
+   "id": "PPC_INST_VMINFP",
+   "count": 110,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bgelr",
+   "id": "PPC_INST_BGELR",
+   "count": 109,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stdx",
+   "id": "PPC_INST_STDX",
+   "count": 109,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fsub",
+   "id": "PPC_INST_FSUB",
+   "count": 108,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fdiv",
+   "id": "PPC_INST_FDIV",
+   "count": 105,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fmadd",
+   "id": "PPC_INST_FMADD",
+   "count": 105,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "cmpd",
+   "id": "PPC_INST_CMPD",
+   "count": 103,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "cmpdi",
+   "id": "PPC_INST_CMPDI",
+   "count": 103,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vspltisw128",
+   "id": "PPC_INST_VSPLTISW128",
+   "count": 100,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mfmsr",
+   "id": "PPC_INST_MFMSR",
+   "count": 98,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vupklsh",
+   "id": "PPC_INST_VUPKLSH",
+   "count": 98,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lwarx",
+   "id": "PPC_INST_LWARX",
+   "count": 96,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vslw",
+   "id": "PPC_INST_VSLW",
+   "count": 87,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "sraw",
+   "id": "PPC_INST_SRAW",
+   "count": 87,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "add.",
+   "id": "PPC_INST_ADD",
+   "count": 86,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bltlr",
+   "id": "PPC_INST_BLTLR",
+   "count": 86,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lfdx",
+   "id": "PPC_INST_LFDX",
+   "count": 86,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vctsxs",
+   "id": "PPC_INST_VCTSXS",
+   "count": 84,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmaxfp",
+   "id": "PPC_INST_VMAXFP",
+   "count": 81,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcsxwfp128",
+   "id": "PPC_INST_VCSXWFP128",
+   "count": 77,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lhax",
+   "id": "PPC_INST_LHAX",
+   "count": 73,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vaddubm",
+   "id": "PPC_INST_VADDUBM",
+   "count": 72,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vupkhsb",
+   "id": "PPC_INST_VUPKHSB",
+   "count": 72,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmrghw128",
+   "id": "PPC_INST_VMRGHW128",
+   "count": 71,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpgtfp",
+   "id": "PPC_INST_VCMPGTFP",
+   "count": 70,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mfocrf",
+   "id": "PPC_INST_MFOCRF",
+   "count": 68,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "sradi",
+   "id": "PPC_INST_SRADI",
+   "count": 68,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lwbrx",
+   "id": "PPC_INST_LWBRX",
+   "count": 66,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "dcbt",
+   "id": "PPC_INST_DCBT",
+   "count": 65,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lvsl",
+   "id": "PPC_INST_LVSL",
+   "count": 61,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bgtlr",
+   "id": "PPC_INST_BGTLR",
+   "count": 56,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vsrw",
+   "id": "PPC_INST_VSRW",
+   "count": 56,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "rldimi",
+   "id": "PPC_INST_RLDIMI",
+   "count": 55,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vslb",
+   "id": "PPC_INST_VSLB",
+   "count": 51,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vxor128",
+   "id": "PPC_INST_VXOR128",
+   "count": 45,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stfdx",
+   "id": "PPC_INST_STFDX",
+   "count": 43,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mulld",
+   "id": "PPC_INST_MULLD",
+   "count": 41,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpgefp",
+   "id": "PPC_INST_VCMPGEFP",
+   "count": 39,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fmsub",
+   "id": "PPC_INST_FMSUB",
+   "count": 39,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vsel128",
+   "id": "PPC_INST_VSEL128",
+   "count": 38,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lvlx128",
+   "id": "PPC_INST_LVLX128",
+   "count": 36,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "divdu",
+   "id": "PPC_INST_DIVDU",
+   "count": 33,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lvsr",
+   "id": "PPC_INST_LVSR",
+   "count": 33,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vnmsubfp128",
+   "id": "PPC_INST_VNMSUBFP128",
+   "count": 30,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vupklsb",
+   "id": "PPC_INST_VUPKLSB",
+   "count": 30,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mullw.",
+   "id": "PPC_INST_MULLW",
+   "count": 29,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "divwu.",
+   "id": "PPC_INST_DIVWU",
+   "count": 27,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpeqfp.",
+   "id": "PPC_INST_VCMPEQFP",
+   "count": 26,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "divd",
+   "id": "PPC_INST_DIVD",
+   "count": 26,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fnmsub",
+   "id": "PPC_INST_FNMSUB",
+   "count": 24,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lbzu",
+   "id": "PPC_INST_LBZU",
+   "count": 23,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "cntlzd",
+   "id": "PPC_INST_CNTLZD",
+   "count": 23,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stwux",
+   "id": "PPC_INST_STWUX",
+   "count": 22,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmrglw128",
+   "id": "PPC_INST_VMRGLW128",
+   "count": 22,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpgtfp.",
+   "id": "PPC_INST_VCMPGTFP",
+   "count": 22,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vrefp128",
+   "id": "PPC_INST_VREFP128",
+   "count": 22,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vperm128",
+   "id": "PPC_INST_VPERM128",
+   "count": 21,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "tdllei",
+   "id": "PPC_INST_TDLLEI",
+   "count": 20,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "rotlwi.",
+   "id": "PPC_INST_ROTLWI",
+   "count": 20,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "dcbzl",
+   "id": "PPC_INST_DCBZL",
+   "count": 19,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "andis.",
+   "id": "PPC_INST_ANDIS",
+   "count": 19,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "xoris",
+   "id": "PPC_INST_XORIS",
+   "count": 19,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vsldoi128",
+   "id": "PPC_INST_VSLDOI128",
+   "count": 19,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "orc",
+   "id": "PPC_INST_ORC",
+   "count": 18,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcuxwfp128",
+   "id": "PPC_INST_VCUXWFP128",
+   "count": 16,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vandc",
+   "id": "PPC_INST_VANDC",
+   "count": 16,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "twi",
+   "id": "PPC_INST_TWI",
+   "count": 16,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bso",
+   "id": "PPC_INST_BSO",
+   "count": 15,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vrfin",
+   "id": "PPC_INST_VRFIN",
+   "count": 14,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "andc.",
+   "id": "PPC_INST_ANDC",
+   "count": 14,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fsqrt",
+   "id": "PPC_INST_FSQRT",
+   "count": 14,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vslw128",
+   "id": "PPC_INST_VSLW128",
+   "count": 13,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vrsqrtefp128",
+   "id": "PPC_INST_VRSQRTEFP128",
+   "count": 13,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmaxfp128",
+   "id": "PPC_INST_VMAXFP128",
+   "count": 12,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vminfp128",
+   "id": "PPC_INST_VMINFP128",
+   "count": 11,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fnmadds",
+   "id": "PPC_INST_FNMADDS",
+   "count": 10,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vrfiz",
+   "id": "PPC_INST_VRFIZ",
+   "count": 10,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lwzu",
+   "id": "PPC_INST_LWZU",
+   "count": 10,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lhbrx",
+   "id": "PPC_INST_LHBRX",
+   "count": 10,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vrfim",
+   "id": "PPC_INST_VRFIM",
+   "count": 9,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vaddubs",
+   "id": "PPC_INST_VADDUBS",
+   "count": 9,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vexptefp",
+   "id": "PPC_INST_VEXPTEFP",
+   "count": 9,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fctid",
+   "id": "PPC_INST_FCTID",
+   "count": 9,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpgtfp128.",
+   "id": "PPC_INST_VCMPGTFP128",
+   "count": 9,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpgefp.",
+   "id": "PPC_INST_VCMPGEFP",
+   "count": 8,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "divw.",
+   "id": "PPC_INST_DIVW",
+   "count": 8,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stbu",
+   "id": "PPC_INST_STBU",
+   "count": 8,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "nor",
+   "id": "PPC_INST_NOR",
+   "count": 8,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpequw",
+   "id": "PPC_INST_VCMPEQUW",
+   "count": 8,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "xor.",
+   "id": "PPC_INST_XOR",
+   "count": 8,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lwax",
+   "id": "PPC_INST_LWAX",
+   "count": 8,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "rotlw",
+   "id": "PPC_INST_ROTLW",
+   "count": 7,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "or.",
+   "id": "PPC_INST_OR",
+   "count": 7,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "addze.",
+   "id": "PPC_INST_ADDZE",
+   "count": 6,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "srw.",
+   "id": "PPC_INST_SRW",
+   "count": 6,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bns",
+   "id": "PPC_INST_BNS",
+   "count": 6,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bdnzf",
+   "id": "PPC_INST_BDNZF",
+   "count": 6,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpgtfp128",
+   "id": "PPC_INST_VCMPGTFP128",
+   "count": 5,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "neg.",
+   "id": "PPC_INST_NEG",
+   "count": 5,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bdnz+",
+   "id": "PPC_INST_BDNZ",
+   "count": 5,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "sraw.",
+   "id": "PPC_INST_SRAW",
+   "count": 5,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mffs",
+   "id": "PPC_INST_MFFS",
+   "count": 5,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mtfsf",
+   "id": "PPC_INST_MTFSF",
+   "count": 5,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "ldu",
+   "id": "PPC_INST_LDU",
+   "count": 5,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "rotldi",
+   "id": "PPC_INST_ROTLDI",
+   "count": 5,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "tdlgei",
+   "id": "PPC_INST_TDLGEI",
+   "count": 5,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stwbrx",
+   "id": "PPC_INST_STWBRX",
+   "count": 5,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stdcx.",
+   "id": "PPC_INST_STDCX",
+   "count": 4,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "beq-",
+   "id": "PPC_INST_BEQ",
+   "count": 4,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vlogefp",
+   "id": "PPC_INST_VLOGEFP",
+   "count": 4,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpgtuh",
+   "id": "PPC_INST_VCMPGTUH",
+   "count": 4,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "lvrx128",
+   "id": "PPC_INST_LVRX128",
+   "count": 4,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpbfp",
+   "id": "PPC_INST_VCMPBFP",
+   "count": 4,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mulhdu",
+   "id": "PPC_INST_MULHDU",
+   "count": 4,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vsrw128",
+   "id": "PPC_INST_VSRW128",
+   "count": 4,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpequw128",
+   "id": "PPC_INST_VCMPEQUW128",
+   "count": 3,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "extsw.",
+   "id": "PPC_INST_EXTSW",
+   "count": 3,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "beqlr+",
+   "id": "PPC_INST_BEQLR",
+   "count": 3,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stvewx128",
+   "id": "PPC_INST_STVEWX128",
+   "count": 3,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vadduhm",
+   "id": "PPC_INST_VADDUHM",
+   "count": 3,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "sync",
+   "id": "PPC_INST_SYNC",
+   "count": 3,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stdu",
+   "id": "PPC_INST_STDU",
+   "count": 3,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "sthbrx",
+   "id": "PPC_INST_STHBRX",
+   "count": 3,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "ldarx",
+   "id": "PPC_INST_LDARX",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "subfc.",
+   "id": "PPC_INST_SUBFC",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bne-",
+   "id": "PPC_INST_BNE",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "not.",
+   "id": "PPC_INST_NOT",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bdnzt",
+   "id": "PPC_INST_BDNZT",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vand128",
+   "id": "PPC_INST_VAND128",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vpkswss",
+   "id": "PPC_INST_VPKSWSS",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vspltb",
+   "id": "PPC_INST_VSPLTB",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "slw.",
+   "id": "PPC_INST_SLW",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bdz-",
+   "id": "PPC_INST_BDZ",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bdzlr-",
+   "id": "PPC_INST_BDZLR",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vsraw",
+   "id": "PPC_INST_VSRAW",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "dcbz",
+   "id": "PPC_INST_DCBZ",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpbfp.",
+   "id": "PPC_INST_VCMPBFP",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "frsqrte",
+   "id": "PPC_INST_FRSQRTE",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mtcr",
+   "id": "PPC_INST_MTCR",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "fnabs",
+   "id": "PPC_INST_FNABS",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "eqv",
+   "id": "PPC_INST_EQV",
+   "count": 2,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vavgsb",
+   "id": "PPC_INST_VAVGSB",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmrghb",
+   "id": "PPC_INST_VMRGHB",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmrglb",
+   "id": "PPC_INST_VMRGLB",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vavgsh",
+   "id": "PPC_INST_VAVGSH",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmrghh",
+   "id": "PPC_INST_VMRGHH",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmrglh",
+   "id": "PPC_INST_VMRGLH",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vandc128",
+   "id": "PPC_INST_VANDC128",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stvlx128",
+   "id": "PPC_INST_STVLX128",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "stvrx128",
+   "id": "PPC_INST_STVRX128",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bnectr",
+   "id": "PPC_INST_BNECTR",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mfcr",
+   "id": "PPC_INST_MFCR",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vctuxs",
+   "id": "PPC_INST_VCTUXS",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpeqfp128.",
+   "id": "PPC_INST_VCMPEQFP128",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "eieio",
+   "id": "PPC_INST_EIEIO",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "beq+",
+   "id": "PPC_INST_BEQ",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vsubuhm",
+   "id": "PPC_INST_VSUBUHM",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vadduws",
+   "id": "PPC_INST_VADDUWS",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vmaxsw",
+   "id": "PPC_INST_VMAXSW",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "beqlr-",
+   "id": "PPC_INST_BEQLR",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bge+",
+   "id": "PPC_INST_BGE",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "blrl",
+   "id": "PPC_INST_BLRL",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "nand",
+   "id": "PPC_INST_NAND",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "vcmpbfp128.",
+   "id": "PPC_INST_VCMPBFP128",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "mtxer",
+   "id": "PPC_INST_MTXER",
+   "count": 1,
+   "state": "handled"
+  },
+  {
+   "mnemonic": "bge-",
+   "id": "PPC_INST_BGE",
+   "count": 1,
+   "state": "handled"
+  }
+ ],
+ "unknown_tokens": {},
+ "unimplemented_markers": {},
+ "functions": {
+  "total": 41219,
+  "hooked": 103,
+  "sources": 177,
+  "hooked_addresses": [
+   "8225AB30",
+   "822846A0",
+   "82287130",
+   "822A38D0",
+   "822ECED0",
+   "82324938",
+   "823263D8",
+   "82326728",
+   "82351F60",
+   "823597F8",
+   "8235D570",
+   "823819A0",
+   "82381F28",
+   "823B4F20",
+   "823BA308",
+   "823E9490",
+   "823E96F8",
+   "823E9C30",
+   "824099B8",
+   "8240A0B8",
+   "8249E808",
+   "824A1708",
+   "824BB950",
+   "824C1A10",
+   "824C9E08",
+   "824D51B8",
+   "824EC668",
+   "824EFD98",
+   "824EFE68",
+   "824FC190",
+   "824FD840",
+   "8251FA20",
+   "82527AC8",
+   "8254C568",
+   "82568DE0",
+   "825A76E0",
+   "825A8AA0",
+   "825A8C90",
+   "825A9490",
+   "825A9A80",
+   "825A9C20",
+   "825A9CF0",
+   "825A9E80",
+   "825AA490",
+   "825AD5F0",
+   "825B1950",
+   "825B4718",
+   "825B5728",
+   "825B7930",
+   "825BA9F8",
+   "825C80D0",
+   "825CB478",
+   "825D1EC0",
+   "825D3910",
+   "825D8258",
+   "825DBD98",
+   "825DC790",
+   "825E12F8",
+   "82624A30",
+   "82627528",
+   "82627640",
+   "826400D8",
+   "82640A50",
+   "82653FC0",
+   "82658560",
+   "826586B0",
+   "826587F8",
+   "82677CB8",
+   "82678768",
+   "8269A9D8",
+   "826A6B50",
+   "826A7698",
+   "826A8940",
+   "826AED90",
+   "826B1150",
+   "826B3C48",
+   "826B91E0",
+   "826B96D0",
+   "826B9C08",
+   "826B9FF8",
+   "826BB408",
+   "826BB4F0",
+   "826BBEE0",
+   "826BC3D0",
+   "826BC568",
+   "826BCA98",
+   "826BD300",
+   "826BD488",
+   "826BDA38",
+   "826BE578",
+   "826C04A0",
+   "826C3750",
+   "826C3D90",
+   "826C6A50",
+   "8270D160",
+   "82743798",
+   "82A49908",
+   "82A4BEF8",
+   "82A4FA70",
+   "82A50000",
+   "82AB5F10",
+   "82ABDE40",
+   "82ABDF90"
+  ]
+ },
+ "families": {
+  "load / store / cache": 901869,
+  "integer": 763965,
+  "branch / trap": 463891,
+  "floating point": 217093,
+  "compare / CR": 163119,
+  "VMX / VMX128": 92139,
+  "system": 65768
+ }
+}

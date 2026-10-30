@@ -1,0 +1,1672 @@
+{
+ "name": "crackdown",
+ "date": "2026-10-30",
+ "count": 120,
+ "game_named": 15,
+ "areas": {
+  "GPU: shared (command processor, caches)": 31,
+  "GPU: Vulkan backend": 26,
+  "GPU: D3D12 backend": 24,
+  "kernel: xboxkrnl": 10,
+  "core / platform (threads, clock, logging)": 8,
+  "audio (XMA, mixer)": 5,
+  "UI / presenter": 4,
+  "kernel: XAM": 3,
+  "codegen (recompiler)": 3,
+  "input": 3,
+  "other": 1,
+  "build": 1,
+  "HLE renderer channel": 1
+ },
+ "patches": [
+  {
+   "number": 1,
+   "file": "0001-xam-tile-to-texture.patch",
+   "platform": "all",
+   "area": "kernel: XAM",
+   "paths": [
+    "src/kernel/xam/xam_user.cpp"
+   ],
+   "purpose": "`XamReadTileToTexture` ABI fix (achievement icons)",
+   "game_named": false,
+   "lines": 68
+  },
+  {
+   "number": 3,
+   "file": "0003-physical-release-order.patch",
+   "platform": "all",
+   "area": "kernel: xboxkrnl",
+   "paths": [
+    "src/system/xmemory.cpp"
+   ],
+   "purpose": "physical heap release order",
+   "game_named": false,
+   "lines": 32
+  },
+  {
+   "number": 4,
+   "file": "0004-excluded-audio-channels.patch",
+   "platform": "all",
+   "area": "audio (XMA, mixer)",
+   "paths": [
+    "include/rex/audio/conversion.h"
+   ],
+   "purpose": "excluded audio channels",
+   "game_named": false,
+   "lines": 71
+  },
+  {
+   "number": 5,
+   "file": "0005-vpkd3d128-in-place-source.patch",
+   "platform": "all",
+   "area": "codegen (recompiler)",
+   "paths": [
+    "src/codegen/builders/vector.cpp"
+   ],
+   "purpose": "codegen: `vpkd3d128` reads its source in place",
+   "game_named": false,
+   "lines": 104
+  },
+  {
+   "number": 6,
+   "file": "0006-d3d12-occlusion-query-results.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/command_processor.h",
+    "src/graphics/d3d12/command_processor.cpp"
+   ],
+   "purpose": "D3D12 occlusion query results written when the submission completes (Agency target indicators)",
+   "game_named": false,
+   "lines": 188
+  },
+  {
+   "number": 7,
+   "file": "0007-xma-context-sync-fixes.patch",
+   "platform": "all",
+   "area": "audio (XMA, mixer)",
+   "paths": [
+    "include/rex/audio/xma/context.h",
+    "src/audio/xma_context.cpp"
+   ],
+   "purpose": "XMA context synchronisation fixes",
+   "game_named": false,
+   "lines": 103
+  },
+  {
+   "number": 8,
+   "file": "0008-stop-title-threads.patch",
+   "platform": "all",
+   "area": "kernel: xboxkrnl",
+   "paths": [
+    "include/rex/system/kernel_state.h",
+    "include/rex/system/xthread.h",
+    "src/system/kernel_state.cpp",
+    "src/system/runtime.cpp",
+    "src/system/xobject.cpp",
+    "src/system/xthread.cpp"
+   ],
+   "purpose": "stop guest threads on title termination, with a timeout",
+   "game_named": false,
+   "lines": 373
+  },
+  {
+   "number": 9,
+   "file": "0009-renderdoc-detect-loaded-only.patch",
+   "platform": "all",
+   "area": "UI / presenter",
+   "paths": [
+    "include/rex/platform/dynlib.h",
+    "src/core/dynlib_posix.cpp",
+    "src/core/dynlib_win.cpp",
+    "src/ui/renderdoc_api.cpp"
+   ],
+   "purpose": "RenderDoc: detect only when already loaded",
+   "game_named": false,
+   "lines": 69
+  },
+  {
+   "number": 10,
+   "file": "0010-d3d12-adapter-preference.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "src/ui/d3d12/d3d12_provider.cpp"
+   ],
+   "purpose": "D3D12 adapter preference (high-performance GPU)",
+   "game_named": false,
+   "lines": 70
+  },
+  {
+   "number": 11,
+   "file": "0011-vulkan-device-preference.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "src/ui/vulkan/vulkan_provider.cpp"
+   ],
+   "purpose": "Vulkan device preference",
+   "game_named": false,
+   "lines": 86
+  },
+  {
+   "number": 12,
+   "file": "0012-msaa-2x-host-log.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "src/graphics/d3d12/render_target_cache.cpp",
+    "src/graphics/vulkan/render_target_cache.cpp"
+   ],
+   "purpose": "log host MSAA 2x support",
+   "game_named": false,
+   "lines": 43
+  },
+  {
+   "number": 13,
+   "file": "0013-spirv-texture-exp-adjust.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "src/graphics/pipeline/shader/spirv_translator_fetch.cpp"
+   ],
+   "purpose": "SPIR-V texture exponent adjust",
+   "game_named": false,
+   "lines": 39
+  },
+  {
+   "number": 14,
+   "file": "0014-cache-vulkan-swapchain-paint-pipeline.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "src/ui/vulkan/vulkan_presenter.cpp"
+   ],
+   "purpose": "cache the Vulkan swapchain paint pipeline",
+   "game_named": false,
+   "lines": 14
+  },
+  {
+   "number": 15,
+   "file": "0015-timer-queue-blocking-wait.patch",
+   "platform": "all",
+   "area": "core / platform (threads, clock, logging)",
+   "paths": [
+    "src/core/timer_queue.cpp"
+   ],
+   "purpose": "timer queue blocks instead of spinning",
+   "game_named": false,
+   "lines": 106
+  },
+  {
+   "number": 16,
+   "file": "0016-perf-counter-batching.patch",
+   "platform": "all",
+   "area": "core / platform (threads, clock, logging)",
+   "paths": [
+    "src/core/perf/counter.cpp"
+   ],
+   "purpose": "batch performance counter reads",
+   "game_named": false,
+   "lines": 30
+  },
+  {
+   "number": 17,
+   "file": "0017-vblank-thread-sleep-until-due.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "src/graphics/graphics_system.cpp"
+   ],
+   "purpose": "vblank thread sleeps until due",
+   "game_named": false,
+   "lines": 23
+  },
+  {
+   "number": 18,
+   "file": "0018-vblank-thread-priority.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "src/graphics/graphics_system.cpp"
+   ],
+   "purpose": "vblank thread priority",
+   "game_named": false,
+   "lines": 17
+  },
+  {
+   "number": 19,
+   "file": "0019-command-processor-waits.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/command_processor.h",
+    "src/graphics/command_processor.cpp"
+   ],
+   "purpose": "command processor waits instead of polling",
+   "game_named": false,
+   "lines": 84
+  },
+  {
+   "number": 20,
+   "file": "0020-wait-reg-mem-vblank-wake.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/command_processor.h",
+    "src/graphics/command_processor.cpp",
+    "src/graphics/graphics_system.cpp"
+   ],
+   "purpose": "WAIT_REG_MEM woken by vblank",
+   "game_named": false,
+   "lines": 51
+  },
+  {
+   "number": 21,
+   "file": "0021-windows-high-resolution-sleep.patch",
+   "platform": "all",
+   "area": "core / platform (threads, clock, logging)",
+   "paths": [
+    "src/core/threading_win.cpp"
+   ],
+   "purpose": "high-resolution sleep",
+   "game_named": false,
+   "lines": 78
+  },
+  {
+   "number": 23,
+   "file": "0023-ui-repaint-with-guest-frames.patch",
+   "platform": "all",
+   "area": "UI / presenter",
+   "paths": [
+    "include/rex/ui/presenter.h",
+    "include/rex/ui/window.h",
+    "include/rex/ui/window_sdl.h",
+    "src/ui/presenter.cpp",
+    "src/ui/window_sdl.cpp"
+   ],
+   "purpose": "UI repaint once per guest frame",
+   "game_named": false,
+   "lines": 236
+  },
+  {
+   "number": 24,
+   "file": "0024-gpu-register-write-bulk-path.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "src/graphics/command_processor.cpp"
+   ],
+   "purpose": "GPU register writes: block copy for render-state, constant and fetch-constant runs",
+   "game_named": false,
+   "lines": 86
+  },
+  {
+   "number": 25,
+   "file": "0025-gpu-draw-path.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/shared_memory.h",
+    "src/graphics/command_processor.cpp",
+    "src/graphics/primitive_processor.cpp",
+    "src/graphics/shared_memory.cpp",
+    "src/graphics/util/draw_extent_estimator.cpp"
+   ],
+   "purpose": "draw path: primitive cache threshold and overlap fix, reused request allocation, Xenia defaults for `clear_memory_page_state` and `execute_unclipped_draw_vs_on_cpu`",
+   "game_named": false,
+   "lines": 82
+  },
+  {
+   "number": 26,
+   "file": "0026-critical-section-idle-spin.patch",
+   "platform": "all",
+   "area": "kernel: xboxkrnl",
+   "paths": [
+    "src/kernel/xboxkrnl/xboxkrnl_rtl.cpp"
+   ],
+   "purpose": "guest critical sections poll briefly before a kernel wait",
+   "game_named": false,
+   "lines": 40
+  },
+  {
+   "number": 27,
+   "file": "0027-linux-command-thread-wait.linux.patch",
+   "platform": "linux",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "src/graphics/command_processor.cpp"
+   ],
+   "purpose": "idle command thread waits without the alertable flag",
+   "game_named": false,
+   "lines": 16
+  },
+  {
+   "number": 28,
+   "file": "0028-posix-wait-multiple-contention.linux.patch",
+   "platform": "linux",
+   "area": "core / platform (threads, clock, logging)",
+   "paths": [
+    "src/core/threading_posix.cpp"
+   ],
+   "purpose": "`WaitMultiple` backs off on lock contention instead of spinning",
+   "game_named": false,
+   "lines": 60
+  },
+  {
+   "number": 30,
+   "file": "0030-render-target-transfer-performance.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/pipeline/render_target/cache.h",
+    "include/rex/graphics/util/draw_extent_estimator.h",
+    "src/graphics/pipeline/render_target/cache.cpp",
+    "src/graphics/util/draw_extent_estimator.cpp"
+   ],
+   "purpose": "render target transfers cut around rectangles a draw provably overwrites; stencil bits tracked per depth target",
+   "game_named": false,
+   "lines": 332
+  },
+  {
+   "number": 31,
+   "file": "0031-render-target-stencil-regions.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/pipeline/render_target/cache.h",
+    "include/rex/graphics/util/draw_extent_estimator.h",
+    "src/graphics/pipeline/render_target/cache.cpp",
+    "src/graphics/util/draw_extent_estimator.cpp"
+   ],
+   "purpose": "per-tile stencil bits and a conservative first row for ownership claims",
+   "game_named": false,
+   "lines": 258
+  },
+  {
+   "number": 32,
+   "file": "0032-edram-dump-dirty-tiles.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/pipeline/render_target/cache.h",
+    "src/graphics/pipeline/render_target/cache.cpp"
+   ],
+   "purpose": "resolve dumps only EDRAM tiles drawn since the last dump",
+   "game_named": false,
+   "lines": 89
+  },
+  {
+   "number": 33,
+   "file": "0033-guest-fence-wake.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/guest_wake.h",
+    "src/graphics/CMakeLists.txt",
+    "src/graphics/command_processor.cpp",
+    "src/graphics/guest_wake.cpp"
+   ],
+   "purpose": "command processor guest memory writes wake `WaitOnAddress`/futex waiters; `src/gpu_fence_wait.cpp` is the waiter",
+   "game_named": false,
+   "lines": 117
+  },
+  {
+   "number": 34,
+   "file": "0034-d3d12-submissions.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/command_processor.h",
+    "src/graphics/d3d12/command_processor.cpp",
+    "src/graphics/d3d12/render_target_cache.cpp"
+   ],
+   "purpose": "early submission only while fewer than three are in flight, `PollBackgroundWork` finishes pending occlusion queries, no `direct_host_resolve` preflight",
+   "game_named": false,
+   "lines": 115
+  },
+  {
+   "number": 35,
+   "file": "0035-d3d12-render-target-transfers.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/render_target_cache.h",
+    "src/graphics/d3d12/render_target_cache.cpp"
+   ],
+   "purpose": "D3D12 halves of 0030-0032",
+   "game_named": false,
+   "lines": 357
+  },
+  {
+   "number": 36,
+   "file": "0036-d3d12-stencil-regions.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/render_target_cache.h",
+    "src/graphics/d3d12/render_target_cache.cpp"
+   ],
+   "purpose": "D3D12 halves of 0030-0032",
+   "game_named": false,
+   "lines": 421
+  },
+  {
+   "number": 37,
+   "file": "0037-d3d12-edram-dump-dirty-tiles.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/render_target_cache.h",
+    "src/graphics/d3d12/render_target_cache.cpp"
+   ],
+   "purpose": "D3D12 halves of 0030-0032",
+   "game_named": false,
+   "lines": 189
+  },
+  {
+   "number": 38,
+   "file": "0038-vulkan-submissions-and-occlusion.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/command_processor.h",
+    "src/graphics/vulkan/command_processor.cpp"
+   ],
+   "purpose": "Vulkan halves of 0030-0032, submissions and occlusion queries",
+   "game_named": false,
+   "lines": 208
+  },
+  {
+   "number": 39,
+   "file": "0039-vulkan-render-target-transfers.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/render_target_cache.h",
+    "src/graphics/vulkan/render_target_cache.cpp"
+   ],
+   "purpose": "Vulkan halves of 0030-0032, submissions and occlusion queries",
+   "game_named": false,
+   "lines": 646
+  },
+  {
+   "number": 40,
+   "file": "0040-vulkan-edram-dump-dirty-tiles.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/render_target_cache.h",
+    "src/graphics/vulkan/render_target_cache.cpp"
+   ],
+   "purpose": "Vulkan halves of 0030-0032, submissions and occlusion queries",
+   "game_named": false,
+   "lines": 197
+  },
+  {
+   "number": 41,
+   "file": "0041-resolve-copy-into-textures.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/pipeline/render_target/cache.h",
+    "include/rex/graphics/pipeline/texture/cache.h",
+    "include/rex/graphics/util/draw.h",
+    "src/graphics/pipeline/render_target/cache.cpp",
+    "src/graphics/pipeline/texture/cache.cpp"
+   ],
+   "purpose": "resolves copied straight into the textures that sample them (`resolve_copy_into_textures`)",
+   "game_named": false,
+   "lines": 388
+  },
+  {
+   "number": 42,
+   "file": "0042-d3d12-resolve-copy-into-textures.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/texture_cache.h",
+    "src/graphics/d3d12/render_target_cache.cpp",
+    "src/graphics/d3d12/texture_cache.cpp"
+   ],
+   "purpose": "resolves copied straight into the textures that sample them (`resolve_copy_into_textures`)",
+   "game_named": false,
+   "lines": 157
+  },
+  {
+   "number": 43,
+   "file": "0043-vulkan-resolve-copy-into-textures.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/deferred_command_buffer.h",
+    "include/rex/graphics/vulkan/texture_cache.h",
+    "include/rex/ui/vulkan/functions/device_1_0.inc",
+    "src/graphics/vulkan/deferred_command_buffer.cpp",
+    "src/graphics/vulkan/render_target_cache.cpp",
+    "src/graphics/vulkan/texture_cache.cpp"
+   ],
+   "purpose": "resolves copied straight into the textures that sample them (`resolve_copy_into_textures`)",
+   "game_named": false,
+   "lines": 284
+  },
+  {
+   "number": 44,
+   "file": "0044-resolve-deferred-writeback.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/pipeline/render_target/cache.h",
+    "include/rex/graphics/pipeline/texture/cache.h",
+    "src/graphics/pipeline/render_target/cache.cpp",
+    "src/graphics/pipeline/texture/cache.cpp"
+   ],
+   "purpose": "above Original resolution, a resolve kept only in its texture is written back to memory when needed (`resolve_defer_writeback`)",
+   "game_named": false,
+   "lines": 314
+  },
+  {
+   "number": 45,
+   "file": "0045-d3d12-resolve-deferred-writeback.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/render_target_cache.h",
+    "include/rex/graphics/d3d12/texture_cache.h",
+    "src/graphics/d3d12/command_processor.cpp",
+    "src/graphics/d3d12/render_target_cache.cpp",
+    "src/graphics/d3d12/texture_cache.cpp"
+   ],
+   "purpose": "above Original resolution, a resolve kept only in its texture is written back to memory when needed (`resolve_defer_writeback`)",
+   "game_named": false,
+   "lines": 485
+  },
+  {
+   "number": 46,
+   "file": "0046-vulkan-resolve-deferred-writeback.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/render_target_cache.h",
+    "include/rex/graphics/vulkan/texture_cache.h",
+    "src/graphics/vulkan/command_processor.cpp",
+    "src/graphics/vulkan/render_target_cache.cpp",
+    "src/graphics/vulkan/texture_cache.cpp"
+   ],
+   "purpose": "above Original resolution, a resolve kept only in its texture is written back to memory when needed (`resolve_defer_writeback`)",
+   "game_named": false,
+   "lines": 568
+  },
+  {
+   "number": 47,
+   "file": "0047-internal-render-scale.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/flags.h",
+    "include/rex/graphics/pipeline/render_target/cache.h",
+    "include/rex/graphics/pipeline/shader/dxbc_translator.h",
+    "include/rex/graphics/pipeline/shader/spirv_translator.h",
+    "include/rex/graphics/pipeline/texture/cache.h",
+    "include/rex/graphics/util/draw.h",
+    "src/graphics/pipeline/render_target/cache.cpp",
+    "src/graphics/pipeline/shader/dxbc_translator.cpp",
+    "src/graphics/pipeline/shader/spirv_translator.cpp",
+    "src/graphics/pipeline/texture/cache.cpp",
+    "src/graphics/util/draw.cpp"
+   ],
+   "purpose": "`internal_render_scale` 100/75/50: host render targets below the render resolution",
+   "game_named": false,
+   "lines": 520
+  },
+  {
+   "number": 48,
+   "file": "0048-d3d12-internal-render-scale.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "src/graphics/d3d12/command_processor.cpp",
+    "src/graphics/d3d12/pipeline_cache.cpp",
+    "src/graphics/d3d12/render_target_cache.cpp"
+   ],
+   "purpose": "`internal_render_scale` 100/75/50: host render targets below the render resolution",
+   "game_named": false,
+   "lines": 313
+  },
+  {
+   "number": 49,
+   "file": "0049-vulkan-internal-render-scale.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "src/graphics/vulkan/command_processor.cpp",
+    "src/graphics/vulkan/pipeline_cache.cpp",
+    "src/graphics/vulkan/render_target_cache.cpp"
+   ],
+   "purpose": "`internal_render_scale` 100/75/50: host render targets below the render resolution",
+   "game_named": false,
+   "lines": 304
+  },
+  {
+   "number": 50,
+   "file": "0050-xma-context-loop-layout-acquire-loads.patch",
+   "platform": "all",
+   "area": "audio (XMA, mixer)",
+   "paths": [
+    "include/rex/audio/xma/context.h"
+   ],
+   "purpose": "XMA context loop layout acquire loads",
+   "game_named": false,
+   "lines": 35
+  },
+  {
+   "number": 51,
+   "file": "0051-audio-callback-pacing.patch",
+   "platform": "all",
+   "area": "audio (XMA, mixer)",
+   "paths": [
+    "src/audio/audio_system.cpp"
+   ],
+   "purpose": "audio callbacks paced at the hardware's steady rate (`audio_callback_pacing`)",
+   "game_named": false,
+   "lines": 51
+  },
+  {
+   "number": 52,
+   "file": "0052-vrsqrtefp-bit-exact-estimate.patch",
+   "platform": "all",
+   "area": "codegen (recompiler)",
+   "paths": [
+    "resources/templates/codegen/pch_h.inja",
+    "src/codegen/builders/vector.cpp"
+   ],
+   "purpose": "codegen: bit-exact `vrsqrtefp` estimate instead of an exact 1/sqrt; the helper is emitted into the generated `crackdown_pch.h` because the game compiles against the stock SDK headers; regenerate with `tools\\codegen.ps1`",
+   "game_named": false,
+   "lines": 109
+  },
+  {
+   "number": 53,
+   "file": "0053-vulkan-occlusion-query-results.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/command_processor.h",
+    "src/graphics/vulkan/command_processor.cpp"
+   ],
+   "purpose": "Vulkan occlusion query results, the counterpart of 0006: the guest's begin and end blocks are separate, and the end block stays unfinished until the submission completes",
+   "game_named": false,
+   "lines": 89
+  },
+  {
+   "number": 54,
+   "file": "0054-input-mnk-keystrokes-from-keybinds.patch",
+   "platform": "all",
+   "area": "input",
+   "paths": [
+    "include/rex/input/mnk/mnk_input_driver.h",
+    "src/input/mnk/mnk_input_driver.cpp"
+   ],
+   "purpose": "keyboard and mouse binds also reach `XInputGetKeystroke` (menus such as Press Start), with the SDL driver's repeat timing",
+   "game_named": true,
+   "lines": 311
+  },
+  {
+   "number": 55,
+   "file": "0055-input-mnk-mouse-look-speed.patch",
+   "platform": "all",
+   "area": "input",
+   "paths": [
+    "include/rex/input/mnk/mnk_input_driver.h",
+    "src/input/mnk/mnk_input_driver.cpp"
+   ],
+   "purpose": "mouse look sets the right stick from mouse speed (`mnk_mouse_scale`, `mnk_mouse_deadzone`), so slow movement still turns the camera; `mnk_mouse_stick` lets a title switch the mouse-derived stick off for its own mouse look",
+   "game_named": true,
+   "lines": 102
+  },
+  {
+   "number": 56,
+   "file": "0056-readback-resolve-max-bytes.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/command_processor.h",
+    "include/rex/graphics/flags.h",
+    "include/rex/graphics/pipeline/render_target/cache.h",
+    "src/graphics/command_processor.cpp",
+    "src/graphics/pipeline/render_target/cache.cpp"
+   ],
+   "purpose": "`readback_resolve_max_bytes`: with `readback_resolve` on, only resolves of at most this many bytes are copied back to guest memory; larger ones stay GPU-only and may defer their writes (`resolve_defer_writeback`)",
+   "game_named": false,
+   "lines": 112
+  },
+  {
+   "number": 57,
+   "file": "0057-d3d12-readback-resolve-max-bytes.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "src/graphics/d3d12/command_processor.cpp",
+    "src/graphics/d3d12/render_target_cache.cpp"
+   ],
+   "purpose": "D3D12 half of 0056",
+   "game_named": false,
+   "lines": 50
+  },
+  {
+   "number": 58,
+   "file": "0058-vulkan-readback-resolve-max-bytes.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "src/graphics/vulkan/command_processor.cpp",
+    "src/graphics/vulkan/render_target_cache.cpp"
+   ],
+   "purpose": "Vulkan half of 0056",
+   "game_named": false,
+   "lines": 40
+  },
+  {
+   "number": 59,
+   "file": "0059-save-recovery-lazy-zero-page.patch",
+   "platform": "all",
+   "area": "kernel: xboxkrnl",
+   "paths": [
+    "include/rex/system/guest_page_recovery.h",
+    "src/system/xmemory.cpp"
+   ],
+   "purpose": "a read fault on an uncommitted page in 0x70000000-0x70FFFFFF (save-load) maps one zeroed page, at most 8 pages, each logged as `[SAVE_RECOVERY]`; writes and other ranges are not recovered",
+   "game_named": false,
+   "lines": 153
+  },
+  {
+   "number": 60,
+   "file": "0060-xam-enumerate-zero-items-on-error.patch",
+   "platform": "all",
+   "area": "kernel: XAM",
+   "paths": [
+    "src/kernel/xam/xam_enum.cpp"
+   ],
+   "purpose": "`XamEnumerate` sets the item count to zero before any error return and no longer copies an uninitialised value (an unimplemented `XamCreateEnumeratorHandle` made the title walk off its stack)",
+   "game_named": false,
+   "lines": 24
+  },
+  {
+   "number": 61,
+   "file": "0061-ke-floating-point-stubs-log-once.patch",
+   "platform": "all",
+   "area": "kernel: xboxkrnl",
+   "paths": [
+    "src/kernel/xboxkrnl/xboxkrnl_threading.cpp"
+   ],
+   "purpose": "`KeSaveFloatingPointState` and `KeRestoreFloatingPointState` stubs warn on the first call only (the title calls them every frame)",
+   "game_named": false,
+   "lines": 36
+  },
+  {
+   "number": 62,
+   "file": "0062-resolve-sample-select-log-once.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "src/graphics/util/draw.cpp"
+   ],
+   "purpose": "the \"Incorrect resolve sample selected\" warning is logged once per sample/depth/MSAA combination; the fallback is unchanged",
+   "game_named": false,
+   "lines": 37
+  },
+  {
+   "number": 63,
+   "file": "0063-guest-fault-region-diagnostic.patch",
+   "platform": "all",
+   "area": "kernel: xboxkrnl",
+   "paths": [
+    "include/rex/system/guest_fault_region.h",
+    "src/system/xmemory.cpp"
+   ],
+   "purpose": "an unhandled guest fault also logs `[SAVE_CRASH]` with the page's allocation and its place relative to the faulting thread's stack (from the PCR): own stack, guard, the page above, or other memory",
+   "game_named": false,
+   "lines": 185
+  },
+  {
+   "number": 64,
+   "file": "0064-invalid-texture-fetch-log-once.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/pipeline/texture/invalid_fetch_log.h",
+    "src/graphics/pipeline/texture/cache.cpp"
+   ],
+   "purpose": "the \"has \\\"invalid\\\" type\" texture fetch warning is logged once per distinct fetch constant, up to 16, then one overflow notice; handling is unchanged",
+   "game_named": false,
+   "lines": 120
+  },
+  {
+   "number": 65,
+   "file": "0065-guest-recovery-refuses-stack-faults.patch",
+   "platform": "all",
+   "area": "kernel: xboxkrnl",
+   "paths": [
+    "include/rex/system/guest_page_recovery.h",
+    "src/system/xmemory.cpp"
+   ],
+   "purpose": "0059 recovers only free or reserved pages away from the faulting thread's stack and its guard pages, never a page adjacent to one it already recovered, and nothing when the stack is unknown",
+   "game_named": false,
+   "lines": 113
+  },
+  {
+   "number": 66,
+   "file": "0066-quiet-expected-file-probe-misses.patch",
+   "platform": "all",
+   "area": "kernel: xboxkrnl",
+   "paths": [
+    "include/rex/filesystem/expected_miss.h",
+    "src/filesystem/virtual_file_system.cpp",
+    "src/kernel/xboxkrnl/xboxkrnl_io.cpp"
+   ],
+   "purpose": "a read-only open that finds nothing (`NO_SUCH_FILE`, `OBJECT_NAME_NOT_FOUND`) and a path without a device (the kernel has no current directory) log at debug instead of warning/error; other `NtCreateFile` failures and unknown devices still warn",
+   "game_named": false,
+   "lines": 84
+  },
+  {
+   "number": 67,
+   "file": "0067-sdl-video-failure-guidance.linux.patch",
+   "platform": "linux",
+   "area": "UI / presenter",
+   "paths": [
+    "src/ui/windowed_app_context_sdl.cpp"
+   ],
+   "purpose": "when SDL video cannot start, stderr also gets the SDL error and the graphical-session hint (DISPLAY for X11, WAYLAND_DISPLAY for Wayland) before the normal failure exit",
+   "game_named": false,
+   "lines": 27
+  },
+  {
+   "number": 68,
+   "file": "0068-guest-clock-lock-free.patch",
+   "platform": "all",
+   "area": "core / platform (threads, clock, logging)",
+   "paths": [
+    "src/core/clock.cpp"
+   ],
+   "purpose": "the guest time base is read without a lock: it runs at one ratio from the last ratio change, so reading it no longer takes the clock mutex on every `mftb`",
+   "game_named": false,
+   "lines": 81
+  },
+  {
+   "number": 69,
+   "file": "0069-command-processor-progress-wake.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "src/graphics/command_processor.cpp"
+   ],
+   "purpose": "the command processor also wakes `WaitOnAddress`/futex waiters after its read pointer and scratch register writebacks (the Direct3D ring waits in `src/gpu_fence_wait.cpp`)",
+   "game_named": false,
+   "lines": 19
+  },
+  {
+   "number": 70,
+   "file": "0070-vfs-host-lookup-work.patch",
+   "platform": "all",
+   "area": "kernel: xboxkrnl",
+   "paths": [
+    "src/filesystem/devices/host_path_device.cpp",
+    "src/kernel/xboxkrnl/xboxkrnl_io.cpp"
+   ],
+   "purpose": "on Windows a missing host file is not searched for again by listing its folder after the exact name was not found (names are case-insensitive); `NtQueryFullAttributesFile` translates its path once",
+   "game_named": false,
+   "lines": 51
+  },
+  {
+   "number": 73,
+   "file": "0073-d3d12-occlusion-query-index-reuse.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "src/graphics/d3d12/command_processor.cpp"
+   ],
+   "purpose": "an occlusion query index is reused only after the pending query that held it has its result",
+   "game_named": false,
+   "lines": 29
+  },
+  {
+   "number": 78,
+   "file": "0078-gpu-shared-memory-lock-free-validity.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/shared_memory.h",
+    "src/graphics/shared_memory.cpp"
+   ],
+   "purpose": "a shared memory request whose pages are all valid and allocated returns without the lock (the invalidation callback clears valid bits with release stores); `gpu_invalidation_expand_pages` (16; 64 is the original whole block) limits the pages a CPU write drops to an aligned group",
+   "game_named": true,
+   "lines": 144
+  },
+  {
+   "number": 79,
+   "file": "0079-gpu-side-effect-free-register-ranges.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "src/graphics/command_processor.cpp"
+   ],
+   "purpose": "the register block copy covers every range without write side effects, not only render state: everything but the shader constants, scratch registers, `COHER_STATUS_HOST` and the gamma ramp ports",
+   "game_named": true,
+   "lines": 48
+  },
+  {
+   "number": 80,
+   "file": "0080-gpu-draw-state-memo.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/pipeline/render_target/cache.h",
+    "src/graphics/pipeline/render_target/cache.cpp"
+   ],
+   "purpose": "`gpu_draw_state_memo`: an update claiming the same render target ranges as the previous one, with the ownership unchanged since, skips the ownership walk",
+   "game_named": true,
+   "lines": 138
+  },
+  {
+   "number": 81,
+   "file": "0081-d3d12-async-submission.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/command_processor.h",
+    "include/rex/graphics/d3d12/deferred_command_list.h",
+    "src/graphics/d3d12/command_processor.cpp"
+   ],
+   "purpose": "`d3d12_async_submission`: a \"D3D12 Submission\" thread replays, executes and signals the recorded submissions in order, and a swap waits for it to drain; `d3d12_async_submission_draws` (2000) also ends a submission between draws outside occlusion queries. The thread is joined in the command processor's destructor and a repeated start does not create a second worker",
+   "game_named": true,
+   "lines": 285
+  },
+  {
+   "number": 82,
+   "file": "0082-d3d12-draw-state-memo.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/command_processor.h",
+    "src/graphics/d3d12/command_processor.cpp",
+    "src/graphics/d3d12/render_target_cache.cpp"
+   ],
+   "purpose": "D3D12 half of 0080: draws without transfers or clears skip the transfer pass, and sampler parameters are recomputed only when the shader, a fetch constant or `anisotropic_override` changed",
+   "game_named": true,
+   "lines": 122
+  },
+  {
+   "number": 83,
+   "file": "0083-d3d12-host-threads-avoid-cpu0.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "src/graphics/d3d12/command_processor.cpp"
+   ],
+   "purpose": "`gpu_host_threads_avoid_cpu0`: the command processor and submission threads run on the process's CPUs except 0 and 1 when it has at least 8 in one processor group",
+   "game_named": true,
+   "lines": 69
+  },
+  {
+   "number": 84,
+   "file": "0084-imgui-mouse-cursors.patch",
+   "platform": "all",
+   "area": "UI / presenter",
+   "paths": [
+    "src/ui/imgui_drawer.cpp"
+   ],
+   "purpose": "the ImGui drawer applies the cursor shape ImGui asked for through `SDL_SetCursor`, which nothing did otherwise (`imgui_drawer.cpp`), so launcher hyperlinks show the hand cursor",
+   "game_named": false,
+   "lines": 59
+  },
+  {
+   "number": 85,
+   "file": "0085-logging-detach-file-sink.patch",
+   "platform": "all",
+   "area": "core / platform (threads, clock, logging)",
+   "paths": [
+    "include/rex/logging/api.h",
+    "src/core/logging.cpp"
+   ],
+   "purpose": "`DetachFileSink` removes and closes the rotating file sink without destroying loggers, so a controlled hard exit can delete the session log without freeing logger state other threads may still use",
+   "game_named": false,
+   "lines": 43
+  },
+  {
+   "number": 86,
+   "file": "0086-xam-launch-title-owning-path.patch",
+   "platform": "all",
+   "area": "kernel: XAM",
+   "paths": [
+    "src/kernel/xam/xam_info.cpp"
+   ],
+   "purpose": "`XamLoaderLaunchTitle` keeps the expanded launch path in an owning `std::string`; a `std::string_view` pointed into the temporary from `utf8_join_guest_paths()` for a relative XEX name (`-Wdangling-assignment-gsl`)",
+   "game_named": false,
+   "lines": 20
+  },
+  {
+   "number": 87,
+   "file": "0087-rtl-compare-string-n-lengths.patch",
+   "platform": "all",
+   "area": "kernel: xboxkrnl",
+   "paths": [
+    "src/kernel/xboxkrnl/xboxkrnl_rtl.cpp"
+   ],
+   "purpose": "`RtlCompareStringN` compares up to the shorter real length (0xFFFF = `strlen`) and then orders by length, as `RtlCompareString`; before, \"abc\" and \"abcd\" compared equal",
+   "game_named": true,
+   "lines": 30
+  },
+  {
+   "number": 88,
+   "file": "0088-d3d12-texture-load-slice-size-init.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "src/graphics/d3d12/texture_cache.cpp"
+   ],
+   "purpose": "D3D12 texture load: `host_slice_size_base` starts at 0 (a `-Wuninitialized` false positive; the conditional lvalue write is not tracked, and every read follows a write)",
+   "game_named": false,
+   "lines": 21
+  },
+  {
+   "number": 89,
+   "file": "0089-draw-extent-scissor-signed-compare.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "src/graphics/util/draw_extent_estimator.cpp"
+   ],
+   "purpose": "draw extent estimate: a negative scissor edge no longer counts as the 8192 \"no scissor\" case (signed comparison against `int32_t(xenos::kTexture2DCubeMaxWidthHeight)`); non-negative scissors are unchanged",
+   "game_named": false,
+   "lines": 32
+  },
+  {
+   "number": 90,
+   "file": "0090-d3d12-render-target-cache-unused-counters.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/render_target_cache.h"
+   ],
+   "purpose": "D3D12 render target cache: the direct resolve success/fallback counters that 0034 left unused are removed (the class is private to the GPU plugin)",
+   "game_named": false,
+   "lines": 22
+  },
+  {
+   "number": 91,
+   "file": "0091-warning-cleanup.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/audio/xma/decoder.h",
+    "include/rex/graphics/pipeline/render_target/cache.h",
+    "include/rex/graphics/pipeline/shader/dxbc_translator.h",
+    "include/rex/graphics/pipeline/texture/cache.h",
+    "include/rex/graphics/xenos.h",
+    "include/rex/system/xmemory.h",
+    "src/audio/xma_decoder.cpp",
+    "src/core/utf8.cpp",
+    "src/filesystem/devices/null_device.cpp",
+    "src/graphics/pipeline/shader/dxbc_translator.cpp",
+    "src/graphics/pipeline/shader/translator.cpp",
+    "src/graphics/primitive_processor.cpp",
+    "src/kernel/xam/xam_net.cpp",
+    "src/kernel/xboxkrnl/xboxkrnl_debug.cpp",
+    "src/kernel/xboxkrnl/xboxkrnl_threading.cpp",
+    "src/system/xfile.cpp",
+    "src/system/xobject.cpp",
+    "src/system/xsocket.cpp",
+    "src/ui/imgui_drawer.cpp",
+    "src/ui/presenter.cpp",
+    "src/ui/window.cpp"
+   ],
+   "purpose": "warning cleanup without behaviour change except `MakePacketType0`, which now sets its one-register bit (its only caller passes false): `void*` casts for the deliberate texture-key `memcpy`/`memset`, unused parameter names, initializer lists in declaration order, unsigned `-1` sentinels, no pessimizing `std::move`, range-loop references, `= {}` for `X_SLIST_HEADER`, and an unused lambda capture",
+   "game_named": false,
+   "lines": 405
+  },
+  {
+   "number": 92,
+   "file": "0092-warning-cleanup.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/ui/d3d12/d3d12_util.h",
+    "src/core/threading_win.cpp",
+    "src/graphics/d3d12/command_processor.cpp",
+    "src/graphics/d3d12/pipeline_cache.cpp",
+    "src/input/xinput/xinput_input_driver.cpp",
+    "src/ui/d3d12/d3d12_immediate_drawer.cpp",
+    "src/ui/d3d12/d3d12_presenter.cpp",
+    "src/ui/d3d12/d3d12_provider.cpp"
+   ],
+   "purpose": "Windows half of 0091 and 0093: full `D3D12_HEAP_PROPERTIES` initializers, a missing `override`, explicit `GetProcAddress` casts, an unused lambda capture and an unused local",
+   "game_named": false,
+   "lines": 137
+  },
+  {
+   "number": 93,
+   "file": "0093-unused-locals.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "src/filesystem/virtual_file_system.cpp",
+    "src/graphics/packet_disassembler.cpp",
+    "src/graphics/pipeline/texture/conversion.cpp",
+    "src/kernel/xam/apps/xam_app.cpp",
+    "src/kernel/xam/xam_content.cpp",
+    "src/kernel/xam/xam_user.cpp",
+    "src/kernel/xboxkrnl/xboxkrnl_debug.cpp",
+    "src/system/mmio_handler.cpp",
+    "src/system/util/object_table.cpp",
+    "src/system/xex_module.cpp",
+    "src/ui/overlay/settings_overlay.cpp",
+    "src/ui/presenter.cpp"
+   ],
+   "purpose": "unused locals removed where their initializer has no side effect; guest-memory reads, FidelityFX-only locals and the only use of a parameter keep their evaluation with `[[maybe_unused]]`",
+   "game_named": false,
+   "lines": 228
+  },
+  {
+   "number": 94,
+   "file": "0094-input-activity-callback.patch",
+   "platform": "all",
+   "area": "input",
+   "paths": [
+    "include/rex/input/input_system.h",
+    "src/input/input_system.cpp"
+   ],
+   "purpose": "a passive input-activity callback reports each device's changed state from `InputSystem::GetState`; the cursor policy reads it without altering gamepad state, merging or device assignment",
+   "game_named": false,
+   "lines": 97
+  },
+  {
+   "number": 95,
+   "file": "0095-fused-vector-multiply-add.patch",
+   "platform": "all",
+   "area": "codegen (recompiler)",
+   "paths": [
+    "resources/templates/codegen/pch_h.inja",
+    "src/codegen/builders/vector.cpp"
+   ],
+   "purpose": "codegen: `vmaddfp`/`vnmsubfp` (and the 128 forms) round once like the hardware, and `vmsum3fp128`/`vmsum4fp128` sum in double and round once (Xenia's order) instead of `dpps`; with two roundings a unit length could round above 1.0. The helpers are emitted into the generated `crackdown_pch.h`: with `-mfma` or on ARM64 they use the native fused multiply-add, otherwise x64 checks the CPU once and uses `vfmadd213ps` on FMA3 hosts and the exact round-to-odd emulation elsewhere, with the same bits, so FMA3 is not required",
+   "game_named": true,
+   "lines": 219
+  },
+  {
+   "number": 96,
+   "file": "0096-xma-context-stall-guards.patch",
+   "platform": "all",
+   "area": "audio (XMA, mixer)",
+   "paths": [
+    "src/audio/xma_context.cpp"
+   ],
+   "purpose": "XMA `Work()`: a partly delivered frame keeps draining after the input runs out, an input-starved context sets its output write offset to the read offset, and output is invalidated only when the ring is full, so voices no longer stall for good after a long host hitch",
+   "game_named": true,
+   "lines": 66
+  },
+  {
+   "number": 97,
+   "file": "0097-inline-bit-scan-forward.patch",
+   "platform": "all",
+   "area": "core / platform (threads, clock, logging)",
+   "paths": [
+    "include/rex/math.h",
+    "src/core/math_gcc.cpp",
+    "src/core/math_msvc.cpp"
+   ],
+   "purpose": "`rex::bit_scan_forward` is inline in `math.h` instead of defined in the runtime DLL: the GPU plugin calls it in its per-draw loops (constant maps, render target and texture bindings), and every call went through the import table. The runtime no longer exports it; nothing outside the SDK calls it. Portable, but Windows only until a Linux build checks it",
+   "game_named": true,
+   "lines": 62
+  },
+  {
+   "number": 98,
+   "file": "0098-gpu-plugin-thinlto.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "src/graphics/CMakeLists.txt"
+   ],
+   "purpose": "the GPU plugin builds with ThinLTO in Release (`/opt:lldlto=3`), so the command processor's per-draw path (render target, texture and pipeline caches, shared memory, register file) inlines across its translation units",
+   "game_named": false,
+   "lines": 20
+  },
+  {
+   "number": 99,
+   "file": "0099-d3d12-unchanged-constant-writes.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "src/graphics/d3d12/command_processor.cpp"
+   ],
+   "purpose": "`gpu_skip_unchanged_constant_writes` (on): when the game rewrites float, bool, loop or fetch constants with the values they already have, the D3D12 command processor keeps the uploaded constant buffers, the texture bindings and the sampler memo instead of rebuilding them for the next draw. Vertex buffer residency is still reset on every fetch constant write, since the game may have rewritten the vertex data at the same address",
+   "game_named": false,
+   "lines": 134
+  },
+  {
+   "number": 100,
+   "file": "0100-texture-cache-resolve-target-index.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/pipeline/texture/cache.h",
+    "src/graphics/pipeline/texture/cache.cpp"
+   ],
+   "purpose": "the texture cache indexes its textures by base page, so `FindResolveCopyTargets` looks at the textures on the resolve's page instead of scanning all of them on every resolve. Portable, but Windows only until a Linux build checks it",
+   "game_named": false,
+   "lines": 63
+  },
+  {
+   "number": 101,
+   "file": "0101-d3d12-per-draw-loops.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/render_target_cache.h",
+    "src/graphics/d3d12/command_processor.cpp"
+   ],
+   "purpose": "D3D12 per-draw loops: vertex buffer residency is invalidated a 64-bit mask at a time instead of a bit at a time, the used float constants are copied a run of consecutive constants per `memcpy`, and the stencil tile bits are read and added in up to two contiguous runs that vectorize instead of a byte at a time with wrapping",
+   "game_named": false,
+   "lines": 127
+  },
+  {
+   "number": 102,
+   "file": "0102-gpu-plugin-pgo.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "src/graphics/CMakeLists.txt"
+   ],
+   "purpose": "profile-guided optimization of the GPU plugin in Release: `REXGPU_PGO_USE` names a merged profile to optimize it with, and `tools\\rexruntime-patch.ps1` sets it to `patches\\rexglue-sdk-pgo\\rexgpu-xenos.profdata` when that file exists (see [build-workflow.md](build-workflow.md#profile-guided-optimization-of-the-gpu-plugin))",
+   "game_named": false,
+   "lines": 25
+  },
+  {
+   "number": 103,
+   "file": "0103-d3d12-present-latency-wait.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/ui/d3d12/d3d12_presenter.h",
+    "src/ui/d3d12/d3d12_presenter.cpp"
+   ],
+   "purpose": "`d3d12_present_latency_wait` (on, restart): the swap chain has a frame-latency waitable object (at most 2 frames queued) and painting waits on it before recording, so a V-Sync forced by the driver no longer makes `Present` wait for a back buffer on the direct queue the GPU emulation submits to; `ResizeBuffers` keeps the same flags and the handle is closed with the swap chain",
+   "game_named": true,
+   "lines": 91
+  },
+  {
+   "number": 104,
+   "file": "0104-xex-patch-path.patch",
+   "platform": "all",
+   "area": "other",
+   "paths": [
+    "src/system/user_module.cpp"
+   ],
+   "purpose": "`xex_patch` (runtime option): the guest path of the XEX patch applied to the main module, instead of the `.xexp` next to the XEX. The Title Update 6 guest sets it to `update:\\Default.xexp` with `--update_data_root` pointing at the installed update, so the patch never sits in the game folder the base build reads. A patch file is not given a patch of its own; with the option set, a missing file fails the load. Unset, nothing changes",
+   "game_named": false,
+   "lines": 68
+  },
+  {
+   "number": 105,
+   "file": "0105-profiling-debug-only.patch",
+   "platform": "all",
+   "area": "core / platform (threads, clock, logging)",
+   "paths": [
+    "CMakeLists.txt",
+    "src/core/CMakeLists.txt",
+    "src/system/CMakeLists.txt"
+   ],
+   "purpose": "Tracy zones and the perf counters only in Debug (they were in every configuration but Release): they cost the GPU command processor about a tenth of its time, so RelWithDebInfo, the profiling build, now performs like Release. The Tracy DLL is still built and staged; the game, compiled against the stock headers, still has its (inactive) zones",
+   "game_named": false,
+   "lines": 58
+  },
+  {
+   "number": 106,
+   "file": "0106-memoize-texture-layout-extents.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "src/graphics/pipeline/texture/cache.cpp"
+   ],
+   "purpose": "the base and mip extents of a texture key's guest layout, needed on every binding change at a draw resolution scale, come from a 1024-entry direct-mapped table (about 4% of the command processor thread)",
+   "game_named": false,
+   "lines": 67
+  },
+  {
+   "number": 107,
+   "file": "0107-gpu-frame-stats.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/gpu_frame_stats.h",
+    "src/graphics/command_processor.cpp",
+    "src/graphics/pipeline/texture/cache.cpp"
+   ],
+   "purpose": "`gpu_frame_stats` (off): every 10 s, logs what the guest command stream asked per frame (draws, resolves, type-0/type-3 packets and their registers, indirect buffers, constant registers by source, shader loads, texture lookups and creations), counted with plain increments on the command processor thread",
+   "game_named": false,
+   "lines": 235
+  },
+  {
+   "number": 108,
+   "file": "0108-gpu-draw-trace.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/command_processor.h",
+    "src/graphics/command_processor.cpp"
+   ],
+   "purpose": "`gpu_draw_trace` = <file> (cleared once done) records the next `gpu_draw_trace_frames` frames (default 1) from a swap: per draw or resolve, the draw initiator, index buffer, predication and visibility-query kill, the first ucode dwords of both shaders, and the raw render-state, float, fetch and bool/loop constant registers (about 12 KB a draw). HLE renderer milestone 1 compares it with the game-side capture of the D3D device",
+   "game_named": false,
+   "lines": 196
+  },
+  {
+   "number": 109,
+   "file": "0109-cached-indirect-buffers.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/command_processor.h",
+    "include/rex/graphics/gpu_frame_stats.h",
+    "src/graphics/command_processor.cpp"
+   ],
+   "purpose": "`gpu_cached_indirect_buffers` (on, hot reload): an indirect buffer executed again with the same address and size (the precompiled command buffers of mesh assets, replayed every frame) is decoded once into the operations its packets perform and replayed without parsing while its dwords are unchanged (one `memcmp` against the copy taken at translation). Replays make the parse's calls in its order; register runs that already hold their values, where rewriting them changes nothing, are skipped. Other type-3 packets (waits, events with memory writes, swaps) run their own handler from the buffer's dwords; buffers with a malformed packet are parsed as before, and buffers whose dwords keep changing (ring segments) stop being translated. Bypassed while `gpu_draw_trace` records. HLE renderer milestone 3a",
+   "game_named": false,
+   "lines": 715
+  },
+  {
+   "number": 110,
+   "file": "0110-draw-identity-memo.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/command_processor.h",
+    "include/rex/graphics/d3d12/command_processor.h",
+    "include/rex/graphics/d3d12/pipeline_cache.h",
+    "include/rex/graphics/gpu_frame_stats.h",
+    "include/rex/graphics/pipeline/texture/cache.h",
+    "src/graphics/command_processor.cpp",
+    "src/graphics/d3d12/command_processor.cpp",
+    "src/graphics/d3d12/render_target_cache.cpp",
+    "src/graphics/d3d12/texture_cache.cpp",
+    "src/graphics/pipeline/render_target/cache.cpp",
+    "src/graphics/pipeline/texture/cache.cpp"
+   ],
+   "purpose": "`gpu_draw_identity_memo` (off, hot reload; needs 0109's cache): a draw of a cached indirect buffer has an identity (its DRAW operation and occurrence in the frame) and a memo of what `IssueDraw` derived for it: pixel shader use, shader variants and translations, pipeline and root signature, color mask, viewport, used textures, and the texture bindings (keys and textures, reused without parsing the fetch constants or looking textures up while no texture was destroyed and the scaled resolve state is unchanged). The memo is reused when the shaders are the same and a 64-bit hash of the render state (0x2000-0x23FF but the resolve registers) and of the used textures' fetch constants matches; float, bool and loop constants are not inputs of any of it. `gpu_frame_stats` also logs the time `IssueDraw` takes per draw by memo outcome. HLE renderer milestone 3b",
+   "game_named": false,
+   "lines": 1273
+  },
+  {
+   "number": 111,
+   "file": "0111-fetch-constant-caches.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/texture_cache.h",
+    "include/rex/graphics/gpu_frame_stats.h",
+    "include/rex/graphics/pipeline/texture/cache.h",
+    "src/graphics/command_processor.cpp",
+    "src/graphics/d3d12/texture_cache.cpp",
+    "src/graphics/pipeline/texture/cache.cpp"
+   ],
+   "purpose": "`gpu_fetch_constant_caches` (on, hot reload): what texture bindings and sampler parameters derive from a texture fetch constant is kept in direct-mapped tables indexed by a hash of its six dwords: the binding key, signs and host format swizzle, the textures last looked up for the key (reused while no texture was destroyed and the scaled resolve state of memory is unchanged, or still the texture's), and the sampler parameters (also keyed on the binding's filter overrides and `anisotropic_override`). About 6,000 binding updates and 3,000 sampler parameter computations a frame in the city, from few distinct fetch constants",
+   "game_named": false,
+   "lines": 323
+  },
+  {
+   "number": 112,
+   "file": "0112-edram-bookkeeping-memo.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/d3d12/render_target_cache.h",
+    "include/rex/graphics/gpu_frame_stats.h",
+    "include/rex/graphics/pipeline/render_target/cache.h",
+    "src/graphics/command_processor.cpp",
+    "src/graphics/d3d12/render_target_cache.cpp",
+    "src/graphics/pipeline/render_target/cache.cpp"
+   ],
+   "purpose": "`gpu_edram_bookkeeping_memo` (on, hot reload): every draw marks the EDRAM tiles of each render target it writes dirty and adds stencil bits to them; a range within one of the last four set dirty since tiles were last made clean, or within the render target's last stencil addition with no new bits since its bits were last set, is skipped (both are idempotent, and consecutive draws to the same render targets repeat them)",
+   "game_named": false,
+   "lines": 179
+  },
+  {
+   "number": 113,
+   "file": "0113-gpu-draw-trace-resolve-data.patch",
+   "platform": "all",
+   "area": "GPU: D3D12 backend",
+   "paths": [
+    "include/rex/graphics/command_processor.h",
+    "src/graphics/command_processor.cpp",
+    "src/graphics/d3d12/command_processor.cpp"
+   ],
+   "purpose": "`gpu_draw_trace_resolve_data`: a draw trace also writes the bytes of every resolve (`<trace>_resolves.bin`)",
+   "game_named": false,
+   "lines": 163
+  },
+  {
+   "number": 114,
+   "file": "0114-vulkan-backend-on-windows.patch",
+   "platform": "all",
+   "area": "build",
+   "paths": [
+    "CMakeLists.txt",
+    "src/system/gpu_plugin_loader.cpp"
+   ],
+   "purpose": "the Vulkan backend is built on Windows too, and `gpu_backend` (`any`/`d3d12`/`vulkan`) picks the one the plugin creates",
+   "game_named": false,
+   "lines": 54
+  },
+  {
+   "number": 115,
+   "file": "0115-vulkan-async-submission.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/command_processor.h",
+    "include/rex/graphics/vulkan/deferred_command_buffer.h",
+    "src/graphics/vulkan/command_processor.cpp"
+   ],
+   "purpose": "`vulkan_async_submission` (off: slower here, see the patch): the Vulkan counterpart of 0081, a \"Vulkan Submission\" thread replays and submits the recorded command buffers in order; fences are only polled once submitted",
+   "game_named": true,
+   "lines": 454
+  },
+  {
+   "number": 116,
+   "file": "0116-vulkan-issue-draw-timers.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/command_processor.h",
+    "src/graphics/vulkan/command_processor.cpp"
+   ],
+   "purpose": "`gpu_frame_stats` on Vulkan: IssueDraw timed in 15 sections (ns a draw) and render pass entries counted, logged every 10 s with the GPU command thread's CPU time",
+   "game_named": false,
+   "lines": 261
+  },
+  {
+   "number": 117,
+   "file": "0117-vulkan-per-draw-costs.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/texture_cache.h",
+    "src/graphics/vulkan/command_processor.cpp",
+    "src/graphics/vulkan/texture_cache.cpp"
+   ],
+   "purpose": "cheaper Vulkan draws: the memexport readback check (a by-name cvar lookup) only for draws that export, and a table of sampler parameters keyed by the fetch constant",
+   "game_named": false,
+   "lines": 88
+  },
+  {
+   "number": 118,
+   "file": "0118-gpu-ab-windows.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "src/graphics/vulkan/command_processor.cpp",
+    "src/graphics/vulkan/texture_cache.cpp"
+   ],
+   "purpose": "`gpu_ab_cvar` / `gpu_ab_values`: with `gpu_frame_stats` on Vulkan, a hot-reloadable cvar alternates every 10 s window so one run measures A and B in the same scene; `vulkan_sampler_parameters_cache` toggles 0117's table",
+   "game_named": false,
+   "lines": 105
+  },
+  {
+   "number": 119,
+   "file": "0119-vulkan-reuse-texture-descriptors.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/command_processor.h",
+    "src/graphics/vulkan/command_processor.cpp"
+   ],
+   "purpose": "`vulkan_reuse_texture_descriptors` (on): a stage's texture descriptor set is kept while its image views and samplers are unchanged (~15 ns a draw)",
+   "game_named": false,
+   "lines": 105
+  },
+  {
+   "number": 120,
+   "file": "0120-vulkan-unchanged-constant-writes.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "src/graphics/vulkan/command_processor.cpp"
+   ],
+   "purpose": "`vulkan_skip_unchanged_constant_writes` (on), the Vulkan half of 0099 (no measurable effect here: the constants do change)",
+   "game_named": false,
+   "lines": 69
+  },
+  {
+   "number": 121,
+   "file": "0121-vulkan-update-bindings-timers.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/command_processor.h",
+    "src/graphics/vulkan/command_processor.cpp"
+   ],
+   "purpose": "`gpu_frame_stats` on Vulkan: UpdateBindings timed in five subsections, descriptor sets written per frame counted",
+   "game_named": false,
+   "lines": 139
+  },
+  {
+   "number": 122,
+   "file": "0122-vulkan-dynamic-constant-buffers.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/command_processor.h",
+    "include/rex/ui/vulkan/upload_buffer_pool.h",
+    "src/graphics/vulkan/command_processor.cpp",
+    "src/ui/vulkan/vulkan_upload_buffer_pool.cpp"
+   ],
+   "purpose": "Vulkan constants through dynamic uniform buffers: a set names the upload buffers, offsets are given at bind, so ~5,000 set writes a frame become none (+20-25% FPS at the city spot); upload pages keep a reserved tail",
+   "game_named": false,
+   "lines": 357
+  },
+  {
+   "number": 123,
+   "file": "0123-vulkan-submission-timers.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/command_processor.h",
+    "src/graphics/vulkan/command_processor.cpp"
+   ],
+   "purpose": "`gpu_frame_stats` on Vulkan: EndSubmission, its command buffer replay and submit, and IssueSwap timed per frame",
+   "game_named": false,
+   "lines": 91
+  },
+  {
+   "number": 124,
+   "file": "0124-portable-rdtsc-include.patch",
+   "platform": "all",
+   "area": "GPU: shared (command processor, caches)",
+   "paths": [
+    "include/rex/graphics/gpu_frame_stats.h",
+    "src/graphics/command_processor.cpp"
+   ],
+   "purpose": "portable `__rdtsc` include for the frame stats timers (`<x86intrin.h>` off MSVC-style toolchains), needed by the Linux build since 0110 became common",
+   "game_named": false,
+   "lines": 35
+  },
+  {
+   "number": 125,
+   "file": "0125-vulkan-constant-copies-and-load-stats.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/command_processor.h",
+    "include/rex/ui/vulkan/functions/device_1_0.inc",
+    "src/graphics/vulkan/command_processor.cpp"
+   ],
+   "purpose": "Vulkan float constants copied a run per memcpy and vertex buffer residency cleared a 64-bit mask at a time (as 0101); `gpu_frame_stats` adds the whole process CPU time and the host GPU time per frame (timestamps around each replayed command buffer)",
+   "game_named": false,
+   "lines": 282
+  },
+  {
+   "number": 126,
+   "file": "0126-vulkan-gpu-time-by-category.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/command_processor.h",
+    "include/rex/graphics/vulkan/deferred_command_buffer.h",
+    "src/graphics/vulkan/command_processor.cpp",
+    "src/graphics/vulkan/deferred_command_buffer.cpp"
+   ],
+   "purpose": "`gpu_frame_stats` on Vulkan: host GPU time per frame by category (draw passes, render target updates, resolves, swap, other), from timestamps at render pass entries and exits and at changes of what the command processor does",
+   "game_named": false,
+   "lines": 288
+  },
+  {
+   "number": 127,
+   "file": "0127-vulkan-render-pass-end-reasons.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/command_processor.h",
+    "src/graphics/vulkan/command_processor.cpp"
+   ],
+   "purpose": "`gpu_frame_stats` on Vulkan: render pass ends per frame by reason (barriers, forced copies and dispatches, render target changes, occlusion queries, submission ends)",
+   "game_named": false,
+   "lines": 133
+  },
+  {
+   "number": 128,
+   "file": "0128-vulkan-occlusion-queries-in-render-pass.patch",
+   "platform": "all",
+   "area": "GPU: Vulkan backend",
+   "paths": [
+    "include/rex/graphics/vulkan/command_processor.h",
+    "src/graphics/vulkan/command_processor.cpp"
+   ],
+   "purpose": "`vulkan_occlusion_queries_in_render_pass` (off): occlusion queries run inside the guest's render passes, one host query per pass a guest query spans, summed, instead of ending the pass around each query",
+   "game_named": false,
+   "lines": 315
+  },
+  {
+   "number": 129,
+   "file": "0129-hle-frame-record-channel.patch",
+   "platform": "all",
+   "area": "HLE renderer channel",
+   "paths": [
+    "include/rex/graphics/command_processor.h",
+    "include/rex/graphics/hle_draw_match.h",
+    "include/rex/graphics/hle_frame.h",
+    "include/rex/graphics/vulkan/command_processor.h",
+    "include/rex/graphics/vulkan/deferred_command_buffer.h",
+    "include/rex/graphics/vulkan/pipeline_cache.h",
+    "include/rex/graphics/vulkan/render_target_cache.h",
+    "src/graphics/CMakeLists.txt",
+    "src/graphics/command_processor.cpp",
+    "src/graphics/hle_frame.cpp",
+    "src/graphics/plugin_main.cpp",
+    "src/graphics/vulkan/command_processor.cpp",
+    "src/graphics/vulkan/deferred_command_buffer.cpp",
+    "src/graphics/vulkan/pipeline_cache.cpp",
+    "src/graphics/vulkan/render_target_cache.cpp"
+   ],
+   "purpose": "HLE renderer channel (native pass diagnostics, frame matching over the last 4 frames): exported `rex_gpu_hle_submit_frame` (ABI 4) takes a frame's draw records, state blocks, state layout, pass names, shader microcode locations and draw packets (index buffers) from the game (`crackdown_hle_plugin_channel`, off), copies them into `HleFrameSink` and logs what it receives and how many draws resolve to shaders emulation already loaded (`VulkanPipelineCache::FindShader`), plus an inventory per render pass , a dry run of one pass to pipelines (`gpu_hle_dry_run_pass`), its native draw into an own depth image (`gpu_hle_native_pass`, off) and a depth comparison with the emulated target at its resolve (PNG dumps), under `gpu_frame_stats`; `vulkan_per_draw_tests` checks the game's `HleFrameAbi` matches",
+   "game_named": true,
+   "lines": 2304
+  }
+ ]
+}

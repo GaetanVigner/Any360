@@ -1,0 +1,32 @@
+{
+ "date": "2026-10-30",
+ "titles": {
+  "crackdown": {
+   "imports": 248,
+   "imports_provided": 223,
+   "functions": 41219,
+   "functions_native": 103,
+   "instructions": 2667844,
+   "instructions_handled": 2667844,
+   "mnemonics": 340
+  },
+  "simpsons": {
+   "imports": 317,
+   "imports_provided": 270,
+   "functions": 81874,
+   "functions_native": 27,
+   "instructions": 2938230,
+   "instructions_handled": 2938229,
+   "mnemonics": 338
+  }
+ },
+ "layer": {
+  "components": 24,
+  "done": 2,
+  "in_progress": 0,
+  "patches_crackdown": {
+   "count": 120,
+   "game_named": 15
+  }
+ }
+}
