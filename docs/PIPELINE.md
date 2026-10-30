@@ -79,6 +79,27 @@ prologue/epilogue no-ops (a custom calling convention or a `__savegprlr` signatu
 decoded by the stock `A2ALT` language (log: "Unable to resolve constructor" on vector code), which needs Ghidra's Xenon
 processor extension; until then those functions decompile with gaps and the generated C++ is the reference for them.
 
+## Verification: the I/O comparison test
+
+A translation is accepted when it is indistinguishable from the recompiled original on random inputs. The test
+(Crackdown `tests/decomp_io_tests.cpp`, the generic form moves into Any360's sandbox) runs both on the same seeded
+scene: two 16 KB object blocks of random words (small values, plausible pointers into the blocks, anything), random
+integer and float arguments, the image globals the function reads set to random values (so a translation that
+hard-codes a constant is caught), and a per-function preparation that bounds loops and places the pointers the
+function chases. After each run it collects the result register (when the function returns one) and every changed
+word of guest memory outside the stack's red zone, then compares the two outcomes: the first difference names the
+function, the trial, the seed and the word. 64 trials per function; a watchdog catches an unbounded loop.
+
+What the comparison deliberately ignores: scratch registers (r4-r12, cr, xer, ctr), the red-zone stores of the
+original's spills, and instruction-level behaviour. What it keeps exact: 32-bit address wraps, 64-bit register
+values returned in r3, single-precision rounding (each float operation computed in double and rounded once, as the
+recompiled code does, `fmadds` through `std::fma`), big-endian memory layout.
+
+The first batch (2026-10-30, Crackdown `src/decomp/leaf_batch1.cpp`): 13 leaf functions of the game code chosen for
+variety: chunk-list walk with halfword swaps, entity visibility bit test, pointer-array clear, indexed table lookup,
+string compare against an image name, character state flags, orb-map pan/zoom floats, a constructor, a profiler slot
+with a 64-bit mask, a max over packed sizes, a running-sum threshold search, and global float pairs.
+
 ## Any title
 
 `titles/<title>/pipeline.json` is all the pipeline needs: image, image base, generated code, port sources, bind

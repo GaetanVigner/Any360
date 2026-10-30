@@ -3,7 +3,7 @@
  "titles": {
   "crackdown": {
    "functions": 41219,
-   "functions_native": 103,
+   "functions_native": 116,
    "functions_verified": 291,
    "functions_library": 449,
    "instructions": 2667844,
@@ -37,7 +37,7 @@
  "toolkit": {
   "components": 27,
   "done": 3,
-  "in_progress": 1,
+  "in_progress": 2,
   "patches": {
    "crackdown": 120
   }

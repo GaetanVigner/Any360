@@ -137,16 +137,16 @@
   {
    "area": "stage 2: decompilation",
    "name": "Guest sandbox: run recompiled functions outside the game in a lazily committed 4 GB guest space, golden inputs / outputs",
-   "state": "planned",
+   "state": "in progress",
    "source": "crackdown: tests/guest_sandbox.h, tests/cmake/guest_sandbox.cmake, tests/golden",
-   "note": "leaf functions today; non-leaf functions and memory snapshots next"
+   "note": "leaf functions with goldens (D3D runtime) and the I/O comparison of translations against originals (decomp_io_tests: random scenes, per-function input preparation); non-leaf functions and memory snapshots next"
   },
   {
    "area": "stage 2: decompilation",
    "name": "Decompile + bind + verify pipeline: Ghidra PowerPC output cleaned with recovered types, bound over sub_X, proven against the oracle",
    "state": "in progress",
    "source": "any360: pipeline/any360.py + pipeline/ghidra/*.java (from the Crackdown re/ scripts); crackdown: src/guest_binding.h (103 functions bound by hand)",
-   "note": "inventory, Ghidra import, decompile and bind steps exist; verify runs the title's sandbox tests; ANY360_BIND and the non-leaf sandbox are next"
+   "note": "first batch done on Crackdown: 13 leaf functions translated (src/decomp/leaf_batch1.cpp), each proven equal to the recompiled original on 64 random inputs by tests/decomp_io_tests, bound over the originals in the game build"
   },
   {
    "area": "stage 2: decompilation",

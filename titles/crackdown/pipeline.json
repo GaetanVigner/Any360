@@ -11,6 +11,6 @@
  "language": "PowerPC:BE:64:A2ALT-32addr",
  "project_dir": "F:/Crackdown/re/ghidra-project",
  "project_name": "crackdown-seeded",
- "decomp_dir": "F:/Crackdown/crackdown-xbox360-recompiled/src/decomp",
+ "decomp_dir": "F:/Crackdown/crackdown-xbox360-recompiled/decomp",
  "verify_command": "powershell -File F:/Crackdown/crackdown-xbox360-recompiled/tools/test.ps1 -Filter guest_d3d_leaf_tests"
 }
