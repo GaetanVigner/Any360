@@ -1,0 +1,6 @@
+{
+ "_comment": "What Any360 provides itself, by name: system calls implemented in any360::sys, instruction ids whose semantics the decompilation rules cover, XDK functions implemented in any360::gfx or the CRT. Hand-kept until the layer's sources carry the names; tools/build_db.py counts these as 'native'.",
+ "system_calls": [],
+ "instructions": [],
+ "xdk": []
+}

@@ -6,7 +6,9 @@ replace its emulated system calls and GPU with native, portable implementations;
 function by function, each proven against the original; end with a codebase that builds for Windows, Linux, macOS,
 Android, x86-64, ARM64 and WebAssembly from reconstructed source and the player's own copy of the game data, the way
 the projects on [awesome-decomp-games](https://submitgame.github.io/awesome-decomp-games/) do. What one title needed
-is reused by the next; a progress page says how native each title is.
+is reused by the next; one database lists every function of the platform a native port must provide, and one global
+progress page says how much of it is native. Titles are sources, not the unit of progress: their own repositories
+track how native each game is.
 
 Started from the [Crackdown port](https://github.com/GaetanVigner/CrackdownRewrite) (ReXGlue v0.10.0, 120 SDK patches,
 native Vulkan renderer in progress, 103 functions already rewritten). Next title:
@@ -32,15 +34,17 @@ Details, boundaries and milestones: [docs/DESIGN.md](docs/DESIGN.md).
 | | |
 |---|---|
 | [docs/DESIGN.md](docs/DESIGN.md) | The path from static recomp to native codebase; what Any360 holds and what a game's repository holds; how a title uses it; counting rules; milestones |
-| [docs/progress.html](docs/progress.html) | Progress page in the AnyPS5 style: one square per function and per system call, a tab per title with sortable tables (modules, translated functions, system calls, render passes, every function), toolkit by stage, history ([progress.json](docs/progress.json), [progress.svg](docs/progress.svg)) |
-| [docs/coverage/](docs/coverage/) | Per-title coverage: [crackdown](docs/coverage/crackdown.md), [simpsons](docs/coverage/simpsons.md), [comparison](docs/coverage/COMPARISON-crackdown-vs-simpsons.md), Crackdown [SDK patch inventory](docs/coverage/patches-crackdown.json) |
+| [db/](db/) | **The database**: every function of the Xbox 360 platform surface a native port must provide, whatever the title: [system_calls.json](db/system_calls.json) (2,900 exports of xboxkrnl / xam / xbdm with library, ordinal, area, reference state, Any360 state, the known titles importing each), [instructions.json](db/instructions.json) (1,842 CPU instruction ids by family), [xdk.json](db/xdk.json) (statically linked XDK library functions known by name, from [xdk_seed.json](db/xdk_seed.json)); built by [tools/build_db.py](tools/build_db.py) |
+| [docs/progress.html](docs/progress.html) | Global progress page in the AnyPS5 style: one square per system call, instruction id and XDK function, filterable tables of the database, the known titles as sources, toolkit by stage, history ([progress.json](docs/progress.json), [progress.svg](docs/progress.svg)) |
+| [docs/coverage/](docs/coverage/) | Source reports per known title (what feeds the database): [crackdown](docs/coverage/crackdown.md), [simpsons](docs/coverage/simpsons.md), [comparison](docs/coverage/COMPARISON-crackdown-vs-simpsons.md), Crackdown [SDK patch inventory](docs/coverage/patches-crackdown.json) |
 | [docs/COMPARISON.md](docs/COMPARISON.md) | What the comparison says: where a second title costs effort (the GPU, twice the functions), where it does not (kernel, CPU) |
 | [layer/status.json](layer/status.json) | Components by stage, where each comes from, its state |
 | [docs/PIPELINE.md](docs/PIPELINE.md) | The decompile → bind → verify → recompile pipeline, driven by [pipeline/any360.py](pipeline/any360.py) and one `titles/<title>/pipeline.json` per game |
-| [tools/inventory.py](tools/inventory.py) | Every function of a title with its state (native / verified / library / recompiled) and the functions the port already translated: [docs/data/](docs/data/), [inventory reports](docs/coverage/) |
+| [tools/inventory.py](tools/inventory.py) | Every function of a title with its state (native / verified / library / recompiled) and the functions the port already translated; the per-function dump stays local (`docs/data/`, ignored), the summary feeds the database's library ranges |
 | [tools/coverage.py](tools/coverage.py) | Given a recomp's generated code and an SDK tree: imports (implemented / stub / missing), instruction mnemonics (handled or not), native functions; `--compare` two titles |
 | [tools/patch_inventory.py](tools/patch_inventory.py) | Classifies an SDK patch set by SDK area |
-| [tools/progress_page.py](tools/progress_page.py) | Regenerates the progress page |
+| [tools/build_db.py](tools/build_db.py) | Rebuilds `db/` from the reference SDK's tables, the title reports and the hand-kept seeds |
+| [tools/progress_page.py](tools/progress_page.py) | Regenerates the progress page from `db/` |
 
 [![Any360 progress](docs/progress.svg)](https://gaetanvigner.github.io/Any360/progress.html)
 
@@ -80,8 +84,7 @@ The pipeline (Ghidra project, decompile, bind, verify) is described in [docs/PIP
 python pipeline/any360.py crackdown status
 ```
 
-The progress page's per-function table loads `docs/data/functions-<title>.json` over http: open it from GitHub Pages
-or serve `docs/` locally (`python -m http.server`), a `file://` page shows everything else.
+Before every commit: `python tools/build_db.py` then `python tools/progress_page.py`.
 
 `--generated` is the ReXGlue codegen output (`*_init.cpp` for the import table, `*_recomp.*.cpp` for the instruction
 comments); `--sdk` an SDK source tree. Generated code is never committed here: run the tools against your local tree

@@ -1,42 +1,100 @@
 {
  "date": "2026-10-31",
+ "reference": {
+  "sdk": "ReXGlue",
+  "version": "0.10.0"
+ },
+ "system_calls": {
+  "total": 2914,
+  "used_by_titles": 340,
+  "native": 0,
+  "ported": 2,
+  "runnable": 493,
+  "by_state": {
+   "reference": 491,
+   "stub": 2406,
+   "missing": 15,
+   "ported": 2
+  },
+  "by_library": {
+   "crt": 2,
+   "xam": 1735,
+   "xbdm": 255,
+   "xboxkrnl": 922
+  }
+ },
+ "instructions": {
+  "total": 1842,
+  "used_by_titles": 313,
+  "native": 0,
+  "reference": 497,
+  "by_family": {
+   "VMX / VMX128": {
+    "reference": 197,
+    "missing": 42
+   },
+   "branch / trap": {
+    "reference": 82,
+    "missing": 202
+   },
+   "compare / CR": {
+    "missing": 9,
+    "reference": 16
+   },
+   "floating point": {
+    "missing": 51,
+    "reference": 52
+   },
+   "integer": {
+    "missing": 551,
+    "reference": 75
+   },
+   "load / store / cache": {
+    "missing": 105,
+    "reference": 59
+   },
+   "system": {
+    "reference": 16,
+    "missing": 385
+   }
+  }
+ },
+ "xdk": {
+  "total": 31,
+  "native": 0,
+  "ported": 0,
+  "unnamed_by_title": {
+   "crackdown": {
+    "XDK D3D runtime": 742,
+    "CRT register save/restore helpers": 22,
+    "kernel import thunks": 2
+   },
+   "simpsons": {
+    "XDK D3D command writers": 342,
+    "CRT (string / memory)": 64,
+    "kernel import thunks": 96
+   }
+  }
+ },
  "titles": {
   "crackdown": {
-   "functions": 41219,
-   "functions_native": 377,
-   "functions_verified": 291,
-   "functions_library": 449,
-   "instructions": 2667844,
    "imports": 248,
-   "imports_provided": 223,
-   "imports_stub": 25,
-   "instructions_handled": 2667844,
-   "instructions_total": 2667844,
    "mnemonics": 340,
-   "passes": 29,
-   "passes_native": 1,
-   "sdk": "0.10.0"
+   "instructions": 2667844,
+   "sdk": "0.10.0",
+   "unnamed_library_functions": 766
   },
   "simpsons": {
-   "functions": 81874,
-   "functions_native": 27,
-   "functions_verified": 0,
-   "functions_library": 499,
-   "instructions": 2938307,
    "imports": 317,
-   "imports_provided": 270,
-   "imports_stub": 47,
-   "instructions_handled": 2938229,
-   "instructions_total": 2938230,
    "mnemonics": 338,
-   "passes": 0,
-   "passes_native": 0,
-   "sdk": "0.8.0"
+   "instructions": 2938230,
+   "sdk": "0.8.0",
+   "unnamed_library_functions": 502
   }
  },
  "toolkit": {
-  "components": 27,
-  "done": 3,
+  "components": 28,
+  "done": 4,
   "in_progress": 2,
   "patches": {
    "crackdown": 120

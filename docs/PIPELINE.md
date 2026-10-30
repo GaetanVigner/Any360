@@ -23,12 +23,12 @@ its files are in `titles/<title>/pipeline.json` (nothing of the game enters this
 
 | Step | Command | Produces |
 |---|---|---|
-| inventory | `python pipeline/any360.py <title> inventory` | `docs/data/functions-<title>.json` (every function: address, instructions, state N native / V verified / L library / R recompiled, handler, file), `docs/coverage/inventory-<title>.json` (modules, translated functions, imports) |
+| inventory | `python pipeline/any360.py <title> inventory` | `docs/data/functions-<title>.json` (local, ignored by git: every function with address, instructions, state N native / V verified / L library / R recompiled, handler, file), `docs/coverage/inventory-<title>.json` (modules, translated functions, imports: the title's contribution to `db/`) |
 | import | `python pipeline/any360.py <title> import` | the Ghidra project: `BinaryLoader` at the image base, `SeedFunctions.java` creates and names every function the recompiler found (so cross-references and the decompiler work on the same function boundaries as the generated code), then Ghidra's auto-analysis |
 | decompile | `python pipeline/any360.py <title> decompile sub_826B9C08 826C3750 "XDK D3D runtime"` | `Decompile.java` writes the C of each function (or of every function of a module from `titles/<title>/modules.json`) to `<decomp_dir>/raw/` |
 | bind | `python pipeline/any360.py <title> bind 826B9C08 --module renderer --purpose "..."` | `<decomp_dir>/<module>/<module>_bindings.cpp`: one handler per function that calls the original, one `BIND(address, handler)` per function; `goldens.txt` lists what to verify |
 | verify | `python pipeline/any360.py <title> verify` | runs the title's sandbox golden tests (`verify_command`): each bound function on recorded inputs against the recompiled original |
-| status | `python pipeline/any360.py <title> status` | the counts per module; `tools/progress_page.py` draws them |
+| status | `python pipeline/any360.py <title> status` | the counts per module (the title's own progress; `tools/build_db.py` + `tools/progress_page.py` draw the global page) |
 
 The binding mechanism is the one the Crackdown port uses today: `CRACKDOWN_BIND(address, handler)` makes the
 generated `sub_address` jump to `handler(ctx, base, original)`; the handler can call the original, so a function is

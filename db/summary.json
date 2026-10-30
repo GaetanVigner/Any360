@@ -1,0 +1,71 @@
+{
+ "date": "2026-10-31",
+ "reference": {
+  "sdk": "ReXGlue",
+  "version": "0.10.0"
+ },
+ "titles": {
+  "crackdown": {
+   "imports": 248,
+   "mnemonics": 340,
+   "instructions": 2667844,
+   "sdk": "0.10.0",
+   "unnamed_library_functions": 766
+  },
+  "simpsons": {
+   "imports": 317,
+   "mnemonics": 338,
+   "instructions": 2938230,
+   "sdk": "0.8.0",
+   "unnamed_library_functions": 502
+  }
+ },
+ "system_calls": {
+  "total": 2914,
+  "used": 340,
+  "any360": {
+   "todo": 2912,
+   "ported": 2
+  },
+  "reference": {
+   "implemented": 493,
+   "stub": 2406,
+   "missing": 15
+  },
+  "libraries": {
+   "crt": 2,
+   "xam": 1735,
+   "xbdm": 255,
+   "xboxkrnl": 922
+  }
+ },
+ "instructions": {
+  "total": 1842,
+  "used": 313,
+  "any360": {
+   "todo": 1842
+  },
+  "reference": {
+   "missing": 1345,
+   "handled": 497
+  }
+ },
+ "xdk": {
+  "total": 31,
+  "any360": {
+   "todo": 31
+  },
+  "unnamed_by_title": {
+   "crackdown": {
+    "XDK D3D runtime": 742,
+    "CRT register save/restore helpers": 22,
+    "kernel import thunks": 2
+   },
+   "simpsons": {
+    "XDK D3D command writers": 342,
+    "CRT (string / memory)": 64,
+    "kernel import thunks": 96
+   }
+  }
+ }
+}

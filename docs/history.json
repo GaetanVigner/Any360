@@ -1,42 +1,22 @@
 [
  {
-  "date": "2026-10-30",
-  "titles": {
-   "crackdown": {
-    "functions_native": 302,
-    "functions_verified": 291,
-    "imports_provided": 223,
-    "imports": 248,
-    "passes_native": 1
-   },
-   "simpsons": {
-    "functions_native": 27,
-    "functions_verified": 0,
-    "imports_provided": 270,
-    "imports": 317,
-    "passes_native": 0
-   }
-  },
-  "toolkit_done": 3
- },
- {
   "date": "2026-10-31",
-  "titles": {
-   "crackdown": {
-    "functions_native": 377,
-    "functions_verified": 291,
-    "imports_provided": 223,
-    "imports": 248,
-    "passes_native": 1
-   },
-   "simpsons": {
-    "functions_native": 27,
-    "functions_verified": 0,
-    "imports_provided": 270,
-    "imports": 317,
-    "passes_native": 0
-   }
+  "system_calls": {
+   "native": 0,
+   "ported": 2,
+   "runnable": 493,
+   "total": 2914
   },
-  "toolkit_done": 3
+  "instructions": {
+   "native": 0,
+   "reference": 497,
+   "total": 1842
+  },
+  "xdk": {
+   "native": 0,
+   "ported": 0,
+   "total": 31
+  },
+  "toolkit_done": 4
  }
 ]

@@ -1,0 +1,281 @@
+[
+ {
+  "name": "D3DDevice_BeginTiling",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x824675C8"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_BeginVertices",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x8244C450"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_Clear",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82453C30"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_CreateShaderA",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82448178"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_CreateShaderB",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82448308"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_CreateTexture",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82440578"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_DrawIndexedVertices",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x8244D360"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_DrawVertices",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x8244CF78"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_DrawVerticesUP",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x8244C910"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_EndTiling",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82467B50"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_EndVertices",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x8244CEA0"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_GpuBeginShaderConstantF4",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82444BD8"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_Resolve",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82455570"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_SetPixelShader",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82445578"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_SetPredication",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82467450"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_SetTexture",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x824408E0"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_SetVertexShader",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82445278"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DDevice_Swap",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x824544F0"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DVertexBuffer_Lock",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x824418A0"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3DVertexBuffer_Unlock",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x824419A0"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3D_AddCallsToPrimaryBuffer",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82456E68"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3D_BeginVizQuery",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x8244EEA8"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3D_BlockOnFence",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x824574B8"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3D_BlockUntilIdle",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82458080"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3D_EndVizQuery",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x8244EF78"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3D_InternalClearDraw",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82453B08"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3D_KickOff",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x824572F8"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3D_LoadShaderLiterals",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x8245F810"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3D_PollGpuProgress",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82452018"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3D_RingAlloc",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82457F50"
+  },
+  "note": ""
+ },
+ {
+  "name": "D3D_RingMakeSpace",
+  "library": "D3D",
+  "any360": "todo",
+  "titles": {
+   "simpsons": "0x82457CC8"
+  },
+  "note": ""
+ }
+]

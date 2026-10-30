@@ -173,6 +173,15 @@ draw trace) into `coverage/gpu-<title>.json`, shown on the progress page as emul
 
 ### 4.3 Counting rules
 
+The unit of progress is the platform surface, not a title: `db/` lists every function a native port of any Xbox 360
+game must provide (the exports of xboxkrnl / xam / xbdm, the CPU instruction ids, the statically linked XDK library
+functions known by name) and the progress page counts them globally. A title contributes its imports and its
+instruction mix (so that what matters first comes first) and tracks its own game-specific progress in its own repository.
+
+- *Native* entry: implemented in this repository (`any360::sys`, `any360::gfx`, the decompilation rules;
+  `layer/sys/native.json` until the sources carry the names) and verified against the reference. *Ported*: implemented
+  natively in a known title's repository (`__imp__X` provided by the port), to be moved here. *Reference*: runs today only
+  through ReXGlue's implementation. *Stub* / *missing*: runs nowhere. The headline percentage counts native and ported.
 - *Provided* import: `REX_EXPORT` or `REX_HOOK_RAW(__imp__X)` in the runtime, or a mapped kernel variable; a stub counts
   as a stub even when the title never notices. *Native* import: implemented in `any360::sys`.
 - *Handled* instruction: the opcode id the disassembler assigns to the mnemonic has a builder; extended mnemonics and

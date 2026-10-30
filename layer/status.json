@@ -24,6 +24,13 @@
   },
   {
    "area": "stage 0: scaffold (ReXGlue)",
+   "name": "Database of the platform surface: system calls, CPU instruction ids, named XDK library functions, with states and the titles using each",
+   "state": "done",
+   "source": "any360: db/, tools/build_db.py",
+   "note": "the unit of progress; the page counts it globally"
+  },
+  {
+   "area": "stage 0: scaffold (ReXGlue)",
    "name": "Progress page in the AnyPS5 style (treemaps, per-title tabs, interactive function table, history)",
    "state": "done",
    "source": "any360: tools/progress_page.py",
