@@ -42,7 +42,9 @@ Details, boundaries and milestones: [docs/DESIGN.md](docs/DESIGN.md).
 | [tools/patch_inventory.py](tools/patch_inventory.py) | Classifies an SDK patch set by SDK area |
 | [tools/progress_page.py](tools/progress_page.py) | Regenerates the progress page |
 
-![Any360 progress](docs/progress.svg)
+[![Any360 progress](docs/progress.svg)](https://gaetanvigner.github.io/Any360/progress.html)
+
+Live page: **https://gaetanvigner.github.io/Any360/** (click the map).
 
 ## Running the tools
 

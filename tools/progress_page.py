@@ -19,6 +19,7 @@ DOCS = ROOT / 'docs'
 COVERAGE = DOCS / 'coverage'
 TITLES = ROOT / 'titles'
 STATUS = ROOT / 'layer' / 'status.json'
+LIVE = 'https://gaetanvigner.github.io/Any360/progress.html'  # where the standalone SVG's blocks link to
 
 BG, PANEL, BORDER, TEXT, MUTED = '#0d1117', '#161b22', '#30363d', '#c9d1d9', '#8b949e'
 FUNCTION_STATES = [('N', 'native', '#2ea043'), ('V', 'verified', '#2f81f7'), ('L', 'library', '#8957e5'), ('R', 'recompiled', '#6e7681')]
@@ -78,7 +79,7 @@ def squarify(items, x, y, w, h):
     return out
 
 
-def treemap(x0, y0, w, h, title, groups, states, done_states):
+def treemap(x0, y0, w, h, title, groups, states, done_states, href='#'):
     """groups: [(name, {state: count})]. One unit square per item (merged when a block holds more than ~400)."""
     total = sum(sum(c.values()) for _, c in groups)
     done = sum(c.get(s, 0) for _, c in groups for s in done_states)
@@ -102,7 +103,7 @@ def treemap(x0, y0, w, h, title, groups, states, done_states):
         cw, ch = bw / cols, bh / rows
         share = sum(cells.get(s, 0) for s in done_states) / count * 100
         tip = f'{name}: {count:,} ({share:.0f}% ' + '/'.join(done_states) + ')' + (f' [{per} per square]' if per > 1 else '')
-        out.append(f'<g class="blk"><title>{esc(tip)}</title>')
+        out.append(f'<a href="{href}"><g class="blk"><title>{esc(tip)}</title>')
         for i, state in enumerate(units):
             cx, cy = bx + (i % cols) * cw, by + (i // cols) * ch
             out.append(f'<rect x="{cx:.2f}" y="{cy:.2f}" width="{max(cw - .5, .3):.2f}" height="{max(ch - .5, .3):.2f}" fill="{color[state]}"/>')
@@ -111,7 +112,7 @@ def treemap(x0, y0, w, h, title, groups, states, done_states):
             label = name if bw > 7 * len(name) else name[:max(2, int(bw / 7))]
             out.append(f'<text x="{bx + 4:.1f}" y="{by + 13:.1f}" font-size="12" fill="#ffffff" stroke="{BG}" '
                        f'stroke-width="3" paint-order="stroke">{esc(label)}</text>')
-        out.append('</g>')
+        out.append('</g></a>')
     return out
 
 
@@ -124,7 +125,7 @@ def legend(x, y, entries):
     return out
 
 
-def title_svg(name, inv, cov, passes):
+def title_svg(name, inv, cov, passes, href):
     """Two treemaps for a title (functions by module, system calls by library) plus the render pass strip."""
     width, map_h, header = 1000, 260, 34
     out = []
@@ -133,12 +134,12 @@ def title_svg(name, inv, cov, passes):
         rest = v['functions'] - v['native'] - v['verified']
         groups.append((m, {'N': v['native'], 'V': v['verified'], 'L': rest if v['kind'] == 'library' else 0,
                            'R': rest if v['kind'] != 'library' else 0}))
-    out += treemap(0, header, 495, map_h, f'{name}: functions native', groups, [(s, c) for s, _, c in FUNCTION_STATES], ['N', 'V', 'L'])
+    out += treemap(0, header, 495, map_h, f'{name}: functions native', groups, [(s, c) for s, _, c in FUNCTION_STATES], ['N', 'V', 'L'], href)
     by_lib = {}
     for c in cov.get('imports', []):
         by_lib.setdefault(c['library'], {}).setdefault(c['state'], 0)
         by_lib[c['library']][c['state']] += 1
-    out += treemap(505, header, 495, map_h, 'system calls provided', list(by_lib.items()), CALL_STATES, ['implemented', 'variable'])
+    out += treemap(505, header, 495, map_h, 'system calls provided', list(by_lib.items()), CALL_STATES, ['implemented', 'variable'], href)
     y = header + map_h + 8
     out += legend(0, y, [(lbl, c) for _, lbl, c in FUNCTION_STATES])
     out += legend(505, y, [(s, c) for s, c in CALL_STATES if s != 'variable'])
@@ -207,7 +208,7 @@ def main():
     today = date.today().isoformat()
 
     summary = {'date': today, 'titles': {}, 'toolkit': {}}
-    svgs = []
+    svgs, svgs_live = [], []
     for n in names:
         i, c = inv[n], cov[n]
         provided = sum(1 for x in c.get('imports', []) if x['state'] in ('implemented', 'variable'))
@@ -222,7 +223,8 @@ def main():
             'instructions_handled': handled, 'instructions_total': total_i, 'mnemonics': len(c.get('instructions', [])),
             'passes': len(pn), 'passes_native': sum(1 for p in pn if passes[n].get('passes', {}).get(p) in ('validated', 'native')),
             'sdk': c.get('sdk', {}).get('version', '')}
-        svgs.append(title_svg(n, i, c, passes[n]))
+        svgs.append(title_svg(n, i, c, passes[n], f'#{n}'))
+        svgs_live.append(title_svg(n, i, c, passes[n], f'{LIVE}#{n}'))
     comps = status['components']
     summary['toolkit'] = {'components': len(comps), 'done': sum(1 for x in comps if x['state'] == 'done'),
                           'in_progress': sum(1 for x in comps if x['state'] == 'in progress'),
@@ -237,7 +239,7 @@ def main():
     (DOCS / 'progress.json').write_text(json.dumps(summary, indent=1) + '\n', encoding='utf-8')
 
     y, parts = 0, []
-    for svg, height in svgs:
+    for svg, height in svgs_live:
         body = svg.split('\n', 3)[3].rsplit('</svg>', 1)[0]
         parts.append(f'<g transform="translate(0,{y})">{body}</g>')
         y += height + 16
@@ -394,8 +396,9 @@ for (const [n, t] of Object.entries(D.titles)) {
 table('#toolkit', [{k:'area',t:'Stage / area'},{k:'name',t:'Component'},{k:'state',t:'State',f:v=>dot(SC[v]||'#6e7681', v)},{k:'source',t:'Comes from',f:v=>`<span class="muted">${h(v)}</span>`},{k:'note',t:'Note',f:v=>`<span class="muted">${h(v)}</span>`}], D.components, {sort:'area', asc:true});
 table('#patches', [{k:'set',t:'Patch set'},{k:'area',t:'SDK area'},{k:'count',t:'Patches',n:1}], Object.entries(D.patches).flatMap(([set, areas]) => Object.entries(areas).map(([area, count]) => ({set, area, count}))), {sort:'count'});
 
-document.querySelectorAll('.tab').forEach(b => b.onclick = () => { document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === b)); document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + b.dataset.tab)); history.replaceState(null, '', '#' + b.dataset.tab); });
-if (location.hash) { const b = document.querySelector(`.tab[data-tab="${location.hash.slice(1)}"]`); if (b) b.click(); }
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => { document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === b)); document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + b.dataset.tab)); if (location.hash !== '#' + b.dataset.tab) history.replaceState(null, '', '#' + b.dataset.tab); });
+const goHash = () => { const b = document.querySelector(`.tab[data-tab="${location.hash.slice(1)}"]`); if (b && !b.classList.contains('active')) { b.click(); window.scrollTo(0, 0); } };
+window.addEventListener('hashchange', goHash); if (location.hash) goHash();
 </script></body></html>
 '''
 
