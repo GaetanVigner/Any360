@@ -153,7 +153,7 @@ plugin, and a CMake package:
 ```cmake
 # in the title's CMakeLists.txt
 include(FetchContent)
-FetchContent_Declare(any360 GIT_REPOSITORY https://github.com/<owner>/any360 GIT_TAG v0.1.0)
+FetchContent_Declare(any360 GIT_REPOSITORY https://github.com/GaetanVigner/Any360 GIT_TAG v0.1.0)
 FetchContent_MakeAvailable(any360)
 any360_setup_target(simpsons           # the generated code target
     XDK_BINDINGS generated/default      # where the binding tool finds the title's functions
