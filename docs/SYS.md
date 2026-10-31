@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (104 system calls)
+## What is verified (115 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -48,6 +48,16 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `Poll`), the guest clock (`KeQuerySystemTime`, FILETIME from the host clock) and the multiple-object waits
   (`KeWaitForMultipleObjects`, `NtWaitForMultipleObjectsEx`: wait-any returns the index taken, wait-all consumes every
   object together or nothing). Timer APC routines are not delivered yet.
+- **The scheduler** (`scheduler.h`, scenario tests): guest threads as host threads, each with its KTHREAD, PCR, TLS
+  block and stack in guest memory (the structures the rest of the layer reads through r13), run through the
+  `Dispatcher` the title installs (the layer never executes guest code itself). `ExCreateThread` (stack size, thread
+  id, XAPI start-up path, `CREATE_SUSPENDED`, the handle-is-object flag), `ExTerminateThread` (unwinds the host thread),
+  `KeDelayExecutionThread` (relative and absolute), `NtYieldExecution`, `NtResumeThread` / `KeResumeThread` /
+  `NtSuspendThread` (previous counts, `STATUS_THREAD_IS_TERMINATING`), `KeSetAffinityThread` (previous affinity through
+  the pointer, as the Xbox kernel does), `KeQueryBasePriorityThread`, `KeSetBasePriorityThread`,
+  `KeSetDisableBoostThread`. A thread is a dispatcher object signalled when it ends. Suspension is cooperative: a thread
+  created suspended waits before its first instruction, a running one pauses at its next delay, yield or wait. The
+  title process (KPROCESS) is created with the first thread when none is set.
 - **Offline networking**: `NetDll_inet_addr` (the Winsock parser), `NetDll___WSAFDIsSet`, `NetDll_XNetInAddrToString`,
   the XNet address conversions.
 
@@ -72,10 +82,9 @@ and the NT semantics (previous state returned, signal state in the object) are t
 
 Next for the layer, in this order:
 
-1. **Object manager, continued**: absolute wait timeouts, timer APCs, freeing kernel objects.
-2. **Waits and the scheduler**: `KeWaitForSingleObject` / `NtWaitForSingleObjectEx` / multiple-object waits, delays,
-   APCs, thread creation and the PCR / KTHREAD protocol the layer already follows.
-3. **Memory**: the virtual and physical allocators (`NtAllocateVirtualMemory`, `MmAllocatePhysicalMemoryEx`, queries
+1. **Object manager and scheduler, continued**: absolute wait timeouts, APCs (timer and `NtQueueApcThread`),
+   pre-emptive suspension, freeing kernel objects, `KeGetCurrentThread`-style queries.
+2. **Memory**: the virtual and physical allocators (`NtAllocateVirtualMemory`, `MmAllocatePhysicalMemoryEx`, queries
    and protection), compared on the observable properties of regions rather than on addresses.
-4. **Files and XAM**: a VFS over installed data, content packages, user profile and input, then the Live-offline
+3. **Files and XAM**: a VFS over installed data, content packages, user profile and input, then the Live-offline
    answers.

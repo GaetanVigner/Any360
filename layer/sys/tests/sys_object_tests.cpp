@@ -8,6 +8,13 @@
 #include <vector>
 
 #include "any360/sys/objects.h"
+#include "any360/sys/scheduler.h"
+
+#include <atomic>
+#include <chrono>
+#include <functional>
+#include <map>
+#include <thread>
 
 namespace {
 
@@ -15,7 +22,7 @@ using namespace any360::sys;
 
 std::vector<uint8_t> g_memory(0x20000);
 const Guest g{g_memory.data()};
-constexpr uint32_t kHeap = 0x10000, kScratch = 0x1000, kThread = 0x8000, kOtherThread = 0x8100;
+constexpr uint32_t kHeap = 0x10000, kScratch = 0x1000, kMainThread = 0x8000, kOtherThread = 0x8100;
 int g_failures = 0;
 
 #define CHECK(condition)                                                                   \
@@ -27,8 +34,10 @@ int g_failures = 0;
   } while (0)
 
 void Fresh() {
+  Threads().Shutdown();
   std::memset(g_memory.data(), 0, g_memory.size());
   Objects().SetKernelHeap(kHeap, 0x8000);
+  Objects().SetGuest(g);
   Objects().Reset();
 }
 
@@ -58,15 +67,15 @@ void Events() {
   // A synchronization event is consumed by a wait; a notification event is not.
   Objects().SetEvent(g, ev);
   const int64_t zero = 0;
-  CHECK(Objects().WaitForObject(g, ev, kThread, &zero) == 0 && g.Load32(ev + 4) == 0);
-  CHECK(Objects().WaitForObject(g, ev, kThread, &zero) == kStatusTimeout);
+  CHECK(Objects().WaitForObject(g, ev, kMainThread, &zero) == 0 && g.Load32(ev + 4) == 0);
+  CHECK(Objects().WaitForObject(g, ev, kMainThread, &zero) == kStatusTimeout);
   Objects().InitializeEvent(g, ev, kNotificationEvent, 1);
-  CHECK(Objects().WaitForObject(g, ev, kThread, &zero) == 0 && g.Load32(ev + 4) == 1);
-  CHECK(Objects().WaitForObject(g, ev, kThread, &zero) == 0);
+  CHECK(Objects().WaitForObject(g, ev, kMainThread, &zero) == 0 && g.Load32(ev + 4) == 1);
+  CHECK(Objects().WaitForObject(g, ev, kMainThread, &zero) == 0);
   // A short relative timeout on an unsignalled event times out.
   Objects().ResetEvent(g, ev);
   const int64_t ten_ms = -100000;
-  CHECK(Objects().WaitForObject(g, ev, kThread, &ten_ms) == kStatusTimeout);
+  CHECK(Objects().WaitForObject(g, ev, kMainThread, &ten_ms) == kStatusTimeout);
 
   // Nt* through handles.
   const uint32_t out = kScratch + 0x200;
@@ -80,9 +89,9 @@ void Events() {
   CHECK(Objects().NtQueryEvent(g, h, out + 8) == 0 && g.Load32(out + 8) == 1 && g.Load32(out + 12) == 1);
   CHECK(Objects().NtClearEvent(g, h) == 0 && g.Load32(object + 4) == 0);
   CHECK(Objects().NtPulseEvent(g, h, out + 4) == 0 && g.Load32(out + 4) == 0);
-  CHECK(Objects().WaitForHandle(g, h, kThread, &zero) == kStatusTimeout);
+  CHECK(Objects().WaitForHandle(g, h, kMainThread, &zero) == kStatusTimeout);
   Objects().NtSetEvent(g, h, 0);
-  CHECK(Objects().WaitForHandle(g, h, kThread, &zero) == 0);
+  CHECK(Objects().WaitForHandle(g, h, kMainThread, &zero) == 0);
   // Duplicate, close: the object lives while a handle does.
   CHECK(Objects().Duplicate(g, h, out + 16, 0) == 0);
   const uint32_t h2 = g.Load32(out + 16);
@@ -91,7 +100,7 @@ void Events() {
   CHECK(Objects().Close(h) == kStatusInvalidHandle);
   CHECK(Objects().NtSetEvent(g, h, 0) == kStatusInvalidHandle);
   CHECK(Objects().Close(h2) == 0 && Objects().Lookup(h2) == 0);
-  CHECK(Objects().WaitForHandle(g, h2, kThread, &zero) == kStatusInvalidHandle);
+  CHECK(Objects().WaitForHandle(g, h2, kMainThread, &zero) == kStatusInvalidHandle);
   // A freed slot is reused; handles stay four apart.
   CHECK(Objects().CreateEvent(g, out, 0, 0, 1) == 0 && g.Load32(out) == h);
   // Named events: a second creation opens the existing one.
@@ -112,8 +121,8 @@ void Semaphores() {
   CHECK(Objects().ReleaseSemaphore(g, sem, 2, status) == 4 && status == kStatusSemaphoreLimitExceeded && g.Load32(sem + 4) == 4);
   CHECK(Objects().ReleaseSemaphore(g, sem, 1, status) == 4 && status == 0 && g.Load32(sem + 4) == 5);
   const int64_t zero = 0;
-  for (int i = 0; i < 5; ++i) CHECK(Objects().WaitForObject(g, sem, kThread, &zero) == 0);
-  CHECK(g.Load32(sem + 4) == 0 && Objects().WaitForObject(g, sem, kThread, &zero) == kStatusTimeout);
+  for (int i = 0; i < 5; ++i) CHECK(Objects().WaitForObject(g, sem, kMainThread, &zero) == 0);
+  CHECK(g.Load32(sem + 4) == 0 && Objects().WaitForObject(g, sem, kMainThread, &zero) == kStatusTimeout);
 
   const uint32_t out = kScratch + 0x200;
   CHECK(Objects().CreateSemaphore(g, out, 0, 3, 2) == kStatusInvalidParameter);
@@ -129,22 +138,22 @@ void Mutants() {
   Fresh();
   const uint32_t out = kScratch + 0x200;
   // Created owned: the creating thread holds it, another thread cannot release or take it.
-  CHECK(Objects().CreateMutant(g, out, 0, 1, kThread) == 0);
+  CHECK(Objects().CreateMutant(g, out, 0, 1, kMainThread) == 0);
   const uint32_t h = g.Load32(out), m = Objects().Lookup(h);
-  CHECK(g.Load8(m) == kMutant && g.Load32(m + 4) == 0 && g.Load32(m + kMutantOwner) == kThread);
+  CHECK(g.Load8(m) == kMutant && g.Load32(m + 4) == 0 && g.Load32(m + kMutantOwner) == kMainThread);
   CHECK(Objects().NtReleaseMutant(g, h, kOtherThread) == kStatusMutantNotOwned);
   const int64_t zero = 0;
   CHECK(Objects().WaitForHandle(g, h, kOtherThread, &zero) == kStatusTimeout);
   // The owner may acquire again (recursion) and must release as many times.
-  CHECK(Objects().WaitForHandle(g, h, kThread, &zero) == 0 && int32_t(g.Load32(m + 4)) == -1);
-  CHECK(Objects().NtReleaseMutant(g, h, kThread) == 0 && g.Load32(m + 4) == 0 && g.Load32(m + kMutantOwner) == kThread);
-  CHECK(Objects().NtReleaseMutant(g, h, kThread) == 0 && g.Load32(m + 4) == 1 && g.Load32(m + kMutantOwner) == 0);
-  CHECK(Objects().NtReleaseMutant(g, h, kThread) == kStatusMutantNotOwned);
+  CHECK(Objects().WaitForHandle(g, h, kMainThread, &zero) == 0 && int32_t(g.Load32(m + 4)) == -1);
+  CHECK(Objects().NtReleaseMutant(g, h, kMainThread) == 0 && g.Load32(m + 4) == 0 && g.Load32(m + kMutantOwner) == kMainThread);
+  CHECK(Objects().NtReleaseMutant(g, h, kMainThread) == 0 && g.Load32(m + 4) == 1 && g.Load32(m + kMutantOwner) == 0);
+  CHECK(Objects().NtReleaseMutant(g, h, kMainThread) == kStatusMutantNotOwned);
   // Free: the other thread takes it.
   CHECK(Objects().WaitForHandle(g, h, kOtherThread, &zero) == 0 && g.Load32(m + kMutantOwner) == kOtherThread);
-  CHECK(Objects().WaitForHandle(g, h, kThread, &zero) == kStatusTimeout);
+  CHECK(Objects().WaitForHandle(g, h, kMainThread, &zero) == kStatusTimeout);
   // Created free.
-  CHECK(Objects().CreateMutant(g, out + 4, 0, 0, kThread) == 0);
+  CHECK(Objects().CreateMutant(g, out + 4, 0, 0, kMainThread) == 0);
   const uint32_t m2 = Objects().Lookup(g.Load32(out + 4));
   CHECK(g.Load32(m2 + 4) == 1 && g.Load32(m2 + kMutantOwner) == 0);
 }
@@ -155,13 +164,13 @@ void References() {
   CHECK(Objects().CreateEvent(g, out, 0, 0, 0) == 0);
   const uint32_t h = g.Load32(out), object = Objects().Lookup(h);
   // A reference keeps the object alive after its handle closes.
-  CHECK(Objects().ReferenceObjectByHandle(g, h, kThread, out + 4) == 0 && g.Load32(out + 4) == object);
+  CHECK(Objects().ReferenceObjectByHandle(g, h, kMainThread, out + 4) == 0 && g.Load32(out + 4) == object);
   CHECK(Objects().Close(h) == 0 && Objects().Lookup(h) == 0);
   CHECK(Objects().SetEvent(g, object) == 0 && g.Load32(object + 4) == 1);
   CHECK(Objects().DereferenceObject(g, object) == 0);
   // The current-thread pseudo handle.
-  CHECK(Objects().ReferenceObjectByHandle(g, kCurrentThreadHandle, kThread, out + 8) == 0 && g.Load32(out + 8) == kThread);
-  CHECK(Objects().ReferenceObjectByHandle(g, kHandleBase + 0x1000, kThread, out + 8) == kStatusInvalidHandle);
+  CHECK(Objects().ReferenceObjectByHandle(g, kCurrentThreadHandle, kMainThread, out + 8) == 0 && g.Load32(out + 8) == kMainThread);
+  CHECK(Objects().ReferenceObjectByHandle(g, kHandleBase + 0x1000, kMainThread, out + 8) == kStatusInvalidHandle);
   // DUPLICATE_CLOSE_SOURCE.
   CHECK(Objects().CreateEvent(g, out, 0, 0, 0) == 0);
   const uint32_t h3 = g.Load32(out);
@@ -178,30 +187,30 @@ void Timers() {
   CHECK(g.Load8(timer) == kNotificationTimer && g.Load32(timer + 4) == 0);
   g.Store64(out + 8, uint64_t(ten_ms));
   CHECK(Objects().NtSetTimerEx(g, h, out + 8, 0, out + 16) == 0 && g.Load32(out + 16) == 0 && g.Load8(timer + 3) == 1);
-  CHECK(Objects().WaitForHandle(g, h, kThread, &zero) == kStatusTimeout);
-  CHECK(Objects().WaitForHandle(g, h, kThread, &half_second) == 0);
+  CHECK(Objects().WaitForHandle(g, h, kMainThread, &zero) == kStatusTimeout);
+  CHECK(Objects().WaitForHandle(g, h, kMainThread, &half_second) == 0);
   CHECK(g.Load32(timer + 4) == 1 && g.Load8(timer + 3) == 0);
-  CHECK(Objects().WaitForHandle(g, h, kThread, &zero) == 0);
+  CHECK(Objects().WaitForHandle(g, h, kMainThread, &zero) == 0);
   // Re-arming reports the timer was not armed any more; cancelling an armed one reports it was.
   CHECK(Objects().NtSetTimerEx(g, h, out + 8, 0, out + 16) == 0 && g.Load32(out + 16) == 0 && g.Load32(timer + 4) == 0);
   CHECK(Objects().NtSetTimerEx(g, h, out + 8, 0, out + 16) == 0 && g.Load32(out + 16) == 1);
   CHECK(Objects().NtCancelTimer(g, h, out + 20) == 0 && g.Load32(out + 20) == 1 && g.Load8(timer + 3) == 0);
   CHECK(Objects().NtCancelTimer(g, h, out + 20) == 0 && g.Load32(out + 20) == 0);
-  CHECK(Objects().WaitForHandle(g, h, kThread, &ten_ms) == kStatusTimeout);
+  CHECK(Objects().WaitForHandle(g, h, kMainThread, &ten_ms) == kStatusTimeout);
   // A synchronization timer is consumed by the wait; a periodic one re-arms.
   CHECK(Objects().CreateTimer(g, out + 24, 0, 1) == 0);
   const uint32_t hs = g.Load32(out + 24), sync = Objects().Lookup(hs);
   CHECK(g.Load8(sync) == kSynchronizationTimer);
   CHECK(Objects().NtSetTimerEx(g, hs, out + 8, 5, 0) == 0);
-  CHECK(Objects().WaitForHandle(g, hs, kThread, &half_second) == 0 && g.Load32(sync + 4) == 0 && g.Load8(sync + 3) == 1);
-  CHECK(Objects().WaitForHandle(g, hs, kThread, &half_second) == 0);
+  CHECK(Objects().WaitForHandle(g, hs, kMainThread, &half_second) == 0 && g.Load32(sync + 4) == 0 && g.Load8(sync + 3) == 1);
+  CHECK(Objects().WaitForHandle(g, hs, kMainThread, &half_second) == 0);
   CHECK(Objects().NtCancelTimer(g, hs, 0) == 0);
   // An absolute due time in the past is due at once; KeInitializeTimerEx on a guest structure.
   const uint32_t kt = kScratch;
   Objects().InitializeTimer(g, kt, 0, 2);
   CHECK(g.Load8(kt) == kNotificationTimer && g.Load8(kt + 2) == 2 && g.Load64(kt + 16) == 0);
   CHECK(Objects().SetTimer(g, kt, int64_t(SystemTime() - 10), 0) == 0);
-  CHECK(Objects().WaitForObject(g, kt, kThread, &zero) == 0 && g.Load32(kt + 4) == 1);
+  CHECK(Objects().WaitForObject(g, kt, kMainThread, &zero) == 0 && g.Load32(kt + 4) == 1);
   CHECK(Objects().NtSetTimerEx(g, h, 0, 0, 0) == kStatusInvalidParameter);
   CHECK(Objects().NtSetTimerEx(g, kHandleBase + 0x800, out + 8, 0, 0) == kStatusInvalidHandle);
   // The clock advances and sits after 2020.
@@ -219,28 +228,117 @@ void MultipleWaits() {
   const uint32_t e0 = Objects().Lookup(g.Load32(handles)), e1 = Objects().Lookup(g.Load32(handles + 4)),
                  s2 = Objects().Lookup(g.Load32(handles + 8));
   // Wait-any takes the first satisfiable object, in order, and only that one.
-  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAny, kThread, &zero) == 1);
+  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAny, kMainThread, &zero) == 1);
   CHECK(g.Load32(s2 + 4) == 1);
   Objects().SetEvent(g, e0);
-  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAny, kThread, &zero) == 0 && g.Load32(e0 + 4) == 0);
+  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAny, kMainThread, &zero) == 0 && g.Load32(e0 + 4) == 0);
   // Wait-all needs every object and consumes them together; nothing is taken when one is missing.
-  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAll, kThread, &zero) == kStatusTimeout);
+  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAll, kMainThread, &zero) == kStatusTimeout);
   CHECK(g.Load32(s2 + 4) == 1 && g.Load32(e1 + 4) == 1);
   Objects().SetEvent(g, e0);
-  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAll, kThread, &zero) == 0);
+  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAll, kMainThread, &zero) == 0);
   CHECK(g.Load32(e0 + 4) == 0 && g.Load32(e1 + 4) == 1 && g.Load32(s2 + 4) == 0);
-  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAll, kThread, &ten_ms) == kStatusTimeout);
+  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAll, kMainThread, &ten_ms) == kStatusTimeout);
   // An unknown handle in the list is a parameter error; Ke* on guest objects goes through the same path.
   g.Store32(handles + 12, kHandleBase + 0x900);
-  CHECK(Objects().WaitForHandles(g, 4, handles, kWaitAny, kThread, &zero) == kStatusInvalidParameter);
+  CHECK(Objects().WaitForHandles(g, 4, handles, kWaitAny, kMainThread, &zero) == kStatusInvalidParameter);
   const uint32_t objects[] = {e0, e1};
-  CHECK(Objects().WaitForObjects(g, 2, objects, kWaitAny, kThread, &zero) == 1);
+  CHECK(Objects().WaitForObjects(g, 2, objects, kWaitAny, kMainThread, &zero) == 1);
   (void)out;
+}
+
+// The test's "guest code": host functions by start address, run on the scheduler's threads.
+std::map<uint32_t, std::function<uint64_t(uint32_t pcr, uint64_t, uint64_t)>> g_code;
+uint64_t Dispatch(uint32_t address, uint32_t, uint32_t pcr, uint64_t a0, uint64_t a1, void*) {
+  auto it = g_code.find(address);
+  return it == g_code.end() ? 0xDEAD : it->second(pcr, a0, a1);
+}
+
+void SchedulerTests() {
+  Fresh();
+  g_memory.resize(0x80000);  // stacks and thread objects need room
+  Objects().SetKernelHeap(0x10000, 0x70000);
+  Objects().SetGuest(Guest{g_memory.data()});
+  Objects().Reset();
+  const Guest gm{g_memory.data()};
+  Threads().SetDispatcher(&Dispatch, nullptr);
+  const uint32_t out = kScratch + 0x200, ev = kScratch;
+  const int64_t zero = 0, second = -10000000;
+  Objects().InitializeEvent(gm, ev, kNotificationEvent, 0);
+  // A thread that sets the event and returns 7; its handle is waitable and its exit status recorded.
+  g_code[0x1000] = [&](uint32_t pcr, uint64_t context, uint64_t) {
+    CHECK(gm.Load32(pcr + 0x100) != 0 && gm.Load32(gm.Load32(pcr + 0x100) + 0x68) != 0);
+    CHECK(context == 0x1234);
+    Objects().SetEvent(gm, ev);
+    return 7;
+  };
+  CHECK(Threads().CreateThread(gm, out, 0, out + 4, 0, 0x1000, 0x1234, 0) == 0);
+  const uint32_t h = gm.Load32(out), id = gm.Load32(out + 4), kthread = Objects().Lookup(h);
+  CHECK(id == 1 && kthread != 0 && gm.Load8(kthread) == 6);
+  CHECK(Objects().WaitForHandle(gm, h, kMainThread, &second) == 0);
+  CHECK(Objects().WaitForObject(gm, ev, kMainThread, &zero) == 0);
+  CHECK(gm.Load32(kthread + 0x140) == 7 && gm.Load8(kthread + 0xBE) == 1 && gm.Load32(kthread + 0x14C) == 1);
+  CHECK(gm.Load32(kthread + 0x84) == Threads().process() && gm.Load8(kthread + 0x73) == 2);
+  CHECK(Threads().NtSuspendThread(gm, h, out + 8) == kStatusThreadIsTerminating);
+  // Created suspended: nothing runs until resumed; the previous count comes back.
+  Objects().ResetEvent(gm, ev);
+  CHECK(Threads().CreateThread(gm, out, 0x8000, out + 4, 0, 0x1000, 0x1234, kCreateSuspended) == 0);
+  const uint32_t hs = gm.Load32(out), ks = Objects().Lookup(hs);
+  CHECK(gm.Load32(out + 4) == 2 && gm.Load8(ks + 0xBC) == 1);
+  std::this_thread::sleep_for(std::chrono::milliseconds(30));
+  CHECK(gm.Load32(ev + 4) == 0 && gm.Load32(ks + 4) == 0);
+  CHECK(Threads().NtSuspendThread(gm, hs, out + 8) == 0 && gm.Load32(out + 8) == 1);
+  CHECK(Threads().NtResumeThread(gm, hs, out + 8) == 0 && gm.Load32(out + 8) == 2);
+  std::this_thread::sleep_for(std::chrono::milliseconds(30));
+  CHECK(gm.Load32(ev + 4) == 0);
+  CHECK(Threads().NtResumeThread(gm, hs, out + 8) == 0 && gm.Load32(out + 8) == 1);
+  CHECK(Objects().WaitForHandle(gm, hs, kMainThread, &second) == 0 && gm.Load32(ev + 4) == 1);
+  CHECK(Threads().NtResumeThread(gm, kHandleBase + 0x700, out + 8) == kStatusInvalidHandle);
+  // The XAPI start-up path receives (start, context); ExTerminateThread inside the thread records its code; the
+  // handle-is-object flag hands the KTHREAD back; a delay sleeps for its interval.
+  g_code[0x2000] = [&](uint32_t pcr, uint64_t start, uint64_t context) {
+    CHECK(start == 0x3000 && context == 0x42);
+    const auto t0 = std::chrono::steady_clock::now();
+    Threads().Delay(gm, pcr, -200000);  // 20 ms
+    CHECK(std::chrono::steady_clock::now() - t0 >= std::chrono::milliseconds(19));
+    Threads().TerminateThread(gm, pcr, 99);
+    CHECK(false);  // not reached
+    return 0;
+  };
+  CHECK(Threads().CreateThread(gm, out, 0, 0, 0x2000, 0x3000, 0x42, kCreateHandleIsObject) == 0);
+  const uint32_t kx = gm.Load32(out);
+  CHECK(gm.Load8(kx) == 6 && Objects().Lookup(kx) == 0);
+  CHECK(Objects().WaitForObject(gm, kx, kMainThread, &second) == 0 && gm.Load32(kx + 0x140) == 99);
+  // Affinity, priority, boost on a KTHREAD.
+  CHECK(Threads().SetAffinity(gm, kx, 0, out + 12) == kStatusInvalidParameter);
+  CHECK(Threads().SetAffinity(gm, kx, 0x4, out + 12) == 0 && gm.Load32(out + 12) == 1 && gm.Load8(kx + 0xBF) == 2);
+  CHECK(Threads().SetAffinity(gm, kx, 0x2, out + 12) == 0 && gm.Load32(out + 12) == 4);
+  CHECK(Threads().QueryBasePriority(gm, kx) == 8);
+  CHECK(Threads().SetBasePriority(gm, kx, 12) == 8 && Threads().QueryBasePriority(gm, kx) == 12);
+  CHECK(Threads().SetBasePriority(gm, kx, uint32_t(-5)) == 12 && Threads().QueryBasePriority(gm, kx) == 0);
+  CHECK(Threads().SetDisableBoost(gm, kx, 1) == 0 && Threads().SetDisableBoost(gm, kx, 0) == 1);
+  // Two threads share the process TLS bitmap and have their own TLS blocks.
+  std::atomic<int> slots{0};
+  g_code[0x4000] = [&](uint32_t pcr, uint64_t, uint64_t) {
+    const uint32_t kt = gm.Load32(pcr + 0x100);
+    gm.Store32(gm.Load32(kt + 0x68), gm.Load32(kt + 0x14C));
+    ++slots;
+    return 0;
+  };
+  CHECK(Threads().CreateThread(gm, out, 0, 0, 0, 0x4000, 0, 0) == 0);
+  CHECK(Threads().CreateThread(gm, out + 4, 0, 0, 0, 0x4000, 0, 0) == 0);
+  CHECK(Objects().WaitForHandle(gm, gm.Load32(out), kMainThread, &second) == 0);
+  CHECK(Objects().WaitForHandle(gm, gm.Load32(out + 4), kMainThread, &second) == 0);
+  const uint32_t ka = Objects().Lookup(gm.Load32(out)), kb = Objects().Lookup(gm.Load32(out + 4));
+  CHECK(slots == 2 && gm.Load32(gm.Load32(ka + 0x68)) == gm.Load32(ka + 0x14C) && gm.Load32(gm.Load32(kb + 0x68)) == gm.Load32(kb + 0x14C));
+  CHECK(gm.Load32(ka + 0x68) != gm.Load32(kb + 0x68));
+  Threads().Shutdown();
 }
 
 }  // namespace
 
 int main() {
+  SchedulerTests();
   Timers();
   MultipleWaits();
   Events();

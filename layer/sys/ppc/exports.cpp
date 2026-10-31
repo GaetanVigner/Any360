@@ -13,6 +13,7 @@
 #include "any360/sys/net.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/rtl.h"
+#include "any360/sys/scheduler.h"
 #include "any360/sys/threading.h"
 #include "any360/sys/video.h"
 
@@ -236,6 +237,23 @@ ANY360_SYS_EXPORT(NtWaitForMultipleObjectsEx) {
   ctx.r3.u64 = Objects().WaitForHandles({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ThreadOf(ctx, base), Timeout(base, ctx.r8.u32, storage));
 }
 
+// Batch 7: the scheduler (sys_object_tests).
+ANY360_SYS_EXPORT(ExCreateThread) {
+  ctx.r3.u64 = Threads().CreateThread({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32);
+}
+ANY360_SYS_EXPORT(ExTerminateThread) { ctx.r3.u64 = Threads().TerminateThread({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KeDelayExecutionThread) {
+  ctx.r3.u64 = Threads().Delay({base}, ctx.r13.u32, ctx.r5.u32 ? int64_t(Guest{base}.Load64(ctx.r5.u32)) : 0);
+}
+ANY360_SYS_EXPORT(NtYieldExecution) { ctx.r3.u64 = Threads().Yield({base}, ctx.r13.u32); }
+ANY360_SYS_EXPORT(KeResumeThread) { ctx.r3.u64 = Threads().Resume({base}, ctx.r3.u32, nullptr); }
+ANY360_SYS_EXPORT(NtResumeThread) { ctx.r3.u64 = Threads().NtResumeThread({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(NtSuspendThread) { ctx.r3.u64 = Threads().NtSuspendThread({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(KeSetAffinityThread) { ctx.r3.u64 = Threads().SetAffinity({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(KeQueryBasePriorityThread) { ctx.r3.u64 = Threads().QueryBasePriority({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KeSetBasePriorityThread) { ctx.r3.u64 = Threads().SetBasePriority({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(KeSetDisableBoostThread) { ctx.r3.u64 = Threads().SetDisableBoost({base}, ctx.r3.u32, ctx.r4.u32); }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -336,6 +354,18 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(NtCancelTimer),
     ANY360_SYS_ENTRY(KeWaitForMultipleObjects),
     ANY360_SYS_ENTRY(NtWaitForMultipleObjectsEx),
+    // Batch 7: the scheduler.
+    ANY360_SYS_ENTRY(ExCreateThread),
+    ANY360_SYS_ENTRY(ExTerminateThread),
+    ANY360_SYS_ENTRY(KeDelayExecutionThread),
+    ANY360_SYS_ENTRY(NtYieldExecution),
+    ANY360_SYS_ENTRY(KeResumeThread),
+    ANY360_SYS_ENTRY(NtResumeThread),
+    ANY360_SYS_ENTRY(NtSuspendThread),
+    ANY360_SYS_ENTRY(KeSetAffinityThread),
+    ANY360_SYS_ENTRY(KeQueryBasePriorityThread),
+    ANY360_SYS_ENTRY(KeSetBasePriorityThread),
+    ANY360_SYS_ENTRY(KeSetDisableBoostThread),
 };
 const unsigned kExportCount = sizeof(kExports) / sizeof(kExports[0]);
 

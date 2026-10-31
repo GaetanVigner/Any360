@@ -60,9 +60,9 @@
   {
    "area": "stage 1: native system (any360::sys)",
    "name": "Threads, synchronisation, APCs, timers with Xbox semantics (~60 imports)",
-   "state": "planned",
-   "source": "to write; reference: rexruntime src/kernel/xboxkrnl_threading.cpp + Crackdown patches 0015-0021, 0026, 0068",
-   "note": "first any360::sys slice (L5)"
+   "state": "in progress",
+   "source": "any360: layer/sys (objects, scheduler, threading)",
+   "note": "dispatcher objects, waits, critical sections, spinlocks, TLS, thread creation and control done; APCs and pre-emptive suspension to do"
   },
   {
    "area": "stage 1: native system (any360::sys)",
@@ -202,7 +202,7 @@
    "name": "any360::sys: the system calls, verified against the reference runtime",
    "state": "in progress",
    "source": "any360: layer/sys (any360_sys, any360_sys_ppc, sys_io_tests)",
-   "note": "104 system calls: 76 verified equal to the reference (sys_io_tests, sys_runtime_tests on a guest thread of the reference kernel), 28 of the object manager (events, semaphores, mutants, timers, handles, single and multiple waits, the clock) verified against the NT semantics by scenario tests; next: scheduler, memory manager"
+   "note": "115 system calls: 76 verified equal to the reference, 39 of the object manager and scheduler (events, semaphores, mutants, timers, handles, waits, the clock, thread creation / suspension / delays / priorities) verified against the NT semantics by scenario tests; next: memory manager"
   }
  ]
 }

@@ -91,6 +91,12 @@ class ObjectManager {
 
   // The object a handle names (0 when none), for tests and binders.
   uint32_t Lookup(uint32_t handle);
+  // For the other managers: a guest region from the kernel heap (0 when exhausted), a handle on an existing object,
+  // the guest memory the heap lives in.
+  uint32_t AllocateObject(uint32_t size) { return Allocate(size); }
+  uint32_t OpenHandle(uint32_t object) { return AddHandle(object, {}); }
+  Guest guest() const { return guest_; }
+  void SetGuest(Guest g) { guest_ = g; }
 
  private:
   // One handle: a slot of the table, free again once closed. Ob* references are counted per object apart from
@@ -112,6 +118,7 @@ class ObjectManager {
   std::unordered_map<uint32_t, int> references_;  // object -> Ob references
   std::vector<uint32_t> timers_;  // armed timers (guest addresses)
   uint32_t heap_begin_ = 0, heap_end_ = 0, heap_next_ = 0;
+  Guest guest_{nullptr};
 };
 
 ObjectManager& Objects();
