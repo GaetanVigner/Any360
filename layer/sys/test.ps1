@@ -46,6 +46,8 @@ try {
     if ($LASTEXITCODE) { throw "Build failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_io_tests.exe') --trials $Trials | Out-Host
     if ($LASTEXITCODE) { throw "sys_io_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'sys_runtime_tests.exe') --trials $Trials | Out-Host
+    if ($LASTEXITCODE) { throw "sys_runtime_tests failed ($LASTEXITCODE)" }
 } finally {
     foreach ($name in @([Environment]::GetEnvironmentVariables().Keys)) {
         if (-not $saved.Contains($name)) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }

@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 750" width="1000" height="750" font-family="sans-serif">
 <style>.blk:hover rect{opacity:.8}</style>
 <rect width="1000" height="750" fill="#0d1117"/>
-<text x="0" y="25" font-size="16" fill="#c9d1d9" font-weight="600">System calls native: 2.0% (58/2,914) <tspan font-size="12" font-weight="400" fill="#8b949e">· 16.9% run on the reference runtime · one square per export</tspan></text>
+<text x="0" y="25" font-size="16" fill="#c9d1d9" font-weight="600">System calls native: 2.7% (78/2,914) <tspan font-size="12" font-weight="400" fill="#8b949e">· 16.9% run on the reference runtime · one square per export</tspan></text>
 <rect x="0" y="34" width="1000" height="300" fill="#0d1117"/>
 <a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xam ui: 340 (0% native/ported; 8 reference, 331 stub, 1 missing)</title>
 <rect x="0.00" y="34.00" width="9.71" height="9.58" fill="#8957e5"/>
@@ -1343,25 +1343,25 @@
 <rect x="347.3" y="187.0" width="104.3" height="147.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="351.3" y="200.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">xam info</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl threading: 146 (1% native/ported; 1 ported, 73 reference, 72 stub)</title>
-<rect x="451.61" y="34.00" width="9.98" height="8.81" fill="#2f81f7"/>
-<rect x="462.10" y="34.00" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="472.58" y="34.00" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="483.06" y="34.00" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="493.54" y="34.00" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="504.02" y="34.00" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="514.51" y="34.00" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="524.99" y="34.00" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="535.47" y="34.00" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="545.95" y="34.00" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="556.44" y="34.00" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="451.61" y="43.31" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="462.10" y="43.31" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="472.58" y="43.31" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="483.06" y="43.31" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="493.54" y="43.31" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="504.02" y="43.31" width="9.98" height="8.81" fill="#8957e5"/>
-<rect x="514.51" y="43.31" width="9.98" height="8.81" fill="#8957e5"/>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl threading: 146 (12% native/ported; 17 native, 1 ported, 56 reference, 72 stub)</title>
+<rect x="451.61" y="34.00" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="462.10" y="34.00" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="472.58" y="34.00" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="483.06" y="34.00" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="493.54" y="34.00" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="504.02" y="34.00" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="514.51" y="34.00" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="524.99" y="34.00" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="535.47" y="34.00" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="545.95" y="34.00" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="556.44" y="34.00" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="451.61" y="43.31" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="462.10" y="43.31" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="472.58" y="43.31" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="483.06" y="43.31" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="493.54" y="43.31" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="504.02" y="43.31" width="9.98" height="8.81" fill="#2ea043"/>
+<rect x="514.51" y="43.31" width="9.98" height="8.81" fill="#2f81f7"/>
 <rect x="524.99" y="43.31" width="9.98" height="8.81" fill="#8957e5"/>
 <rect x="535.47" y="43.31" width="9.98" height="8.81" fill="#8957e5"/>
 <rect x="545.95" y="43.31" width="9.98" height="8.81" fill="#8957e5"/>
@@ -2035,7 +2035,7 @@
 <rect x="659.2" y="34.0" width="73.4" height="77.1" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="663.2" y="47.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">xboxkrnl h</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl rtl: 55 (35% native/ported; 19 native, 10 reference, 26 stub)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl rtl: 55 (40% native/ported; 22 native, 7 reference, 26 stub)</title>
 <rect x="659.23" y="111.10" width="9.99" height="9.14" fill="#2ea043"/>
 <rect x="669.72" y="111.10" width="9.99" height="9.14" fill="#2ea043"/>
 <rect x="680.21" y="111.10" width="9.99" height="9.14" fill="#2ea043"/>
@@ -2055,9 +2055,9 @@
 <rect x="680.21" y="130.38" width="9.99" height="9.14" fill="#2ea043"/>
 <rect x="690.70" y="130.38" width="9.99" height="9.14" fill="#2ea043"/>
 <rect x="701.20" y="130.38" width="9.99" height="9.14" fill="#2ea043"/>
-<rect x="711.69" y="130.38" width="9.99" height="9.14" fill="#8957e5"/>
-<rect x="722.18" y="130.38" width="9.99" height="9.14" fill="#8957e5"/>
-<rect x="659.23" y="140.02" width="9.99" height="9.14" fill="#8957e5"/>
+<rect x="711.69" y="130.38" width="9.99" height="9.14" fill="#2ea043"/>
+<rect x="722.18" y="130.38" width="9.99" height="9.14" fill="#2ea043"/>
+<rect x="659.23" y="140.02" width="9.99" height="9.14" fill="#2ea043"/>
 <rect x="669.72" y="140.02" width="9.99" height="9.14" fill="#8957e5"/>
 <rect x="680.21" y="140.02" width="9.99" height="9.14" fill="#8957e5"/>
 <rect x="690.70" y="140.02" width="9.99" height="9.14" fill="#8957e5"/>

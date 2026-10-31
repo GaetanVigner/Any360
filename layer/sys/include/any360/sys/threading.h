@@ -1,5 +1,9 @@
-// xboxkrnl.exe threading exports that only read or initialise guest structures: critical sections, the current
-// process type (from the processor control region r13 points at). Scheduling itself comes later.
+// xboxkrnl.exe threading exports that work on the guest kernel structures the running thread owns: the processor
+// control region r13 points at (KPCR: IRQL at +0x18, PRCB at +0x100 with the current KTHREAD at +0, DPC flag at +0x50,
+// the process type to report during a DPC at +0xC), the KTHREAD (TLS block at +0x68, process type at +0x73, process at
+// +0x84, APC disable count at +0xB0, host-order) and the KPROCESS (TLS slot bitmap at +0x30). Critical sections,
+// spinlocks and IRQL follow the kernel's own in-memory protocol, so threads of the layer and of a static recompilation
+// interoperate. Waiting on a contended object belongs to the scheduler, which comes later: the contended paths spin.
 #pragma once
 
 #include <cstdint>
@@ -8,13 +12,37 @@
 
 namespace any360::sys {
 
+constexpr uint32_t kTlsSlots = 1024;  // the slots a thread gets when the title's XEX asks for none
+
 // RTL_CRITICAL_SECTION (28 bytes): dispatcher header (type 1, spin count / 256 in the second byte, signal state 0),
-// lock count -1, recursion count 0, no owner.
+// lock count -1 (host order), recursion count 0, no owner.
 void RtlInitializeCriticalSection(Guest g, uint32_t cs);
 uint32_t RtlInitializeCriticalSectionAndSpinCount(Guest g, uint32_t cs, uint32_t spin_count);
+void RtlEnterCriticalSection(Guest g, uint32_t pcr, uint32_t cs);
+uint32_t RtlTryEnterCriticalSection(Guest g, uint32_t pcr, uint32_t cs);
+void RtlLeaveCriticalSection(Guest g, uint32_t pcr, uint32_t cs);
 
-// KPCR layout: the PRCB at +0x100 (current thread at +0, dpc_active at +0x50), the process type to report during a
-// DPC at +0xC; KTHREAD's process type at +0x73.
 uint32_t KeGetCurrentProcessType(Guest g, uint32_t pcr);
+void KeSetCurrentProcessType(Guest g, uint32_t pcr, uint32_t type);
+
+uint32_t KfRaiseIrql(Guest g, uint32_t pcr, uint32_t new_irql);
+uint32_t KeRaiseIrqlToDpcLevel(Guest g, uint32_t pcr);
+void KfLowerIrql(Guest g, uint32_t pcr, uint32_t new_irql);
+// A spinlock is one word holding the owner's PCR address (0 when free).
+uint32_t KfAcquireSpinLock(Guest g, uint32_t pcr, uint32_t lock);
+void KfReleaseSpinLock(Guest g, uint32_t pcr, uint32_t lock, uint32_t old_irql);
+void KeAcquireSpinLockAtRaisedIrql(Guest g, uint32_t pcr, uint32_t lock);
+uint32_t KeTryToAcquireSpinLockAtRaisedIrql(Guest g, uint32_t pcr, uint32_t lock);
+void KeReleaseSpinLockFromRaisedIrql(Guest g, uint32_t lock);
+
+void KeEnterCriticalRegion(Guest g, uint32_t pcr);
+void KeLeaveCriticalRegion(Guest g, uint32_t pcr);
+
+uint32_t KeTlsAlloc(Guest g, uint32_t pcr);
+uint32_t KeTlsFree(Guest g, uint32_t pcr, uint32_t slot);
+uint32_t KeTlsGetValue(Guest g, uint32_t pcr, uint32_t slot);
+uint32_t KeTlsSetValue(Guest g, uint32_t pcr, uint32_t slot, uint32_t value);
+
+uint32_t KeQueryPerformanceFrequency();  // 50 MHz, the Xenon time base
 
 }  // namespace any360::sys

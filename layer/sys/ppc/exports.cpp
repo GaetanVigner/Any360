@@ -141,6 +141,30 @@ ANY360_SYS_EXPORT(__C_specific_handler) { __C_specific_handler(); }
 ANY360_SYS_EXPORT(VdShutdownEngines) { VdShutdownEngines(); }
 ANY360_SYS_EXPORT(VdSetSystemCommandBufferGpuIdentifierAddress) { VdSetSystemCommandBufferGpuIdentifierAddress(); }
 
+// Batch 4: the thread's own kernel structures through r13 (the PCR).
+ANY360_SYS_EXPORT(KeGetCurrentProcessType) { ctx.r3.u64 = KeGetCurrentProcessType({base}, ctx.r13.u32); }
+ANY360_SYS_EXPORT(KeSetCurrentProcessType) { KeSetCurrentProcessType({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KeRaiseIrqlToDpcLevel) { ctx.r3.u64 = KeRaiseIrqlToDpcLevel({base}, ctx.r13.u32); }
+ANY360_SYS_EXPORT(KfRaiseIrql) { ctx.r3.u64 = KfRaiseIrql({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KfLowerIrql) { KfLowerIrql({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KfAcquireSpinLock) { ctx.r3.u64 = KfAcquireSpinLock({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KfReleaseSpinLock) { KfReleaseSpinLock({base}, ctx.r13.u32, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(KeAcquireSpinLockAtRaisedIrql) { KeAcquireSpinLockAtRaisedIrql({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KeTryToAcquireSpinLockAtRaisedIrql) {
+  ctx.r3.u64 = KeTryToAcquireSpinLockAtRaisedIrql({base}, ctx.r13.u32, ctx.r3.u32);
+}
+ANY360_SYS_EXPORT(KeReleaseSpinLockFromRaisedIrql) { KeReleaseSpinLockFromRaisedIrql({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(RtlEnterCriticalSection) { RtlEnterCriticalSection({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(RtlTryEnterCriticalSection) { ctx.r3.u64 = RtlTryEnterCriticalSection({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(RtlLeaveCriticalSection) { RtlLeaveCriticalSection({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KeEnterCriticalRegion) { KeEnterCriticalRegion({base}, ctx.r13.u32); }
+ANY360_SYS_EXPORT(KeLeaveCriticalRegion) { KeLeaveCriticalRegion({base}, ctx.r13.u32); }
+ANY360_SYS_EXPORT(KeTlsAlloc) { ctx.r3.u64 = KeTlsAlloc({base}, ctx.r13.u32); }
+ANY360_SYS_EXPORT(KeTlsFree) { ctx.r3.u64 = KeTlsFree({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KeTlsGetValue) { ctx.r3.u64 = KeTlsGetValue({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KeTlsSetValue) { ctx.r3.u64 = KeTlsSetValue({base}, ctx.r13.u32, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(KeQueryPerformanceFrequency) { ctx.r3.u64 = KeQueryPerformanceFrequency(); }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -190,6 +214,27 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(__C_specific_handler),
     ANY360_SYS_ENTRY(VdShutdownEngines),
     ANY360_SYS_ENTRY(VdSetSystemCommandBufferGpuIdentifierAddress),
+    // Batch 4: IRQL, spinlocks, critical sections and regions, TLS, process type (verified by sys_runtime_tests).
+    ANY360_SYS_ENTRY(KeGetCurrentProcessType),
+    ANY360_SYS_ENTRY(KeSetCurrentProcessType),
+    ANY360_SYS_ENTRY(KeRaiseIrqlToDpcLevel),
+    ANY360_SYS_ENTRY(KfRaiseIrql),
+    ANY360_SYS_ENTRY(KfLowerIrql),
+    ANY360_SYS_ENTRY(KfAcquireSpinLock),
+    ANY360_SYS_ENTRY(KfReleaseSpinLock),
+    ANY360_SYS_ENTRY(KeAcquireSpinLockAtRaisedIrql),
+    ANY360_SYS_ENTRY(KeTryToAcquireSpinLockAtRaisedIrql),
+    ANY360_SYS_ENTRY(KeReleaseSpinLockFromRaisedIrql),
+    ANY360_SYS_ENTRY(RtlEnterCriticalSection),
+    ANY360_SYS_ENTRY(RtlTryEnterCriticalSection),
+    ANY360_SYS_ENTRY(RtlLeaveCriticalSection),
+    ANY360_SYS_ENTRY(KeEnterCriticalRegion),
+    ANY360_SYS_ENTRY(KeLeaveCriticalRegion),
+    ANY360_SYS_ENTRY(KeTlsAlloc),
+    ANY360_SYS_ENTRY(KeTlsFree),
+    ANY360_SYS_ENTRY(KeTlsGetValue),
+    ANY360_SYS_ENTRY(KeTlsSetValue),
+    ANY360_SYS_ENTRY(KeQueryPerformanceFrequency),
 };
 const unsigned kExportCount = sizeof(kExports) / sizeof(kExports[0]);
 

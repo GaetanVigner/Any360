@@ -36,4 +36,16 @@ if(ANY360_REFERENCE_SDK)
         target_link_libraries(sys_io_tests PRIVATE any360_sys_ppc "${ANY360_REFERENCE_SDK}/lib/librexruntimerd.so")
     endif()
     add_test(NAME sys_io_tests COMMAND sys_io_tests)
+
+    # The oracle with the reference kernel running: the same libraries, a guest thread of the reference runtime.
+    add_executable(sys_runtime_tests tests/sys_runtime_tests.cpp)
+    target_include_directories(sys_runtime_tests PRIVATE tests)
+    target_compile_options(sys_runtime_tests PRIVATE -Wall -Wextra)
+    if(WIN32)
+        target_link_libraries(sys_runtime_tests PRIVATE any360_sys_ppc "${ANY360_REFERENCE_SDK}/lib/rexruntimerd.lib"
+                              "${ANY360_REFERENCE_SDK}/lib/spdlogrd.lib" "${ANY360_REFERENCE_SDK}/lib/fmtrd.lib")
+    else()
+        target_link_libraries(sys_runtime_tests PRIVATE any360_sys_ppc "${ANY360_REFERENCE_SDK}/lib/librexruntimerd.so")
+    endif()
+    add_test(NAME sys_runtime_tests COMMAND sys_runtime_tests)
 endif()

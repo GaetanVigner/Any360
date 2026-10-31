@@ -202,7 +202,7 @@
    "name": "any360::sys: the system calls, verified against the reference runtime",
    "state": "in progress",
    "source": "any360: layer/sys (any360_sys, any360_sys_ppc, sys_io_tests)",
-   "note": "first system calls (Rtl strings / memory / time, XGet*) verified equal to the reference by sys_io_tests; next: by number of titles importing them"
+   "note": "76 system calls verified equal to the reference (sys_io_tests for the stateless ones, sys_runtime_tests on a guest thread of the reference kernel for IRQL / spinlocks / critical sections / TLS); next: events, semaphores, memory, objects"
   }
  ]
 }
