@@ -202,7 +202,7 @@
    "name": "any360::sys: the system calls, verified against the reference runtime",
    "state": "in progress",
    "source": "any360: layer/sys (any360_sys, any360_sys_ppc, sys_io_tests)",
-   "note": "97 system calls: 76 verified equal to the reference (sys_io_tests, sys_runtime_tests on a guest thread of the reference kernel), 21 of the object manager (events, semaphores, mutants, handles, waits) verified against the NT semantics by scenario tests; next: timers, multiple waits, scheduler, memory"
+   "note": "104 system calls: 76 verified equal to the reference (sys_io_tests, sys_runtime_tests on a guest thread of the reference kernel), 28 of the object manager (events, semaphores, mutants, timers, handles, single and multiple waits, the clock) verified against the NT semantics by scenario tests; next: scheduler, memory manager"
   }
  ]
 }

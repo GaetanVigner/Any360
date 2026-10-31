@@ -168,9 +168,81 @@ void References() {
   CHECK(Objects().Duplicate(g, h3, out + 12, 1) == 0 && Objects().Lookup(h3) == 0 && Objects().Lookup(g.Load32(out + 12)) != 0);
 }
 
+void Timers() {
+  Fresh();
+  const uint32_t out = kScratch + 0x200;
+  const int64_t zero = 0, ten_ms = -100000, half_second = -5000000;
+  // A relative one-shot notification timer: not signalled before its due time, signalled after, and it stays so.
+  CHECK(Objects().CreateTimer(g, out, 0, 0) == 0);
+  const uint32_t h = g.Load32(out), timer = Objects().Lookup(h);
+  CHECK(g.Load8(timer) == kNotificationTimer && g.Load32(timer + 4) == 0);
+  g.Store64(out + 8, uint64_t(ten_ms));
+  CHECK(Objects().NtSetTimerEx(g, h, out + 8, 0, out + 16) == 0 && g.Load32(out + 16) == 0 && g.Load8(timer + 3) == 1);
+  CHECK(Objects().WaitForHandle(g, h, kThread, &zero) == kStatusTimeout);
+  CHECK(Objects().WaitForHandle(g, h, kThread, &half_second) == 0);
+  CHECK(g.Load32(timer + 4) == 1 && g.Load8(timer + 3) == 0);
+  CHECK(Objects().WaitForHandle(g, h, kThread, &zero) == 0);
+  // Re-arming reports the timer was not armed any more; cancelling an armed one reports it was.
+  CHECK(Objects().NtSetTimerEx(g, h, out + 8, 0, out + 16) == 0 && g.Load32(out + 16) == 0 && g.Load32(timer + 4) == 0);
+  CHECK(Objects().NtSetTimerEx(g, h, out + 8, 0, out + 16) == 0 && g.Load32(out + 16) == 1);
+  CHECK(Objects().NtCancelTimer(g, h, out + 20) == 0 && g.Load32(out + 20) == 1 && g.Load8(timer + 3) == 0);
+  CHECK(Objects().NtCancelTimer(g, h, out + 20) == 0 && g.Load32(out + 20) == 0);
+  CHECK(Objects().WaitForHandle(g, h, kThread, &ten_ms) == kStatusTimeout);
+  // A synchronization timer is consumed by the wait; a periodic one re-arms.
+  CHECK(Objects().CreateTimer(g, out + 24, 0, 1) == 0);
+  const uint32_t hs = g.Load32(out + 24), sync = Objects().Lookup(hs);
+  CHECK(g.Load8(sync) == kSynchronizationTimer);
+  CHECK(Objects().NtSetTimerEx(g, hs, out + 8, 5, 0) == 0);
+  CHECK(Objects().WaitForHandle(g, hs, kThread, &half_second) == 0 && g.Load32(sync + 4) == 0 && g.Load8(sync + 3) == 1);
+  CHECK(Objects().WaitForHandle(g, hs, kThread, &half_second) == 0);
+  CHECK(Objects().NtCancelTimer(g, hs, 0) == 0);
+  // An absolute due time in the past is due at once; KeInitializeTimerEx on a guest structure.
+  const uint32_t kt = kScratch;
+  Objects().InitializeTimer(g, kt, 0, 2);
+  CHECK(g.Load8(kt) == kNotificationTimer && g.Load8(kt + 2) == 2 && g.Load64(kt + 16) == 0);
+  CHECK(Objects().SetTimer(g, kt, int64_t(SystemTime() - 10), 0) == 0);
+  CHECK(Objects().WaitForObject(g, kt, kThread, &zero) == 0 && g.Load32(kt + 4) == 1);
+  CHECK(Objects().NtSetTimerEx(g, h, 0, 0, 0) == kStatusInvalidParameter);
+  CHECK(Objects().NtSetTimerEx(g, kHandleBase + 0x800, out + 8, 0, 0) == kStatusInvalidHandle);
+  // The clock advances and sits after 2020.
+  const uint64_t t0 = SystemTime();
+  CHECK(t0 > 132223104000000000ull && SystemTime() >= t0);
+}
+
+void MultipleWaits() {
+  Fresh();
+  const uint32_t out = kScratch + 0x200, handles = kScratch + 0x300;
+  const int64_t zero = 0, ten_ms = -100000;
+  CHECK(Objects().CreateEvent(g, handles, 0, 1, 0) == 0);      // sync event, unsignalled
+  CHECK(Objects().CreateEvent(g, handles + 4, 0, 0, 1) == 0);  // notification event, signalled
+  CHECK(Objects().CreateSemaphore(g, handles + 8, 0, 1, 2) == 0);
+  const uint32_t e0 = Objects().Lookup(g.Load32(handles)), e1 = Objects().Lookup(g.Load32(handles + 4)),
+                 s2 = Objects().Lookup(g.Load32(handles + 8));
+  // Wait-any takes the first satisfiable object, in order, and only that one.
+  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAny, kThread, &zero) == 1);
+  CHECK(g.Load32(s2 + 4) == 1);
+  Objects().SetEvent(g, e0);
+  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAny, kThread, &zero) == 0 && g.Load32(e0 + 4) == 0);
+  // Wait-all needs every object and consumes them together; nothing is taken when one is missing.
+  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAll, kThread, &zero) == kStatusTimeout);
+  CHECK(g.Load32(s2 + 4) == 1 && g.Load32(e1 + 4) == 1);
+  Objects().SetEvent(g, e0);
+  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAll, kThread, &zero) == 0);
+  CHECK(g.Load32(e0 + 4) == 0 && g.Load32(e1 + 4) == 1 && g.Load32(s2 + 4) == 0);
+  CHECK(Objects().WaitForHandles(g, 3, handles, kWaitAll, kThread, &ten_ms) == kStatusTimeout);
+  // An unknown handle in the list is a parameter error; Ke* on guest objects goes through the same path.
+  g.Store32(handles + 12, kHandleBase + 0x900);
+  CHECK(Objects().WaitForHandles(g, 4, handles, kWaitAny, kThread, &zero) == kStatusInvalidParameter);
+  const uint32_t objects[] = {e0, e1};
+  CHECK(Objects().WaitForObjects(g, 2, objects, kWaitAny, kThread, &zero) == 1);
+  (void)out;
+}
+
 }  // namespace
 
 int main() {
+  Timers();
+  MultipleWaits();
   Events();
   Semaphores();
   Mutants();

@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (97 system calls)
+## What is verified (104 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -43,6 +43,11 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `ObReferenceObjectByHandle`, `ObDereferenceObject`, and the single-object waits (`KeWaitForSingleObject`,
   `NtWaitForSingleObjectEx`: a signalled object is consumed at once, a relative timeout polls, zero does not wait).
   Nt-created objects are allocated from the kernel heap a title gives the layer (`ObjectManager::SetKernelHeap`).
+  Timers (`KeInitializeTimerEx`, `NtCreateTimer`, `NtSetTimerEx`, `NtCancelTimer`: relative and absolute due times,
+  periods, notification and synchronization types; expiry is noticed when the objects are polled by a wait or
+  `Poll`), the guest clock (`KeQuerySystemTime`, FILETIME from the host clock) and the multiple-object waits
+  (`KeWaitForMultipleObjects`, `NtWaitForMultipleObjectsEx`: wait-any returns the index taken, wait-all consumes every
+  object together or nothing). Timer APC routines are not delivered yet.
 - **Offline networking**: `NetDll_inet_addr` (the Winsock parser), `NetDll___WSAFDIsSet`, `NetDll_XNetInAddrToString`,
   the XNet address conversions.
 
@@ -67,8 +72,7 @@ and the NT semantics (previous state returned, signal state in the object) are t
 
 Next for the layer, in this order:
 
-1. **Object manager, continued**: timers (`NtCreateTimer`, `NtSetTimerEx`, `NtCancelTimer`, `KeInitializeTimerEx`)
-   on the guest clock, multiple-object waits, absolute timeouts, and freeing kernel objects.
+1. **Object manager, continued**: absolute wait timeouts, timer APCs, freeing kernel objects.
 2. **Waits and the scheduler**: `KeWaitForSingleObject` / `NtWaitForSingleObjectEx` / multiple-object waits, delays,
    APCs, thread creation and the PCR / KTHREAD protocol the layer already follows.
 3. **Memory**: the virtual and physical allocators (`NtAllocateVirtualMemory`, `MmAllocatePhysicalMemoryEx`, queries

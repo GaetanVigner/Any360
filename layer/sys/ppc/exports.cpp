@@ -4,6 +4,8 @@
 // for tools/build_db.py, which counts every name here as native.
 #include <rex/ppc.h>
 
+#include <vector>
+
 #include "any360/sys/config.h"
 #include "any360/sys/exports.h"
 #include "any360/sys/format.h"
@@ -209,6 +211,31 @@ ANY360_SYS_EXPORT(NtWaitForSingleObjectEx) {
   ctx.r3.u64 = Objects().WaitForHandle({base}, ctx.r3.u32, ThreadOf(ctx, base), Timeout(base, ctx.r6.u32, storage));
 }
 
+// Batch 6: the guest clock, timers, multiple-object waits (sys_object_tests).
+ANY360_SYS_EXPORT(KeQuerySystemTime) {
+  if (ctx.r3.u32) Guest{base}.Store64(ctx.r3.u32, SystemTime());
+}
+ANY360_SYS_EXPORT(KeInitializeTimerEx) { Objects().InitializeTimer({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(NtCreateTimer) { ctx.r3.u64 = Objects().CreateTimer({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(NtSetTimerEx) {
+  // (handle, due time, APC routine, 1, APC context, resume, period in ms, previous state out); APCs are not delivered yet.
+  ctx.r3.u64 = Objects().NtSetTimerEx({base}, ctx.r3.u32, ctx.r4.u32, ctx.r9.u32, ctx.r10.u32);
+}
+ANY360_SYS_EXPORT(NtCancelTimer) { ctx.r3.u64 = Objects().NtCancelTimer({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(KeWaitForMultipleObjects) {
+  // (count, objects, wait type, reason, mode, alertable, timeout, wait blocks)
+  const uint32_t count = ctx.r3.u32;
+  std::vector<uint32_t> objects(count);
+  for (uint32_t i = 0; i < count; ++i) objects[i] = Guest{base}.Load32(ctx.r4.u32 + 4 * i);
+  int64_t storage;
+  ctx.r3.u64 = Objects().WaitForObjects({base}, count, objects.data(), ctx.r5.u32, ThreadOf(ctx, base), Timeout(base, ctx.r9.u32, storage));
+}
+ANY360_SYS_EXPORT(NtWaitForMultipleObjectsEx) {
+  // (count, handles, wait type, mode, alertable, timeout)
+  int64_t storage;
+  ctx.r3.u64 = Objects().WaitForHandles({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ThreadOf(ctx, base), Timeout(base, ctx.r8.u32, storage));
+}
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -301,6 +328,14 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ObDereferenceObject),
     ANY360_SYS_ENTRY(KeWaitForSingleObject),
     ANY360_SYS_ENTRY(NtWaitForSingleObjectEx),
+    // Batch 6: clock, timers, multiple waits.
+    ANY360_SYS_ENTRY(KeQuerySystemTime),
+    ANY360_SYS_ENTRY(KeInitializeTimerEx),
+    ANY360_SYS_ENTRY(NtCreateTimer),
+    ANY360_SYS_ENTRY(NtSetTimerEx),
+    ANY360_SYS_ENTRY(NtCancelTimer),
+    ANY360_SYS_ENTRY(KeWaitForMultipleObjects),
+    ANY360_SYS_ENTRY(NtWaitForMultipleObjectsEx),
 };
 const unsigned kExportCount = sizeof(kExports) / sizeof(kExports[0]);
 

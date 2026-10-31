@@ -1,5 +1,6 @@
 #include "any360/sys/objects.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <thread>
@@ -23,6 +24,12 @@ void InitializeHeader(Guest g, uint32_t object, uint8_t type, uint32_t signal_st
 
 }  // namespace
 
+uint64_t SystemTime() {
+  // 1601-01-01 to 1970-01-01 in 100 ns units.
+  const auto since_epoch = std::chrono::system_clock::now().time_since_epoch();
+  return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(since_epoch).count() / 100) + 116444736000000000ull;
+}
+
 ObjectManager& Objects() {
   static ObjectManager objects;
   return objects;
@@ -36,6 +43,7 @@ void ObjectManager::SetKernelHeap(uint32_t begin, uint32_t size) {
 void ObjectManager::Reset() {
   entries_.clear();
   references_.clear();
+  timers_.clear();
   heap_next_ = heap_begin_;
 }
 
@@ -128,6 +136,57 @@ uint32_t ObjectManager::ReleaseSemaphore(Guest g, uint32_t semaphore, uint32_t a
   g.Store32(semaphore + kHeaderSignalState, previous + adjustment);
   status = kStatusSuccess;
   return previous;
+}
+
+void ObjectManager::InitializeTimer(Guest g, uint32_t timer, uint32_t type, uint32_t process_type) {
+  // The other fields carry through calls; the header, due time and period are reset.
+  g.Store8(timer + kHeaderType, uint8_t(kNotificationTimer + (type & 1)));
+  g.Store8(timer + 2, uint8_t(process_type));
+  g.Store8(timer + 3, 0);  // inserted
+  g.Store32(timer + kHeaderSignalState, 0);
+  g.Store32(timer + kHeaderWaitListFlink, timer + kHeaderWaitListFlink);
+  g.Store32(timer + kHeaderWaitListBlink, timer + kHeaderWaitListFlink);
+  g.Store64(timer + kTimerDueTime, 0);
+  g.Store32(timer + kTimerPeriod, 0);
+}
+
+uint32_t ObjectManager::SetTimer(Guest g, uint32_t timer, int64_t due_time, uint32_t period_ms) {
+  const bool was_armed = std::find(timers_.begin(), timers_.end(), timer) != timers_.end();
+  const uint64_t due = due_time < 0 ? SystemTime() + uint64_t(-due_time) : uint64_t(due_time);
+  g.Store64(timer + kTimerDueTime, due);
+  g.Store32(timer + kTimerPeriod, period_ms);
+  g.Store32(timer + kHeaderSignalState, 0);
+  g.Store8(timer + 3, 1);
+  if (!was_armed) timers_.push_back(timer);
+  return was_armed ? 1 : 0;
+}
+
+uint32_t ObjectManager::CancelTimer(Guest g, uint32_t timer) {
+  auto it = std::find(timers_.begin(), timers_.end(), timer);
+  if (it == timers_.end()) return 0;
+  timers_.erase(it);
+  g.Store8(timer + 3, 0);
+  return 1;
+}
+
+void ObjectManager::Poll(Guest g) {
+  const uint64_t now = SystemTime();
+  for (size_t i = 0; i < timers_.size();) {
+    const uint32_t timer = timers_[i];
+    if (g.Load64(timer + kTimerDueTime) > now) {
+      ++i;
+      continue;
+    }
+    g.Store32(timer + kHeaderSignalState, 1);
+    const uint32_t period = g.Load32(timer + kTimerPeriod);
+    if (period) {
+      g.Store64(timer + kTimerDueTime, now + uint64_t(period) * 10'000);
+      ++i;
+    } else {
+      g.Store8(timer + 3, 0);
+      timers_.erase(timers_.begin() + long(i));
+    }
+  }
 }
 
 void ObjectManager::InitializeMutant(Guest g, uint32_t mutant, uint32_t owner_thread) {
@@ -249,6 +308,39 @@ uint32_t ObjectManager::NtReleaseMutant(Guest g, uint32_t handle, uint32_t threa
   return status;
 }
 
+uint32_t ObjectManager::CreateTimer(Guest g, uint32_t handle_out, uint32_t attributes, uint32_t type) {
+  const std::string name = NameOf(g, attributes);
+  if (Entry* existing = FindByName(name)) {
+    const uint8_t t = g.Load8(existing->object + kHeaderType);
+    if (t != kNotificationTimer && t != kSynchronizationTimer) return kStatusInvalidHandle;
+    if (handle_out) g.Store32(handle_out, AddHandle(existing->object, existing->name));
+    return kStatusObjectNameExists;
+  }
+  const uint32_t object = Allocate(kTimerSize);
+  if (!object) return kStatusNoMemory;
+  InitializeTimer(g, object, type, 0);
+  const uint32_t handle = AddHandle(object, name);
+  if (handle_out) g.Store32(handle_out, handle);
+  return kStatusSuccess;
+}
+
+uint32_t ObjectManager::NtSetTimerEx(Guest g, uint32_t handle, uint32_t due_time_ptr, uint32_t period_ms, uint32_t previous_out) {
+  const Entry* e = Find(handle);
+  if (!e) return kStatusInvalidHandle;
+  if (!due_time_ptr) return kStatusInvalidParameter;
+  const uint32_t previous = SetTimer(g, e->object, int64_t(g.Load64(due_time_ptr)), period_ms);
+  if (previous_out) g.Store32(previous_out, previous);
+  return kStatusSuccess;
+}
+
+uint32_t ObjectManager::NtCancelTimer(Guest g, uint32_t handle, uint32_t current_state_out) {
+  const Entry* e = Find(handle);
+  if (!e) return kStatusInvalidHandle;
+  const uint32_t state = CancelTimer(g, e->object);
+  if (current_state_out) g.Store32(current_state_out, state);
+  return kStatusSuccess;
+}
+
 uint32_t ObjectManager::Close(uint32_t handle) {
   Entry* e = Find(handle);
   if (!e) return kStatusInvalidHandle;
@@ -307,12 +399,64 @@ bool ObjectManager::TrySatisfy(Guest g, uint32_t object, uint32_t thread) {
       g.Store32(object + kMutantOwner, thread);
       return true;
     }
+    case kSynchronizationTimer:
+      if (!state) return false;
+      g.Store32(object + kHeaderSignalState, 0);
+      return true;
     default:
       return state != 0;
   }
 }
 
+bool ObjectManager::IsSatisfiable(Guest g, uint32_t object, uint32_t thread) const {
+  const uint8_t type = g.Load8(object + kHeaderType);
+  const uint32_t state = g.Load32(object + kHeaderSignalState);
+  if (type == kMutant) return int32_t(state) > 0 || g.Load32(object + kMutantOwner) == thread;
+  return state != 0;
+}
+
+uint32_t ObjectManager::WaitForObjects(Guest g, uint32_t count, const uint32_t* objects, uint32_t wait_type, uint32_t thread,
+                                       const int64_t* timeout) {
+  auto attempt = [&]() -> int32_t {
+    Poll(g);
+    if (wait_type == kWaitAny) {
+      for (uint32_t i = 0; i < count; ++i) {
+        if (TrySatisfy(g, objects[i], thread)) return int32_t(i);
+      }
+      return -1;
+    }
+    for (uint32_t i = 0; i < count; ++i) {
+      if (!IsSatisfiable(g, objects[i], thread)) return -1;
+    }
+    for (uint32_t i = 0; i < count; ++i) TrySatisfy(g, objects[i], thread);
+    return 0;
+  };
+  int32_t taken = attempt();
+  if (taken >= 0) return uint32_t(taken);
+  if (timeout && *timeout >= 0) return kStatusTimeout;  // zero, or an absolute time (not supported yet)
+  const auto start = std::chrono::steady_clock::now();
+  const auto limit = timeout ? std::chrono::nanoseconds(-*timeout * 100) : std::chrono::nanoseconds::max();
+  for (;;) {
+    std::this_thread::yield();
+    taken = attempt();
+    if (taken >= 0) return uint32_t(taken);
+    if (timeout && std::chrono::steady_clock::now() - start >= limit) return kStatusTimeout;
+  }
+}
+
+uint32_t ObjectManager::WaitForHandles(Guest g, uint32_t count, uint32_t handles, uint32_t wait_type, uint32_t thread,
+                                       const int64_t* timeout) {
+  std::vector<uint32_t> objects(count);
+  for (uint32_t i = 0; i < count; ++i) {
+    const Entry* e = Find(g.Load32(handles + 4 * i));
+    if (!e) return kStatusInvalidParameter;
+    objects[i] = e->object;
+  }
+  return WaitForObjects(g, count, objects.data(), wait_type, thread, timeout);
+}
+
 uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread, const int64_t* timeout) {
+  Poll(g);
   if (TrySatisfy(g, object, thread)) return kStatusSuccess;
   if (timeout && *timeout == 0) return kStatusTimeout;
   // Relative timeouts are negative 100 ns counts; an absolute one is not supported yet and does not wait.
@@ -321,6 +465,7 @@ uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread,
   const auto limit = timeout ? std::chrono::nanoseconds(-*timeout * 100) : std::chrono::nanoseconds::max();
   for (;;) {
     std::this_thread::yield();
+    Poll(g);
     if (TrySatisfy(g, object, thread)) return kStatusSuccess;
     if (timeout && std::chrono::steady_clock::now() - start >= limit) return kStatusTimeout;
   }
