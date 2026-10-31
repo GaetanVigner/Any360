@@ -1,5 +1,5 @@
 {
- "_comment": "Where the Crackdown pipeline finds the title (nothing of it is in this repository). image: the decrypted default.xex image (dump_image in the port); project_dir: the Ghidra project; decomp_dir: where decompiled C and bindings are written, inside the title's repository.",
+ "_comment": "Where the Crackdown pipeline finds the title (nothing of it is in this repository). image: the decrypted default.xex image (dump_image in the port); project_dir: the Ghidra project; decomp_dir: where decompiled C and bindings are written, inside the title's repository. reference_sdk: the ReXGlue SDK install (include/, lib/, bin/) layer/sys/test.ps1 links the reference runtime from.",
  "image": "F:/Crackdown/re/image.bin",
  "image_base": "0x82000000",
  "generated": "F:/Crackdown/crackdown-xbox360-recompiled/generated/default",
@@ -12,5 +12,6 @@
  "project_dir": "F:/Crackdown/re/ghidra-project",
  "project_name": "crackdown-seeded",
  "decomp_dir": "F:/Crackdown/crackdown-xbox360-recompiled/decomp",
- "verify_command": "powershell -File F:/Crackdown/crackdown-xbox360-recompiled/tools/test.ps1 -Filter guest_d3d_leaf_tests"
+ "verify_command": "powershell -File F:/Crackdown/crackdown-xbox360-recompiled/tools/test.ps1 -Filter guest_d3d_leaf_tests",
+ "reference_sdk": "F:/Crackdown/crackdown-xbox360-recompiled/tools/rexglue/win-amd64"
 }

@@ -14,7 +14,7 @@ the title, with its state and the known titles that use it. Three tables, writte
 
 Inputs: the SDK of the first title whose pipeline.json names one (tools/coverage.py reads its tables), the per-title
 coverage reports docs/coverage/<title>.json, each title's port sources (for the imports it already provides natively),
-db/xdk_seed.json (hand-kept names) and layer/sys/native.json (what Any360 provides itself). Standard library only.
+db/xdk_seed.json (hand-kept names), layer/sys/ppc/*.cpp (the system calls the layer provides) and layer/sys/native.json. Standard library only.
 
   python tools/build_db.py
 """
@@ -215,6 +215,9 @@ def main():
     if not sdk:
         sys.exit('no title names an existing SDK (titles/<title>/pipeline.json "sdk")')
     native = load_json(NATIVE, {'system_calls': [], 'instructions': [], 'xdk': []})
+    # What layer/sys provides: every ANY360_SYS_EXPORT(name) of its PowerPC export table (verified by sys_io_tests).
+    for path in (ROOT / 'layer' / 'sys' / 'ppc').glob('*.cpp'):
+        native.setdefault('system_calls', []).extend(re.findall(r'ANY360_SYS_EXPORT\((\w+)\)', path.read_text(encoding='utf-8')))
     calls = build_system_calls(sdk, known, native)
     instructions = build_instructions(sdk, known, native)
     xdk, unnamed = build_xdk(sdk, known, native)

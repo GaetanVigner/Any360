@@ -7,12 +7,13 @@
  "system_calls": {
   "total": 2914,
   "used_by_titles": 340,
-  "native": 0,
+  "native": 17,
   "ported": 2,
   "runnable": 493,
   "by_state": {
-   "reference": 491,
+   "reference": 474,
    "stub": 2406,
+   "native": 17,
    "missing": 15,
    "ported": 2
   },
@@ -93,9 +94,9 @@
   }
  },
  "toolkit": {
-  "components": 28,
+  "components": 29,
   "done": 4,
-  "in_progress": 2,
+  "in_progress": 3,
   "patches": {
    "crackdown": 120
   }

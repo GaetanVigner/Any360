@@ -38,6 +38,7 @@ Details, boundaries and milestones: [docs/DESIGN.md](docs/DESIGN.md).
 | [docs/progress.html](docs/progress.html) | Global progress page in the AnyPS5 style: one square per system call, instruction id and XDK function, filterable tables of the database, the known titles as sources, toolkit by stage, history ([progress.json](docs/progress.json), [progress.svg](docs/progress.svg)) |
 | [docs/coverage/](docs/coverage/) | Source reports per known title (what feeds the database): [crackdown](docs/coverage/crackdown.md), [simpsons](docs/coverage/simpsons.md), [comparison](docs/coverage/COMPARISON-crackdown-vs-simpsons.md), Crackdown [SDK patch inventory](docs/coverage/patches-crackdown.json) |
 | [docs/COMPARISON.md](docs/COMPARISON.md) | What the comparison says: where a second title costs effort (the GPU, twice the functions), where it does not (kernel, CPU) |
+| [layer/sys/](layer/sys/) | **`any360::sys`**, the native system layer (stage 1): portable C++ implementations of the system calls ([include/any360/sys/](layer/sys/include/any360/sys/)), their PowerPC ABI adapters a recompiled title binds in place of the runtime's ([ppc/exports.cpp](layer/sys/ppc/exports.cpp)), and [sys_io_tests](layer/sys/tests/sys_io_tests.cpp), which runs each one against the reference runtime's implementation on random inputs (`.\layer\sys	est.ps1`) |
 | [layer/status.json](layer/status.json) | Components by stage, where each comes from, its state |
 | [docs/PIPELINE.md](docs/PIPELINE.md) | The decompile → bind → verify → recompile pipeline, driven by [pipeline/any360.py](pipeline/any360.py) and one `titles/<title>/pipeline.json` per game |
 | [tools/inventory.py](tools/inventory.py) | Every function of a title with its state (native / verified / library / recompiled) and the functions the port already translated; the per-function dump stays local (`docs/data/`, ignored), the summary feeds the database's library ranges |
@@ -82,6 +83,13 @@ The pipeline (Ghidra project, decompile, bind, verify) is described in [docs/PIP
 
 ```bash
 python pipeline/any360.py crackdown status
+```
+
+The system layer builds with the titles' toolchain (Visual Studio's clang++) against a ReXGlue SDK install named by
+`reference_sdk` in a `titles/<title>/pipeline.json`, and verifies every system call it provides against that runtime:
+
+```bash
+powershell -File layer/sys/test.ps1
 ```
 
 Before every commit: `python tools/build_db.py` then `python tools/progress_page.py`.

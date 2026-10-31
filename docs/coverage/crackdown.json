@@ -1,8 +1,8 @@
 {
  "name": "crackdown",
- "date": "2026-10-30",
+ "date": "2026-10-31",
  "sdk": {
-  "path": "F:\\Crackdown\\crackdown-xbox360-recompiled\\out\\rexglue-sdk-src",
+  "path": "..\\crackdown-xbox360-recompiled\\out\\rexglue-sdk-src",
   "version": "0.10.0",
   "exports_known": 2914,
   "exports_implemented": 493,
@@ -10,1746 +10,1495 @@
   "instruction_ids": 1842,
   "instruction_ids_handled": 497
  },
- "compare_sdk": {
-  "path": "C:\\Users\\Gaetan\\AppData\\Local\\Temp\\claude\\F--Crackdown\\3b16fc3b-412c-464b-9cb5-ee3daaffe8a6\\scratchpad\\simpsons\\repo\\tools\\rexglue-sdk",
-  "version": "0.8.0"
- },
+ "compare_sdk": null,
  "imports": [
   {
    "name": "DbgBreakPoint",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "DbgPrint",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "ExCreateThread",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "ExGetXConfigSetting",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "ExRegisterTitleTerminateNotification",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "ExTerminateThread",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "HalReturnToFirmware",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "IoDismountVolumeByFileHandle",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeAcquireSpinLockAtRaisedIrql",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeBugCheck",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeBugCheckEx",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeDelayExecutionThread",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeEnableFpuExceptions",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeEnterCriticalRegion",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeGetCurrentProcessType",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeInitializeSemaphore",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeLeaveCriticalRegion",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeLockL2",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeQueryPerformanceFrequency",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeQuerySystemTime",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeRaiseIrqlToDpcLevel",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeReleaseSemaphore",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeReleaseSpinLockFromRaisedIrql",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeResetEvent",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeRestoreFloatingPointState",
    "library": "xboxkrnl",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "KeResumeThread",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeSaveFloatingPointState",
    "library": "xboxkrnl",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "KeSetAffinityThread",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeSetBasePriorityThread",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeSetEvent",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeTlsAlloc",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeTlsFree",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeTlsGetValue",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeTlsSetValue",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeUnlockL2",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeWaitForMultipleObjects",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KeWaitForSingleObject",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KfAcquireSpinLock",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KfLowerIrql",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KfReleaseSpinLock",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "KiApcNormalRoutineNop",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "MmAllocatePhysicalMemoryEx",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "MmFreePhysicalMemory",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "MmGetPhysicalAddress",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "MmQueryAddressProtect",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "MmQueryStatistics",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "MmSetAddressProtect",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_WSACloseEvent",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_WSACreateEvent",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_WSAEventSelect",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "NetDll_WSAGetLastError",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_WSAStartup",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_WSAWaitForMultipleEvents",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetConnect",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetCreateKey",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetGetConnectStatus",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetGetTitleXnAddr",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetInAddrToString",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetInAddrToXnAddr",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetQosListen",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetQosLookup",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetQosRelease",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetRandom",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetRegisterKey",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetServerToInAddr",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetStartup",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetUnregisterKey",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "NetDll_XNetXnAddrToInAddr",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll___WSAFDIsSet",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_accept",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_bind",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_closesocket",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_connect",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_getpeername",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "NetDll_getsockname",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "NetDll_getsockopt",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "NetDll_inet_addr",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_ioctlsocket",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_listen",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_recv",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_recvfrom",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_select",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_send",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_sendto",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_setsockopt",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_shutdown",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NetDll_socket",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtAllocateVirtualMemory",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtCancelTimer",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtClearEvent",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtClose",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtCreateEvent",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtCreateFile",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtCreateMutant",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtCreateSemaphore",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtCreateTimer",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtDeviceIoControlFile",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtDuplicateObject",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtFlushBuffersFile",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtFreeVirtualMemory",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtOpenFile",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtQueryDirectoryFile",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtQueryFullAttributesFile",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtQueryInformationFile",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtQueryVirtualMemory",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtQueryVolumeInformationFile",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtReadFile",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtReleaseMutant",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtReleaseSemaphore",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtResumeThread",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtSetEvent",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtSetInformationFile",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtSetTimerEx",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtSuspendThread",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtWaitForMultipleObjectsEx",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtWaitForSingleObjectEx",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "NtWriteFile",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "ObCreateSymbolicLink",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "ObDeleteSymbolicLink",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "ObDereferenceObject",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "ObReferenceObjectByHandle",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlCaptureContext",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlCompareMemoryUlong",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlEnterCriticalSection",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlFillMemoryUlong",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlFreeAnsiString",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlImageXexHeaderField",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlInitAnsiString",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlInitUnicodeString",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlInitializeCriticalSection",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlInitializeCriticalSectionAndSpinCount",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlLeaveCriticalSection",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlMultiByteToUnicodeN",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlNtStatusToDosError",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlRaiseException",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlTimeFieldsToTime",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlTimeToTimeFields",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlTryEnterCriticalSection",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlUnicodeStringToAnsiString",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlUnicodeToMultiByteN",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "RtlUnwind",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "StfsControlDevice",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "StfsCreateDevice",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdCallGraphicsNotificationRoutines",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdEnableDisableClockGating",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdEnableRingBufferRPtrWriteBack",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdGetCurrentDisplayGamma",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdGetCurrentDisplayInformation",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdGetSystemCommandBuffer",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdInitializeEngines",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdInitializeRingBuffer",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdInitializeScalerCommandBuffer",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdIsHSIOTrainingSucceeded",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdPersistDisplay",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdQueryVideoFlags",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdQueryVideoMode",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdRetrainEDRAM",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdRetrainEDRAMWorker",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdSetDisplayMode",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdSetGraphicsInterruptCallback",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdSetSystemCommandBufferGpuIdentifierAddress",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdShutdownEngines",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "VdSwap",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XAudioGetVoiceCategoryVolume",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XAudioGetVoiceCategoryVolumeChangeMask",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XAudioRegisterRenderDriverClient",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XAudioSubmitRenderDriverFrame",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XAudioUnregisterRenderDriverClient",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XGetAVPack",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XGetGameRegion",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XGetLanguage",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XGetVideoMode",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XMACreateContext",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XMAReleaseContext",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XMsgCancelIORequest",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XMsgInProcessCall",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XMsgStartIORequest",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XMsgStartIORequestEx",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XNetLogonGetTitleID",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "XNotifyGetNext",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamAlloc",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamContentClose",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamContentCreateEnumerator",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamContentCreateEx",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamContentDelete",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamContentGetDeviceState",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamContentLaunchImage",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "XamCreateEnumeratorHandle",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamEnumerate",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamFree",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamGetExecutionId",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamGetPrivateEnumStructureFromHandle",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamGetSystemVersion",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamInputGetCapabilities",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamInputGetKeystrokeEx",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamInputGetState",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamInputSetState",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamLoaderLaunchTitle",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamLoaderSetLaunchData",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamLoaderTerminateTitle",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamNotifyCreateListener",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamParseGamerTileKey",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamReadTileToTexture",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamSessionCreateHandle",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamSessionRefObjByHandle",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamShowDeviceSelectorUI",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamShowFriendsUI",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "XamShowGamerCardUIForXUID",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "XamShowMarketplaceUI",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "XamShowMessageBoxUIEx",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamShowSigninUI",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamTaskCloseHandle",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamTaskSchedule",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamTaskShouldExit",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamUserAreUsersFriends",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamUserCheckPrivilege",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamUserCreateAchievementEnumerator",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamUserCreateStatsEnumerator",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "XamUserGetMembershipTierFromXUID",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "XamUserGetName",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamUserGetOnlineCountryFromXUID",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "XamUserGetSigninState",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamUserGetXUID",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamUserReadProfileSettings",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamUserWriteProfileSettings",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamVoiceClose",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamVoiceCreate",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamVoiceHeadsetPresent",
    "library": "xam",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XamVoiceSubmitPacket",
    "library": "xam",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "XeCryptBnQwBeSigVerify",
    "library": "xboxkrnl",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "XeCryptRotSumSha",
    "library": "xboxkrnl",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "XeCryptSha",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XeKeysConsolePrivateKeySign",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XeKeysConsoleSignatureVerification",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XeKeysGetKey",
    "library": "xboxkrnl",
    "state": "stub",
-   "kind": "function",
-   "other_state": "stub"
+   "kind": "function"
   },
   {
    "name": "XexCheckExecutablePrivilege",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XexGetModuleHandle",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XexGetModuleSection",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XexGetProcedureAddress",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XexLoadImage",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "XexUnloadImage",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "__C_specific_handler",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "_snwprintf",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "_vscwprintf",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "_vsnprintf",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "sprintf",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "swprintf",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   },
   {
    "name": "vswprintf",
    "library": "xboxkrnl",
    "state": "implemented",
-   "kind": "function",
-   "other_state": "implemented"
+   "kind": "function"
   }
  ],
  "instructions": [
@@ -3798,44 +3547,197 @@
  "unimplemented_markers": {},
  "functions": {
   "total": 41219,
-  "hooked": 103,
+  "hooked": 402,
   "sources": 177,
   "hooked_addresses": [
+   "8213BC38",
+   "8213E3C8",
+   "8213F180",
+   "82140C90",
+   "82140CE0",
+   "82144D80",
+   "82150C98",
+   "82150CF0",
+   "821577C0",
+   "82157808",
+   "82157A18",
+   "82157A60",
+   "821584B0",
+   "821584F8",
+   "82158540",
+   "82158588",
+   "8215A4A0",
+   "821681D0",
+   "8216F470",
+   "8216F4E8",
+   "82172648",
+   "82185E40",
+   "8218DC98",
+   "8218DF60",
+   "82199AA8",
+   "8219A2C0",
+   "8219A318",
+   "8219D658",
+   "821A17C8",
+   "821A9C00",
+   "821AA050",
+   "821BC260",
+   "821BFCC0",
+   "821C5D38",
+   "821C5D70",
+   "821CAA40",
+   "821E72D0",
+   "821E8E90",
+   "821F3320",
+   "821F39B0",
+   "821F58D0",
+   "82202068",
+   "82213708",
+   "82213798",
+   "822137E0",
+   "82258550",
    "8225AB30",
+   "82270B80",
+   "82271AD8",
    "822846A0",
+   "82284F58",
    "82287130",
+   "822979C8",
    "822A38D0",
+   "822B7408",
+   "822C5EC8",
+   "822DEFD0",
+   "822E9A98",
+   "822EB240",
+   "822EBBB0",
+   "822ECBC0",
    "822ECED0",
+   "822F0F08",
+   "822F9AD8",
+   "822F9FA0",
+   "822FB238",
+   "822FC1A8",
+   "822FD2E8",
+   "822FE9F0",
+   "82302828",
+   "82303670",
+   "82305158",
+   "82307B70",
+   "82308DE8",
+   "82309F98",
+   "8230A578",
+   "8230E280",
+   "8230EE50",
+   "82311448",
+   "82312AB8",
+   "823137F8",
+   "82314E50",
+   "82315270",
+   "82315780",
+   "823159A0",
+   "82315B78",
+   "82315CE0",
+   "82315E00",
+   "82316328",
    "82324938",
+   "82326300",
+   "82326348",
    "823263D8",
    "82326728",
+   "8232AD48",
+   "8232AD98",
+   "8232EFB0",
+   "82340008",
    "82351F60",
    "823597F8",
    "8235D570",
+   "82369348",
    "823819A0",
    "82381F28",
+   "82391118",
+   "823925C0",
+   "823A41D8",
+   "823A4248",
    "823B4F20",
+   "823B7838",
    "823BA308",
+   "823CA8F0",
+   "823CAA10",
+   "823CD950",
+   "823D19A8",
    "823E9490",
    "823E96F8",
+   "823E9BD0",
    "823E9C30",
+   "823EA600",
+   "823FA9A8",
    "824099B8",
    "8240A0B8",
+   "8240B648",
+   "8240B7B8",
+   "8240B8D0",
+   "8240BAC8",
+   "8240BC48",
+   "8240C038",
+   "8241BDB8",
+   "8241F868",
+   "82445008",
+   "82462D98",
+   "82462E60",
+   "82463160",
+   "8246DAE0",
+   "82471460",
+   "82473790",
+   "82474118",
+   "824748B0",
+   "82474CA8",
+   "82474CE0",
+   "82475DD0",
+   "82476C50",
+   "82477E88",
+   "82479668",
+   "8247A720",
+   "82481B08",
+   "824879B8",
+   "824888C8",
+   "8249E760",
    "8249E808",
+   "824A05D0",
    "824A1708",
+   "824A3BC8",
+   "824ABED0",
    "824BB950",
    "824C1A10",
+   "824C55E8",
    "824C9E08",
    "824D51B8",
+   "824DA608",
+   "824DE458",
    "824EC668",
    "824EFD98",
    "824EFE68",
    "824FC190",
    "824FD840",
+   "825065E0",
+   "8250ADE0",
+   "8250F0F0",
+   "825111A8",
    "8251FA20",
    "82527AC8",
+   "8253C118",
    "8254C568",
+   "82555B38",
    "82568DE0",
+   "82581CF8",
+   "82581E18",
+   "82581ED0",
+   "82586538",
+   "82587D30",
+   "8258AEA8",
+   "8258C098",
+   "82597840",
+   "8259FD50",
+   "825A7068",
    "825A76E0",
    "825A8AA0",
    "825A8C90",
@@ -3851,26 +3753,42 @@
    "825B5728",
    "825B7930",
    "825BA9F8",
+   "825BFA18",
    "825C80D0",
    "825CB478",
    "825D1EC0",
+   "825D3808",
    "825D3910",
    "825D8258",
    "825DBD98",
    "825DC790",
+   "825DD2B0",
+   "825DD398",
    "825E12F8",
+   "825F1890",
+   "825F6CC8",
+   "825FBDB8",
+   "825FF080",
+   "826011F8",
+   "8261BCF8",
    "82624A30",
+   "82626BE8",
    "82627528",
    "82627640",
    "826400D8",
    "82640A50",
+   "8264FAA0",
+   "82652B30",
    "82653FC0",
    "82658560",
    "826586B0",
    "826587F8",
+   "8265CDC8",
    "82677CB8",
    "82678768",
+   "82694200",
    "8269A9D8",
+   "8269B3C8",
    "826A6B50",
    "826A7698",
    "826A8940",
@@ -3895,15 +3813,145 @@
    "826C3750",
    "826C3D90",
    "826C6A50",
+   "826D5C28",
+   "8270D108",
    "8270D160",
+   "82726F50",
+   "82726FC8",
+   "8272A530",
+   "8272C558",
+   "8272F260",
+   "82730D90",
+   "8273B2F8",
+   "8273C678",
+   "8273CC98",
+   "82740710",
    "82743798",
+   "8278EA38",
+   "82793BB8",
+   "82793DF8",
+   "82793ED8",
+   "82794140",
+   "827944D8",
+   "82794510",
+   "827945C0",
+   "82794868",
+   "82794C58",
+   "82794E68",
+   "82794F60",
+   "82794FB8",
+   "82795010",
+   "82795160",
+   "827C5CC8",
+   "827C7F08",
+   "827F4660",
+   "82807698",
+   "8281B120",
+   "8281BDD0",
+   "82832BF8",
+   "82832F88",
+   "828397B8",
+   "82839CF0",
+   "8283EEC8",
+   "82844E88",
+   "82845E00",
+   "82846518",
+   "8284D670",
+   "8284DBD8",
+   "8285B180",
+   "8285E988",
+   "8287A968",
+   "8287CCF0",
+   "828C6468",
+   "828CDC28",
+   "828D2700",
+   "828FEE28",
+   "8292D4B0",
+   "8293D600",
+   "82944E58",
+   "8294AA18",
+   "8294DDD0",
+   "829518F0",
+   "82953330",
+   "82957EE8",
+   "8297DEB0",
+   "82981388",
+   "82987A58",
+   "82988798",
+   "8298A330",
+   "8298A828",
+   "8298C970",
+   "8298D7B0",
+   "8298F838",
+   "8298FA58",
+   "82993038",
+   "829A3680",
+   "829DC450",
+   "829DCDC8",
+   "829EBFF8",
+   "829EC030",
+   "829EC830",
+   "829F0F40",
+   "829F1438",
+   "829F1AD8",
+   "82A151E8",
+   "82A24A70",
+   "82A27D10",
+   "82A3F0A0",
+   "82A45648",
    "82A49908",
    "82A4BEF8",
+   "82A4BF98",
+   "82A4F8A8",
    "82A4FA70",
    "82A50000",
+   "82A52168",
+   "82A792E0",
+   "82A85C38",
+   "82A85E18",
+   "82A85FD0",
+   "82A89BE0",
+   "82A94078",
+   "82A95278",
+   "82A95780",
+   "82A97790",
+   "82AAAB88",
+   "82AB2FF0",
+   "82AB52B0",
+   "82AB52F0",
    "82AB5F10",
+   "82AB5FD0",
    "82ABDE40",
-   "82ABDF90"
+   "82ABDF90",
+   "82AC4470",
+   "82AD8038",
+   "82AED2C0",
+   "82AEDC80",
+   "82B0FB40",
+   "82B0FDA8",
+   "82B0FE18",
+   "82B0FEC0",
+   "82B0FF08",
+   "82B0FF58",
+   "82B11740",
+   "82B12560",
+   "82B12638",
+   "82B12710",
+   "82B1F4A8",
+   "82B1F4D0",
+   "82B22708",
+   "82B37038",
+   "82B37118",
+   "82B47D50",
+   "82B47DA0",
+   "82B47E60",
+   "82B47F28",
+   "82B48FE8",
+   "82B4A590",
+   "82B4A610",
+   "82B4A7A0",
+   "82B52010",
+   "82B6F290"
   ]
  },
  "families": {

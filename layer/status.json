@@ -196,6 +196,13 @@
    "state": "game-specific",
    "source": "title repositories (CrackdownRewrite, TheSimpsonsGameRewrite)",
    "note": "Any360 never holds a title's code or data"
+  },
+  {
+   "area": "stage 1: native system layer",
+   "name": "any360::sys: the system calls, verified against the reference runtime",
+   "state": "in progress",
+   "source": "any360: layer/sys (any360_sys, any360_sys_ppc, sys_io_tests)",
+   "note": "first system calls (Rtl strings / memory / time, XGet*) verified equal to the reference by sys_io_tests; next: by number of titles importing them"
   }
  ]
 }
