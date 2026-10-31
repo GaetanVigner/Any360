@@ -2,8 +2,8 @@
  {
   "date": "2026-10-31",
   "system_calls": {
-   "native": 76,
-   "ported": 2,
+   "native": 97,
+   "ported": 1,
    "runnable": 493,
    "total": 2914
   },

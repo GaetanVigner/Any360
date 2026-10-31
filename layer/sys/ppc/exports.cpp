@@ -9,6 +9,7 @@
 #include "any360/sys/format.h"
 #include "any360/sys/info.h"
 #include "any360/sys/net.h"
+#include "any360/sys/objects.h"
 #include "any360/sys/rtl.h"
 #include "any360/sys/threading.h"
 #include "any360/sys/video.h"
@@ -165,6 +166,49 @@ ANY360_SYS_EXPORT(KeTlsGetValue) { ctx.r3.u64 = KeTlsGetValue({base}, ctx.r13.u3
 ANY360_SYS_EXPORT(KeTlsSetValue) { ctx.r3.u64 = KeTlsSetValue({base}, ctx.r13.u32, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(KeQueryPerformanceFrequency) { ctx.r3.u64 = KeQueryPerformanceFrequency(); }
 
+// Batch 5: the object manager (verified by sys_object_tests against the NT semantics, see docs/SYS.md).
+static uint32_t ThreadOf(PPCContext& ctx, uint8_t* base) { return Guest{base}.Load32(ctx.r13.u32 + 0x100); }
+static const int64_t* Timeout(uint8_t* base, uint32_t pointer, int64_t& storage) {
+  if (!pointer) return nullptr;
+  storage = int64_t(Guest{base}.Load64(pointer));
+  return &storage;
+}
+
+ANY360_SYS_EXPORT(KeInitializeEvent) { Objects().InitializeEvent({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(KeSetEvent) { ctx.r3.u64 = Objects().SetEvent({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KeResetEvent) { ctx.r3.u64 = Objects().ResetEvent({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KePulseEvent) { ctx.r3.u64 = Objects().PulseEvent({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KeInitializeSemaphore) { Objects().InitializeSemaphore({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(KeReleaseSemaphore) {
+  uint32_t status;
+  ctx.r3.u64 = Objects().ReleaseSemaphore({base}, ctx.r3.u32, ctx.r5.u32, status);
+}
+ANY360_SYS_EXPORT(NtCreateEvent) { ctx.r3.u64 = Objects().CreateEvent({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(NtSetEvent) { ctx.r3.u64 = Objects().NtSetEvent({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(NtClearEvent) { ctx.r3.u64 = Objects().NtClearEvent({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(NtPulseEvent) { ctx.r3.u64 = Objects().NtPulseEvent({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(NtQueryEvent) { ctx.r3.u64 = Objects().NtQueryEvent({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(NtCreateSemaphore) { ctx.r3.u64 = Objects().CreateSemaphore({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(NtReleaseSemaphore) { ctx.r3.u64 = Objects().NtReleaseSemaphore({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(NtCreateMutant) {
+  ctx.r3.u64 = Objects().CreateMutant({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ThreadOf(ctx, base));
+}
+ANY360_SYS_EXPORT(NtReleaseMutant) { ctx.r3.u64 = Objects().NtReleaseMutant({base}, ctx.r3.u32, ThreadOf(ctx, base)); }
+ANY360_SYS_EXPORT(NtClose) { ctx.r3.u64 = Objects().Close(ctx.r3.u32); }
+ANY360_SYS_EXPORT(NtDuplicateObject) { ctx.r3.u64 = Objects().Duplicate({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(ObReferenceObjectByHandle) {
+  ctx.r3.u64 = Objects().ReferenceObjectByHandle({base}, ctx.r3.u32, ThreadOf(ctx, base), ctx.r5.u32);
+}
+ANY360_SYS_EXPORT(ObDereferenceObject) { ctx.r3.u64 = Objects().DereferenceObject({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(KeWaitForSingleObject) {
+  int64_t storage;
+  ctx.r3.u64 = Objects().WaitForObject({base}, ctx.r3.u32, ThreadOf(ctx, base), Timeout(base, ctx.r7.u32, storage));
+}
+ANY360_SYS_EXPORT(NtWaitForSingleObjectEx) {
+  int64_t storage;
+  ctx.r3.u64 = Objects().WaitForHandle({base}, ctx.r3.u32, ThreadOf(ctx, base), Timeout(base, ctx.r6.u32, storage));
+}
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -235,6 +279,28 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(KeTlsGetValue),
     ANY360_SYS_ENTRY(KeTlsSetValue),
     ANY360_SYS_ENTRY(KeQueryPerformanceFrequency),
+    // Batch 5: events, semaphores, mutants, handles, waits (sys_object_tests).
+    ANY360_SYS_ENTRY(KeInitializeEvent),
+    ANY360_SYS_ENTRY(KeSetEvent),
+    ANY360_SYS_ENTRY(KeResetEvent),
+    ANY360_SYS_ENTRY(KePulseEvent),
+    ANY360_SYS_ENTRY(KeInitializeSemaphore),
+    ANY360_SYS_ENTRY(KeReleaseSemaphore),
+    ANY360_SYS_ENTRY(NtCreateEvent),
+    ANY360_SYS_ENTRY(NtSetEvent),
+    ANY360_SYS_ENTRY(NtClearEvent),
+    ANY360_SYS_ENTRY(NtPulseEvent),
+    ANY360_SYS_ENTRY(NtQueryEvent),
+    ANY360_SYS_ENTRY(NtCreateSemaphore),
+    ANY360_SYS_ENTRY(NtReleaseSemaphore),
+    ANY360_SYS_ENTRY(NtCreateMutant),
+    ANY360_SYS_ENTRY(NtReleaseMutant),
+    ANY360_SYS_ENTRY(NtClose),
+    ANY360_SYS_ENTRY(NtDuplicateObject),
+    ANY360_SYS_ENTRY(ObReferenceObjectByHandle),
+    ANY360_SYS_ENTRY(ObDereferenceObject),
+    ANY360_SYS_ENTRY(KeWaitForSingleObject),
+    ANY360_SYS_ENTRY(NtWaitForSingleObjectEx),
 };
 const unsigned kExportCount = sizeof(kExports) / sizeof(kExports[0]);
 

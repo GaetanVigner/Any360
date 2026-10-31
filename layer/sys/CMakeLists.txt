@@ -10,9 +10,16 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(any360_sys STATIC src/rtl.cpp src/info.cpp src/config.cpp src/error_tables.cpp src/video.cpp src/net.cpp
-            src/threading.cpp src/format.cpp)
+            src/threading.cpp src/format.cpp src/objects.cpp)
 target_include_directories(any360_sys PUBLIC include)
 target_compile_options(any360_sys PRIVATE -Wall -Wextra)
+
+# The object manager's scenario tests need no reference runtime.
+enable_testing()
+add_executable(sys_object_tests tests/sys_object_tests.cpp)
+target_link_libraries(sys_object_tests PRIVATE any360_sys)
+target_compile_options(sys_object_tests PRIVATE -Wall -Wextra)
+add_test(NAME sys_object_tests COMMAND sys_object_tests)
 
 set(ANY360_REFERENCE_SDK "" CACHE PATH "ReXGlue SDK install used as the reference (include/, lib/, bin/)")
 if(ANY360_REFERENCE_SDK)

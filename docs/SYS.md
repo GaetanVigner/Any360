@@ -14,10 +14,12 @@ implementation a title keeps.
 | `tests/sys_runtime_tests.cpp` | Oracle 2: calls bound to the running thread. Sets the reference runtime up in tool mode (memory and kernel state, no GPU or audio), registers a host entry in its function table and creates a guest thread that runs the cases, so the reference implementations find their current thread, PCR and process. Native and reference run from the same state (blocks, PCR, KTHREAD, KPROCESS snapshotted and restored in between); r3 and every region are compared |
 | `test.ps1` | Builds with the titles' toolchain (Visual Studio's clang++) against the SDK install named by `reference_sdk` in a `titles/<title>/pipeline.json`, runs both oracles |
 
-A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
-to the reference.
+| `tests/sys_object_tests.cpp` | Scenario tests of the object manager against the NT kernel's documented semantics: sequences of calls checked on statuses, returned states and guest fields, handles abstracted (no reference runtime: it is not an oracle here, see below) |
 
-## What is verified (76 system calls)
+A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
+to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
+
+## What is verified (97 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -33,6 +35,14 @@ to the reference.
   `XamGetSystemVersion`, `XGetVideoMode` and the `Vd*` display queries (`VdQueryVideoMode`, `VdQueryVideoFlags`,
   `VdGetCurrentDisplayInformation`, `VdGetCurrentDisplayGamma`, `VdGetSystemCommandBuffer`,
   `VdInitializeScalerCommandBuffer`, the constant-return and no-op ones).
+- **The object manager** (`objects.h`, scenario tests): the handle table (handles from 0xF8000000 by four, slots
+  reused, duplicates, `DUPLICATE_CLOSE_SOURCE`, the current-thread pseudo handle, Ob references apart from handles),
+  events (`KeInitializeEvent`, `KeSetEvent`, `KeResetEvent`, `KePulseEvent` returning the previous state, the Nt*
+  forms with their previous-state outputs, `NtQueryEvent`, named events), semaphores (count and limit, the limit
+  error), mutants (owner, recursion, `STATUS_MUTANT_NOT_OWNED`), `NtClose`, `NtDuplicateObject`,
+  `ObReferenceObjectByHandle`, `ObDereferenceObject`, and the single-object waits (`KeWaitForSingleObject`,
+  `NtWaitForSingleObjectEx`: a signalled object is consumed at once, a relative timeout polls, zero does not wait).
+  Nt-created objects are allocated from the kernel heap a title gives the layer (`ObjectManager::SetKernelHeap`).
 - **Offline networking**: `NetDll_inet_addr` (the Winsock parser), `NetDll___WSAFDIsSet`, `NetDll_XNetInAddrToString`,
   the XNet address conversions.
 
@@ -57,10 +67,8 @@ and the NT semantics (previous state returned, signal state in the object) are t
 
 Next for the layer, in this order:
 
-1. **Object manager and dispatcher objects**: the layer's own handle table and the NT semantics of events,
-   semaphores, mutants and timers in the guest structures, verified by scenario tests (sequences of calls compared on
-   statuses, returned states and the guest fields, with handle values abstracted) against the reference where it is
-   faithful (statuses, `NtClose` of an unknown handle, named objects) and against the documented semantics elsewhere.
+1. **Object manager, continued**: timers (`NtCreateTimer`, `NtSetTimerEx`, `NtCancelTimer`, `KeInitializeTimerEx`)
+   on the guest clock, multiple-object waits, absolute timeouts, and freeing kernel objects.
 2. **Waits and the scheduler**: `KeWaitForSingleObject` / `NtWaitForSingleObjectEx` / multiple-object waits, delays,
    APCs, thread creation and the PCR / KTHREAD protocol the layer already follows.
 3. **Memory**: the virtual and physical allocators (`NtAllocateVirtualMemory`, `MmAllocatePhysicalMemoryEx`, queries
