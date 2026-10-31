@@ -18,5 +18,25 @@
    "total": 31
   },
   "toolkit_done": 4
+ },
+ {
+  "date": "2026-11-01",
+  "system_calls": {
+   "native": 128,
+   "ported": 1,
+   "runnable": 493,
+   "total": 2914
+  },
+  "instructions": {
+   "native": 0,
+   "reference": 497,
+   "total": 1842
+  },
+  "xdk": {
+   "native": 0,
+   "ported": 0,
+   "total": 31
+  },
+  "toolkit_done": 4
  }
 ]

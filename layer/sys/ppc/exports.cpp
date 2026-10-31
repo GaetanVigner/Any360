@@ -10,6 +10,7 @@
 #include "any360/sys/exports.h"
 #include "any360/sys/format.h"
 #include "any360/sys/info.h"
+#include "any360/sys/memory.h"
 #include "any360/sys/net.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/rtl.h"
@@ -254,6 +255,30 @@ ANY360_SYS_EXPORT(KeQueryBasePriorityThread) { ctx.r3.u64 = Threads().QueryBaseP
 ANY360_SYS_EXPORT(KeSetBasePriorityThread) { ctx.r3.u64 = Threads().SetBasePriority({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(KeSetDisableBoostThread) { ctx.r3.u64 = Threads().SetDisableBoost({base}, ctx.r3.u32, ctx.r4.u32); }
 
+// Batch 8: the memory manager (sys_object_tests).
+ANY360_SYS_EXPORT(NtAllocateVirtualMemory) {
+  ctx.r3.u64 = Memory().AllocateVirtual({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(NtFreeVirtualMemory) { ctx.r3.u64 = Memory().FreeVirtual({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(NtQueryVirtualMemory) { ctx.r3.u64 = Memory().QueryVirtual({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(MmAllocatePhysicalMemoryEx) {
+  ctx.r3.u64 = Memory().AllocatePhysical({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32);
+}
+ANY360_SYS_EXPORT(MmAllocatePhysicalMemory) {
+  ctx.r3.u64 = Memory().AllocatePhysical({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, 0, 0xFFFFFFFF, 0);
+}
+ANY360_SYS_EXPORT(MmFreePhysicalMemory) { Memory().FreePhysical(ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(MmGetPhysicalAddress) {
+  const uint32_t physical = Memory().PhysicalAddress(ctx.r3.u32);
+  ctx.r3.u64 = physical == 0xFFFFFFFF ? 0 : physical;
+}
+ANY360_SYS_EXPORT(MmQueryAddressProtect) { ctx.r3.u64 = Memory().QueryProtect(ctx.r3.u32); }
+ANY360_SYS_EXPORT(MmSetAddressProtect) { Memory().SetProtect(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(MmQueryAllocationSize) { ctx.r3.u64 = Memory().QueryAllocationSize(ctx.r3.u32); }
+ANY360_SYS_EXPORT(MmQueryStatistics) { ctx.r3.u64 = Memory().QueryStatistics({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamAlloc) { ctx.r3.u64 = Memory().XamAlloc({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamFree) { ctx.r3.u64 = Memory().XamFree({base}, ctx.r3.u32); }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -366,6 +391,20 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(KeQueryBasePriorityThread),
     ANY360_SYS_ENTRY(KeSetBasePriorityThread),
     ANY360_SYS_ENTRY(KeSetDisableBoostThread),
+    // Batch 8: the memory manager.
+    ANY360_SYS_ENTRY(NtAllocateVirtualMemory),
+    ANY360_SYS_ENTRY(NtFreeVirtualMemory),
+    ANY360_SYS_ENTRY(NtQueryVirtualMemory),
+    ANY360_SYS_ENTRY(MmAllocatePhysicalMemoryEx),
+    ANY360_SYS_ENTRY(MmAllocatePhysicalMemory),
+    ANY360_SYS_ENTRY(MmFreePhysicalMemory),
+    ANY360_SYS_ENTRY(MmGetPhysicalAddress),
+    ANY360_SYS_ENTRY(MmQueryAddressProtect),
+    ANY360_SYS_ENTRY(MmSetAddressProtect),
+    ANY360_SYS_ENTRY(MmQueryAllocationSize),
+    ANY360_SYS_ENTRY(MmQueryStatistics),
+    ANY360_SYS_ENTRY(XamAlloc),
+    ANY360_SYS_ENTRY(XamFree),
 };
 const unsigned kExportCount = sizeof(kExports) / sizeof(kExports[0]);
 

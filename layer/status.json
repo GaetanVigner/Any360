@@ -202,7 +202,7 @@
    "name": "any360::sys: the system calls, verified against the reference runtime",
    "state": "in progress",
    "source": "any360: layer/sys (any360_sys, any360_sys_ppc, sys_io_tests)",
-   "note": "115 system calls: 76 verified equal to the reference, 39 of the object manager and scheduler (events, semaphores, mutants, timers, handles, waits, the clock, thread creation / suspension / delays / priorities) verified against the NT semantics by scenario tests; next: memory manager"
+   "note": "128 system calls: 76 verified equal to the reference, 52 of the object manager, scheduler and memory manager verified against the NT semantics by scenario tests; next: files / XAM"
   }
  ]
 }

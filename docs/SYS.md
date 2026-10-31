@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (115 system calls)
+## What is verified (128 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -58,6 +58,15 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `KeSetDisableBoostThread`. A thread is a dispatcher object signalled when it ends. Suspension is cooperative: a thread
   created suspended waits before its first instruction, a running one pauses at its next delay, yield or wait. The
   title process (KPROCESS) is created with the first thread when none is set.
+- **The memory manager** (`memory.h`, scenario tests): the guest heaps as the kernel lays them out (virtual 4 KB pages
+  below 0x40000000 and 64 KB pages above, the physical views at 0xA0000000 / 0xC0000000 / 0xE0000000 over one 512 MB
+  physical space, page states free / reserved / committed with their protections and regions).
+  `NtAllocateVirtualMemory` (reserve, commit, fixed addresses, large pages, top-down, sizes rounded as the kernel does,
+  committed pages zeroed), `NtFreeVirtualMemory` (release of a region, decommit), `NtQueryVirtualMemory` and the region
+  queries, `MmAllocatePhysicalMemoryEx` / `MmAllocatePhysicalMemory` (page size from the protection flags, alignment,
+  address range, the views never overlap in physical space), `MmFreePhysicalMemory`, `MmGetPhysicalAddress`,
+  `MmQueryAddressProtect`, `MmSetAddressProtect`, `MmQueryAllocationSize`, `MmQueryStatistics`, `XamAlloc` / `XamFree`.
+  Addresses are the manager's own: the tests check the properties of regions, not the reference's numbers.
 - **Offline networking**: `NetDll_inet_addr` (the Winsock parser), `NetDll___WSAFDIsSet`, `NetDll_XNetInAddrToString`,
   the XNet address conversions.
 
@@ -84,7 +93,7 @@ Next for the layer, in this order:
 
 1. **Object manager and scheduler, continued**: absolute wait timeouts, APCs (timer and `NtQueueApcThread`),
    pre-emptive suspension, freeing kernel objects, `KeGetCurrentThread`-style queries.
-2. **Memory**: the virtual and physical allocators (`NtAllocateVirtualMemory`, `MmAllocatePhysicalMemoryEx`, queries
-   and protection), compared on the observable properties of regions rather than on addresses.
+2. **Memory, continued**: `NtProtectVirtualMemory`, `MEM_RESET`, the executable's image range as a queryable heap,
+   `ExAllocatePool*`, `MmCreateKernelStack`, `KeLockL2` / `KeUnlockL2`.
 3. **Files and XAM**: a VFS over installed data, content packages, user profile and input, then the Live-offline
    answers.

@@ -2947,7 +2947,7 @@
 "kind":"function",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "simpsons"
@@ -2970,7 +2970,7 @@
 "kind":"function",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "simpsons"
@@ -22286,7 +22286,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "simpsons"
 ]
@@ -22298,7 +22298,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "simpsons"
@@ -22331,7 +22331,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "simpsons"
@@ -22344,7 +22344,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "simpsons"
@@ -22407,7 +22407,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "simpsons"
@@ -22420,7 +22420,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "simpsons"
 ]
@@ -22432,7 +22432,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "simpsons"
@@ -22445,7 +22445,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "simpsons"
@@ -22498,7 +22498,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "simpsons"
@@ -22693,7 +22693,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "simpsons"
@@ -22894,7 +22894,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "simpsons"

@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
 
@@ -335,9 +336,105 @@ void SchedulerTests() {
   Threads().Shutdown();
 }
 
+// The memory manager on a small layout the test's buffer can hold: a 4 KB virtual heap, a 64 KB one, a 4 KB physical
+// view and a 64 KB physical view sharing one physical space.
+void MemoryTests() {
+  Fresh();
+  std::vector<uint8_t> memory(0x200000);
+  const Guest gm{memory.data()};
+  Memory().Reset({{0x00000000, 0x40000, 0x1000, false}, {0x40000, 0x80000, 0x10000, false},
+                  {0x100000, 0x40000, 0x1000, true}, {0x140000, 0x80000, 0x10000, true}});
+  const uint32_t io = 0x3F000;  // the in/out words live in the small heap's last page, never allocated by the tests
+  gm.Store32(io, 0);
+  gm.Store32(io + 4, 0x3000);
+  // Reserve and commit: the size rounds up to 64 KB for a search, pages are zeroed, the region queries back.
+  std::memset(memory.data() + 0x1000, 0xAA, 0x20000);
+  CHECK(Memory().AllocateVirtual(gm, io, io + 4, kMemReserve | kMemCommit, kPageReadWrite, 0) == 0);
+  const uint32_t a = gm.Load32(io);
+  CHECK(a != 0 && a % 0x1000 == 0 && a < 0x40000 && gm.Load32(io + 4) == 0x10000);
+  CHECK(memory[a] == 0 && memory[a + 0xFFFF] == 0);
+  RegionInfo info;
+  CHECK(Memory().QueryRegion(a + 0x2000, info) && info.allocation_base == a && info.region_size == 0xE000 &&
+        info.state == kMemCommit && info.protect == kPageReadWrite && info.allocation_size == 0x10000);
+  CHECK(Memory().QueryVirtual(gm, a, io + 0x20, 0) == 0 && gm.Load32(io + 0x24) == a && gm.Load32(io + 0x2C) == 0x10000 &&
+        gm.Load32(io + 0x30) == kMemCommit && gm.Load32(io + 0x38) == kMemPrivate);
+  CHECK(Memory().QueryVirtual(gm, a, io + 0x20, 3) == kStatusInvalidParameter);
+  CHECK(Memory().QueryAllocationSize(a + 0x100) == 0x10000 && Memory().QueryProtect(a) == kPageReadWrite);
+  // Protection changes, queried back; execute bits normalise to read / read-write.
+  Memory().SetProtect(a, 0x2000, kPageReadOnly | kPageNoCache);
+  CHECK(Memory().QueryProtect(a + 0x1000) == (kPageReadOnly | kPageNoCache) && Memory().QueryProtect(a + 0x2000) == kPageReadWrite);
+  Memory().SetProtect(a, 0x1000, kPageReadOnly | kPageReadWrite);  // two bits: ignored
+  CHECK(Memory().QueryProtect(a) == (kPageReadOnly | kPageNoCache));
+  Memory().SetProtect(a, 0x1000, kPageExecuteReadWrite);
+  CHECK(Memory().QueryProtect(a) == kPageReadWrite);
+  // Reserve first, commit a part at a fixed address with the heap's page size, decommit, release the whole region.
+  gm.Store32(io, 0);
+  gm.Store32(io + 4, 0x12000);
+  CHECK(Memory().AllocateVirtual(gm, io, io + 4, kMemReserve | kMemLargePages, kPageReadWrite, 0) == 0);
+  const uint32_t r = gm.Load32(io);
+  CHECK(r >= 0x40000 && r % 0x10000 == 0 && gm.Load32(io + 4) == 0x20000);
+  CHECK(Memory().QueryRegion(r, info) && info.state == kMemReserve);
+  gm.Store32(io, r + 0x10000);
+  gm.Store32(io + 4, 0x100);
+  CHECK(Memory().AllocateVirtual(gm, io, io + 4, kMemCommit, kPageReadOnly, 0) == 0 && gm.Load32(io) == r + 0x10000 && gm.Load32(io + 4) == 0x10000);
+  CHECK(Memory().QueryRegion(r, info) && info.state == kMemReserve && info.region_size == 0x10000);
+  CHECK(Memory().QueryRegion(r + 0x10000, info) && info.state == kMemCommit && info.protect == kPageReadOnly && info.allocation_base == r);
+  gm.Store32(io, r + 0x10000);
+  gm.Store32(io + 4, 0x10000);
+  CHECK(Memory().FreeVirtual(gm, io, io + 4, kMemDecommit, 0) == 0);
+  CHECK(Memory().QueryRegion(r + 0x10000, info) && info.state == kMemReserve);
+  gm.Store32(io, r);
+  gm.Store32(io + 4, 0);
+  CHECK(Memory().FreeVirtual(gm, io, io + 4, kMemRelease, 0) == 0 && gm.Load32(io + 4) == 0x20000);
+  CHECK(Memory().QueryRegion(r, info) && info.state == kMemFree);
+  gm.Store32(io, r + 0x10000);
+  CHECK(Memory().FreeVirtual(gm, io, io + 4, kMemRelease, 0) == kStatusUnsuccessful);  // not a region start
+  gm.Store32(io, 0);
+  CHECK(Memory().FreeVirtual(gm, io, io + 4, kMemRelease, 0) == kStatusMemoryNotAllocated);
+  // Parameter checks, exhaustion, top-down placement.
+  gm.Store32(io, 0);
+  gm.Store32(io + 4, 0);
+  CHECK(Memory().AllocateVirtual(gm, io, io + 4, kMemCommit, kPageReadWrite, 0) == kStatusInvalidParameter);
+  gm.Store32(io + 4, 0x1000);
+  CHECK(Memory().AllocateVirtual(gm, io, io + 4, 0, kPageReadWrite, 0) == kStatusInvalidParameter);
+  CHECK(Memory().AllocateVirtual(gm, io, io + 4, kMemReset | kMemCommit, kPageReadWrite, 0) == kStatusInvalidParameter);
+  gm.Store32(io + 4, 0x100000);
+  CHECK(Memory().AllocateVirtual(gm, io, io + 4, kMemCommit, kPageReadWrite, 0) == kStatusNoMemory);
+  gm.Store32(io, 0);
+  gm.Store32(io + 4, 0x1000);
+  CHECK(Memory().AllocateVirtual(gm, io, io + 4, kMemCommit | kMemTopDown, kPageReadWrite, 0) == 0);
+  CHECK(gm.Load32(io) == 0x40000 - 0x10000);
+  // Physical allocations: page size from the protection flags, physical addresses, the views share one space.
+  const uint32_t p = Memory().AllocatePhysical(gm, 0, 0x3000, kPageReadWrite, 0, 0xFFFFFFFF, 0);
+  CHECK(p >= 0x100000 && p < 0x140000 && Memory().PhysicalAddress(p) == p - 0x100000);
+  CHECK(Memory().QueryAllocationSize(p) == 0x3000 && Memory().QueryProtect(p + 0x2000) == kPageReadWrite);
+  const uint32_t q = Memory().AllocatePhysical(gm, 0, 0x20000, kPageReadWrite | kMemLargePages, 0, 0xFFFFFFFF, 0x20000);
+  std::printf("q=%X\n", q);
+  CHECK(q >= 0x140000 && q % 0x20000 == 0);
+  CHECK(Memory().PhysicalAddress(q) != Memory().PhysicalAddress(p));
+  const uint32_t pp = Memory().PhysicalAddress(q);
+  bool overlap = pp < Memory().PhysicalAddress(p) + 0x3000 && Memory().PhysicalAddress(p) < pp + 0x20000;
+  CHECK(!overlap);
+  CHECK(Memory().AllocatePhysical(gm, 0, 0x1000, kPageNoAccess, 0, 0xFFFFFFFF, 0) == 0);
+  CHECK(Memory().AllocatePhysical(gm, 0, 0x50000, kPageReadWrite, 0, 0xFFFFFFFF, 0) == 0);  // more than the 4 KB view holds
+  Memory().FreePhysical(0, p);
+  CHECK(Memory().QueryProtect(p) == 0 && Memory().PhysicalAddress(0x3F000) == 0xFFFFFFFF);
+  // Statistics and XamAlloc.
+  gm.Store32(io + 0x40, 104);
+  CHECK(Memory().QueryStatistics(gm, io + 0x40) == 0 && gm.Load32(io + 0x44) == 0x20000 && gm.Load32(io + 0x4C) < 0x20000);
+  gm.Store32(io + 0x40, 100);
+  CHECK(Memory().QueryStatistics(gm, io + 0x40) == 0xC0000023u);
+  CHECK(Memory().XamAlloc(gm, 0, 100, io + 8) == 0);
+  const uint32_t x = gm.Load32(io + 8);
+  CHECK(x != 0 && x % 0x1000 == 0 && Memory().QueryAllocationSize(x) == 0x1000 && memory[x] == 0);
+  CHECK(Memory().XamFree(gm, x) == 0 && Memory().QueryAllocationSize(x) == 0);
+  Memory().Reset();
+}
+
 }  // namespace
 
 int main() {
+  MemoryTests();
   SchedulerTests();
   Timers();
   MultipleWaits();
