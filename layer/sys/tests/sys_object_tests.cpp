@@ -409,7 +409,6 @@ void MemoryTests() {
   CHECK(p >= 0x100000 && p < 0x140000 && Memory().PhysicalAddress(p) == p - 0x100000);
   CHECK(Memory().QueryAllocationSize(p) == 0x3000 && Memory().QueryProtect(p + 0x2000) == kPageReadWrite);
   const uint32_t q = Memory().AllocatePhysical(gm, 0, 0x20000, kPageReadWrite | kMemLargePages, 0, 0xFFFFFFFF, 0x20000);
-  std::printf("q=%X\n", q);
   CHECK(q >= 0x140000 && q % 0x20000 == 0);
   CHECK(Memory().PhysicalAddress(q) != Memory().PhysicalAddress(p));
   const uint32_t pp = Memory().PhysicalAddress(q);
