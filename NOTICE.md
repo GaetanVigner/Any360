@@ -32,3 +32,8 @@ the bytes. Anyone running the tools does so against their own copy of a game the
 
 Xbox and Xbox 360 are trademarks of Microsoft. Crackdown is a trademark of Microsoft; The Simpsons Game is a trademark
 of Electronic Arts and Twentieth Century Fox. This project is not affiliated with or endorsed by any of them.
+
+## NTSTATUS to Win32 error tables
+
+`layer/sys/src/error_tables.cpp` is data derived from Xenia (`xboxkrnl_error.cc`, Copyright 2022 Ben Vanik, BSD 3-Clause
+license), through the ReXGlue SDK. The mapping itself is the one the Xbox 360 kernel applies; the lookup code is Any360's.

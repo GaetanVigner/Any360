@@ -35,6 +35,29 @@ REFERENCE(XGetAVPack)
 REFERENCE(XGetGameRegion)
 REFERENCE(XGetLanguage)
 REFERENCE(XamGetSystemVersion)
+REFERENCE(RtlNtStatusToDosError)
+REFERENCE(ExGetXConfigSetting)
+REFERENCE(RtlInitializeCriticalSection)
+REFERENCE(RtlInitializeCriticalSectionAndSpinCount)
+REFERENCE(VdQueryVideoMode)
+REFERENCE(XGetVideoMode)
+REFERENCE(VdQueryVideoFlags)
+REFERENCE(VdGetCurrentDisplayInformation)
+REFERENCE(VdGetCurrentDisplayGamma)
+REFERENCE(VdSetDisplayMode)
+REFERENCE(VdEnableDisableClockGating)
+REFERENCE(VdIsHSIOTrainingSucceeded)
+REFERENCE(VdRetrainEDRAM)
+REFERENCE(VdRetrainEDRAMWorker)
+REFERENCE(VdGetGraphicsAsicID)
+REFERENCE(VdGetSystemCommandBuffer)
+REFERENCE(VdCallGraphicsNotificationRoutines)
+REFERENCE(VdInitializeScalerCommandBuffer)
+REFERENCE(NetDll_inet_addr)
+REFERENCE(NetDll_XNetInAddrToString)
+REFERENCE(NetDll_XNetXnAddrToInAddr)
+REFERENCE(NetDll_XNetInAddrToXnAddr)
+REFERENCE(NetDll___WSAFDIsSet)
 
 namespace {
 
@@ -190,6 +213,83 @@ const Case kCases[] = {
     CASE(XGetGameRegion, nullptr),
     CASE(XGetLanguage, nullptr),
     CASE(XamGetSystemVersion, nullptr),
+    // Batch 2.
+    CASE(RtlNtStatusToDosError, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      static const uint32_t kBases[] = {0x00000103, 0x40000002, 0x40020056, 0x400200AF, 0x80000001, 0x80000288, 0x80090300,
+                                        0xC0000001, 0xC0000202, 0xC0020001, 0xC0030001, 0xC0030059, 0xC0050003, 0xC0980001};
+      switch (rng() % 5) {
+        case 0: ctx.r3.u64 = uint32_t(rng()); break;
+        case 1: ctx.r3.u64 = 0x80070000 | rng() % 0x10000; break;
+        case 2: ctx.r3.u64 = (rng() % 2 ? 0xD0000000 : 0xC0010000) | rng() % 0x400; break;
+        default: ctx.r3.u64 = kBases[rng() % 14] + rng() % 300 - (rng() % 8 == 0 ? 3 : 0);
+      }
+    }),
+    CASE(ExGetXConfigSetting, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 4 ? 2 + rng() % 2 : rng() % 6;
+      ctx.r4.u64 = rng() % 0x1B;
+      ctx.r5.u64 = rng() % 4 ? kOut : 0;
+      ctx.r6.u64 = rng() % 6;
+      ctx.r7.u64 = rng() % 2 ? kWritten : 0;
+    }),
+    CASE(RtlInitializeCriticalSection, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = kStruct; }),
+    CASE(RtlInitializeCriticalSectionAndSpinCount, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kStruct;
+      ctx.r4.u64 = rng() % 2 ? rng() % 70000 : rng() % 1024;
+    }),
+    CASE(VdQueryVideoMode, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = kOut; }),
+    CASE(XGetVideoMode, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = kOut; }),
+    CASE(VdQueryVideoFlags, nullptr),
+    CASE(VdGetCurrentDisplayInformation, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = kOut; }),
+    CASE(VdGetCurrentDisplayGamma, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = kOut; ctx.r4.u64 = kOut + 8; }),
+    CASE(VdSetDisplayMode, [](Scene&, PPCContext& ctx, std::mt19937& rng) { ctx.r3.u64 = uint32_t(rng()); }),
+    CASE(VdEnableDisableClockGating, [](Scene&, PPCContext& ctx, std::mt19937& rng) { ctx.r3.u64 = rng() % 2; }),
+    CASE(VdIsHSIOTrainingSucceeded, nullptr),
+    CASE(VdRetrainEDRAM, nullptr),
+    CASE(VdRetrainEDRAMWorker, nullptr),
+    CASE(VdGetGraphicsAsicID, nullptr),
+    CASE(VdGetSystemCommandBuffer, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = kOut; ctx.r4.u64 = kOut + 0x100; }),
+    CASE(VdCallGraphicsNotificationRoutines, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = 1; ctx.r4.u64 = kStruct; }),
+    CASE(VdInitializeScalerCommandBuffer, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      s.Word(ctx.r1.u32 + 0x54 + 2 * 8, kOut);
+      s.Word(ctx.r1.u32 + 0x54 + 3 * 8, rng() % 64);
+    }),
+    CASE(NetDll_inet_addr, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      std::string text;
+      const int parts = 1 + rng() % 4;
+      for (int i = 0; i < parts; ++i) {
+        const uint32_t v = rng() % 8 ? rng() % 256 : rng() % 70000;
+        char buffer[32];
+        switch (rng() % 6) {
+          case 0: std::snprintf(buffer, sizeof buffer, "0x%X", v); break;
+          case 1: std::snprintf(buffer, sizeof buffer, "0%o", v); break;
+          default: std::snprintf(buffer, sizeof buffer, "%u", v);
+        }
+        text += (i ? "." : "") + std::string(buffer);
+      }
+      switch (rng() % 10) {
+        case 0: text.clear(); break;
+        case 1: text += " "; break;
+        case 2: text += "x"; break;
+        case 3: text += "."; break;
+        default: break;
+      }
+      std::memcpy(s.base + kString1, text.c_str(), text.size() + 1);
+      ctx.r3.u64 = rng() % 16 ? kString1 : 0;
+    }),
+    CASE(NetDll_XNetInAddrToString, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r4.u64 = uint32_t(rng());
+      ctx.r5.u64 = kOut;
+      ctx.r6.u64 = rng() % 20;
+    }),
+    CASE(NetDll_XNetXnAddrToInAddr, nullptr),
+    CASE(NetDll_XNetInAddrToXnAddr, nullptr),
+    CASE(NetDll___WSAFDIsSet, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      const uint32_t socket = 0xF000 + rng() % 16;
+      s.Word(kStruct, rng() % 70);
+      for (uint32_t i = 0; i < 64; ++i) s.Word(kStruct + 4 + 4 * i, 0xF000 + rng() % 16);
+      ctx.r3.u64 = socket;
+      ctx.r4.u64 = kStruct;
+    }),
 };
 
 struct Result {
