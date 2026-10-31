@@ -29,6 +29,8 @@ uint32_t VdRetrainEDRAMWorker();
 uint32_t VdGetGraphicsAsicID();
 void VdGetSystemCommandBuffer(Guest g, uint32_t p0, uint32_t p1);
 uint32_t VdCallGraphicsNotificationRoutines();
+void VdShutdownEngines();
+void VdSetSystemCommandBufferGpuIdentifierAddress();
 // Fills the destination with `count` NOP words; returns the count.
 uint32_t VdInitializeScalerCommandBuffer(Guest g, uint32_t destination, uint32_t count);
 

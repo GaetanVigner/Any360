@@ -6,6 +6,7 @@
 
 #include "any360/sys/config.h"
 #include "any360/sys/exports.h"
+#include "any360/sys/format.h"
 #include "any360/sys/info.h"
 #include "any360/sys/net.h"
 #include "any360/sys/rtl.h"
@@ -75,6 +76,71 @@ ANY360_SYS_EXPORT(NetDll_XNetXnAddrToInAddr) { ctx.r3.u64 = NetDll_XNetXnAddrToI
 ANY360_SYS_EXPORT(NetDll_XNetInAddrToXnAddr) { ctx.r3.u64 = NetDll_XNetInAddrToXnAddr(); }
 ANY360_SYS_EXPORT(NetDll___WSAFDIsSet) { ctx.r3.u64 = NetDll___WSAFDIsSet({base}, ctx.r3.u32, ctx.r4.u32); }
 
+// The variadic arguments of a call: r3..r10 from `first`, then the caller's stack slots.
+class RegisterArguments : public ArgumentSource {
+ public:
+  RegisterArguments(PPCContext& ctx, uint8_t* base, unsigned first) : ctx_(ctx), base_(base), index_(first) {}
+  uint64_t Next64() override {
+    static constexpr PPCRegister PPCContext::* kRegisters[] = {&PPCContext::r3, &PPCContext::r4, &PPCContext::r5, &PPCContext::r6,
+                                                               &PPCContext::r7, &PPCContext::r8, &PPCContext::r9, &PPCContext::r10};
+    const unsigned i = index_++;
+    if (i < 8) return (ctx_.*kRegisters[i]).u64;
+    return Guest{base_}.Load64(ctx_.r1.u32 + 0x54 + (i - 8) * 8);
+  }
+
+ private:
+  PPCContext& ctx_;
+  uint8_t* base_;
+  unsigned index_;
+};
+
+ANY360_SYS_EXPORT(sprintf) {
+  RegisterArguments args(ctx, base, 2);
+  ctx.r3.u64 = uint64_t(int64_t(Sprintf({base}, ctx.r3.u32, ctx.r4.u32, args, false)));
+}
+ANY360_SYS_EXPORT(_snprintf) {
+  RegisterArguments args(ctx, base, 3);
+  ctx.r3.u64 = uint64_t(int64_t(Snprintf({base}, ctx.r3.u32, int32_t(ctx.r4.u32), ctx.r5.u32, args, false, false)));
+}
+ANY360_SYS_EXPORT(swprintf) {
+  RegisterArguments args(ctx, base, 2);
+  ctx.r3.u64 = uint64_t(int64_t(Sprintf({base}, ctx.r3.u32, ctx.r4.u32, args, true)));
+}
+ANY360_SYS_EXPORT(_snwprintf) {
+  RegisterArguments args(ctx, base, 3);
+  ctx.r3.u64 = uint64_t(int64_t(Snprintf({base}, ctx.r3.u32, int32_t(ctx.r4.u32), ctx.r5.u32, args, true, false)));
+}
+ANY360_SYS_EXPORT(vsprintf) {
+  ArrayArguments args({base}, ctx.r5.u32);
+  ctx.r3.u64 = uint64_t(int64_t(Sprintf({base}, ctx.r3.u32, ctx.r4.u32, args, false)));
+}
+ANY360_SYS_EXPORT(_vsnprintf) {
+  ArrayArguments args({base}, ctx.r6.u32);
+  ctx.r3.u64 = uint64_t(int64_t(Snprintf({base}, ctx.r3.u32, int32_t(ctx.r4.u32), ctx.r5.u32, args, false, true)));
+}
+ANY360_SYS_EXPORT(vswprintf) {
+  ArrayArguments args({base}, ctx.r5.u32);
+  ctx.r3.u64 = uint64_t(int64_t(Sprintf({base}, ctx.r3.u32, ctx.r4.u32, args, true)));
+}
+ANY360_SYS_EXPORT(_vsnwprintf) {
+  ArrayArguments args({base}, ctx.r6.u32);
+  ctx.r3.u64 = uint64_t(int64_t(Snprintf({base}, ctx.r3.u32, int32_t(ctx.r4.u32), ctx.r5.u32, args, true, true)));
+}
+ANY360_SYS_EXPORT(_vscwprintf) {
+  ArrayArguments args({base}, ctx.r4.u32);
+  ctx.r3.u64 = uint64_t(int64_t(Vscwprintf({base}, ctx.r3.u32, args)));
+}
+ANY360_SYS_EXPORT(DbgPrint) {
+  RegisterArguments args(ctx, base, 1);
+  ctx.r3.u64 = DbgPrint({base}, ctx.r3.u32, args);
+}
+ANY360_SYS_EXPORT(RtlCompareMemory) { ctx.r3.u64 = RtlCompareMemory({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(RtlCaptureContext) { RtlCaptureContext(); }
+ANY360_SYS_EXPORT(RtlUnwind) { RtlUnwind(); }
+ANY360_SYS_EXPORT(__C_specific_handler) { __C_specific_handler(); }
+ANY360_SYS_EXPORT(VdShutdownEngines) { VdShutdownEngines(); }
+ANY360_SYS_EXPORT(VdSetSystemCommandBufferGpuIdentifierAddress) { VdSetSystemCommandBufferGpuIdentifierAddress(); }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -107,6 +173,23 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(NetDll_XNetXnAddrToInAddr),
     ANY360_SYS_ENTRY(NetDll_XNetInAddrToXnAddr),
     ANY360_SYS_ENTRY(NetDll___WSAFDIsSet),
+    // Batch 3: the CRT formatting family, DbgPrint, RtlCompareMemory, the no-op exception and video helpers.
+    ANY360_SYS_ENTRY(sprintf),
+    ANY360_SYS_ENTRY(_snprintf),
+    ANY360_SYS_ENTRY(swprintf),
+    ANY360_SYS_ENTRY(_snwprintf),
+    ANY360_SYS_ENTRY(vsprintf),
+    ANY360_SYS_ENTRY(_vsnprintf),
+    ANY360_SYS_ENTRY(vswprintf),
+    ANY360_SYS_ENTRY(_vsnwprintf),
+    ANY360_SYS_ENTRY(_vscwprintf),
+    ANY360_SYS_ENTRY(DbgPrint),
+    ANY360_SYS_ENTRY(RtlCompareMemory),
+    ANY360_SYS_ENTRY(RtlCaptureContext),
+    ANY360_SYS_ENTRY(RtlUnwind),
+    ANY360_SYS_ENTRY(__C_specific_handler),
+    ANY360_SYS_ENTRY(VdShutdownEngines),
+    ANY360_SYS_ENTRY(VdSetSystemCommandBufferGpuIdentifierAddress),
 };
 const unsigned kExportCount = sizeof(kExports) / sizeof(kExports[0]);
 

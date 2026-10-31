@@ -40,5 +40,11 @@ uint32_t RtlUnicodeToMultiByteN(Guest g, uint32_t destination, uint32_t destinat
 void RtlTimeToTimeFields(Guest g, uint32_t time, uint32_t time_fields);
 uint32_t RtlTimeFieldsToTime(Guest g, uint32_t time_fields, uint32_t time);
 uint32_t RtlComputeCrc32(Guest g, uint32_t seed, uint32_t buffer, uint32_t length);
+// The number of leading bytes that are equal.
+uint32_t RtlCompareMemory(Guest g, uint32_t source1, uint32_t source2, uint32_t length);
+// Structured exception handling is not provided yet: these do nothing, as the reference runtime does.
+void RtlCaptureContext();
+void RtlUnwind();
+void __C_specific_handler();
 
 }  // namespace any360::sys

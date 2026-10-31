@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 750" width="1000" height="750" font-family="sans-serif">
 <style>.blk:hover rect{opacity:.8}</style>
 <rect width="1000" height="750" fill="#0d1117"/>
-<text x="0" y="25" font-size="16" fill="#c9d1d9" font-weight="600">System calls native: 1.4% (42/2,914) <tspan font-size="12" font-weight="400" fill="#8b949e">· 16.9% run on the reference runtime · one square per export</tspan></text>
+<text x="0" y="25" font-size="16" fill="#c9d1d9" font-weight="600">System calls native: 2.0% (58/2,914) <tspan font-size="12" font-weight="400" fill="#8b949e">· 16.9% run on the reference runtime · one square per export</tspan></text>
 <rect x="0" y="34" width="1000" height="300" fill="#0d1117"/>
 <a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xam ui: 340 (0% native/ported; 8 reference, 331 stub, 1 missing)</title>
 <rect x="0.00" y="34.00" width="9.71" height="9.58" fill="#8957e5"/>
@@ -1691,7 +1691,7 @@
 <rect x="451.6" y="263.5" width="115.3" height="70.5" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="455.6" y="276.5" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">xam content</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl video: 77 (18% native/ported; 13 native, 1 ported, 12 reference, 49 stub, 2 missing)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl video: 77 (21% native/ported; 15 native, 1 ported, 10 reference, 49 stub, 2 missing)</title>
 <rect x="566.92" y="34.00" width="9.76" height="9.04" fill="#2ea043"/>
 <rect x="577.18" y="34.00" width="9.76" height="9.04" fill="#2ea043"/>
 <rect x="587.43" y="34.00" width="9.76" height="9.04" fill="#2ea043"/>
@@ -1705,9 +1705,9 @@
 <rect x="577.18" y="43.54" width="9.76" height="9.04" fill="#2ea043"/>
 <rect x="587.43" y="43.54" width="9.76" height="9.04" fill="#2ea043"/>
 <rect x="597.69" y="43.54" width="9.76" height="9.04" fill="#2ea043"/>
-<rect x="607.95" y="43.54" width="9.76" height="9.04" fill="#2f81f7"/>
-<rect x="618.20" y="43.54" width="9.76" height="9.04" fill="#8957e5"/>
-<rect x="628.46" y="43.54" width="9.76" height="9.04" fill="#8957e5"/>
+<rect x="607.95" y="43.54" width="9.76" height="9.04" fill="#2ea043"/>
+<rect x="618.20" y="43.54" width="9.76" height="9.04" fill="#2ea043"/>
+<rect x="628.46" y="43.54" width="9.76" height="9.04" fill="#2f81f7"/>
 <rect x="638.72" y="43.54" width="9.76" height="9.04" fill="#8957e5"/>
 <rect x="648.97" y="43.54" width="9.76" height="9.04" fill="#8957e5"/>
 <rect x="566.92" y="53.08" width="9.76" height="9.04" fill="#8957e5"/>
@@ -2035,7 +2035,7 @@
 <rect x="659.2" y="34.0" width="73.4" height="77.1" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="663.2" y="47.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">xboxkrnl h</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl rtl: 55 (27% native/ported; 15 native, 14 reference, 26 stub)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl rtl: 55 (35% native/ported; 19 native, 10 reference, 26 stub)</title>
 <rect x="659.23" y="111.10" width="9.99" height="9.14" fill="#2ea043"/>
 <rect x="669.72" y="111.10" width="9.99" height="9.14" fill="#2ea043"/>
 <rect x="680.21" y="111.10" width="9.99" height="9.14" fill="#2ea043"/>
@@ -2051,10 +2051,10 @@
 <rect x="711.69" y="120.74" width="9.99" height="9.14" fill="#2ea043"/>
 <rect x="722.18" y="120.74" width="9.99" height="9.14" fill="#2ea043"/>
 <rect x="659.23" y="130.38" width="9.99" height="9.14" fill="#2ea043"/>
-<rect x="669.72" y="130.38" width="9.99" height="9.14" fill="#8957e5"/>
-<rect x="680.21" y="130.38" width="9.99" height="9.14" fill="#8957e5"/>
-<rect x="690.70" y="130.38" width="9.99" height="9.14" fill="#8957e5"/>
-<rect x="701.20" y="130.38" width="9.99" height="9.14" fill="#8957e5"/>
+<rect x="669.72" y="130.38" width="9.99" height="9.14" fill="#2ea043"/>
+<rect x="680.21" y="130.38" width="9.99" height="9.14" fill="#2ea043"/>
+<rect x="690.70" y="130.38" width="9.99" height="9.14" fill="#2ea043"/>
+<rect x="701.20" y="130.38" width="9.99" height="9.14" fill="#2ea043"/>
 <rect x="711.69" y="130.38" width="9.99" height="9.14" fill="#8957e5"/>
 <rect x="722.18" y="130.38" width="9.99" height="9.14" fill="#8957e5"/>
 <rect x="659.23" y="140.02" width="9.99" height="9.14" fill="#8957e5"/>
@@ -2976,17 +2976,17 @@
 <rect x="981.62" y="233.34" width="8.69" height="10.00" fill="#d29922"/>
 <rect x="963.2" y="201.8" width="36.8" height="42.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl strings: 14 (0% native/ported; 10 reference, 3 stub, 1 missing)</title>
-<rect x="882.38" y="243.84" width="9.78" height="8.85" fill="#8957e5"/>
-<rect x="892.66" y="243.84" width="9.78" height="8.85" fill="#8957e5"/>
-<rect x="902.94" y="243.84" width="9.78" height="8.85" fill="#8957e5"/>
-<rect x="882.38" y="253.19" width="9.78" height="8.85" fill="#8957e5"/>
-<rect x="892.66" y="253.19" width="9.78" height="8.85" fill="#8957e5"/>
-<rect x="902.94" y="253.19" width="9.78" height="8.85" fill="#8957e5"/>
-<rect x="882.38" y="262.54" width="9.78" height="8.85" fill="#8957e5"/>
-<rect x="892.66" y="262.54" width="9.78" height="8.85" fill="#8957e5"/>
-<rect x="902.94" y="262.54" width="9.78" height="8.85" fill="#8957e5"/>
-<rect x="882.38" y="271.89" width="9.78" height="8.85" fill="#8957e5"/>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl strings: 14 (71% native/ported; 10 native, 3 stub, 1 missing)</title>
+<rect x="882.38" y="243.84" width="9.78" height="8.85" fill="#2ea043"/>
+<rect x="892.66" y="243.84" width="9.78" height="8.85" fill="#2ea043"/>
+<rect x="902.94" y="243.84" width="9.78" height="8.85" fill="#2ea043"/>
+<rect x="882.38" y="253.19" width="9.78" height="8.85" fill="#2ea043"/>
+<rect x="892.66" y="253.19" width="9.78" height="8.85" fill="#2ea043"/>
+<rect x="902.94" y="253.19" width="9.78" height="8.85" fill="#2ea043"/>
+<rect x="882.38" y="262.54" width="9.78" height="8.85" fill="#2ea043"/>
+<rect x="892.66" y="262.54" width="9.78" height="8.85" fill="#2ea043"/>
+<rect x="902.94" y="262.54" width="9.78" height="8.85" fill="#2ea043"/>
+<rect x="882.38" y="271.89" width="9.78" height="8.85" fill="#2ea043"/>
 <rect x="892.66" y="271.89" width="9.78" height="8.85" fill="#d29922"/>
 <rect x="902.94" y="271.89" width="9.78" height="8.85" fill="#d29922"/>
 <rect x="882.38" y="281.24" width="9.78" height="8.85" fill="#d29922"/>

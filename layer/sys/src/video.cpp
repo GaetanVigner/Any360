@@ -85,6 +85,8 @@ void VdGetSystemCommandBuffer(Guest g, uint32_t p0, uint32_t p1) {
 }
 
 uint32_t VdCallGraphicsNotificationRoutines() { return 0; }
+void VdShutdownEngines() {}
+void VdSetSystemCommandBufferGpuIdentifierAddress() {}
 
 uint32_t VdInitializeScalerCommandBuffer(Guest g, uint32_t destination, uint32_t count) {
   for (uint32_t i = 0; i < count; ++i) g.Store32(destination + 4 * i, 0x80000000);

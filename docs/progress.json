@@ -7,13 +7,13 @@
  "system_calls": {
   "total": 2914,
   "used_by_titles": 340,
-  "native": 40,
+  "native": 56,
   "ported": 2,
   "runnable": 493,
   "by_state": {
-   "reference": 451,
+   "reference": 435,
    "stub": 2406,
-   "native": 40,
+   "native": 56,
    "missing": 15,
    "ported": 2
   },

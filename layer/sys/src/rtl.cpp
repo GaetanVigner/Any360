@@ -224,4 +224,16 @@ uint32_t RtlComputeCrc32(Guest g, uint32_t seed, uint32_t buffer, uint32_t lengt
   return ~hash;
 }
 
+uint32_t RtlCompareMemory(Guest g, uint32_t source1, uint32_t source2, uint32_t length) {
+  uint32_t n = 0;
+  for (uint32_t i = 0; i < length; ++i) {
+    if (g.Load8(source1 + i) == g.Load8(source2 + i)) ++n;
+  }
+  return n;
+}
+
+void RtlCaptureContext() {}
+void RtlUnwind() {}
+void __C_specific_handler() {}
+
 }  // namespace any360::sys

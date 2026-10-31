@@ -58,6 +58,22 @@ REFERENCE(NetDll_XNetInAddrToString)
 REFERENCE(NetDll_XNetXnAddrToInAddr)
 REFERENCE(NetDll_XNetInAddrToXnAddr)
 REFERENCE(NetDll___WSAFDIsSet)
+REFERENCE(sprintf)
+REFERENCE(_snprintf)
+REFERENCE(swprintf)
+REFERENCE(_snwprintf)
+REFERENCE(vsprintf)
+REFERENCE(_vsnprintf)
+REFERENCE(vswprintf)
+REFERENCE(_vsnwprintf)
+REFERENCE(_vscwprintf)
+REFERENCE(DbgPrint)
+REFERENCE(RtlCompareMemory)
+REFERENCE(RtlCaptureContext)
+REFERENCE(RtlUnwind)
+REFERENCE(__C_specific_handler)
+REFERENCE(VdShutdownEngines)
+REFERENCE(VdSetSystemCommandBufferGpuIdentifierAddress)
 
 namespace {
 
@@ -119,6 +135,80 @@ void Strings(Scene& s, std::mt19937& rng) {
       std::memcpy(s.base + kString2, s.base + kString1, n + 1);
       s.base[kString2 + rng() % (n + 1)] = 0;
   }
+}
+
+// A random printf format with its arguments: the format at `format`, the arguments as 64-bit slots. Returns the slots.
+std::vector<uint64_t> RandomFormat(Scene& s, std::mt19937& rng, uint32_t format, bool wide) {
+  static const char kText[] = "abcXYZ 09-_.:/%%";
+  std::string f;
+  std::vector<uint64_t> slots;
+  const int items = 1 + rng() % 5;
+  for (int i = 0; i < items; ++i) {
+    for (int k = rng() % 4; k > 0; --k) f += kText[rng() % (sizeof(kText) - 3)];
+    if (rng() % 8 == 0) f += "%%";
+    f += '%';
+    if (rng() % 3 == 0) f += "-+0 #"[rng() % 5];
+    if (rng() % 3 == 0) f += std::to_string(rng() % 24);
+    else if (rng() % 8 == 0) { f += '*'; slots.push_back(uint64_t(int64_t(int32_t(rng() % 30) - 8))); }
+    if (rng() % 3 == 0) {
+      f += '.';
+      if (rng() % 6 == 0) { f += '*'; slots.push_back(uint64_t(int64_t(int32_t(rng() % 12) - 2))); }
+      else f += std::to_string(rng() % 12);
+    }
+    static const char* kSizes[] = {"", "", "", "h", "l", "ll", "I64", "I32", "w", "L"};
+    const char* size = kSizes[rng() % 10];
+    f += size;
+    static const char kTypes[] = "dicuxXopsSfeEgGa";
+    const char type = kTypes[rng() % (sizeof(kTypes) - 1)];
+    f += type;
+    switch (type) {
+      case 'c': case 'C': slots.push_back(0x20 + rng() % 90); break;
+      case 's': case 'S': {
+        const bool as_wide = (std::strcmp(size, "l") == 0 || std::strcmp(size, "w") == 0) ? true : std::strcmp(size, "h") == 0 ? false : ((type == 'S') != wide);
+        slots.push_back(rng() % 8 == 0 ? 0 : as_wide ? kWide : kString2);
+        break;
+      }
+      case 'f': case 'e': case 'E': case 'g': case 'G': case 'a': {
+        double v = (rng() % 2 ? 1 : -1) * double(rng() % 100000) / double(1 + rng() % 1000);
+        if (rng() % 6 == 0) v = double(rng()) * 1e12;
+        uint64_t bits;
+        std::memcpy(&bits, &v, 8);
+        slots.push_back(bits);
+        break;
+      }
+      default: {
+        // The reference prints a negative 64-bit value with an unsigned conversion through a signed remainder (garbage
+        // digits), which no CRT does: unsigned 64-bit conversions get non-negative values, the rest anything.
+        const bool wide_unsigned = (std::strcmp(size, "ll") == 0 || std::strcmp(size, "I64") == 0) && std::strchr("ouxX", type);
+        slots.push_back(wide_unsigned ? (uint64_t(rng()) << 31 | rng()) : rng() % 4 ? uint64_t(int64_t(int32_t(rng()))) : (uint64_t(rng()) << 32 | rng()));
+      }
+    }
+  }
+  for (int k = rng() % 4; k > 0; --k) f += kText[rng() % (sizeof(kText) - 3)];
+  if (wide) {
+    for (size_t i = 0; i <= f.size(); ++i) s.Half(format + 2 * uint32_t(i), uint16_t(uint8_t(f[i])));
+  } else {
+    std::memcpy(s.base + format, f.c_str(), f.size() + 1);
+  }
+  s.Text(kString2, rng, rng() % 30);
+  s.WideText(kWide, rng, rng() % 30);
+  return slots;
+}
+
+// Variadic call: the slots after the fixed arguments go to the remaining registers, then the stack.
+void VariadicArguments(Scene& s, PPCContext& ctx, const std::vector<uint64_t>& slots, unsigned first) {
+  PPCRegister* regs[] = {&ctx.r3, &ctx.r4, &ctx.r5, &ctx.r6, &ctx.r7, &ctx.r8, &ctx.r9, &ctx.r10};
+  for (size_t i = 0; i < slots.size(); ++i) {
+    const unsigned index = first + unsigned(i);
+    if (index < 8) regs[index]->u64 = slots[i];
+    else s.Quad(ctx.r1.u32 + 0x54 + (index - 8) * 8, slots[i]);
+  }
+}
+
+// va_list call: the slots in guest memory at kVaList.
+constexpr uint32_t kVaList = kBlockB + 0x1000, kFormat = kBlockB + 0x800;
+void ArrayArguments(Scene& s, const std::vector<uint64_t>& slots) {
+  for (size_t i = 0; i < slots.size(); ++i) s.Quad(kVaList + 8 * uint32_t(i), slots[i]);
 }
 
 Function Native(const char* name) {
@@ -290,6 +380,80 @@ const Case kCases[] = {
       ctx.r3.u64 = socket;
       ctx.r4.u64 = kStruct;
     }),
+    // Batch 3.
+    CASE(sprintf, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      const auto slots = RandomFormat(s, rng, kFormat, false);
+      ctx.r3.u64 = rng() % 16 ? kOut : 0;
+      ctx.r4.u64 = kFormat;
+      VariadicArguments(s, ctx, slots, 2);
+    }),
+    CASE(_snprintf, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      const auto slots = RandomFormat(s, rng, kFormat, false);
+      ctx.r3.u64 = rng() % 16 ? kOut : 0;
+      ctx.r4.u64 = rng() % 8 ? rng() % 40 : uint32_t(int32_t(rng() % 3) - 1);
+      ctx.r5.u64 = kFormat;
+      VariadicArguments(s, ctx, slots, 3);
+    }),
+    CASE(swprintf, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      const auto slots = RandomFormat(s, rng, kFormat, true);
+      ctx.r3.u64 = rng() % 16 ? kOut : 0;
+      ctx.r4.u64 = kFormat;
+      VariadicArguments(s, ctx, slots, 2);
+    }),
+    CASE(_snwprintf, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      const auto slots = RandomFormat(s, rng, kFormat, true);
+      ctx.r3.u64 = rng() % 16 ? kOut : 0;
+      ctx.r4.u64 = rng() % 8 ? rng() % 40 : uint32_t(int32_t(rng() % 3) - 1);
+      ctx.r5.u64 = kFormat;
+      VariadicArguments(s, ctx, slots, 3);
+    }),
+    CASE(vsprintf, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      ArrayArguments(s, RandomFormat(s, rng, kFormat, false));
+      ctx.r3.u64 = rng() % 16 ? kOut : 0;
+      ctx.r4.u64 = kFormat;
+      ctx.r5.u64 = kVaList;
+    }),
+    CASE(_vsnprintf, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      ArrayArguments(s, RandomFormat(s, rng, kFormat, false));
+      ctx.r3.u64 = rng() % 16 ? kOut : 0;
+      ctx.r4.u64 = rng() % 8 ? rng() % 40 : uint32_t(int32_t(rng() % 3) - 1);
+      ctx.r5.u64 = kFormat;
+      ctx.r6.u64 = kVaList;
+    }),
+    CASE(vswprintf, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      ArrayArguments(s, RandomFormat(s, rng, kFormat, true));
+      ctx.r3.u64 = rng() % 16 ? kOut : 0;
+      ctx.r4.u64 = kFormat;
+      ctx.r5.u64 = kVaList;
+    }),
+    CASE(_vsnwprintf, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      ArrayArguments(s, RandomFormat(s, rng, kFormat, true));
+      ctx.r3.u64 = rng() % 16 ? kOut : 0;
+      ctx.r4.u64 = rng() % 8 ? rng() % 40 : uint32_t(int32_t(rng() % 3) - 1);
+      ctx.r5.u64 = kFormat;
+      ctx.r6.u64 = kVaList;
+    }),
+    CASE(_vscwprintf, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      ArrayArguments(s, RandomFormat(s, rng, kFormat, true));
+      ctx.r3.u64 = rng() % 16 ? kFormat : 0;
+      ctx.r4.u64 = kVaList;
+    }),
+    CASE(DbgPrint, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      const auto slots = RandomFormat(s, rng, kFormat, false);
+      ctx.r3.u64 = rng() % 16 ? kFormat : 0;
+      VariadicArguments(s, ctx, slots, 1);
+    }),
+    CASE(RtlCompareMemory, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + rng() % 64;
+      ctx.r4.u64 = kBlockB + rng() % 64;
+      ctx.r5.u64 = rng() % 200;
+      if (rng() % 2) std::memcpy(s.base + ctx.r4.u32, s.base + ctx.r3.u32, rng() % 200);
+    }),
+    CASE(RtlCaptureContext, nullptr),
+    CASE(RtlUnwind, nullptr),
+    CASE(__C_specific_handler, nullptr),
+    CASE(VdShutdownEngines, nullptr),
+    CASE(VdSetSystemCommandBufferGpuIdentifierAddress, nullptr),
 };
 
 struct Result {
@@ -355,6 +519,20 @@ int main(int argc, char** argv) {
           std::printf("%s: trial %d: byte %08X native %02X, reference %02X\n", c.name, trial, kBlockB + i, native.b[i], reference.b[i]);
           ok = false;
         }
+      }
+      if (!ok && std::strstr(c.name, "printf")) {
+        // The format and both outputs of the failing trial, from the images (wide text shown by its low bytes).
+        const bool wide = std::strchr(c.name, 'w') != nullptr;
+        auto text = [&](const std::vector<uint8_t>& block, uint32_t offset) {
+          std::string out;
+          for (uint32_t k = offset + (wide ? 1 : 0); k < block.size() && out.size() < 160; k += wide ? 2 : 1) {
+            if (!block[k]) break;
+            out += block[k] >= 32 && block[k] < 127 ? char(block[k]) : '.';
+          }
+          return out;
+        };
+        std::printf("  format    \"%s\"\n  native    \"%s\"\n  reference \"%s\"\n", text(image_reference, kBlockSize + kFormat - kBlockB).c_str(),
+                    text(native.a, kOut - kBlockA).c_str(), text(reference.a, kOut - kBlockA).c_str());
       }
     }
     if (ok) std::printf("%s: %d trials equal\n", c.name, trials);
