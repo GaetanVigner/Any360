@@ -102,6 +102,19 @@ than the previous state, and the first use stashes a host handle in the header's
 files and XAM state are host state too. A byte-for-byte comparison cannot verify a native implementation of these,
 and the NT semantics (previous state returned, signal state in the object) are the ones a decompiled title relies on.
 
+## Priorities and the MVP
+
+The order of work comes from the titles that feed the database (`tools/build_db.py`): for each system call, how many
+known titles import it and, where a title's generated code is at hand, how many call sites it has. Two of the titles
+are known only by their import list, read from a XenonRecomp port's own minimal kernel (Sonic the Hedgehog (2006) from
+MarathonRecomp, Test Drive Unlimited from TDURecomp; `titles/<title>/imports.json`, names only): a kernel that small runs
+the game, so those lists say what a native port needs first. Small ReXGlue recomps do not publish their generated code,
+so their import tables are not available without the game.
+
+**MVP**: one title with every system call except the graphics and audio ones native, so it can run on `any360::sys`
+with only those left to the reference. The progress page shows the MVP per title; the closest title is the target, and
+the calls the four titles share come first.
+
 Next for the layer, in this order:
 
 1. **Object manager and scheduler, continued**: absolute wait timeouts, APCs (timer and `NtQueueApcThread`),

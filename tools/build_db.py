@@ -86,12 +86,48 @@ def load_json(path, default=None):
 
 
 def titles():
+    """Known titles: those with a pipeline (their recomp's generated code), and those known only by their import list
+    (titles/<title>/imports.json, read from a port's own kernel)."""
     out = {}
     for cfg_path in sorted(TITLES.glob('*/pipeline.json')):
         cfg = load_json(cfg_path)
         out[cfg_path.parent.name] = {'config': cfg, 'coverage': load_json(COVERAGE / f'{cfg_path.parent.name}.json', {}),
                                      'inventory': load_json(COVERAGE / f'inventory-{cfg_path.parent.name}.json', {})}
+    for list_path in sorted(TITLES.glob('*/imports.json')):
+        name = list_path.parent.name
+        if name in out:
+            continue
+        listed = load_json(list_path)
+        out[name] = {'config': {'source': listed.get('source', ''), 'description': listed.get('title', '')},
+                     'coverage': {'imports': [{'name': n, 'port': state} for n, state in listed['imports'].items()]},
+                     'inventory': {}}
     return out
+
+
+# Calls a native port needs from the graphics and audio layers rather than from any360::sys; the MVP counts the rest.
+GFX_AUDIO_CALLS = {'VdInitializeEngines', 'VdShutdownEngines', 'VdInitializeRingBuffer', 'VdEnableRingBufferRPtrWriteBack',
+                   'VdSetGraphicsInterruptCallback', 'VdSwap', 'VdPersistDisplay', 'VdSetSystemCommandBuffer',
+                   'VdQuerySystemCommandBuffer', 'VdGetSystemCommandBuffer', 'VdSetSystemCommandBufferGpuIdentifierAddress',
+                   'VdCallGraphicsNotificationRoutines', 'VdInitializeScalerCommandBuffer', 'VdRetrainEDRAM', 'VdRetrainEDRAMWorker',
+                   'VdIsHSIOTrainingSucceeded', 'VdEnableDisableClockGating'}
+
+
+def is_gfx_audio(row):
+    return row['name'] in GFX_AUDIO_CALLS or row['group'] in ('audio', 'audio xma')
+
+
+def call_sites(known):
+    """title -> {import: number of call sites in the recompiled code} for titles whose generated code is at hand."""
+    sites = {}
+    for t, k in known.items():
+        generated = k['config'].get('generated')
+        if not generated or not Path(generated).exists():
+            continue
+        counter = Counter()
+        for path in Path(generated).glob('*_recomp.*.cpp'):
+            counter.update(re.findall(r'__imp__([A-Za-z0-9_]+)\(ctx', coverage.read(path)))
+        sites[t] = counter
+    return sites
 
 
 def group_of(name, library, implemented_file):
@@ -138,7 +174,7 @@ def build_system_calls(sdk, known, native):
     exports = coverage.sdk_exports(sdk)
     files = sdk_export_files(sdk)
     used = {t: {i['name'] for i in k['coverage'].get('imports', [])} for t, k in known.items()}
-    ported = {t: port_imports(Path(k['config']['port_src'])) & used[t] for t, k in known.items()}
+    ported = {t: port_imports(Path(k['config']['port_src'])) & used[t] if k['config'].get('port_src') else set() for t, k in known.items()}
     rows = []
     for name, e in exports.items():
         if e['ordinal'] is None and name.startswith(XDK_PREFIXES):
@@ -209,6 +245,29 @@ def build_xdk(sdk, known, native):
     return rows, unnamed
 
 
+def title_summary(t, k, calls, sites, unnamed):
+    """What a title needs and how much of it Any360 provides: imports, call sites, and the MVP (every system call except
+    the graphics and audio ones native, so the title runs on any360::sys with only those left to the reference)."""
+    mine = [r for r in calls if t in r['titles']]
+    sys_calls = [r for r in mine if not r['gfx_audio']]
+
+    def done(r):
+        return r['any360'] in ('native', 'ported')
+
+    out = {'imports': len(mine), 'imports_native': sum(1 for r in mine if done(r)),
+           'mvp_total': len(sys_calls), 'mvp_native': sum(1 for r in sys_calls if done(r)),
+           'mnemonics': len(k['coverage'].get('instructions', [])),
+           'instructions': sum(i['count'] for i in k['coverage'].get('instructions', [])),
+           'sdk': k['coverage'].get('sdk', {}).get('version', ''), 'unnamed_library_functions': sum(unnamed.get(t, {}).values()),
+           'source': k['config'].get('source', ''), 'description': k['config'].get('description', '')}
+    if t in sites:
+        out['sites'] = sum(r['sites'].get(t, 0) for r in mine)
+        out['sites_native'] = sum(r['sites'].get(t, 0) for r in mine if done(r))
+        out['mvp_sites'] = sum(r['sites'].get(t, 0) for r in sys_calls)
+        out['mvp_sites_native'] = sum(r['sites'].get(t, 0) for r in sys_calls if done(r))
+    return out
+
+
 def main():
     known = titles()
     sdk = next((Path(k['config']['sdk']) for k in known.values() if k['config'].get('sdk') and Path(k['config']['sdk']).exists()), None)
@@ -219,6 +278,10 @@ def main():
     for path in (ROOT / 'layer' / 'sys' / 'ppc').glob('*.cpp'):
         native.setdefault('system_calls', []).extend(re.findall(r'ANY360_SYS_EXPORT\((\w+)\)', path.read_text(encoding='utf-8')))
     calls = build_system_calls(sdk, known, native)
+    sites = call_sites(known)
+    for r in calls:
+        r['sites'] = {t: sites[t][r['name']] for t in sites if sites[t][r['name']]}
+        r['gfx_audio'] = is_gfx_audio(r)
     instructions = build_instructions(sdk, known, native)
     xdk, unnamed = build_xdk(sdk, known, native)
     DB.mkdir(exist_ok=True)
@@ -228,10 +291,7 @@ def main():
 
     summary = {
         'date': date.today().isoformat(), 'reference': {'sdk': 'ReXGlue', 'version': coverage.sdk_version(sdk)},
-        'titles': {t: {'imports': len(k['coverage'].get('imports', [])), 'mnemonics': len(k['coverage'].get('instructions', [])),
-                       'instructions': sum(i['count'] for i in k['coverage'].get('instructions', [])),
-                       'sdk': k['coverage'].get('sdk', {}).get('version', ''), 'unnamed_library_functions': sum(unnamed[t].values())}
-                   for t, k in known.items()},
+        'titles': {t: title_summary(t, k, calls, sites, unnamed) for t, k in known.items()},
         'system_calls': {'total': len(calls), 'used': sum(1 for r in calls if r['titles']), 'any360': count(calls, 'any360'),
                          'reference': count(calls, 'reference'), 'libraries': dict(Counter(r['library'] for r in calls))},
         'instructions': {'total': len(instructions), 'used': sum(1 for r in instructions if r['titles']),

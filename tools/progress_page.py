@@ -255,7 +255,8 @@ def main():
 
     page_data = {
         'date': today, 'summary': summary, 'components': comps, 'patches': {k: v['areas'] for k, v in patches.items()},
-        'calls': [{k: r[k] for k in ('name', 'library', 'ordinal', 'group', 'reference', 'any360', 'state', 'titles')} for r in calls],
+        'calls': [{**{k: r[k] for k in ('name', 'library', 'ordinal', 'group', 'reference', 'any360', 'state', 'titles')},
+                   'sites': sum(r.get('sites', {}).values()), 'gfx': r.get('gfx_audio', False)} for r in calls],
         'instructions': [{k: r[k] for k in ('id', 'mnemonic', 'family', 'reference', 'any360', 'state', 'used', 'titles')} for r in instructions],
         'xdk': xdk, 'repos': REPOS,
     }
@@ -325,7 +326,7 @@ label.t{color:var(--muted);font-size:12.5px;cursor:pointer}.muted{color:var(--mu
 
 <section class="panel" id="panel-sources">
 <h2>Sources: the known titles</h2>
-<p>Titles whose recompilation feeds the database (their imports and instruction mix). They are examples, not the unit of progress: each title's own repository tracks how native that game is.</p>
+<p>Titles that feed the database: recompilations whose generated code is at hand (imports, call sites, instruction mix) and ports whose own minimal kernel lists the imports a game needs. They say what matters first; each title's own repository tracks how native that game is. <b>MVP</b>: every system call of a title except the graphics and audio ones native, so the title can run on any360::sys with only those left to the reference.</p>
 <div id="sources"></div>
 </section>
 
@@ -384,6 +385,8 @@ const S = D.summary, sc = S.system_calls, si = S.instructions, sx = S.xdk;
 $('#overview-cards').innerHTML = `
   <div class="card"><b>${num(sc.native + sc.ported)} / ${num(sc.total)}</b><span>system calls native or ported (${pct(sc.native + sc.ported, sc.total)}); ${num(sc.runnable)} run on the reference</span></div>
   <div class="card"><b>${num(sc.used_by_titles)}</b><span>system calls the ${Object.keys(S.titles).length} known titles import</span></div>
+  ${(() => { const [n, t] = Object.entries(S.titles).sort((a, b) => (b[1].mvp_native / b[1].mvp_total) - (a[1].mvp_native / a[1].mvp_total))[0];
+             return `<div class="card"><b>${t.mvp_native} / ${t.mvp_total}</b><span>MVP: system calls (graphics and audio aside) native for ${h(n)}, the closest title (${pct(t.mvp_native, t.mvp_total)})</span></div>`; })()}
   <div class="card"><b>${num(si.native)} / ${num(si.total)}</b><span>instruction ids with native rules; ${num(si.reference)} handled by the reference recompiler</span></div>
   <div class="card"><b>${num(sx.native + sx.ported)} / ${num(sx.total)}</b><span>named XDK library functions native</span></div>
   <div class="card"><b>${S.toolkit.done} / ${S.toolkit.components}</b><span>toolkit components done (${S.toolkit.in_progress} in progress)</span></div>`;
@@ -391,14 +394,15 @@ $('#overview-cards').innerHTML = `
 // System calls.
 {
   const cols = [{k:'library',t:'Library'},{k:'name',t:'Export',f:v=>`<code>${h(v)}</code>`},{k:'ordinal',t:'Ordinal',n:1,f:v=>v==null?'':'0x'+v.toString(16).toUpperCase()},{k:'group',t:'Area'},
-                {k:'state',t:'State',f:v=>dot(CS[v], v)},{k:'reference',t:'Reference'},{k:'n',t:'Titles',n:1,f:(v,r)=>v ? `${v} <span class="muted">(${r.titles.join(', ')})</span>` : '<span class="muted">0</span>'}];
-  const rows = D.calls.map(r => ({...r, n: r.titles.length}));
+                {k:'state',t:'State',f:v=>dot(CS[v], v)},{k:'reference',t:'Reference'},{k:'n',t:'Titles',n:1,f:(v,r)=>v ? `${v} <span class="muted">(${r.titles.join(', ')})</span>` : '<span class="muted">0</span>'},
+                {k:'sites',t:'Call sites',n:1,f:v=>v ? num(v) : ''},{k:'priority',t:'Priority',n:1,f:v=>`<span class="muted">${num(v)}</span>`},{k:'mvp',t:'MVP',f:(v,r)=>r.gfx ? '<span class="muted">gfx / audio</span>' : (r.n ? 'yes' : '')}];
+  const rows = D.calls.map(r => ({...r, n: r.titles.length, priority: r.titles.length * 100000 + r.sites}));
   let t = null;
   const on = chips('#calls-chips', ['native','ported','reference','stub','missing'], apply);
   function apply() {
     const q = $('#calls-q').value.trim().toLowerCase(), used = $('#calls-used').checked;
     const rs = rows.filter(r => on.has(r.state) && (!used || r.n) && (!q || (r.name + ' ' + r.group + ' ' + r.library).toLowerCase().includes(q)));
-    t ? t.update(rs) : t = table('#calls', cols, rs, {sort:'n', page:200}); $('#calls-info').textContent = `${num(rs.length)} of ${num(rows.length)}`;
+    t ? t.update(rs) : t = table('#calls', cols, rs, {sort:'priority', page:200}); $('#calls-info').textContent = `${num(rs.length)} of ${num(rows.length)}`;
   }
   $('#calls-q').oninput = apply; $('#calls-used').onchange = apply; apply();
 }
@@ -421,9 +425,12 @@ table('#xdk', [{k:'library',t:'Library'},{k:'name',t:'Function',f:v=>`<code>${h(
 table('#xdk-unnamed', [{k:'title',t:'Title'},{k:'range',t:'Library range'},{k:'functions',t:'Functions',n:1,f:num}],
       Object.entries(sx.unnamed_by_title).flatMap(([title, ranges]) => Object.entries(ranges).map(([range, functions]) => ({title, range, functions}))), {sort:'functions'});
 // Sources.
-table('#sources', [{k:'title',t:'Title',f:(v)=>D.repos[v] ? `<a href="${D.repos[v]}">${h(v)}</a>` : h(v)},{k:'sdk',t:'Reference SDK'},{k:'imports',t:'System calls imported',n:1,f:num},
+table('#sources', [{k:'title',t:'Title',f:(v,r)=>(D.repos[v] || r.source) ? `<a href="${D.repos[v] || r.source}">${h(v)}</a>` : h(v)},
+                   {k:'mvp',t:'MVP (sys calls native)',n:1,f:(v,r)=>`${bar(r.mvp_native, r.mvp_total)} <span class="muted">${r.mvp_native}/${r.mvp_total}</span>`},
+                   {k:'imports',t:'System calls imported',n:1,f:(v,r)=>`${num(v)} <span class="muted">(${r.imports_native} native)</span>`},
+                   {k:'sites',t:'Call sites native',n:1,f:(v,r)=>v ? `${pct(r.sites_native, v)} <span class="muted">of ${num(v)}</span>` : '<span class="muted">import list only</span>'},
                    {k:'mnemonics',t:'Mnemonics used',n:1,f:num},{k:'instructions',t:'Instructions in code',n:1,f:num},{k:'unnamed_library_functions',t:'Unnamed library functions',n:1,f:num}],
-      Object.entries(S.titles).map(([title, t]) => ({title, ...t})), {sort:'title', asc:true});
+      Object.entries(S.titles).map(([title, t]) => ({title, mvp: t.mvp_native / t.mvp_total, ...t})), {sort:'mvp'});
 // Toolkit.
 table('#toolkit', [{k:'area',t:'Stage / area'},{k:'name',t:'Component'},{k:'state',t:'State',f:v=>dot(SC[v]||'#6e7681', v)},{k:'source',t:'Comes from',f:v=>`<span class="muted">${h(v)}</span>`},{k:'note',t:'Note',f:v=>`<span class="muted">${h(v)}</span>`}], D.components, {sort:'area', asc:true});
 table('#patches', [{k:'set',t:'Patch set'},{k:'area',t:'SDK area'},{k:'count',t:'Patches',n:1}], Object.entries(D.patches).flatMap(([set, areas]) => Object.entries(areas).map(([area, count]) => ({set, area, count}))), {sort:'count'});

@@ -7,22 +7,64 @@
  "titles": {
   "crackdown": {
    "imports": 248,
+   "imports_native": 118,
+   "mvp_total": 226,
+   "mvp_native": 108,
    "mnemonics": 340,
    "instructions": 2667844,
    "sdk": "0.10.0",
-   "unnamed_library_functions": 766
+   "unnamed_library_functions": 766,
+   "source": "",
+   "description": "",
+   "sites": 1534,
+   "sites_native": 1291,
+   "mvp_sites": 1504,
+   "mvp_sites_native": 1275
   },
   "simpsons": {
    "imports": 317,
+   "imports_native": 122,
+   "mvp_total": 277,
+   "mvp_native": 112,
    "mnemonics": 338,
    "instructions": 2938230,
    "sdk": "0.8.0",
-   "unnamed_library_functions": 502
+   "unnamed_library_functions": 502,
+   "source": "",
+   "description": "",
+   "sites": 4697,
+   "sites_native": 4287,
+   "mvp_sites": 4635,
+   "mvp_sites_native": 4273
+  },
+  "sonic06": {
+   "imports": 200,
+   "imports_native": 104,
+   "mvp_total": 178,
+   "mvp_native": 94,
+   "mnemonics": 0,
+   "instructions": 0,
+   "sdk": "",
+   "unnamed_library_functions": 0,
+   "source": "https://github.com/sonicnext-dev/MarathonRecomp",
+   "description": "Sonic the Hedgehog (2006), MarathonRecomp (XenonRecomp; its own minimal kernel)"
+  },
+  "tdu": {
+   "imports": 278,
+   "imports_native": 124,
+   "mvp_total": 255,
+   "mvp_native": 114,
+   "mnemonics": 0,
+   "instructions": 0,
+   "sdk": "",
+   "unnamed_library_functions": 0,
+   "source": "https://github.com/testdriveupgrade/TDURecomp",
+   "description": "Test Drive Unlimited, TDURecomp (XenonRecomp fork; its own minimal kernel)"
   }
  },
  "system_calls": {
   "total": 2914,
-  "used": 340,
+  "used": 374,
   "any360": {
    "todo": 2773,
    "native": 140,
@@ -66,7 +108,9 @@
     "XDK D3D command writers": 342,
     "CRT (string / memory)": 64,
     "kernel import thunks": 96
-   }
+   },
+   "sonic06": {},
+   "tdu": {}
   }
  }
 }
