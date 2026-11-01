@@ -10,7 +10,8 @@ namespace any360::gfx::vk {
 namespace {
 // Xenos swizzle codes.
 constexpr uint32_t Swizzle(uint32_t x, uint32_t y, uint32_t z, uint32_t w) { return x | y << 3 | z << 6 | w << 9; }
-constexpr uint32_t kRGBA = Swizzle(0, 1, 2, 3), kRRRR = Swizzle(0, 0, 0, 0), kRGGG = Swizzle(0, 1, 1, 1);
+constexpr uint32_t kRGBA = Swizzle(0, 1, 2, 3), kRRRR = Swizzle(0, 0, 0, 0), kRGGG = Swizzle(0, 1, 1, 1),
+                   kRGBB = Swizzle(0, 1, 2, 2);
 
 uint32_t Swap(uint32_t v, uint32_t endian) {
   switch (endian) {
@@ -54,6 +55,7 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
   static const TextureFormatInfo k8 = {VK_FORMAT_R8_UNORM, 1, 1, kRRRR};
   static const TextureFormatInfo k8_8 = {VK_FORMAT_R8G8_UNORM, 2, 1, kRGGG};
   static const TextureFormatInfo k8_8_8_8 = {VK_FORMAT_R8G8B8A8_UNORM, 4, 1, kRGBA};
+  static const TextureFormatInfo k5_6_5 = {VK_FORMAT_R5G6B5_UNORM_PACK16, 2, 1, kRGBB, TextureFormatInfo::kSwapRedBlue565};
   static const TextureFormatInfo k2_10_10_10 = {VK_FORMAT_A2B10G10R10_UNORM_PACK32, 4, 1, kRGBA};
   static const TextureFormatInfo kDxt1 = {VK_FORMAT_BC1_RGBA_UNORM_BLOCK, 8, 4, kRGBA};
   static const TextureFormatInfo kDxt3 = {VK_FORMAT_BC2_UNORM_BLOCK, 16, 4, kRGBA};
@@ -70,6 +72,7 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
   switch (xenos_format) {
     case 2: case 8: return &k8;  // k_8, k_8_A
     case 10: return &k8_8;
+    case 4: return &k5_6_5;
     case 6: return &k8_8_8_8;
     case 7: return &k2_10_10_10;
     case 18: return &kDxt1;
@@ -138,6 +141,7 @@ TextureFetch TextureFetch::Parse(const uint32_t d[6]) {
   } else {
     f.width = (d[2] & 0x1FFF) + 1, f.height = ((d[2] >> 13) & 0x1FFF) + 1, f.depth = (d[2] >> 26) + 1;
   }
+  if (f.dimension == 3) f.depth = 6;  // cube: six faces, laid out as stacked slices
   f.swizzle = (d[3] >> 1) & 0xFFF;
   f.mag_filter = (d[3] >> 19) & 3;
   f.min_filter = (d[3] >> 21) & 3;
@@ -158,7 +162,7 @@ uint32_t TextureCache::GuestExtent(const TextureFetch& t, const TextureFormatInf
   // The base level's blocks: linear rows aligned to 256 bytes, or 32x32-block tiles; then the other slices.
   const uint32_t bh = (t.height + info.block_size - 1) / info.block_size, bw = (t.width + info.block_size - 1) / info.block_size;
   const uint32_t pitch_blocks = std::max(1u, (std::max(t.pitch, t.width) + info.block_size - 1) / info.block_size);
-  const uint32_t slices = t.dimension == 1 ? t.depth : 1;
+  const uint32_t slices = t.dimension == 1 || t.dimension == 3 ? t.depth : 1;
   const uint32_t others = (slices - 1) * SliceStride(t, info);
   if (t.tiled) return others + ((pitch_blocks + 31) & ~31u) * ((bh + 31) & ~31u) * info.block_bytes;
   const uint32_t row_pitch = (pitch_blocks * info.block_bytes + 255) & ~255u;
@@ -168,7 +172,7 @@ uint32_t TextureCache::GuestExtent(const TextureFetch& t, const TextureFormatInf
 bool TextureCache::LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blocks, std::string& error) const {
   const TextureFetch t = TextureFetch::Parse(fetch);
   const TextureFormatInfo* info = GuestTextureFormat(t.format);
-  if (!info || t.dimension != 1) return error = "texture format or dimension not handled yet", false;
+  if (!info || (t.dimension != 1 && t.dimension != 3)) return error = "texture format or dimension not handled yet", false;
   const uint32_t bw = (t.width + info->block_size - 1) / info->block_size, bh = (t.height + info->block_size - 1) / info->block_size;
   const uint32_t pitch_blocks = std::max(1u, (std::max(t.pitch, t.width) + info->block_size - 1) / info->block_size);
   const uint32_t bpb_log2 = std::countr_zero(info->block_bytes);
@@ -198,7 +202,14 @@ bool TextureCache::LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blo
       }
     }
   }
-  if (info->convert != TextureFormatInfo::kNone) {
+  if (info->convert == TextureFormatInfo::kSwapRedBlue565) {
+    for (size_t i = 0; i + 2 <= blocks.size(); i += 2) {
+      uint16_t v;
+      std::memcpy(&v, &blocks[i], 2);
+      v = uint16_t((v & 0x07E0) | (v & 0x1F) << 11 | v >> 11);
+      std::memcpy(&blocks[i], &v, 2);
+    }
+  } else if (info->convert != TextureFormatInfo::kNone) {
     for (size_t i = 0; i + 4 <= blocks.size(); i += 4) {
       uint32_t v;
       std::memcpy(&v, &blocks[i], 4);
@@ -245,15 +256,85 @@ TextureCache::~TextureCache() {
     DestroyImage(device_, t->image);
   }
   for (auto& [key, sampler] : samplers_) f.vkDestroySampler(d, sampler, nullptr);
+  for (Image& image : empty_) DestroyImage(device_, image);
 }
 
-VkImageView TextureCache::View(const uint32_t fetch[6], std::string& error) {
+VkImageView TextureCache::Empty(ViewType type, std::string& error) {
+  Image& image = empty_[int(type)];
+  if (image.view) return image.view;
+  const Functions& f = device_.fn();
+  const uint32_t layers = type == ViewType::kCube ? 6 : 1;
+  VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+  ci.flags = type == ViewType::kCube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
+  ci.imageType = type == ViewType::k3D ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
+  ci.format = VK_FORMAT_R8G8B8A8_UNORM;
+  ci.extent = {1, 1, 1};
+  ci.mipLevels = 1;
+  ci.arrayLayers = layers;
+  ci.samples = VK_SAMPLE_COUNT_1_BIT;
+  ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+  ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  if (f.vkCreateImage(device_.device(), &ci, nullptr, &image.image) != VK_SUCCESS) return error = "empty texture", VK_NULL_HANDLE;
+  VkMemoryRequirements req;
+  f.vkGetImageMemoryRequirements(device_.device(), image.image, &req);
+  VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+  alloc.allocationSize = req.size;
+  alloc.memoryTypeIndex = device_.MemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+  if (alloc.memoryTypeIndex == UINT32_MAX || f.vkAllocateMemory(device_.device(), &alloc, nullptr, &image.memory) != VK_SUCCESS) {
+    return error = "empty texture memory", VK_NULL_HANDLE;
+  }
+  f.vkBindImageMemory(device_.device(), image.image, image.memory, 0);
+  image.format = ci.format;
+  image.width = image.height = 1;
+  const bool ok = device_.Submit([&](VkCommandBuffer cb) {
+    VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+    barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.dstStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image.image;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layers};
+    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependency.imageMemoryBarrierCount = 1;
+    dependency.pImageMemoryBarriers = &barrier;
+    f.vkCmdPipelineBarrier2(cb, &dependency);
+    const VkClearColorValue black{};
+    f.vkCmdClearColorImage(cb, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &barrier.subresourceRange);
+    barrier.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+    barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    f.vkCmdPipelineBarrier2(cb, &dependency);
+  });
+  if (!ok) return error = "empty texture upload", VK_NULL_HANDLE;
+  VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+  vi.image = image.image;
+  vi.viewType = type == ViewType::kCube ? VK_IMAGE_VIEW_TYPE_CUBE
+                : type == ViewType::k3D ? VK_IMAGE_VIEW_TYPE_3D
+                                        : VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+  vi.format = image.format;
+  vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layers};
+  if (f.vkCreateImageView(device_.device(), &vi, nullptr, &image.view) != VK_SUCCESS) {
+    image.view = VK_NULL_HANDLE;
+    return error = "empty texture view", VK_NULL_HANDLE;
+  }
+  return image.view;
+}
+
+VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::string& error) {
   const TextureFetch t = TextureFetch::Parse(fetch);
   if (t.type != 2) return error = "fetch constant is not a texture", VK_NULL_HANDLE;
-  if (t.dimension != 1) {
-    static const char* const kDimensions[4] = {"1D", "2D", "3D", "cube"};
-    return error = std::string(kDimensions[t.dimension & 3]) + " textures (not yet)", VK_NULL_HANDLE;
+  // The data dimension (fetch constant word 5): 0 1D, 1 2D or stacked, 2 3D, 3 cube.
+  const ViewType matching = t.dimension == 3 ? ViewType::kCube : t.dimension == 2 ? ViewType::k3D : ViewType::k2DArray;
+  if (type != matching) return Empty(type, error);
+  if (t.dimension == 0 || t.dimension == 2) {
+    return error = std::string(t.dimension ? "3D" : "1D") + " textures (not yet)", VK_NULL_HANDLE;
   }
+  const bool cube = t.dimension == 3;
   const TextureFormatInfo* info = GuestTextureFormat(t.format);
   if (!info) return error = "texture format " + std::to_string(t.format) + " not handled yet", VK_NULL_HANDLE;
   if (t.packed_mips && (t.width <= 16 || t.height <= 16)) return error = "packed mip tail base (not yet)", VK_NULL_HANDLE;
@@ -270,11 +351,12 @@ VkImageView TextureCache::View(const uint32_t fetch[6], std::string& error) {
   if (!slot) {
     slot = std::make_unique<Texture>();
     VkImageCreateInfo info_ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    info_ci.flags = cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
     info_ci.imageType = VK_IMAGE_TYPE_2D;
     info_ci.format = info->format;
     info_ci.extent = {t.width, t.height, 1};
     info_ci.mipLevels = 1;
-    info_ci.arrayLayers = t.depth;  // stacked textures: one layer a slice
+    info_ci.arrayLayers = t.depth;  // stacked textures: one layer a slice; cubes: a face
     info_ci.samples = VK_SAMPLE_COUNT_1_BIT;
     info_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
     info_ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -347,7 +429,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], std::string& error) {
   if (!view) {
     VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     vi.image = slot->image.image;
-    vi.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;  // the translator declares 2D textures arrayed
+    vi.viewType = cube ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D_ARRAY;  // 2D textures are declared arrayed
     vi.format = info->format;
     vi.components = {Component(host_swizzle & 7), Component((host_swizzle >> 3) & 7), Component((host_swizzle >> 6) & 7),
                      Component((host_swizzle >> 9) & 7)};

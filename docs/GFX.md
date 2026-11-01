@@ -209,8 +209,10 @@ image: sky, buildings, the character, the HUD. The geometry stretched toward the
 now applied as the reference does: the frame's composition matches the reference's (mean difference 29 per channel
 on the first frame, from 108). Rectangle lists (the shadow maps' clears; expanded in the vertex shader) and quad
 lists (the HUD's text, particles; drawn as triangle lists) followed. Still missing there: the ground and shadowed
-areas (dark: the sun pass samples the two shadow cascades as one stacked texture), so stacked (array) textures
-first; then signed textures, k_5_6_5 textures, MSAA surfaces, the packed mip tail.
+areas. Stacked textures (the sun pass reads the two shadow cascades as one), cube textures (726 draws of the main
+pass) and k_5_6_5 textures (771) then brought the refused draws to 238 of about 12,700 (MSAA surfaces, signed
+textures, the packed mip tail): the car, the rifle, the far buildings appear. The ground is still dark, now
+without a refused draw: a correctness question (the shadow test, most likely), next to diagnose.
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames

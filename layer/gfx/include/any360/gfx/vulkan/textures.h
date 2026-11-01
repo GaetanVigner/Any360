@@ -25,8 +25,9 @@ struct TextureFormatInfo {
   uint32_t block_bytes;  // bytes a block (a texel, or a 4x4 block for DXT) takes
   uint32_t block_size;   // texels a block spans in x and y (1, or 4 for DXT)
   uint32_t swizzle;      // the format's own component swizzle (Xenos 3-bit codes: 0-3 RGBA, 4 zero, 5 one)
-  // How each 32-bit texel is converted for the host format (kNone: copied as it is).
-  enum Convert : uint32_t { kNone, kDepthUnorm24, kDepthFloat24 } convert = kNone;
+  // How each texel is converted for the host format (kNone: copied as it is): 32-bit depth words to float, or
+  // 16-bit 5:6:5 with red and blue exchanged (the guest's red is in the low bits, the host's in the high bits).
+  enum Convert : uint32_t { kNone, kDepthUnorm24, kDepthFloat24, kSwapRedBlue565 } convert = kNone;
 };
 
 // Xenos float24 depth (20e4: 4 exponent bits, bias 15, 20 mantissa bits, no sign) to and from float, as the
@@ -54,9 +55,12 @@ class TextureCache {
   TextureCache(Device& device, const uint8_t* physical, uint32_t mirror_bytes);
   ~TextureCache();
 
-  // A 2D-array view of the texture `fetch` describes, with its swizzle, uploaded and ready for sampling; null with
-  // `error` when it is not handled yet.
-  VkImageView View(const uint32_t fetch[6], std::string& error);
+  // The view types the translated shaders declare: 2D and stacked textures as 2D arrays, 3D, cube.
+  enum class ViewType { k2DArray, k3D, kCube };
+  // A view of `type` of the texture `fetch` describes, with its swizzle, uploaded and ready for sampling; null with
+  // `error` when it is not handled yet. A shader declares a 2D-array and a 3D binding for a fetch that can be either
+  // and picks one at run time: the binding the texture's dimension does not match gets an empty texture.
+  VkImageView View(const uint32_t fetch[6], ViewType type, std::string& error);
   // The sampler for `fetch` with a fetch instruction's filters (3 / 7: take the fetch constant's).
   VkSampler Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t min, uint32_t mip, uint32_t aniso);
 
@@ -70,7 +74,6 @@ class TextureCache {
   void SetBeforeUpload(std::function<void()> callback) { before_upload_ = std::move(callback); }
 
  private:
-  // The guest bytes the base level spans, and its blocks endian-swapped and untiled into rows.
   // The guest memory a texture spans (all its stacked slices), and the distance between slices: the slice's blocks
   // with rows and columns aligned to 32 blocks, aligned to 4 KB (as the reference lays them out).
   static uint32_t GuestExtent(const TextureFetch& t, const TextureFormatInfo& info);
@@ -90,6 +93,8 @@ class TextureCache {
   std::map<std::array<uint32_t, 4>, std::unique_ptr<Texture>> textures_;
   std::map<std::array<uint32_t, 8>, VkSampler> samplers_;
   std::vector<uint8_t> scratch_;
+  Image empty_[3];  // 1x1 black textures by ViewType, made on first use
+  VkImageView Empty(ViewType type, std::string& error);
   uint32_t uploads_ = 0;
   std::function<void()> before_upload_;
 };

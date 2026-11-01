@@ -661,7 +661,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         }
       }
       std::string error;
-      const VkImageView view = textures_->View(fetch, error);
+      const TextureCache::ViewType view_type =
+          binding.dimension == rg::xenos::FetchOpDimension::kCube           ? TextureCache::ViewType::kCube
+          : binding.dimension == rg::xenos::FetchOpDimension::k3DOrStacked ? TextureCache::ViewType::k3D
+                                                                           : TextureCache::ViewType::k2DArray;
+      const VkImageView view = textures_->View(fetch, view_type, error);
       if (!view) {
         Fail("texture " + std::to_string(binding.fetch_constant) + ": " + error);
         return;
