@@ -118,8 +118,13 @@ From the Crackdown runs (each one cost a debugging session there):
    or resolves; the viewport without window offsets or scissors; rectangle and quad lists not expanded; the whole
    mirrored memory copied before each draw, one submission per draw; the translator's `Features` all on and its
    modification bits at their defaults rather than read from the device and the registers.
-3. **State**: render state registers to pipeline state; texture fetch constants to untiled host textures; resolves
-   as copies between host targets and to guest memory where the CPU reads them.
+3. **Render state** (done, 2026-11-01): depth and stencil (front and back), blending and write mask of render
+   target 0, culling and front face (D3D semantics checked: the `face` bit means clockwise front), wireframe fill,
+   polygon offset in the depth format's unit, the scissor (window scissor with the window offset, within the screen
+   scissor), as the reference reads them; dynamic state per draw. Depth is D24S8, or D32S8 where the device lacks it
+   (the AMD driver). `gfx_render_tests` checks each feature to the pixel on NVIDIA and AMD. Next: render targets from
+   `RB_SURFACE_INFO` / `RB_COLOR_INFO` / `RB_DEPTH_INFO` (several targets, formats, MSAA), then textures, then
+   resolves as copies between host targets and to guest memory where the CPU reads them.
 4. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 5. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; the swap goes to a
    window through SDL3.
