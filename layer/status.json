@@ -67,9 +67,9 @@
   {
    "area": "stage 1: native system (any360::sys)",
    "name": "Files, saves, DLC: VFS over installed data, STFS / XContent packages (~40 imports)",
-   "state": "planned",
-   "source": "to write; crackdown has src/stfs.cpp, src/xdvdfs.cpp, src/content_*.cpp (game-side today)",
-   "note": "Crackdown's STFS and XDVDFS readers are already native and generic"
+   "state": "in progress",
+   "source": "any360: layer/sys (files)",
+   "note": "VFS over host directories, symbolic links and the Nt file calls done; STFS / XContent packages to do"
   },
   {
    "area": "stage 1: native system (any360::sys)",
@@ -202,7 +202,7 @@
    "name": "any360::sys: the system calls, verified against the reference runtime",
    "state": "in progress",
    "source": "any360: layer/sys (any360_sys, any360_sys_ppc, sys_io_tests)",
-   "note": "128 system calls: 76 verified equal to the reference, 52 of the object manager, scheduler and memory manager verified against the NT semantics by scenario tests; next: files / XAM"
+   "note": "140 system calls: 76 verified equal to the reference, 64 of the object manager, scheduler, memory manager and file system verified against the NT semantics by scenario tests; next: XAM content / profile / input"
   }
  ]
 }

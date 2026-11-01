@@ -97,6 +97,8 @@ class ObjectManager {
   uint32_t OpenHandle(uint32_t object) { return AddHandle(object, {}); }
   Guest guest() const { return guest_; }
   void SetGuest(Guest g) { guest_ = g; }
+  // Called with the object when its last handle closes (the file system frees an open file there).
+  void SetCloseHook(void (*hook)(uint32_t object)) { close_hook_ = hook; }
 
  private:
   // One handle: a slot of the table, free again once closed. Ob* references are counted per object apart from
@@ -119,6 +121,8 @@ class ObjectManager {
   std::vector<uint32_t> timers_;  // armed timers (guest addresses)
   uint32_t heap_begin_ = 0, heap_end_ = 0, heap_next_ = 0;
   Guest guest_{nullptr};
+  void (*close_hook_)(uint32_t) = nullptr;
+  void Closed(uint32_t object);
 };
 
 ObjectManager& Objects();

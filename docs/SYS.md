@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (128 system calls)
+## What is verified (140 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -67,6 +67,19 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   address range, the views never overlap in physical space), `MmFreePhysicalMemory`, `MmGetPhysicalAddress`,
   `MmQueryAddressProtect`, `MmSetAddressProtect`, `MmQueryAllocationSize`, `MmQueryStatistics`, `XamAlloc` / `XamFree`.
   Addresses are the manager's own: the tests check the properties of regions, not the reference's numbers.
+- **The file system** (`files.h`, scenario tests on a temporary directory): guest devices mounted on host directories
+  (read-only or writable), the kernel's symbolic links (`ObCreateSymbolicLink`, `ObDeleteSymbolicLink`, `game:`,
+  `\??\D:`), case-insensitive resolution component by component (the same data works on case-sensitive hosts), never
+  above a device's root. `NtCreateFile` / `NtOpenFile` (all dispositions, directory and non-directory options, delete on
+  close, paths relative to a directory handle, the action in the I/O status block), `NtReadFile` / `NtWriteFile`
+  (explicit offset or the file position, end of file, the completion event), `NtQueryInformationFile` and
+  `NtSetInformationFile` (basic, standard, internal, position, mode, alignment, network open; rename, disposition,
+  allocation, end of file), `NtQueryFullAttributesFile`, `NtQueryDirectoryFile` (one entry per call, wildcards,
+  restart, entries sorted so the order is the same on every host), `NtQueryVolumeInformationFile`,
+  `NtFlushBuffersFile`. Open files are objects of the object manager: `NtClose` of the last handle frees them (and
+  deletes a file marked for deletion). The statuses are the NT ones (`OBJECT_NAME_NOT_FOUND` for a missing name,
+  `OBJECT_PATH_NOT_FOUND` for a missing directory or device), which `RtlNtStatusToDosError` maps to the Win32 codes
+  XAPI expects. Completion APCs and asynchronous I/O are not provided yet; reads and writes complete at once.
 - **Offline networking**: `NetDll_inet_addr` (the Winsock parser), `NetDll___WSAFDIsSet`, `NetDll_XNetInAddrToString`,
   the XNet address conversions.
 
@@ -95,5 +108,6 @@ Next for the layer, in this order:
    pre-emptive suspension, freeing kernel objects, `KeGetCurrentThread`-style queries.
 2. **Memory, continued**: `NtProtectVirtualMemory`, `MEM_RESET`, the executable's image range as a queryable heap,
    `ExAllocatePool*`, `MmCreateKernelStack`, `KeLockL2` / `KeUnlockL2`.
-3. **Files and XAM**: a VFS over installed data, content packages, user profile and input, then the Live-offline
-   answers.
+3. **Files, continued**: STFS / XContent packages (saves, DLC), I/O completion ports, APC completion.
+4. **XAM**: content enumeration and creation over the file system, the user profile and sign-in, input, the UI
+   dialogs and the Live-offline answers.

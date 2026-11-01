@@ -7,7 +7,10 @@
 #include <string>
 #include <vector>
 
+#include "any360/sys/files.h"
 #include "any360/sys/memory.h"
+#include <filesystem>
+#include <fstream>
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
 
@@ -21,7 +24,7 @@ namespace {
 
 using namespace any360::sys;
 
-std::vector<uint8_t> g_memory(0x20000);
+std::vector<uint8_t> g_memory(0x80000);  // sized once: `g` points into it
 const Guest g{g_memory.data()};
 constexpr uint32_t kHeap = 0x10000, kScratch = 0x1000, kMainThread = 0x8000, kOtherThread = 0x8100;
 int g_failures = 0;
@@ -257,7 +260,6 @@ uint64_t Dispatch(uint32_t address, uint32_t, uint32_t pcr, uint64_t a0, uint64_
 
 void SchedulerTests() {
   Fresh();
-  g_memory.resize(0x80000);  // stacks and thread objects need room
   Objects().SetKernelHeap(0x10000, 0x70000);
   Objects().SetGuest(Guest{g_memory.data()});
   Objects().Reset();
@@ -430,9 +432,155 @@ void MemoryTests() {
   Memory().Reset();
 }
 
+// The file system on a temporary directory: a read-only "game" device and a writable "hdd" one.
+void FileTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "any360-sys-files";
+  std::error_code ec;
+  fs::remove_all(root, ec);
+  fs::create_directories(root / "game" / "Media" / "Levels");
+  fs::create_directories(root / "hdd");
+  { std::ofstream(root / "game" / "Media" / "Data.BIN", std::ios::binary) << "0123456789ABCDEF"; }
+  { std::ofstream(root / "game" / "Media" / "Levels" / "one.lvl", std::ios::binary) << "1"; }
+  { std::ofstream(root / "game" / "Media" / "Levels" / "two.lvl", std::ios::binary) << "22"; }
+  { std::ofstream(root / "game" / "Media" / "Levels" / "readme.txt", std::ios::binary) << "x"; }
+  Files().Reset();
+  Files().Mount("\\Device\\Cdrom0", root / "game", true);
+  Files().Mount("\\Device\\Harddisk0\\Partition1", root / "hdd", false);
+  Files().Link("game:", "\\Device\\Cdrom0");
+  const uint32_t attrs = kScratch + 0x100, name = kScratch + 0x120, text = kScratch + 0x140, iosb = kScratch + 0x300,
+                 out = kScratch + 0x320, buf = kScratch + 0x400, info = kScratch + 0x600, pat = kScratch + 0x700;
+  auto path = [&](const char* p, uint32_t root_handle = 0) {
+    g.Store32(attrs, root_handle);
+    g.Store32(attrs + 4, name);
+    g.Store16(name, uint16_t(std::strlen(p)));
+    g.Store32(name + 4, text);
+    std::memcpy(g.host(text), p, std::strlen(p) + 1);
+    return attrs;
+  };
+  const uint32_t kRead = 0x80000000, kWrite = 0x40000000;
+  // Open through a link, case-insensitively; read sequentially, then at an offset, then past the end.
+  CHECK(Files().CreateFile(g, out, kRead, path("game:\\media\\data.bin"), iosb, 0, kOpen, kFileNonDirectoryFile) == 0);
+  CHECK(g.Load32(iosb) == 0 && g.Load32(iosb + 4) == kOpened);
+  const uint32_t f = g.Load32(out);
+  CHECK(f >= kHandleBase);
+  CHECK(Files().ReadFile(g, f, 0, iosb, buf, 4, 0) == 0 && g.Load32(iosb + 4) == 4 && std::memcmp(g.host(buf), "0123", 4) == 0);
+  CHECK(Files().ReadFile(g, f, 0, iosb, buf, 4, 0) == 0 && std::memcmp(g.host(buf), "4567", 4) == 0);
+  g.Store64(out + 8, 12);
+  CHECK(Files().ReadFile(g, f, 0, iosb, buf, 100, out + 8) == 0 && g.Load32(iosb + 4) == 4 && std::memcmp(g.host(buf), "CDEF", 4) == 0);
+  CHECK(Files().ReadFile(g, f, 0, iosb, buf, 4, 0) == kStatusEndOfFile && g.Load32(iosb) == kStatusEndOfFile && g.Load32(iosb + 4) == 0);
+  CHECK(Files().ReadFile(g, f, 0, iosb, buf, 0, 0) == 0);  // zero length at the end succeeds
+  // The read signals an event; an unknown event handle is refused.
+  const uint32_t ev = out + 16;
+  CHECK(Objects().CreateEvent(g, ev, 0, 0, 0) == 0);
+  g.Store64(out + 8, 0);
+  CHECK(Files().ReadFile(g, f, g.Load32(ev), iosb, buf, 2, out + 8) == 0 && Objects().WaitForHandle(g, g.Load32(ev), kMainThread, nullptr) == 0);
+  CHECK(Files().ReadFile(g, f, kHandleBase + 0xF00, iosb, buf, 2, 0) == 0xC0000008u);
+  // Information classes.
+  CHECK(Files().QueryInformation(g, f, iosb, info, 56, kFileNetworkOpenInformation) == 0 && g.Load64(info + 40) == 16 &&
+        g.Load32(info + 48) == kAttributeNormal && g.Load64(info + 24) > 0);
+  CHECK(Files().QueryInformation(g, f, iosb, info, 8, kFilePositionInformation) == 0 && g.Load64(info) == 2);
+  CHECK(Files().QueryInformation(g, f, iosb, info, 24, kFileStandardInformation) == 0 && g.Load64(info + 8) == 16 && g.Load8(info + 21) == 0);
+  CHECK(Files().QueryInformation(g, f, iosb, info, 4, kFileNetworkOpenInformation) == kStatusInfoLengthMismatch);
+  CHECK(Files().QueryInformation(g, f, iosb, info, 64, 99) == kStatusInvalidInfoClass);
+  g.Store64(info, 10);
+  CHECK(Files().SetInformation(g, f, iosb, info, 8, kFilePositionInformation) == 0);
+  CHECK(Files().ReadFile(g, f, 0, iosb, buf, 1, 0) == 0 && g.Load8(buf) == 'A');
+  // Read-only device: writes are refused at open and at write.
+  CHECK(Files().WriteFile(g, f, 0, iosb, buf, 1, 0) == 0xC0000022u);
+  CHECK(Files().CreateFile(g, out, kWrite, path("game:\\media\\data.bin"), iosb, 0, kOpen, 0) == 0xC0000022u);
+  CHECK(Files().CreateFile(g, out, kRead, path("game:\\media\\new.bin"), iosb, 0, kCreate, 0) == 0xC0000022u);
+  // Missing names and paths, directory / file mismatches, collisions.
+  CHECK(Files().CreateFile(g, out, kRead, path("game:\\media\\nope.bin"), iosb, 0, kOpen, 0) == kStatusObjectNameNotFound &&
+        g.Load32(iosb + 4) == kDoesNotExist && g.Load32(out) == 0xFFFFFFFF);
+  CHECK(Files().CreateFile(g, out, kRead, path("game:\\nope\\data.bin"), iosb, 0, kOpen, 0) == kStatusObjectPathNotFound);
+  CHECK(Files().CreateFile(g, out, kRead, path("nodevice:\\data.bin"), iosb, 0, kOpen, 0) == kStatusObjectPathNotFound);
+  CHECK(Files().CreateFile(g, out, kRead, path("game:\\media"), iosb, 0, kOpen, kFileNonDirectoryFile) == kStatusFileIsADirectory);
+  CHECK(Files().CreateFile(g, out, kRead, path("game:\\media\\data.bin"), iosb, 0, kOpen, kFileDirectoryFile) == kStatusNotADirectory);
+  CHECK(Files().CreateFile(g, out, kRead, path("game:\\..\\x"), iosb, 0, kOpen, 0) == kStatusObjectPathNotFound);
+  // Full attributes by path; a path relative to an open directory handle.
+  CHECK(Files().QueryFullAttributes(g, path("\\Device\\Cdrom0\\MEDIA\\Levels\\two.lvl"), info) == 0 && g.Load64(info + 40) == 2);
+  CHECK(Files().QueryFullAttributes(g, path("game:\\media\\Levels"), info) == 0 && g.Load32(info + 48) == kAttributeDirectory);
+  CHECK(Files().QueryFullAttributes(g, path("game:\\media\\x.y"), info) == kStatusObjectNameNotFound);
+  CHECK(Files().CreateFile(g, out, kRead, path("game:\\media\\levels"), iosb, 0, kOpen, kFileDirectoryFile) == 0);
+  const uint32_t d = g.Load32(out);
+  CHECK(Files().CreateFile(g, out, kRead, path("one.lvl", d), iosb, 0, kOpen, 0) == 0);
+  CHECK(Files().ReadFile(g, g.Load32(out), 0, iosb, buf, 8, 0) == 0 && g.Load32(iosb + 4) == 1 && g.Load8(buf) == '1');
+  CHECK(Objects().Close(g.Load32(out)) == 0);
+  // Directory enumeration: one entry per call, sorted, with a pattern; restart; the end.
+  g.Store16(pat, 5);
+  g.Store32(pat + 4, pat + 8);
+  std::memcpy(g.host(pat + 8), "*.lvl", 6);
+  CHECK(Files().QueryDirectory(g, d, iosb, info, 0x100, pat, 0) == 0 && g.Load32(info + 0x3C) == 7 &&
+        std::memcmp(g.host(info + 0x40), "one.lvl", 7) == 0 && g.Load64(info + 0x28) == 1);
+  CHECK(Files().QueryDirectory(g, d, iosb, info, 0x100, 0, 0) == 0 && std::memcmp(g.host(info + 0x40), "two.lvl", 7) == 0);
+  CHECK(Files().QueryDirectory(g, d, iosb, info, 0x100, 0, 0) == kStatusNoMoreFiles);
+  CHECK(Files().QueryDirectory(g, d, iosb, info, 0x100, 0, 1) == 0 && std::memcmp(g.host(info + 0x40), "one.lvl", 7) == 0);
+  CHECK(Files().QueryDirectory(g, d, iosb, info, 64, 0, 0) == kStatusInfoLengthMismatch);
+  std::memcpy(g.host(pat + 8), "*.zzz", 6);
+  CHECK(Files().QueryDirectory(g, d, iosb, info, 0x100, pat, 0) == kStatusNoSuchFile);
+  CHECK(Files().QueryVolume(g, d, iosb, info, 16, kFsAttributeInformation) == 0 && std::memcmp(g.host(info + 12), "FATX", 4) == 0);
+  CHECK(Files().QueryVolume(g, d, iosb, info, 24, kFsSizeInformation) == 0 && g.Load32(info + 20) == 0x200 && g.Load64(info + 8) == 0);
+  CHECK(Files().QueryVolume(g, d, iosb, info, 8, kFsDeviceInformation) == 0 && g.Load32(info) == 7);
+  CHECK(Files().QueryVolume(g, d, iosb, info, 8, 2) == kStatusInvalidInfoClass);
+  CHECK(Objects().Close(d) == 0 && Objects().Close(f) == 0);
+  // The writable device: create, write, overwrite, grow, rename, delete on close, directories; symbolic links made
+  // and removed by the title.
+  g.Store16(pat, 4);
+  g.Store32(pat + 4, pat + 8);
+  std::memcpy(g.host(pat + 8), "hdd:", 4);
+  g.Store16(pat + 0x20, 28);
+  g.Store32(pat + 0x24, pat + 0x28);
+  std::memcpy(g.host(pat + 0x28), "\\Device\\Harddisk0\\Partition1", 29);
+  CHECK(Files().CreateSymbolicLink(g, pat, pat + 0x20) == 0);
+  CHECK(Files().CreateFile(g, out, kRead | kWrite, path("hdd:\\save.dat"), iosb, 0, kOpenIf, 0) == 0 && g.Load32(iosb + 4) == kCreated);
+  const uint32_t w = g.Load32(out);
+  std::memcpy(g.host(buf), "hello world", 11);
+  CHECK(Files().WriteFile(g, w, 0, iosb, buf, 11, 0) == 0 && g.Load32(iosb + 4) == 11);
+  g.Store64(out + 8, 6);
+  std::memcpy(g.host(buf), "WORLD", 5);
+  CHECK(Files().WriteFile(g, w, 0, iosb, buf, 5, out + 8) == 0);
+  g.Store64(out + 8, 0);
+  CHECK(Files().ReadFile(g, w, 0, iosb, buf, 32, out + 8) == 0 && g.Load32(iosb + 4) == 11 && std::memcmp(g.host(buf), "hello WORLD", 11) == 0);
+  g.Store64(info, 4);
+  CHECK(Files().SetInformation(g, w, iosb, info, 8, kFileEndOfFileInformation) == 0 && fs::file_size(root / "hdd" / "save.dat") == 4);
+  CHECK(Files().Flush(g, w, iosb) == 0);
+  // Rename on the same device.
+  g.Store32(info, 0);
+  g.Store32(info + 4, 0);
+  g.Store16(info + 8, 13);
+  g.Store32(info + 12, info + 16);
+  std::memcpy(g.host(info + 16), "hdd:\\save.bak", 13);
+  CHECK(Files().SetInformation(g, w, iosb, info, 16, kFileRenameInformation) == 0 && fs::exists(root / "hdd" / "save.bak") &&
+        !fs::exists(root / "hdd" / "save.dat"));
+  CHECK(Objects().Close(w) == 0);
+  CHECK(Files().CreateFile(g, out, kRead, path("hdd:\\SAVE.BAK"), iosb, 0, kCreate, 0) == kStatusObjectNameCollision);
+  CHECK(Files().CreateFile(g, out, kRead | kWrite, path("hdd:\\save.bak"), iosb, 0, kOverwriteIf, 0) == 0 &&
+        g.Load32(iosb + 4) == kOverwritten && fs::file_size(root / "hdd" / "save.bak") == 0);
+  CHECK(Objects().Close(g.Load32(out)) == 0);
+  // Delete on close, through the disposition class; the file goes when its last handle does.
+  CHECK(Files().CreateFile(g, out, kRead | kWrite | 0x10000, path("hdd:\\save.bak"), iosb, 0, kOpen, 0) == 0);
+  const uint32_t del = g.Load32(out);
+  CHECK(Objects().Duplicate(g, del, out + 4, 0) == 0);
+  g.Store8(info, 1);
+  CHECK(Files().SetInformation(g, del, iosb, info, 1, kFileDispositionInformation) == 0);
+  CHECK(Objects().Close(del) == 0 && fs::exists(root / "hdd" / "save.bak"));
+  CHECK(Objects().Close(g.Load32(out + 4)) == 0 && !fs::exists(root / "hdd" / "save.bak"));
+  CHECK(Files().CreateFile(g, out, kRead | kWrite, path("hdd:\\cache"), iosb, 0, kCreate, kFileDirectoryFile) == 0 &&
+        fs::is_directory(root / "hdd" / "cache"));
+  CHECK(Objects().Close(g.Load32(out)) == 0);
+  CHECK(Files().DeleteSymbolicLink(g, pat) == 0 && Files().DeleteSymbolicLink(g, pat) == kStatusObjectNameNotFound);
+  CHECK(Files().CreateFile(g, out, kRead, path("hdd:\\cache"), iosb, 0, kOpen, 0) == kStatusObjectPathNotFound);
+  CHECK(Files().ReadFile(g, kHandleBase + 0xF00, 0, iosb, buf, 1, 0) == 0xC0000008u);
+  Files().Reset();
+  fs::remove_all(root, ec);
+}
+
 }  // namespace
 
 int main() {
+  FileTests();
   MemoryTests();
   SchedulerTests();
   Timers();

@@ -8,6 +8,7 @@
 
 #include "any360/sys/config.h"
 #include "any360/sys/exports.h"
+#include "any360/sys/files.h"
 #include "any360/sys/format.h"
 #include "any360/sys/info.h"
 #include "any360/sys/memory.h"
@@ -279,6 +280,40 @@ ANY360_SYS_EXPORT(MmQueryStatistics) { ctx.r3.u64 = Memory().QueryStatistics({ba
 ANY360_SYS_EXPORT(XamAlloc) { ctx.r3.u64 = Memory().XamAlloc({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XamFree) { ctx.r3.u64 = Memory().XamFree({base}, ctx.r3.u32); }
 
+// Batch 9: the file system (sys_object_tests).
+ANY360_SYS_EXPORT(NtCreateFile) {
+  // (handle, access, attributes, I/O status, allocation size, file attributes, share, disposition, options)
+  ctx.r3.u64 = Files().CreateFile({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r8.u32, ctx.r10.u32, StackArgument(ctx, base, 8));
+}
+ANY360_SYS_EXPORT(NtOpenFile) {
+  // (handle, access, attributes, I/O status, options)
+  ctx.r3.u64 = Files().CreateFile({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, 0, kOpen, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(NtReadFile) {
+  // (handle, event, APC routine, APC context, I/O status, buffer, length, offset); APCs are not delivered yet.
+  ctx.r3.u64 = Files().ReadFile({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+}
+ANY360_SYS_EXPORT(NtWriteFile) {
+  ctx.r3.u64 = Files().WriteFile({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+}
+ANY360_SYS_EXPORT(NtQueryInformationFile) {
+  ctx.r3.u64 = Files().QueryInformation({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(NtSetInformationFile) {
+  ctx.r3.u64 = Files().SetInformation({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(NtQueryFullAttributesFile) { ctx.r3.u64 = Files().QueryFullAttributes({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(NtQueryDirectoryFile) {
+  // (handle, event, APC routine, APC context, I/O status, information, length, file name, restart scan)
+  ctx.r3.u64 = Files().QueryDirectory({base}, ctx.r3.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32, StackArgument(ctx, base, 8));
+}
+ANY360_SYS_EXPORT(NtQueryVolumeInformationFile) {
+  ctx.r3.u64 = Files().QueryVolume({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(NtFlushBuffersFile) { ctx.r3.u64 = Files().Flush({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(ObCreateSymbolicLink) { ctx.r3.u64 = Files().CreateSymbolicLink({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(ObDeleteSymbolicLink) { ctx.r3.u64 = Files().DeleteSymbolicLink({base}, ctx.r3.u32); }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -405,6 +440,19 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(MmQueryStatistics),
     ANY360_SYS_ENTRY(XamAlloc),
     ANY360_SYS_ENTRY(XamFree),
+    // Batch 9: the file system.
+    ANY360_SYS_ENTRY(NtCreateFile),
+    ANY360_SYS_ENTRY(NtOpenFile),
+    ANY360_SYS_ENTRY(NtReadFile),
+    ANY360_SYS_ENTRY(NtWriteFile),
+    ANY360_SYS_ENTRY(NtQueryInformationFile),
+    ANY360_SYS_ENTRY(NtSetInformationFile),
+    ANY360_SYS_ENTRY(NtQueryFullAttributesFile),
+    ANY360_SYS_ENTRY(NtQueryDirectoryFile),
+    ANY360_SYS_ENTRY(NtQueryVolumeInformationFile),
+    ANY360_SYS_ENTRY(NtFlushBuffersFile),
+    ANY360_SYS_ENTRY(ObCreateSymbolicLink),
+    ANY360_SYS_ENTRY(ObDeleteSymbolicLink),
 };
 const unsigned kExportCount = sizeof(kExports) / sizeof(kExports[0]);
 

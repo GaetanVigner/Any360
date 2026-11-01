@@ -341,10 +341,19 @@ uint32_t ObjectManager::NtCancelTimer(Guest g, uint32_t handle, uint32_t current
   return kStatusSuccess;
 }
 
+void ObjectManager::Closed(uint32_t object) {
+  if (!close_hook_) return;
+  for (const Entry& e : entries_) {
+    if (e.open && e.object == object) return;
+  }
+  close_hook_(object);
+}
+
 uint32_t ObjectManager::Close(uint32_t handle) {
   Entry* e = Find(handle);
   if (!e) return kStatusInvalidHandle;
   e->open = false;
+  Closed(e->object);
   return kStatusSuccess;
 }
 
@@ -354,7 +363,7 @@ uint32_t ObjectManager::Duplicate(Guest g, uint32_t handle, uint32_t new_handle_
   const uint32_t duplicate = AddHandle(e->object, e->name);
   e = Find(handle);  // the table may have grown
   if (new_handle_out) g.Store32(new_handle_out, duplicate);
-  if (options == 1 && e) e->open = false;  // DUPLICATE_CLOSE_SOURCE
+  if (options == 1 && e) e->open = false;  // DUPLICATE_CLOSE_SOURCE (the duplicate keeps the object open)
   return kStatusSuccess;
 }
 
