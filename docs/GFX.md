@@ -212,7 +212,14 @@ lists (the HUD's text, particles; drawn as triangle lists) followed. Still missi
 areas. Stacked textures (the sun pass reads the two shadow cascades as one), cube textures (726 draws of the main
 pass) and k_5_6_5 textures (771) then brought the refused draws to 238 of about 12,700 (MSAA surfaces, signed
 textures, the packed mip tail): the car, the rifle, the far buildings appear. The ground is still dark, now
-without a refused draw: a correctness question (the shadow test, most likely), next to diagnose.
+without a refused draw. Diagnosed with --trace, --dump-resolves and switching depth resolves off: the frame starts
+with a colour and depth clear drawn on a 4x MSAA view of the same EDRAM (pitch 640 for the 1280-wide surface), which
+was refused, so from the second frame on the main depth kept the last frame's end state and the ground failed its
+depth test. MSAA surfaces are now drawn as their samples (a 4x surface of pitch P is the EDRAM of a 1x surface of
+pitch 2P with twice the rows; 2x doubles the rows), the coordinates scaled to samples: the clear reaches the main
+surfaces and the three frames match the reference's composition (mean difference 27 per channel each; the rest is
+mostly texture noise without mip levels). Left: signed textures (99 draws), the packed mip tail (21), mip levels,
+resolves from MSAA surfaces (which average samples).
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames

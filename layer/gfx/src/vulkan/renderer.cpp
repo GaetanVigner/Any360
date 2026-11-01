@@ -4,6 +4,7 @@
 #include <cmath>
 #include <bit>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <optional>
 #include <thread>
@@ -702,12 +703,18 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
 
   // The surfaces: colour targets the pixel shader writes and RB_COLOR_MASK enables, the depth/stencil target when
   // the depth or stencil test is on; all at the pitch of RB_SURFACE_INFO.
+  // An MSAA surface is drawn as its samples: EDRAM holds a 4x surface of pitch P like a 1x surface of pitch 2P
+  // with twice the rows (2x: the same pitch, twice the rows), so the title's MSAA draws (its fast clears among them)
+  // reach the same host image as its 1x draws to that EDRAM. Coordinates are scaled to samples; resolves from MSAA
+  // surfaces (which average samples) are a later step.
   const uint32_t surface_info = regs[kRbSurfaceInfo];
-  if ((surface_info >> 16) & 3) {
-    Fail("MSAA surfaces (not yet)");
+  const uint32_t msaa = (surface_info >> 16) & 3;
+  if (msaa > 2) {
+    Fail("MSAA mode 3");
     return;
   }
-  const uint32_t pitch = surface_info & 0x3FFF;
+  const int32_t sample_x = msaa == 2 ? 2 : 1, sample_y = msaa ? 2 : 1;
+  const uint32_t pitch = (surface_info & 0x3FFF) * uint32_t(sample_x);
   uint32_t depth_control = regs[kRbDepthControl];
   // Depth tested always without writes does nothing (the reference drops it the same way).
   if ((depth_control & 2) && !(depth_control & 4) && ((depth_control >> 4) & 7) == 7) depth_control &= ~2u;
@@ -755,10 +762,10 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   int32_t top = int32_t((window_tl >> 16) & 0x3FFF) + (offset_scissor ? offset_y : 0);
   int32_t right = int32_t(window_br & 0x3FFF) + (offset_scissor ? offset_x : 0);
   int32_t bottom = int32_t((window_br >> 16) & 0x3FFF) + (offset_scissor ? offset_y : 0);
-  left = std::max({left, int32_t(regs[kPaScScreenScissorTl] & 0x7FFF), 0});
-  top = std::max({top, int32_t((regs[kPaScScreenScissorTl] >> 16) & 0x7FFF), 0});
-  right = std::min({right, int32_t(regs[kPaScScreenScissorBr] & 0x7FFF), int32_t(width)});
-  bottom = std::min({bottom, int32_t((regs[kPaScScreenScissorBr] >> 16) & 0x7FFF), int32_t(height)});
+  left = std::max({left, int32_t(regs[kPaScScreenScissorTl] & 0x7FFF), 0}) * sample_x;
+  top = std::max({top, int32_t((regs[kPaScScreenScissorTl] >> 16) & 0x7FFF), 0}) * sample_y;
+  right = std::min(std::min(right, int32_t(regs[kPaScScreenScissorBr] & 0x7FFF)) * sample_x, int32_t(width));
+  bottom = std::min(std::min(bottom, int32_t((regs[kPaScScreenScissorBr] >> 16) & 0x7FFF)) * sample_y, int32_t(height));
   if (right <= left || bottom <= top) {
     ++stats_.skipped;
     return;
@@ -844,8 +851,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     const float scale = (vte & (1u << (2 * i))) ? AsFloat(regs[kPaClVportXScale + 2 * i]) : 1.0f;
     const float offset = (vte & (1u << (2 * i + 1))) ? AsFloat(regs[kPaClVportXScale + 2 * i + 1]) : 0.0f;
     if (i < 2) {
-      system->ndc_scale[i] = scale * 2.0f / size[i];
-      system->ndc_offset[i] = (offset + window_shift[i]) * 2.0f / size[i] - 1.0f;
+      const float samples = float(i ? sample_y : sample_x);  // guest pixels to surface samples
+      system->ndc_scale[i] = scale * samples * 2.0f / size[i];
+      system->ndc_offset[i] = (offset + window_shift[i]) * samples * 2.0f / size[i] - 1.0f;
     } else {
       system->ndc_scale[i] = scale;
       system->ndc_offset[i] = offset;

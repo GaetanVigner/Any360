@@ -8,7 +8,9 @@
 //     --out DIR   writes each compared frame as DIR/frame_N_ours.png and DIR/frame_N_reference.png
 //     --trace     prints the frames' structure: runs of draws by render target (drawn, skipped, failed), each
 //                 resolve and each swap, in order
-//     --dump-resolves DIR  with --trace, writes each k_8_8_8_8 colour resolve's destination as DIR/resolve_N.png
+//     --dump-resolves DIR  with --trace, writes each 32-bit resolve's destination as DIR/resolve_N.png (and depth
+//                 resolves' words as DIR/resolve_N.bin)
+//     --watch ADDR    with --trace, prints the texture fetch constants that read the 4 KB page at ADDR (hex)
 #include <algorithm>
 #include <bit>
 #include <array>
@@ -150,8 +152,8 @@ bool WritePng(const std::string& path, uint32_t width, uint32_t height, const ui
 // --trace: forwards to the renderer and prints the order of things, draws grouped in runs of the same targets.
 class TracingRenderer : public Renderer {
  public:
-  TracingRenderer(vk::VulkanRenderer& renderer, const uint8_t* physical, std::string dump)
-      : r_(renderer), physical_(physical), dump_(std::move(dump)) {}
+  TracingRenderer(vk::VulkanRenderer& renderer, const uint8_t* physical, std::string dump, uint32_t watch)
+      : r_(renderer), physical_(physical), dump_(std::move(dump)), watch_(watch) {}
   ~TracingRenderer() override { EndRun(); }
   void ShaderLoaded(const Shader& shader) override { r_.ShaderLoaded(shader); }
   void Invalidate(uint32_t base, uint32_t size) override { r_.Invalidate(base, size); }
@@ -165,6 +167,16 @@ class TracingRenderer : public Renderer {
       EndRun();
       run_ = true;
       key_ = key;
+    }
+    if (watch_) {
+      // The texture fetch constants that read the watched address.
+      for (uint32_t fc = 0; fc < 32; ++fc) {
+        const uint32_t* d = regs + 0x4800 + 6 * fc;
+        if ((d[0] & 3) == 2 && (d[1] & 0x1FFFF000) == watch_) {
+          std::printf("    fetch %u reads %08X: %08X %08X %08X %08X %08X %08X (format %u)\n", fc, watch_, d[0], d[1], d[2], d[3],
+                      d[4], d[5], d[1] & 0x3F);
+        }
+      }
     }
     const vk::RendererStats before = r_.stats();
     r_.Draw(draw);
@@ -199,7 +211,23 @@ class TracingRenderer : public Renderer {
           pixels[size_t(y) * width + x] = ((info & 7) == 2 ? std::byteswap(raw) : raw) | 0xFF000000u;
         }
       }
-      const std::string name = dump_ + "/resolve_" + std::to_string(resolves_++) + ".png";
+      const std::string name = dump_ + "/resolve_" + std::to_string(resolves_) + ".png";
+      if ((regs[0x2318] & 7) >= 4) {
+        // Depth: the words as they are (depth << 8 | stencil), alpha would hide the top byte in the PNG.
+        if (std::FILE* raw = std::fopen((dump_ + "/resolve_" + std::to_string(resolves_) + ".bin").c_str(), "wb")) {
+          std::vector<uint32_t> words(pixels.size());
+          for (uint32_t y = 0; y < height; ++y) {
+            for (uint32_t x = 0; x < width; ++x) {
+              uint32_t w;
+              std::memcpy(&w, physical_ + (regs[0x2319] & 0x1FFFFFFF) + uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), width, 2)), 4);
+              words[size_t(y) * width + x] = (info & 7) == 2 ? std::byteswap(w) : w;
+            }
+          }
+          std::fwrite(words.data(), 4, words.size(), raw);
+          std::fclose(raw);
+        }
+      }
+      ++resolves_;
       WritePng(name, width, height, pixels.data());
       std::printf("    written to %s\n", name.c_str());
     }
@@ -226,6 +254,7 @@ class TracingRenderer : public Renderer {
   const uint8_t* physical_;
   std::string dump_;
   uint32_t resolves_ = 0;
+  uint32_t watch_ = 0;
   bool run_ = false;
   std::array<uint32_t, 8> key_{};
   uint32_t drawn_ = 0, skipped_ = 0, failed_ = 0;
@@ -238,16 +267,18 @@ int main(int argc, char** argv) {
   std::string path, out;
   bool trace = false;
   std::string dump;
+  uint32_t watch = 0;
   vk::DeviceOptions options;
   for (int i = 1; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--gpu") && i + 1 < argc) options.prefer = argv[++i];
     else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
     else if (!std::strcmp(argv[i], "--trace")) trace = true;
     else if (!std::strcmp(argv[i], "--dump-resolves") && i + 1 < argc) dump = argv[++i];
+    else if (!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = uint32_t(std::strtoul(argv[++i], nullptr, 16)) & 0x1FFFF000;
     else path = argv[i];
   }
   if (path.empty()) {
-    std::printf("usage: gfx_replay CAPTURE [--gpu NAME] [--out DIR] [--trace]\n");
+    std::printf("usage: gfx_replay CAPTURE [--gpu NAME] [--out DIR] [--trace] [--dump-resolves DIR] [--watch ADDR]\n");
     return 2;
   }
   vk::Device device;
@@ -266,7 +297,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   CommandProcessor cp(physical);
-  TracingRenderer tracing(renderer, physical, dump);
+  TracingRenderer tracing(renderer, physical, dump, watch);
   cp.SetRenderer(trace ? static_cast<Renderer*>(&tracing) : &renderer);
   cp.SetInterruptHandler([](uint32_t, uint32_t) {});
 

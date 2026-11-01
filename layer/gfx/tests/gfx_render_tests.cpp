@@ -249,6 +249,22 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: quad list: %u of %u pixels\n", p.Count(color), kSize * kSize);
     CHECK(p.Count(color) == kSize * kSize);
   }
+  // MSAA as samples: a full-target quad drawn with RB_SURFACE_INFO at 4x MSAA and pitch 32 (a 32x32 viewport and
+  // scissor) covers the 64x64 samples of the same EDRAM, the 1x surface of pitch 64.
+  {
+    const uint32_t color = Rgba(200, 120, 10, 255);
+    Pixels p = scenario("MSAA as samples", nullptr, [&] {
+      s.Reg(0x2000, 32u | 2u << 16);  // RB_SURFACE_INFO: pitch 32, 4x MSAA
+      s.Put({Type0(0x210F, 6), Bits(16), Bits(16), Bits(-16), Bits(16), Bits(1), Bits(0)});
+      s.Put({Type0(0x200E, 2), 0, 32u << 16 | 32u});
+      s.Put({Type0(0x2080, 3), 0, 0, 32u << 16 | 32u});
+      s.Vertices(0);
+      s.Color(200, 120, 10, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    std::printf("gfx_render_tests: MSAA as samples: %u of %u samples\n", p.Count(color), kSize * kSize);
+    CHECK(p.Count(color) == kSize * kSize);
+  }
   // Depth: a quad at 0.5 (LESS, writes), one behind at 0.75 hidden, a triangle in front at 0.25 shown.
   {
     const uint32_t mid = Rgba(0, 255, 0, 255), back = Rgba(255, 0, 0, 255), front = Rgba(0, 0, 255, 255);
