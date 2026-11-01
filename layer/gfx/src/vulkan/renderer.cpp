@@ -132,6 +132,7 @@ VulkanRenderer::~VulkanRenderer() {
 
 bool VulkanRenderer::Fail(const std::string& why) {
   last_error_ = why;
+  ++failures_[why];
   ++stats_.failed;
   return false;
 }

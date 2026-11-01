@@ -1,10 +1,11 @@
 # any360::gfx: the GPU side of stage 1 (docs/DESIGN.md). `any360_gfx` is portable C++23 over any360_sys: the command
 # processor (PM4 execution behind sys::GpuBackend) and the Renderer interface the native Vulkan renderer implements.
 # Built from layer/sys/CMakeLists.txt, which adds this directory; `gfx_cp_tests` needs no reference runtime.
-add_library(any360_gfx STATIC src/command_processor.cpp)
+add_library(any360_gfx STATIC src/command_processor.cpp src/capture.cpp)
 target_include_directories(any360_gfx PUBLIC include)
 target_link_libraries(any360_gfx PUBLIC any360_sys)
 target_compile_options(any360_gfx PRIVATE -Wall -Wextra)
+target_compile_definitions(any360_gfx PRIVATE $<$<BOOL:${WIN32}>:_CRT_SECURE_NO_WARNINGS>)
 
 add_executable(gfx_cp_tests tests/gfx_cp_tests.cpp)
 target_link_libraries(gfx_cp_tests PRIVATE any360_gfx)
@@ -70,6 +71,12 @@ add_executable(gfx_render_tests tests/gfx_render_tests.cpp)
 target_link_libraries(gfx_render_tests PRIVATE any360_gfx_vulkan)
 target_compile_options(gfx_render_tests PRIVATE -Wall -Wextra)
 add_test(NAME gfx_render_tests COMMAND gfx_render_tests)
+
+# Replays a frame capture (capture.h) and reports what its frames need: gfx_replay CAPTURE [--gpu NAME] [--out DIR].
+add_executable(gfx_replay tests/gfx_replay.cpp)
+target_link_libraries(gfx_replay PRIVATE any360_gfx_vulkan)
+target_compile_options(gfx_replay PRIVATE -Wall -Wextra)
+target_compile_definitions(gfx_replay PRIVATE $<$<BOOL:${WIN32}>:_CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN>)
 
 # A window showing the whole chain every frame (PM4 -> command processor -> renderer -> resolve -> swap -> present).
 # The window comes from SDL3 (the platform layer's choice); until SDL3 is vendored, its headers and static library

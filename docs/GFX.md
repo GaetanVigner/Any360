@@ -22,6 +22,8 @@ portable C++23 with no dependency on a graphics API. The renderer behind it is V
 | `tests/gfx_window_demo.cpp` | A window (SDL3) showing the whole chain every frame: hand-written PM4, a textured quad and a moving triangle, resolve, swap, present (`gfx_window_demo [--frames N] [--gpu NAME]`, built when the reference SDK has SDL3) |
 | `tests/ucode_encode.h` | Hand encoding of control flow, vector ALU and vertex fetch instructions, shared by the tests |
 | `tests/gfx_render_tests.cpp` | End to end: hand-written PM4 (state, fetch constant, shaders, constants, an auto-indexed and a DMA-indexed draw) through the command processor into the renderer; every pixel read back and checked |
+| `include/any360/gfx/capture.h`, `src/capture.cpp` | Frame captures ([CAPTURE.md](CAPTURE.md)): the writer a GPU front end feeds at each kick and swap, the reader, the replay through a `CommandProcessor` |
+| `tests/gfx_replay.cpp` | `gfx_replay CAPTURE [--gpu NAME] [--out DIR]`: a capture replayed, the draws not drawn by reason, the PM4 packets used, each frame compared with the reference's |
 
 `layer/sys/CMakeLists.txt` adds this directory, and `layer/sys/test.ps1` runs the gfx tests with the other tests.
 The translated shaders run on the NVIDIA (RTX 5070 Ti) and AMD (Radeon integrated) Windows drivers with identical
@@ -186,6 +188,15 @@ Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex
 
 What remains on the CPU: the resolve's readback and tiling into guest memory (needed while the CPU or a later
 texture can read it), texture untiling and hashing, and translating shaders the first time.
+
+### Frame capture and replay (2026-11-01)
+
+Hand-written PM4 shows that a feature works; only a title's frames show which features it needs, in what order.
+A capture ([CAPTURE.md](CAPTURE.md)) records what a GPU front end ran: the register file when it starts, then for
+each kick of the ring the physical memory pages that changed and the ring's span, and the reference's presented
+frame at each swap. `gfx_replay CAPTURE` runs it through our command processor and Vulkan renderer and reports the
+draws not drawn, by reason, the PM4 packets the frames use, and how far each frame is from the reference's
+(`--out DIR` writes both as PNG). Captures hold the title's data: they stay on the machine that made them.
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames

@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "any360/gfx/capture.h"
 #include "any360/gfx/command_processor.h"
 #include "any360/gfx/vulkan/renderer.h"
 #include "ucode_encode.h"
@@ -40,6 +41,8 @@ uint8_t* const g_storage = [] {
   return p;
 }();
 uint8_t* g_memory = g_storage;
+// --capture PATH: the capture scenario's file is kept there (for gfx_replay) instead of deleted.
+std::string g_capture;
 
 // Register indices the scenarios write.
 constexpr uint32_t kRbDepthControl = 0x2200, kRbBlendControl0 = 0x2201, kRbColorMask = 0x2104,
@@ -134,6 +137,7 @@ int main(int argc, char** argv) {
   vk::DeviceOptions options;
   for (int i = 1; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--copy")) g_memory = g_storage + 64;
+    else if (!std::strcmp(argv[i], "--capture") && i + 1 < argc) g_capture = argv[++i];
     else options.prefer = argv[i];
   }
   if (!device.Create(options)) {
@@ -487,6 +491,73 @@ int main(int argc, char** argv) {
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
   CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 3 && stats.texture_uploads == 4 && stats.resolves == 1);
+  // Capture and replay: a frame (two triangles, a resolve, a swap) captured as it runs, then replayed into fresh
+  // memory, a fresh command processor and a fresh renderer; the replayed frame must be the captured one.
+  {
+    const uint32_t rect = kVertices + 0x800, resolved = 0x80000;
+    const std::string path = g_capture.empty() ? "gfx_render_tests_capture.a360cap" : g_capture;
+    capture::Writer writer;
+    CHECK(writer.Open(path, g_memory, kMemory, cp.registers(), reg::kRegisterCount, "gfx_render_tests"));
+    writer.Shaders(cp.shader(0).microcode, cp.shader(1).microcode);
+    cp.SetCapture(&writer);
+    s.Defaults();
+    s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+    s.Vertices(0);
+    s.Color(51, 102, 153, 255);
+    s.DrawAuto(kTriangleList, 3);
+    s.Color(204, 51, 102, 255);
+    s.DrawIndexed16(kTriangleList, 3);
+    s.Run();  // a kick of its own: the replay must carry the state across kicks
+    s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});
+    s.Put({Type0(0x2318, 4), 0u, resolved, 64u | 64u << 16, 2u | 6u << 7});
+    s.Reg(0x2208, 6);
+    s.DrawAuto(8, 3);
+    s.Reg(0x2208, 4);
+    s.Put({Type0(0x4800, 6), 2u | 2u << 10 | 2u << 13 | 2u << 22 | 1u << 31, 6u | 2u << 6 | resolved, 63u | 63u << 13,
+           0x688u << 1, 0, 1u << 9});
+    s.Put({Type3(pm4::XE_SWAP, 4), 0x53574150, resolved, kSize, kSize});
+    s.Run();
+    cp.SetCapture(nullptr);
+    std::vector<uint32_t> reference;
+    CHECK(renderer.ReadFrame(reference) && reference.size() == kSize * kSize);
+    if (reference.size() == kSize * kSize) writer.Frame(kSize, kSize, reference.data());
+    const uint64_t capture_bytes = writer.bytes_written();
+    writer.Close();
+    const uint32_t a = Rgba(51, 102, 153, 255), b = Rgba(204, 51, 102, 255);
+    uint32_t reference_ab = 0;
+    for (uint32_t px : reference) reference_ab += px == a || px == b;
+    CHECK(reference_ab == kSize * kSize);
+
+    auto* fresh = static_cast<uint8_t*>(::operator new(kMemory, std::align_val_t(65536)));
+    std::memset(fresh, 0, kMemory);
+    {
+      vk::VulkanRenderer replay_renderer(device, fresh, kMemory);
+      CHECK(replay_renderer.Initialize());
+      CommandProcessor replay(fresh);
+      replay.SetRenderer(&replay_renderer);
+      replay.SetInterruptHandler([](uint32_t, uint32_t) {});
+      capture::ReplayStats rs;
+      std::string error;
+      uint32_t compared = 0, wrong = kSize * kSize;
+      const bool ok = capture::Replay(path, replay, fresh, kMemory, [&](uint32_t w, uint32_t h, const uint32_t* rgba) {
+        std::vector<uint32_t> ours;
+        if (!replay_renderer.ReadFrame(ours) || w != kSize || h != kSize || ours.size() != size_t(w) * h) return;
+        ++compared;
+        wrong = 0;
+        for (size_t i = 0; i < ours.size(); ++i) wrong += ours[i] != rgba[i];
+      }, rs, error);
+      CHECK(ok);
+      std::printf("gfx_render_tests: capture: %llu KB, %u kicks, %u pages, %u frame; replay: %u draws, %u failed, %u of %u pixels "
+                  "differ from the reference%s%s\n",
+                  (unsigned long long)(capture_bytes / 1024), rs.kicks, rs.pages, rs.frames, replay_renderer.stats().draws,
+                  replay_renderer.stats().failed, wrong, kSize * kSize, ok ? "" : ": ", error.c_str());
+      CHECK(rs.kicks == 2 && rs.failed_kicks == 0 && rs.frames == 1 && compared == 1 && wrong == 0);
+      CHECK(replay_renderer.stats().failed == 0 && replay_renderer.stats().resolves == 1);
+      CHECK(replay.opcode_counts()[pm4::XE_SWAP] == 1 && replay.opcode_counts()[pm4::DRAW_INDX] == 1);
+    }
+    ::operator delete(fresh, std::align_val_t(65536));
+    if (g_capture.empty()) std::remove(path.c_str());
+  }
   std::printf("gfx_render_tests: guest memory %s\n", renderer.guest_memory_in_place() ? "read in place" : "copied per draw");
   std::printf("gfx_render_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;

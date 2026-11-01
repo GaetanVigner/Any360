@@ -1,6 +1,7 @@
 
 # Local scratch
 # Never game code or data: generated recomp output, images, assets
+*.a360cap
 *.bin
 *.iso
 *.log

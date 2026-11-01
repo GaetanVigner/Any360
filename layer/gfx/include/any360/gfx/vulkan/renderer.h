@@ -115,6 +115,8 @@ class VulkanRenderer : public gfx::Renderer {
 
   const RendererStats& stats() const { return stats_; }
   const std::string& last_error() const { return last_error_; }
+  // Every failure so far, by reason (last_error's text).
+  const std::map<std::string, uint32_t>& failures() const { return failures_; }
   bool guest_memory_in_place() const { return shared_memory_imported_; }
   VkFormat depth_format() const { return depth_format_; }
 
@@ -185,6 +187,7 @@ class VulkanRenderer : public gfx::Renderer {
   Surface* frame_surface_ = nullptr;
   uint32_t frame_x_ = 0, frame_y_ = 0;
   std::string last_error_;
+  std::map<std::string, uint32_t> failures_;
 };
 
 }  // namespace any360::gfx::vk

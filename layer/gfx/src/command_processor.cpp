@@ -1,5 +1,7 @@
 #include "any360/gfx/command_processor.h"
 
+#include "any360/gfx/capture.h"
+
 #include <atomic>
 #include <bit>
 #include <chrono>
@@ -154,6 +156,10 @@ bool CommandProcessor::Test(uint32_t wait_info, uint32_t poll, uint32_t referenc
 bool CommandProcessor::Wait(uint32_t wait_info, uint32_t poll, uint32_t reference, uint32_t mask, uint32_t interval) {
   while (!Test(wait_info, poll, reference, mask, true)) {
     if (stopping_) return false;
+    if (replaying_) {
+      ++replay_skipped_waits_;
+      return true;
+    }
     // The interval is in units of 1/256 ms: long waits sleep, short ones yield.
     if (interval >= 0x100) {
       std::this_thread::sleep_for(std::chrono::microseconds(interval * 1000 / 0x100));
@@ -176,6 +182,7 @@ bool CommandProcessor::Execute() {
   const uint32_t read = read_index_;
   if (!ring_dwords_ || write == read) return true;
   busy_ = true;
+  if (capture_) capture_->Kick(ring_base_, ring_dwords_, read, write);
   Reader r{ring_base_, ring_dwords_, read, (write + ring_dwords_ - read) % ring_dwords_};
   bool ok = true;
   while (r.remaining && ok) {
@@ -243,6 +250,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     skip_rest();
     return true;
   }
+  ++opcode_counts_[opcode];
   auto has = [&](uint32_t n) { return end - r.offset >= n; };
   auto write_constants = [&](uint32_t type, uint32_t index, uint32_t n, auto value_at) {
     static constexpr uint32_t kBase[] = {reg::kAluConstants, reg::kFetchConstants, reg::kBoolConstants, reg::kLoopConstants,
@@ -505,6 +513,37 @@ void CommandProcessor::LoadShader(uint32_t type, uint32_t address, uint32_t dwor
   for (uint32_t i = 0; i < dwords; ++i) shader.microcode[i] = LoadBig(shader.address + 4 * i);
   shader.hash = Fnv1a(shader.microcode);
   if (renderer_) renderer_->ShaderLoaded(shader);
+}
+
+void CommandProcessor::Restore(const uint32_t* registers, uint32_t count) {
+  for (uint32_t i = 0; i < count && i < reg::kRegisterCount; ++i) {
+    std::atomic_ref<uint32_t>(registers_[i]).store(registers[i], std::memory_order_release);
+  }
+  ring_base_ = reg(reg::CP_RB_BASE) & 0x1FFFFFFF;
+  // A pending coherency request was the CPU's: done by now.
+  std::atomic_ref<uint32_t>(registers_[reg::COHER_STATUS_HOST]).store(0, std::memory_order_release);
+}
+
+void CommandProcessor::RestoreShader(uint32_t type, std::vector<uint32_t> microcode) {
+  if (type > 1 || microcode.empty()) return;
+  Shader& shader = shaders_[type];
+  shader.type = type;
+  shader.address = 0;
+  shader.microcode = std::move(microcode);
+  shader.hash = Fnv1a(shader.microcode);
+  if (renderer_) renderer_->ShaderLoaded(shader);
+}
+
+bool CommandProcessor::Replay(uint32_t ring_base, uint32_t ring_dwords, uint32_t read, uint32_t write) {
+  ring_base_ = ring_base & 0x1FFFFFFF;
+  ring_dwords_ = ring_dwords;
+  read_index_ = read;
+  write_index_ = write;
+  write_back_ = 0;  // the CPU is not there to read it
+  replaying_ = true;
+  const bool ok = Execute();
+  replaying_ = false;
+  return ok;
 }
 
 void CommandProcessor::Start() {

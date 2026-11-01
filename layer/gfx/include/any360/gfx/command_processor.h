@@ -9,6 +9,7 @@
 // The host is little-endian.
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -21,6 +22,10 @@
 #include "registers.h"
 
 namespace any360::gfx {
+
+namespace capture {
+class Writer;
+}
 
 enum class Endian : uint32_t { kNone = 0, k8in16 = 1, k8in32 = 2, k16in32 = 3 };
 uint32_t GpuSwap(uint32_t value, Endian endian);
@@ -101,6 +106,17 @@ class CommandProcessor : public sys::GpuBackend {
   uint32_t ring_dwords() const { return ring_dwords_; }
   const Shader& shader(uint32_t type) const { return shaders_[type & 1]; }
 
+  // Frame captures (capture.h): each kick of the ring is recorded into `writer` before it runs (null: none).
+  void SetCapture(capture::Writer* writer) { capture_ = writer; }
+  // Replay of a capture: the register file and the shaders as it starts, then each kick it recorded. A wait that is
+  // not met when reached (on the CPU, absent from a replay) passes, counted in replay_skipped_waits().
+  void Restore(const uint32_t* registers, uint32_t count);
+  void RestoreShader(uint32_t type, std::vector<uint32_t> microcode);
+  bool Replay(uint32_t ring_base, uint32_t ring_dwords, uint32_t read, uint32_t write);
+  uint32_t replay_skipped_waits() const { return replay_skipped_waits_; }
+  // Type-3 packets executed, by opcode: what a title's frames use.
+  const std::array<uint64_t, 128>& opcode_counts() const { return opcode_counts_; }
+
  private:
   struct Reader {
     uint32_t base, capacity, offset, remaining;  // dwords, wrapping at capacity
@@ -132,6 +148,10 @@ class CommandProcessor : public sys::GpuBackend {
   std::atomic<bool> busy_{false}, stopping_{false};
   uint64_t bin_mask_ = ~0ull, bin_select_ = ~0ull;
   Shader shaders_[2];
+  capture::Writer* capture_ = nullptr;
+  bool replaying_ = false;
+  uint32_t replay_skipped_waits_ = 0;
+  std::array<uint64_t, 128> opcode_counts_{};
   std::mutex mutex_;
   std::condition_variable kicked_;
   std::thread worker_;

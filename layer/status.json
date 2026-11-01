@@ -125,7 +125,7 @@
    "name": "Vulkan renderer: draws from the command processor (system constants, shared memory, vertex fetch, textures, host render targets, resolves)",
    "state": "in progress",
    "source": "any360: layer/gfx (next); crackdown: patch 0129 native atlas",
-   "note": "draws end to end from PM4 with render state, render targets (EDRAM surfaces) and 2D textures (linear, tiled, DXT) from the registers, checked to the pixel on NVIDIA and AMD; and colour resolves to guest memory with clears; frames presented in a window (SDL3 + Presenter, VdSwap native); 2,000 draws a frame at 214 FPS (guest memory imported in place, batched submissions, fast resolves, swaps from the GPU); next: mips, depth resolves, MSAA, binding a title"
+   "note": "draws end to end from PM4 with render state, render targets (EDRAM surfaces) and 2D textures (linear, tiled, DXT) from the registers, checked to the pixel on NVIDIA and AMD; and colour resolves to guest memory with clears; frames presented in a window (SDL3 + Presenter, VdSwap native); 2,000 draws a frame at 214 FPS (guest memory imported in place, batched submissions, fast resolves, swaps from the GPU); frame capture and replay (gfx_replay: a title's frames, the draws not drawn by reason, compared with the reference); next: capture Crackdown frames, mips, depth resolves, MSAA, binding a title"
   },
   {
    "area": "stage 1: native graphics (any360::gfx)",
