@@ -207,8 +207,10 @@ stencil, float24 for D24FS8) and k_24_8 / k_24_8_FLOAT textures (sampled as floa
 image: sky, buildings, the character, the HUD. The geometry stretched toward the camera came from primitive reset
 (strips cut at VGT_MULTI_PRIM_IB_RESET_INDX) and the index offset and range (VGT_INDX_OFFSET, VGT_MIN/MAX_VTX_INDX),
 now applied as the reference does: the frame's composition matches the reference's (mean difference 29 per channel
-on the first frame, from 108). Still missing there: the ground and shadowed areas (dark), quad lists (type 13, particles and text), stacked (array) textures, signed textures, k_5_6_5
-textures, MSAA surfaces, the packed mip tail.
+on the first frame, from 108). Rectangle lists (the shadow maps' clears; expanded in the vertex shader) and quad
+lists (the HUD's text, particles; drawn as triangle lists) followed. Still missing there: the ground and shadowed
+areas (dark: the sun pass samples the two shadow cascades as one stacked texture), so stacked (array) textures
+first; then signed textures, k_5_6_5 textures, MSAA surfaces, the packed mip tail.
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames

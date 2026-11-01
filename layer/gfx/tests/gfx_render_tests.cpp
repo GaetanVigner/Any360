@@ -226,6 +226,29 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: primitive reset and index offset: %u of %u pixels\n", p.Count(color), kSize * kSize);
     CHECK(p.Count(color) == kSize * kSize);
   }
+  // A rectangle list (three corners; the vertex shader makes the fourth) and a quad list (corners in order around
+  // the quad, drawn as two triangles), each auto-indexed over the full target.
+  {
+    const float perimeter[4][4] = {{-1, -1, 0.5f, 1}, {1, -1, 0.5f, 1}, {1, 1, 0.5f, 1}, {-1, 1, 0.5f, 1}};
+    for (uint32_t i = 0; i < 4; ++i) {
+      for (uint32_t j = 0; j < 4; ++j) SetBig(kVertices + 0x700 + 16 * i + 4 * j, Bits(perimeter[i][j]));
+    }
+    const uint32_t color = Rgba(90, 20, 220, 255);
+    Pixels p = scenario("rectangle list", nullptr, [&] {
+      s.Vertices(0);
+      s.Color(90, 20, 220, 255);
+      s.DrawAuto(8, 3);
+    });
+    std::printf("gfx_render_tests: rectangle list: %u of %u pixels\n", p.Count(color), kSize * kSize);
+    CHECK(p.Count(color) == kSize * kSize);
+    p = scenario("quad list", nullptr, [&] {
+      s.Vertices(7);
+      s.Color(90, 20, 220, 255);
+      s.DrawAuto(13, 4);
+    });
+    std::printf("gfx_render_tests: quad list: %u of %u pixels\n", p.Count(color), kSize * kSize);
+    CHECK(p.Count(color) == kSize * kSize);
+  }
   // Depth: a quad at 0.5 (LESS, writes), one behind at 0.75 hidden, a triangle in front at 0.25 shown.
   {
     const uint32_t mid = Rgba(0, 255, 0, 255), back = Rgba(255, 0, 0, 255), front = Rgba(0, 0, 255, 255);

@@ -564,7 +564,16 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     Fail("no vertex shader");
     return;
   }
-  const VkPrimitiveTopology topology = Topology(draw.primitive_type);
+  // Rectangle lists are drawn as two-triangle strips whose fourth corner the vertex shader makes, quad lists as
+  // triangle lists (a, b, c, a, c, d), as the reference does without geometry shaders.
+  const bool rectangle_list = draw.primitive_type == 0x08, quad_list = draw.primitive_type == 0x0D;
+  const VkPrimitiveTopology topology = rectangle_list ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
+                                       : quad_list    ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+                                                      : Topology(draw.primitive_type);
+  const uint32_t primitives = rectangle_list ? draw.index_count / 3 : quad_list ? draw.index_count / 4 : 0;
+  const uint32_t host_index_count = rectangle_list ? (primitives ? 5 * primitives - 1 : 0)
+                                    : quad_list    ? 6 * primitives
+                                                   : draw.index_count;
   if (topology == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM) {
     Fail("primitive type " + std::to_string(draw.primitive_type) + " needs expansion (not yet)");
     return;
@@ -579,8 +588,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t reset_index = regs[kVgtMultiPrimIbResetIndx];
   const bool strip = topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP || topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP ||
                      topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
-  const bool restart = draw.source == DrawSource::kDma && strip && ((regs[kPaSuScModeCntl] >> 21) & 1) &&
-                       (draw.index_32 || reset_index <= UINT16_MAX);
+  const bool restart = rectangle_list || (draw.source == DrawSource::kDma && strip && ((regs[kPaSuScModeCntl] >> 21) & 1) &&
+                                          (draw.index_32 || reset_index <= UINT16_MAX));
 
   TranslatedShader* vs = GetShader(*draw.vertex_shader);
   const bool wants_ps = edram_mode == 4 && draw.pixel_shader && !draw.pixel_shader->microcode.empty();
@@ -609,7 +618,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     }
   }
   SpirvShaderTranslator::Modification vs_modification(translator_->GetDefaultVertexShaderModification(
-      vs->shader->GetDynamicAddressableRegisterCount(program_cntl.vs_num_reg), rg::Shader::HostVertexShaderType::kVertex));
+      vs->shader->GetDynamicAddressableRegisterCount(program_cntl.vs_num_reg),
+      rectangle_list ? rg::Shader::HostVertexShaderType::kRectangleListAsTriangleStrip : rg::Shader::HostVertexShaderType::kVertex));
   vs_modification.vertex.interpolator_mask = interpolators;
   const VkShaderModule vs_module = GetModule(*vs, vs_modification.value);
   VkShaderModule ps_module = VK_NULL_HANDLE;
@@ -789,7 +799,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
                         kFetchBytes + 5 * constant_alignment_ + kFloatBufferBytes;
   // Everything this draw takes from the batch, checked up front: a flush once its constants are written would let
   // later draws overwrite them.
-  const uint32_t index_need = draw.source == DrawSource::kDma ? draw.index_bytes + 4 : 0;
+  const uint32_t index_need = rectangle_list || quad_list       ? host_index_count * 4 + 4
+                              : draw.source == DrawSource::kDma ? draw.index_bytes + 4
+                                                                : 0;
   const uint32_t images_need = uint32_t(stage_textures[0].views.size() + stage_textures[1].views.size());
   const uint32_t samplers_need = uint32_t(stage_textures[0].samplers.size() + stage_textures[1].samplers.size());
   if (constant_head_ + most > constants_.size || index_head_ + index_need > indices_.size || draw_sets_ + 2 > kDrawSets ||
@@ -839,6 +851,16 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   system->vertex_base_index = int32_t(regs[kVgtIndxOffset]);
   system->vertex_index_min = regs[kVgtMinVtxIndx];
   system->vertex_index_max = regs[kVgtMaxVtxIndx];
+  // A rectangle list's vertex shader loads its guest indices itself (from the strip vertex it runs for).
+  if (rectangle_list && draw.source == DrawSource::kDma) {
+    system->flags |= SpirvShaderTranslator::kSysFlag_ComputeOrPrimitiveVertexIndexLoad;
+    if (draw.index_32) system->flags |= SpirvShaderTranslator::kSysFlag_ComputeOrPrimitiveVertexIndexLoad32Bit;
+    system->vertex_index_load_address = draw.index_base;
+    // 16-bit indices swap within 16 bits (as the reference normalizes 32-bit swap modes for them).
+    Endian endian = draw.index_endian;
+    if (!draw.index_32) endian = endian == Endian::k8in32 ? Endian::k8in16 : endian == Endian::k16in32 ? Endian::kNone : endian;
+    system->vertex_index_endian = decltype(system->vertex_index_endian)(uint32_t(endian));
+  }
   std::memcpy(system->texture_swizzled_signs, swizzled_signs, sizeof(swizzled_signs));
   // Alpha test (RB_COLORCONTROL): the compare function's less / equal / greater bits are the pass flags; a disabled
   // test is "always" (with none of them set, every pixel would be discarded).
@@ -893,7 +915,43 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // The indices (endian-swapped to host order) into the batch's ring.
   VkIndexType index_type = VK_INDEX_TYPE_NONE_KHR;
   VkDeviceSize index_offset = 0;
-  if (draw.source == DrawSource::kDma) {
+  if (rectangle_list || quad_list) {
+    if (draw.source == DrawSource::kDma && uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_) {
+      Fail("index buffer outside the mirrored memory");
+      return;
+    }
+    index_type = VK_INDEX_TYPE_UINT32;
+    index_offset = index_head_;
+    index_head_ = AlignUp(index_head_ + host_index_count * 4, 4);
+    uint32_t* dst = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(indices_.mapped) + index_offset);
+    if (rectangle_list) {
+      // Four strip vertices a rectangle, a restart between rectangles.
+      for (uint32_t r = 0; r < primitives; ++r) {
+        if (r) *dst++ = UINT32_MAX;
+        for (uint32_t i = 0; i < 4; ++i) *dst++ = 4 * r + i;
+      }
+    } else {
+      auto guest_index = [&](uint32_t i) -> uint32_t {
+        if (draw.source != DrawSource::kDma) return i;
+        const uint8_t* src = physical_ + draw.index_base;
+        if (draw.index_32) {
+          uint32_t v;
+          std::memcpy(&v, src + 4 * i, 4);
+          return GpuSwap(v, draw.index_endian);
+        }
+        uint16_t v;
+        std::memcpy(&v, src + 2 * i, 2);
+        if (draw.index_endian == Endian::k8in16 || draw.index_endian == Endian::k8in32) v = uint16_t(v << 8 | v >> 8);
+        return v;
+      };
+      for (uint32_t q = 0; q < primitives; ++q) {
+        const uint32_t a = guest_index(4 * q), b = guest_index(4 * q + 1), cc = guest_index(4 * q + 2), d = guest_index(4 * q + 3);
+        const uint32_t six[6] = {a, b, cc, a, cc, d};
+        std::memcpy(dst, six, sizeof(six));
+        dst += 6;
+      }
+    }
+  } else if (draw.source == DrawSource::kDma) {
     if (uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_ || draw.index_bytes > indices_.size) {
       Fail("index buffer outside the mirrored memory");
       return;
@@ -1017,9 +1075,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     f.vkCmdSetStencilReference(cb, VK_STENCIL_FACE_BACK_BIT, stencil_back & 0xFF);
     if (index_type != VK_INDEX_TYPE_NONE_KHR) {
       f.vkCmdBindIndexBuffer(cb, indices_.buffer, index_offset, index_type);
-      f.vkCmdDrawIndexed(cb, draw.index_count, 1, 0, 0, 0);
+      f.vkCmdDrawIndexed(cb, host_index_count, 1, 0, 0, 0);
     } else {
-      f.vkCmdDraw(cb, draw.index_count, 1, 0, 0);
+      f.vkCmdDraw(cb, host_index_count, 1, 0, 0);
     }
   }
   ++stats_.draws;
