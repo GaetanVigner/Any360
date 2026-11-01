@@ -1,0 +1,2263 @@
+[
+{
+"id":"command processor:type 0 (register writes)",
+"name":"type 0 (register writes)",
+"family":"command processor",
+"value":null,
+"state":"native"
+},
+{
+"id":"command processor:type 1 (two registers)",
+"name":"type 1 (two registers)",
+"family":"command processor",
+"value":null,
+"state":"native"
+},
+{
+"id":"command processor:type 2 (no-op)",
+"name":"type 2 (no-op)",
+"family":"command processor",
+"value":null,
+"state":"native"
+},
+{
+"id":"command processor:ME_INIT",
+"name":"ME_INIT",
+"family":"command processor",
+"value":72,
+"state":"native"
+},
+{
+"id":"command processor:NOP",
+"name":"NOP",
+"family":"command processor",
+"value":16,
+"state":"native"
+},
+{
+"id":"command processor:INDIRECT_BUFFER",
+"name":"INDIRECT_BUFFER",
+"family":"command processor",
+"value":63,
+"state":"native"
+},
+{
+"id":"command processor:INDIRECT_BUFFER_PFD",
+"name":"INDIRECT_BUFFER_PFD",
+"family":"command processor",
+"value":55,
+"state":"native"
+},
+{
+"id":"command processor:WAIT_FOR_IDLE",
+"name":"WAIT_FOR_IDLE",
+"family":"command processor",
+"value":38,
+"state":"native"
+},
+{
+"id":"command processor:WAIT_REG_MEM",
+"name":"WAIT_REG_MEM",
+"family":"command processor",
+"value":60,
+"state":"native"
+},
+{
+"id":"command processor:WAIT_REG_EQ",
+"name":"WAIT_REG_EQ",
+"family":"command processor",
+"value":82,
+"state":"missing"
+},
+{
+"id":"command processor:WAIT_REG_GTE",
+"name":"WAIT_REG_GTE",
+"family":"command processor",
+"value":83,
+"state":"missing"
+},
+{
+"id":"command processor:WAIT_UNTIL_READ",
+"name":"WAIT_UNTIL_READ",
+"family":"command processor",
+"value":92,
+"state":"missing"
+},
+{
+"id":"command processor:WAIT_IB_PFD_COMPLETE",
+"name":"WAIT_IB_PFD_COMPLETE",
+"family":"command processor",
+"value":93,
+"state":"missing"
+},
+{
+"id":"command processor:REG_RMW",
+"name":"REG_RMW",
+"family":"command processor",
+"value":33,
+"state":"native"
+},
+{
+"id":"command processor:REG_TO_MEM",
+"name":"REG_TO_MEM",
+"family":"command processor",
+"value":62,
+"state":"native"
+},
+{
+"id":"command processor:MEM_WRITE",
+"name":"MEM_WRITE",
+"family":"command processor",
+"value":61,
+"state":"native"
+},
+{
+"id":"command processor:MEM_WRITE_CNTR",
+"name":"MEM_WRITE_CNTR",
+"family":"command processor",
+"value":79,
+"state":"missing"
+},
+{
+"id":"command processor:COND_EXEC",
+"name":"COND_EXEC",
+"family":"command processor",
+"value":68,
+"state":"missing"
+},
+{
+"id":"command processor:COND_WRITE",
+"name":"COND_WRITE",
+"family":"command processor",
+"value":69,
+"state":"native"
+},
+{
+"id":"command processor:EVENT_WRITE",
+"name":"EVENT_WRITE",
+"family":"command processor",
+"value":70,
+"state":"native"
+},
+{
+"id":"command processor:EVENT_WRITE_SHD",
+"name":"EVENT_WRITE_SHD",
+"family":"command processor",
+"value":88,
+"state":"native"
+},
+{
+"id":"command processor:EVENT_WRITE_CFL",
+"name":"EVENT_WRITE_CFL",
+"family":"command processor",
+"value":89,
+"state":"missing"
+},
+{
+"id":"command processor:EVENT_WRITE_EXT",
+"name":"EVENT_WRITE_EXT",
+"family":"command processor",
+"value":90,
+"state":"native"
+},
+{
+"id":"command processor:EVENT_WRITE_ZPD",
+"name":"EVENT_WRITE_ZPD",
+"family":"command processor",
+"value":91,
+"state":"native"
+},
+{
+"id":"command processor:DRAW_INDX",
+"name":"DRAW_INDX",
+"family":"command processor",
+"value":34,
+"state":"native"
+},
+{
+"id":"command processor:DRAW_INDX_2",
+"name":"DRAW_INDX_2",
+"family":"command processor",
+"value":54,
+"state":"native"
+},
+{
+"id":"command processor:DRAW_INDX_BIN",
+"name":"DRAW_INDX_BIN",
+"family":"command processor",
+"value":52,
+"state":"missing"
+},
+{
+"id":"command processor:DRAW_INDX_2_BIN",
+"name":"DRAW_INDX_2_BIN",
+"family":"command processor",
+"value":53,
+"state":"missing"
+},
+{
+"id":"command processor:VIZ_QUERY",
+"name":"VIZ_QUERY",
+"family":"command processor",
+"value":35,
+"state":"native"
+},
+{
+"id":"command processor:SET_STATE",
+"name":"SET_STATE",
+"family":"command processor",
+"value":37,
+"state":"missing"
+},
+{
+"id":"command processor:SET_CONSTANT",
+"name":"SET_CONSTANT",
+"family":"command processor",
+"value":45,
+"state":"native"
+},
+{
+"id":"command processor:SET_CONSTANT2",
+"name":"SET_CONSTANT2",
+"family":"command processor",
+"value":85,
+"state":"native"
+},
+{
+"id":"command processor:SET_SHADER_CONSTANTS",
+"name":"SET_SHADER_CONSTANTS",
+"family":"command processor",
+"value":86,
+"state":"native"
+},
+{
+"id":"command processor:LOAD_ALU_CONSTANT",
+"name":"LOAD_ALU_CONSTANT",
+"family":"command processor",
+"value":47,
+"state":"native"
+},
+{
+"id":"command processor:IM_LOAD",
+"name":"IM_LOAD",
+"family":"command processor",
+"value":39,
+"state":"native"
+},
+{
+"id":"command processor:IM_LOAD_IMMEDIATE",
+"name":"IM_LOAD_IMMEDIATE",
+"family":"command processor",
+"value":43,
+"state":"native"
+},
+{
+"id":"command processor:LOAD_CONSTANT_CONTEXT",
+"name":"LOAD_CONSTANT_CONTEXT",
+"family":"command processor",
+"value":46,
+"state":"missing"
+},
+{
+"id":"command processor:INVALIDATE_STATE",
+"name":"INVALIDATE_STATE",
+"family":"command processor",
+"value":59,
+"state":"native"
+},
+{
+"id":"command processor:SET_SHADER_BASES",
+"name":"SET_SHADER_BASES",
+"family":"command processor",
+"value":74,
+"state":"missing"
+},
+{
+"id":"command processor:SET_BIN_BASE_OFFSET",
+"name":"SET_BIN_BASE_OFFSET",
+"family":"command processor",
+"value":75,
+"state":"missing"
+},
+{
+"id":"command processor:SET_BIN_MASK",
+"name":"SET_BIN_MASK",
+"family":"command processor",
+"value":80,
+"state":"native"
+},
+{
+"id":"command processor:SET_BIN_SELECT",
+"name":"SET_BIN_SELECT",
+"family":"command processor",
+"value":81,
+"state":"native"
+},
+{
+"id":"command processor:CONTEXT_UPDATE",
+"name":"CONTEXT_UPDATE",
+"family":"command processor",
+"value":94,
+"state":"native"
+},
+{
+"id":"command processor:INTERRUPT",
+"name":"INTERRUPT",
+"family":"command processor",
+"value":84,
+"state":"native"
+},
+{
+"id":"command processor:XE_SWAP",
+"name":"XE_SWAP",
+"family":"command processor",
+"value":100,
+"state":"native"
+},
+{
+"id":"command processor:IM_STORE",
+"name":"IM_STORE",
+"family":"command processor",
+"value":44,
+"state":"missing"
+},
+{
+"id":"command processor:SET_BIN_MASK_LO",
+"name":"SET_BIN_MASK_LO",
+"family":"command processor",
+"value":96,
+"state":"native"
+},
+{
+"id":"command processor:SET_BIN_MASK_HI",
+"name":"SET_BIN_MASK_HI",
+"family":"command processor",
+"value":97,
+"state":"native"
+},
+{
+"id":"command processor:SET_BIN_SELECT_LO",
+"name":"SET_BIN_SELECT_LO",
+"family":"command processor",
+"value":98,
+"state":"native"
+},
+{
+"id":"command processor:SET_BIN_SELECT_HI",
+"name":"SET_BIN_SELECT_HI",
+"family":"command processor",
+"value":99,
+"state":"native"
+},
+{
+"id":"shader control flow:kNop",
+"name":"kNop",
+"family":"shader control flow",
+"value":0,
+"state":"reference"
+},
+{
+"id":"shader control flow:kExec",
+"name":"kExec",
+"family":"shader control flow",
+"value":1,
+"state":"reference"
+},
+{
+"id":"shader control flow:kExecEnd",
+"name":"kExecEnd",
+"family":"shader control flow",
+"value":2,
+"state":"native"
+},
+{
+"id":"shader control flow:kCondExec",
+"name":"kCondExec",
+"family":"shader control flow",
+"value":3,
+"state":"reference"
+},
+{
+"id":"shader control flow:kCondExecEnd",
+"name":"kCondExecEnd",
+"family":"shader control flow",
+"value":4,
+"state":"reference"
+},
+{
+"id":"shader control flow:kCondExecPred",
+"name":"kCondExecPred",
+"family":"shader control flow",
+"value":5,
+"state":"reference"
+},
+{
+"id":"shader control flow:kCondExecPredEnd",
+"name":"kCondExecPredEnd",
+"family":"shader control flow",
+"value":6,
+"state":"reference"
+},
+{
+"id":"shader control flow:kLoopStart",
+"name":"kLoopStart",
+"family":"shader control flow",
+"value":7,
+"state":"reference"
+},
+{
+"id":"shader control flow:kLoopEnd",
+"name":"kLoopEnd",
+"family":"shader control flow",
+"value":8,
+"state":"reference"
+},
+{
+"id":"shader control flow:kCondCall",
+"name":"kCondCall",
+"family":"shader control flow",
+"value":9,
+"state":"reference"
+},
+{
+"id":"shader control flow:kReturn",
+"name":"kReturn",
+"family":"shader control flow",
+"value":10,
+"state":"reference"
+},
+{
+"id":"shader control flow:kCondJmp",
+"name":"kCondJmp",
+"family":"shader control flow",
+"value":11,
+"state":"reference"
+},
+{
+"id":"shader control flow:kAlloc",
+"name":"kAlloc",
+"family":"shader control flow",
+"value":12,
+"state":"native"
+},
+{
+"id":"shader control flow:kCondExecPredClean",
+"name":"kCondExecPredClean",
+"family":"shader control flow",
+"value":13,
+"state":"reference"
+},
+{
+"id":"shader control flow:kCondExecPredCleanEnd",
+"name":"kCondExecPredCleanEnd",
+"family":"shader control flow",
+"value":14,
+"state":"reference"
+},
+{
+"id":"shader control flow:kMarkVsFetchDone",
+"name":"kMarkVsFetchDone",
+"family":"shader control flow",
+"value":15,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kAdd",
+"name":"kAdd",
+"family":"shader ALU vector",
+"value":0,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kMul",
+"name":"kMul",
+"family":"shader ALU vector",
+"value":1,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kMax",
+"name":"kMax",
+"family":"shader ALU vector",
+"value":2,
+"state":"native"
+},
+{
+"id":"shader ALU vector:kMin",
+"name":"kMin",
+"family":"shader ALU vector",
+"value":3,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kSeq",
+"name":"kSeq",
+"family":"shader ALU vector",
+"value":4,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kSgt",
+"name":"kSgt",
+"family":"shader ALU vector",
+"value":5,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kSge",
+"name":"kSge",
+"family":"shader ALU vector",
+"value":6,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kSne",
+"name":"kSne",
+"family":"shader ALU vector",
+"value":7,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kFrc",
+"name":"kFrc",
+"family":"shader ALU vector",
+"value":8,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kTrunc",
+"name":"kTrunc",
+"family":"shader ALU vector",
+"value":9,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kFloor",
+"name":"kFloor",
+"family":"shader ALU vector",
+"value":10,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kMad",
+"name":"kMad",
+"family":"shader ALU vector",
+"value":11,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kCndEq",
+"name":"kCndEq",
+"family":"shader ALU vector",
+"value":12,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kCndGe",
+"name":"kCndGe",
+"family":"shader ALU vector",
+"value":13,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kCndGt",
+"name":"kCndGt",
+"family":"shader ALU vector",
+"value":14,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kDp4",
+"name":"kDp4",
+"family":"shader ALU vector",
+"value":15,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kDp3",
+"name":"kDp3",
+"family":"shader ALU vector",
+"value":16,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kDp2Add",
+"name":"kDp2Add",
+"family":"shader ALU vector",
+"value":17,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kCube",
+"name":"kCube",
+"family":"shader ALU vector",
+"value":18,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kMax4",
+"name":"kMax4",
+"family":"shader ALU vector",
+"value":19,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kSetpEqPush",
+"name":"kSetpEqPush",
+"family":"shader ALU vector",
+"value":20,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kSetpNePush",
+"name":"kSetpNePush",
+"family":"shader ALU vector",
+"value":21,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kSetpGtPush",
+"name":"kSetpGtPush",
+"family":"shader ALU vector",
+"value":22,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kSetpGePush",
+"name":"kSetpGePush",
+"family":"shader ALU vector",
+"value":23,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kKillEq",
+"name":"kKillEq",
+"family":"shader ALU vector",
+"value":24,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kKillGt",
+"name":"kKillGt",
+"family":"shader ALU vector",
+"value":25,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kKillGe",
+"name":"kKillGe",
+"family":"shader ALU vector",
+"value":26,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kKillNe",
+"name":"kKillNe",
+"family":"shader ALU vector",
+"value":27,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kDst",
+"name":"kDst",
+"family":"shader ALU vector",
+"value":28,
+"state":"reference"
+},
+{
+"id":"shader ALU vector:kMaxA",
+"name":"kMaxA",
+"family":"shader ALU vector",
+"value":29,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kAdds",
+"name":"kAdds",
+"family":"shader ALU scalar",
+"value":0,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kAddsPrev",
+"name":"kAddsPrev",
+"family":"shader ALU scalar",
+"value":1,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kMuls",
+"name":"kMuls",
+"family":"shader ALU scalar",
+"value":2,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kMulsPrev",
+"name":"kMulsPrev",
+"family":"shader ALU scalar",
+"value":3,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kMulsPrev2",
+"name":"kMulsPrev2",
+"family":"shader ALU scalar",
+"value":4,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kMaxs",
+"name":"kMaxs",
+"family":"shader ALU scalar",
+"value":5,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kMins",
+"name":"kMins",
+"family":"shader ALU scalar",
+"value":6,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSeqs",
+"name":"kSeqs",
+"family":"shader ALU scalar",
+"value":7,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSgts",
+"name":"kSgts",
+"family":"shader ALU scalar",
+"value":8,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSges",
+"name":"kSges",
+"family":"shader ALU scalar",
+"value":9,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSnes",
+"name":"kSnes",
+"family":"shader ALU scalar",
+"value":10,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kFrcs",
+"name":"kFrcs",
+"family":"shader ALU scalar",
+"value":11,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kTruncs",
+"name":"kTruncs",
+"family":"shader ALU scalar",
+"value":12,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kFloors",
+"name":"kFloors",
+"family":"shader ALU scalar",
+"value":13,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kExp",
+"name":"kExp",
+"family":"shader ALU scalar",
+"value":14,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kLogc",
+"name":"kLogc",
+"family":"shader ALU scalar",
+"value":15,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kLog",
+"name":"kLog",
+"family":"shader ALU scalar",
+"value":16,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kRcpc",
+"name":"kRcpc",
+"family":"shader ALU scalar",
+"value":17,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kRcpf",
+"name":"kRcpf",
+"family":"shader ALU scalar",
+"value":18,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kRcp",
+"name":"kRcp",
+"family":"shader ALU scalar",
+"value":19,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kRsqc",
+"name":"kRsqc",
+"family":"shader ALU scalar",
+"value":20,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kRsqf",
+"name":"kRsqf",
+"family":"shader ALU scalar",
+"value":21,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kRsq",
+"name":"kRsq",
+"family":"shader ALU scalar",
+"value":22,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kMaxAs",
+"name":"kMaxAs",
+"family":"shader ALU scalar",
+"value":23,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kMaxAsf",
+"name":"kMaxAsf",
+"family":"shader ALU scalar",
+"value":24,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSubs",
+"name":"kSubs",
+"family":"shader ALU scalar",
+"value":25,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSubsPrev",
+"name":"kSubsPrev",
+"family":"shader ALU scalar",
+"value":26,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSetpEq",
+"name":"kSetpEq",
+"family":"shader ALU scalar",
+"value":27,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSetpNe",
+"name":"kSetpNe",
+"family":"shader ALU scalar",
+"value":28,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSetpGt",
+"name":"kSetpGt",
+"family":"shader ALU scalar",
+"value":29,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSetpGe",
+"name":"kSetpGe",
+"family":"shader ALU scalar",
+"value":30,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSetpInv",
+"name":"kSetpInv",
+"family":"shader ALU scalar",
+"value":31,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSetpPop",
+"name":"kSetpPop",
+"family":"shader ALU scalar",
+"value":32,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSetpClr",
+"name":"kSetpClr",
+"family":"shader ALU scalar",
+"value":33,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSetpRstr",
+"name":"kSetpRstr",
+"family":"shader ALU scalar",
+"value":34,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kKillsEq",
+"name":"kKillsEq",
+"family":"shader ALU scalar",
+"value":35,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kKillsGt",
+"name":"kKillsGt",
+"family":"shader ALU scalar",
+"value":36,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kKillsGe",
+"name":"kKillsGe",
+"family":"shader ALU scalar",
+"value":37,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kKillsNe",
+"name":"kKillsNe",
+"family":"shader ALU scalar",
+"value":38,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kKillsOne",
+"name":"kKillsOne",
+"family":"shader ALU scalar",
+"value":39,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSqrt",
+"name":"kSqrt",
+"family":"shader ALU scalar",
+"value":40,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kMulsc0",
+"name":"kMulsc0",
+"family":"shader ALU scalar",
+"value":42,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kMulsc1",
+"name":"kMulsc1",
+"family":"shader ALU scalar",
+"value":43,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kAddsc0",
+"name":"kAddsc0",
+"family":"shader ALU scalar",
+"value":44,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kAddsc1",
+"name":"kAddsc1",
+"family":"shader ALU scalar",
+"value":45,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSubsc0",
+"name":"kSubsc0",
+"family":"shader ALU scalar",
+"value":46,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSubsc1",
+"name":"kSubsc1",
+"family":"shader ALU scalar",
+"value":47,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kSin",
+"name":"kSin",
+"family":"shader ALU scalar",
+"value":48,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kCos",
+"name":"kCos",
+"family":"shader ALU scalar",
+"value":49,
+"state":"reference"
+},
+{
+"id":"shader ALU scalar:kRetainPrev",
+"name":"kRetainPrev",
+"family":"shader ALU scalar",
+"value":50,
+"state":"native"
+},
+{
+"id":"shader fetch:kVertexFetch",
+"name":"kVertexFetch",
+"family":"shader fetch",
+"value":0,
+"state":"native"
+},
+{
+"id":"shader fetch:kTextureFetch",
+"name":"kTextureFetch",
+"family":"shader fetch",
+"value":1,
+"state":"reference"
+},
+{
+"id":"shader fetch:kGetTextureBorderColorFrac",
+"name":"kGetTextureBorderColorFrac",
+"family":"shader fetch",
+"value":16,
+"state":"reference"
+},
+{
+"id":"shader fetch:kGetTextureComputedLod",
+"name":"kGetTextureComputedLod",
+"family":"shader fetch",
+"value":17,
+"state":"reference"
+},
+{
+"id":"shader fetch:kGetTextureGradients",
+"name":"kGetTextureGradients",
+"family":"shader fetch",
+"value":18,
+"state":"reference"
+},
+{
+"id":"shader fetch:kGetTextureWeights",
+"name":"kGetTextureWeights",
+"family":"shader fetch",
+"value":19,
+"state":"reference"
+},
+{
+"id":"shader fetch:kSetTextureLod",
+"name":"kSetTextureLod",
+"family":"shader fetch",
+"value":24,
+"state":"reference"
+},
+{
+"id":"shader fetch:kSetTextureGradientsHorz",
+"name":"kSetTextureGradientsHorz",
+"family":"shader fetch",
+"value":25,
+"state":"reference"
+},
+{
+"id":"shader fetch:kSetTextureGradientsVert",
+"name":"kSetTextureGradientsVert",
+"family":"shader fetch",
+"value":26,
+"state":"reference"
+},
+{
+"id":"primitive types:kPointList",
+"name":"kPointList",
+"family":"primitive types",
+"value":1,
+"state":"reference"
+},
+{
+"id":"primitive types:kLineList",
+"name":"kLineList",
+"family":"primitive types",
+"value":2,
+"state":"reference"
+},
+{
+"id":"primitive types:kLineStrip",
+"name":"kLineStrip",
+"family":"primitive types",
+"value":3,
+"state":"reference"
+},
+{
+"id":"primitive types:kTriangleList",
+"name":"kTriangleList",
+"family":"primitive types",
+"value":4,
+"state":"native"
+},
+{
+"id":"primitive types:kTriangleFan",
+"name":"kTriangleFan",
+"family":"primitive types",
+"value":5,
+"state":"reference"
+},
+{
+"id":"primitive types:kTriangleStrip",
+"name":"kTriangleStrip",
+"family":"primitive types",
+"value":6,
+"state":"native"
+},
+{
+"id":"primitive types:kTriangleWithWFlags",
+"name":"kTriangleWithWFlags",
+"family":"primitive types",
+"value":7,
+"state":"reference"
+},
+{
+"id":"primitive types:kRectangleList",
+"name":"kRectangleList",
+"family":"primitive types",
+"value":8,
+"state":"reference"
+},
+{
+"id":"primitive types:kLineLoop",
+"name":"kLineLoop",
+"family":"primitive types",
+"value":12,
+"state":"reference"
+},
+{
+"id":"primitive types:kQuadList",
+"name":"kQuadList",
+"family":"primitive types",
+"value":13,
+"state":"reference"
+},
+{
+"id":"primitive types:kQuadStrip",
+"name":"kQuadStrip",
+"family":"primitive types",
+"value":14,
+"state":"reference"
+},
+{
+"id":"primitive types:kPolygon",
+"name":"kPolygon",
+"family":"primitive types",
+"value":15,
+"state":"reference"
+},
+{
+"id":"primitive types:kExplicitMajorModeForceStart",
+"name":"kExplicitMajorModeForceStart",
+"family":"primitive types",
+"value":16,
+"state":"reference"
+},
+{
+"id":"primitive types:k2DCopyRectListV1",
+"name":"k2DCopyRectListV1",
+"family":"primitive types",
+"value":17,
+"state":"reference"
+},
+{
+"id":"primitive types:k2DCopyRectListV2",
+"name":"k2DCopyRectListV2",
+"family":"primitive types",
+"value":18,
+"state":"reference"
+},
+{
+"id":"primitive types:k2DCopyRectListV3",
+"name":"k2DCopyRectListV3",
+"family":"primitive types",
+"value":19,
+"state":"reference"
+},
+{
+"id":"primitive types:k2DFillRectList",
+"name":"k2DFillRectList",
+"family":"primitive types",
+"value":20,
+"state":"reference"
+},
+{
+"id":"primitive types:k2DLineStrip",
+"name":"k2DLineStrip",
+"family":"primitive types",
+"value":21,
+"state":"reference"
+},
+{
+"id":"primitive types:k2DTriStrip",
+"name":"k2DTriStrip",
+"family":"primitive types",
+"value":22,
+"state":"reference"
+},
+{
+"id":"vertex formats:kUndefined",
+"name":"kUndefined",
+"family":"vertex formats",
+"value":0,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_8_8_8_8",
+"name":"k_8_8_8_8",
+"family":"vertex formats",
+"value":6,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_2_10_10_10",
+"name":"k_2_10_10_10",
+"family":"vertex formats",
+"value":7,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_10_11_11",
+"name":"k_10_11_11",
+"family":"vertex formats",
+"value":16,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_11_11_10",
+"name":"k_11_11_10",
+"family":"vertex formats",
+"value":17,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_16_16",
+"name":"k_16_16",
+"family":"vertex formats",
+"value":25,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_16_16_16_16",
+"name":"k_16_16_16_16",
+"family":"vertex formats",
+"value":26,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_16_16_FLOAT",
+"name":"k_16_16_FLOAT",
+"family":"vertex formats",
+"value":31,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_16_16_16_16_FLOAT",
+"name":"k_16_16_16_16_FLOAT",
+"family":"vertex formats",
+"value":32,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_32",
+"name":"k_32",
+"family":"vertex formats",
+"value":33,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_32_32",
+"name":"k_32_32",
+"family":"vertex formats",
+"value":34,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_32_32_32_32",
+"name":"k_32_32_32_32",
+"family":"vertex formats",
+"value":35,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_32_FLOAT",
+"name":"k_32_FLOAT",
+"family":"vertex formats",
+"value":36,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_32_32_FLOAT",
+"name":"k_32_32_FLOAT",
+"family":"vertex formats",
+"value":37,
+"state":"reference"
+},
+{
+"id":"vertex formats:k_32_32_32_32_FLOAT",
+"name":"k_32_32_32_32_FLOAT",
+"family":"vertex formats",
+"value":38,
+"state":"native"
+},
+{
+"id":"vertex formats:k_32_32_32_FLOAT",
+"name":"k_32_32_32_FLOAT",
+"family":"vertex formats",
+"value":57,
+"state":"reference"
+},
+{
+"id":"texture formats:k_1_REVERSE",
+"name":"k_1_REVERSE",
+"family":"texture formats",
+"value":0,
+"state":"reference"
+},
+{
+"id":"texture formats:k_1",
+"name":"k_1",
+"family":"texture formats",
+"value":1,
+"state":"reference"
+},
+{
+"id":"texture formats:k_8",
+"name":"k_8",
+"family":"texture formats",
+"value":2,
+"state":"reference"
+},
+{
+"id":"texture formats:k_1_5_5_5",
+"name":"k_1_5_5_5",
+"family":"texture formats",
+"value":3,
+"state":"reference"
+},
+{
+"id":"texture formats:k_5_6_5",
+"name":"k_5_6_5",
+"family":"texture formats",
+"value":4,
+"state":"reference"
+},
+{
+"id":"texture formats:k_6_5_5",
+"name":"k_6_5_5",
+"family":"texture formats",
+"value":5,
+"state":"reference"
+},
+{
+"id":"texture formats:k_8_8_8_8",
+"name":"k_8_8_8_8",
+"family":"texture formats",
+"value":6,
+"state":"reference"
+},
+{
+"id":"texture formats:k_2_10_10_10",
+"name":"k_2_10_10_10",
+"family":"texture formats",
+"value":7,
+"state":"reference"
+},
+{
+"id":"texture formats:k_8_A",
+"name":"k_8_A",
+"family":"texture formats",
+"value":8,
+"state":"reference"
+},
+{
+"id":"texture formats:k_8_B",
+"name":"k_8_B",
+"family":"texture formats",
+"value":9,
+"state":"reference"
+},
+{
+"id":"texture formats:k_8_8",
+"name":"k_8_8",
+"family":"texture formats",
+"value":10,
+"state":"reference"
+},
+{
+"id":"texture formats:k_Cr_Y1_Cb_Y0_REP",
+"name":"k_Cr_Y1_Cb_Y0_REP",
+"family":"texture formats",
+"value":11,
+"state":"reference"
+},
+{
+"id":"texture formats:k_Y1_Cr_Y0_Cb_REP",
+"name":"k_Y1_Cr_Y0_Cb_REP",
+"family":"texture formats",
+"value":12,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_16_EDRAM",
+"name":"k_16_16_EDRAM",
+"family":"texture formats",
+"value":13,
+"state":"reference"
+},
+{
+"id":"texture formats:k_8_8_8_8_A",
+"name":"k_8_8_8_8_A",
+"family":"texture formats",
+"value":14,
+"state":"reference"
+},
+{
+"id":"texture formats:k_4_4_4_4",
+"name":"k_4_4_4_4",
+"family":"texture formats",
+"value":15,
+"state":"reference"
+},
+{
+"id":"texture formats:k_10_11_11",
+"name":"k_10_11_11",
+"family":"texture formats",
+"value":16,
+"state":"reference"
+},
+{
+"id":"texture formats:k_11_11_10",
+"name":"k_11_11_10",
+"family":"texture formats",
+"value":17,
+"state":"reference"
+},
+{
+"id":"texture formats:k_DXT1",
+"name":"k_DXT1",
+"family":"texture formats",
+"value":18,
+"state":"reference"
+},
+{
+"id":"texture formats:k_DXT2_3",
+"name":"k_DXT2_3",
+"family":"texture formats",
+"value":19,
+"state":"reference"
+},
+{
+"id":"texture formats:k_DXT4_5",
+"name":"k_DXT4_5",
+"family":"texture formats",
+"value":20,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_16_16_16_EDRAM",
+"name":"k_16_16_16_16_EDRAM",
+"family":"texture formats",
+"value":21,
+"state":"reference"
+},
+{
+"id":"texture formats:k_24_8",
+"name":"k_24_8",
+"family":"texture formats",
+"value":22,
+"state":"reference"
+},
+{
+"id":"texture formats:k_24_8_FLOAT",
+"name":"k_24_8_FLOAT",
+"family":"texture formats",
+"value":23,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16",
+"name":"k_16",
+"family":"texture formats",
+"value":24,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_16",
+"name":"k_16_16",
+"family":"texture formats",
+"value":25,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_16_16_16",
+"name":"k_16_16_16_16",
+"family":"texture formats",
+"value":26,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_EXPAND",
+"name":"k_16_EXPAND",
+"family":"texture formats",
+"value":27,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_16_EXPAND",
+"name":"k_16_16_EXPAND",
+"family":"texture formats",
+"value":28,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_16_16_16_EXPAND",
+"name":"k_16_16_16_16_EXPAND",
+"family":"texture formats",
+"value":29,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_FLOAT",
+"name":"k_16_FLOAT",
+"family":"texture formats",
+"value":30,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_16_FLOAT",
+"name":"k_16_16_FLOAT",
+"family":"texture formats",
+"value":31,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_16_16_16_FLOAT",
+"name":"k_16_16_16_16_FLOAT",
+"family":"texture formats",
+"value":32,
+"state":"reference"
+},
+{
+"id":"texture formats:k_32",
+"name":"k_32",
+"family":"texture formats",
+"value":33,
+"state":"reference"
+},
+{
+"id":"texture formats:k_32_32",
+"name":"k_32_32",
+"family":"texture formats",
+"value":34,
+"state":"reference"
+},
+{
+"id":"texture formats:k_32_32_32_32",
+"name":"k_32_32_32_32",
+"family":"texture formats",
+"value":35,
+"state":"reference"
+},
+{
+"id":"texture formats:k_32_FLOAT",
+"name":"k_32_FLOAT",
+"family":"texture formats",
+"value":36,
+"state":"reference"
+},
+{
+"id":"texture formats:k_32_32_FLOAT",
+"name":"k_32_32_FLOAT",
+"family":"texture formats",
+"value":37,
+"state":"reference"
+},
+{
+"id":"texture formats:k_32_32_32_32_FLOAT",
+"name":"k_32_32_32_32_FLOAT",
+"family":"texture formats",
+"value":38,
+"state":"reference"
+},
+{
+"id":"texture formats:k_32_AS_8",
+"name":"k_32_AS_8",
+"family":"texture formats",
+"value":39,
+"state":"reference"
+},
+{
+"id":"texture formats:k_32_AS_8_8",
+"name":"k_32_AS_8_8",
+"family":"texture formats",
+"value":40,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_MPEG",
+"name":"k_16_MPEG",
+"family":"texture formats",
+"value":41,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_16_MPEG",
+"name":"k_16_16_MPEG",
+"family":"texture formats",
+"value":42,
+"state":"reference"
+},
+{
+"id":"texture formats:k_8_INTERLACED",
+"name":"k_8_INTERLACED",
+"family":"texture formats",
+"value":43,
+"state":"reference"
+},
+{
+"id":"texture formats:k_32_AS_8_INTERLACED",
+"name":"k_32_AS_8_INTERLACED",
+"family":"texture formats",
+"value":44,
+"state":"reference"
+},
+{
+"id":"texture formats:k_32_AS_8_8_INTERLACED",
+"name":"k_32_AS_8_8_INTERLACED",
+"family":"texture formats",
+"value":45,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_INTERLACED",
+"name":"k_16_INTERLACED",
+"family":"texture formats",
+"value":46,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_MPEG_INTERLACED",
+"name":"k_16_MPEG_INTERLACED",
+"family":"texture formats",
+"value":47,
+"state":"reference"
+},
+{
+"id":"texture formats:k_16_16_MPEG_INTERLACED",
+"name":"k_16_16_MPEG_INTERLACED",
+"family":"texture formats",
+"value":48,
+"state":"reference"
+},
+{
+"id":"texture formats:k_DXN",
+"name":"k_DXN",
+"family":"texture formats",
+"value":49,
+"state":"reference"
+},
+{
+"id":"texture formats:k_8_8_8_8_AS_16_16_16_16",
+"name":"k_8_8_8_8_AS_16_16_16_16",
+"family":"texture formats",
+"value":50,
+"state":"reference"
+},
+{
+"id":"texture formats:k_DXT1_AS_16_16_16_16",
+"name":"k_DXT1_AS_16_16_16_16",
+"family":"texture formats",
+"value":51,
+"state":"reference"
+},
+{
+"id":"texture formats:k_DXT2_3_AS_16_16_16_16",
+"name":"k_DXT2_3_AS_16_16_16_16",
+"family":"texture formats",
+"value":52,
+"state":"reference"
+},
+{
+"id":"texture formats:k_DXT4_5_AS_16_16_16_16",
+"name":"k_DXT4_5_AS_16_16_16_16",
+"family":"texture formats",
+"value":53,
+"state":"reference"
+},
+{
+"id":"texture formats:k_2_10_10_10_AS_16_16_16_16",
+"name":"k_2_10_10_10_AS_16_16_16_16",
+"family":"texture formats",
+"value":54,
+"state":"reference"
+},
+{
+"id":"texture formats:k_10_11_11_AS_16_16_16_16",
+"name":"k_10_11_11_AS_16_16_16_16",
+"family":"texture formats",
+"value":55,
+"state":"reference"
+},
+{
+"id":"texture formats:k_11_11_10_AS_16_16_16_16",
+"name":"k_11_11_10_AS_16_16_16_16",
+"family":"texture formats",
+"value":56,
+"state":"reference"
+},
+{
+"id":"texture formats:k_32_32_32_FLOAT",
+"name":"k_32_32_32_FLOAT",
+"family":"texture formats",
+"value":57,
+"state":"reference"
+},
+{
+"id":"texture formats:k_DXT3A",
+"name":"k_DXT3A",
+"family":"texture formats",
+"value":58,
+"state":"reference"
+},
+{
+"id":"texture formats:k_DXT5A",
+"name":"k_DXT5A",
+"family":"texture formats",
+"value":59,
+"state":"reference"
+},
+{
+"id":"texture formats:k_CTX1",
+"name":"k_CTX1",
+"family":"texture formats",
+"value":60,
+"state":"reference"
+},
+{
+"id":"texture formats:k_DXT3A_AS_1_1_1_1",
+"name":"k_DXT3A_AS_1_1_1_1",
+"family":"texture formats",
+"value":61,
+"state":"reference"
+},
+{
+"id":"texture formats:k_8_8_8_8_GAMMA_EDRAM",
+"name":"k_8_8_8_8_GAMMA_EDRAM",
+"family":"texture formats",
+"value":62,
+"state":"reference"
+},
+{
+"id":"texture formats:k_2_10_10_10_FLOAT_EDRAM",
+"name":"k_2_10_10_10_FLOAT_EDRAM",
+"family":"texture formats",
+"value":63,
+"state":"reference"
+},
+{
+"id":"render target formats:k_8_8_8_8",
+"name":"k_8_8_8_8",
+"family":"render target formats",
+"value":0,
+"state":"reference"
+},
+{
+"id":"render target formats:k_8_8_8_8_GAMMA",
+"name":"k_8_8_8_8_GAMMA",
+"family":"render target formats",
+"value":1,
+"state":"reference"
+},
+{
+"id":"render target formats:k_2_10_10_10",
+"name":"k_2_10_10_10",
+"family":"render target formats",
+"value":2,
+"state":"reference"
+},
+{
+"id":"render target formats:k_2_10_10_10_FLOAT",
+"name":"k_2_10_10_10_FLOAT",
+"family":"render target formats",
+"value":3,
+"state":"reference"
+},
+{
+"id":"render target formats:k_16_16",
+"name":"k_16_16",
+"family":"render target formats",
+"value":4,
+"state":"reference"
+},
+{
+"id":"render target formats:k_16_16_16_16",
+"name":"k_16_16_16_16",
+"family":"render target formats",
+"value":5,
+"state":"reference"
+},
+{
+"id":"render target formats:k_16_16_FLOAT",
+"name":"k_16_16_FLOAT",
+"family":"render target formats",
+"value":6,
+"state":"reference"
+},
+{
+"id":"render target formats:k_16_16_16_16_FLOAT",
+"name":"k_16_16_16_16_FLOAT",
+"family":"render target formats",
+"value":7,
+"state":"reference"
+},
+{
+"id":"render target formats:k_2_10_10_10_AS_10_10_10_10",
+"name":"k_2_10_10_10_AS_10_10_10_10",
+"family":"render target formats",
+"value":10,
+"state":"reference"
+},
+{
+"id":"render target formats:k_2_10_10_10_FLOAT_AS_16_16_16_16",
+"name":"k_2_10_10_10_FLOAT_AS_16_16_16_16",
+"family":"render target formats",
+"value":12,
+"state":"reference"
+},
+{
+"id":"render target formats:k_32_FLOAT",
+"name":"k_32_FLOAT",
+"family":"render target formats",
+"value":14,
+"state":"reference"
+},
+{
+"id":"render target formats:k_32_32_FLOAT",
+"name":"k_32_32_FLOAT",
+"family":"render target formats",
+"value":15,
+"state":"reference"
+},
+{
+"id":"render target formats:kD24S8",
+"name":"kD24S8",
+"family":"render target formats",
+"value":0,
+"state":"reference"
+},
+{
+"id":"render target formats:kD24FS8",
+"name":"kD24FS8",
+"family":"render target formats",
+"value":1,
+"state":"reference"
+},
+{
+"id":"render features:viewport transform",
+"name":"viewport transform",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:window offset",
+"name":"window offset",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:window scissor",
+"name":"window scissor",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:screen scissor",
+"name":"screen scissor",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:depth test",
+"name":"depth test",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:depth write",
+"name":"depth write",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:stencil front",
+"name":"stencil front",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:stencil back",
+"name":"stencil back",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:blending",
+"name":"blending",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:blend constants",
+"name":"blend constants",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:colour write mask",
+"name":"colour write mask",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:alpha test",
+"name":"alpha test",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:alpha to coverage",
+"name":"alpha to coverage",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:colour exponent bias",
+"name":"colour exponent bias",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:culling",
+"name":"culling",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:front face",
+"name":"front face",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:wireframe fill",
+"name":"wireframe fill",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:polygon offset",
+"name":"polygon offset",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:user clip planes",
+"name":"user clip planes",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:point sprites",
+"name":"point sprites",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:primitive restart",
+"name":"primitive restart",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:multiple render targets",
+"name":"multiple render targets",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:MSAA 2x",
+"name":"MSAA 2x",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:MSAA 4x",
+"name":"MSAA 4x",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:render targets from RB_* registers",
+"name":"render targets from RB_* registers",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:gamma render targets",
+"name":"gamma render targets",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:float24 depth",
+"name":"float24 depth",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:textures (2D)",
+"name":"textures (2D)",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:textures (3D)",
+"name":"textures (3D)",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:cube textures",
+"name":"cube textures",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:texture arrays",
+"name":"texture arrays",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:texture filtering",
+"name":"texture filtering",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:anisotropic filtering",
+"name":"anisotropic filtering",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:texture tiling (untile)",
+"name":"texture tiling (untile)",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:mip maps",
+"name":"mip maps",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:vertex textures",
+"name":"vertex textures",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:resolve colour",
+"name":"resolve colour",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:resolve depth",
+"name":"resolve depth",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:resolve with clear",
+"name":"resolve with clear",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:resolve to guest memory",
+"name":"resolve to guest memory",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:occlusion queries",
+"name":"occlusion queries",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:memexport",
+"name":"memexport",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:tessellation",
+"name":"tessellation",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:interpolators",
+"name":"interpolators",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:centroid interpolation",
+"name":"centroid interpolation",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:swap / present",
+"name":"swap / present",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:gamma ramp",
+"name":"gamma ramp",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:vertex fetch (shared memory)",
+"name":"vertex fetch (shared memory)",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:index buffers (DMA)",
+"name":"index buffers (DMA)",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:auto indices",
+"name":"auto indices",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:immediate indices",
+"name":"immediate indices",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:shader constants (float)",
+"name":"shader constants (float)",
+"family":"render features",
+"value":null,
+"state":"native"
+},
+{
+"id":"render features:shader constants (bool / loop)",
+"name":"shader constants (bool / loop)",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:dynamic constant addressing",
+"name":"dynamic constant addressing",
+"family":"render features",
+"value":null,
+"state":"reference"
+},
+{
+"id":"render features:predication (bins)",
+"name":"predication (bins)",
+"family":"render features",
+"value":null,
+"state":"reference"
+}
+]

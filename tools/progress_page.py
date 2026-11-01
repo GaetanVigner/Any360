@@ -28,6 +28,7 @@ BG, TEXT, MUTED = '#0d1117', '#c9d1d9', '#8b949e'
 CALL_STATES = [('native', '#2ea043'), ('ported', '#2f81f7'), ('reference', '#8957e5'), ('stub', '#d29922'), ('missing', '#f85149')]
 INSTRUCTION_STATES = [('native', '#2ea043'), ('reference', '#8957e5'), ('missing', '#f85149')]
 XDK_STATES = [('native', '#2ea043'), ('ported', '#2f81f7'), ('reference', '#8957e5'), ('todo', '#f85149')]
+GPU_STATES = [('native', '#2ea043'), ('reference', '#8957e5'), ('missing', '#f85149')]
 
 
 def esc(text):
@@ -133,16 +134,18 @@ def treemap(x0, y0, w, h, title, groups, states, done_states, href='#', subtitle
 
 
 def legend(x, y, entries):
-    out = []
-    for i, (label, color) in enumerate(entries):
-        lx = x + i * 118
+    # Each entry as wide as its label (about 6 px a character at 11 px), so long labels do not overlap.
+    out, lx = [], x
+    for label, color in entries:
         out.append(f'<rect x="{lx}" y="{y}" width="10" height="10" rx="2" fill="{color}"/>')
         out.append(f'<text x="{lx + 14}" y="{y + 9}" font-size="11" fill="{MUTED}">{esc(label)}</text>')
+        lx += max(118, 14 + 6 * len(label) + 16)
     return out
 
 
-def overview_svg(calls, instructions, xdk, href_base):
-    """The three global treemaps stacked: system calls by library / group, instructions by family, XDK by library."""
+def overview_svg(calls, instructions, xdk, gpu, href_base):
+    """The four global treemaps stacked: system calls by library / group, instructions by family, XDK by library,
+    GPU units by family."""
     width, map_h, header, gap = 1000, 300, 34, 46
     by_group = defaultdict(Counter)
     for r in calls:
@@ -170,7 +173,16 @@ def overview_svg(calls, instructions, xdk, href_base):
     out += treemap(0, y, width, xdk_h, 'XDK library functions native', sorted(by_library.items()), XDK_STATES, ['native', 'ported'],
                    f'{href_base}#xdk', '· named by signature so far · one square per function')
     out += legend(0, y + xdk_h + 6, [('native (Any360)', '#2ea043'), ('ported (in a title)', '#2f81f7'), ('reference (hooked by name)', '#8957e5'), ('to do', '#f85149')])
-    height = y + xdk_h + 24
+    y += xdk_h + gap
+    by_gpu_family = defaultdict(Counter)
+    for r in gpu:
+        by_gpu_family[r['family']][r['state']] += 1
+    gpu_h = 150
+    gpu_reference = sum(1 for r in gpu if r['state'] != 'missing')
+    out += treemap(0, y, width, gpu_h, 'GPU (Xenos) native', sorted(by_gpu_family.items()), GPU_STATES, ['native'],
+                   f'{href_base}#gpu', f'· {pct(gpu_reference, len(gpu))} handled by the reference GPU · one square per opcode, format or feature')
+    out += legend(0, y + gpu_h + 6, [('native (any360::gfx, tested)', '#2ea043'), ('reference (ReXGlue / vendored translator)', '#8957e5'), ('missing', '#f85149')])
+    height = y + gpu_h + 24
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" '
            f'font-family="sans-serif">\n<style>.blk:hover rect{{opacity:.8}}</style>\n<rect width="{width}" height="{height}" fill="{BG}"/>\n'
            + '\n'.join(out) + '\n</svg>')
@@ -210,6 +222,7 @@ def main():
     calls = load_json(DB / 'system_calls.json', [])
     instructions = load_json(DB / 'instructions.json', [])
     xdk = load_json(DB / 'xdk.json', [])
+    gpu = load_json(DB / 'gpu.json', [])
     db_summary = load_json(DB / 'summary.json', {})
     status = load_json(STATUS, {'components': []})
     patches = {p.stem[len('patches-'):]: load_json(p) for p in (DOCS / 'coverage').glob('patches-*.json')}
@@ -235,6 +248,9 @@ def main():
                              ((f, Counter(r['state'] for r in instructions if r['family'] == f)) for f in {r['family'] for r in instructions}))}},
         'xdk': {'total': len(xdk), 'native': sum(1 for r in xdk if r['any360'] == 'native'),
                 'ported': sum(1 for r in xdk if r['any360'] == 'ported'), 'unnamed_by_title': db_summary.get('xdk', {}).get('unnamed_by_title', {})},
+        'gpu': {'total': len(gpu), 'native': sum(1 for r in gpu if r['state'] == 'native'),
+                'reference': sum(1 for r in gpu if r['state'] == 'reference'),
+                'by_family': {f: dict(Counter(r['state'] for r in gpu if r['family'] == f)) for f in sorted({r['family'] for r in gpu})}},
         'titles': db_summary.get('titles', {}),
         'toolkit': {'components': len(comps), 'done': sum(1 for x in comps if x['state'] == 'done'),
                     'in_progress': sum(1 for x in comps if x['state'] == 'in progress'), 'patches': {k: v['count'] for k, v in patches.items()}},
@@ -245,12 +261,13 @@ def main():
     history.append({'date': today,
                     'system_calls': {k: summary['system_calls'][k] for k in ('native', 'ported', 'runnable', 'total')},
                     'instructions': {k: summary['instructions'][k] for k in ('native', 'reference', 'total')},
-                    'xdk': {k: summary['xdk'][k] for k in ('native', 'ported', 'total')}, 'toolkit_done': summary['toolkit']['done']})
+                    'xdk': {k: summary['xdk'][k] for k in ('native', 'ported', 'total')},
+                    'gpu': {k: summary['gpu'][k] for k in ('native', 'reference', 'total')}, 'toolkit_done': summary['toolkit']['done']})
     history_path.write_text(json.dumps(history, indent=1) + '\n', encoding='utf-8')
     (DOCS / 'progress.json').write_text(json.dumps(summary, indent=1) + '\n', encoding='utf-8')
 
-    svg, _ = overview_svg(calls, instructions, xdk, '')
-    svg_live, _ = overview_svg(calls, instructions, xdk, LIVE)
+    svg, _ = overview_svg(calls, instructions, xdk, gpu, '')
+    svg_live, _ = overview_svg(calls, instructions, xdk, gpu, LIVE)
     (DOCS / 'progress.svg').write_text(svg_live + '\n', encoding='utf-8')
 
     page_data = {
@@ -258,7 +275,7 @@ def main():
         'calls': [{**{k: r[k] for k in ('name', 'library', 'ordinal', 'group', 'reference', 'any360', 'state', 'titles')},
                    'sites': sum(r.get('sites', {}).values()), 'gfx': r.get('gfx_audio', False)} for r in calls],
         'instructions': [{k: r[k] for k in ('id', 'mnemonic', 'family', 'reference', 'any360', 'state', 'used', 'titles')} for r in instructions],
-        'xdk': xdk, 'repos': REPOS,
+        'xdk': xdk, 'gpu': gpu, 'repos': REPOS,
     }
     html = TEMPLATE.replace('__DATA__', json.dumps(page_data, separators=(',', ':')).replace('</', '<\\/'))
     html = html.replace('__DATE__', today).replace('__OVERVIEW__', svg).replace('__HISTORY__', history_svg(history))
@@ -267,6 +284,7 @@ def main():
     print(f"progress page: system calls {s['native'] + s['ported']}/{s['total']} native or ported ({s['runnable']} runnable, "
           f"{s['used_by_titles']} used by the known titles); instructions {summary['instructions']['native']}/{summary['instructions']['total']} native "
           f"({summary['instructions']['reference']} handled by the reference); XDK {summary['xdk']['native'] + summary['xdk']['ported']}/{summary['xdk']['total']}; "
+          f"GPU {summary['gpu']['native']}/{summary['gpu']['total']} native ({summary['gpu']['reference']} reference); "
           f"toolkit {summary['toolkit']['done']}/{summary['toolkit']['components']}; wrote {DOCS / 'progress.html'}")
 
 
@@ -295,7 +313,7 @@ label.t{color:var(--muted);font-size:12.5px;cursor:pointer}.muted{color:var(--mu
 </style></head><body><main>
 <h1>Any360 progress</h1>
 <p>How much of the Xbox 360 platform surface Any360 provides natively, whatever the title: every system call a game can import (the exports of <code>xboxkrnl.exe</code>, <code>xam.xex</code>, <code>xbdm.dll</code>), every CPU instruction a recompiled or decompiled game can execute, and the XDK library functions games link statically (Direct3D, CRT, XAudio...). The reference runtime (<a href="https://github.com/rexglue/rexglue-sdk">ReXGlue</a>, stage 0) is the oracle each native function is verified against, not the goal. Known titles are sources: they say which entries matter first, and their own repositories track their own progress. Generated by <a href="https://github.com/GaetanVigner/Any360/blob/main/tools/progress_page.py">tools/progress_page.py</a> from <a href="https://github.com/GaetanVigner/Any360/tree/main/db">db/</a> on __DATE__; raw numbers in <a href="progress.json">progress.json</a>. Public API names, ordinals and counts only: no game code or data.</p>
-<nav><button class="tab active" data-tab="overview">Overview</button><button class="tab" data-tab="calls">System calls</button><button class="tab" data-tab="instructions">Instructions</button><button class="tab" data-tab="xdk">XDK libraries</button><button class="tab" data-tab="sources">Sources (titles)</button><button class="tab" data-tab="toolkit">Toolkit</button><button class="tab" data-tab="history">History</button></nav>
+<nav><button class="tab active" data-tab="overview">Overview</button><button class="tab" data-tab="calls">System calls</button><button class="tab" data-tab="instructions">Instructions</button><button class="tab" data-tab="xdk">XDK libraries</button><button class="tab" data-tab="gpu">GPU</button><button class="tab" data-tab="sources">Sources (titles)</button><button class="tab" data-tab="toolkit">Toolkit</button><button class="tab" data-tab="history">History</button></nav>
 
 <section class="panel active" id="panel-overview">
 <div class="cards" id="overview-cards"></div>
@@ -322,6 +340,13 @@ label.t{color:var(--muted);font-size:12.5px;cursor:pointer}.muted{color:var(--mu
 <p>Statically linked library functions known by name, with the address each title has them at (<code>db/xdk_seed.json</code>). The unnamed library ranges of each title (below) are the pool signature matching will name.</p>
 <div id="xdk"></div>
 <h3>Unnamed library functions per title</h3><div id="xdk-unnamed"></div>
+</section>
+
+<section class="panel" id="panel-gpu">
+<h2>GPU (Xenos)</h2>
+<p>What a native port needs from the Xbox 360 GPU, unit by unit: the command processor's PM4 opcodes, the shader microcode opcodes, primitive types, vertex, texture and render target formats, and the render features a renderer implements (enumerated from the hardware's own lists in <code>layer/gfx/third_party/xenos_shader</code>, <code>tools/gpu_units.py</code>). <b>native</b>: <code>any360::gfx</code> handles it and a test checks it (<code>gfx_cp_tests</code>, <code>gfx_shader_tests</code>, <code>gfx_render_tests</code>; the list is <code>layer/gfx/native.json</code>); <b>reference</b>: the reference GPU (ReXGlue's, Xenia's translator vendored here) handles it, no Any360 test runs it yet; <b>missing</b>: neither. See <a href="https://github.com/GaetanVigner/Any360/blob/main/docs/GFX.md">docs/GFX.md</a>.</p>
+<div class="tools"><input type="search" id="gpu-q" placeholder="name, family"><span id="gpu-chips"></span><span class="muted" id="gpu-info"></span></div>
+<div id="gpu"></div>
 </section>
 
 <section class="panel" id="panel-sources">
@@ -381,7 +406,7 @@ function chips(sel, items, onChange) {
 }
 
 // Overview cards.
-const S = D.summary, sc = S.system_calls, si = S.instructions, sx = S.xdk;
+const S = D.summary, sc = S.system_calls, si = S.instructions, sx = S.xdk, sg = S.gpu;
 $('#overview-cards').innerHTML = `
   <div class="card"><b>${num(sc.native + sc.ported)} / ${num(sc.total)}</b><span>system calls native or ported (${pct(sc.native + sc.ported, sc.total)}); ${num(sc.runnable)} run on the reference</span></div>
   <div class="card"><b>${num(sc.used_by_titles)}</b><span>system calls the ${Object.keys(S.titles).length} known titles import</span></div>
@@ -389,6 +414,7 @@ $('#overview-cards').innerHTML = `
              return `<div class="card"><b>${t.mvp_native} / ${t.mvp_total}</b><span>MVP: system calls (graphics and audio aside) native for ${h(n)}, the closest title (${pct(t.mvp_native, t.mvp_total)})</span></div>`; })()}
   <div class="card"><b>${num(si.native)} / ${num(si.total)}</b><span>instruction ids with native rules; ${num(si.reference)} handled by the reference recompiler</span></div>
   <div class="card"><b>${num(sx.native + sx.ported)} / ${num(sx.total)}</b><span>named XDK library functions native</span></div>
+  <div class="card"><b>${num(sg.native)} / ${num(sg.total)}</b><span>GPU units native and tested; ${num(sg.reference)} handled by the reference GPU</span></div>
   <div class="card"><b>${S.toolkit.done} / ${S.toolkit.components}</b><span>toolkit components done (${S.toolkit.in_progress} in progress)</span></div>`;
 
 // System calls.
@@ -418,6 +444,19 @@ $('#overview-cards').innerHTML = `
     t ? t.update(rs) : t = table('#instructions', cols, rs, {sort:'used', page:200}); $('#ins-info').textContent = `${num(rs.length)} of ${num(D.instructions.length)}`;
   }
   $('#ins-q').oninput = apply; $('#ins-used').onchange = apply; apply();
+}
+// GPU.
+{
+  const cols = [{k:'family',t:'Family'},{k:'name',t:'Unit',f:v=>`<code>${h(v)}</code>`},{k:'value',t:'Value',n:1,f:v=>v==null?'':'0x'+v.toString(16).toUpperCase()},
+                {k:'state',t:'State',f:v=>dot(CS[v], v)}];
+  let t = null;
+  const on = chips('#gpu-chips', ['native','reference','missing'], apply);
+  function apply() {
+    const q = $('#gpu-q').value.trim().toLowerCase();
+    const rs = D.gpu.filter(r => on.has(r.state) && (!q || (r.name + ' ' + r.family).toLowerCase().includes(q)));
+    t ? t.update(rs) : t = table('#gpu', cols, rs, {sort:'family', asc:true, page:400}); $('#gpu-info').textContent = `${num(rs.length)} of ${num(D.gpu.length)}`;
+  }
+  $('#gpu-q').oninput = apply; apply();
 }
 // XDK.
 table('#xdk', [{k:'library',t:'Library'},{k:'name',t:'Function',f:v=>`<code>${h(v)}</code>`},{k:'any360',t:'State',f:v=>dot(CS[v], v)},

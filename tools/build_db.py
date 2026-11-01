@@ -10,6 +10,8 @@ the title, with its state and the known titles that use it. Three tables, writte
                         reference recompiler handles it and the titles that execute it
   db/xdk.json           the statically linked XDK library functions known by name (D3D, CRT, XAudio...), with the
                         address each title has them at; grows with signature matching
+  db/gpu.json           every GPU unit (PM4 opcode, shader opcode, primitive type, format, render feature) with its
+                        state: native in layer/gfx and tested, handled by the reference GPU, or missing (tools/gpu_units.py)
   db/summary.json       the counts the progress page and README quote
 
 Inputs: the SDK of the first title whose pipeline.json names one (tools/coverage.py reads its tables), the per-title
@@ -28,6 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tools'))
 import coverage  # noqa: E402  (tools/coverage.py: the SDK readers and the instruction families)
+import gpu_units  # noqa: E402  (tools/gpu_units.py: the GPU units and their states)
 
 DB = ROOT / 'db'
 TITLES = ROOT / 'titles'
@@ -284,6 +287,9 @@ def main():
         r['gfx_audio'] = is_gfx_audio(r)
     instructions = build_instructions(sdk, known, native)
     xdk, unnamed = build_xdk(sdk, known, native)
+    reference_sdk = next((k['config']['reference_sdk'] for k in known.values()
+                          if k['config'].get('reference_sdk') and Path(k['config']['reference_sdk']).exists()), None)
+    gpu = gpu_units.build(reference_sdk)
     DB.mkdir(exist_ok=True)
 
     def count(rows, key):
@@ -297,14 +303,16 @@ def main():
         'instructions': {'total': len(instructions), 'used': sum(1 for r in instructions if r['titles']),
                          'any360': count(instructions, 'any360'), 'reference': count(instructions, 'reference')},
         'xdk': {'total': len(xdk), 'any360': count(xdk, 'any360'), 'unnamed_by_title': unnamed},
+        'gpu': {'total': len(gpu), 'state': count(gpu, 'state')},
     }
     (DB / 'system_calls.json').write_text(json.dumps(calls, indent=0, separators=(',', ':')) + '\n', encoding='utf-8')
     (DB / 'instructions.json').write_text(json.dumps(instructions, indent=0, separators=(',', ':')) + '\n', encoding='utf-8')
     (DB / 'xdk.json').write_text(json.dumps(xdk, indent=1) + '\n', encoding='utf-8')
+    (DB / 'gpu.json').write_text(json.dumps(gpu, indent=0, separators=(',', ':')) + '\n', encoding='utf-8')
     (DB / 'summary.json').write_text(json.dumps(summary, indent=1) + '\n', encoding='utf-8')
     s = summary['system_calls']
     print(f"db: {s['total']} system calls ({s['used']} used by {len(known)} titles; any360 {s['any360']}; reference {s['reference']}); "
-          f"{summary['instructions']['total']} instruction ids ({summary['instructions']['reference']}); {len(xdk)} named XDK functions")
+          f"{summary['instructions']['total']} instruction ids ({summary['instructions']['reference']}); {len(xdk)} named XDK functions; {len(gpu)} GPU units ({summary['gpu']['state']})")
 
 
 if __name__ == '__main__':

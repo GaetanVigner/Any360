@@ -79,6 +79,51 @@
    "tdu": {}
   }
  },
+ "gpu": {
+  "total": 323,
+  "native": 58,
+  "reference": 251,
+  "by_family": {
+   "command processor": {
+    "native": 36,
+    "missing": 14
+   },
+   "primitive types": {
+    "reference": 17,
+    "native": 2
+   },
+   "render features": {
+    "native": 14,
+    "reference": 41
+   },
+   "render target formats": {
+    "reference": 14
+   },
+   "shader ALU scalar": {
+    "reference": 49,
+    "native": 1
+   },
+   "shader ALU vector": {
+    "reference": 29,
+    "native": 1
+   },
+   "shader control flow": {
+    "reference": 14,
+    "native": 2
+   },
+   "shader fetch": {
+    "native": 1,
+    "reference": 8
+   },
+   "texture formats": {
+    "reference": 64
+   },
+   "vertex formats": {
+    "reference": 15,
+    "native": 1
+   }
+  }
+ },
  "titles": {
   "crackdown": {
    "imports": 248,

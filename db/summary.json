@@ -112,5 +112,13 @@
    "sonic06": {},
    "tdu": {}
   }
+ },
+ "gpu": {
+  "total": 323,
+  "state": {
+   "native": 58,
+   "missing": 14,
+   "reference": 251
+  }
  }
 }

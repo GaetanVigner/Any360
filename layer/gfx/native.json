@@ -1,0 +1,27 @@
+{
+ "_comment": "GPU units any360::gfx provides and a test exercises, as '<family>:<name>' of tools/gpu_units.py (PM4 opcodes are found in the command processor's source instead). Add a unit only with the test that runs it: gfx_shader_tests and gfx_render_tests (hand-encoded microcode and PM4, pixels checked).",
+ "gpu": [
+  "shader control flow:kAlloc",
+  "shader control flow:kExecEnd",
+  "shader ALU vector:kMax",
+  "shader ALU scalar:kRetainPrev",
+  "shader fetch:kVertexFetch",
+  "primitive types:kTriangleList",
+  "primitive types:kTriangleStrip",
+  "vertex formats:k_32_32_32_32_FLOAT",
+  "render features:viewport transform",
+  "render features:window scissor",
+  "render features:screen scissor",
+  "render features:depth test",
+  "render features:depth write",
+  "render features:stencil front",
+  "render features:blending",
+  "render features:colour write mask",
+  "render features:culling",
+  "render features:front face",
+  "render features:vertex fetch (shared memory)",
+  "render features:index buffers (DMA)",
+  "render features:auto indices",
+  "render features:shader constants (float)"
+ ]
+}
