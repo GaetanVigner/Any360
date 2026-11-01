@@ -434,6 +434,20 @@ int main(int argc, char** argv) {
     }
     std::printf("gfx_render_tests: resolve: sampled back, %u of %u pixels wrong\n", wrong, kSize * kSize);
     CHECK(wrong == 0);
+    // Swap: what VdSwap writes, the front buffer's fetch constant 0 then XE_SWAP; the presented frame is the
+    // resolved image.
+    s.Put({Type0(0x4800, 6), 2u | 2u << 10 | 2u << 13 | 2u << 22 | 1u << 31, 6u | 2u << 6 | resolved, 63u | 63u << 13,
+           0x688u << 1, 0, 1u << 9});
+    s.Put({Type3(pm4::XE_SWAP, 4), 0x53574150, resolved, kSize, kSize});
+    s.Run();
+    const vk::VulkanRenderer::Frame& frame = renderer.frame();
+    uint32_t frame_wrong = frame.pixels.size() == kSize * kSize ? 0 : kSize * kSize;
+    for (uint32_t y = 0; y < kSize && !frame_wrong; ++y) {
+      for (uint32_t x = 0; x < kSize; ++x) frame_wrong += frame.pixels[y * kSize + x] != quadrant[quadrant_of(x, y, 32)];
+    }
+    std::printf("gfx_render_tests: swap: frame %llu, %ux%u, %u pixels wrong\n", (unsigned long long)frame.number, frame.width,
+                frame.height, frame_wrong);
+    CHECK(frame.number == 1 && frame.width == kSize && frame.height == kSize && frame_wrong == 0);
     s.Shader(0, t::BuildFetchPositionShader());
   }
 

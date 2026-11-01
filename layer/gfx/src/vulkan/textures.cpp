@@ -121,6 +121,69 @@ TextureFetch TextureFetch::Parse(const uint32_t d[6]) {
   return f;
 }
 
+uint32_t TextureCache::GuestExtent(const TextureFetch& t, const TextureFormatInfo& info) {
+  // The base level's blocks: linear rows aligned to 256 bytes, or 32x32-block tiles.
+  const uint32_t bh = (t.height + info.block_size - 1) / info.block_size, bw = (t.width + info.block_size - 1) / info.block_size;
+  const uint32_t pitch_blocks = std::max(1u, (std::max(t.pitch, t.width) + info.block_size - 1) / info.block_size);
+  if (t.tiled) return ((pitch_blocks + 31) & ~31u) * ((bh + 31) & ~31u) * info.block_bytes;
+  const uint32_t row_pitch = (pitch_blocks * info.block_bytes + 255) & ~255u;
+  return row_pitch * (bh - 1) + bw * info.block_bytes;
+}
+
+bool TextureCache::LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blocks, std::string& error) const {
+  const TextureFetch t = TextureFetch::Parse(fetch);
+  const TextureFormatInfo* info = GuestTextureFormat(t.format);
+  if (!info || t.dimension != 1) return error = "texture format or dimension not handled yet", false;
+  const uint32_t bw = (t.width + info->block_size - 1) / info->block_size, bh = (t.height + info->block_size - 1) / info->block_size;
+  const uint32_t pitch_blocks = std::max(1u, (std::max(t.pitch, t.width) + info->block_size - 1) / info->block_size);
+  const uint32_t bpb_log2 = std::countr_zero(info->block_bytes);
+  const uint32_t base = t.base & 0x1FFFFFFF, extent = GuestExtent(t, *info);
+  if (uint64_t(base) + extent > mirror_bytes_) return error = "texture outside the mirrored memory", false;
+  // Endian swap as the GPU reads memory (32-bit words), then untile block by block into rows of blocks.
+  std::vector<uint8_t> words((extent + 3) & ~3u);
+  std::memcpy(words.data(), physical_ + base, std::min<size_t>(words.size(), mirror_bytes_ - base));
+  for (size_t i = 0; i + 4 <= words.size(); i += 4) {
+    uint32_t v;
+    std::memcpy(&v, &words[i], 4);
+    v = Swap(v, t.endian);
+    std::memcpy(&words[i], &v, 4);
+  }
+  blocks.assign(size_t(bw) * bh * info->block_bytes, 0);
+  const uint32_t row_pitch = (pitch_blocks * info->block_bytes + 255) & ~255u;
+  for (uint32_t y = 0; y < bh; ++y) {
+    for (uint32_t x = 0; x < bw; ++x) {
+      const uint32_t src = t.tiled ? uint32_t(TiledOffset2D(int32_t(x), int32_t(y), pitch_blocks, bpb_log2))
+                                   : y * row_pitch + x * info->block_bytes;
+      if (src + info->block_bytes <= words.size()) {
+        std::memcpy(&blocks[(size_t(y) * bw + x) * info->block_bytes], &words[src], info->block_bytes);
+      }
+    }
+  }
+  return true;
+}
+
+bool TextureCache::ReadRGBA8(const uint32_t fetch[6], uint32_t& width, uint32_t& height, std::vector<uint32_t>& pixels,
+                             std::string& error) const {
+  const TextureFetch t = TextureFetch::Parse(fetch);
+  if (t.type != 2 || t.format != 6) return error = "front buffer not a k_8_8_8_8 texture (not yet)", false;
+  std::vector<uint8_t> blocks;
+  if (!LoadBlocks(fetch, blocks, error)) return false;
+  width = t.width, height = t.height;
+  pixels.resize(size_t(width) * height);
+  // The guest swizzle over the texel's components (codes 4 and 5: zero and one; 6 and 7 read as 4 and 5).
+  for (size_t i = 0; i < pixels.size(); ++i) {
+    const uint8_t* c = &blocks[i * 4];
+    uint32_t out = 0;
+    for (uint32_t k = 0; k < 4; ++k) {
+      const uint32_t code = (t.swizzle >> (3 * k)) & 7;
+      const uint32_t value = code < 4 ? c[code] : (code & 1) ? 0xFF : 0;
+      out |= value << (8 * k);
+    }
+    pixels[i] = out;
+  }
+  return true;
+}
+
 TextureCache::TextureCache(Device& device, const uint8_t* physical, uint32_t mirror_bytes)
     : device_(device), physical_(physical), mirror_bytes_(mirror_bytes) {}
 
@@ -145,17 +208,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], std::string& error) {
   if (t.packed_mips && (t.width <= 16 || t.height <= 16)) return error = "packed mip tail base (not yet)", VK_NULL_HANDLE;
 
   // The guest memory: blocks of the base level, linear (rows aligned to 256 bytes) or tiled (32x32-block tiles).
-  const uint32_t bw = (t.width + info->block_size - 1) / info->block_size, bh = (t.height + info->block_size - 1) / info->block_size;
-  const uint32_t pitch_blocks = std::max(1u, (std::max(t.pitch, t.width) + info->block_size - 1) / info->block_size);
-  const uint32_t bpb_log2 = std::countr_zero(info->block_bytes);
-  uint32_t extent;
-  if (t.tiled) {
-    extent = ((pitch_blocks + 31) & ~31u) * ((bh + 31) & ~31u) * info->block_bytes;
-  } else {
-    const uint32_t row_pitch = (pitch_blocks * info->block_bytes + 255) & ~255u;
-    extent = row_pitch * (bh - 1) + bw * info->block_bytes;
-  }
   const uint32_t base = t.base & 0x1FFFFFFF;
+  const uint32_t extent = GuestExtent(t, *info);
   if (uint64_t(base) + extent > mirror_bytes_) return error = "texture outside the mirrored memory", VK_NULL_HANDLE;
   const uint64_t hash = Fnv1a(physical_ + base, extent) ^ (uint64_t(fetch[0]) << 32 | fetch[1]) ^ (uint64_t(fetch[2]) << 7);
 
@@ -191,31 +245,13 @@ VkImageView TextureCache::View(const uint32_t fetch[6], std::string& error) {
   }
 
   if (slot->content_hash != hash) {
-    // Endian swap as the GPU reads memory (32-bit words), then untile block by block into rows of blocks.
-    std::vector<uint8_t> words((extent + 3) & ~3u);
-    std::memcpy(words.data(), physical_ + base, std::min<size_t>(words.size(), mirror_bytes_ - base));
-    for (size_t i = 0; i + 4 <= words.size(); i += 4) {
-      uint32_t v;
-      std::memcpy(&v, &words[i], 4);
-      v = Swap(v, t.endian);
-      std::memcpy(&words[i], &v, 4);
-    }
-    const size_t host_bytes = size_t(bw) * bh * info->block_bytes;
+    std::vector<uint8_t> blocks;
+    if (!LoadBlocks(fetch, blocks, error)) return VK_NULL_HANDLE;
     Buffer staging;
-    if (!CreateBuffer(device_, host_bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, staging)) {
+    if (!CreateBuffer(device_, blocks.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, staging)) {
       return error = "texture staging", VK_NULL_HANDLE;
     }
-    uint8_t* dst = static_cast<uint8_t*>(staging.mapped);
-    const uint32_t row_pitch = (pitch_blocks * info->block_bytes + 255) & ~255u;
-    for (uint32_t y = 0; y < bh; ++y) {
-      for (uint32_t x = 0; x < bw; ++x) {
-        const uint32_t src = t.tiled ? uint32_t(TiledOffset2D(int32_t(x), int32_t(y), pitch_blocks, bpb_log2))
-                                     : y * row_pitch + x * info->block_bytes;
-        if (src + info->block_bytes <= words.size()) {
-          std::memcpy(dst + (size_t(y) * bw + x) * info->block_bytes, &words[src], info->block_bytes);
-        }
-      }
-    }
+    std::memcpy(staging.mapped, blocks.data(), blocks.size());
     Image& image = slot->image;
     const bool ok = device_.Submit([&](VkCommandBuffer cb) {
       VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};

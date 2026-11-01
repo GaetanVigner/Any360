@@ -87,6 +87,16 @@ class VulkanRenderer : public gfx::Renderer {
   // A resolve: the EDRAM surface RB_COPY_CONTROL selects, over the rectangle of the copy draw's vertices, converted to
   // RB_COPY_DEST_INFO's format and written tiled to guest memory at RB_COPY_DEST_BASE; then the cleared targets.
   void Copy(const uint32_t* registers) override;
+  // A swap: the front buffer (texture fetch constant 0, as VdSwap writes it) read into the presented frame.
+  void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* registers) override;
+
+  // The last presented frame: RGBA8 pixels (R in the low byte), row after row; `number` counts swaps.
+  struct Frame {
+    uint32_t width = 0, height = 0;
+    std::vector<uint32_t> pixels;
+    uint64_t number = 0;
+  };
+  const Frame& frame() const { return frame_; }
 
   const RendererStats& stats() const { return stats_; }
   const std::string& last_error() const { return last_error_; }
@@ -137,6 +147,7 @@ class VulkanRenderer : public gfx::Renderer {
   Buffer shared_memory_, constants_, indices_;
   uint32_t constant_alignment_ = 256;
   RendererStats stats_;
+  Frame frame_;
   std::string last_error_;
 };
 

@@ -18,6 +18,8 @@ portable C++23 with no dependency on a graphics API. The renderer behind it is V
 | `tests/gfx_vulkan_tests.cpp` | On a real driver: the translated shaders compiled into pipelines with the translator's descriptor layout, an offscreen target rendered and read back (skipped without a Vulkan 1.3 device) |
 | `include/any360/gfx/vulkan/renderer.h`, `src/vulkan/renderer.cpp` | `VulkanRenderer`, the command processor's `Renderer`: shaders translated and cached by hash, pipelines by shader pair and topology, the five constant buffers from the register file, guest memory mirrored for vertex fetch, DMA indices endian-swapped |
 | `include/any360/gfx/vulkan/textures.h`, `src/vulkan/textures.cpp` | The texture cache: fetch constants parsed, guest memory endian-swapped and untiled (Xenos 32x32-block tiling, as the reference computes it), uploaded when it changed, viewed with the guest swizzle; samplers from the fetch constant and the fetch instruction |
+| `include/any360/gfx/vulkan/presenter.h`, `src/vulkan/presenter.cpp` | Presentation: a swapchain on the window surface the platform layer makes, each swapped frame uploaded and blitted with its aspect ratio kept (FIFO) |
+| `tests/gfx_window_demo.cpp` | A window (SDL3) showing the whole chain every frame: hand-written PM4, a textured quad and a moving triangle, resolve, swap, present (`gfx_window_demo [--frames N] [--gpu NAME]`, built when the reference SDK has SDL3) |
 | `tests/ucode_encode.h` | Hand encoding of control flow, vector ALU and vertex fetch instructions, shared by the tests |
 | `tests/gfx_render_tests.cpp` | End to end: hand-written PM4 (state, fetch constant, shaders, constants, an auto-indexed and a DMA-indexed draw) through the command processor into the renderer; every pixel read back and checked |
 
@@ -150,9 +152,17 @@ From the Crackdown runs (each one cost a debugging session there):
    clears, checks every texel in guest memory and the cleared targets, and samples the result back, on NVIDIA and
    AMD. Next: depth resolves, more destination formats, MSAA, 3D / array destinations, and host-to-host copies so
    a resolved texture need not go through guest memory; then a frame can be presented.
-7. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
-8. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; the swap goes to a
-   window through SDL3.
+7. **Present** (first step done, 2026-11-01): `XE_SWAP` presents the texture of fetch constant 0, as `VdSwap` (now
+   native in any360::sys) writes it: the front buffer is read from guest memory as RGBA8 with its swizzle (the
+   renderer's `frame()`, checked headless in `gfx_render_tests`), then the `Presenter` shows it in a window. The
+   window comes from SDL3 and the platform layer makes the Vulkan surface from its native handle (Win32 for now,
+   X11 / Wayland next), which also works with SDL builds that lack SDL's own Vulkan support (the reference SDK's).
+   `gfx_window_demo` runs the whole chain at 77 FPS (RTX 5070 Ti) and 61 FPS (Radeon integrated) for a 1280x720
+   frame; the time goes into the deliberately simple paths (all mirrored memory copied per draw, one submission
+   per draw, CPU untiling and readback). Learned: readback buffers need cached host memory (from 3 to 77 FPS).
+8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
+9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames
+   then reach the window.
 
 It avoids geometry shaders and rasterizer-ordered views so that it runs through MoltenVK and on mobile GPUs:
 rectangle and quad lists are expanded in the vertex stage.

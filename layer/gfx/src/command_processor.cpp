@@ -265,7 +265,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
       if (has(4)) {
         Next(r);  // 'SWAP'
         const uint32_t frontbuffer = Next(r), width = Next(r), height = Next(r);
-        if (renderer_) renderer_->Swap(frontbuffer & 0x1FFFFFFF, width, height);
+        if (renderer_) renderer_->Swap(frontbuffer & 0x1FFFFFFF, width, height, registers_.data());
         ++counter_;  // the counter fences read moves with swaps as well as vertical blanks
       }
       break;

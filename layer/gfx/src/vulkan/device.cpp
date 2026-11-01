@@ -90,7 +90,7 @@ bool Device::Create(const DeviceOptions& options) {
       if (std::strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0) layers.push_back("VK_LAYER_KHRONOS_validation");
     }
   }
-  std::vector<const char*> extensions;
+  std::vector<const char*> extensions = options.instance_extensions;
   VkInstanceCreateFlags instance_flags = 0;
 #if defined(__APPLE__)
   // MoltenVK is a portability implementation: listed only when asked for.
@@ -116,8 +116,16 @@ bool Device::Create(const DeviceOptions& options) {
   if (!fn_.name) fn_.name = reinterpret_cast<PFN_##name>(get(instance_, #name));
 #include "any360/gfx/vulkan/functions.inc"
 #undef ANY360_VK_FN
+  if (options.make_surface) {
+    surface_ = options.make_surface(instance_);
+    if (!surface_) {
+      error_ = "the platform layer made no surface";
+      return false;
+    }
+  }
 
-  // The physical device: Vulkan 1.3 with a graphics queue; the preferred name, else a discrete GPU, else the first.
+  // The physical device: Vulkan 1.3 with a graphics queue (that presents to the surface, when there is one); the
+  // preferred name, else a discrete GPU, else the first.
   uint32_t count = 0;
   fn_.vkEnumeratePhysicalDevices(instance_, &count, nullptr);
   std::vector<VkPhysicalDevice> devices(count);
@@ -133,7 +141,9 @@ bool Device::Create(const DeviceOptions& options) {
     fn_.vkGetPhysicalDeviceQueueFamilyProperties(candidate, &family_count, families.data());
     uint32_t family = UINT32_MAX;
     for (uint32_t i = 0; i < family_count; ++i) {
-      if (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+      VkBool32 presents = VK_TRUE;
+      if (surface_) fn_.vkGetPhysicalDeviceSurfaceSupportKHR(candidate, i, surface_, &presents);
+      if ((families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && presents) {
         family = i;
         break;
       }
@@ -183,6 +193,11 @@ bool Device::Create(const DeviceOptions& options) {
   VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, &enabled};
   device_info.queueCreateInfoCount = 1;
   device_info.pQueueCreateInfos = &queue_info;
+  const char* swapchain_extension = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+  if (surface_) {
+    device_info.enabledExtensionCount = 1;
+    device_info.ppEnabledExtensionNames = &swapchain_extension;
+  }
   if (fn_.vkCreateDevice(physical_, &device_info, nullptr, &device_) != VK_SUCCESS) {
     error_ = "vkCreateDevice failed";
     return false;
@@ -212,6 +227,8 @@ void Device::Destroy() {
     if (pool_) fn_.vkDestroyCommandPool(device_, pool_, nullptr);
     fn_.vkDestroyDevice(device_, nullptr);
   }
+  if (surface_ && instance_) fn_.vkDestroySurfaceKHR(instance_, surface_, nullptr);
+  surface_ = VK_NULL_HANDLE;
   if (instance_) fn_.vkDestroyInstance(instance_, nullptr);
   CloseLoader(library_);
   library_ = nullptr;
@@ -265,7 +282,13 @@ bool CreateBuffer(const Device& d, VkDeviceSize size, VkBufferUsageFlags usage, 
                                                    : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
   VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
   alloc.allocationSize = req.size;
-  alloc.memoryTypeIndex = d.MemoryType(req.memoryTypeBits, flags);
+  alloc.memoryTypeIndex = UINT32_MAX;
+  // Readbacks (the CPU reads what the GPU wrote) want cached memory: reading write-combined memory is orders of
+  // magnitude slower (a 1280x720 resolve read back took ~100 ms).
+  if (host_visible && usage == VK_BUFFER_USAGE_TRANSFER_DST_BIT) {
+    alloc.memoryTypeIndex = d.MemoryType(req.memoryTypeBits, flags | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+  }
+  if (alloc.memoryTypeIndex == UINT32_MAX) alloc.memoryTypeIndex = d.MemoryType(req.memoryTypeBits, flags);
   if (alloc.memoryTypeIndex == UINT32_MAX || f.vkAllocateMemory(d.device(), &alloc, nullptr, &out.memory) != VK_SUCCESS) return false;
   f.vkBindBufferMemory(d.device(), out.buffer, out.memory, 0);
   if (host_visible) f.vkMapMemory(d.device(), out.memory, 0, VK_WHOLE_SIZE, 0, &out.mapped);

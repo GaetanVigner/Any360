@@ -1144,4 +1144,25 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   ++stats_.resolves;
 }
 
+void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint32_t* regs) {
+  // The front buffer is a texture in guest memory (the last resolve's destination, usually): read it as RGBA8 with
+  // its swizzle; the packet's size bounds it (the texture can be padded).
+  Frame next;
+  std::string error;
+  std::vector<uint32_t> texels;
+  uint32_t tw = 0, th = 0;
+  if (!textures_ || !textures_->ReadRGBA8(regs + reg::kFetchConstants, tw, th, texels, error)) {
+    Fail("swap: " + error);
+    return;
+  }
+  next.width = std::min(width ? width : tw, tw);
+  next.height = std::min(height ? height : th, th);
+  next.pixels.resize(size_t(next.width) * next.height);
+  for (uint32_t y = 0; y < next.height; ++y) {
+    std::memcpy(&next.pixels[size_t(y) * next.width], &texels[size_t(y) * tw], size_t(next.width) * 4);
+  }
+  next.number = frame_.number + 1;
+  frame_ = std::move(next);
+}
+
 }  // namespace any360::gfx::vk

@@ -51,6 +51,28 @@ uint32_t GraphicsKernel::PersistDisplay(Guest g, uint32_t block_ptr) {
   return 1;
 }
 
+bool GraphicsKernel::Swap(Guest g, uint32_t buffer, uint32_t fetch, uint32_t frontbuffer_ptr, uint32_t width_ptr,
+                          uint32_t height_ptr) {
+  uint32_t dwords[6];
+  for (uint32_t i = 0; i < 6; ++i) dwords[i] = g.Load32(fetch + 4 * i);
+  // The fetch constant holds the front buffer's virtual address; the GPU needs the physical one.
+  const uint32_t frontbuffer = dwords[1] & 0xFFFFF000;
+  const uint32_t physical = Memory().PhysicalAddress(frontbuffer);
+  if (physical == 0xFFFFFFFF) return false;
+  (void)frontbuffer_ptr;  // the title passes the same address again
+  dwords[1] = (dwords[1] & 0xFFF) | (physical & 0xFFFFF000);
+  uint32_t at = buffer;
+  g.Store32(at, 5u << 16 | 0x4800), at += 4;  // type 0: 6 registers from SHADER_CONSTANT_FETCH_00_0
+  for (uint32_t d : dwords) g.Store32(at, d), at += 4;
+  g.Store32(at, 3u << 30 | 3u << 16 | 0x64u << 8), at += 4;  // type 3: XE_SWAP, 4 dwords
+  g.Store32(at, 0x53574150), at += 4;                        // 'SWAP'
+  g.Store32(at, physical), at += 4;
+  g.Store32(at, g.Load32(width_ptr)), at += 4;
+  g.Store32(at, g.Load32(height_ptr)), at += 4;
+  while (at < buffer + 64 * 4) g.Store32(at, 2u << 30), at += 4;  // type 2 padding
+  return true;
+}
+
 bool GraphicsKernel::RaiseInterrupt(Guest g, uint32_t source) {
   if (!callback_ || !context_.pcr) return false;
   // At dispatch level, as a DPC: the title's handler checks this through KeGetCurrentProcessType and the IRQL.

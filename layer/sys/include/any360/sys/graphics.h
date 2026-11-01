@@ -43,6 +43,10 @@ class GraphicsKernel {
   void SetInterruptCallback(Guest g, uint32_t callback, uint32_t user_data);
   // VdPersistDisplay: a 64-byte block the title later frees with MmFreePhysicalMemory; returns 1.
   uint32_t PersistDisplay(Guest g, uint32_t block_ptr);
+  // VdSwap: 64 dwords at `buffer` (in the ring) the GPU runs as a swap: the front buffer's texture fetch constant
+  // (from `fetch`, its base made physical) into fetch constant 0, then XE_SWAP with the front buffer and its size,
+  // then type-2 padding. False when the front buffer has no physical address.
+  bool Swap(Guest g, uint32_t buffer, uint32_t fetch, uint32_t frontbuffer_ptr, uint32_t width_ptr, uint32_t height_ptr);
 
   // MMIO, handed to the backend (0 without one).
   void WriteRegister(uint32_t index, uint32_t value) {

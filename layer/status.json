@@ -125,7 +125,7 @@
    "name": "Vulkan renderer: draws from the command processor (system constants, shared memory, vertex fetch, textures, host render targets, resolves)",
    "state": "in progress",
    "source": "any360: layer/gfx (next); crackdown: patch 0129 native atlas",
-   "note": "draws end to end from PM4 with render state, render targets (EDRAM surfaces) and 2D textures (linear, tiled, DXT) from the registers, checked to the pixel on NVIDIA and AMD; and colour resolves to guest memory with clears; next: present a frame, mips, depth resolves, MSAA"
+   "note": "draws end to end from PM4 with render state, render targets (EDRAM surfaces) and 2D textures (linear, tiled, DXT) from the registers, checked to the pixel on NVIDIA and AMD; and colour resolves to guest memory with clears; frames presented in a window (SDL3 + Presenter, VdSwap native); next: speed (memory watching, batched submissions, GPU untiling), mips, depth resolves, MSAA"
   },
   {
    "area": "stage 1: native graphics (any360::gfx)",
@@ -230,7 +230,7 @@
    "name": "any360::sys: the system calls, verified against the reference runtime",
    "state": "in progress",
    "source": "any360: layer/sys (any360_sys, any360_sys_ppc, sys_io_tests)",
-   "note": "254 system calls native: 77 equal to the reference, 177 proven against the NT / XDK semantics by scenario tests. Sonic '06: all 200 of its system calls native (MVP 178/178, plus the kernel side of graphics and audio over GpuBackend / AudioSink / XmaBackend interfaces); Crackdown 205/248, TDU 232/278, Simpsons 212/317"
+   "note": "255 system calls native: 77 equal to the reference, 178 proven against the NT / XDK semantics by scenario tests. Sonic '06: all 200 of its system calls native (MVP 178/178, plus the kernel side of graphics and audio over GpuBackend / AudioSink / XmaBackend interfaces); Crackdown 205/248, TDU 232/278, Simpsons 212/317"
   }
  ]
 }

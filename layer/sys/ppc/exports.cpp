@@ -456,6 +456,12 @@ ANY360_SYS_EXPORT(VdInitializeRingBuffer) { Graphics().InitializeRingBuffer({bas
 ANY360_SYS_EXPORT(VdEnableRingBufferRPtrWriteBack) { Graphics().EnableReadPointerWriteBack({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(VdSetGraphicsInterruptCallback) { Graphics().SetInterruptCallback({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(VdPersistDisplay) { ctx.r3.u64 = Graphics().PersistDisplay({base}, ctx.r4.u32); }
+// (buffer, fetch, system writeback, command buffer, its id, frontbuffer address ptr, format ptr, colour space ptr,
+// width ptr, height ptr)
+ANY360_SYS_EXPORT(VdSwap) {
+  Graphics().Swap({base}, ctx.r3.u32, ctx.r4.u32, ctx.r8.u32, StackArgument(ctx, base, 8), StackArgument(ctx, base, 9));
+  ctx.r3.u64 = 0;
+}
 ANY360_SYS_EXPORT(XAudioRegisterRenderDriverClient) { ctx.r3.u64 = Audio().RegisterClient({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XAudioUnregisterRenderDriverClient) { ctx.r3.u64 = Audio().UnregisterClient(ctx.r3.u32); }
 ANY360_SYS_EXPORT(XAudioSubmitRenderDriverFrame) { ctx.r3.u64 = Audio().SubmitFrame({base}, ctx.r3.u32, ctx.r4.u32); }
@@ -715,6 +721,7 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(VdEnableRingBufferRPtrWriteBack),
     ANY360_SYS_ENTRY(VdSetGraphicsInterruptCallback),
     ANY360_SYS_ENTRY(VdPersistDisplay),
+    ANY360_SYS_ENTRY(VdSwap),
     ANY360_SYS_ENTRY(XAudioRegisterRenderDriverClient),
     ANY360_SYS_ENTRY(XAudioUnregisterRenderDriverClient),
     ANY360_SYS_ENTRY(XAudioSubmitRenderDriverFrame),

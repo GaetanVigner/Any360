@@ -57,7 +57,8 @@ class Renderer {
   virtual void Draw(const DrawCall&) {}
   // A draw in EDRAM copy mode: resolve the render target as the RB_COPY_* registers say.
   virtual void Copy(const uint32_t* /*registers*/) {}
-  virtual void Swap(uint32_t /*frontbuffer*/, uint32_t /*width*/, uint32_t /*height*/) {}
+  // A swap (XE_SWAP): the front buffer is the texture fetch constant 0 of `registers` describes (VdSwap writes it).
+  virtual void Swap(uint32_t /*frontbuffer*/, uint32_t /*width*/, uint32_t /*height*/, const uint32_t* /*registers*/) {}
   // The CPU wrote [base, base + size) (COHER_*_HOST): cached copies of that memory are stale.
   virtual void Invalidate(uint32_t /*base*/, uint32_t /*size*/) {}
 };

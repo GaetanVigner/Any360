@@ -943,6 +943,24 @@ void GraphicsAudioTests() {
   // VdPersistDisplay: a 64-byte physical block, then 1.
   const uint32_t out = 0x1800;
   CHECK(Graphics().PersistDisplay(gm, out) == 1);
+  // VdSwap: the front buffer (a physical allocation) through its fetch constant, written into the ring as the GPU's
+  // swap packets.
+  {
+    const uint32_t front = Memory().AllocatePhysical(gm, 0, 0x1000, 0x4, 0, 0xFFFFFFFF, 0x1000);
+    const uint32_t fetch = 0x2400, ring = 0x2800, w = 0x2440, h = 0x2444;
+    const uint32_t d[6] = {0x80400002, 0x00000086 | front, 0x0059E4FF, 0x00000D10, 0, 0x00000200};
+    for (uint32_t i = 0; i < 6; ++i) gm.Store32(fetch + 4 * i, d[i]);
+    gm.Store32(w, 1280);
+    gm.Store32(h, 720);
+    CHECK(Graphics().Swap(gm, ring, fetch, 0, w, h));
+    const uint32_t physical = Memory().PhysicalAddress(front);
+    CHECK(gm.Load32(ring) == 0x00054800 && gm.Load32(ring + 4) == d[0] && gm.Load32(ring + 8) == (0x86u | physical));
+    CHECK(gm.Load32(ring + 24) == d[5] && gm.Load32(ring + 28) == 0xC0036400 && gm.Load32(ring + 32) == 0x53574150);
+    CHECK(gm.Load32(ring + 36) == physical && gm.Load32(ring + 40) == 1280 && gm.Load32(ring + 44) == 720);
+    CHECK(gm.Load32(ring + 48) == 0x80000000 && gm.Load32(ring + 63 * 4) == 0x80000000);
+    gm.Store32(fetch + 4, 0x00000086 | 0x7000);  // not physical memory: refused
+    CHECK(!Graphics().Swap(gm, ring, fetch, 0, w, h));
+  }
   const uint32_t persisted = gm.Load32(out);
   CHECK(persisted >= 0x100000 && persisted < 0x140000 && Memory().QueryProtect(persisted) != 0);
   Memory().FreePhysical(0, persisted);

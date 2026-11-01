@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (254 system calls)
+## What is verified (255 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -107,7 +107,7 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   depends on that value, and Sonic '06's own port runs with it stubbed).
 - **Graphics and audio, the kernel side** (`graphics.h`, `audio.h`; scenario tests with a fake GPU, sink and XMA
   decoder): `VdInitializeEngines`, `VdInitializeRingBuffer` and `VdEnableRingBufferRPtrWriteBack` (handed to a
-  `GpuBackend`, the command processor), `VdSetGraphicsInterruptCallback` (the title's handler runs on a guest context
+  `GpuBackend`, the command processor), `VdSwap` (the front buffer's fetch constant, made physical, and `XE_SWAP` written into the ring as the reference does), `VdSetGraphicsInterruptCallback` (the title's handler runs on a guest context
   of its own at dispatch level, for vertical blanks from a host clock and command-processor interrupts the backend
   raises), `VdPersistDisplay`; `XAudioRegisterRenderDriverClient` / `Unregister` (driver `0x4155000n`, the client's
   mixer callback pumped every 256 samples at 48 kHz), `XAudioSubmitRenderDriverFrame` (6 big-endian channels of 256

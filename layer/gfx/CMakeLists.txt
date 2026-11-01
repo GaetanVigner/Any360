@@ -48,7 +48,8 @@ add_test(NAME gfx_shader_tests COMMAND gfx_shader_tests)
 
 # any360_gfx_vulkan: the Vulkan side of the renderer. The loader is opened at run time (VK_NO_PROTOTYPES), so the
 # build needs only the vendored Khronos headers (third_party/vulkan-headers) and no Vulkan SDK.
-add_library(any360_gfx_vulkan STATIC src/vulkan/device.cpp src/vulkan/renderer.cpp src/vulkan/textures.cpp)
+add_library(any360_gfx_vulkan STATIC src/vulkan/device.cpp src/vulkan/renderer.cpp src/vulkan/textures.cpp
+            src/vulkan/presenter.cpp)
 target_link_libraries(any360_gfx_vulkan PUBLIC any360_gfx any360_xenos_shader)
 target_include_directories(any360_gfx_vulkan PUBLIC include ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vulkan-headers/include)
 # The Vulkan idiom {sType} leaves the other fields zero on purpose.
@@ -69,3 +70,15 @@ add_executable(gfx_render_tests tests/gfx_render_tests.cpp)
 target_link_libraries(gfx_render_tests PRIVATE any360_gfx_vulkan)
 target_compile_options(gfx_render_tests PRIVATE -Wall -Wextra)
 add_test(NAME gfx_render_tests COMMAND gfx_render_tests)
+
+# A window showing the whole chain every frame (PM4 -> command processor -> renderer -> resolve -> swap -> present).
+# The window comes from SDL3 (the platform layer's choice); until SDL3 is vendored, its headers and static library
+# are taken from the reference SDK install when it has them. Run by hand: gfx_window_demo [--frames N] [--gpu NAME].
+set(ANY360_SDL3_DIR "${ANY360_REFERENCE_SDK}" CACHE PATH "An install with include/SDL3 and lib/SDL3-static*.lib")
+if(WIN32 AND ANY360_SDL3_DIR AND EXISTS "${ANY360_SDL3_DIR}/include/SDL3/SDL.h" AND EXISTS "${ANY360_SDL3_DIR}/lib/SDL3-staticrd.lib")
+    add_executable(gfx_window_demo tests/gfx_window_demo.cpp)
+    target_include_directories(gfx_window_demo SYSTEM PRIVATE "${ANY360_SDL3_DIR}/include")
+    target_link_libraries(gfx_window_demo PRIVATE any360_gfx_vulkan "${ANY360_SDL3_DIR}/lib/SDL3-staticrd.lib"
+                          setupapi winmm imm32 version ole32 oleaut32 user32 gdi32 advapi32 shell32 cfgmgr32 uuid)
+    target_compile_options(gfx_window_demo PRIVATE -Wall -Wextra)
+endif()

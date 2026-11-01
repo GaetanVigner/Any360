@@ -22,8 +22,8 @@
  {
   "date": "2026-11-01",
   "system_calls": {
-   "native": 254,
-   "ported": 1,
+   "native": 255,
+   "ported": 0,
    "runnable": 506,
    "total": 2914
   },
@@ -38,8 +38,8 @@
    "total": 31
   },
   "gpu": {
-   "native": 76,
-   "reference": 233,
+   "native": 77,
+   "reference": 232,
    "total": 323
   },
   "toolkit_done": 7

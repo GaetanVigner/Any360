@@ -52,9 +52,18 @@ class TextureCache {
   // The sampler for `fetch` with a fetch instruction's filters (3 / 7: take the fetch constant's).
   VkSampler Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t min, uint32_t mip, uint32_t aniso);
 
+  // The texture `fetch` describes as RGBA8 pixels, swizzled as the guest asks (a front buffer to present; k_8_8_8_8
+  // only for now).
+  bool ReadRGBA8(const uint32_t fetch[6], uint32_t& width, uint32_t& height, std::vector<uint32_t>& pixels,
+                 std::string& error) const;
+
   uint32_t uploads() const { return uploads_; }
 
  private:
+  // The guest bytes the base level spans, and its blocks endian-swapped and untiled into rows.
+  static uint32_t GuestExtent(const TextureFetch& t, const TextureFormatInfo& info);
+  bool LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blocks, std::string& error) const;
+
   struct Texture {
     Image image;  // the view member is unused: views are per swizzle
     uint64_t content_hash = 0;

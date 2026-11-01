@@ -8,6 +8,7 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,11 @@ struct Functions {
 struct DeviceOptions {
   bool validation = false;     // VK_LAYER_KHRONOS_validation when installed
   std::string prefer;          // a substring of the device name to choose ("Radeon", "NVIDIA"); else discrete first
+  // Presenting to a window: the instance extensions the platform layer needs (VK_KHR_surface and the window
+  // system's), and the surface it makes once the instance exists. The device then has a queue that presents to it
+  // and VK_KHR_swapchain.
+  std::vector<const char*> instance_extensions;
+  std::function<VkSurfaceKHR(VkInstance)> make_surface;
 };
 
 class Device {
@@ -41,6 +47,7 @@ class Device {
   VkPhysicalDevice physical() const { return physical_; }
   VkDevice device() const { return device_; }
   VkQueue queue() const { return queue_; }
+  VkSurfaceKHR surface() const { return surface_; }
   uint32_t queue_family() const { return queue_family_; }
   const VkPhysicalDeviceProperties& properties() const { return properties_; }
   const std::string& error() const { return error_; }
@@ -67,6 +74,7 @@ class Device {
   VkPhysicalDevice physical_ = VK_NULL_HANDLE;
   VkDevice device_ = VK_NULL_HANDLE;
   VkQueue queue_ = VK_NULL_HANDLE;
+  VkSurfaceKHR surface_ = VK_NULL_HANDLE;
   uint32_t queue_family_ = 0;
   VkCommandPool pool_ = VK_NULL_HANDLE;
   VkPhysicalDeviceProperties properties_{};

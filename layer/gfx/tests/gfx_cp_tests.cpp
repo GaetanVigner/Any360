@@ -55,7 +55,7 @@ struct Recorder : Renderer {
   void ShaderLoaded(const Shader& s) override { ++shaders, last_hash = s.hash; }
   void Draw(const DrawCall& d) override { draws.push_back(d); }
   void Copy(const uint32_t*) override { ++copies; }
-  void Swap(uint32_t f, uint32_t w, uint32_t h) override { ++swaps, frontbuffer = f, width = w, height = h; }
+  void Swap(uint32_t f, uint32_t w, uint32_t h, const uint32_t*) override { ++swaps, frontbuffer = f, width = w, height = h; }
   void Invalidate(uint32_t b, uint32_t s) override { ++invalidations, invalid_base = b, invalid_size = s; }
 };
 
