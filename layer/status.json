@@ -125,7 +125,7 @@
    "name": "Vulkan renderer: draws from the command processor (system constants, shared memory, vertex fetch, textures, host render targets, resolves)",
    "state": "in progress",
    "source": "any360: layer/gfx (next); crackdown: patch 0129 native atlas",
-   "note": "next: one translated draw offscreen, read back and checked"
+   "note": "first translated draws run end to end from PM4 (vertex fetch, DMA indices, constants), pixels identical on NVIDIA and AMD; next: depth, blending, culling, textures, render targets from RB_*, resolves"
   },
   {
    "area": "stage 1: native graphics (any360::gfx)",

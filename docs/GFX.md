@@ -16,11 +16,13 @@ portable C++23 with no dependency on a graphics API. The renderer behind it is V
 | `include/any360/gfx/vulkan/device.h`, `src/vulkan/device.cpp` | The Vulkan device: the loader opened at run time (no SDK, no import library; Windows, Linux, macOS through MoltenVK), Vulkan 1.3 with dynamic rendering and synchronization2, headless, buffers and images for tests and readbacks |
 | `tests/gfx_shader_tests.cpp` | Microcode encoded by hand (no game data), translated as the reference pipeline cache asks, SPIR-V checked and written out |
 | `tests/gfx_vulkan_tests.cpp` | On a real driver: the translated shaders compiled into pipelines with the translator's descriptor layout, an offscreen target rendered and read back (skipped without a Vulkan 1.3 device) |
+| `include/any360/gfx/vulkan/renderer.h`, `src/vulkan/renderer.cpp` | `VulkanRenderer`, the command processor's `Renderer`: shaders translated and cached by hash, pipelines by shader pair and topology, the five constant buffers from the register file, guest memory mirrored for vertex fetch, DMA indices endian-swapped |
+| `tests/ucode_encode.h` | Hand encoding of control flow, vector ALU and vertex fetch instructions, shared by the tests |
+| `tests/gfx_render_tests.cpp` | End to end: hand-written PM4 (state, fetch constant, shaders, constants, an auto-indexed and a DMA-indexed draw) through the command processor into the renderer; every pixel read back and checked |
 
-`layer/sys/CMakeLists.txt` adds this directory, and `layer/sys/test.ps1` runs the three gfx tests with the other tests.
-The translated shaders compile into pipelines on the NVIDIA (RTX 5070 Ti) and AMD (Radeon integrated) Windows
-drivers; RADV on the Steam Deck is still to run. No draw with translated shaders has executed yet: that needs the
-system constants, the shared memory binding and the vertex fetch the next step builds.
+`layer/sys/CMakeLists.txt` adds this directory, and `layer/sys/test.ps1` runs the gfx tests with the other tests.
+The translated shaders run on the NVIDIA (RTX 5070 Ti) and AMD (Radeon integrated) Windows drivers with identical
+pixels; RADV on the Steam Deck is still to run.
 
 ## The command processor
 
@@ -110,9 +112,12 @@ From the Crackdown runs (each one cost a debugging session there):
 
 1. **Shaders** (done): the vendored translator, run on hand-built microcode in `gfx_shader_tests`, the SPIR-V
    compiled into pipelines by real drivers in `gfx_vulkan_tests`.
-2. **Offscreen draw**: one draw from the command processor's `DrawCall` (system constants, shared memory as storage
-   buffers, vertex fetch from guest memory, constants from the register file, the translator's `Features` filled
-   from the device and its modification bits from the registers) into a host render target, read back and checked.
+2. **Offscreen draw** (done, 2026-11-01): `VulkanRenderer` draws the command processor's draws. Two learned on the
+   way: the alpha test's pass bits must be set for a disabled test (none set discards every pixel), and the colour
+   exponent bias is a multiplier (1, not 0). Still narrow: one RGBA8 target, no depth, blending, culling, textures
+   or resolves; the viewport without window offsets or scissors; rectangle and quad lists not expanded; the whole
+   mirrored memory copied before each draw, one submission per draw; the translator's `Features` all on and its
+   modification bits at their defaults rather than read from the device and the registers.
 3. **State**: render state registers to pipeline state; texture fetch constants to untiled host textures; resolves
    as copies between host targets and to guest memory where the CPU reads them.
 4. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.

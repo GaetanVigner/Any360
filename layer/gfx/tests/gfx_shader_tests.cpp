@@ -21,6 +21,8 @@
 #include <rex/graphics/pipeline/shader/spirv_translator.h>
 #include <rex/string/buffer.h>
 
+#include "ucode_encode.h"
+
 namespace {
 
 using namespace rex::graphics;
@@ -35,63 +37,8 @@ void Check(bool ok, const std::string& what) {
     }
 }
 
-// ---- Encoders (bit layouts from ucode.h) ---------------------------------------------------------------------------
-
-// One control flow instruction: 32 bits in dword_0, 16 bits in dword_1 (ucode::ControlFlowInstruction).
-struct Cf {
-    uint32_t dword_0 = 0;
-    uint32_t dword_1 = 0;
-};
-
-Cf CfExec(uc::ControlFlowOpcode opcode, uint32_t address, uint32_t count, uint32_t sequence) {
-    Cf cf;
-    cf.dword_0 = (address & 0xFFF) | ((count & 0x7) << 12) | ((sequence & 0xFFF) << 16);
-    cf.dword_1 = (1u << 9) /* is_predicate_clean */ | (uint32_t(uc::AddressingMode::kRelative) << 11) |
-                 (uint32_t(opcode) << 12);
-    return cf;
-}
-
-Cf CfAlloc(uc::AllocType type, uint32_t size) {
-    Cf cf;
-    cf.dword_0 = size & 0x7;
-    cf.dword_1 = (uint32_t(type) << 9) | (uint32_t(uc::ControlFlowOpcode::kAlloc) << 12);
-    return cf;
-}
-
-// Packs a pair of control flow instructions into 3 dwords (inverse of ucode::UnpackControlFlowInstructions).
-void PushCfPair(std::vector<uint32_t>& words, const Cf& a, const Cf& b) {
-    words.push_back(a.dword_0);
-    words.push_back((a.dword_1 & 0xFFFF) | (b.dword_0 << 16));
-    words.push_back((b.dword_0 >> 16) | (b.dword_1 << 16));
-}
-
-struct AluOperand {
-    uint32_t reg = 0;
-    bool is_temp = false;  // false: float constant c[reg]
-};
-
-// An exporting (or temp-writing) vector ALU operation with the scalar unit idle (kRetainPrev, empty write mask).
-// Swizzles are identity (component-relative 0), no negation, no predication, no relative addressing.
-void PushAluVector(std::vector<uint32_t>& words, uc::AluVectorOpcode opcode, uint32_t dest, bool is_export,
-                   uint32_t write_mask, AluOperand src1, AluOperand src2) {
-    uint32_t w0 = (dest & 0x3F) | ((is_export ? 1u : 0u) << 15) | ((write_mask & 0xF) << 16) |
-                  (uint32_t(uc::AluScalarOpcode::kRetainPrev) << 26);
-    uint32_t w1 = 0;
-    uint32_t w2 = (src2.reg & 0xFF) << 8 | (src1.reg & 0xFF) << 16 | (uint32_t(opcode) & 0x1F) << 24 |
-                  (src2.is_temp ? 1u : 0u) << 30 | (src1.is_temp ? 1u : 0u) << 31;
-    words.push_back(w0);
-    words.push_back(w1);
-    words.push_back(w2);
-}
-
-// alloc <type>; exece (one ALU instruction at slot 1); <one vector ALU export>.
-std::vector<uint32_t> BuildSingleExportShader(uc::AllocType alloc, uint32_t export_reg, AluOperand src) {
-    std::vector<uint32_t> words;
-    PushCfPair(words, CfAlloc(alloc, 0), CfExec(uc::ControlFlowOpcode::kExecEnd, 1, 1, 0));
-    // mov = max(src, src) on the vector unit.
-    PushAluVector(words, uc::AluVectorOpcode::kMax, export_reg, true, 0b1111, src, src);
-    return words;
-}
+// The encoders (control flow, vector ALU, vertex fetch) are shared with gfx_render_tests.
+using namespace any360::gfx::test;
 
 // Decodes the words back through ucode.h's structures and checks they say what the encoders meant.
 void CheckDecode(const std::vector<uint32_t>& words, uc::AllocType alloc, uint32_t export_reg, AluOperand src,

@@ -48,7 +48,8 @@ add_test(NAME gfx_shader_tests COMMAND gfx_shader_tests)
 
 # any360_gfx_vulkan: the Vulkan side of the renderer. The loader is opened at run time (VK_NO_PROTOTYPES), so the
 # build needs only the vendored Khronos headers (third_party/vulkan-headers) and no Vulkan SDK.
-add_library(any360_gfx_vulkan STATIC src/vulkan/device.cpp)
+add_library(any360_gfx_vulkan STATIC src/vulkan/device.cpp src/vulkan/renderer.cpp)
+target_link_libraries(any360_gfx_vulkan PUBLIC any360_gfx any360_xenos_shader)
 target_include_directories(any360_gfx_vulkan PUBLIC include ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vulkan-headers/include)
 # The Vulkan idiom {sType} leaves the other fields zero on purpose.
 target_compile_options(any360_gfx_vulkan PRIVATE -Wall -Wextra)
@@ -62,3 +63,9 @@ add_executable(gfx_vulkan_tests tests/gfx_vulkan_tests.cpp)
 target_link_libraries(gfx_vulkan_tests PRIVATE any360_gfx_vulkan any360_xenos_shader)
 target_compile_options(gfx_vulkan_tests PRIVATE -Wall -Wextra)
 add_test(NAME gfx_vulkan_tests COMMAND gfx_vulkan_tests)
+
+# End to end: hand-written PM4 through the command processor into the Vulkan renderer, pixels read back.
+add_executable(gfx_render_tests tests/gfx_render_tests.cpp)
+target_link_libraries(gfx_render_tests PRIVATE any360_gfx_vulkan)
+target_compile_options(gfx_render_tests PRIVATE -Wall -Wextra)
+add_test(NAME gfx_render_tests COMMAND gfx_render_tests)

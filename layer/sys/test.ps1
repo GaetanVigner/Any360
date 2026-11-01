@@ -52,6 +52,8 @@ try {
     if ($LASTEXITCODE) { throw "gfx_shader_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_vulkan_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "gfx_vulkan_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'gfx/gfx_render_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "gfx_render_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_io_tests.exe') --trials $Trials | Out-Host
     if ($LASTEXITCODE) { throw "sys_io_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_runtime_tests.exe') --trials $Trials | Out-Host
