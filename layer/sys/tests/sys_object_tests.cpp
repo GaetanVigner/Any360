@@ -13,6 +13,7 @@
 #include <fstream>
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
+#include "any360/sys/xam.h"
 
 #include <atomic>
 #include <chrono>
@@ -577,9 +578,174 @@ void FileTests() {
   fs::remove_all(root, ec);
 }
 
+// XAM as an offline console with one local profile, and the title module from a synthetic XEX header.
+const char* g_stop_reason = nullptr;
+uint32_t g_stop_code = 0;
+void RecordStop(const char* reason, uint32_t code) {
+  g_stop_reason = reason;
+  g_stop_code = code;
+}
+
+void XamTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  XamState().Reset();
+  Files().Reset();
+  XamState().host().stop = &RecordStop;
+  const fs::path content = fs::temp_directory_path() / "any360-sys-content";
+  std::error_code ec;
+  fs::remove_all(content, ec);
+  XamState().title().content_root = content;
+  const uint32_t out = kScratch + 0x200, ov = kScratch + 0x300, buf = kScratch + 0x400, str = kScratch + 0x800;
+  // Messages complete at once; through an overlapped structure, its event is set and the call is pending.
+  CHECK(XamState().MsgStartIORequest(g, 0xFB, 0x58003, 0, buf, 16) == 0);
+  CHECK(Objects().CreateEvent(g, out, 0, 0, 0) == 0);
+  std::memset(g.host(ov), 0xEE, 0x1C);
+  g.Store32(ov + 0x0C, g.Load32(out));
+  CHECK(XamState().MsgStartIORequest(g, 0xFB, 0x58003, ov, buf, 16) == kErrorIoPending && g.Load32(ov) == 0 && g.Load32(ov + 4) == 0);
+  const int64_t zero = 0;
+  CHECK(Objects().WaitForHandle(g, g.Load32(out), kMainThread, &zero) == 0);
+  // Notifications: a new system listener hears the sign-in first; filters; the guide when the sign-in UI is shown.
+  const uint32_t l = XamState().NotifyCreateListener(g, 1, 0);
+  CHECK(l >= kHandleBase);
+  CHECK(XamState().NotifyGetNext(g, l, 0, out + 4, out + 8) == 1 && g.Load32(out + 4) == kNotifySigninChanged && g.Load32(out + 8) == 1);
+  CHECK(XamState().NotifyGetNext(g, l, 0, out + 4, out + 8) == 0 && g.Load32(out + 4) == 0);
+  CHECK(XamState().ShowSigninUI(1, 0) == 0);
+  CHECK(XamState().NotifyGetNext(g, l, kNotifySystemUi, out + 4, out + 8) == 1 && g.Load32(out + 8) == 1);
+  CHECK(XamState().NotifyGetNext(g, l, kNotifySystemUi, out + 4, out + 8) == 1 && g.Load32(out + 8) == 0);
+  CHECK(XamState().NotifyGetNext(g, kHandleBase + 0xF00, 0, out + 4, 0) == 0);
+  const uint32_t other = XamState().NotifyCreateListener(g, 1ull << 1, 0);  // a listener of another area hears nothing
+  CHECK(XamState().NotifyGetNext(g, other, 0, out + 4, 0) == 0);
+  // The user.
+  CHECK(XamState().UserGetSigninState(0) == 1 && XamState().UserGetSigninState(1) == 0);
+  CHECK(XamState().UserGetXUID(g, 0, 1, out) == 0 && g.Load64(out) == XamState().title().xuid);
+  CHECK(XamState().UserGetXUID(g, 2, 1, out) == kErrorNoSuchUser);
+  CHECK(XamState().UserGetName(g, 0, str, 16) == 0 && std::strcmp(reinterpret_cast<const char*>(g.host(str)), "Player") == 0);
+  CHECK(XamState().UserGetName(g, 0, str, 3) == 0 && std::strcmp(reinterpret_cast<const char*>(g.host(str)), "Pl") == 0);
+  CHECK(XamState().UserGetSigninInfo(g, 0, 0, buf) == 0 && g.Load64(buf) == XamState().title().xuid && g.Load32(buf + 12) == 1);
+  CHECK(XamState().UserCheckPrivilege(g, 0, 0xFC, out) == 0 && g.Load32(out) == 1);
+  // Profile settings: the size protocol, defaults, then what the title wrote.
+  const uint32_t ids = kScratch + 0x180, size = kScratch + 0x1F0;
+  g.Store32(ids, 0x10040002);      // an int32 setting
+  g.Store32(ids + 4, 0x63E83FFF);  // a binary setting of 0x3E8 bytes
+  g.Store32(size, 0);
+  CHECK(XamState().UserReadProfileSettings(g, 0, 0, 0, 0, 2, ids, size, 0, 0) == kErrorInsufficientBuffer);
+  const uint32_t needed = g.Load32(size);
+  CHECK(needed == 8 + 2 * 40 + 0x3E8);
+  const uint32_t big = 0x10000;
+  CHECK(XamState().UserReadProfileSettings(g, 0, 0, 0, 0, 2, ids, size, big, 0) == 0);
+  CHECK(g.Load32(big) == 2 && g.Load32(big + 4) == big + 8 && g.Load32(big + 8) == 1 && g.Load32(big + 8 + 16) == 0x10040002);
+  CHECK(g.Load32(big + 48 + 16) == 0x63E83FFF && g.Load32(big + 48 + 32) == 0x3E8 && g.Load32(big + 48 + 36) == big + 88);
+  CHECK(XamState().UserReadProfileSettings(g, 0, 1, 0, 0, 2, ids, size, big, 0) == kErrorNoSuchUser);
+  CHECK(XamState().UserReadProfileSettings(g, 0, 0, 0, 0, 0, ids, size, big, 0) == kErrorInvalidParameter);
+  std::memset(g.host(buf), 0, 40);
+  g.Store32(buf + 16, 0x10040002);
+  g.Store8(buf + 24, 1);
+  g.Store32(buf + 32, 77);
+  CHECK(XamState().UserWriteProfileSettings(g, 0, 0, 1, buf, 0) == 0);
+  CHECK(XamState().UserReadProfileSettings(g, 0, 0, 0, 0, 2, ids, size, big, 0) == 0 && g.Load32(big + 8) == 2 && g.Load32(big + 8 + 32) == 77);
+  // Sessions, message boxes, device selection.
+  CHECK(XamState().SessionCreateHandle(g, out) == 0 && XamState().SessionRefObjByHandle(g, g.Load32(out), out + 4) == 0 && g.Load32(out + 4) != 0);
+  CHECK(XamState().ShowMessageBoxUI(g, out + 8, ov) == kErrorIoPending && g.Load32(out + 8) == 0);
+  CHECK(XamState().ShowDeviceSelectorUI(g, out + 8, 0) == 0 && g.Load32(out + 8) == 1);
+  // Content: create a save, write through its root, close, enumerate, delete.
+  const uint32_t data = kScratch + 0xA00;
+  std::memset(g.host(data), 0, 0x134);
+  g.Store32(data, 1);
+  g.Store32(data + 4, 1);  // saved game
+  std::memcpy(g.host(data + 0x108), "slot0", 5);
+  std::memcpy(g.host(str), "save", 5);
+  CHECK(XamState().ContentCreate(g, 0, str, data, 3, out, out + 4, 0) == kErrorFileNotFound);  // open existing: none yet
+  CHECK(XamState().ContentCreate(g, 0, str, data, 4, out, out + 4, 0) == 0 && g.Load32(out) == 1);  // open always: created
+  const uint32_t attrs = kScratch + 0xC00;
+  g.Store32(attrs, 0);
+  g.Store32(attrs + 4, attrs + 0x10);
+  g.Store16(attrs + 0x10, 13);
+  g.Store32(attrs + 0x14, attrs + 0x20);
+  std::memcpy(g.host(attrs + 0x20), "save:\\game.sav", 14);
+  g.Store16(attrs + 0x10, 14);
+  CHECK(Files().CreateFile(g, out + 8, 0xC0000000, attrs, 0, 0, kCreate, 0) == 0);
+  CHECK(Objects().Close(g.Load32(out + 8)) == 0 && fs::exists(content / "00000001" / "slot0" / "game.sav"));
+  CHECK(XamState().ContentClose(g, str, 0) == 0 && XamState().ContentClose(g, str, 0) == kErrorFileNotFound);
+  CHECK(Files().CreateFile(g, out + 8, 0x80000000, attrs, 0, 0, kOpen, 0) == kStatusObjectPathNotFound);
+  CHECK(XamState().ContentCreate(g, 0, str, data, 1, out, 0, 0) == kErrorAlreadyExists);  // create new: exists
+  CHECK(XamState().ContentCreateEnumerator(g, 0, 0, 1, 0, 1, out + 12, out + 16) == 0 && g.Load32(out + 12) == 0x134);
+  CHECK(XamState().Enumerate(g, g.Load32(out + 16), 0, buf, 0x134, out + 20, 0) == 0 && g.Load32(out + 20) == 1 &&
+        std::memcmp(g.host(buf + 0x108), "slot0", 5) == 0 && g.Load32(buf + 4) == 1);
+  CHECK(XamState().Enumerate(g, g.Load32(out + 16), 0, buf, 0x134, out + 20, 0) == kErrorNoMoreFiles && g.Load32(out + 20) == 0);
+  CHECK(XamState().Enumerate(g, g.Load32(out + 16), 0, buf, 0x10, out + 20, 0) == kErrorInsufficientBuffer);
+  CHECK(XamState().GetPrivateEnumStructure(g, g.Load32(out + 16), out + 24) == 0 && g.Load32(out + 24) != 0);
+  CHECK(XamState().ContentDelete(g, 0, data, 0) == 0 && !fs::exists(content / "00000001" / "slot0"));
+  CHECK(XamState().ContentGetDeviceState(g, 1, 0) == 0 && XamState().ContentGetDeviceState(g, 7, 0) == kErrorDeviceNotConnected);
+  // Controllers: controller 0 by default, a state from the host, vibration to the host.
+  CHECK(XamState().InputGetCapabilities(g, 0, 1, buf) == 0 && g.Load8(buf) == 1);
+  CHECK(XamState().InputGetCapabilities(g, 1, 1, buf) == kErrorDeviceNotConnected);
+  CHECK(XamState().InputGetState(g, 0xFF, 0, buf) == 0 && g.Load32(buf) == 1 && g.Load16(buf + 4) == 0);
+  XamState().host().controller_state = [](uint32_t, GamepadState& s) {
+    s.buttons = 0x1000;
+    s.thumb_lx = -5;
+    return true;
+  };
+  CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load32(buf) == 2 && g.Load16(buf + 4) == 0x1000 && int16_t(g.Load16(buf + 8)) == -5);
+  static uint32_t vibrated = 0;
+  XamState().host().vibrate = [](uint32_t, uint16_t left, uint16_t right) { vibrated = uint32_t(left) << 16 | right; };
+  g.Store16(buf, 0x1234);
+  g.Store16(buf + 2, 0x5678);
+  CHECK(XamState().InputSetState(g, 0, buf) == 0 && vibrated == 0x12345678);
+  CHECK(XamState().InputGetKeystroke(g, 0, 0, buf) == kErrorEmpty);
+  // The title module from a synthetic XEX header: inline, pointer and offset fields; privileges; the execution id.
+  const uint32_t xex = kScratch + 0xE00;
+  std::memset(g.host(xex), 0, 0x100);
+  g.Store32(xex, 0x58455832);  // "XEX2"
+  g.Store32(xex + 0x14, 3);
+  g.Store32(xex + 0x18, 0x00030000);  // system flags, inline
+  g.Store32(xex + 0x1C, 0x00000410);
+  g.Store32(xex + 0x20, 0x00040006);  // execution info, at an offset
+  g.Store32(xex + 0x24, 0x80);
+  g.Store32(xex + 0x28, 0x00020001);  // one word, by address
+  g.Store32(xex + 0x2C, 0xABCD);
+  g.Store32(xex + 0x80 + 12, 0x4D5307E6);  // title id in the execution info
+  XamState().title().xex_header = xex;
+  XamState().title().module_handle = xex;
+  CHECK(XamState().ImageXexHeaderField(g, xex, 0x00030000) == 0x410);
+  CHECK(XamState().ImageXexHeaderField(g, xex, 0x00040006) == xex + 0x80);
+  CHECK(XamState().ImageXexHeaderField(g, xex, 0x00020001) == xex + 0x2C);
+  CHECK(XamState().ImageXexHeaderField(g, xex, 0x12345600) == 0);
+  CHECK(XamState().CheckExecutablePrivilege(g, 4) == 1 && XamState().CheckExecutablePrivilege(g, 10) == 1 &&
+        XamState().CheckExecutablePrivilege(g, 5) == 0 && XamState().CheckExecutablePrivilege(g, 40) == 0);
+  CHECK(XamState().GetExecutionId(g, out) == 0 && g.Load32(g.Load32(out) + 12) == 0x4D5307E6);
+  std::memcpy(g.host(str), "Default.XEX", 12);
+  CHECK(XamState().GetModuleHandle(g, str, out) == 0 && g.Load32(out) == xex);
+  CHECK(XamState().GetModuleHandle(g, 0, out) == 0 && g.Load32(out) == xex);
+  std::memcpy(g.host(str), "xboxkrnl.exe", 13);
+  CHECK(XamState().GetModuleHandle(g, str, out) == 0xC0000225u);
+  CHECK(XamState().GetProcedureAddress(g, 0x100, 5, out) == 0xC000007Au && g.Load32(out) == 0);
+  XamState().host().procedure = [](const char*, uint32_t ordinal) { return ordinal == 5 ? 0x82001000u : 0u; };
+  CHECK(XamState().GetProcedureAddress(g, 0x100, 5, out) == 0 && g.Load32(out) == 0x82001000);
+  // Stops go to the host; thread names are not exceptions.
+  g.Store32(buf, 0x406D1388);
+  XamState().RaiseException(g, buf);
+  CHECK(g_stop_reason == nullptr);
+  g.Store32(buf, 0xE06D7363);
+  XamState().RaiseException(g, buf);
+  CHECK(g_stop_reason && g_stop_code == 0xE06D7363);
+  XamState().Stop("bug check", 0xDEAD);
+  CHECK(g_stop_code == 0xDEAD);
+  // The offline network.
+  CHECK(XamState().WsaStartup(g, 0x0202, buf) == 0 && g.Load16(buf) == 0x0202);
+  CHECK(XamState().NetStartup() == 0);
+  CHECK(XamState().Socket() == 0xFFFFFFFF && XamState().WsaGetLastError() == 10050);
+  CHECK(XamState().SocketFailure(0xFFFFFFFF) == 0xFFFFFFFF && XamState().WsaGetLastError() == 10038);
+  CHECK(XamState().XNetGetTitleXnAddr(g, buf) == 1 && g.Load32(buf) == 0);
+  XamState().Reset();
+  Files().Reset();
+  fs::remove_all(content, ec);
+}
+
 }  // namespace
 
 int main() {
+  XamTests();
   FileTests();
   MemoryTests();
   SchedulerTests();

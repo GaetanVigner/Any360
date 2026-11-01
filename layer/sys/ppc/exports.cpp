@@ -18,6 +18,7 @@
 #include "any360/sys/scheduler.h"
 #include "any360/sys/threading.h"
 #include "any360/sys/video.h"
+#include "any360/sys/xam.h"
 
 #define ANY360_SYS_EXPORT(name) extern "C" void any360_##name(PPCContext& ctx, [[maybe_unused]] uint8_t* base)
 
@@ -314,6 +315,92 @@ ANY360_SYS_EXPORT(NtFlushBuffersFile) { ctx.r3.u64 = Files().Flush({base}, ctx.r
 ANY360_SYS_EXPORT(ObCreateSymbolicLink) { ctx.r3.u64 = Files().CreateSymbolicLink({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(ObDeleteSymbolicLink) { ctx.r3.u64 = Files().DeleteSymbolicLink({base}, ctx.r3.u32); }
 
+// Batch 10: XAM, the title module, stops and the offline network (sys_object_tests).
+ANY360_SYS_EXPORT(XMsgStartIORequest) { ctx.r3.u64 = XamState().MsgStartIORequest({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32); }
+ANY360_SYS_EXPORT(XMsgStartIORequestEx) { ctx.r3.u64 = XamState().MsgStartIORequest({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32); }
+ANY360_SYS_EXPORT(XMsgInProcessCall) { ctx.r3.u64 = XamState().MsgInProcessCall(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XMsgCancelIORequest) { ctx.r3.u64 = XamState().MsgCancelIORequest({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamNotifyCreateListener) { ctx.r3.u64 = XamState().NotifyCreateListener({base}, ctx.r3.u64, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XNotifyGetNext) { ctx.r3.u64 = XamState().NotifyGetNext({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XamUserGetSigninState) { ctx.r3.u64 = XamState().UserGetSigninState(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamUserGetXUID) { ctx.r3.u64 = XamState().UserGetXUID({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamUserGetName) { ctx.r3.u64 = XamState().UserGetName({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamUserGetSigninInfo) { ctx.r3.u64 = XamState().UserGetSigninInfo({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamUserCheckPrivilege) { ctx.r3.u64 = XamState().UserCheckPrivilege({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamUserReadProfileSettings) {
+  ctx.r3.u64 = XamState().UserReadProfileSettings({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32,
+                                                  ctx.r9.u32, ctx.r10.u32, StackArgument(ctx, base, 8));
+}
+ANY360_SYS_EXPORT(XamUserWriteProfileSettings) {
+  ctx.r3.u64 = XamState().UserWriteProfileSettings({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(XamSessionCreateHandle) { ctx.r3.u64 = XamState().SessionCreateHandle({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamSessionRefObjByHandle) { ctx.r3.u64 = XamState().SessionRefObjByHandle({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamShowSigninUI) { ctx.r3.u64 = XamState().ShowSigninUI(ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamShowMessageBoxUI) { ctx.r3.u64 = XamState().ShowMessageBoxUI({base}, ctx.r10.u32, StackArgument(ctx, base, 8)); }
+ANY360_SYS_EXPORT(XamShowMessageBoxUIEx) { ctx.r3.u64 = XamState().ShowMessageBoxUI({base}, ctx.r10.u32, StackArgument(ctx, base, 8)); }
+ANY360_SYS_EXPORT(XamShowDeviceSelectorUI) { ctx.r3.u64 = XamState().ShowDeviceSelectorUI({base}, ctx.r7.u32, ctx.r8.u32); }
+ANY360_SYS_EXPORT(XamCreateEnumeratorHandle) { ctx.r3.u64 = kErrorInvalidParameter; }
+ANY360_SYS_EXPORT(XamEnumerate) {
+  ctx.r3.u64 = XamState().Enumerate({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32);
+}
+ANY360_SYS_EXPORT(XamGetPrivateEnumStructureFromHandle) { ctx.r3.u64 = XamState().GetPrivateEnumStructure({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamContentCreateEx) {
+  // (user, root name, content data, flags, disposition, license mask, cache size, content size, overlapped)
+  ctx.r3.u64 = XamState().ContentCreate({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32,
+                                        StackArgument(ctx, base, 8));
+}
+ANY360_SYS_EXPORT(XamContentClose) { ctx.r3.u64 = XamState().ContentClose({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamContentDelete) { ctx.r3.u64 = XamState().ContentDelete({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamContentCreateEnumerator) {
+  ctx.r3.u64 = XamState().ContentCreateEnumerator({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32);
+}
+ANY360_SYS_EXPORT(XamContentGetDeviceState) { ctx.r3.u64 = XamState().ContentGetDeviceState({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamInputGetCapabilities) { ctx.r3.u64 = XamState().InputGetCapabilities({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamInputGetState) { ctx.r3.u64 = XamState().InputGetState({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamInputSetState) { ctx.r3.u64 = XamState().InputSetState({base}, ctx.r3.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamInputGetKeystrokeEx) {
+  const uint32_t user = ctx.r3.u32 ? Guest{base}.Load32(ctx.r3.u32) : 0;
+  ctx.r3.u64 = XamState().InputGetKeystroke({base}, user, ctx.r4.u32, ctx.r5.u32);
+}
+ANY360_SYS_EXPORT(RtlImageXexHeaderField) { ctx.r3.u64 = XamState().ImageXexHeaderField({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XexGetModuleHandle) { ctx.r3.u64 = XamState().GetModuleHandle({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XexGetProcedureAddress) { ctx.r3.u64 = XamState().GetProcedureAddress({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XexCheckExecutablePrivilege) { ctx.r3.u64 = XamState().CheckExecutablePrivilege({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamGetExecutionId) { ctx.r3.u64 = XamState().GetExecutionId({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(ExRegisterTitleTerminateNotification) { XamState().RegisterTitleTerminateNotification(ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(KeBugCheck) { XamState().Stop("bug check", ctx.r3.u32); }
+ANY360_SYS_EXPORT(KeBugCheckEx) { XamState().Stop("bug check", ctx.r3.u32); }
+ANY360_SYS_EXPORT(RtlRaiseException) { XamState().RaiseException({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(DbgBreakPoint) {}
+ANY360_SYS_EXPORT(HalReturnToFirmware) { XamState().Stop("return to firmware", 0); }
+ANY360_SYS_EXPORT(XamLoaderTerminateTitle) { XamState().Stop("title terminated", 0); }
+ANY360_SYS_EXPORT(XamLoaderLaunchTitle) { XamState().Stop("title launched another title", 0); }
+ANY360_SYS_EXPORT(KeEnableFpuExceptions) {}
+ANY360_SYS_EXPORT(KeLockL2) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(KeUnlockL2) {}
+ANY360_SYS_EXPORT(KiApcNormalRoutineNop) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(NetDll_WSAStartup) { ctx.r3.u64 = XamState().WsaStartup({base}, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(NetDll_WSACleanup) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(NetDll_XNetStartup) { ctx.r3.u64 = XamState().NetStartup(); }
+ANY360_SYS_EXPORT(NetDll_XNetGetTitleXnAddr) { ctx.r3.u64 = XamState().XNetGetTitleXnAddr({base}, ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_WSAGetLastError) { ctx.r3.u64 = XamState().WsaGetLastError(); }
+ANY360_SYS_EXPORT(NetDll_socket) { ctx.r3.u64 = XamState().Socket(); }
+ANY360_SYS_EXPORT(NetDll_closesocket) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_shutdown) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_setsockopt) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_getsockopt) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_bind) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_connect) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_listen) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_accept) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_select) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_recv) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_recvfrom) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_send) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_sendto) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_ioctlsocket) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -453,6 +540,75 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(NtFlushBuffersFile),
     ANY360_SYS_ENTRY(ObCreateSymbolicLink),
     ANY360_SYS_ENTRY(ObDeleteSymbolicLink),
+    // Batch 10: XAM, the title module, stops, the offline network.
+    ANY360_SYS_ENTRY(XMsgStartIORequest),
+    ANY360_SYS_ENTRY(XMsgStartIORequestEx),
+    ANY360_SYS_ENTRY(XMsgInProcessCall),
+    ANY360_SYS_ENTRY(XMsgCancelIORequest),
+    ANY360_SYS_ENTRY(XamNotifyCreateListener),
+    ANY360_SYS_ENTRY(XNotifyGetNext),
+    ANY360_SYS_ENTRY(XamUserGetSigninState),
+    ANY360_SYS_ENTRY(XamUserGetXUID),
+    ANY360_SYS_ENTRY(XamUserGetName),
+    ANY360_SYS_ENTRY(XamUserGetSigninInfo),
+    ANY360_SYS_ENTRY(XamUserCheckPrivilege),
+    ANY360_SYS_ENTRY(XamUserReadProfileSettings),
+    ANY360_SYS_ENTRY(XamUserWriteProfileSettings),
+    ANY360_SYS_ENTRY(XamSessionCreateHandle),
+    ANY360_SYS_ENTRY(XamSessionRefObjByHandle),
+    ANY360_SYS_ENTRY(XamShowSigninUI),
+    ANY360_SYS_ENTRY(XamShowMessageBoxUI),
+    ANY360_SYS_ENTRY(XamShowMessageBoxUIEx),
+    ANY360_SYS_ENTRY(XamShowDeviceSelectorUI),
+    ANY360_SYS_ENTRY(XamCreateEnumeratorHandle),
+    ANY360_SYS_ENTRY(XamEnumerate),
+    ANY360_SYS_ENTRY(XamGetPrivateEnumStructureFromHandle),
+    ANY360_SYS_ENTRY(XamContentCreateEx),
+    ANY360_SYS_ENTRY(XamContentClose),
+    ANY360_SYS_ENTRY(XamContentDelete),
+    ANY360_SYS_ENTRY(XamContentCreateEnumerator),
+    ANY360_SYS_ENTRY(XamContentGetDeviceState),
+    ANY360_SYS_ENTRY(XamInputGetCapabilities),
+    ANY360_SYS_ENTRY(XamInputGetState),
+    ANY360_SYS_ENTRY(XamInputSetState),
+    ANY360_SYS_ENTRY(XamInputGetKeystrokeEx),
+    ANY360_SYS_ENTRY(RtlImageXexHeaderField),
+    ANY360_SYS_ENTRY(XexGetModuleHandle),
+    ANY360_SYS_ENTRY(XexGetProcedureAddress),
+    ANY360_SYS_ENTRY(XexCheckExecutablePrivilege),
+    ANY360_SYS_ENTRY(XamGetExecutionId),
+    ANY360_SYS_ENTRY(ExRegisterTitleTerminateNotification),
+    ANY360_SYS_ENTRY(KeBugCheck),
+    ANY360_SYS_ENTRY(KeBugCheckEx),
+    ANY360_SYS_ENTRY(RtlRaiseException),
+    ANY360_SYS_ENTRY(DbgBreakPoint),
+    ANY360_SYS_ENTRY(HalReturnToFirmware),
+    ANY360_SYS_ENTRY(XamLoaderTerminateTitle),
+    ANY360_SYS_ENTRY(XamLoaderLaunchTitle),
+    ANY360_SYS_ENTRY(KeEnableFpuExceptions),
+    ANY360_SYS_ENTRY(KeLockL2),
+    ANY360_SYS_ENTRY(KeUnlockL2),
+    ANY360_SYS_ENTRY(KiApcNormalRoutineNop),
+    ANY360_SYS_ENTRY(NetDll_WSAStartup),
+    ANY360_SYS_ENTRY(NetDll_WSACleanup),
+    ANY360_SYS_ENTRY(NetDll_XNetStartup),
+    ANY360_SYS_ENTRY(NetDll_XNetGetTitleXnAddr),
+    ANY360_SYS_ENTRY(NetDll_WSAGetLastError),
+    ANY360_SYS_ENTRY(NetDll_socket),
+    ANY360_SYS_ENTRY(NetDll_closesocket),
+    ANY360_SYS_ENTRY(NetDll_shutdown),
+    ANY360_SYS_ENTRY(NetDll_setsockopt),
+    ANY360_SYS_ENTRY(NetDll_getsockopt),
+    ANY360_SYS_ENTRY(NetDll_bind),
+    ANY360_SYS_ENTRY(NetDll_connect),
+    ANY360_SYS_ENTRY(NetDll_listen),
+    ANY360_SYS_ENTRY(NetDll_accept),
+    ANY360_SYS_ENTRY(NetDll_select),
+    ANY360_SYS_ENTRY(NetDll_recv),
+    ANY360_SYS_ENTRY(NetDll_recvfrom),
+    ANY360_SYS_ENTRY(NetDll_send),
+    ANY360_SYS_ENTRY(NetDll_sendto),
+    ANY360_SYS_ENTRY(NetDll_ioctlsocket),
 };
 const unsigned kExportCount = sizeof(kExports) / sizeof(kExports[0]);
 

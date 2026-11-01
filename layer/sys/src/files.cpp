@@ -139,6 +139,17 @@ void FileSystem::Link(const std::string& link, const std::string& target) {
   links_[name] = target;
 }
 
+void FileSystem::Unmount(const std::string& device) {
+  const std::string lower = Lower(device);
+  mounts_.erase(std::remove_if(mounts_.begin(), mounts_.end(), [&](const Mounted& m) { return m.device == lower; }), mounts_.end());
+}
+
+void FileSystem::Unlink(const std::string& link) {
+  std::string name = Lower(link);
+  if (name.rfind("\\??\\", 0) == 0) name = name.substr(4);
+  links_.erase(name);
+}
+
 uint32_t FileSystem::CreateSymbolicLink(Guest g, uint32_t link, uint32_t target) {
   const std::string name = AnsiString(g, link), to = AnsiString(g, target);
   if (name.empty() || to.empty()) return kStatusInvalidParameter;

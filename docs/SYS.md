@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (140 system calls)
+## What is verified (208 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -80,6 +80,22 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   deletes a file marked for deletion). The statuses are the NT ones (`OBJECT_NAME_NOT_FOUND` for a missing name,
   `OBJECT_PATH_NOT_FOUND` for a missing directory or device), which `RtlNtStatusToDosError` maps to the Win32 codes
   XAPI expects. Completion APCs and asynchronous I/O are not provided yet; reads and writes complete at once.
+- **XAM and the process** (`xam.h`, scenario tests): the answers of a retail console with one local profile signed
+  in and no Xbox Live. Messages to the system applications (`XMsgStartIORequest(Ex)`, `XMsgInProcessCall`,
+  `XMsgCancelIORequest`) complete at once; notifications (`XamNotifyCreateListener`, `XNotifyGetNext`: a new system
+  listener first hears the sign-in, the guide opens and closes for `XamShowSigninUI`); the user (`XamUserGetSigninState`,
+  `XamUserGetXUID`, `XamUserGetName`, `XamUserGetSigninInfo`, `XamUserCheckPrivilege`, profile settings read and written
+  with the kernel's size protocol); sessions; message boxes and the device selector; enumerators; content packages
+  (`XamContentCreateEx`, `XamContentClose`, `XamContentDelete`, `XamContentCreateEnumerator`, `XamContentGetDeviceState`:
+  folders under the title's content root, mounted as `<root>:` on the file system while open); controllers
+  (`XamInputGetCapabilities`, `XamInputGetState`, `XamInputSetState`, `XamInputGetKeystrokeEx`, through an input source
+  the host provides; controller 0 by default); the title module (`RtlImageXexHeaderField`, `XexGetModuleHandle`,
+  `XexGetProcedureAddress` through a host resolver, `XexCheckExecutablePrivilege`, `XamGetExecutionId`,
+  `ExRegisterTitleTerminateNotification`); stops through a host hook (`KeBugCheck(Ex)`, `RtlRaiseException` except thread
+  names, `HalReturnToFirmware`, `XamLoaderTerminateTitle`, `XamLoaderLaunchTitle`); the no-op process calls
+  (`DbgBreakPoint`, `KeEnableFpuExceptions`, `KeLockL2`, `KeUnlockL2`, `KiApcNormalRoutineNop`); and the network of a
+  console without a connection (`NetDll_WSAStartup`, `NetDll_XNetStartup`, `NetDll_XNetGetTitleXnAddr` with no address,
+  sockets that fail with `WSAENETDOWN`, `NetDll_WSAGetLastError`).
 - **Offline networking**: `NetDll_inet_addr` (the Winsock parser), `NetDll___WSAFDIsSet`, `NetDll_XNetInAddrToString`,
   the XNet address conversions.
 

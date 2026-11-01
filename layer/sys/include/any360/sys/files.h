@@ -43,6 +43,8 @@ class FileSystem {
   void Mount(const std::string& device, const std::filesystem::path& host, bool read_only);
   // A symbolic link from a DOS name ("game:", "\??\D:") to a device path.
   void Link(const std::string& link, const std::string& target);
+  void Unmount(const std::string& device);
+  void Unlink(const std::string& link);
 
   // ObCreateSymbolicLink / ObDeleteSymbolicLink: ANSI_STRING pointers.
   uint32_t CreateSymbolicLink(Guest g, uint32_t link, uint32_t target);

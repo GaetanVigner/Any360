@@ -81,9 +81,9 @@
   {
    "area": "stage 1: native system (any360::sys)",
    "name": "Input, user profiles, offline achievements, UI dialogs, Live offline answers (~100 imports)",
-   "state": "planned",
-   "source": "crackdown: src/achievements_*.cpp, src/user_data.cpp (game-side today)",
-   "note": ""
+   "state": "in progress",
+   "source": "any360: layer/sys (xam)",
+   "note": "offline console: local profile, settings, notifications, content packages, controllers through a host input source, UI answers; achievements and Live-offline details to do"
   },
   {
    "area": "stage 1: native graphics (any360::gfx)",
@@ -202,7 +202,7 @@
    "name": "any360::sys: the system calls, verified against the reference runtime",
    "state": "in progress",
    "source": "any360: layer/sys (any360_sys, any360_sys_ppc, sys_io_tests)",
-   "note": "140 system calls: 76 verified equal to the reference, 64 of the object manager, scheduler, memory manager and file system verified against the NT semantics by scenario tests; next: XAM content / profile / input"
+   "note": "208 system calls native: 76 equal to the reference, 132 proven against the NT / XDK semantics by scenario tests (objects, scheduler, memory, files, XAM, offline network). MVP (system calls except graphics and audio): Sonic 06 146/178, Crackdown 173/226; 95% of Crackdown call sites, 97% of the Simpsons"
   }
  ]
 }

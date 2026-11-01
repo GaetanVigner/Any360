@@ -7,9 +7,9 @@
  "titles": {
   "crackdown": {
    "imports": 248,
-   "imports_native": 118,
+   "imports_native": 183,
    "mvp_total": 226,
-   "mvp_native": 108,
+   "mvp_native": 173,
    "mnemonics": 340,
    "instructions": 2667844,
    "sdk": "0.10.0",
@@ -17,15 +17,15 @@
    "source": "",
    "description": "",
    "sites": 1534,
-   "sites_native": 1291,
+   "sites_native": 1453,
    "mvp_sites": 1504,
-   "mvp_sites_native": 1275
+   "mvp_sites_native": 1437
   },
   "simpsons": {
    "imports": 317,
-   "imports_native": 122,
+   "imports_native": 190,
    "mvp_total": 277,
-   "mvp_native": 112,
+   "mvp_native": 180,
    "mnemonics": 338,
    "instructions": 2938230,
    "sdk": "0.8.0",
@@ -33,15 +33,15 @@
    "source": "",
    "description": "",
    "sites": 4697,
-   "sites_native": 4287,
+   "sites_native": 4526,
    "mvp_sites": 4635,
-   "mvp_sites_native": 4273
+   "mvp_sites_native": 4512
   },
   "sonic06": {
    "imports": 200,
-   "imports_native": 104,
+   "imports_native": 156,
    "mvp_total": 178,
-   "mvp_native": 94,
+   "mvp_native": 146,
    "mnemonics": 0,
    "instructions": 0,
    "sdk": "",
@@ -51,9 +51,9 @@
   },
   "tdu": {
    "imports": 278,
-   "imports_native": 124,
+   "imports_native": 188,
    "mvp_total": 255,
-   "mvp_native": 114,
+   "mvp_native": 178,
    "mnemonics": 0,
    "instructions": 0,
    "sdk": "",
@@ -66,8 +66,8 @@
   "total": 2914,
   "used": 374,
   "any360": {
-   "todo": 2773,
-   "native": 140,
+   "todo": 2705,
+   "native": 208,
    "ported": 1
   },
   "reference": {
