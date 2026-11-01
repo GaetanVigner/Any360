@@ -108,6 +108,27 @@
   },
   {
    "area": "stage 1: native graphics (any360::gfx)",
+   "name": "Xenos microcode to SPIR-V translator (Xenia's, from the ReXGlue SDK) vendored as any360_xenos_shader",
+   "state": "done",
+   "source": "any360: layer/gfx/third_party/xenos_shader (BSD-3), gfx_shader_tests",
+   "note": "the translator the Crackdown native shadow atlas validated to the pixel; SPIR-V compiles into pipelines on NVIDIA and AMD drivers"
+  },
+  {
+   "area": "stage 1: native graphics (any360::gfx)",
+   "name": "Vulkan device: run-time loader (no SDK), Vulkan 1.3 headless, offscreen targets and readback",
+   "state": "done",
+   "source": "any360: layer/gfx/src/vulkan, gfx_vulkan_tests",
+   "note": "Windows, Linux, macOS through MoltenVK; RADV on the Steam Deck still to run"
+  },
+  {
+   "area": "stage 1: native graphics (any360::gfx)",
+   "name": "Vulkan renderer: draws from the command processor (system constants, shared memory, vertex fetch, textures, host render targets, resolves)",
+   "state": "in progress",
+   "source": "any360: layer/gfx (next); crackdown: patch 0129 native atlas",
+   "note": "next: one translated draw offscreen, read back and checked"
+  },
+  {
+   "area": "stage 1: native graphics (any360::gfx)",
    "name": "PM4 decoder: Xenos packets to state writes, draws, shader loads, bin predication, indirect buffers",
    "state": "planned",
    "source": "crackdown: src/pm4_decode.h (+ tests/pm4_decode_tests.cpp)",

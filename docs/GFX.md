@@ -11,8 +11,16 @@ portable C++23 with no dependency on a graphics API. The renderer behind it is V
 | `include/any360/gfx/registers.h` | The register indices the command processor acts on, the type-3 opcodes, packet builders |
 | `include/any360/gfx/command_processor.h`, `src/command_processor.cpp` | `CommandProcessor` (a `sys::GpuBackend`), `Renderer`, `DrawCall`, `Shader` |
 | `tests/gfx_cp_tests.cpp` | Scenario tests: packets written by hand, executed, effects read back |
+| `third_party/xenos_shader/` | The Xenos microcode to SPIR-V translator, vendored from the ReXGlue SDK (Xenia's, BSD-3): upstream files at their own paths, two marked edits, `shim/` for the SDK infrastructure it included (`NOTICE.md` lists every change) |
+| `third_party/glslang/`, `third_party/fmt/`, `third_party/vulkan-headers/` | The SPIR-V builder the translator writes with, header-only fmt, the Khronos headers (each with its license and notice) |
+| `include/any360/gfx/vulkan/device.h`, `src/vulkan/device.cpp` | The Vulkan device: the loader opened at run time (no SDK, no import library; Windows, Linux, macOS through MoltenVK), Vulkan 1.3 with dynamic rendering and synchronization2, headless, buffers and images for tests and readbacks |
+| `tests/gfx_shader_tests.cpp` | Microcode encoded by hand (no game data), translated as the reference pipeline cache asks, SPIR-V checked and written out |
+| `tests/gfx_vulkan_tests.cpp` | On a real driver: the translated shaders compiled into pipelines with the translator's descriptor layout, an offscreen target rendered and read back (skipped without a Vulkan 1.3 device) |
 
-`layer/sys/CMakeLists.txt` adds this directory, and `layer/sys/test.ps1` runs `gfx_cp_tests` with the other tests.
+`layer/sys/CMakeLists.txt` adds this directory, and `layer/sys/test.ps1` runs the three gfx tests with the other tests.
+The translated shaders compile into pipelines on the NVIDIA (RTX 5070 Ti) and AMD (Radeon integrated) Windows
+drivers; RADV on the Steam Deck is still to run. No draw with translated shaders has executed yet: that needs the
+system constants, the shared memory binding and the vertex fetch the next step builds.
 
 ## The command processor
 
@@ -57,12 +65,59 @@ GPU, so it is not used as an oracle here. `gfx_cp_tests` checks each packet agai
 - `Swap`: the front buffer address and size.
 - `Invalidate`: memory the CPU changed, for texture and buffer caches.
 
-## Next
+## The Vulkan renderer
 
-1. **The Vulkan renderer**: Xenos microcode to SPIR-V, cached by hash; host render targets per surface instead of
-   EDRAM emulation; textures untiled at load; resolves as copies between host targets. It avoids geometry shaders and
-   rasterizer-ordered views so that it runs through MoltenVK and on mobile GPUs: rectangle and quad lists are expanded
-   in the vertex stage.
-2. **Draw records**: the `DrawRecord` model and the Crackdown PM4 walker (`pm4_decode.h`) move here. A title can then
-   feed the renderer from XDK hooks instead of PM4.
-3. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`.
+Vulkan is the one graphics API: Windows, Linux and the Steam Deck (the primary target: RDNA2 with RADV, 4 Zen 2
+cores, 1280x800, so CPU cost per draw comes first and FSR is the upscaler that matters), Android, and macOS through
+MoltenVK. WebGPU stays a possible side project for a browser build, not a second backend here.
+
+### What comes from the Crackdown port
+
+The Crackdown repository built the first native renderer, inside its patched ReXGlue GPU plugin (SDK patch 0129,
+`src/hle_*`, `HLE_RENDERER_PLAN.md`). Its shadow atlas is drawn natively, per draw, in place of the emulated draws,
+and equals them to the pixel (2026-10-30/31). What Any360 takes from it:
+
+| Element | Where it was | In Any360 |
+|---|---|---|
+| Xenos microcode to SPIR-V translator (Xenia's, BSD-3): the shaders of the native atlas | ReXGlue `pipeline/shader/spirv_translator*.cpp` | vendored in `layer/gfx/third_party/xenos_shader`, without the rest of ReXGlue |
+| Command processor semantics | ReXGlue `command_processor.cpp` | `CommandProcessor`, checked line by line against it |
+| Draw records: the XDK D3D runtime's device state at each draw, in shared immutable blocks, with command buffer draws as records of their own | `src/hle_records.{h,cpp}`, `hle_frame_abi.h` | next: the record model and its expansion over the register file, for titles bound at the D3D level |
+| PM4 walker for records and its tests | `src/pm4_decode.h`, `tests/pm4_decode_tests.cpp` | next, with the records |
+| Per-draw matching of records to emulated draws (the comparison harness) | `src/hle_draw_match.h` + tests | next, as the renderer's own oracle against ReXGlue |
+
+### Lessons that shape it
+
+From the Crackdown runs (each one cost a debugging session there):
+
+- **Hash shaders when the draw is recorded, not later.** The D3D runtime patches a vertex shader's microcode in
+  place for each vertex declaration. Looking the shader up by address or hashing it at render time finds the next
+  draw's variant: wrong vertex fetch, spiky geometry.
+- **Dynamic vertex and index data belong to the draw's moment.** Skinned meshes are rewritten for the next frame
+  once the GPU has consumed them. A renderer that reads them later (end of pass, end of frame) draws torn
+  geometry. Copy them when the draw is recorded, or draw in stream order.
+- **Command buffers hold most draws.** Precompiled buffers the game replays carried 2-4 times more shadow draws than
+  the D3D calls. Their draws need records too, with the buffer's register and shader writes applied.
+- **Passes resolve between cascades at the same EDRAM base.** A pass ends at its resolve, not at a marker.
+- **Float24 depth**: host render targets need depth converted in the pixel shader to match the console (garage
+  markers clipped otherwise); measured at ~0.5 ms on an RTX 5070 Ti.
+- **Occlusion queries must be real host queries**: faked counts show markers through walls.
+- **Render pass breaks dominate on Vulkan**: ~200 render pass entries a frame (barriers, attachment load/store at
+  1440p with MSAA) cost more than the draws. Host render targets per surface avoid most of them.
+- **Per-draw CPU cost is the budget**: the emulated path spent ~800-1,000 ns a draw in `IssueDraw` (bindings,
+  textures, render targets). Dynamic uniform buffers and descriptor reuse cut it most.
+
+### Plan
+
+1. **Shaders** (done): the vendored translator, run on hand-built microcode in `gfx_shader_tests`, the SPIR-V
+   compiled into pipelines by real drivers in `gfx_vulkan_tests`.
+2. **Offscreen draw**: one draw from the command processor's `DrawCall` (system constants, shared memory as storage
+   buffers, vertex fetch from guest memory, constants from the register file, the translator's `Features` filled
+   from the device and its modification bits from the registers) into a host render target, read back and checked.
+3. **State**: render state registers to pipeline state; texture fetch constants to untiled host textures; resolves
+   as copies between host targets and to guest memory where the CPU reads them.
+4. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
+5. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; the swap goes to a
+   window through SDL3.
+
+It avoids geometry shaders and rasterizer-ordered views so that it runs through MoltenVK and on mobile GPUs:
+rectangle and quad lists are expanded in the vertex stage.
