@@ -74,6 +74,7 @@ void WriteFrame(Ring& r, float time, uint32_t count) {
   // Surfaces: pitch 1280, colour 0 at tile 0 (k_8_8_8_8); viewport over 1280x720 (y up, W as is); scissors.
   r.Put({Type0(0x2000, 3), kWidth, 0, 0});
   r.Reg(0x2208, 4);
+  r.Put({Type0(0x2100, 4), 0xFFFFFF, 0, 0, 0});  // indices: the full range, no offset, no primitive reset
   r.Reg(0x2206, 0x3F | 1u << 10);
   r.Put({Type0(0x210F, 6), Bits(kWidth / 2.0f), Bits(kWidth / 2.0f), Bits(-float(kHeight) / 2.0f), Bits(kHeight / 2.0f), Bits(1), Bits(0)});
   r.Put({Type0(0x200E, 2), 0, kHeight << 16 | kWidth});

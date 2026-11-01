@@ -100,6 +100,8 @@ struct Scene {
     // Surfaces: pitch 64, colour 0 at EDRAM tile 0 (k_8_8_8_8), depth at tile 1024 (D24S8).
     Put({Type0(0x2000, 3), kSize, 0u << 16 | 0, 0u << 16 | 1024});
     Reg(0x2208, 4);
+    // Indices: the full range (VGT_MAX_VTX_INDX, VGT_MIN_VTX_INDX), no offset, no primitive reset.
+    Put({Type0(0x2100, 4), 0xFFFFFF, 0, 0, 0});
     Reg(0x2206, 0x3F | 1u << 10);
     Put({Type0(0x210F, 6), Bits(kSize / 2.0f), Bits(kSize / 2.0f), Bits(-float(kSize) / 2.0f), Bits(kSize / 2.0f), Bits(1), Bits(0)});
     Put({Type0(0x200E, 2), 0, kSize << 16 | kSize});
@@ -198,6 +200,31 @@ int main(int argc, char** argv) {
     });
     CHECK(p.At(4, 59) == a && p.At(59, 4) == b && p.Count(a) + p.Count(b) == kSize * kSize);
     std::printf("gfx_render_tests: triangles %u + %u pixels\n", p.Count(a), p.Count(b));
+  }
+  // Primitive reset and index offset: a triangle strip of DMA indices {0, 1, 2, reset, 1, 3, 2} with reset index
+  // 0x1234 (PA_SU_SC_MODE_CNTL multi_prim_ib_ena) is the two triangles of a quad; the vertex fetch constant points
+  // at vertex set 5 (all zero: nothing would be drawn) and VGT_INDX_OFFSET 16 moves the indices to set 6's quad
+  // (indices are 24-bit: the offset cannot reach below the fetch constant's base).
+  {
+    const uint32_t strip_indices = kIndices + 0x100;
+    WriteQuad(6, 0.5f);
+    const uint16_t strip[7] = {0, 1, 2, 0x1234, 1, 3, 2};
+    for (uint32_t i = 0; i < 7; ++i) {
+      const uint16_t big = uint16_t(strip[i] << 8 | strip[i] >> 8);
+      std::memcpy(g_memory + strip_indices + 2 * i, &big, 2);
+    }
+    const uint32_t color = Rgba(10, 200, 30, 255);
+    Pixels p = scenario("primitive reset", nullptr, [&] {
+      s.Reg(kPaSuScModeCntl, 1u << 21);
+      s.Reg(0x2103, 0x1234);           // VGT_MULTI_PRIM_IB_RESET_INDX
+      s.Reg(0x2102, 16);               // VGT_INDX_OFFSET
+      s.Vertices(5);
+      s.Color(10, 200, 30, 255);
+      s.Put({Type3(pm4::DRAW_INDX, 4), 0, 7u << 16 | 0u << 6 | kTriangleStrip, strip_indices, 1u << 30 | 7u});
+      s.Put({Type0(0x2102, 2), 0, 0});
+    });
+    std::printf("gfx_render_tests: primitive reset and index offset: %u of %u pixels\n", p.Count(color), kSize * kSize);
+    CHECK(p.Count(color) == kSize * kSize);
   }
   // Depth: a quad at 0.5 (LESS, writes), one behind at 0.75 hidden, a triangle in front at 0.25 shown.
   {

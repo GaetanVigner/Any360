@@ -204,8 +204,10 @@ First Crackdown capture (city, 3 frames, 244 MB): about 7,000 draws a frame. Pix
 first gap (4,894 draws refused, now handled), then float24 depth clears (handled). The geometry passes now draw:
 the deferred renderer's normal and albedo targets come out right in the resolves. Depth resolves (the EDRAM word: depth << 8 |
 stencil, float24 for D24FS8) and k_24_8 / k_24_8_FLOAT textures (sampled as float depth) then gave the first lit
-image: sky, buildings, the character, the HUD. Still missing there: the ground (dark), some geometry stretched
-toward the camera, quad lists (type 13, particles and text), stacked (array) textures, signed textures, k_5_6_5
+image: sky, buildings, the character, the HUD. The geometry stretched toward the camera came from primitive reset
+(strips cut at VGT_MULTI_PRIM_IB_RESET_INDX) and the index offset and range (VGT_INDX_OFFSET, VGT_MIN/MAX_VTX_INDX),
+now applied as the reference does: the frame's composition matches the reference's (mean difference 29 per channel
+on the first frame, from 108). Still missing there: the ground and shadowed areas (dark), quad lists (type 13, particles and text), stacked (array) textures, signed textures, k_5_6_5
 textures, MSAA surfaces, the packed mip tail.
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.

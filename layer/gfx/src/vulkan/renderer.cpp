@@ -32,7 +32,8 @@ constexpr uint32_t kRbDepthInfo = 0x2002, kPaScScreenScissorTl = 0x200E, kPaScSc
                    kRbStencilRefMask = 0x210D, kPaClVportXScale = 0x210F, kRbDepthControl = 0x2200,
                    kRbColorControl = 0x2202, kPaSuScModeCntl = 0x2205, kPaClVteCntl = 0x2206,
                    kRbModeControl = 0x2208, kPaSuPolyOffsetFrontScale = 0x2380, kRbSurfaceInfo = 0x2000,
-                   kSqProgramCntl = 0x2180, kSqContextMisc = 0x2181;
+                   kSqProgramCntl = 0x2180, kSqContextMisc = 0x2181, kVgtMaxVtxIndx = 0x2100, kVgtMinVtxIndx = 0x2101,
+                   kVgtIndxOffset = 0x2102, kVgtMultiPrimIbResetIndx = 0x2103;
 constexpr uint32_t kRbColorInfo[4] = {0x2001, 0x2003, 0x2004, 0x2005};
 constexpr uint32_t kRbBlendControl[4] = {0x2201, 0x2209, 0x220A, 0x220B};
 // Bytes each constant buffer can hold (the most a shader can address).
@@ -472,6 +473,7 @@ VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key) {
   VkPipelineVertexInputStateCreateInfo vertex_input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
   VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
   assembly.topology = VkPrimitiveTopology(key.topology);
+  assembly.primitiveRestartEnable = key.primitive_restart ? VK_TRUE : VK_FALSE;
   VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
   viewport.viewportCount = 1;
   viewport.scissorCount = 1;
@@ -572,6 +574,13 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     return;
   }
   const bool polygonal = IsPolygonal(topology);
+  // Primitive reset (PA_SU_SC_MODE_CNTL multi_prim_ib_ena, VGT_MULTI_PRIM_IB_RESET_INDX): strips of DMA indices are
+  // cut at the reset index, as the reference does (16-bit indices only when the reset index fits in 16 bits).
+  const uint32_t reset_index = regs[kVgtMultiPrimIbResetIndx];
+  const bool strip = topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP || topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP ||
+                     topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+  const bool restart = draw.source == DrawSource::kDma && strip && ((regs[kPaSuScModeCntl] >> 21) & 1) &&
+                       (draw.index_32 || reset_index <= UINT16_MAX);
 
   TranslatedShader* vs = GetShader(*draw.vertex_shader);
   const bool wants_ps = edram_mode == 4 && draw.pixel_shader && !draw.pixel_shader->microcode.empty();
@@ -748,6 +757,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   key.layout = uint64_t(pipeline_layout);
   key.ps_module = uint64_t(ps_module);
   key.topology = topology;
+  key.primitive_restart = restart ? 1 : 0;
   key.polygon_mode = VK_POLYGON_MODE_FILL;
   if (polygonal) {
     key.cull_mode = (mode_cntl & 1 ? VK_CULL_MODE_FRONT_BIT : 0) | (mode_cntl & 2 ? VK_CULL_MODE_BACK_BIT : 0);
@@ -825,7 +835,10 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       system->ndc_offset[i] = offset;
     }
   }
-  system->vertex_index_max = UINT32_MAX;
+  // Index offset and clamp (VGT_INDX_OFFSET, VGT_MIN_VTX_INDX, VGT_MAX_VTX_INDX), applied by the vertex shader.
+  system->vertex_base_index = int32_t(regs[kVgtIndxOffset]);
+  system->vertex_index_min = regs[kVgtMinVtxIndx];
+  system->vertex_index_max = regs[kVgtMaxVtxIndx];
   std::memcpy(system->texture_swizzled_signs, swizzled_signs, sizeof(swizzled_signs));
   // Alpha test (RB_COLORCONTROL): the compare function's less / equal / greater bits are the pass flags; a disabled
   // test is "always" (with none of them set, every pixel would be discarded).
@@ -889,12 +902,14 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     index_head_ = AlignUp(index_head_ + draw.index_bytes, 4);
     const uint8_t* src = physical_ + draw.index_base;
     uint8_t* dst = static_cast<uint8_t*>(indices_.mapped) + index_offset;
+    // With primitive reset, the guest's reset index becomes the host's (all ones).
     if (draw.index_32) {
       index_type = VK_INDEX_TYPE_UINT32;
       for (uint32_t i = 0; i < draw.index_bytes / 4; ++i) {
         uint32_t v;
         std::memcpy(&v, src + 4 * i, 4);
         v = GpuSwap(v, draw.index_endian);
+        if (restart && v == reset_index) v = UINT32_MAX;
         std::memcpy(dst + 4 * i, &v, 4);
       }
     } else {
@@ -903,6 +918,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         uint16_t v;
         std::memcpy(&v, src + 2 * i, 2);
         if (draw.index_endian == Endian::k8in16 || draw.index_endian == Endian::k8in32) v = uint16_t(v << 8 | v >> 8);
+        if (restart && v == reset_index) v = UINT16_MAX;
         std::memcpy(dst + 2 * i, &v, 2);
       }
     }

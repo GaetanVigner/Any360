@@ -132,7 +132,8 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t color_formats[4];  // host format of each colour attachment (VK_FORMAT_UNDEFINED: none)
     uint32_t blend_controls[4]; // RB_BLENDCONTROL0-3 (0x00010001: no blending)
     uint32_t color_masks;       // RB_COLOR_MASK of the bound targets
-    uint32_t padding;           // keeps the key free of implicit padding (compared with memcmp)
+    uint32_t primitive_restart; // strips cut where the index buffer holds the reset index (also keeps the key
+                                // free of implicit padding: it is compared with memcmp)
     bool operator<(const PipelineKey& other) const { return std::memcmp(this, &other, sizeof(*this)) < 0; }
   };
   // The analyzed shader (no translation yet), and its translation for a modification.
