@@ -123,6 +123,9 @@ void CommandProcessor::SetRegister(uint32_t index, uint32_t value) {
     // A scratch register the CPU watches: mirrored to memory when its bit of SCRATCH_UMSK is set.
     const uint32_t n = index - reg::SCRATCH_REG0;
     if (reg(reg::SCRATCH_UMSK) & (1u << n)) StoreBig(reg(reg::SCRATCH_ADDR) + 4 * n, value);
+  } else if (index == reg::COHER_STATUS_HOST) {
+    // A coherency request: pending (bit 31) until a WAIT_REG_MEM on this register completes it.
+    std::atomic_ref<uint32_t>(registers_[index]).fetch_or(0x80000000u, std::memory_order_acq_rel);
   }
 }
 
@@ -130,7 +133,7 @@ void CommandProcessor::MakeCoherent() {
   const uint32_t status = reg(reg::COHER_STATUS_HOST);
   if (!(status & 0x80000000)) return;
   if (renderer_) renderer_->Invalidate(reg(reg::COHER_BASE_HOST), reg(reg::COHER_SIZE_HOST));
-  std::atomic_ref<uint32_t>(registers_[reg::COHER_STATUS_HOST]).store(status & ~0x80000000u, std::memory_order_release);
+  std::atomic_ref<uint32_t>(registers_[reg::COHER_STATUS_HOST]).store(0, std::memory_order_release);
 }
 
 bool CommandProcessor::Test(uint32_t wait_info, uint32_t poll, uint32_t reference, uint32_t mask, bool coherent) {
@@ -138,8 +141,9 @@ bool CommandProcessor::Test(uint32_t wait_info, uint32_t poll, uint32_t referenc
   if (wait_info & 0x10) {
     value = GpuSwap(LoadRaw(poll & ~3u), Endian(poll & 3));
   } else {
+    // The register file itself, not the MMIO view.
     if (coherent && poll == reg::COHER_STATUS_HOST) MakeCoherent();
-    value = ReadRegister(poll);
+    value = reg(poll);
   }
   return Compare(wait_info, value & mask, reference);
 }
@@ -194,6 +198,7 @@ void CommandProcessor::ExecuteIndirect(uint32_t address, uint32_t dwords) {
 
 bool CommandProcessor::ExecutePacket(Reader& r, int depth) {
   const uint32_t packet = Next(r);
+  if (packet == 0) return true;  // a zero dword is padding, not a type-0 write of register 0
   switch (packet >> 30) {
     case 0: {
       // Consecutive registers from `first`, or every value to the one register.
@@ -204,7 +209,7 @@ bool CommandProcessor::ExecutePacket(Reader& r, int depth) {
       return true;
     }
     case 1: {
-      if (r.remaining < 2) return false;
+      if (r.remaining < 2) return false;  // the reference reads past the end; this stops instead
       const uint32_t first = Next(r), second = Next(r);
       SetRegister(packet & 0x7FF, first);
       SetRegister((packet >> 11) & 0x7FF, second);
@@ -227,8 +232,8 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
       r.offset = end;
     }
   };
-  // Bin (tile) predication: a predicated packet runs only for the selected bins.
-  if ((packet & 1) && !(bin_select_ & bin_mask_)) {
+  // Bin (tile) predication: a predicated packet runs only for the selected bins; a predicated swap never runs.
+  if ((packet & 1) && (!(bin_select_ & bin_mask_) || opcode == pm4::XE_SWAP)) {
     skip_rest();
     return true;
   }
@@ -245,6 +250,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     case pm4::NOP:
     case pm4::VIZ_QUERY:
     case pm4::WAIT_FOR_IDLE:
+    case pm4::CONTEXT_UPDATE:
     case pm4::INVALIDATE_STATE:
       break;
     case pm4::INTERRUPT:
@@ -260,6 +266,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
         Next(r);  // 'SWAP'
         const uint32_t frontbuffer = Next(r), width = Next(r), height = Next(r);
         if (renderer_) renderer_->Swap(frontbuffer & 0x1FFFFFFF, width, height);
+        ++counter_;  // the counter fences read moves with swaps as well as vertical blanks
       }
       break;
     case pm4::INDIRECT_BUFFER:
@@ -291,7 +298,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     case pm4::REG_TO_MEM:
       if (has(2)) {
         const uint32_t index = Next(r), address = Next(r);
-        StoreRaw(address & ~3u, GpuSwap(ReadRegister(index), Endian(address & 3)));
+        StoreRaw(address & ~3u, GpuSwap(reg(index), Endian(address & 3)));
       }
       break;
     case pm4::MEM_WRITE:
@@ -333,7 +340,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
         // The screen extents of the previous draws, as big-endian halves: the whole surface.
         const uint32_t initiator = Next(r), address = Next(r) & ~3u;
         SetRegister(reg::VGT_EVENT_INITIATOR, initiator & 0x3F);
-        static constexpr uint16_t kExtents[] = {0 >> 3, 2560 >> 3, 0 >> 3, 2560 >> 3, 0, 1};
+        static constexpr uint16_t kExtents[] = {0 >> 3, 8192 >> 3, 0 >> 3, 8192 >> 3, 0, 1};
         for (uint32_t i = 0; i < 6; ++i) {
           const uint16_t big = std::byteswap(kExtents[i]);
           std::memcpy(Host(address + 2 * i), &big, 2);
@@ -345,8 +352,8 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
         // An occlusion query: counts at RB_SAMPLE_COUNT_ADDR (Total, ZFail, ZPass, StencilFail; A and B each).
         SetRegister(reg::VGT_EVENT_INITIATOR, Next(r) & 0x3F);
         const uint32_t counts = reg(reg::RB_SAMPLE_COUNT_ADDR) & 0x1FFFFFFF;
-        const bool ended = (LoadBig(counts + 16) == kQueryFinished && LoadBig(counts + 20) == kQueryFinished) ||
-                           (LoadBig(counts + 8) == kQueryFinished && LoadBig(counts + 12) == kQueryFinished);
+        const bool ended = LoadBig(counts + 16) == kQueryFinished || LoadBig(counts + 20) == kQueryFinished ||
+                           LoadBig(counts + 8) == kQueryFinished || LoadBig(counts + 12) == kQueryFinished;
         std::memset(Host(counts), 0, 32);
         if (ended) {
           StoreRaw(counts + 0, kFakeSampleCount);   // Total_A
@@ -381,6 +388,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     case pm4::IM_LOAD:
       if (has(2)) {
         const uint32_t address_type = Next(r), start_size = Next(r);
+        if ((address_type & 3) > 1) return false;  // neither vertex nor pixel: the buffer stops
         LoadShader(address_type & 3, address_type & ~3u, start_size & 0xFFFF);
       }
       break;
@@ -388,8 +396,9 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
       if (has(2)) {
         const uint32_t type = Next(r), start_size = Next(r);
         const uint32_t dwords = start_size & 0xFFFF;
+        if (type > 1) return false;
         // The microcode follows in the packet (the primary ring never wraps inside a shader the runtime writes).
-        if (has(dwords)) LoadShader(type & 3, r.base + 4 * (r.offset % r.capacity), dwords);
+        if (has(dwords)) LoadShader(type, r.base + 4 * (r.offset % r.capacity), dwords);
       }
       break;
     case pm4::SET_BIN_MASK:
@@ -417,7 +426,9 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
       if (has(1)) bin_select_ = (bin_select_ & 0xFFFFFFFFull) | uint64_t(Next(r)) << 32;
       break;
     default:
-      break;  // not acted on: skipped whole
+      // An opcode the title's runtime does not emit: skipped, and the rest of the buffer with it.
+      skip_rest();
+      return false;
   }
   skip_rest();
   return true;
@@ -443,18 +454,25 @@ void CommandProcessor::Draw(Reader& r, uint32_t opcode, uint32_t end) {
     const uint32_t base = Next(r), size = Next(r);
     SetRegister(reg::VGT_DMA_BASE, base);
     SetRegister(reg::VGT_DMA_SIZE, size);
-    draw.index_base = base & 0x1FFFFFFF;
+    draw.index_base = base & 0x1FFFFFFF & ~(draw.index_32 ? 3u : 1u);
     draw.index_endian = Endian(size >> 30);
     draw.index_bytes = (size & 0x00FFFFFF) * (draw.index_32 ? 4 : 2);
   } else if (draw.source == DrawSource::kImmediate) {
+    // Indices inside the packet: no known title emits them (the reference does not draw them either).
     while (r.offset < end) draw.immediate.push_back(Next(r));
+  } else if (draw.source != DrawSource::kAuto) {
+    return;
   }
-  // RB_MODECONTROL's EDRAM mode: 4 colour and depth, 5 depth only, 6 copy (a resolve); anything else draws nothing.
+  // A visibility query that kills the pixels draws nothing.
+  const uint32_t viz = reg(reg::PA_SC_VIZ_QUERY);
+  if ((viz & 1) && (viz & 0x80)) return;
+  // RB_MODECONTROL's EDRAM mode 6 is a copy (a resolve); every other mode is a draw the renderer judges.
   const uint32_t mode = reg(reg::RB_MODECONTROL) & 7;
   if (!renderer_) return;
   if (mode == 6) {
     renderer_->Copy(registers_.data());
-  } else if (mode == 4 || mode == 5) {
+  } else {
+    draw.edram_mode = mode;
     draw.vertex_shader = &shaders_[0];
     draw.pixel_shader = &shaders_[1];
     draw.registers = registers_.data();

@@ -40,6 +40,7 @@ struct DrawCall {
   DrawSource source = DrawSource::kAuto;
   bool index_32 = false;
   bool major_mode_explicit = false;
+  uint32_t edram_mode = 4;   // RB_MODECONTROL: 4 colour and depth, 5 depth only, 0 ignore
   uint32_t index_base = 0;   // kDma: guest physical address of the indices
   uint32_t index_bytes = 0;  // kDma: their length
   Endian index_endian = Endian::kNone;

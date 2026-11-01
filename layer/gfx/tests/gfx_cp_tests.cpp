@@ -160,7 +160,7 @@ void Memory() {
   SetBig(query + 0x24, 0x1234);  // past the counts: untouched
   ring.Put({Type0(reg::RB_SAMPLE_COUNT_ADDR, 1), query, Type3(pm4::EVENT_WRITE_ZPD, 1), 0x15});
   ring.Run();
-  CHECK(Big(kData + 0x60) == (0u << 16 | (2560u >> 3)) && Big(kData + 0x64) == (0u << 16 | (2560u >> 3)) && Big(kData + 0x68) == 1);
+  CHECK(Big(kData + 0x60) == (0u << 16 | (8192u >> 3)) && Big(kData + 0x64) == (0u << 16 | (8192u >> 3)) && Big(kData + 0x68) == 1);
   CHECK(Raw(query) == 1000 && Raw(query + 16) == 1000 && Raw(query + 20) == 0 && Big(query + 0x24) == 0x1234);
   SetBig(query + 4, 7);
   ring.Put({Type3(pm4::EVENT_WRITE_ZPD, 1), 0x15});
@@ -228,8 +228,9 @@ void IndirectAndShaders() {
   ring.Put({Type0(reg::RB_MODECONTROL, 1), 6, Type3(pm4::DRAW_INDX_2, 1), auto_initiator});
   ring.Put({Type0(reg::RB_MODECONTROL, 1), 0, Type3(pm4::DRAW_INDX_2, 1), auto_initiator});
   ring.Run();
-  CHECK(recorder.draws.size() == 3 && recorder.copies == 1);
-  if (recorder.draws.size() == 3) {
+  CHECK(recorder.draws.size() == 4 && recorder.copies == 1);  // mode 0 is a draw too: the renderer judges it
+  if (recorder.draws.size() == 4) {
+    CHECK(recorder.draws[3].edram_mode == 0 && recorder.draws[0].edram_mode == 4);
     const DrawCall& d = recorder.draws[0];
     CHECK(d.primitive_type == 4 && d.index_count == 6 && d.source == DrawSource::kDma && !d.index_32);
     CHECK(d.index_base == 0x40000 && d.index_bytes == 6 && d.index_endian == Endian::k8in32);
@@ -309,9 +310,38 @@ void Kernel() {
   sys::Graphics().Reset();
 }
 
+// What the reference command processor does that the packet descriptions alone do not say.
+void ReferenceDetails() {
+  CommandProcessor cp(g_physical.data());
+  Ring ring{cp};
+  Recorder recorder;
+  cp.SetRenderer(&recorder);
+  Fresh(cp, ring);
+  // A zero dword is padding; a swap moves the counter; a predicated swap never runs; a write to COHER_STATUS_HOST
+  // keeps the request pending (bit 31) whatever the value.
+  ring.Put({0, 0, Type0(0x2060, 1), 0x61, Type3(pm4::XE_SWAP, 4), 0x53574150, 0x100000, 640, 480});
+  ring.Put({Type3(pm4::XE_SWAP, 4, true), 0x53574150, 0x200000, 640, 480, Type0(reg::COHER_STATUS_HOST, 1), 0x3000000});
+  ring.Run();
+  CHECK(cp.reg(0x2060) == 0x61 && cp.reg(0) == 0 && recorder.swaps == 1 && recorder.frontbuffer == 0x100000 && cp.counter() == 1);
+  CHECK(cp.reg(reg::COHER_STATUS_HOST) == 0x83000000);
+  // A visibility query that kills pixels draws nothing.
+  ring.Put({Type0(reg::RB_MODECONTROL, 1), 4, Type0(reg::PA_SC_VIZ_QUERY, 1), 0x81, Type3(pm4::DRAW_INDX_2, 1), 3u << 16 | 2u << 6 | 4});
+  ring.Put({Type0(reg::PA_SC_VIZ_QUERY, 1), 0x1, Type3(pm4::DRAW_INDX_2, 1), 3u << 16 | 2u << 6 | 4});
+  ring.Run();
+  CHECK(recorder.draws.size() == 1);
+  // An opcode no title emits stops the rest of what was kicked; the read pointer still moves to the write pointer.
+  ring.Put({Type3(0x7E, 2), 1, 2, Type0(0x2061, 1), 0x62});
+  ring.Run();
+  CHECK(cp.reg(0x2061) == 0 && cp.read_pointer() == ring.write);
+  ring.Put({Type0(0x2062, 1), 0x63});
+  ring.Run();
+  CHECK(cp.reg(0x2062) == 0x63);
+}
+
 }  // namespace
 
 int main() {
+  ReferenceDetails();
   RingAndRegisters();
   Memory();
   Constants();
