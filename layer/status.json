@@ -101,6 +101,13 @@
   },
   {
    "area": "stage 1: native graphics (any360::gfx)",
+   "name": "Command processor: PM4 execution behind sys::GpuBackend (ring and indirect buffers, register file, sync, interrupts, shader loads, bin predication) and the Renderer interface",
+   "state": "done",
+   "source": "any360: layer/gfx (any360_gfx, gfx_cp_tests)",
+   "note": "API-agnostic: draws, resolves and swaps go to a Renderer; the Vulkan renderer is the next piece"
+  },
+  {
+   "area": "stage 1: native graphics (any360::gfx)",
    "name": "PM4 decoder: Xenos packets to state writes, draws, shader loads, bin predication, indirect buffers",
    "state": "planned",
    "source": "crackdown: src/pm4_decode.h (+ tests/pm4_decode_tests.cpp)",

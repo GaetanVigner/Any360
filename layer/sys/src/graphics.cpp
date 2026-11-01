@@ -71,6 +71,7 @@ void GraphicsKernel::StartVblank(double hz) {
     while (vblank_running_) {
       std::this_thread::sleep_until(next);
       next += period;
+      if (backend_) backend_->Vblank();
       RaiseInterrupt(Objects().guest(), 0);
     }
   });

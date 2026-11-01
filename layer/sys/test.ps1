@@ -46,6 +46,8 @@ try {
     if ($LASTEXITCODE) { throw "Build failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_object_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "sys_object_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'gfx/gfx_cp_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "gfx_cp_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_io_tests.exe') --trials $Trials | Out-Host
     if ($LASTEXITCODE) { throw "sys_io_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_runtime_tests.exe') --trials $Trials | Out-Host

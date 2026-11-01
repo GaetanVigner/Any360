@@ -22,6 +22,9 @@ target_link_libraries(sys_object_tests PRIVATE any360_sys)
 target_compile_options(sys_object_tests PRIVATE -Wall -Wextra)
 add_test(NAME sys_object_tests COMMAND sys_object_tests)
 
+# any360::gfx, built with the system layer it sits on.
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../gfx ${CMAKE_CURRENT_BINARY_DIR}/gfx)
+
 set(ANY360_REFERENCE_SDK "" CACHE PATH "ReXGlue SDK install used as the reference (include/, lib/, bin/)")
 if(ANY360_REFERENCE_SDK)
     add_library(any360_sys_ppc STATIC ppc/exports.cpp)
