@@ -28,7 +28,9 @@ struct TextureFormatInfo {
   // How each texel is converted for the host format (kNone: copied as it is): 32-bit depth words to float, or
   // 16-bit 5:6:5 with red and blue exchanged (the guest's red is in the low bits, the host's in the high bits).
   enum Convert : uint32_t { kNone, kDepthUnorm24, kDepthFloat24, kSwapRedBlue565 } convert = kNone;
-};
+  // The format a view reads signed components with (the same bits as signed normalized; float formats are signed
+  // already), VK_FORMAT_UNDEFINED when there is none yet.
+  VkFormat signed_format = VK_FORMAT_UNDEFINED;};
 
 // Xenos float24 depth (20e4: 4 exponent bits, bias 15, 20 mantissa bits, no sign) to and from float, as the
 // reference converts it (round to nearest even; negative and NaN give 0, too large the largest value).
@@ -66,7 +68,8 @@ class TextureCache {
   // A view of `type` of the texture `fetch` describes, with its swizzle, uploaded and ready for sampling; null with
   // `error` when it is not handled yet. A shader declares a 2D-array and a 3D binding for a fetch that can be either
   // and picks one at run time: the binding the texture's dimension does not match gets an empty texture.
-  VkImageView View(const uint32_t fetch[6], ViewType type, std::string& error);
+  // `is_signed`: the view the shader's signed binding reads (the texture's signed format).
+  VkImageView View(const uint32_t fetch[6], ViewType type, std::string& error, bool is_signed = false);
   // The sampler for `fetch` with a fetch instruction's filters (3 / 7: take the fetch constant's).
   VkSampler Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t min, uint32_t mip, uint32_t aniso);
 
@@ -88,7 +91,7 @@ class TextureCache {
   struct Texture {
     Image image;  // the view member is unused: views are per swizzle
     uint64_t content_hash = 0;
-    std::map<uint32_t, VkImageView> views;  // by host swizzle
+    std::map<uint32_t, VkImageView> views;  // by host swizzle, bit 16: signed
   };
 
   Device& device_;

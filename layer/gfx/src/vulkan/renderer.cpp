@@ -650,23 +650,18 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     TranslatedShader* shader = stage ? ps : vs;
     if (!shader) continue;
     for (const auto& binding : shader->shader->GetTextureBindingsAfterTranslation()) {
-      // The translator declares an unsigned and a signed binding for a fetch and picks one by the fetch constant's
-      // signs at run time; until signed views exist, a texture with no signed component binds its unsigned view to
-      // both (the shader never samples the signed one then).
+      // The translator declares an unsigned and a signed binding for a fetch and picks one per component by the
+      // fetch constant's signs at run time: the signed binding gets the texture's signed view when a component is
+      // signed (sign 1), else the unsigned view (never sampled then).
       const uint32_t* fetch = regs + reg::kFetchConstants + 6 * binding.fetch_constant;
-      if (binding.is_signed) {
-        const uint32_t signs = (fetch[0] >> 2) & 0xFF;
-        if (((signs & 0x55) & ~(signs >> 1)) != 0) {  // a component of sign 1 (signed)
-          Fail("signed textures (not yet)");
-          return;
-        }
-      }
+      const uint32_t fetch_signs = (fetch[0] >> 2) & 0xFF;
+      const bool signed_view = binding.is_signed && ((fetch_signs & 0x55) & ~(fetch_signs >> 1)) != 0;
       std::string error;
       const TextureCache::ViewType view_type =
           binding.dimension == rg::xenos::FetchOpDimension::kCube           ? TextureCache::ViewType::kCube
           : binding.dimension == rg::xenos::FetchOpDimension::k3DOrStacked ? TextureCache::ViewType::k3D
                                                                            : TextureCache::ViewType::k2DArray;
-      const VkImageView view = textures_->View(fetch, view_type, error);
+      const VkImageView view = textures_->View(fetch, view_type, error, signed_view);
       if (!view) {
         Fail("texture " + std::to_string(binding.fetch_constant) + ": " + error);
         return;

@@ -52,20 +52,25 @@ uint64_t Fnv1a(const uint8_t* data, size_t size) {
 
 const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
   // As the reference maps them (VulkanTextureCache::kBestHostFormats), for the formats a host image holds unchanged.
-  static const TextureFormatInfo k8 = {VK_FORMAT_R8_UNORM, 1, 1, kRRRR};
-  static const TextureFormatInfo k8_8 = {VK_FORMAT_R8G8_UNORM, 2, 1, kRGGG};
-  static const TextureFormatInfo k8_8_8_8 = {VK_FORMAT_R8G8B8A8_UNORM, 4, 1, kRGBA};
+  static const TextureFormatInfo k8 = {VK_FORMAT_R8_UNORM, 1, 1, kRRRR, TextureFormatInfo::kNone, VK_FORMAT_R8_SNORM};
+  static const TextureFormatInfo k8_8 = {VK_FORMAT_R8G8_UNORM, 2, 1, kRGGG, TextureFormatInfo::kNone, VK_FORMAT_R8G8_SNORM};
+  static const TextureFormatInfo k8_8_8_8 = {VK_FORMAT_R8G8B8A8_UNORM, 4, 1, kRGBA, TextureFormatInfo::kNone,
+                                             VK_FORMAT_R8G8B8A8_SNORM};
   static const TextureFormatInfo k5_6_5 = {VK_FORMAT_R5G6B5_UNORM_PACK16, 2, 1, kRGBB, TextureFormatInfo::kSwapRedBlue565};
   static const TextureFormatInfo k2_10_10_10 = {VK_FORMAT_A2B10G10R10_UNORM_PACK32, 4, 1, kRGBA};
   static const TextureFormatInfo kDxt1 = {VK_FORMAT_BC1_RGBA_UNORM_BLOCK, 8, 4, kRGBA};
   static const TextureFormatInfo kDxt3 = {VK_FORMAT_BC2_UNORM_BLOCK, 16, 4, kRGBA};
   static const TextureFormatInfo kDxt5 = {VK_FORMAT_BC3_UNORM_BLOCK, 16, 4, kRGBA};
-  static const TextureFormatInfo k16Float = {VK_FORMAT_R16_SFLOAT, 2, 1, kRRRR};
-  static const TextureFormatInfo k16_16Float = {VK_FORMAT_R16G16_SFLOAT, 4, 1, kRGGG};
-  static const TextureFormatInfo k16_16_16_16Float = {VK_FORMAT_R16G16B16A16_SFLOAT, 8, 1, kRGBA};
-  static const TextureFormatInfo k32Float = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR};
-  static const TextureFormatInfo k32_32Float = {VK_FORMAT_R32G32_SFLOAT, 8, 1, kRGGG};
-  static const TextureFormatInfo k32_32_32_32Float = {VK_FORMAT_R32G32B32A32_SFLOAT, 16, 1, kRGBA};
+  static const TextureFormatInfo k16Float = {VK_FORMAT_R16_SFLOAT, 2, 1, kRRRR, TextureFormatInfo::kNone, VK_FORMAT_R16_SFLOAT};
+  static const TextureFormatInfo k16_16Float = {VK_FORMAT_R16G16_SFLOAT, 4, 1, kRGGG, TextureFormatInfo::kNone,
+                                                VK_FORMAT_R16G16_SFLOAT};
+  static const TextureFormatInfo k16_16_16_16Float = {VK_FORMAT_R16G16B16A16_SFLOAT, 8, 1, kRGBA, TextureFormatInfo::kNone,
+                                                      VK_FORMAT_R16G16B16A16_SFLOAT};
+  static const TextureFormatInfo k32Float = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kNone, VK_FORMAT_R32_SFLOAT};
+  static const TextureFormatInfo k32_32Float = {VK_FORMAT_R32G32_SFLOAT, 8, 1, kRGGG, TextureFormatInfo::kNone,
+                                                VK_FORMAT_R32G32_SFLOAT};
+  static const TextureFormatInfo k32_32_32_32Float = {VK_FORMAT_R32G32B32A32_SFLOAT, 16, 1, kRGBA, TextureFormatInfo::kNone,
+                                                      VK_FORMAT_R32G32B32A32_SFLOAT};
   // Depth as the resolves write it (depth << 8 | stencil): sampled as float depth (VK_FORMAT_R32_SFLOAT, RRRR).
   static const TextureFormatInfo k24_8 = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kDepthUnorm24};
   static const TextureFormatInfo k24_8Float = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kDepthFloat24};
@@ -404,7 +409,7 @@ VkImageView TextureCache::Empty(ViewType type, std::string& error) {
   return image.view;
 }
 
-VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::string& error) {
+VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::string& error, bool is_signed) {
   const TextureFetch t = TextureFetch::Parse(fetch);
   if (t.type != 2) return error = "fetch constant is not a texture", VK_NULL_HANDLE;
   // The data dimension (fetch constant word 5): 0 1D, 1 2D or stacked, 2 3D, 3 cube.
@@ -416,6 +421,11 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   const bool cube = t.dimension == 3;
   const TextureFormatInfo* info = GuestTextureFormat(t.format);
   if (!info) return error = "texture format " + std::to_string(t.format) + " not handled yet", VK_NULL_HANDLE;
+  if (is_signed && info->signed_format == VK_FORMAT_UNDEFINED) {
+    return error = "signed texture format " + std::to_string(t.format) + " (not yet)", VK_NULL_HANDLE;
+  }
+  // Signed views of the same bits need a mutable-format image.
+  const bool mutable_format = info->signed_format != VK_FORMAT_UNDEFINED && info->signed_format != info->format;
 
   // The levels, and a hash of the guest memory each spans (a level's slices at its stride, the packed tail's tile).
   uint32_t first_level, last_level;
@@ -435,7 +445,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   if (!slot) {
     slot = std::make_unique<Texture>();
     VkImageCreateInfo info_ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-    info_ci.flags = cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
+    info_ci.flags = (cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0) | (mutable_format ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0);
     info_ci.imageType = VK_IMAGE_TYPE_2D;
     info_ci.format = info->format;
     info_ci.extent = {t.width, t.height, 1};
@@ -519,12 +529,12 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     const uint32_t guest = (t.swizzle >> (3 * i)) & 7;
     host_swizzle |= (guest >= 4 ? (guest & 5) : (info->swizzle >> (3 * guest)) & 7) << (3 * i);
   }
-  VkImageView& view = slot->views[host_swizzle];
+  VkImageView& view = slot->views[host_swizzle | (is_signed ? 1u << 16 : 0u)];
   if (!view) {
     VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     vi.image = slot->image.image;
     vi.viewType = cube ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D_ARRAY;  // 2D textures are declared arrayed
-    vi.format = info->format;
+    vi.format = is_signed ? info->signed_format : info->format;
     vi.components = {Component(host_swizzle & 7), Component((host_swizzle >> 3) & 7), Component((host_swizzle >> 6) & 7),
                      Component((host_swizzle >> 9) & 7)};
     vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, t.depth};

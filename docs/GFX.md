@@ -220,8 +220,11 @@ pitch 2P with twice the rows; 2x doubles the rows), the coordinates scaled to sa
 surfaces and the three frames match the reference's composition (mean difference 27 per channel each; the rest is
 mostly texture noise without mip levels). Mip levels then (the fetch constant's level range, levels 1 and up at the
 mip address, the packed mip tail's offsets, as texture_util lays them out): the grain is gone and the frame is close
-to the reference's (mean difference 21.7 per channel; still missing: the pink beam, likely the 99 draws with signed
-textures, and the image is slightly softer). Left: signed textures, resolves from MSAA surfaces (averaging samples).
+to the reference's (mean difference 21.7 per channel). Signed textures then (a signed view of the same bits,
+SNORM, bound to the shader's signed binding when a component is signed): every draw of the capture is drawn (12,857,
+none refused, NVIDIA and AMD). What is left of the difference (21 per channel) is uniform: ours is about 17 brighter
+in each channel, which points at the display gamma ramp the reference applies when it presents (DC_LUT registers),
+a presentation step still to add; then resolves from MSAA surfaces (averaging samples).
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames

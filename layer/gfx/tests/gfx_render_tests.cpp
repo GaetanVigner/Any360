@@ -536,6 +536,48 @@ int main(int argc, char** argv) {
       std::printf("gfx_render_tests: packed mip tail: %u of %u pixels from level 1\n", p.Count(blue), kSize * kSize);
       CHECK(p.Count(blue) == kSize * kSize);
     }
+    // A signed texture: k_8_8_8_8 with every component signed (sign 1), texels 0x40 0xC0 0x40 0x7F, read as
+    // 64/127 = 0.504, -0.504, 0.504, 1 into a 16_16_16_16_FLOAT target.
+    {
+      const uint32_t signed_base = 0xC0000;
+      for (uint32_t y = 0; y < 32; ++y) {
+        for (uint32_t x = 0; x < 32; ++x) {
+          SetBig(signed_base + uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), 32, 2)), Rgba(0x40, 0xC0, 0x40, 0x7F));
+        }
+      }
+      const vk::SurfaceKey target{1536, kSize, 7, 0};
+      const float zero[4] = {0, 0, 0, 0};
+      CHECK(renderer.ClearColor(target, zero));
+      scenario("signed texture", nullptr, [&] {
+        s.Shader(0, t::BuildTexturedVertexShader());
+        s.Shader(1, t::BuildTexturedPixelShader(1));
+        s.Reg(0x2001, 7u << 16 | 1536);
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+        s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 0x55u << 2 | 2u << 10 | 2u << 13 | 1u << 22 | 1u << 31,
+               6u | 2u << 6 | signed_base, 31u | 31u << 13, 0x688u << 1, 0, 1u << 9});
+        s.DrawAuto(kTriangleStrip, 4);
+      });
+      std::vector<uint8_t> bytes;
+      CHECK(renderer.ReadBack(target, kSize, kSize, bytes));
+      auto half = [](uint16_t h) {
+        const uint32_t e = (h >> 10) & 0x1F;
+        const float m = std::ldexp(float((h & 0x3FF) | (e ? 0x400 : 0)), (e ? int(e) : 1) - 25);
+        return h & 0x8000 ? -m : m;
+      };
+      uint32_t right = 0;
+      float first[4] = {};
+      for (size_t i = 0; i + 8 <= bytes.size(); i += 8) {
+        uint16_t h[4];
+        std::memcpy(h, bytes.data() + i, 8);
+        if (!i) for (int k = 0; k < 4; ++k) first[k] = half(h[k]);
+        right += std::fabs(half(h[0]) - 64 / 127.0f) < 0.002f && std::fabs(half(h[1]) + 64 / 127.0f) < 0.002f &&
+                 std::fabs(half(h[2]) - 64 / 127.0f) < 0.002f && std::fabs(half(h[3]) - 1.0f) < 0.002f;
+      }
+      std::printf("gfx_render_tests: signed texture: %u of %u pixels right (%.3f %.3f %.3f %.3f)\n", right, kSize * kSize,
+                  first[0], first[1], first[2], first[3]);
+      CHECK(right == kSize * kSize);
+      s.Reg(0x2001, 0);
+    }
     // Resolve: the quadrant texture (tiled k_8_8_8_8 at 0x60000) drawn into colour 0, resolved to guest memory at
     // 0x80000 (k_8_8_8_8, 8-in-32, tiled, pitch 64) with a green clear of the target, then sampled back from there.
     const uint32_t rect = kVertices + 0x800, resolved = 0x80000;
@@ -632,7 +674,7 @@ int main(int argc, char** argv) {
               device.properties().deviceName, renderer.depth_format() == VK_FORMAT_D24_UNORM_S8_UINT ? "D24S8" : "D32S8",
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 4 && stats.texture_uploads == 6 && stats.resolves == 1);
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 4 && stats.texture_uploads == 7 && stats.resolves == 1);
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.
   // The float24 conversions round-trip first.
