@@ -86,9 +86,7 @@ uint32_t Scheduler::ThreadOf(Guest g, uint32_t pcr) const {
   return Find(kthread) ? kthread : 0;
 }
 
-uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_size, uint32_t thread_id_out, uint32_t xapi_startup,
-                                 uint32_t start_address, uint32_t start_context, uint32_t creation_flags) {
-  if (!dispatcher_) return kStatusInvalidParameter;
+uint32_t Scheduler::EnsureProcess(Guest g) {
   if (!process_) {
     process_ = Objects().AllocateObject(kProcessSize);
     if (!process_) return kStatusNoMemory;
@@ -96,6 +94,11 @@ uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_si
     g.Store8(process_ + kProcessTypeField, 2);  // the title process
     for (uint32_t i = 0; i < 8; ++i) g.Store32(process_ + kProcessTlsBitmap + 4 * i, 0xFFFFFFFF);
   }
+  return kStatusSuccess;
+}
+
+uint32_t Scheduler::CreateContext(Guest g, uint32_t stack_size, GuestContext& context, uint32_t creation_flags) {
+  if (EnsureProcess(g) != kStatusSuccess) return kStatusNoMemory;
   if (!stack_size) stack_size = default_stack_size_;
   stack_size = std::max<uint32_t>(0x4000, (stack_size + 0xFFF) & ~0xFFFu);
 
@@ -128,8 +131,7 @@ uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_si
   g.Store8(kthread + kSuspendCount, (creation_flags & kCreateSuspended) ? 1 : 0);
   g.Store32(kthread + kPrcbA, pcr + kPrcb);
   g.Store32(kthread + kPrcbB, pcr + kPrcb);
-  const uint32_t thread_id = next_thread_id_++;
-  g.Store32(kthread + kThreadId, thread_id);
+  g.Store32(kthread + kThreadId, next_thread_id_++);
   g.Store32(kthread + kCreationFlags, creation_flags);
   // The processor control region the thread's r13 points at.
   g.Store32(pcr + kPcrTls, tls);
@@ -139,17 +141,32 @@ uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_si
   g.Store32(pcr + kPcrStackEnd, stack_limit);
   g.Store32(pcr + kPrcbCurrentThread, kthread);
   g.Store32(pcr + kPcrPrcb, pcr + kPrcb);
+  context = {kthread, pcr, stack_base - 0x40};
+  return kStatusSuccess;
+}
+
+uint64_t Scheduler::Dispatch(uint32_t address, const GuestContext& context, uint64_t arg0, uint64_t arg1) {
+  if (!dispatcher_ || !context.pcr) return 0;
+  return dispatcher_(address, context.stack_top, context.pcr, arg0, arg1, dispatcher_user_);
+}
+
+uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_size, uint32_t thread_id_out, uint32_t xapi_startup,
+                                 uint32_t start_address, uint32_t start_context, uint32_t creation_flags) {
+  if (!dispatcher_) return kStatusInvalidParameter;
+  GuestContext context;
+  if (const uint32_t status = CreateContext(g, stack_size, context, creation_flags); status != kStatusSuccess) return status;
+  const uint32_t kthread = context.kthread;
 
   Thread* t = new Thread;
   t->kthread = kthread;
-  t->pcr = pcr;
-  t->stack_top = stack_base - 0x40;
+  t->pcr = context.pcr;
+  t->stack_top = context.stack_top;
   t->start = start_address;
   t->context = start_context;
   t->xapi = xapi_startup;
   threads_.push_back(t);
   if (handle_out) g.Store32(handle_out, (creation_flags & kCreateHandleIsObject) ? kthread : Objects().OpenHandle(kthread));
-  if (thread_id_out) g.Store32(thread_id_out, thread_id);
+  if (thread_id_out) g.Store32(thread_id_out, g.Load32(kthread + kThreadId));
   t->host = std::thread([this, t] { Run(t); });
   return kStatusSuccess;
 }

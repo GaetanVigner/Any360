@@ -7,12 +7,12 @@
  "system_calls": {
   "total": 2914,
   "used_by_titles": 374,
-  "native": 242,
+  "native": 254,
   "ported": 1,
   "runnable": 506,
   "by_state": {
-   "reference": 263,
-   "native": 242,
+   "reference": 251,
+   "native": 254,
    "stub": 2393,
    "missing": 15,
    "ported": 1
@@ -82,7 +82,7 @@
  "titles": {
   "crackdown": {
    "imports": 248,
-   "imports_native": 193,
+   "imports_native": 205,
    "mvp_total": 226,
    "mvp_native": 183,
    "mnemonics": 340,
@@ -92,13 +92,13 @@
    "source": "",
    "description": "",
    "sites": 1534,
-   "sites_native": 1470,
+   "sites_native": 1484,
    "mvp_sites": 1504,
    "mvp_sites_native": 1454
   },
   "simpsons": {
    "imports": 317,
-   "imports_native": 200,
+   "imports_native": 212,
    "mvp_total": 277,
    "mvp_native": 190,
    "mnemonics": 338,
@@ -108,13 +108,13 @@
    "source": "",
    "description": "",
    "sites": 4697,
-   "sites_native": 4537,
+   "sites_native": 4553,
    "mvp_sites": 4635,
    "mvp_sites_native": 4523
   },
   "sonic06": {
    "imports": 200,
-   "imports_native": 188,
+   "imports_native": 200,
    "mvp_total": 178,
    "mvp_native": 178,
    "mnemonics": 0,
@@ -126,7 +126,7 @@
   },
   "tdu": {
    "imports": 278,
-   "imports_native": 220,
+   "imports_native": 232,
    "mvp_total": 255,
    "mvp_native": 210,
    "mnemonics": 0,

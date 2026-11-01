@@ -7,7 +7,9 @@
 #include <string>
 #include <vector>
 
+#include "any360/sys/audio.h"
 #include "any360/sys/files.h"
+#include "any360/sys/graphics.h"
 #include "any360/sys/memory.h"
 #include <filesystem>
 #include <fstream>
@@ -869,9 +871,151 @@ void SonicTests() {
   Memory().Reset();
 }
 
+// The kernel side of graphics and audio: Vd* setup handed to a GPU backend, the interrupt callback run at dispatch
+// level on a context of its own, XAudio clients pumped and their frames deinterleaved to a sink, XMA contexts.
+struct FakeGpu : GpuBackend {
+  uint32_t ring = 0, ring_log2 = 0, write_back = 0, block_log2 = 0;
+  void InitializeRingBuffer(Guest, uint32_t base, uint32_t size_log2) override { ring = base, ring_log2 = size_log2; }
+  void EnableReadPointerWriteBack(Guest, uint32_t address, uint32_t log2) override { write_back = address, block_log2 = log2; }
+};
+struct FakeSink : AudioSink {
+  int frames = 0;
+  uint32_t client = 99;
+  std::vector<float> last;
+  void Submit(uint32_t c, const float* interleaved) override {
+    ++frames, client = c;
+    last.assign(interleaved, interleaved + kAudioFrameSamples * kAudioChannels);
+  }
+};
+struct FakeXma : XmaBackend {
+  int allocated = 0, released = 0;
+  void ContextAllocated(Guest, uint32_t) override { ++allocated; }
+  void ContextReleased(Guest, uint32_t) override { ++released; }
+};
+
+uint32_t FloatBits(float f) {
+  uint32_t bits;
+  std::memcpy(&bits, &f, 4);
+  return bits;
+}
+
+void GraphicsAudioTests() {
+  Fresh();
+  std::vector<uint8_t> memory(0x200000);
+  const Guest gm{memory.data()};
+  Memory().Reset({{0x00000000, 0x80000, 0x1000, false}, {0x100000, 0x40000, 0x1000, true}});
+  Objects().SetKernelHeap(0x80000, 0x70000);
+  Objects().SetGuest(gm);
+  Objects().Reset();
+  Threads().SetDispatcher(&Dispatch, nullptr);
+
+  // Graphics.
+  Graphics().Reset();
+  FakeGpu gpu;
+  Graphics().SetBackend(&gpu);
+  CHECK(Graphics().InitializeEngines() == 1);
+  Graphics().InitializeRingBuffer(gm, 0x1100000, 12);
+  Graphics().EnableReadPointerWriteBack(gm, 0x1000F00, 6);
+  CHECK(gpu.ring == 0x1100000 && gpu.ring_log2 == 12 && gpu.write_back == 0x1000F00 && gpu.block_log2 == 6);
+  CHECK(Graphics().ring_base() == 0x1100000 && Graphics().write_back() == 0x1000F00);
+  CHECK(!Graphics().RaiseInterrupt(gm, 0));  // no callback yet
+  std::atomic<int> interrupts{0};
+  uint64_t source = 99, user = 0;
+  uint32_t irql = 0, dpc = 0, interrupt_pcr = 0;
+  g_code[0x5000] = [&](uint32_t pcr, uint64_t a0, uint64_t a1) -> uint64_t {
+    source = a0, user = a1, interrupt_pcr = pcr;
+    irql = gm.Load8(pcr + 0x18), dpc = gm.Load32(pcr + 0x150);
+    ++interrupts;
+    return 0;
+  };
+  Graphics().SetInterruptCallback(gm, 0x5000, 0x1234);
+  CHECK(Graphics().interrupt_callback() == 0x5000);
+  CHECK(Graphics().RaiseInterrupt(gm, 1));
+  CHECK(interrupts == 1 && source == 1 && user == 0x1234 && irql == 2 && dpc == 1);
+  CHECK(interrupt_pcr && gm.Load8(interrupt_pcr + 0x18) == 0 && gm.Load32(interrupt_pcr + 0x150) == 0);
+  // Its context is a KTHREAD of the title process, current on its PCR.
+  const uint32_t kthread = gm.Load32(interrupt_pcr + 0x100);
+  CHECK(kthread && gm.Load32(kthread + 0x84) == Threads().process() && gm.Load32(interrupt_pcr + 0x30 + 4) == interrupt_pcr);
+  Graphics().StartVblank(1000.0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  Graphics().StopVblank();
+  CHECK(interrupts > 5 && source == 0);
+  // VdPersistDisplay: a 64-byte physical block, then 1.
+  const uint32_t out = 0x1800;
+  CHECK(Graphics().PersistDisplay(gm, out) == 1);
+  const uint32_t persisted = gm.Load32(out);
+  CHECK(persisted >= 0x100000 && persisted < 0x140000 && Memory().QueryProtect(persisted) != 0);
+  Memory().FreePhysical(0, persisted);
+  CHECK(Memory().QueryProtect(persisted) == 0);
+
+  // Audio clients.
+  Audio().Reset();
+  FakeSink sink;
+  Audio().SetSink(&sink);
+  const uint32_t callback = 0x2000, driver = 0x2010, driver2 = 0x2014;
+  CHECK(Audio().RegisterClient(gm, 0, driver) == 0x80070057);
+  CHECK(Audio().RegisterClient(gm, callback, driver) == 0x80070057);  // a null callback
+  std::atomic<int> mixes{0};
+  uint64_t argument = 0;
+  g_code[0x6000] = [&](uint32_t, uint64_t a0, uint64_t) -> uint64_t {
+    argument = a0;
+    ++mixes;
+    return 0;
+  };
+  gm.Store32(callback, 0x6000);
+  gm.Store32(callback + 4, 0xABCD);
+  CHECK(Audio().RegisterClient(gm, callback, driver) == 0 && gm.Load32(driver) == 0x41550000);
+  CHECK(Audio().RegisterClient(gm, callback, driver2) == 0 && gm.Load32(driver2) == 0x41550001);
+  Audio().Pump(gm);
+  CHECK(mixes == 2 && argument == 0xABCD);
+  CHECK(Audio().UnregisterClient(0x41550001) == 0);
+  CHECK(Audio().UnregisterClient(0x12340001) == 0x80070057);
+  Audio().Pump(gm);
+  CHECK(mixes == 3);
+  // A frame: channel after channel in the guest, sample after sample for the sink.
+  const uint32_t samples = 0x3000;
+  for (uint32_t ch = 0; ch < kAudioChannels; ++ch)
+    for (uint32_t s = 0; s < kAudioFrameSamples; ++s) gm.Store32(samples + 4 * (ch * kAudioFrameSamples + s), FloatBits(float(ch * 1000 + s)));
+  CHECK(Audio().SubmitFrame(gm, 0x41550000, samples) == 0);
+  CHECK(sink.frames == 1 && sink.client == 0 && sink.last.size() == kAudioFrameSamples * kAudioChannels);
+  CHECK(sink.last[0] == 0.0f && sink.last[1] == 1000.0f && sink.last[5] == 5000.0f && sink.last[6] == 1.0f &&
+        sink.last[255 * 6 + 3] == 3255.0f);
+  CHECK(Audio().SubmitFrame(gm, 0x41550001, samples) == 0x80070057);  // unregistered
+  CHECK(sink.frames == 1);
+  gm.Store32(out, 0xFFFFFFFF);
+  CHECK(Audio().GetVoiceCategoryVolumeChangeMask(gm, 0x41550000, out) == 0 && gm.Load32(out) == 0);
+  CHECK(Audio().GetVoiceCategoryVolume(gm, out) == 0 && gm.Load32(out) == 0x3F800000);
+  // The audio clock calls the client every 5.33 ms.
+  const int before = mixes;
+  Audio().Start();
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  Audio().Stop();
+  CHECK(mixes - before >= 5);
+
+  // XMA contexts: 64-byte blocks in physical memory, reused once released.
+  FakeXma xma;
+  Audio().SetXmaBackend(&xma);
+  CHECK(Audio().XmaCreateContext(gm, out) == 0);
+  const uint32_t a = gm.Load32(out);
+  CHECK(Audio().XmaCreateContext(gm, out) == 0);
+  const uint32_t b = gm.Load32(out);
+  CHECK(a >= 0x100000 && a < 0x140000 && a % kXmaContextSize == 0 && b == a + kXmaContextSize);
+  gm.Store32(a, 0x12345678);
+  CHECK(Audio().XmaReleaseContext(gm, a) == 0 && gm.Load32(a) == 0);
+  CHECK(Audio().XmaReleaseContext(gm, a) == 0);  // twice: nothing more
+  CHECK(Audio().XmaCreateContext(gm, out) == 0 && gm.Load32(out) == a);
+  CHECK(xma.allocated == 3 && xma.released == 1);
+
+  Audio().Reset();
+  Graphics().Reset();
+  Threads().Shutdown();
+  Memory().Reset();
+}
+
 }  // namespace
 
 int main() {
+  GraphicsAudioTests();
   SonicTests();
   XamTests();
   FileTests();

@@ -19,6 +19,12 @@ constexpr uint32_t kCreateSuspended = 0x1, kCreateHandleIsObject = 0x80;
 // Runs guest code at `address` with r1 = `stack_top`, r13 = `pcr`, r3 / r4 = the arguments; returns r3.
 using Dispatcher = uint64_t (*)(uint32_t address, uint32_t stack_top, uint32_t pcr, uint64_t arg0, uint64_t arg1, void* user);
 
+// A guest execution context: a KTHREAD, its PCR, TLS block and stack. Threads run on one each; host-driven callbacks
+// (graphics interrupts, the audio clock) run guest code on one through Dispatch.
+struct GuestContext {
+  uint32_t kthread = 0, pcr = 0, stack_top = 0;
+};
+
 class Scheduler {
  public:
   void SetDispatcher(Dispatcher dispatcher, void* user);
@@ -51,12 +57,18 @@ class Scheduler {
   uint32_t NtResumeThread(Guest g, uint32_t handle, uint32_t count_out);
   uint32_t NtSuspendThread(Guest g, uint32_t handle, uint32_t count_out);
 
+  // A context of its own for host-driven guest callbacks; not a scheduler thread (its handle is never opened).
+  uint32_t CreateContext(Guest g, uint32_t stack_size, GuestContext& context, uint32_t creation_flags = 0);
+  // Runs guest code at `address` on `context` through the dispatcher; returns r3 (0 without a dispatcher).
+  uint64_t Dispatch(uint32_t address, const GuestContext& context, uint64_t arg0, uint64_t arg1);
+
   // The current KTHREAD of a PCR, 0 when the scheduler does not run that thread.
   uint32_t ThreadOf(Guest g, uint32_t pcr) const;
 
  private:
   struct Thread;
   Thread* Find(uint32_t kthread) const;
+  uint32_t EnsureProcess(Guest g);
   void Run(Thread* thread);
   void PauseWhileSuspended(Guest g, Thread* thread);
 

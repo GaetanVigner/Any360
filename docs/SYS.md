@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (242 system calls)
+## What is verified (254 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -105,6 +105,16 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `ObReferenceObject`, the STFS device calls, and the console-key operations answered as a machine without its keys
   (`XeCryptBnQwBeSigVerify` accepts, `XeKeysGetKey` refuses, `XeCryptRotSumSha` zeroes its digest: no known title
   depends on that value, and Sonic '06's own port runs with it stubbed).
+- **Graphics and audio, the kernel side** (`graphics.h`, `audio.h`; scenario tests with a fake GPU, sink and XMA
+  decoder): `VdInitializeEngines`, `VdInitializeRingBuffer` and `VdEnableRingBufferRPtrWriteBack` (handed to a
+  `GpuBackend`, the command processor), `VdSetGraphicsInterruptCallback` (the title's handler runs on a guest context
+  of its own at dispatch level, for vertical blanks from a host clock and command-processor interrupts the backend
+  raises), `VdPersistDisplay`; `XAudioRegisterRenderDriverClient` / `Unregister` (driver `0x4155000n`, the client's
+  mixer callback pumped every 256 samples at 48 kHz), `XAudioSubmitRenderDriverFrame` (6 big-endian channels of 256
+  floats, handed to an `AudioSink` interleaved by sample), the voice category volumes (unchanged, 1.0),
+  `XMACreateContext` / `XMAReleaseContext` (64-byte contexts in physical memory, announced to an `XmaBackend`). Guest
+  callbacks run through `Scheduler::CreateContext` and `Scheduler::Dispatch`. The renderer, the audio output and the
+  XMA decoder are the backends still to write.
 - **Offline networking**: `NetDll_inet_addr` (the Winsock parser), `NetDll___WSAFDIsSet`, `NetDll_XNetInAddrToString`,
   the XNet address conversions.
 
@@ -136,7 +146,9 @@ MarathonRecomp, Test Drive Unlimited from TDURecomp; `titles/<title>/imports.jso
 the game, so those lists say what a native port needs first. Small ReXGlue recomps do not publish their generated code,
 so their import tables are not available without the game.
 
-**MVP reached for Sonic the Hedgehog (2006)**: all 178 of its system calls outside graphics and audio are native (2026-11-01).
+**MVP reached for Sonic the Hedgehog (2006)**: all 178 of its system calls outside graphics and audio are native (2026-11-01),
+and with the kernel side of graphics and audio, all 200 of its system calls (2026-11-01). What it still needs from
+outside the layer is the backends: the GPU command processor and renderer, the audio output and XMA decoding.
 
 **MVP**: one title with every system call except the graphics and audio ones native, so it can run on `any360::sys`
 with only those left to the reference. The progress page shows the MVP per title; the closest title is the target, and

@@ -6,11 +6,13 @@
 
 #include <vector>
 
+#include "any360/sys/audio.h"
 #include "any360/sys/config.h"
 #include "any360/sys/crypt.h"
 #include "any360/sys/exports.h"
 #include "any360/sys/files.h"
 #include "any360/sys/format.h"
+#include "any360/sys/graphics.h"
 #include "any360/sys/info.h"
 #include "any360/sys/memory.h"
 #include "any360/sys/net.h"
@@ -448,6 +450,22 @@ ANY360_SYS_EXPORT(ObReferenceObject) {
   ctx.r3.u64 = 0;
 }
 
+// Batch 12: the kernel side of graphics and audio (sys_object_tests). The GPU and the audio output are backends.
+ANY360_SYS_EXPORT(VdInitializeEngines) { ctx.r3.u64 = Graphics().InitializeEngines(); }
+ANY360_SYS_EXPORT(VdInitializeRingBuffer) { Graphics().InitializeRingBuffer({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(VdEnableRingBufferRPtrWriteBack) { Graphics().EnableReadPointerWriteBack({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(VdSetGraphicsInterruptCallback) { Graphics().SetInterruptCallback({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(VdPersistDisplay) { ctx.r3.u64 = Graphics().PersistDisplay({base}, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XAudioRegisterRenderDriverClient) { ctx.r3.u64 = Audio().RegisterClient({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XAudioUnregisterRenderDriverClient) { ctx.r3.u64 = Audio().UnregisterClient(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XAudioSubmitRenderDriverFrame) { ctx.r3.u64 = Audio().SubmitFrame({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XAudioGetVoiceCategoryVolumeChangeMask) {
+  ctx.r3.u64 = Audio().GetVoiceCategoryVolumeChangeMask({base}, ctx.r3.u32, ctx.r4.u32);
+}
+ANY360_SYS_EXPORT(XAudioGetVoiceCategoryVolume) { ctx.r3.u64 = Audio().GetVoiceCategoryVolume({base}, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XMACreateContext) { ctx.r3.u64 = Audio().XmaCreateContext({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XMAReleaseContext) { ctx.r3.u64 = Audio().XmaReleaseContext({base}, ctx.r3.u32); }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -691,6 +709,19 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(IoInvalidDeviceRequest),
     ANY360_SYS_ENTRY(ObIsTitleObject),
     ANY360_SYS_ENTRY(ObReferenceObject),
+    // Batch 12: graphics and audio.
+    ANY360_SYS_ENTRY(VdInitializeEngines),
+    ANY360_SYS_ENTRY(VdInitializeRingBuffer),
+    ANY360_SYS_ENTRY(VdEnableRingBufferRPtrWriteBack),
+    ANY360_SYS_ENTRY(VdSetGraphicsInterruptCallback),
+    ANY360_SYS_ENTRY(VdPersistDisplay),
+    ANY360_SYS_ENTRY(XAudioRegisterRenderDriverClient),
+    ANY360_SYS_ENTRY(XAudioUnregisterRenderDriverClient),
+    ANY360_SYS_ENTRY(XAudioSubmitRenderDriverFrame),
+    ANY360_SYS_ENTRY(XAudioGetVoiceCategoryVolumeChangeMask),
+    ANY360_SYS_ENTRY(XAudioGetVoiceCategoryVolume),
+    ANY360_SYS_ENTRY(XMACreateContext),
+    ANY360_SYS_ENTRY(XMAReleaseContext),
 };
 const unsigned kExportCount = sizeof(kExports) / sizeof(kExports[0]);
 
