@@ -16,8 +16,9 @@
 // scissor (PA_SC_WINDOW_* with the window offset, PA_SC_SCREEN_SCISSOR_*); what Vulkan keeps dynamic (viewport,
 // scissor, depth bias, blend constants, stencil masks and references) is set per draw.
 //
-// Still narrow: 1x MSAA only; surfaces that alias the same EDRAM in another format do not share contents; no
-// textures, no resolves; the viewport without resolution scale; the whole mirrored range copied before every draw
+// Textures come from the texture cache (textures.h), sampled through the descriptor sets the translated shaders
+// declare. Still narrow: 1x MSAA only; surfaces that alias the same EDRAM in another format do not share contents; no
+// resolves; the viewport without resolution scale; the whole mirrored range copied before every draw
 // and every draw submitted on its own. Each limit is a later step.
 #pragma once
 
@@ -31,6 +32,7 @@
 
 #include "any360/gfx/command_processor.h"
 #include "device.h"
+#include "textures.h"
 
 namespace rex::graphics {
 class SpirvShaderTranslator;
@@ -46,6 +48,7 @@ struct RendererStats {
   uint32_t translations = 0;
   uint32_t pipelines = 0;
   uint32_t render_targets = 0;
+  uint32_t texture_uploads = 0;
 };
 
 // An EDRAM surface: base in tiles, pitch in pixels, a ColorRenderTargetFormat (or DepthRenderTargetFormat with
@@ -88,7 +91,8 @@ class VulkanRenderer : public gfx::Renderer {
   struct TranslatedShader;
   // Everything a pipeline is created from; plain dwords so it compares as bytes.
   struct PipelineKey {
-    uint64_t vs_hash, ps_hash;
+    uint64_t vs_module, ps_module;  // the translations (a shader per modification: interpolators...)
+    uint64_t layout;                // the pipeline layout (by texture and sampler counts)
     uint32_t topology, cull_mode, front_face_clockwise, polygon_mode;
     uint32_t depth_control;     // RB_DEPTHCONTROL normalized (0: depth and stencil off)
     uint32_t depth_format;      // host format of the depth/stencil attachment (VK_FORMAT_UNDEFINED: none)
@@ -98,8 +102,14 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t padding;           // keeps the key free of implicit padding (compared with memcmp)
     bool operator<(const PipelineKey& other) const { return std::memcmp(this, &other, sizeof(*this)) < 0; }
   };
+  // The analyzed shader (no translation yet), and its translation for a modification.
   TranslatedShader* GetShader(const gfx::Shader& shader);
-  VkPipeline GetPipeline(const PipelineKey& key, const TranslatedShader& vs, const TranslatedShader* ps);
+  VkShaderModule GetModule(TranslatedShader& shader, uint64_t modification);
+  VkPipeline GetPipeline(const PipelineKey& key);
+  // Texture set layouts by stage and counts (sampled images, then samplers, as the reference lays them out) and
+  // pipeline layouts by the four counts.
+  VkDescriptorSetLayout TextureSetLayout(bool vertex, uint32_t textures, uint32_t samplers);
+  VkPipelineLayout PipelineLayout(uint32_t vs_textures, uint32_t vs_samplers, uint32_t ps_textures, uint32_t ps_samplers);
   bool Fail(const std::string& why);
   void Transition(VkCommandBuffer cb, Image& image, VkImageLayout& layout, VkImageLayout to, VkImageAspectFlags aspect);
 
@@ -110,11 +120,14 @@ class VulkanRenderer : public gfx::Renderer {
   std::map<std::pair<uint32_t, uint64_t>, std::unique_ptr<TranslatedShader>> shaders_;  // (type, hash)
   std::map<PipelineKey, VkPipeline> pipelines_;
   std::map<SurfaceKey, std::unique_ptr<Surface>> surfaces_;
+  std::unique_ptr<TextureCache> textures_;
   VkFormat depth_format_ = VK_FORMAT_UNDEFINED;
 
   VkDescriptorSetLayout shared_layout_ = VK_NULL_HANDLE, constants_layout_ = VK_NULL_HANDLE, empty_layout_ = VK_NULL_HANDLE;
-  VkPipelineLayout pipeline_layout_ = VK_NULL_HANDLE;
+  std::map<std::array<uint32_t, 3>, VkDescriptorSetLayout> texture_layouts_;
+  std::map<std::array<uint32_t, 4>, VkPipelineLayout> pipeline_layouts_;
   VkDescriptorPool pool_ = VK_NULL_HANDLE;
+  VkDescriptorPool draw_pool_ = VK_NULL_HANDLE;  // texture sets, reset after each draw
   VkDescriptorSet shared_set_ = VK_NULL_HANDLE, constants_set_ = VK_NULL_HANDLE, empty_set_ = VK_NULL_HANDLE;
   Buffer shared_memory_, constants_, indices_;
   uint32_t constant_alignment_ = 256;

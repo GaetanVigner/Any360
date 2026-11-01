@@ -5065,11 +5065,11 @@
 <text x="278" y="741" font-size="11" fill="#8b949e">reference (hooked by name)</text>
 <rect x="450" y="732" width="10" height="10" rx="2" fill="#f85149"/>
 <text x="464" y="741" font-size="11" fill="#8b949e">to do</text>
-<text x="0" y="763" font-size="16" fill="#c9d1d9" font-weight="600">GPU (Xenos) native: 19.8% (64/323) <tspan font-size="12" font-weight="400" fill="#8b949e">· 95.7% handled by the reference GPU · one square per opcode, format or feature</tspan></text>
+<text x="0" y="763" font-size="16" fill="#c9d1d9" font-weight="600">GPU (Xenos) native: 22.3% (72/323) <tspan font-size="12" font-weight="400" fill="#8b949e">· 95.7% handled by the reference GPU · one square per opcode, format or feature</tspan></text>
 <rect x="0" y="772" width="1000" height="150" fill="#0d1117"/>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>texture formats: 64 (0% native; 64 reference)</title>
-<rect x="0.00" y="772.00" width="21.52" height="18.25" fill="#8957e5"/>
-<rect x="22.02" y="772.00" width="21.52" height="18.25" fill="#8957e5"/>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>texture formats: 64 (3% native; 2 native, 62 reference)</title>
+<rect x="0.00" y="772.00" width="21.52" height="18.25" fill="#2ea043"/>
+<rect x="22.02" y="772.00" width="21.52" height="18.25" fill="#2ea043"/>
 <rect x="44.03" y="772.00" width="21.52" height="18.25" fill="#8957e5"/>
 <rect x="66.05" y="772.00" width="21.52" height="18.25" fill="#8957e5"/>
 <rect x="88.06" y="772.00" width="21.52" height="18.25" fill="#8957e5"/>
@@ -5135,7 +5135,7 @@
 <rect x="0.0" y="772.0" width="198.1" height="150.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="4.0" y="785.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">texture formats</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>render features: 55 (31% native; 17 native, 38 reference)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>render features: 55 (36% native; 20 native, 35 reference)</title>
 <rect x="198.14" y="772.00" width="20.78" height="20.93" fill="#2ea043"/>
 <rect x="219.43" y="772.00" width="20.78" height="20.93" fill="#2ea043"/>
 <rect x="240.71" y="772.00" width="20.78" height="20.93" fill="#2ea043"/>
@@ -5153,9 +5153,9 @@
 <rect x="325.85" y="793.43" width="20.78" height="20.93" fill="#2ea043"/>
 <rect x="347.14" y="793.43" width="20.78" height="20.93" fill="#2ea043"/>
 <rect x="198.14" y="814.86" width="20.78" height="20.93" fill="#2ea043"/>
-<rect x="219.43" y="814.86" width="20.78" height="20.93" fill="#8957e5"/>
-<rect x="240.71" y="814.86" width="20.78" height="20.93" fill="#8957e5"/>
-<rect x="262.00" y="814.86" width="20.78" height="20.93" fill="#8957e5"/>
+<rect x="219.43" y="814.86" width="20.78" height="20.93" fill="#2ea043"/>
+<rect x="240.71" y="814.86" width="20.78" height="20.93" fill="#2ea043"/>
+<rect x="262.00" y="814.86" width="20.78" height="20.93" fill="#2ea043"/>
 <rect x="283.28" y="814.86" width="20.78" height="20.93" fill="#8957e5"/>
 <rect x="304.57" y="814.86" width="20.78" height="20.93" fill="#8957e5"/>
 <rect x="325.85" y="814.86" width="20.78" height="20.93" fill="#8957e5"/>
@@ -5359,10 +5359,10 @@
 <rect x="770.9" y="772.0" width="108.4" height="81.4" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="774.9" y="785.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">primitive types</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>shader control flow: 16 (12% native; 2 native, 14 reference)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>shader control flow: 16 (19% native; 3 native, 13 reference)</title>
 <rect x="770.90" y="853.43" width="21.17" height="16.64" fill="#2ea043"/>
 <rect x="792.57" y="853.43" width="21.17" height="16.64" fill="#2ea043"/>
-<rect x="814.24" y="853.43" width="21.17" height="16.64" fill="#8957e5"/>
+<rect x="814.24" y="853.43" width="21.17" height="16.64" fill="#2ea043"/>
 <rect x="835.91" y="853.43" width="21.17" height="16.64" fill="#8957e5"/>
 <rect x="857.59" y="853.43" width="21.17" height="16.64" fill="#8957e5"/>
 <rect x="770.90" y="870.57" width="21.17" height="16.64" fill="#8957e5"/>
@@ -5379,9 +5379,9 @@
 <rect x="770.9" y="853.4" width="108.4" height="68.6" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="774.9" y="866.4" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">shader control </text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>vertex formats: 16 (6% native; 1 native, 15 reference)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>vertex formats: 16 (12% native; 2 native, 14 reference)</title>
 <rect x="879.26" y="772.00" width="19.62" height="20.01" fill="#2ea043"/>
-<rect x="899.38" y="772.00" width="19.62" height="20.01" fill="#8957e5"/>
+<rect x="899.38" y="772.00" width="19.62" height="20.01" fill="#2ea043"/>
 <rect x="919.50" y="772.00" width="19.62" height="20.01" fill="#8957e5"/>
 <rect x="939.63" y="772.00" width="19.62" height="20.01" fill="#8957e5"/>
 <rect x="959.75" y="772.00" width="19.62" height="20.01" fill="#8957e5"/>
@@ -5417,9 +5417,9 @@
 <rect x="879.3" y="833.5" width="73.5" height="88.5" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="883.3" y="846.5" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">render tar</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>shader fetch: 9 (11% native; 1 native, 8 reference)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>shader fetch: 9 (22% native; 2 native, 7 reference)</title>
 <rect x="952.75" y="833.54" width="23.12" height="17.19" fill="#2ea043"/>
-<rect x="976.38" y="833.54" width="23.12" height="17.19" fill="#8957e5"/>
+<rect x="976.38" y="833.54" width="23.12" height="17.19" fill="#2ea043"/>
 <rect x="952.75" y="851.23" width="23.12" height="17.19" fill="#8957e5"/>
 <rect x="976.38" y="851.23" width="23.12" height="17.19" fill="#8957e5"/>
 <rect x="952.75" y="868.92" width="23.12" height="17.19" fill="#8957e5"/>

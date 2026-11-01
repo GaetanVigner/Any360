@@ -80,6 +80,48 @@ inline std::vector<uint32_t> BuildSingleExportShader(uc::AllocType alloc, uint32
   return words;
 }
 
+// tfetch2D dest.xyzw = texture fetch constant `fetch_constant` (0-31) at src.xy, filters from the fetch constant
+// (ucode::TextureFetchInstruction).
+inline void PushTextureFetch2D(std::vector<uint32_t>& words, uint32_t dest, uint32_t src, uint32_t fetch_constant) {
+  const uint32_t src_swizzle = 0 | 1 << 2 | 2 << 4;  // x, y, z
+  const uint32_t w0 = uint32_t(uc::FetchOpcode::kTextureFetch) | (src & 0x3F) << 5 | (dest & 0x3F) << 12 |
+                      (fetch_constant & 0x1F) << 20 | src_swizzle << 26;
+  const uint32_t dest_swizzle = 0 | 1 << 3 | 2 << 6 | 3 << 9;
+  // mag, min, mip: use the fetch constant's (3); anisotropy: the fetch constant's (7); volume filters likewise.
+  const uint32_t w1 = dest_swizzle | 3u << 12 | 3u << 14 | 3u << 16 | 7u << 18 | 3u << 24 | 3u << 26;
+  // Sample at pixel centres, 2D.
+  const uint32_t w2 = 1u << 1 | uint32_t(rex::graphics::xenos::FetchOpDimension::k2D) << 14;
+  words.push_back(w0);
+  words.push_back(w1);
+  words.push_back(w2);
+}
+
+// A vertex shader for textured draws: vertices of 6 floats (position xyzw, texcoord uv) from vertex fetch
+// constant 0; oPos = position, interpolator 0 = texcoord.
+inline std::vector<uint32_t> BuildTexturedVertexShader() {
+  std::vector<uint32_t> words;
+  // Two control flow pairs (slots 0-1): alloc position, exec 3 at slot 2; alloc interpolators, exece 1 at slot 5.
+  PushCfPair(words, CfAlloc(uc::AllocType::kVsPosition, 0), CfExec(uc::ControlFlowOpcode::kExec, 2, 3, 0b000101));
+  PushCfPair(words, CfAlloc(uc::AllocType::kVsInterpolators, 0), CfExec(uc::ControlFlowOpcode::kExecEnd, 5, 1, 0));
+  PushVertexFetch(words, 1, 0, 0, rex::graphics::xenos::VertexFormat::k_32_32_32_32_FLOAT, 6, 0);
+  PushVertexFetch(words, 2, 0, 0, rex::graphics::xenos::VertexFormat::k_32_32_FLOAT, 6, 4);
+  PushAluVector(words, uc::AluVectorOpcode::kMax, uint32_t(uc::ExportRegister::kVSPosition), true, 0b1111, {1, true},
+                {1, true});
+  PushAluVector(words, uc::AluVectorOpcode::kMax, uint32_t(uc::ExportRegister::kVSInterpolator0), true, 0b1111,
+                {2, true}, {2, true});
+  return words;
+}
+
+// A pixel shader sampling texture fetch constant `fetch_constant` at interpolator 0 (r0): oC0 = tfetch2D(r0.xy).
+inline std::vector<uint32_t> BuildTexturedPixelShader(uint32_t fetch_constant) {
+  std::vector<uint32_t> words;
+  PushCfPair(words, CfAlloc(uc::AllocType::kPsColors, 0), CfExec(uc::ControlFlowOpcode::kExecEnd, 1, 2, 0b0001));
+  PushTextureFetch2D(words, 1, 0, fetch_constant);
+  PushAluVector(words, uc::AluVectorOpcode::kMax, uint32_t(uc::ExportRegister::kPSColor0), true, 0b1111, {1, true},
+                {1, true});
+  return words;
+}
+
 // A pixel shader writing two colour targets: oC0 = c0, oC1 = c1.
 inline std::vector<uint32_t> BuildTwoTargetPixelShader() {
   std::vector<uint32_t> words;

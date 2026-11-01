@@ -28,6 +28,14 @@
   "render features:colour exponent bias",
   "render target formats:k_8_8_8_8",
   "render target formats:k_16_16_16_16_FLOAT",
-  "render target formats:kD24S8"
+  "render target formats:kD24S8",
+  "shader control flow:kExec",
+  "shader fetch:kTextureFetch",
+  "vertex formats:k_32_32_FLOAT",
+  "texture formats:k_8_8_8_8",
+  "texture formats:k_DXT1",
+  "render features:textures (2D)",
+  "render features:texture tiling (untile)",
+  "render features:interpolators"
  ]
 }

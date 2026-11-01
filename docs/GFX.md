@@ -17,6 +17,7 @@ portable C++23 with no dependency on a graphics API. The renderer behind it is V
 | `tests/gfx_shader_tests.cpp` | Microcode encoded by hand (no game data), translated as the reference pipeline cache asks, SPIR-V checked and written out |
 | `tests/gfx_vulkan_tests.cpp` | On a real driver: the translated shaders compiled into pipelines with the translator's descriptor layout, an offscreen target rendered and read back (skipped without a Vulkan 1.3 device) |
 | `include/any360/gfx/vulkan/renderer.h`, `src/vulkan/renderer.cpp` | `VulkanRenderer`, the command processor's `Renderer`: shaders translated and cached by hash, pipelines by shader pair and topology, the five constant buffers from the register file, guest memory mirrored for vertex fetch, DMA indices endian-swapped |
+| `include/any360/gfx/vulkan/textures.h`, `src/vulkan/textures.cpp` | The texture cache: fetch constants parsed, guest memory endian-swapped and untiled (Xenos 32x32-block tiling, as the reference computes it), uploaded when it changed, viewed with the guest swizzle; samplers from the fetch constant and the fetch instruction |
 | `tests/ucode_encode.h` | Hand encoding of control flow, vector ALU and vertex fetch instructions, shared by the tests |
 | `tests/gfx_render_tests.cpp` | End to end: hand-written PM4 (state, fetch constant, shaders, constants, an auto-indexed and a DMA-indexed draw) through the command processor into the renderer; every pixel read back and checked |
 
@@ -131,10 +132,19 @@ From the Crackdown runs (each one cost a debugging session there):
    system constants. Learned: `RB_BLENDCONTROL1-3` at 0 blend ZERO + ZERO, so a target the title leaves at 0 is
    written black (the reference does the same). Still open: MSAA, and surfaces that alias the same EDRAM in other
    formats or pitches (the reference copies contents between them; here each keeps its own).
-5. **Textures, then resolves**: texture fetch constants to untiled host textures; resolves as copies between host
-   targets and to guest memory where the CPU or a later draw reads them.
-6. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
-7. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; the swap goes to a
+5. **Textures** (first step done, 2026-11-01): 2D textures, base level, unsigned components, the formats a host
+   image holds unchanged (8, 8_8, 8_8_8_8, 2_10_10_10, DXT1/3/5, 16- and 32-bit float), linear or tiled; samplers
+   (filters, address modes, anisotropy, border); the translations now carry the interpolator mask the vertex and
+   pixel shaders share (`SQ_PROGRAM_CNTL`), and pipeline layouts follow each stage's texture and sampler counts.
+   Learned: the translator declares an unsigned and a signed binding per fetch and picks one at run time by the
+   fetch constant's signs, so both must be bound. `gfx_render_tests` samples linear and tiled k_8_8_8_8 and tiled
+   DXT1 to the pixel on NVIDIA and AMD. Next for textures: mips and the packed mip tail, signed views, cube, 3D and
+   stacked textures, the formats that need conversion (5_6_5, 4_4_4_4, 10_11_11...), untiling on the GPU, and
+   memory watching instead of hashing each use.
+6. **Resolves**: copies between host targets and to guest memory where the CPU or a later draw reads them; then a
+   frame can be presented.
+7. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
+8. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; the swap goes to a
    window through SDL3.
 
 It avoids geometry shaders and rasterizer-ordered views so that it runs through MoltenVK and on mobile GPUs:

@@ -38,8 +38,8 @@
    "total": 31
   },
   "gpu": {
-   "native": 64,
-   "reference": 245,
+   "native": 72,
+   "reference": 237,
    "total": 323
   },
   "toolkit_done": 7

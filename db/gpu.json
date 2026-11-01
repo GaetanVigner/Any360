@@ -361,7 +361,7 @@
 "name":"kExec",
 "family":"shader control flow",
 "value":1,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kExecEnd",
@@ -1033,7 +1033,7 @@
 "name":"kTextureFetch",
 "family":"shader fetch",
 "value":1,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader fetch:kGetTextureBorderColorFrac",
@@ -1313,7 +1313,7 @@
 "name":"k_32_32_FLOAT",
 "family":"vertex formats",
 "value":37,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_32_32_32_32_FLOAT",
@@ -1376,7 +1376,7 @@
 "name":"k_8_8_8_8",
 "family":"texture formats",
 "value":6,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_2_10_10_10",
@@ -1460,7 +1460,7 @@
 "name":"k_DXT1",
 "family":"texture formats",
 "value":18,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_DXT2_3",
@@ -2069,7 +2069,7 @@
 "name":"textures (2D)",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:textures (3D)",
@@ -2111,7 +2111,7 @@
 "name":"texture tiling (untile)",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:mip maps",
@@ -2181,7 +2181,7 @@
 "name":"interpolators",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:centroid interpolation",

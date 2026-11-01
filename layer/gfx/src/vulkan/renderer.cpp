@@ -20,7 +20,8 @@ constexpr uint32_t kRbDepthInfo = 0x2002, kPaScScreenScissorTl = 0x200E, kPaScSc
                    kRbColorMask = 0x2104, kRbBlendRed = 0x2105, kRbStencilRefMaskBf = 0x210C,
                    kRbStencilRefMask = 0x210D, kPaClVportXScale = 0x210F, kRbDepthControl = 0x2200,
                    kRbColorControl = 0x2202, kPaSuScModeCntl = 0x2205, kPaClVteCntl = 0x2206,
-                   kRbModeControl = 0x2208, kPaSuPolyOffsetFrontScale = 0x2380, kRbSurfaceInfo = 0x2000;
+                   kRbModeControl = 0x2208, kPaSuPolyOffsetFrontScale = 0x2380, kRbSurfaceInfo = 0x2000,
+                   kSqProgramCntl = 0x2180, kSqContextMisc = 0x2181;
 constexpr uint32_t kRbColorInfo[4] = {0x2001, 0x2003, 0x2004, 0x2005};
 constexpr uint32_t kRbBlendControl[4] = {0x2201, 0x2209, 0x220A, 0x220B};
 // Bytes each constant buffer can hold (the most a shader can address).
@@ -81,8 +82,7 @@ VkStencilOpState StencilState(uint32_t func, uint32_t fail, uint32_t pass, uint3
 
 struct VulkanRenderer::TranslatedShader {
   std::unique_ptr<rg::SpirvShader> shader;
-  uint64_t modification = 0;
-  VkShaderModule module = VK_NULL_HANDLE;
+  std::map<uint64_t, VkShaderModule> modules;  // by modification (VK_NULL_HANDLE: translation failed)
 };
 
 VulkanRenderer::VulkanRenderer(Device& device, const uint8_t* physical, uint32_t mirror_bytes)
@@ -98,13 +98,18 @@ VulkanRenderer::~VulkanRenderer() {
   f.vkDeviceWaitIdle(d);
   for (auto& [key, pipeline] : pipelines_) f.vkDestroyPipeline(d, pipeline, nullptr);
   for (auto& [key, shader] : shaders_) {
-    if (shader->module) f.vkDestroyShaderModule(d, shader->module, nullptr);
+    for (auto& [modification, module] : shader->modules) {
+      if (module) f.vkDestroyShaderModule(d, module, nullptr);
+    }
   }
   if (pool_) f.vkDestroyDescriptorPool(d, pool_, nullptr);
-  if (pipeline_layout_) f.vkDestroyPipelineLayout(d, pipeline_layout_, nullptr);
+  if (draw_pool_) f.vkDestroyDescriptorPool(d, draw_pool_, nullptr);
+  for (auto& [key, layout] : pipeline_layouts_) f.vkDestroyPipelineLayout(d, layout, nullptr);
+  for (auto& [key, layout] : texture_layouts_) f.vkDestroyDescriptorSetLayout(d, layout, nullptr);
   for (VkDescriptorSetLayout l : {shared_layout_, constants_layout_, empty_layout_}) {
     if (l) f.vkDestroyDescriptorSetLayout(d, l, nullptr);
   }
+  textures_.reset();
   DestroyBuffer(device_, shared_memory_);
   DestroyBuffer(device_, constants_);
   DestroyBuffer(device_, indices_);
@@ -143,15 +148,14 @@ bool VulkanRenderer::Initialize() {
   info.bindingCount = 1;
   info.pBindings = &shared_binding;
   if (f.vkCreateDescriptorSetLayout(d, &info, nullptr, &shared_layout_) != VK_SUCCESS) return Fail("shared set layout");
-  VkDescriptorSetLayout sets[SpirvShaderTranslator::kDescriptorSetCount];
-  sets[SpirvShaderTranslator::kDescriptorSetSharedMemoryAndEdram] = shared_layout_;
-  sets[SpirvShaderTranslator::kDescriptorSetConstants] = constants_layout_;
-  sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex] = empty_layout_;
-  sets[SpirvShaderTranslator::kDescriptorSetTexturesPixel] = empty_layout_;
-  VkPipelineLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-  layout_info.setLayoutCount = SpirvShaderTranslator::kDescriptorSetCount;
-  layout_info.pSetLayouts = sets;
-  if (f.vkCreatePipelineLayout(d, &layout_info, nullptr, &pipeline_layout_) != VK_SUCCESS) return Fail("pipeline layout");
+  textures_ = std::make_unique<TextureCache>(device_, physical_, mirror_bytes_);
+  // Texture sets: allocated per draw, the pool reset once the draw has run.
+  VkDescriptorPoolSize draw_sizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 64}, {VK_DESCRIPTOR_TYPE_SAMPLER, 64}};
+  VkDescriptorPoolCreateInfo draw_pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+  draw_pool_info.maxSets = 2;
+  draw_pool_info.poolSizeCount = 2;
+  draw_pool_info.pPoolSizes = draw_sizes;
+  if (f.vkCreateDescriptorPool(d, &draw_pool_info, nullptr, &draw_pool_) != VK_SUCCESS) return Fail("texture descriptor pool");
 
   // Buffers: the mirrored guest memory, one draw's constants, indices.
   if (!CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, shared_memory_) ||
@@ -319,41 +323,73 @@ bool VulkanRenderer::ReadBack(const SurfaceKey& key, uint32_t width, uint32_t he
 
 VulkanRenderer::TranslatedShader* VulkanRenderer::GetShader(const gfx::Shader& source) {
   auto& slot = shaders_[{source.type, source.hash}];
-  if (slot) return slot->module ? slot.get() : nullptr;
+  if (slot) return slot.get();
   slot = std::make_unique<TranslatedShader>();
   const rg::xenos::ShaderType type = source.type ? rg::xenos::ShaderType::kPixel : rg::xenos::ShaderType::kVertex;
   slot->shader = std::make_unique<rg::SpirvShader>(type, source.hash, source.microcode.data(), source.microcode.size(),
                                                    std::endian::native);
   rex::string::StringBuffer disassembly;
   slot->shader->AnalyzeUcode(disassembly);
-  // Default modification: no interpolator, clip plane or render target specifics yet.
-  slot->modification =
-      type == rg::xenos::ShaderType::kVertex
-          ? translator_->GetDefaultVertexShaderModification(slot->shader->GetDynamicAddressableRegisterCount(0),
-                                                            rg::Shader::HostVertexShaderType::kVertex)
-          : translator_->GetDefaultPixelShaderModification(slot->shader->GetDynamicAddressableRegisterCount(0));
-  rg::Shader::Translation& translation = *slot->shader->GetOrCreateTranslation(slot->modification);
-  if (!translator_->TranslateAnalyzedShader(translation) || !translation.is_valid()) return nullptr;
+  return slot.get();
+}
+
+VkShaderModule VulkanRenderer::GetModule(TranslatedShader& shader, uint64_t modification) {
+  auto it = shader.modules.find(modification);
+  if (it != shader.modules.end()) return it->second;
+  VkShaderModule& module = shader.modules[modification];
+  rg::Shader::Translation& translation = *shader.shader->GetOrCreateTranslation(modification);
+  if (!translator_->TranslateAnalyzedShader(translation) || !translation.is_valid()) return module = VK_NULL_HANDLE;
   const std::vector<uint8_t>& binary = translation.translated_binary();
   VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
   info.codeSize = binary.size();
   info.pCode = reinterpret_cast<const uint32_t*>(binary.data());
-  if (device_.fn().vkCreateShaderModule(device_.device(), &info, nullptr, &slot->module) != VK_SUCCESS) return nullptr;
+  if (device_.fn().vkCreateShaderModule(device_.device(), &info, nullptr, &module) != VK_SUCCESS) return module = VK_NULL_HANDLE;
   ++stats_.translations;
-  return slot.get();
+  return module;
 }
 
-VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key, const TranslatedShader& vs, const TranslatedShader* ps) {
+VkDescriptorSetLayout VulkanRenderer::TextureSetLayout(bool vertex, uint32_t textures, uint32_t samplers) {
+  if (!textures && !samplers) return empty_layout_;
+  VkDescriptorSetLayout& layout = texture_layouts_[{uint32_t(vertex), textures, samplers}];
+  if (layout) return layout;
+  std::vector<VkDescriptorSetLayoutBinding> bindings;
+  const VkShaderStageFlags stage = vertex ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
+  for (uint32_t i = 0; i < textures; ++i) bindings.push_back({i, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, stage, nullptr});
+  for (uint32_t i = 0; i < samplers; ++i) bindings.push_back({textures + i, VK_DESCRIPTOR_TYPE_SAMPLER, 1, stage, nullptr});
+  VkDescriptorSetLayoutCreateInfo info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+  info.bindingCount = uint32_t(bindings.size());
+  info.pBindings = bindings.data();
+  if (device_.fn().vkCreateDescriptorSetLayout(device_.device(), &info, nullptr, &layout) != VK_SUCCESS) layout = VK_NULL_HANDLE;
+  return layout;
+}
+
+VkPipelineLayout VulkanRenderer::PipelineLayout(uint32_t vs_textures, uint32_t vs_samplers, uint32_t ps_textures,
+                                                uint32_t ps_samplers) {
+  VkPipelineLayout& layout = pipeline_layouts_[{vs_textures, vs_samplers, ps_textures, ps_samplers}];
+  if (layout) return layout;
+  VkDescriptorSetLayout sets[SpirvShaderTranslator::kDescriptorSetCount];
+  sets[SpirvShaderTranslator::kDescriptorSetSharedMemoryAndEdram] = shared_layout_;
+  sets[SpirvShaderTranslator::kDescriptorSetConstants] = constants_layout_;
+  sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex] = TextureSetLayout(true, vs_textures, vs_samplers);
+  sets[SpirvShaderTranslator::kDescriptorSetTexturesPixel] = TextureSetLayout(false, ps_textures, ps_samplers);
+  VkPipelineLayoutCreateInfo info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  info.setLayoutCount = SpirvShaderTranslator::kDescriptorSetCount;
+  info.pSetLayouts = sets;
+  if (device_.fn().vkCreatePipelineLayout(device_.device(), &info, nullptr, &layout) != VK_SUCCESS) layout = VK_NULL_HANDLE;
+  return layout;
+}
+
+VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key) {
   auto it = pipelines_.find(key);
   if (it != pipelines_.end()) return it->second;
   VkPipelineShaderStageCreateInfo stages[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO},
                                                {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
   stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-  stages[0].module = vs.module;
+  stages[0].module = VkShaderModule(key.vs_module);
   stages[0].pName = "main";
-  if (ps) {
+  if (key.ps_module) {
     stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    stages[1].module = ps->module;
+    stages[1].module = VkShaderModule(key.ps_module);
     stages[1].pName = "main";
   }
   VkPipelineVertexInputStateCreateInfo vertex_input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
@@ -415,7 +451,7 @@ VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key, const TranslatedS
   rendering.depthAttachmentFormat = VkFormat(key.depth_format);
   rendering.stencilAttachmentFormat = VkFormat(key.depth_format);
   VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, &rendering};
-  info.stageCount = ps ? 2 : 1;
+  info.stageCount = key.ps_module ? 2 : 1;
   info.pStages = stages;
   info.pVertexInputState = &vertex_input;
   info.pInputAssemblyState = &assembly;
@@ -425,7 +461,7 @@ VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key, const TranslatedS
   info.pDepthStencilState = &depth_stencil;
   info.pColorBlendState = &blend;
   info.pDynamicState = &dynamic;
-  info.layout = pipeline_layout_;
+  info.layout = VkPipelineLayout(key.layout);
   VkPipeline pipeline = VK_NULL_HANDLE;
   if (device_.fn().vkCreateGraphicsPipelines(device_.device(), VK_NULL_HANDLE, 1, &info, nullptr, &pipeline) != VK_SUCCESS) {
     return VK_NULL_HANDLE;
@@ -463,7 +499,94 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const bool wants_ps = edram_mode == 4 && draw.pixel_shader && !draw.pixel_shader->microcode.empty();
   TranslatedShader* ps = wants_ps ? GetShader(*draw.pixel_shader) : nullptr;
   if (!vs || (wants_ps && !ps)) {
+    Fail("shader analysis");
+    return;
+  }
+  // The translations for this draw: the interpolators the vertex shader writes and the pixel shader reads
+  // (SQ_PROGRAM_CNTL, SQ_CONTEXT_MISC), and the register counts dynamic addressing may reach.
+  rg::reg::SQ_PROGRAM_CNTL program_cntl;
+  program_cntl.value = regs[kSqProgramCntl];
+  rg::reg::SQ_CONTEXT_MISC context_misc;
+  context_misc.value = regs[kSqContextMisc];
+  uint32_t interpolators = 0;
+  if (ps) {
+    uint32_t param_gen = UINT32_MAX;
+    interpolators = vs->shader->writes_interpolators() & ps->shader->GetInterpolatorInputMask(program_cntl, context_misc, param_gen);
+    if (param_gen != UINT32_MAX) {
+      Fail("pixel shader parameter generation (not yet)");
+      return;
+    }
+  }
+  SpirvShaderTranslator::Modification vs_modification(translator_->GetDefaultVertexShaderModification(
+      vs->shader->GetDynamicAddressableRegisterCount(program_cntl.vs_num_reg), rg::Shader::HostVertexShaderType::kVertex));
+  vs_modification.vertex.interpolator_mask = interpolators;
+  const VkShaderModule vs_module = GetModule(*vs, vs_modification.value);
+  VkShaderModule ps_module = VK_NULL_HANDLE;
+  if (ps) {
+    SpirvShaderTranslator::Modification ps_modification(
+        translator_->GetDefaultPixelShaderModification(ps->shader->GetDynamicAddressableRegisterCount(program_cntl.ps_num_reg)));
+    ps_modification.pixel.interpolator_mask = interpolators;
+    ps_module = GetModule(*ps, ps_modification.value);
+  }
+  if (!vs_module || (ps && !ps_module)) {
     Fail("shader translation");
+    return;
+  }
+
+  // Textures and samplers of each stage, in the order the translated shader binds them.
+  struct StageTextures {
+    std::vector<VkImageView> views;
+    std::vector<VkSampler> samplers;
+  } stage_textures[2];
+  uint32_t swizzled_signs[8] = {};
+  for (uint32_t stage = 0; stage < 2; ++stage) {
+    TranslatedShader* shader = stage ? ps : vs;
+    if (!shader) continue;
+    for (const auto& binding : shader->shader->GetTextureBindingsAfterTranslation()) {
+      // The translator declares an unsigned and a signed binding for a fetch and picks one by the fetch constant's
+      // signs at run time; until signed views exist, a texture with no signed component binds its unsigned view to
+      // both (the shader never samples the signed one then).
+      const uint32_t* fetch = regs + reg::kFetchConstants + 6 * binding.fetch_constant;
+      if (binding.is_signed) {
+        const uint32_t signs = (fetch[0] >> 2) & 0xFF;
+        if (((signs & 0x55) & ~(signs >> 1)) != 0) {  // a component of sign 1 (signed)
+          Fail("signed textures (not yet)");
+          return;
+        }
+      }
+      std::string error;
+      const VkImageView view = textures_->View(fetch, error);
+      if (!view) {
+        Fail("texture " + std::to_string(binding.fetch_constant) + ": " + error);
+        return;
+      }
+      stage_textures[stage].views.push_back(view);
+      // The signs the shader applies after the swizzle (unsigned is 0), a byte per fetch constant.
+      const TextureFetch t = TextureFetch::Parse(fetch);
+      uint32_t signs = 0;
+      for (uint32_t i = 0; i < 4; ++i) {
+        const uint32_t component = (t.swizzle >> (3 * i)) & 7;
+        if (component < 4) signs |= ((t.signs >> (2 * component)) & 3) << (2 * i);
+      }
+      swizzled_signs[binding.fetch_constant / 4] |= signs << (8 * (binding.fetch_constant % 4));
+    }
+    for (const auto& binding : shader->shader->GetSamplerBindingsAfterTranslation()) {
+      const VkSampler sampler = textures_->Sampler(regs + reg::kFetchConstants + 6 * binding.fetch_constant,
+                                                   uint32_t(binding.mag_filter), uint32_t(binding.min_filter),
+                                                   uint32_t(binding.mip_filter), uint32_t(binding.aniso_filter));
+      if (!sampler) {
+        Fail("sampler");
+        return;
+      }
+      stage_textures[stage].samplers.push_back(sampler);
+    }
+  }
+  stats_.texture_uploads = textures_->uploads();
+  const VkPipelineLayout pipeline_layout =
+      PipelineLayout(uint32_t(stage_textures[0].views.size()), uint32_t(stage_textures[0].samplers.size()),
+                     uint32_t(stage_textures[1].views.size()), uint32_t(stage_textures[1].samplers.size()));
+  if (!pipeline_layout) {
+    Fail("pipeline layout");
     return;
   }
 
@@ -534,8 +657,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // The pipeline state from the registers.
   const uint32_t mode_cntl = regs[kPaSuScModeCntl];
   PipelineKey key{};
-  key.vs_hash = draw.vertex_shader->hash;
-  key.ps_hash = ps ? draw.pixel_shader->hash : 0;
+  key.vs_module = uint64_t(vs_module);
+  key.layout = uint64_t(pipeline_layout);
+  key.ps_module = uint64_t(ps_module);
   key.topology = topology;
   key.polygon_mode = VK_POLYGON_MODE_FILL;
   if (polygonal) {
@@ -556,7 +680,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     key.blend_controls[i] = colors[i] ? (regs[kRbBlendControl[i]] & 0x1FFF1FFF) : kNoBlending;
     if (colors[i]) key.color_masks |= color_mask_register & (0xFu << (4 * i));
   }
-  const VkPipeline pipeline = GetPipeline(key, *vs, ps);
+  const VkPipeline pipeline = GetPipeline(key);
   if (!pipeline) {
     Fail("pipeline creation");
     return;
@@ -596,6 +720,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     }
   }
   system->vertex_index_max = UINT32_MAX;
+  std::memcpy(system->texture_swizzled_signs, swizzled_signs, sizeof(swizzled_signs));
   // Alpha test (RB_COLORCONTROL): the compare function's less / equal / greater bits are the pass flags; a disabled
   // test is "always" (with none of them set, every pixel would be discarded).
   const uint32_t color_control = regs[kRbColorControl];
@@ -673,6 +798,33 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     }
   }
 
+  // The texture sets of both stages: sampled images, then samplers (empty sets for a stage without textures).
+  VkDescriptorSet texture_sets[2] = {empty_set_, empty_set_};
+  for (uint32_t stage = 0; stage < 2; ++stage) {
+    const StageTextures& st = stage_textures[stage];
+    if (st.views.empty() && st.samplers.empty()) continue;
+    VkDescriptorSetLayout layout = TextureSetLayout(stage == 0, uint32_t(st.views.size()), uint32_t(st.samplers.size()));
+    VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    alloc.descriptorPool = draw_pool_;
+    alloc.descriptorSetCount = 1;
+    alloc.pSetLayouts = &layout;
+    if (f.vkAllocateDescriptorSets(device_.device(), &alloc, &texture_sets[stage]) != VK_SUCCESS) {
+      f.vkResetDescriptorPool(device_.device(), draw_pool_, 0);
+      Fail("texture descriptor set");
+      return;
+    }
+    std::vector<VkDescriptorImageInfo> infos(st.views.size() + st.samplers.size());
+    std::vector<VkWriteDescriptorSet> writes(infos.size());
+    for (size_t i = 0; i < infos.size(); ++i) {
+      const bool is_image = i < st.views.size();
+      infos[i] = is_image ? VkDescriptorImageInfo{VK_NULL_HANDLE, st.views[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
+                          : VkDescriptorImageInfo{st.samplers[i - st.views.size()], VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED};
+      writes[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, texture_sets[stage], uint32_t(i), 0, 1,
+                   is_image ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLER, &infos[i], nullptr, nullptr};
+    }
+    f.vkUpdateDescriptorSets(device_.device(), uint32_t(writes.size()), writes.data(), 0, nullptr);
+  }
+
   const bool submitted = device_.Submit([&](VkCommandBuffer cb) {
     VkRenderingAttachmentInfo color[4];
     for (uint32_t i = 0; i < 4; ++i) {
@@ -705,9 +857,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     VkDescriptorSet sets[SpirvShaderTranslator::kDescriptorSetCount];
     sets[SpirvShaderTranslator::kDescriptorSetSharedMemoryAndEdram] = shared_set_;
     sets[SpirvShaderTranslator::kDescriptorSetConstants] = constants_set_;
-    sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex] = empty_set_;
-    sets[SpirvShaderTranslator::kDescriptorSetTexturesPixel] = empty_set_;
-    f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_, 0, SpirvShaderTranslator::kDescriptorSetCount,
+    sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex] = texture_sets[0];
+    sets[SpirvShaderTranslator::kDescriptorSetTexturesPixel] = texture_sets[1];
+    f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, SpirvShaderTranslator::kDescriptorSetCount,
                               sets, SpirvShaderTranslator::kConstantBufferCount, offsets);
     const VkViewport viewport{0, 0, size[0], size[1], 0, 1};
     const VkRect2D scissor{{left, top}, {uint32_t(right - left), uint32_t(bottom - top)}};
@@ -729,6 +881,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     }
     f.vkCmdEndRendering(cb);
   });
+  f.vkResetDescriptorPool(device_.device(), draw_pool_, 0);  // the draw has run (Submit waits)
   if (!submitted) {
     Fail("submission");
     return;

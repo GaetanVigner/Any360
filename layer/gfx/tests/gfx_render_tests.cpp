@@ -324,12 +324,70 @@ int main(int argc, char** argv) {
     CHECK(p.Count(Rgba(102, 204, 0, 255)) == kSize * kSize);
   }
 
+  // Textures: a full-target quad with texcoords sampling a 32x32 texture (point filtering, one texel per 2x2
+  // pixels) whose quadrants have four colours; linear and tiled k_8_8_8_8, tiled DXT1.
+  {
+    // Vertices: position xyzw, texcoord uv (top of the target is v = 0).
+    const uint32_t quad = kVertices + 0x400;
+    const float v[4][6] = {{-1, -1, 0, 1, 0, 1}, {1, -1, 0, 1, 1, 1}, {-1, 1, 0, 1, 0, 0}, {1, 1, 0, 1, 1, 0}};
+    for (uint32_t i = 0; i < 4; ++i) {
+      for (uint32_t c = 0; c < 6; ++c) SetBig(quad + 24 * i + 4 * c, Bits(v[i][c]));
+    }
+    // Quadrant colours (top-left, top-right, bottom-left, bottom-right), exact in RGB565 for DXT1.
+    const uint32_t quadrant[4] = {Rgba(255, 0, 0, 255), Rgba(0, 255, 0, 255), Rgba(0, 0, 255, 255), Rgba(255, 255, 255, 255)};
+    const uint16_t quadrant565[4] = {0xF800, 0x07E0, 0x001F, 0xFFFF};
+    auto quadrant_of = [](uint32_t x, uint32_t y, uint32_t half) { return (y >= half ? 2 : 0) + (x >= half ? 1 : 0); };
+    struct Case {
+      const char* name;
+      uint32_t base, format, endian, tiled;
+    };
+    const Case cases[] = {{"8888 linear", 0x50000, 6, 2, 0}, {"8888 tiled", 0x60000, 6, 2, 1}, {"DXT1 tiled", 0x70000, 18, 1, 1}};
+    for (const Case& c : cases) {
+      // The texels as the title stores them: big-endian words, rows of 256-byte pitch (linear) or 32x32 tiles.
+      if (c.format == 6) {
+        for (uint32_t y = 0; y < 32; ++y) {
+          for (uint32_t x = 0; x < 32; ++x) {
+            const uint32_t at = c.tiled ? uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), 32, 2)) : y * 256 + x * 4;
+            SetBig(c.base + at, quadrant[quadrant_of(x, y, 16)]);  // 8-in-32 swapped: R in the low byte
+          }
+        }
+      } else {
+        for (uint32_t by = 0; by < 8; ++by) {
+          for (uint32_t bx = 0; bx < 8; ++bx) {
+            const uint32_t at = uint32_t(vk::TiledOffset2D(int32_t(bx), int32_t(by), 8, 3));
+            const uint16_t color = quadrant565[quadrant_of(bx, by, 4)];
+            const uint8_t block[8] = {uint8_t(color >> 8), uint8_t(color), 0, 0, 0, 0, 0, 0};  // 8-in-16: big-endian halves
+            std::memcpy(g_physical.data() + c.base + at, block, 8);
+          }
+        }
+      }
+      Pixels p = scenario(c.name, nullptr, [&] {
+        s.Shader(0, t::BuildTexturedVertexShader());
+        s.Shader(1, t::BuildTexturedPixelShader(1));
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});  // vf0: 4 vertices of 6 floats
+        // tf1 (fetch dwords 6-11): texture, clamp to edge, pitch 32, tiled; format, endian, base; 32x32; swizzle
+        // RGBA, point filtering; 2D.
+        s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 1u << 22 | c.tiled << 31,
+               c.format | c.endian << 6 | c.base, 31u | 31u << 13, 0x688u << 1, 0, 1u << 9});
+        s.DrawAuto(kTriangleStrip, 4);
+      });
+      uint32_t wrong = 0;
+      for (uint32_t y = 0; y < kSize; ++y) {
+        for (uint32_t x = 0; x < kSize; ++x) wrong += p.At(x, y) != quadrant[quadrant_of(x, y, 32)];
+      }
+      std::printf("gfx_render_tests: texture %s: %u of %u pixels wrong (top-left %08X, bottom-right %08X)\n", c.name, wrong,
+                  kSize * kSize, p.At(5, 5), p.At(60, 60));
+      CHECK(wrong == 0);
+    }
+    s.Shader(0, t::BuildFetchPositionShader());
+  }
+
   const vk::RendererStats& stats = renderer.stats();
   std::printf("gfx_render_tests: %s (depth %s), %u draws, %u skipped, %u failed%s%s, %u shaders, %u pipelines, %u render targets\n",
               device.properties().deviceName, renderer.depth_format() == VK_FORMAT_D24_UNORM_S8_UINT ? "D24S8" : "D32S8",
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.translations == 3 && stats.render_targets == 3);
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 3 && stats.texture_uploads == 3);
   std::printf("gfx_render_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;
 }
