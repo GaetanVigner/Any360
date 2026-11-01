@@ -497,6 +497,45 @@ int main(int argc, char** argv) {
                   kSize * kSize, p.At(5, 5), p.At(60, 60));
       CHECK(wrong == 0);
     }
+    // Mip levels: a 128x128 tiled k_8_8_8_8 texture, red, whose level 1 (64x64, at the mip address, its own tiled
+    // pitch) is green, drawn over the 64x64 target: one texel a pixel at level 1, so all green. Then a packed mip
+    // tail: a 32x16 texture's level 1 (blue), read from its packed offset in the mip tile.
+    {
+      const uint32_t base = 0xA0000, mips = 0xB0000;
+      for (uint32_t y = 0; y < 128; ++y) {
+        for (uint32_t x = 0; x < 128; ++x) SetBig(base + uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), 128, 2)), Rgba(255, 0, 0, 255));
+      }
+      for (uint32_t y = 0; y < 64; ++y) {
+        for (uint32_t x = 0; x < 64; ++x) SetBig(mips + uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), 64, 2)), Rgba(0, 255, 0, 255));
+      }
+      auto mipped = [&](uint32_t address, uint32_t mip_address, uint32_t width, uint32_t height, bool packed, uint32_t min_level) {
+        s.Shader(0, t::BuildTexturedVertexShader());
+        s.Shader(1, t::BuildTexturedPixelShader(1));
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+        // tf1: point filters, levels 0-1 (mip filter point), 2D, the mip address (and the packed bit).
+        s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | (std::max(width, 32u) / 32) << 22 | 1u << 31,
+               6u | 2u << 6 | address, (width - 1) | (height - 1) << 13, 0x688u << 1, min_level << 2 | 1u << 6,
+               1u << 9 | (packed ? 1u << 11 : 0u) | mip_address});
+        s.DrawAuto(kTriangleStrip, 4);
+      };
+      const uint32_t green = Rgba(0, 255, 0, 255), blue = Rgba(0, 0, 255, 255);
+      Pixels p = scenario("mip levels", nullptr, [&] { mipped(base, mips, 128, 128, false, 0); });
+      std::printf("gfx_render_tests: mip levels: %u of %u pixels from level 1\n", p.Count(green), kSize * kSize);
+      CHECK(p.Count(green) == kSize * kSize);
+      // The packed tail: a 32x16 texture's shorter side is 16, so every level is packed, level 1 (16x8) at y = 8 of
+      // the mip address's tile (a wide texture's levels go down the tile). Levels 1-1 (mip_min_level 1): the sampler
+      // reads level 1 only.
+      const uint32_t tail_base = 0xB8000, tail_mips = 0xB9000;
+      for (uint32_t y = 0; y < 32; ++y) {
+        for (uint32_t x = 0; x < 32; ++x) {
+          SetBig(tail_base + uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), 32, 2)), Rgba(255, 0, 0, 255));
+          SetBig(tail_mips + uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), 32, 2)), y >= 8 && y < 16 ? blue : Rgba(255, 0, 0, 255));
+        }
+      }
+      p = scenario("packed mip tail", nullptr, [&] { mipped(tail_base, tail_mips, 32, 16, true, 1); });
+      std::printf("gfx_render_tests: packed mip tail: %u of %u pixels from level 1\n", p.Count(blue), kSize * kSize);
+      CHECK(p.Count(blue) == kSize * kSize);
+    }
     // Resolve: the quadrant texture (tiled k_8_8_8_8 at 0x60000) drawn into colour 0, resolved to guest memory at
     // 0x80000 (k_8_8_8_8, 8-in-32, tiled, pitch 64) with a green clear of the target, then sampled back from there.
     const uint32_t rect = kVertices + 0x800, resolved = 0x80000;
@@ -593,7 +632,7 @@ int main(int argc, char** argv) {
               device.properties().deviceName, renderer.depth_format() == VK_FORMAT_D24_UNORM_S8_UINT ? "D24S8" : "D32S8",
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 4 && stats.texture_uploads == 4 && stats.resolves == 1);
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 4 && stats.texture_uploads == 6 && stats.resolves == 1);
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.
   // The float24 conversions round-trip first.

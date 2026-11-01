@@ -87,8 +87,9 @@ inline void PushTextureFetch2D(std::vector<uint32_t>& words, uint32_t dest, uint
   const uint32_t w0 = uint32_t(uc::FetchOpcode::kTextureFetch) | (src & 0x3F) << 5 | (dest & 0x3F) << 12 |
                       (fetch_constant & 0x1F) << 20 | src_swizzle << 26;
   const uint32_t dest_swizzle = 0 | 1 << 3 | 2 << 6 | 3 << 9;
-  // mag, min, mip: use the fetch constant's (3); anisotropy: the fetch constant's (7); volume filters likewise.
-  const uint32_t w1 = dest_swizzle | 3u << 12 | 3u << 14 | 3u << 16 | 7u << 18 | 3u << 24 | 3u << 26;
+  // mag, min, mip: use the fetch constant's (3); anisotropy: the fetch constant's (7); volume filters likewise; the
+  // level of detail computed from the derivatives (use_comp_lod), as a D3D sample instruction does.
+  const uint32_t w1 = dest_swizzle | 3u << 12 | 3u << 14 | 3u << 16 | 7u << 18 | 3u << 24 | 3u << 26 | 1u << 28;
   // Sample at pixel centres, 2D.
   const uint32_t w2 = 1u << 1 | uint32_t(rex::graphics::xenos::FetchOpDimension::k2D) << 14;
   words.push_back(w0);

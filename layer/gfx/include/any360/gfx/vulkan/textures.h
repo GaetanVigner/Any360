@@ -47,7 +47,13 @@ struct TextureFetch {
   uint32_t width = 0, height = 0, depth = 0;
   uint32_t swizzle = 0, mag_filter = 0, min_filter = 0, mip_filter = 0, aniso = 0;
   uint32_t border_color = 0, dimension = 0, packed_mips = 0;
+  uint32_t mip_min = 0, mip_max = 0, mip_address = 0;  // the mip levels' range, their storage (0: none)
   static TextureFetch Parse(const uint32_t dwords[6]);
+  // The levels the texture has, as the reference reads them from the fetch constant: [first, last], level 0 from
+  // the base address, levels 1 and up from the mip address.
+  void Levels(uint32_t& first, uint32_t& last) const;
+  // Slices of a 2D array or cube (1 for others).
+  uint32_t slices() const { return dimension == 1 || dimension == 3 ? depth : 1; }
 };
 
 class TextureCache {
@@ -74,11 +80,9 @@ class TextureCache {
   void SetBeforeUpload(std::function<void()> callback) { before_upload_ = std::move(callback); }
 
  private:
-  // The guest memory a texture spans (all its stacked slices), and the distance between slices: the slice's blocks
-  // with rows and columns aligned to 32 blocks, aligned to 4 KB (as the reference lays them out).
-  static uint32_t GuestExtent(const TextureFetch& t, const TextureFormatInfo& info);
-  static uint32_t SliceStride(const TextureFetch& t, const TextureFormatInfo& info);
-  // The texture's blocks in host order, slice after slice.
+  // A level's blocks in host order, slice after slice (level 0: the base).
+  bool LoadLevel(const TextureFetch& t, const TextureFormatInfo& info, uint32_t level, std::vector<uint8_t>& blocks,
+                 std::string& error) const;
   bool LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blocks, std::string& error) const;
 
   struct Texture {
@@ -90,8 +94,8 @@ class TextureCache {
   Device& device_;
   const uint8_t* physical_;
   uint32_t mirror_bytes_;
-  std::map<std::array<uint32_t, 4>, std::unique_ptr<Texture>> textures_;
-  std::map<std::array<uint32_t, 8>, VkSampler> samplers_;
+  std::map<std::array<uint32_t, 5>, std::unique_ptr<Texture>> textures_;
+  std::map<std::array<uint32_t, 10>, VkSampler> samplers_;
   std::vector<uint8_t> scratch_;
   Image empty_[3];  // 1x1 black textures by ViewType, made on first use
   VkImageView Empty(ViewType type, std::string& error);

@@ -218,8 +218,10 @@ was refused, so from the second frame on the main depth kept the last frame's en
 depth test. MSAA surfaces are now drawn as their samples (a 4x surface of pitch P is the EDRAM of a 1x surface of
 pitch 2P with twice the rows; 2x doubles the rows), the coordinates scaled to samples: the clear reaches the main
 surfaces and the three frames match the reference's composition (mean difference 27 per channel each; the rest is
-mostly texture noise without mip levels). Left: signed textures (99 draws), the packed mip tail (21), mip levels,
-resolves from MSAA surfaces (which average samples).
+mostly texture noise without mip levels). Mip levels then (the fetch constant's level range, levels 1 and up at the
+mip address, the packed mip tail's offsets, as texture_util lays them out): the grain is gone and the frame is close
+to the reference's (mean difference 21.7 per channel; still missing: the pink beam, likely the 99 draws with signed
+textures, and the image is slightly softer). Left: signed textures, resolves from MSAA surfaces (averaging samples).
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames

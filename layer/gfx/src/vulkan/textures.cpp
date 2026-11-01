@@ -149,56 +149,128 @@ TextureFetch TextureFetch::Parse(const uint32_t d[6]) {
   f.aniso = (d[3] >> 25) & 7;
   f.border_color = d[5] & 3;
   f.packed_mips = (d[5] >> 11) & 1;
+  f.mip_min = (d[4] >> 2) & 0xF;
+  f.mip_max = (d[4] >> 6) & 0xF;
+  f.mip_address = d[5] & 0xFFFFF000;
   return f;
 }
 
-uint32_t TextureCache::SliceStride(const TextureFetch& t, const TextureFormatInfo& info) {
-  const uint32_t bh = (t.height + info.block_size - 1) / info.block_size;
-  const uint32_t pitch_blocks = std::max(1u, (std::max(t.pitch, t.width) + info.block_size - 1) / info.block_size);
-  return (((pitch_blocks + 31) & ~31u) * info.block_bytes * ((bh + 31) & ~31u) + 4095) & ~4095u;
+namespace {
+
+uint32_t Log2Ceil(uint32_t v) { return v <= 1 ? 0 : 32 - uint32_t(std::countl_zero(v - 1)); }
+uint32_t Log2Floor(uint32_t v) { return 31 - uint32_t(std::countl_zero(v | 1)); }
+
+// The first level stored in the packed mip tail: the one whose shorter side is 16 texels or less.
+uint32_t PackedMipLevel(uint32_t width, uint32_t height) {
+  const uint32_t log2_size = Log2Ceil(std::min(width, height));
+  return log2_size > 4 ? log2_size - 4 : 0;
 }
 
-uint32_t TextureCache::GuestExtent(const TextureFetch& t, const TextureFormatInfo& info) {
-  // The base level's blocks: linear rows aligned to 256 bytes, or 32x32-block tiles; then the other slices.
-  const uint32_t bh = (t.height + info.block_size - 1) / info.block_size, bw = (t.width + info.block_size - 1) / info.block_size;
-  const uint32_t pitch_blocks = std::max(1u, (std::max(t.pitch, t.width) + info.block_size - 1) / info.block_size);
-  const uint32_t slices = t.dimension == 1 || t.dimension == 3 ? t.depth : 1;
-  const uint32_t others = (slices - 1) * SliceStride(t, info);
-  if (t.tiled) return others + ((pitch_blocks + 31) & ~31u) * ((bh + 31) & ~31u) * info.block_bytes;
-  const uint32_t row_pitch = (pitch_blocks * info.block_bytes + 255) & ~255u;
-  return others + row_pitch * (bh - 1) + bw * info.block_bytes;
-}
-
-bool TextureCache::LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blocks, std::string& error) const {
-  const TextureFetch t = TextureFetch::Parse(fetch);
-  const TextureFormatInfo* info = GuestTextureFormat(t.format);
-  if (!info || (t.dimension != 1 && t.dimension != 3)) return error = "texture format or dimension not handled yet", false;
-  const uint32_t bw = (t.width + info->block_size - 1) / info->block_size, bh = (t.height + info->block_size - 1) / info->block_size;
-  const uint32_t pitch_blocks = std::max(1u, (std::max(t.pitch, t.width) + info->block_size - 1) / info->block_size);
-  const uint32_t bpb_log2 = std::countr_zero(info->block_bytes);
-  const uint32_t base = t.base & 0x1FFFFFFF, extent = GuestExtent(t, *info);
-  if (uint64_t(base) + extent > mirror_bytes_) return error = "texture outside the mirrored memory", false;
-  // Endian swap as the GPU reads memory (32-bit words), then untile block by block into rows of blocks.
-  std::vector<uint8_t> words((extent + 3) & ~3u);
-  std::memcpy(words.data(), physical_ + base, std::min<size_t>(words.size(), mirror_bytes_ - base));
-  for (size_t i = 0; i + 4 <= words.size(); i += 4) {
-    uint32_t v;
-    std::memcpy(&v, &words[i], 4);
-    v = Swap(v, t.endian);
-    std::memcpy(&words[i], &v, 4);
+// Where a packed level lies in the mip tail's 32x32 tile, in blocks (texture_util::GetPackedMipOffset for 2D).
+void PackedMipOffset(uint32_t width, uint32_t height, uint32_t block_size, uint32_t level, uint32_t& x, uint32_t& y) {
+  const uint32_t log2_width = Log2Ceil(width), log2_height = Log2Ceil(height);
+  const uint32_t log2_size = std::min(log2_width, log2_height);
+  const uint32_t tail_base = log2_size > 4 ? log2_size - 4 : 0, packed = level - tail_base;
+  if (packed < 3) {
+    x = log2_width > log2_height ? 0 : 16u >> packed;
+    y = log2_width > log2_height ? 16u >> packed : 0;
+  } else if (log2_width > log2_height) {
+    x = (1u << (log2_width - tail_base)) >> (packed - 2), y = 0;
+  } else {
+    x = 0, y = (1u << (log2_height - tail_base)) >> (packed - 2);
   }
-  const uint32_t slices = t.depth, slice_stride = SliceStride(t, *info);
-  const size_t slice_bytes = size_t(bw) * bh * info->block_bytes;
+  x /= block_size, y /= block_size;
+}
+
+// Where a level's texels are in guest memory (texture_util::GetGuestTextureLayout): the base level at the base
+// address with the fetch constant's pitch; levels 1 and up one after the other at the mip address, each sized from
+// the base rounded to powers of two; rows and columns aligned to 32 blocks, slices to 4 KB; the levels whose shorter
+// side is 16 texels or less packed into the tail level's tile at their own offsets.
+struct Placement {
+  uint32_t address = 0, pitch_blocks = 0, row_pitch = 0, slice_stride = 0, x = 0, y = 0;
+};
+
+Placement Place(const TextureFetch& t, const TextureFormatInfo& info, uint32_t level) {
+  const uint32_t bs = info.block_size, bpb = info.block_bytes;
+  const uint32_t packed_level = t.packed_mips ? PackedMipLevel(t.width, t.height) : UINT32_MAX;
+  auto layout = [&](Placement& p, uint32_t stored, bool base) {
+    const uint32_t row_texels = base ? std::max(t.pitch, t.width) : std::max((1u << Log2Ceil(t.width)) >> stored, 1u);
+    const uint32_t rows = base ? t.height : std::max((1u << Log2Ceil(t.height)) >> stored, 1u);
+    p.pitch_blocks = (row_texels + bs - 1) / bs;
+    p.row_pitch = t.tiled ? ((p.pitch_blocks + 31) & ~31u) * bpb : (p.pitch_blocks * bpb + 255) & ~255u;
+    const uint32_t stride_rows = ((rows + bs - 1) / bs + 31) & ~31u;
+    p.slice_stride = (((p.pitch_blocks + 31) & ~31u) * bpb * stride_rows + 4095) & ~4095u;
+    if (!t.tiled) p.slice_stride = std::max(p.slice_stride, (p.row_pitch * stride_rows + 4095) & ~4095u);
+  };
+  Placement p;
+  if (level == 0) {
+    p.address = t.base;
+    layout(p, 0, true);
+    if (packed_level == 0) PackedMipOffset(t.width, t.height, bs, 0, p.x, p.y);
+    return p;
+  }
+  p.address = t.mip_address;
+  const uint32_t stored = std::min(level, packed_level);
+  if (stored > 0) {
+    for (uint32_t i = 1; i < stored; ++i) {
+      Placement before;
+      layout(before, i, false);
+      p.address += before.slice_stride * t.slices();
+    }
+  }
+  layout(p, stored, false);
+  if (level >= packed_level) PackedMipOffset(t.width, t.height, bs, level, p.x, p.y);
+  return p;
+}
+
+}  // namespace
+
+void TextureFetch::Levels(uint32_t& first, uint32_t& last) const {
+  const uint32_t size_levels = Log2Floor(std::max(width, height));
+  first = 0, last = 0;
+  if (mip_address) {
+    first = std::min(mip_min, size_levels);
+    last = std::max(std::min(mip_max, size_levels), first);
+  }
+  if (last && !base) first = std::max(first, 1u);
+}
+
+bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& info_ref, uint32_t level,
+                             std::vector<uint8_t>& blocks, std::string& error) const {
+  const TextureFormatInfo* info = &info_ref;
+  const Placement p = Place(t, *info, level);
+  const uint32_t bs = info->block_size, bpb = info->block_bytes, bpb_log2 = uint32_t(std::countr_zero(bpb));
+  const uint32_t bw = (std::max(t.width >> level, 1u) + bs - 1) / bs, bh = (std::max(t.height >> level, 1u) + bs - 1) / bs;
+  const uint32_t slices = t.slices();
+  const size_t slice_bytes = size_t(bw) * bh * bpb;
   blocks.assign(slice_bytes * slices, 0);
-  const uint32_t row_pitch = (pitch_blocks * info->block_bytes + 255) & ~255u;
+  if (!p.address) return error = "texture level " + std::to_string(level) + " without an address", false;
+  // Block by block: the 32-bit words holding it, endian-swapped as the GPU reads memory.
+  auto read = [&](uint32_t address, uint8_t* out) {
+    if (bpb >= 4) {
+      if (uint64_t(address) + bpb > mirror_bytes_) return;
+      std::memcpy(out, physical_ + address, bpb);
+      for (uint32_t i = 0; i < bpb; i += 4) {
+        uint32_t v;
+        std::memcpy(&v, out + i, 4);
+        v = Swap(v, t.endian);
+        std::memcpy(out + i, &v, 4);
+      }
+    } else {
+      const uint32_t word_address = address & ~3u;
+      if (uint64_t(word_address) + 4 > mirror_bytes_) return;
+      uint32_t v;
+      std::memcpy(&v, physical_ + word_address, 4);
+      v = Swap(v, t.endian);
+      std::memcpy(out, reinterpret_cast<const uint8_t*>(&v) + (address & 3), bpb);
+    }
+  };
   for (uint32_t s = 0; s < slices; ++s) {
     for (uint32_t y = 0; y < bh; ++y) {
       for (uint32_t x = 0; x < bw; ++x) {
-        const uint32_t src = s * slice_stride + (t.tiled ? uint32_t(TiledOffset2D(int32_t(x), int32_t(y), pitch_blocks, bpb_log2))
-                                                         : y * row_pitch + x * info->block_bytes);
-        if (src + info->block_bytes <= words.size()) {
-          std::memcpy(&blocks[s * slice_bytes + (size_t(y) * bw + x) * info->block_bytes], &words[src], info->block_bytes);
-        }
+        const uint32_t offset = t.tiled ? uint32_t(TiledOffset2D(int32_t(x + p.x), int32_t(y + p.y), p.pitch_blocks, bpb_log2))
+                                        : (y + p.y) * p.row_pitch + (x + p.x) * bpb;
+        read(p.address + s * p.slice_stride + offset, &blocks[s * slice_bytes + (size_t(y) * bw + x) * bpb]);
       }
     }
   }
@@ -219,6 +291,13 @@ bool TextureCache::LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blo
     }
   }
   return true;
+}
+
+bool TextureCache::LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blocks, std::string& error) const {
+  const TextureFetch t = TextureFetch::Parse(fetch);
+  const TextureFormatInfo* info = GuestTextureFormat(t.format);
+  if (!info || (t.dimension != 1 && t.dimension != 3)) return error = "texture format or dimension not handled yet", false;
+  return LoadLevel(t, *info, 0, blocks, error);
 }
 
 bool TextureCache::ReadRGBA8(const uint32_t fetch[6], uint32_t& width, uint32_t& height, std::vector<uint32_t>& pixels,
@@ -337,15 +416,20 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   const bool cube = t.dimension == 3;
   const TextureFormatInfo* info = GuestTextureFormat(t.format);
   if (!info) return error = "texture format " + std::to_string(t.format) + " not handled yet", VK_NULL_HANDLE;
-  if (t.packed_mips && (t.width <= 16 || t.height <= 16)) return error = "packed mip tail base (not yet)", VK_NULL_HANDLE;
 
-  // The guest memory: blocks of the base level, linear (rows aligned to 256 bytes) or tiled (32x32-block tiles).
-  const uint32_t base = t.base & 0x1FFFFFFF;
-  const uint32_t extent = GuestExtent(t, *info);
-  if (uint64_t(base) + extent > mirror_bytes_) return error = "texture outside the mirrored memory", VK_NULL_HANDLE;
-  const uint64_t hash = Fnv1a(physical_ + base, extent) ^ (uint64_t(fetch[0]) << 32 | fetch[1]) ^ (uint64_t(fetch[2]) << 7);
+  // The levels, and a hash of the guest memory each spans (a level's slices at its stride, the packed tail's tile).
+  uint32_t first_level, last_level;
+  t.Levels(first_level, last_level);
+  uint64_t hash = (uint64_t(fetch[0]) << 32 | fetch[1]) ^ (uint64_t(fetch[2]) << 7) ^ (uint64_t(fetch[4]) << 21) ^ fetch[5];
+  for (uint32_t level = first_level; level <= last_level; ++level) {
+    const Placement p = Place(t, *info, level);
+    const uint64_t bytes = uint64_t(p.slice_stride) * t.slices();
+    if (!p.address || p.address + bytes > mirror_bytes_) return error = "texture outside the mirrored memory", VK_NULL_HANDLE;
+    hash = hash * 0x100000001B3ull ^ Fnv1a(physical_ + p.address, size_t(bytes));
+  }
+  const uint32_t levels = last_level + 1;
 
-  const std::array<uint32_t, 4> key = {fetch[0] & 0xFFC00003, fetch[1], fetch[2], fetch[5] & 0xE00};
+  const std::array<uint32_t, 5> key = {fetch[0] & 0xFFC00003, fetch[1], fetch[2], fetch[5] & 0xFFFFFE00, fetch[4] & 0x3FC};
   auto& slot = textures_[key];
   const Functions& f = device_.fn();
   if (!slot) {
@@ -355,7 +439,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     info_ci.imageType = VK_IMAGE_TYPE_2D;
     info_ci.format = info->format;
     info_ci.extent = {t.width, t.height, 1};
-    info_ci.mipLevels = 1;
+    info_ci.mipLevels = levels;
     info_ci.arrayLayers = t.depth;  // stacked textures: one layer a slice; cubes: a face
     info_ci.samples = VK_SAMPLE_COUNT_1_BIT;
     info_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -379,8 +463,20 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
 
   if (slot->content_hash != hash) {
     if (before_upload_) before_upload_();  // draws recorded earlier must sample the old content
+    // Every level's blocks, one after the other (levels below the first are never sampled: left as they are).
     std::vector<uint8_t> blocks;
-    if (!LoadBlocks(fetch, blocks, error)) return VK_NULL_HANDLE;
+    std::vector<VkBufferImageCopy> regions;
+    for (uint32_t level = first_level; level <= last_level; ++level) {
+      std::vector<uint8_t> level_blocks;
+      if (!LoadLevel(t, *info, level, level_blocks, error)) return VK_NULL_HANDLE;
+      VkBufferImageCopy region{};
+      region.bufferOffset = blocks.size();
+      region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, t.depth};
+      region.imageExtent = {std::max(t.width >> level, 1u), std::max(t.height >> level, 1u), 1};
+      regions.push_back(region);
+      blocks.insert(blocks.end(), level_blocks.begin(), level_blocks.end());
+      blocks.resize((blocks.size() + 15) & ~size_t(15));  // offsets aligned for any texel size
+    }
     Buffer staging;
     if (!CreateBuffer(device_, blocks.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, staging)) {
       return error = "texture staging", VK_NULL_HANDLE;
@@ -396,15 +492,13 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
       barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
       barrier.image = image.image;
-      barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, t.depth};
+      barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, t.depth};
       VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
       dependency.imageMemoryBarrierCount = 1;
       dependency.pImageMemoryBarriers = &barrier;
       f.vkCmdPipelineBarrier2(cb, &dependency);
-      VkBufferImageCopy region{};
-      region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, t.depth};
-      region.imageExtent = {t.width, t.height, 1};
-      f.vkCmdCopyBufferToImage(cb, staging.buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+      f.vkCmdCopyBufferToImage(cb, staging.buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, uint32_t(regions.size()),
+                               regions.data());
       barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
       barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
       barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
@@ -433,7 +527,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     vi.format = info->format;
     vi.components = {Component(host_swizzle & 7), Component((host_swizzle >> 3) & 7), Component((host_swizzle >> 6) & 7),
                      Component((host_swizzle >> 9) & 7)};
-    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, t.depth};
+    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, t.depth};
     if (f.vkCreateImageView(device_.device(), &vi, nullptr, &view) != VK_SUCCESS) {
       view = VK_NULL_HANDLE;
       return error = "texture view", VK_NULL_HANDLE;
@@ -448,7 +542,10 @@ VkSampler TextureCache::Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t 
   if (min == 3) min = t.min_filter;
   if (mip == 3) mip = t.mip_filter;
   if (aniso == 7) aniso = t.aniso;
-  const std::array<uint32_t, 8> key = {mag, min, mip, aniso, t.clamp_x, t.clamp_y, t.clamp_z, t.border_color};
+  uint32_t first_level, last_level;
+  t.Levels(first_level, last_level);
+  const std::array<uint32_t, 10> key = {mag, min, mip, aniso, t.clamp_x, t.clamp_y, t.clamp_z, t.border_color, first_level,
+                                        last_level};
   VkSampler& sampler = samplers_[key];
   if (sampler) return sampler;
   VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -462,7 +559,9 @@ VkSampler TextureCache::Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t 
     si.anisotropyEnable = VK_TRUE;
     si.maxAnisotropy = std::min(float(1u << (aniso - 1)), device_.properties().limits.maxSamplerAnisotropy);
   }
-  si.maxLod = 0.0f;  // base level only for now
+  // The fetch constant's level range; the base map filter (2) samples its first level only.
+  si.minLod = float(first_level);
+  si.maxLod = mip == 2 ? float(first_level) : float(last_level);
   si.borderColor = t.border_color == 0   ? VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK
                    : t.border_color == 1 ? VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE
                                          : VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
