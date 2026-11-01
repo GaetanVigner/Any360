@@ -141,8 +141,15 @@ From the Crackdown runs (each one cost a debugging session there):
    DXT1 to the pixel on NVIDIA and AMD. Next for textures: mips and the packed mip tail, signed views, cube, 3D and
    stacked textures, the formats that need conversion (5_6_5, 4_4_4_4, 10_11_11...), untiling on the GPU, and
    memory watching instead of hashing each use.
-6. **Resolves**: copies between host targets and to guest memory where the CPU or a later draw reads them; then a
-   frame can be presented.
+6. **Resolves** (first step done, 2026-11-01): a draw in EDRAM copy mode reads the rectangle of its three vertices
+   (vertex fetch constant 0, with the half-pixel offset, 24.8 fixed point, within the scissor, aligned to 8 pixels,
+   as the reference does) from the surface `RB_COPY_CONTROL` selects, converts it to `RB_COPY_DEST_INFO`'s format
+   (red/blue swap, exponent bias, endianness) and writes it tiled to guest memory at `RB_COPY_DEST_BASE`, where
+   the CPU and the texture cache see it; then it clears the colour and depth targets over the rectangle with
+   `RB_COLOR_CLEAR` / `RB_DEPTH_CLEAR` decoded per format. `gfx_render_tests` draws a texture, resolves it with
+   clears, checks every texel in guest memory and the cleared targets, and samples the result back, on NVIDIA and
+   AMD. Next: depth resolves, more destination formats, MSAA, 3D / array destinations, and host-to-host copies so
+   a resolved texture need not go through guest memory; then a frame can be presented.
 7. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 8. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; the swap goes to a
    window through SDL3.

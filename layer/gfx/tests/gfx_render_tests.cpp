@@ -379,6 +379,61 @@ int main(int argc, char** argv) {
                   kSize * kSize, p.At(5, 5), p.At(60, 60));
       CHECK(wrong == 0);
     }
+    // Resolve: the quadrant texture (tiled k_8_8_8_8 at 0x60000) drawn into colour 0, resolved to guest memory at
+    // 0x80000 (k_8_8_8_8, 8-in-32, tiled, pitch 64) with a green clear of the target, then sampled back from there.
+    const uint32_t rect = kVertices + 0x800, resolved = 0x80000;
+    const float rv[3][2] = {{0, 0}, {float(kSize), 0}, {float(kSize), float(kSize)}};
+    for (uint32_t i = 0; i < 3; ++i) {
+      SetBig(rect + 8 * i, Bits(rv[i][0]));
+      SetBig(rect + 8 * i + 4, Bits(rv[i][1]));
+    }
+    std::memset(g_physical.data() + resolved, 0xCD, 64 * 64 * 4);
+    auto textured = [&](uint32_t base, uint32_t size) {
+      s.Shader(0, t::BuildTexturedVertexShader());
+      s.Shader(1, t::BuildTexturedPixelShader(1));
+      s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+      s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | (size / 32) << 22 | 1u << 31,
+             6u | 2u << 6 | base, (size - 1) | (size - 1) << 13, 0x688u << 1, 0, 1u << 9});
+      s.DrawAuto(kTriangleStrip, 4);
+    };
+    const uint32_t green = Rgba(0, 255, 0, 255);
+    Pixels p = scenario("resolve", nullptr, [&] {
+      textured(0x60000, 32);
+      s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});  // vf0: the copy rectangle
+      // Control (colour 0, clear colour and depth), base, pitch, info.
+      s.Put({Type0(0x2318, 4), 0u | 1u << 8 | 1u << 9, resolved, 64u | 64u << 16, 2u | 6u << 7});
+      s.Reg(0x231E, 0xFF00FF00);  // RB_COLOR_CLEAR: green, opaque (component 0 in the low byte)
+      s.Reg(0x231D, 0);           // RB_DEPTH_CLEAR: depth 0 (nearest), stencil 0
+      s.Reg(0x2208, 6);           // EDRAM copy mode
+      s.DrawAuto(8, 3);           // the rectangle list the runtime draws for a resolve
+      s.Reg(0x2208, 4);
+      // The depth clear took: a quad at depth 0.5 tested LESS draws nothing over depth 0.
+      s.Shader(0, t::BuildFetchPositionShader());
+      s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+      s.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 1u << 4);
+      s.Vertices(0);
+      s.Color(255, 0, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    std::printf("gfx_render_tests: resolve: target after clear %u of %u green\n", p.Count(green), kSize * kSize);
+    CHECK(p.Count(green) == kSize * kSize);
+    uint32_t wrong_texels = 0;
+    for (uint32_t y = 0; y < kSize; ++y) {
+      for (uint32_t x = 0; x < kSize; ++x) {
+        uint32_t big;
+        std::memcpy(&big, g_physical.data() + resolved + vk::TiledOffset2D(int32_t(x), int32_t(y), 64, 2), 4);
+        wrong_texels += std::byteswap(big) != quadrant[quadrant_of(x, y, 32)];
+      }
+    }
+    std::printf("gfx_render_tests: resolve: %u of %u texels wrong in guest memory\n", wrong_texels, kSize * kSize);
+    CHECK(wrong_texels == 0);
+    p = scenario("resolved texture", nullptr, [&] { textured(resolved, 64); });
+    uint32_t wrong = 0;
+    for (uint32_t y = 0; y < kSize; ++y) {
+      for (uint32_t x = 0; x < kSize; ++x) wrong += p.At(x, y) != quadrant[quadrant_of(x, y, 32)];
+    }
+    std::printf("gfx_render_tests: resolve: sampled back, %u of %u pixels wrong\n", wrong, kSize * kSize);
+    CHECK(wrong == 0);
     s.Shader(0, t::BuildFetchPositionShader());
   }
 
@@ -387,7 +442,7 @@ int main(int argc, char** argv) {
               device.properties().deviceName, renderer.depth_format() == VK_FORMAT_D24_UNORM_S8_UINT ? "D24S8" : "D32S8",
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 3 && stats.texture_uploads == 3);
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 3 && stats.texture_uploads == 4 && stats.resolves == 1);
   std::printf("gfx_render_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;
 }

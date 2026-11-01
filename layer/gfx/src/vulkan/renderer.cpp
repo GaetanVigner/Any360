@@ -1,6 +1,7 @@
 #include "any360/gfx/vulkan/renderer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <bit>
 #include <cstring>
 
@@ -85,7 +86,7 @@ struct VulkanRenderer::TranslatedShader {
   std::map<uint64_t, VkShaderModule> modules;  // by modification (VK_NULL_HANDLE: translation failed)
 };
 
-VulkanRenderer::VulkanRenderer(Device& device, const uint8_t* physical, uint32_t mirror_bytes)
+VulkanRenderer::VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirror_bytes)
     : device_(device), physical_(physical), mirror_bytes_(mirror_bytes) {
   // Every translator feature on: what desktop Vulkan 1.3 drivers and RADV offer (to be read from the device).
   translator_ = std::make_unique<SpirvShaderTranslator>(SpirvShaderTranslator::Features(true), true, true, false);
@@ -887,6 +888,260 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     return;
   }
   ++stats_.draws;
+}
+
+namespace {
+// Resolve registers.
+constexpr uint32_t kRbCopyControl = 0x2318, kRbCopyDestBase = 0x2319, kRbCopyDestPitch = 0x231A, kRbCopyDestInfo = 0x231B,
+                   kRbDepthClear = 0x231D, kRbColorClear = 0x231E, kRbColorClearLo = 0x231F, kPaSuVtxCntl = 0x2302;
+
+uint16_t FloatToHalf(float f) {
+  // Round-to-nearest-even IEEE half (finite values; the resolve path carries what the target holds).
+  const uint32_t b = std::bit_cast<uint32_t>(f);
+  const uint32_t sign = (b >> 16) & 0x8000;
+  int32_t exponent = int32_t((b >> 23) & 0xFF) - 127 + 15;
+  uint32_t mantissa = b & 0x7FFFFF;
+  if (exponent <= 0) return uint16_t(sign);
+  if (exponent >= 31) return uint16_t(sign | 0x7C00);
+  uint32_t half = sign | uint32_t(exponent) << 10 | mantissa >> 13;
+  const uint32_t rest = mantissa & 0x1FFF;
+  if (rest > 0x1000 || (rest == 0x1000 && (half & 1))) ++half;
+  return uint16_t(half);
+}
+float HalfToFloat(uint16_t h) {
+  const uint32_t sign = uint32_t(h & 0x8000) << 16, exponent = (h >> 10) & 0x1F, mantissa = h & 0x3FF;
+  if (!exponent) return std::bit_cast<float>(sign) + (sign ? -1.0f : 1.0f) * float(mantissa) / 16777216.0f;
+  if (exponent == 31) return std::bit_cast<float>(sign | 0x7F800000 | mantissa << 13);
+  return std::bit_cast<float>(sign | (exponent - 15 + 127) << 23 | mantissa << 13);
+}
+// Endian128 of RB_COPY_DEST_INFO on a 32- or 64-bit element (as little-endian bytes in `bytes`).
+void SwapElement(uint8_t* bytes, uint32_t size, uint32_t endian) {
+  if (endian >= 1 && endian <= 3) {
+    for (uint32_t i = 0; i < size; i += 4) {
+      uint32_t v;
+      std::memcpy(&v, bytes + i, 4);
+      v = GpuSwap(v, Endian(endian));
+      std::memcpy(bytes + i, &v, 4);
+    }
+  } else if (endian == 4 && size == 8) {  // 8 in 64
+    std::reverse(bytes, bytes + 8);
+  }
+}
+}  // namespace
+
+void VulkanRenderer::Copy(const uint32_t* regs) {
+  const Functions& f = device_.fn();
+  const uint32_t copy_control = regs[kRbCopyControl];
+  const uint32_t source = copy_control & 7, copy_command = (copy_control >> 20) & 3;
+  const bool clear_color = (copy_control >> 8) & 1, clear_depth = (copy_control >> 9) & 1;
+  if (copy_command > 1) {
+    Fail("resolve copy command " + std::to_string(copy_command) + " (not yet)");
+    return;
+  }
+  const uint32_t surface_info = regs[kRbSurfaceInfo];
+  if ((surface_info >> 16) & 3) {
+    Fail("MSAA resolve (not yet)");
+    return;
+  }
+  const uint32_t pitch = surface_info & 0x3FFF;
+
+  // The rectangle: the copy draw's three vertices (vertex fetch constant 0, float2 window coordinates), with the
+  // D3D half-pixel offset, in 24.8 fixed point, within the scissor, aligned to 8 pixels (as the reference does).
+  const uint32_t fetch0 = regs[reg::kFetchConstants], fetch1 = regs[reg::kFetchConstants + 1];
+  if ((fetch0 & 3) != 3 || ((fetch1 >> 2) & 0xFFFFFF) != 6) {
+    Fail("resolve vertex buffer format");
+    return;
+  }
+  const uint32_t vertex_address = fetch0 & 0x1FFFFFFC;
+  if (vertex_address + 24 > mirror_bytes_) {
+    Fail("resolve vertices outside the mirrored memory");
+    return;
+  }
+  const float half_pixel = ((regs[kPaSuVtxCntl] & 1) == 0) ? 0.5f : 0.0f;  // pix_center: D3D zero
+  int32_t fixed[6];
+  for (uint32_t i = 0; i < 6; ++i) {
+    uint32_t bits;
+    std::memcpy(&bits, physical_ + vertex_address + 4 * i, 4);
+    const float value = std::bit_cast<float>(GpuSwap(bits, Endian(fetch1 & 3))) + half_pixel;
+    fixed[i] = int32_t(std::lround(value * 256.0f));
+  }
+  int32_t x0 = (std::min({fixed[0], fixed[2], fixed[4]}) + 127) >> 8, y0 = (std::min({fixed[1], fixed[3], fixed[5]}) + 127) >> 8;
+  int32_t x1 = (std::max({fixed[0], fixed[2], fixed[4]}) + 127) >> 8, y1 = (std::max({fixed[1], fixed[3], fixed[5]}) + 127) >> 8;
+  const uint32_t window_offset = regs[kPaScWindowOffset];
+  if ((regs[kPaSuScModeCntl] >> 16) & 1) {
+    const int32_t ox = int32_t(window_offset << 17) >> 17, oy = int32_t(window_offset << 1) >> 17;
+    x0 += ox, x1 += ox, y0 += oy, y1 += oy;
+  }
+  // The scissor without the window offset applied to it (as the reference reads it for resolves).
+  const uint32_t window_tl = regs[kPaScWindowScissorTl], window_br = regs[kPaScWindowScissorBr];
+  const int32_t sl = std::max(int32_t(window_tl & 0x3FFF), int32_t(regs[kPaScScreenScissorTl] & 0x7FFF));
+  const int32_t st = std::max(int32_t((window_tl >> 16) & 0x3FFF), int32_t((regs[kPaScScreenScissorTl] >> 16) & 0x7FFF));
+  const int32_t sr = std::min(int32_t(window_br & 0x3FFF), int32_t(regs[kPaScScreenScissorBr] & 0x7FFF));
+  const int32_t sb = std::min(int32_t((window_br >> 16) & 0x3FFF), int32_t((regs[kPaScScreenScissorBr] >> 16) & 0x7FFF));
+  x0 = std::clamp(x0, sl, std::max(sl, sr)), x1 = std::clamp(x1, sl, std::max(sl, sr));
+  y0 = std::clamp(y0, st, std::max(st, sb)), y1 = std::clamp(y1, st, std::max(st, sb));
+  x0 &= ~7, y0 &= ~7, x1 = (x1 + 7) & ~7, y1 = (y1 + 7) & ~7;
+  x1 = std::min(x1, int32_t(pitch & ~7u));
+  if (x0 >= x1 || y0 >= y1) {
+    Fail("resolve region empty");
+    return;
+  }
+
+  // The source surface and the targets the resolve clears.
+  const bool is_depth = source >= 4;
+  const uint32_t color_info = is_depth ? 0 : regs[kRbColorInfo[source]];
+  const uint32_t depth_info = regs[kRbDepthInfo];
+  const SurfaceKey source_key = is_depth ? SurfaceKey{depth_info & 0xFFF, pitch, (depth_info >> 16) & 1, 1}
+                                         : SurfaceKey{color_info & 0xFFF, pitch, (color_info >> 16) & 0xF, 0};
+  Surface* surface = GetSurface(source_key);
+  if (!surface) {
+    Fail("resolve source surface");
+    return;
+  }
+  const uint32_t width = uint32_t(std::min<int32_t>(x1, int32_t(surface->image.width)) - x0);
+  const uint32_t height = uint32_t(std::min<int32_t>(y1, int32_t(surface->image.height)) - y0);
+
+  // The copy: the region read back, converted, tiled into guest memory (destination texels at the source's
+  // coordinates, at RB_COPY_DEST_BASE with RB_COPY_DEST_PITCH).
+  const uint32_t dest_info = regs[kRbCopyDestInfo];
+  const uint32_t dest_endian = dest_info & 7, dest_format = (dest_info >> 7) & 0x3F, dest_swap = (dest_info >> 24) & 1;
+  const int32_t dest_bias = int32_t(dest_info << 10) >> 26;  // bits 16-21, signed
+  const uint32_t dest_base = regs[kRbCopyDestBase] & 0x1FFFFFFF, dest_pitch = regs[kRbCopyDestPitch] & 0x3FFF;
+  if (is_depth) {
+    Fail("depth resolve (not yet)");
+    return;
+  }
+  if ((dest_info >> 3) & 1) {
+    Fail("resolve to a 3D / array destination (not yet)");
+    return;
+  }
+  const VkFormat host = surface->image.format;
+  uint32_t dest_bytes = 0, source_bytes = 0;
+  if (dest_format == 6 && host == VK_FORMAT_R8G8B8A8_UNORM) {
+    dest_bytes = 4, source_bytes = 4;  // k_8_8_8_8 from an 8_8_8_8 target
+  } else if (dest_format == 32 && host == VK_FORMAT_R16G16B16A16_SFLOAT) {
+    dest_bytes = 8, source_bytes = 8;  // k_16_16_16_16_FLOAT from a 16_16_16_16_FLOAT target
+  } else {
+    Fail("resolve from host format " + std::to_string(host) + " to format " + std::to_string(dest_format) + " (not yet)");
+    return;
+  }
+  Buffer readback;
+  if (!CreateBuffer(device_, VkDeviceSize(width) * height * source_bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback)) {
+    Fail("resolve readback buffer");
+    return;
+  }
+  bool ok = device_.Submit([&](VkCommandBuffer cb) {
+    Transition(cb, surface->image, surface->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageOffset = {x0, y0, 0};
+    region.imageExtent = {width, height, 1};
+    f.vkCmdCopyImageToBuffer(cb, surface->image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1, &region);
+  });
+  if (ok) {
+    const uint8_t* src = static_cast<const uint8_t*>(readback.mapped);
+    const float scale = std::ldexp(1.0f, dest_bias);
+    const uint32_t bpp_log2 = dest_bytes == 8 ? 3 : 2;
+    for (uint32_t y = 0; y < height; ++y) {
+      for (uint32_t x = 0; x < width; ++x) {
+        uint8_t element[8];
+        const uint8_t* texel = src + (size_t(y) * width + x) * source_bytes;
+        if (dest_bytes == 4) {
+          uint8_t c[4];
+          for (int i = 0; i < 4; ++i) {
+            c[i] = dest_bias ? uint8_t(std::clamp(std::lround(texel[i] * scale), 0L, 255L)) : texel[i];
+          }
+          if (dest_swap) std::swap(c[0], c[2]);
+          std::memcpy(element, c, 4);  // component 0 in the low byte, as the GPU writes
+        } else {
+          uint16_t c[4];
+          std::memcpy(c, texel, 8);
+          if (dest_bias) {
+            for (uint16_t& h : c) h = FloatToHalf(HalfToFloat(h) * scale);
+          }
+          if (dest_swap) std::swap(c[0], c[2]);
+          std::memcpy(element, c, 8);
+        }
+        SwapElement(element, dest_bytes, dest_endian);
+        const uint32_t tx = uint32_t(x0) + x, ty = uint32_t(y0) + y;
+        const uint32_t address = dest_base + uint32_t(TiledOffset2D(int32_t(tx), int32_t(ty), dest_pitch, bpp_log2));
+        if (address + dest_bytes <= mirror_bytes_) std::memcpy(physical_ + address, element, dest_bytes);
+      }
+    }
+  }
+  DestroyBuffer(device_, readback);
+  if (!ok) {
+    Fail("resolve copy");
+    return;
+  }
+
+  // The clears: the colour source and the depth target over the same rectangle, with the values RB_COLOR_CLEAR /
+  // RB_DEPTH_CLEAR give in the targets' formats (as the reference decodes them).
+  if (clear_color || clear_depth) {
+    Surface* color_target = clear_color ? surface : nullptr;
+    Surface* depth_target = clear_depth ? GetSurface({depth_info & 0xFFF, pitch, (depth_info >> 16) & 1, 1}) : nullptr;
+    VkClearValue color_value{}, depth_value{};
+    if (color_target) {
+      const uint64_t clear = regs[kRbColorClear] | uint64_t(regs[kRbColorClearLo]) << 32;
+      switch (source_key.format) {
+        case 0: case 1:  // 8_8_8_8 (gamma alike)
+          for (uint32_t j = 0; j < 4; ++j) color_value.color.float32[j] = float((clear >> (8 * j)) & 0xFF) / 255.0f;
+          break;
+        case 6: case 7:  // 16-bit float
+          for (uint32_t j = 0; j < 4; ++j) color_value.color.float32[j] = HalfToFloat(uint16_t(clear >> (16 * j)));
+          break;
+        case 14:
+          color_value.color.float32[0] = std::bit_cast<float>(uint32_t(clear));
+          break;
+        default:
+          Fail("resolve clear of target format " + std::to_string(source_key.format) + " (not yet)");
+          return;
+      }
+    }
+    if (depth_target) {
+      const uint32_t clear = regs[kRbDepthClear];
+      if ((depth_info >> 16) & 1) {
+        Fail("float24 depth clear (not yet)");
+        return;
+      }
+      depth_value.depthStencil = {float(clear >> 8) / float(0xFFFFFF), clear & 0xFF};
+    }
+    ok = device_.Submit([&](VkCommandBuffer cb) {
+      // A render pass over the rectangle that clears on load and stores: clears exactly the rectangle.
+      VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO}, depth{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+      if (color_target) {
+        Transition(cb, color_target->image, color_target->layout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+        color.imageView = color_target->image.view;
+        color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color.clearValue = color_value;
+      }
+      if (depth_target) {
+        Transition(cb, depth_target->image, depth_target->layout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                   VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+        depth.imageView = depth_target->image.view;
+        depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        depth.clearValue = depth_value;
+      }
+      VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
+      rendering.renderArea = {{x0, y0}, {width, height}};
+      rendering.layerCount = 1;
+      rendering.colorAttachmentCount = color_target ? 1 : 0;
+      rendering.pColorAttachments = color_target ? &color : nullptr;
+      rendering.pDepthAttachment = depth_target ? &depth : nullptr;
+      rendering.pStencilAttachment = depth_target ? &depth : nullptr;
+      f.vkCmdBeginRendering(cb, &rendering);
+      f.vkCmdEndRendering(cb);
+    });
+    if (!ok) {
+      Fail("resolve clear");
+      return;
+    }
+  }
+  ++stats_.resolves;
 }
 
 }  // namespace any360::gfx::vk

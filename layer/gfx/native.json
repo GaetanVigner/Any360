@@ -36,6 +36,10 @@
   "texture formats:k_DXT1",
   "render features:textures (2D)",
   "render features:texture tiling (untile)",
-  "render features:interpolators"
+  "render features:interpolators",
+  "render features:resolve colour",
+  "render features:resolve with clear",
+  "render features:resolve to guest memory",
+  "primitive types:kRectangleList"
  ]
 }

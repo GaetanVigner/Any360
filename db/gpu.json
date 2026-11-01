@@ -1138,7 +1138,7 @@
 "name":"kRectangleList",
 "family":"primitive types",
 "value":8,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"primitive types:kLineLoop",
@@ -2132,7 +2132,7 @@
 "name":"resolve colour",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:resolve depth",
@@ -2146,14 +2146,14 @@
 "name":"resolve with clear",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:resolve to guest memory",
 "name":"resolve to guest memory",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:occlusion queries",

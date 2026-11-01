@@ -17,7 +17,8 @@
 // scissor, depth bias, blend constants, stencil masks and references) is set per draw.
 //
 // Textures come from the texture cache (textures.h), sampled through the descriptor sets the translated shaders
-// declare. Still narrow: 1x MSAA only; surfaces that alias the same EDRAM in another format do not share contents; no
+// declare; resolves (Copy) write guest memory. Still narrow: 1x MSAA only; surfaces that alias the same EDRAM in
+// another format do not share contents; colour resolves of a few formats only; no
 // resolves; the viewport without resolution scale; the whole mirrored range copied before every draw
 // and every draw submitted on its own. Each limit is a later step.
 #pragma once
@@ -49,6 +50,7 @@ struct RendererStats {
   uint32_t pipelines = 0;
   uint32_t render_targets = 0;
   uint32_t texture_uploads = 0;
+  uint32_t resolves = 0;
 };
 
 // An EDRAM surface: base in tiles, pitch in pixels, a ColorRenderTargetFormat (or DepthRenderTargetFormat with
@@ -64,7 +66,7 @@ VkFormat ColorTargetFormat(uint32_t color_format);
 class VulkanRenderer : public gfx::Renderer {
  public:
   // `physical`: guest physical memory; the first `mirror_bytes` of it are visible to shaders.
-  VulkanRenderer(Device& device, const uint8_t* physical, uint32_t mirror_bytes);
+  VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirror_bytes);
   ~VulkanRenderer() override;
 
   bool Initialize();
@@ -82,6 +84,9 @@ class VulkanRenderer : public gfx::Renderer {
   bool ReadBack(const SurfaceKey& key, uint32_t width, uint32_t height, std::vector<uint8_t>& bytes);
 
   void Draw(const DrawCall& draw) override;
+  // A resolve: the EDRAM surface RB_COPY_CONTROL selects, over the rectangle of the copy draw's vertices, converted to
+  // RB_COPY_DEST_INFO's format and written tiled to guest memory at RB_COPY_DEST_BASE; then the cleared targets.
+  void Copy(const uint32_t* registers) override;
 
   const RendererStats& stats() const { return stats_; }
   const std::string& last_error() const { return last_error_; }
@@ -114,7 +119,7 @@ class VulkanRenderer : public gfx::Renderer {
   void Transition(VkCommandBuffer cb, Image& image, VkImageLayout& layout, VkImageLayout to, VkImageAspectFlags aspect);
 
   Device& device_;
-  const uint8_t* physical_;
+  uint8_t* physical_;  // written by resolves
   uint32_t mirror_bytes_;
   std::unique_ptr<rex::graphics::SpirvShaderTranslator> translator_;
   std::map<std::pair<uint32_t, uint64_t>, std::unique_ptr<TranslatedShader>> shaders_;  // (type, hash)

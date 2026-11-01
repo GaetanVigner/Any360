@@ -125,7 +125,7 @@
    "name": "Vulkan renderer: draws from the command processor (system constants, shared memory, vertex fetch, textures, host render targets, resolves)",
    "state": "in progress",
    "source": "any360: layer/gfx (next); crackdown: patch 0129 native atlas",
-   "note": "draws end to end from PM4 with render state, render targets (EDRAM surfaces) and 2D textures (linear, tiled, DXT) from the registers, checked to the pixel on NVIDIA and AMD; next: resolves, mips, MSAA"
+   "note": "draws end to end from PM4 with render state, render targets (EDRAM surfaces) and 2D textures (linear, tiled, DXT) from the registers, checked to the pixel on NVIDIA and AMD; and colour resolves to guest memory with clears; next: present a frame, mips, depth resolves, MSAA"
   },
   {
    "area": "stage 1: native graphics (any360::gfx)",
