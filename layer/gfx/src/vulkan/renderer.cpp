@@ -587,11 +587,15 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   rg::reg::SQ_CONTEXT_MISC context_misc;
   context_misc.value = regs[kSqContextMisc];
   uint32_t interpolators = 0;
+  // Pixel parameter generation (SQ_PROGRAM_CNTL gen_index_pix): the pixel shader reads, in one of its interpolators,
+  // the pixel position, whether the primitive is back-facing, a line or a point, and the point coordinates. The
+  // translator makes it from the fragment coordinates and the primitive flags of the system constants; points would
+  // need their coordinates from a point sprite expansion.
+  uint32_t param_gen = UINT32_MAX;
   if (ps) {
-    uint32_t param_gen = UINT32_MAX;
     interpolators = vs->shader->writes_interpolators() & ps->shader->GetInterpolatorInputMask(program_cntl, context_misc, param_gen);
-    if (param_gen != UINT32_MAX) {
-      Fail("pixel shader parameter generation (not yet)");
+    if (param_gen != UINT32_MAX && topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) {
+      Fail("point sprites with pixel parameter generation (not yet)");
       return;
     }
   }
@@ -604,6 +608,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     SpirvShaderTranslator::Modification ps_modification(
         translator_->GetDefaultPixelShaderModification(ps->shader->GetDynamicAddressableRegisterCount(program_cntl.ps_num_reg)));
     ps_modification.pixel.interpolator_mask = interpolators;
+    if (param_gen < 16) {
+      ps_modification.pixel.param_gen_enable = 1;
+      ps_modification.pixel.param_gen_interpolator = param_gen;
+      ps_modification.pixel.param_gen_point = 0;
+    }
     ps_module = GetModule(*ps, ps_modification.value);
   }
   if (!vs_module || (ps && !ps_module)) {
@@ -796,6 +805,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   if (vte & (1u << 8)) system->flags |= SpirvShaderTranslator::kSysFlag_XYDividedByW;
   if (vte & (1u << 9)) system->flags |= SpirvShaderTranslator::kSysFlag_ZDividedByW;
   if (vte & (1u << 10)) system->flags |= SpirvShaderTranslator::kSysFlag_WNotReciprocal;
+  // The primitive class, for pixel parameter generation (back-facing only means something for polygons).
+  if (polygonal) system->flags |= SpirvShaderTranslator::kSysFlag_PrimitivePolygonal;
+  if (topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST || topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) {
+    system->flags |= SpirvShaderTranslator::kSysFlag_PrimitiveLine;
+  }
   const float size[2] = {float(width), float(height)};
   // The window offset moves vertices too when PA_SU_SC_MODE_CNTL asks for it.
   const float window_shift[2] = {(mode_cntl >> 16) & 1 ? float(offset_x) : 0.0f, (mode_cntl >> 16) & 1 ? float(offset_y) : 0.0f};
@@ -1060,6 +1074,12 @@ uint16_t FloatToHalf(float f) {
   if (rest > 0x1000 || (rest == 0x1000 && (half & 1))) ++half;
   return uint16_t(half);
 }
+float Float20e4ToFloat(uint32_t f24) {
+  const uint32_t mantissa = f24 & 0xFFFFF, exponent = (f24 >> 20) & 0xF;
+  return exponent ? std::ldexp(1.0f + float(mantissa) / float(1u << 20), int(exponent) - 15)
+                  : std::ldexp(float(mantissa) / float(1u << 20), -14);
+}
+
 float HalfToFloat(uint16_t h) {
   const uint32_t sign = uint32_t(h & 0x8000) << 16, exponent = (h >> 10) & 0x1F, mantissa = h & 0x3FF;
   if (!exponent) return std::bit_cast<float>(sign) + (sign ? -1.0f : 1.0f) * float(mantissa) / 16777216.0f;
@@ -1276,11 +1296,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     }
     if (depth_target) {
       const uint32_t clear = regs[kRbDepthClear];
-      if ((depth_info >> 16) & 1) {
-        Fail("float24 depth clear (not yet)");
-        return;
-      }
-      depth_value.depthStencil = {float(clear >> 8) / float(0xFFFFFF), clear & 0xFF};
+      // D24FS8 holds depth as float24 (20e4: 4 exponent bits, bias 15, 20 mantissa bits); the host depth buffer
+      // holds the same value in its own format.
+      const float depth = ((depth_info >> 16) & 1) ? Float20e4ToFloat(clear >> 8) : float(clear >> 8) / float(0xFFFFFF);
+      depth_value.depthStencil = {depth, clear & 0xFF};
     }
     ok = device_.Submit([&](VkCommandBuffer cb) {
       // A render pass over the rectangle that clears on load and stores: clears exactly the rectangle.

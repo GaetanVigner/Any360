@@ -6,11 +6,16 @@
 //   gfx_replay CAPTURE [--gpu NAME] [--out DIR]
 //     --gpu NAME  a substring of the device to use ("NVIDIA", "Radeon")
 //     --out DIR   writes each compared frame as DIR/frame_N_ours.png and DIR/frame_N_reference.png
+//     --trace     prints the frames' structure: runs of draws by render target (drawn, skipped, failed), each
+//                 resolve and each swap, in order
+//     --dump-resolves DIR  with --trace, writes each k_8_8_8_8 colour resolve's destination as DIR/resolve_N.png
 #include <algorithm>
+#include <bit>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -142,18 +147,107 @@ bool WritePng(const std::string& path, uint32_t width, uint32_t height, const ui
   return std::fclose(f) == 0;
 }
 
+// --trace: forwards to the renderer and prints the order of things, draws grouped in runs of the same targets.
+class TracingRenderer : public Renderer {
+ public:
+  TracingRenderer(vk::VulkanRenderer& renderer, const uint8_t* physical, std::string dump)
+      : r_(renderer), physical_(physical), dump_(std::move(dump)) {}
+  ~TracingRenderer() override { EndRun(); }
+  void ShaderLoaded(const Shader& shader) override { r_.ShaderLoaded(shader); }
+  void Invalidate(uint32_t base, uint32_t size) override { r_.Invalidate(base, size); }
+  void Flush() override { r_.Flush(); }
+  void Draw(const DrawCall& draw) override {
+    const uint32_t* regs = draw.registers;
+    // RB_SURFACE_INFO (pitch, MSAA), RB_COLOR_INFO 0-3, RB_DEPTH_INFO, RB_MODECONTROL, RB_COLOR_MASK.
+    const std::array<uint32_t, 8> key = {regs[0x2000], regs[0x2001], regs[0x2003], regs[0x2004], regs[0x2005],
+                                         regs[0x2002], regs[0x2208] & 7, regs[0x2104]};
+    if (!run_ || key != key_) {
+      EndRun();
+      run_ = true;
+      key_ = key;
+    }
+    const vk::RendererStats before = r_.stats();
+    r_.Draw(draw);
+    const vk::RendererStats& after = r_.stats();
+    if (after.failed != before.failed) {
+      ++failed_;
+      reasons_[r_.last_error()]++;
+    } else if (after.skipped != before.skipped) {
+      ++skipped_;
+    } else {
+      ++drawn_;
+    }
+  }
+  void Copy(const uint32_t* regs) override {
+    EndRun();
+    const uint32_t failed = r_.stats().failed;
+    r_.Copy(regs);
+    std::printf("  resolve: control %08X from surface %08X colour0 %08X depth %08X to %08X info %08X pitch %08X%s%s%s",
+                regs[0x2318], regs[0x2000], regs[0x2001], regs[0x2002], regs[0x2319], regs[0x231B], regs[0x231A],
+                r_.stats().failed != failed ? " FAILED: " : "", r_.stats().failed != failed ? r_.last_error().c_str() : "",
+                "\n");
+    // The destination as the title will read it: tiled 32-bit texels, 8-in-32 swapped (R in the low byte after).
+    const uint32_t info = regs[0x231B], format = (info >> 7) & 0x3F;
+    const uint32_t width = regs[0x231A] & 0x3FFF, height = (regs[0x231A] >> 16) & 0x3FFF;
+    if (!dump_.empty() && format == 6 && !(regs[0x2318] & 0x8) && width && height) {
+      std::vector<uint32_t> pixels(size_t(width) * height);
+      for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+          uint32_t raw;
+          const uint32_t at = (regs[0x2319] & 0x1FFFFFFF) + uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), width, 2));
+          std::memcpy(&raw, physical_ + at, 4);
+          pixels[size_t(y) * width + x] = ((info & 7) == 2 ? std::byteswap(raw) : raw) | 0xFF000000u;
+        }
+      }
+      const std::string name = dump_ + "/resolve_" + std::to_string(resolves_++) + ".png";
+      WritePng(name, width, height, pixels.data());
+      std::printf("    written to %s\n", name.c_str());
+    }
+  }
+  void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* regs) override {
+    EndRun();
+    r_.Swap(frontbuffer, width, height, regs);
+    std::printf("  swap: front buffer %08X %ux%u (fetch %08X %08X)\n", frontbuffer, width, height, regs[0x4800],
+                regs[0x4801]);
+  }
+
+ private:
+  void EndRun() {
+    if (!run_) return;
+    run_ = false;
+    std::printf("  draws: surface %08X colour %08X %08X %08X %08X depth %08X mode %u mask %04X: %u drawn, %u skipped, %u failed",
+                key_[0], key_[1], key_[2], key_[3], key_[4], key_[5], key_[6], key_[7], drawn_, skipped_, failed_);
+    for (const auto& [why, n] : reasons_) std::printf(" [%u %s]", n, why.c_str());
+    std::printf("\n");
+    drawn_ = skipped_ = failed_ = 0;
+    reasons_.clear();
+  }
+  vk::VulkanRenderer& r_;
+  const uint8_t* physical_;
+  std::string dump_;
+  uint32_t resolves_ = 0;
+  bool run_ = false;
+  std::array<uint32_t, 8> key_{};
+  uint32_t drawn_ = 0, skipped_ = 0, failed_ = 0;
+  std::map<std::string, uint32_t> reasons_;
+};
+
 }  // namespace
 
 int main(int argc, char** argv) {
   std::string path, out;
+  bool trace = false;
+  std::string dump;
   vk::DeviceOptions options;
   for (int i = 1; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--gpu") && i + 1 < argc) options.prefer = argv[++i];
     else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
+    else if (!std::strcmp(argv[i], "--trace")) trace = true;
+    else if (!std::strcmp(argv[i], "--dump-resolves") && i + 1 < argc) dump = argv[++i];
     else path = argv[i];
   }
   if (path.empty()) {
-    std::printf("usage: gfx_replay CAPTURE [--gpu NAME] [--out DIR]\n");
+    std::printf("usage: gfx_replay CAPTURE [--gpu NAME] [--out DIR] [--trace]\n");
     return 2;
   }
   vk::Device device;
@@ -172,7 +266,8 @@ int main(int argc, char** argv) {
     return 1;
   }
   CommandProcessor cp(physical);
-  cp.SetRenderer(&renderer);
+  TracingRenderer tracing(renderer, physical, dump);
+  cp.SetRenderer(trace ? static_cast<Renderer*>(&tracing) : &renderer);
   cp.SetInterruptHandler([](uint32_t, uint32_t) {});
 
   uint32_t compared = 0, frame_index = 0;

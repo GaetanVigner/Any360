@@ -3,6 +3,7 @@
 // from the register file and indices by DMA; the render state comes from the registers. Each scenario clears the
 // targets, runs its packets and checks the pixels it read back. Skipped without a Vulkan 1.3 device.
 #include <bit>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -326,6 +327,41 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: two targets: colour 1 (16_16_16_16_FLOAT) %u of %u pixels exact\n", exact, kSize * kSize);
     CHECK(exact == kSize * kSize);
   }
+  // Pixel parameter generation (SQ_PROGRAM_CNTL param_gen, SQ_CONTEXT_MISC param_gen_pos = 0): the pixel shader
+  // exports r0, which the rasterizer fills with the pixel's position (x with the back-facing sign, y), 0 for a
+  // triangle in z and 0 in w; drawn into a 16_16_16_16_FLOAT target so the positions stay exact.
+  {
+    const vk::SurfaceKey target{1536, kSize, 7, 0};
+    const float zero[4] = {0, 0, 0, 0};
+    CHECK(renderer.ClearColor(target, zero));
+    scenario("parameter generation", nullptr, [&] {
+      s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, true}));
+      s.Reg(0x2001, 7u << 16 | 1536);  // RB_COLOR_INFO: k_16_16_16_16_FLOAT at tile 1536
+      s.Reg(0x2180, 1u << 18);         // SQ_PROGRAM_CNTL: param_gen, one register each
+      s.Reg(0x2181, 0);                // SQ_CONTEXT_MISC: param_gen_pos 0
+      s.Vertices(0);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2180, 0);
+    });
+    std::vector<uint8_t> bytes;
+    CHECK(renderer.ReadBack(target, kSize, kSize, bytes));
+    auto half = [](uint16_t h) {
+      const float magnitude = std::ldexp(float((h & 0x3FF) | ((h >> 10) & 0x1F ? 0x400 : 0)), ((h >> 10) & 0x1F ? (h >> 10) & 0x1F : 1) - 25);
+      return h & 0x8000 ? -magnitude : magnitude;
+    };
+    uint32_t exact = 0, back_facing = 0;
+    for (uint32_t y = 0; y < kSize && bytes.size() == kSize * kSize * 8; ++y) {
+      for (uint32_t x = 0; x < kSize; ++x) {
+        uint16_t h[4];
+        std::memcpy(h, bytes.data() + (size_t(y) * kSize + x) * 8, 8);
+        exact += std::fabs(half(h[0])) == float(x) && half(h[1]) == float(y) && (h[2] & 0x7FFF) == 0 && h[3] == 0;
+        back_facing += (h[0] & 0x8000) != 0;
+      }
+    }
+    std::printf("gfx_render_tests: parameter generation: %u of %u pixels with their own position, %u back-facing\n", exact,
+                kSize * kSize, back_facing);
+    CHECK(exact == kSize * kSize && (back_facing == 0 || back_facing == kSize * kSize - kSize));
+  }
   // The colour exponent bias of RB_COLOR_INFO: +1 doubles what the shader writes (0.2 -> 0.4).
   {
     Pixels p = scenario("exponent bias", nullptr, [&] {
@@ -490,7 +526,7 @@ int main(int argc, char** argv) {
               device.properties().deviceName, renderer.depth_format() == VK_FORMAT_D24_UNORM_S8_UINT ? "D24S8" : "D32S8",
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 3 && stats.texture_uploads == 4 && stats.resolves == 1);
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 4 && stats.texture_uploads == 4 && stats.resolves == 1);
   // Capture and replay: a frame (two triangles, a resolve, a swap) captured as it runs, then replayed into fresh
   // memory, a fresh command processor and a fresh renderer; the replayed frame must be the captured one.
   {

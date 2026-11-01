@@ -197,6 +197,14 @@ each kick of the ring the physical memory pages that changed and the ring's span
 frame at each swap. `gfx_replay CAPTURE` runs it through our command processor and Vulkan renderer and reports the
 draws not drawn, by reason, the PM4 packets the frames use, and how far each frame is from the reference's
 (`--out DIR` writes both as PNG). Captures hold the title's data: they stay on the machine that made them.
+`--trace` prints the frames' structure (runs of draws by render target with their outcome, each resolve, each swap)
+and `--dump-resolves DIR` writes each k_8_8_8_8 colour resolve as the title will read it.
+
+First Crackdown capture (city, 3 frames, 244 MB): about 7,000 draws a frame. Pixel parameter generation was the
+first gap (4,894 draws refused, now handled), then float24 depth clears (handled). The geometry passes now draw:
+the deferred renderer's normal and albedo targets come out right in the resolves. What blocks the lit image next:
+depth resolves and the k_24_8_FLOAT textures they make (the lighting reads depth), quad lists (type 13, particles
+and text), stacked (array) textures, signed textures, k_5_6_5 textures, MSAA surfaces, the packed mip tail.
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames
