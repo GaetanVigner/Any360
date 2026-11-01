@@ -17,10 +17,11 @@
 // scissor, depth bias, blend constants, stencil masks and references) is set per draw.
 //
 // Textures come from the texture cache (textures.h), sampled through the descriptor sets the translated shaders
-// declare; resolves (Copy) write guest memory. Still narrow: 1x MSAA only; surfaces that alias the same EDRAM in
-// another format do not share contents; colour resolves of a few formats only; no
-// resolves; the viewport without resolution scale; the whole mirrored range copied before every draw
-// and every draw submitted on its own. Each limit is a later step.
+// declare; resolves (Copy) write guest memory; swaps keep the frame on the GPU when it is the last resolve.
+// Guest memory is imported in place when the device allows it, and draws run in batches (Flush).
+//
+// Still narrow: 1x MSAA only; surfaces that alias the same EDRAM in another format do not share contents; colour
+// resolves of a few formats only; the viewport without resolution scale. Each limit is a later step.
 #pragma once
 
 #include <array>
