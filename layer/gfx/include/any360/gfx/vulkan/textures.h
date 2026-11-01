@@ -71,7 +71,11 @@ class TextureCache {
 
  private:
   // The guest bytes the base level spans, and its blocks endian-swapped and untiled into rows.
+  // The guest memory a texture spans (all its stacked slices), and the distance between slices: the slice's blocks
+  // with rows and columns aligned to 32 blocks, aligned to 4 KB (as the reference lays them out).
   static uint32_t GuestExtent(const TextureFetch& t, const TextureFormatInfo& info);
+  static uint32_t SliceStride(const TextureFetch& t, const TextureFormatInfo& info);
+  // The texture's blocks in host order, slice after slice.
   bool LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blocks, std::string& error) const;
 
   struct Texture {

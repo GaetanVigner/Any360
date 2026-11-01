@@ -148,13 +148,21 @@ TextureFetch TextureFetch::Parse(const uint32_t d[6]) {
   return f;
 }
 
+uint32_t TextureCache::SliceStride(const TextureFetch& t, const TextureFormatInfo& info) {
+  const uint32_t bh = (t.height + info.block_size - 1) / info.block_size;
+  const uint32_t pitch_blocks = std::max(1u, (std::max(t.pitch, t.width) + info.block_size - 1) / info.block_size);
+  return (((pitch_blocks + 31) & ~31u) * info.block_bytes * ((bh + 31) & ~31u) + 4095) & ~4095u;
+}
+
 uint32_t TextureCache::GuestExtent(const TextureFetch& t, const TextureFormatInfo& info) {
-  // The base level's blocks: linear rows aligned to 256 bytes, or 32x32-block tiles.
+  // The base level's blocks: linear rows aligned to 256 bytes, or 32x32-block tiles; then the other slices.
   const uint32_t bh = (t.height + info.block_size - 1) / info.block_size, bw = (t.width + info.block_size - 1) / info.block_size;
   const uint32_t pitch_blocks = std::max(1u, (std::max(t.pitch, t.width) + info.block_size - 1) / info.block_size);
-  if (t.tiled) return ((pitch_blocks + 31) & ~31u) * ((bh + 31) & ~31u) * info.block_bytes;
+  const uint32_t slices = t.dimension == 1 ? t.depth : 1;
+  const uint32_t others = (slices - 1) * SliceStride(t, info);
+  if (t.tiled) return others + ((pitch_blocks + 31) & ~31u) * ((bh + 31) & ~31u) * info.block_bytes;
   const uint32_t row_pitch = (pitch_blocks * info.block_bytes + 255) & ~255u;
-  return row_pitch * (bh - 1) + bw * info.block_bytes;
+  return others + row_pitch * (bh - 1) + bw * info.block_bytes;
 }
 
 bool TextureCache::LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blocks, std::string& error) const {
@@ -175,14 +183,18 @@ bool TextureCache::LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blo
     v = Swap(v, t.endian);
     std::memcpy(&words[i], &v, 4);
   }
-  blocks.assign(size_t(bw) * bh * info->block_bytes, 0);
+  const uint32_t slices = t.depth, slice_stride = SliceStride(t, *info);
+  const size_t slice_bytes = size_t(bw) * bh * info->block_bytes;
+  blocks.assign(slice_bytes * slices, 0);
   const uint32_t row_pitch = (pitch_blocks * info->block_bytes + 255) & ~255u;
-  for (uint32_t y = 0; y < bh; ++y) {
-    for (uint32_t x = 0; x < bw; ++x) {
-      const uint32_t src = t.tiled ? uint32_t(TiledOffset2D(int32_t(x), int32_t(y), pitch_blocks, bpb_log2))
-                                   : y * row_pitch + x * info->block_bytes;
-      if (src + info->block_bytes <= words.size()) {
-        std::memcpy(&blocks[(size_t(y) * bw + x) * info->block_bytes], &words[src], info->block_bytes);
+  for (uint32_t s = 0; s < slices; ++s) {
+    for (uint32_t y = 0; y < bh; ++y) {
+      for (uint32_t x = 0; x < bw; ++x) {
+        const uint32_t src = s * slice_stride + (t.tiled ? uint32_t(TiledOffset2D(int32_t(x), int32_t(y), pitch_blocks, bpb_log2))
+                                                         : y * row_pitch + x * info->block_bytes);
+        if (src + info->block_bytes <= words.size()) {
+          std::memcpy(&blocks[s * slice_bytes + (size_t(y) * bw + x) * info->block_bytes], &words[src], info->block_bytes);
+        }
       }
     }
   }
@@ -238,7 +250,10 @@ TextureCache::~TextureCache() {
 VkImageView TextureCache::View(const uint32_t fetch[6], std::string& error) {
   const TextureFetch t = TextureFetch::Parse(fetch);
   if (t.type != 2) return error = "fetch constant is not a texture", VK_NULL_HANDLE;
-  if (t.dimension != 1 || t.depth != 1) return error = "only 2D textures (not yet stacked, cube, 3D, 1D)", VK_NULL_HANDLE;
+  if (t.dimension != 1) {
+    static const char* const kDimensions[4] = {"1D", "2D", "3D", "cube"};
+    return error = std::string(kDimensions[t.dimension & 3]) + " textures (not yet)", VK_NULL_HANDLE;
+  }
   const TextureFormatInfo* info = GuestTextureFormat(t.format);
   if (!info) return error = "texture format " + std::to_string(t.format) + " not handled yet", VK_NULL_HANDLE;
   if (t.packed_mips && (t.width <= 16 || t.height <= 16)) return error = "packed mip tail base (not yet)", VK_NULL_HANDLE;
@@ -259,7 +274,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], std::string& error) {
     info_ci.format = info->format;
     info_ci.extent = {t.width, t.height, 1};
     info_ci.mipLevels = 1;
-    info_ci.arrayLayers = 1;
+    info_ci.arrayLayers = t.depth;  // stacked textures: one layer a slice
     info_ci.samples = VK_SAMPLE_COUNT_1_BIT;
     info_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
     info_ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -299,13 +314,13 @@ VkImageView TextureCache::View(const uint32_t fetch[6], std::string& error) {
       barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
       barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
       barrier.image = image.image;
-      barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+      barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, t.depth};
       VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
       dependency.imageMemoryBarrierCount = 1;
       dependency.pImageMemoryBarriers = &barrier;
       f.vkCmdPipelineBarrier2(cb, &dependency);
       VkBufferImageCopy region{};
-      region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, t.depth};
       region.imageExtent = {t.width, t.height, 1};
       f.vkCmdCopyBufferToImage(cb, staging.buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
       barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
@@ -336,7 +351,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], std::string& error) {
     vi.format = info->format;
     vi.components = {Component(host_swizzle & 7), Component((host_swizzle >> 3) & 7), Component((host_swizzle >> 6) & 7),
                      Component((host_swizzle >> 9) & 7)};
-    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, t.depth};
     if (f.vkCreateImageView(device_.device(), &vi, nullptr, &view) != VK_SUCCESS) {
       view = VK_NULL_HANDLE;
       return error = "texture view", VK_NULL_HANDLE;
