@@ -25,7 +25,14 @@ struct TextureFormatInfo {
   uint32_t block_bytes;  // bytes a block (a texel, or a 4x4 block for DXT) takes
   uint32_t block_size;   // texels a block spans in x and y (1, or 4 for DXT)
   uint32_t swizzle;      // the format's own component swizzle (Xenos 3-bit codes: 0-3 RGBA, 4 zero, 5 one)
+  // How each 32-bit texel is converted for the host format (kNone: copied as it is).
+  enum Convert : uint32_t { kNone, kDepthUnorm24, kDepthFloat24 } convert = kNone;
 };
+
+// Xenos float24 depth (20e4: 4 exponent bits, bias 15, 20 mantissa bits, no sign) to and from float, as the
+// reference converts it (round to nearest even; negative and NaN give 0, too large the largest value).
+float Float20e4ToFloat(uint32_t f24);
+uint32_t FloatTo20e4(float value);
 // The host format of a Xenos texture format, or nullptr when it is not handled yet.
 const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format);
 

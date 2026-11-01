@@ -4,6 +4,7 @@
 // targets, runs its packets and checks the pixels it read back. Skipped without a Vulkan 1.3 device.
 #include <bit>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -527,6 +528,66 @@ int main(int argc, char** argv) {
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
   CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 4 && stats.texture_uploads == 4 && stats.resolves == 1);
+  // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
+  // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.
+  // The float24 conversions round-trip first.
+  {
+    uint32_t round_trip_wrong = 0;
+    for (float v : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.0f / 3.0f, 0.001f}) {
+      round_trip_wrong += std::fabs(vk::Float20e4ToFloat(vk::FloatTo20e4(v)) - v) > v * 1e-6f;
+    }
+    CHECK(vk::FloatTo20e4(1.0f) == 0xF00000 && vk::FloatTo20e4(0.5f) == 0xE00000 && round_trip_wrong == 0);
+    const uint32_t rect = kVertices + 0x800, quad = kVertices + 0x400, resolved = 0x90000;
+    std::memset(g_memory + resolved, 0xCD, 64 * 64 * 4);
+    scenario("depth resolve", nullptr, [&] {
+      s.Shader(0, t::BuildFetchPositionShader());
+      s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+      s.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 7u << 4);  // z_enable, z_write, ALWAYS
+      s.Vertices(0);
+      s.Color(255, 255, 255, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});
+      s.Put({Type0(0x2318, 4), 4u, resolved, 64u | 64u << 16, 2u | 22u << 7});  // depth, k_24_8, 8-in-32
+      s.Reg(0x2208, 6);
+      s.DrawAuto(8, 3);
+      s.Reg(0x2208, 4);
+    });
+    uint32_t wrong_words = 0, sample = 0;
+    for (uint32_t y = 0; y < kSize; ++y) {
+      for (uint32_t x = 0; x < kSize; ++x) {
+        uint32_t big;
+        std::memcpy(&big, g_memory + resolved + vk::TiledOffset2D(int32_t(x), int32_t(y), 64, 2), 4);
+        const uint32_t word = std::byteswap(big);
+        if (x == 10 && y == 10) sample = word;
+        wrong_words += (word & 0xFF) != 0 || std::abs(int32_t(word >> 8) - 0x800000) > 2;
+      }
+    }
+    std::printf("gfx_render_tests: depth resolve: %u of %u words wrong (%08X)\n", wrong_words, kSize * kSize, sample);
+    CHECK(wrong_words == 0);
+    const vk::SurfaceKey target{1536, kSize, 7, 0};
+    const float zero[4] = {0, 0, 0, 0};
+    CHECK(renderer.ClearColor(target, zero));
+    scenario("depth texture", nullptr, [&] {
+      s.Shader(0, t::BuildTexturedVertexShader());
+      s.Shader(1, t::BuildTexturedPixelShader(1));
+      s.Reg(0x2001, 7u << 16 | 1536);
+      s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+      s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 2u << 22 | 1u << 31,
+             22u | 2u << 6 | resolved, 63u | 63u << 13, 0x688u << 1, 0, 1u << 9});
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    std::vector<uint8_t> bytes;
+    CHECK(renderer.ReadBack(target, kSize, kSize, bytes));
+    uint32_t half_wrong = bytes.size() == kSize * kSize * 8 ? 0 : kSize * kSize;
+    for (size_t i = 0; i + 8 <= bytes.size(); i += 8) {
+      uint16_t h;
+      std::memcpy(&h, bytes.data() + i, 2);
+      half_wrong += h != 0x3800;  // 0.5
+    }
+    std::printf("gfx_render_tests: depth texture (k_24_8): %u of %u pixels not 0.5\n", half_wrong, kSize * kSize);
+    CHECK(half_wrong == 0);
+    s.Shader(0, t::BuildFetchPositionShader());
+  }
   // Capture and replay: a frame (two triangles, a resolve, a swap) captured as it runs, then replayed into fresh
   // memory, a fresh command processor and a fresh renderer; the replayed frame must be the captured one.
   {

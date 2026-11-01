@@ -202,9 +202,11 @@ and `--dump-resolves DIR` writes each k_8_8_8_8 colour resolve as the title will
 
 First Crackdown capture (city, 3 frames, 244 MB): about 7,000 draws a frame. Pixel parameter generation was the
 first gap (4,894 draws refused, now handled), then float24 depth clears (handled). The geometry passes now draw:
-the deferred renderer's normal and albedo targets come out right in the resolves. What blocks the lit image next:
-depth resolves and the k_24_8_FLOAT textures they make (the lighting reads depth), quad lists (type 13, particles
-and text), stacked (array) textures, signed textures, k_5_6_5 textures, MSAA surfaces, the packed mip tail.
+the deferred renderer's normal and albedo targets come out right in the resolves. Depth resolves (the EDRAM word: depth << 8 |
+stencil, float24 for D24FS8) and k_24_8 / k_24_8_FLOAT textures (sampled as float depth) then gave the first lit
+image: sky, buildings, the character, the HUD. Still missing there: the ground (dark), some geometry stretched
+toward the camera, quad lists (type 13, particles and text), stacked (array) textures, signed textures, k_5_6_5
+textures, MSAA surfaces, the packed mip tail.
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames

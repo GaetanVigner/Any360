@@ -1,6 +1,7 @@
 #include "any360/gfx/vulkan/textures.h"
 
 #include <algorithm>
+#include <cmath>
 #include <bit>
 #include <cstring>
 
@@ -63,6 +64,9 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
   static const TextureFormatInfo k32Float = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR};
   static const TextureFormatInfo k32_32Float = {VK_FORMAT_R32G32_SFLOAT, 8, 1, kRGGG};
   static const TextureFormatInfo k32_32_32_32Float = {VK_FORMAT_R32G32B32A32_SFLOAT, 16, 1, kRGBA};
+  // Depth as the resolves write it (depth << 8 | stencil): sampled as float depth (VK_FORMAT_R32_SFLOAT, RRRR).
+  static const TextureFormatInfo k24_8 = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kDepthUnorm24};
+  static const TextureFormatInfo k24_8Float = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kDepthFloat24};
   switch (xenos_format) {
     case 2: case 8: return &k8;  // k_8, k_8_A
     case 10: return &k8_8;
@@ -71,6 +75,8 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
     case 18: return &kDxt1;
     case 19: return &kDxt3;
     case 20: return &kDxt5;
+    case 22: return &k24_8;
+    case 23: return &k24_8Float;
     case 30: return &k16Float;
     case 31: return &k16_16Float;
     case 32: return &k16_16_16_16Float;
@@ -79,6 +85,27 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
     case 38: return &k32_32_32_32Float;
     default: return nullptr;
   }
+}
+
+float Float20e4ToFloat(uint32_t f24) {
+  const uint32_t mantissa = f24 & 0xFFFFF, exponent = (f24 >> 20) & 0xF;
+  return exponent ? std::ldexp(1.0f + float(mantissa) / float(1u << 20), int(exponent) - 15)
+                  : std::ldexp(float(mantissa) / float(1u << 20), -14);
+}
+
+uint32_t FloatTo20e4(float value) {
+  uint32_t f32 = std::bit_cast<uint32_t>(value);
+  if (int32_t(f32) <= 0 || f32 > 0x7F800000u) return 0;  // negative, zero, NaN
+  f32 = std::min(f32, 0x3FFFFFF8u);  // the largest float24 (just under 2)
+  if (f32 < 0x38800000u) {
+    // Below 2^-14: a denormal float24.
+    const uint32_t shift = std::min(113u - (f32 >> 23), 24u);
+    f32 = (0x800000u | (f32 & 0x7FFFFFu)) >> shift;
+  } else {
+    f32 += 0xC8000000u;  // the exponent bias from 127 to 15
+  }
+  f32 += 3 + ((f32 >> 3) & 1);  // to nearest even at the 3 bits dropped
+  return (f32 >> 3) & 0xFFFFFF;
 }
 
 int32_t TiledOffset2D(int32_t x, int32_t y, uint32_t pitch, uint32_t bytes_per_block_log2) {
@@ -157,6 +184,15 @@ bool TextureCache::LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blo
       if (src + info->block_bytes <= words.size()) {
         std::memcpy(&blocks[(size_t(y) * bw + x) * info->block_bytes], &words[src], info->block_bytes);
       }
+    }
+  }
+  if (info->convert != TextureFormatInfo::kNone) {
+    for (size_t i = 0; i + 4 <= blocks.size(); i += 4) {
+      uint32_t v;
+      std::memcpy(&v, &blocks[i], 4);
+      const float depth = info->convert == TextureFormatInfo::kDepthFloat24 ? Float20e4ToFloat(v >> 8)
+                                                                           : float(v >> 8) / float(0xFFFFFF);
+      std::memcpy(&blocks[i], &depth, 4);
     }
   }
   return true;

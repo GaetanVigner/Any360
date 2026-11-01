@@ -1074,12 +1074,6 @@ uint16_t FloatToHalf(float f) {
   if (rest > 0x1000 || (rest == 0x1000 && (half & 1))) ++half;
   return uint16_t(half);
 }
-float Float20e4ToFloat(uint32_t f24) {
-  const uint32_t mantissa = f24 & 0xFFFFF, exponent = (f24 >> 20) & 0xF;
-  return exponent ? std::ldexp(1.0f + float(mantissa) / float(1u << 20), int(exponent) - 15)
-                  : std::ldexp(float(mantissa) / float(1u << 20), -14);
-}
-
 float HalfToFloat(uint16_t h) {
   const uint32_t sign = uint32_t(h & 0x8000) << 16, exponent = (h >> 10) & 0x1F, mantissa = h & 0x3FF;
   if (!exponent) return std::bit_cast<float>(sign) + (sign ? -1.0f : 1.0f) * float(mantissa) / 16777216.0f;
@@ -1100,6 +1094,56 @@ void SwapElement(uint8_t* bytes, uint32_t size, uint32_t endian) {
   }
 }
 }  // namespace
+
+bool VulkanRenderer::ResolveDepth(Surface& surface, bool float24, int32_t x0, int32_t y0, uint32_t width, uint32_t height,
+                                  uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian, uint32_t dest_format) {
+  // The EDRAM depth word as the title reads it back: depth (24-bit unorm, or float24 for D24FS8) << 8 | stencil,
+  // into a 32-bit destination format (k_8_8_8_8, k_24_8, k_24_8_FLOAT, k_32_FLOAT), endian-swapped and tiled.
+  if (dest_format != 6 && dest_format != 22 && dest_format != 23 && dest_format != 36) {
+    return Fail("depth resolve to format " + std::to_string(dest_format) + " (not yet)");
+  }
+  const Functions& f = device_.fn();
+  const VkDeviceSize depth_bytes = VkDeviceSize(width) * height * 4;
+  Buffer readback;
+  if (!CreateBuffer(device_, depth_bytes + VkDeviceSize(width) * height, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback)) {
+    return Fail("resolve readback buffer");
+  }
+  const bool ok = device_.Submit([&](VkCommandBuffer cb) {
+    Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+               VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+    VkBufferImageCopy regions[2]{};
+    regions[0].imageSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+    regions[0].imageOffset = {x0, y0, 0};
+    regions[0].imageExtent = {width, height, 1};
+    regions[1] = regions[0];
+    regions[1].bufferOffset = depth_bytes;
+    regions[1].imageSubresource.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
+    f.vkCmdCopyImageToBuffer(cb, surface.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 2, regions);
+  });
+  if (ok) {
+    const uint8_t* depth = static_cast<const uint8_t*>(readback.mapped);
+    const uint8_t* stencil = depth + depth_bytes;
+    // D24_UNORM_S8_UINT reads back as 32-bit words with the depth in the low 24 bits; D32_SFLOAT_S8_UINT as floats.
+    const bool unorm24 = surface.image.format == VK_FORMAT_D24_UNORM_S8_UINT;
+    for (uint32_t y = 0; y < height; ++y) {
+      for (uint32_t x = 0; x < width; ++x) {
+        const size_t i = size_t(y) * width + x;
+        uint32_t raw;
+        std::memcpy(&raw, depth + i * 4, 4);
+        const float value = unorm24 ? float(raw & 0xFFFFFF) / float(0xFFFFFF) : std::bit_cast<float>(raw);
+        const uint32_t guest = float24 ? FloatTo20e4(value)
+                                       : (unorm24 ? raw & 0xFFFFFF
+                                                  : uint32_t(std::lround(std::clamp(value, 0.0f, 1.0f) * float(0xFFFFFF))));
+        const uint32_t word = GpuSwap(guest << 8 | stencil[i], Endian(dest_endian <= 3 ? dest_endian : 0));
+        const uint32_t address =
+            dest_base + uint32_t(TiledOffset2D(int32_t(uint32_t(x0) + x), int32_t(uint32_t(y0) + y), dest_pitch, 2));
+        if (address + 4 <= mirror_bytes_) std::memcpy(physical_ + address, &word, 4);
+      }
+    }
+  }
+  DestroyBuffer(device_, readback);
+  return ok ? true : Fail("depth resolve copy");
+}
 
 void VulkanRenderer::Copy(const uint32_t* regs) {
   Flush();  // the draws before the resolve must be in the surface
@@ -1181,94 +1225,96 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   const uint32_t dest_endian = dest_info & 7, dest_format = (dest_info >> 7) & 0x3F, dest_swap = (dest_info >> 24) & 1;
   const int32_t dest_bias = int32_t(dest_info << 10) >> 26;  // bits 16-21, signed
   const uint32_t dest_base = regs[kRbCopyDestBase] & 0x1FFFFFFF, dest_pitch = regs[kRbCopyDestPitch] & 0x3FFF;
-  if (is_depth) {
-    Fail("depth resolve (not yet)");
-    return;
-  }
   if ((dest_info >> 3) & 1) {
     Fail("resolve to a 3D / array destination (not yet)");
     return;
   }
-  const VkFormat host = surface->image.format;
-  uint32_t dest_bytes = 0, source_bytes = 0;
-  if (dest_format == 6 && host == VK_FORMAT_R8G8B8A8_UNORM) {
-    dest_bytes = 4, source_bytes = 4;  // k_8_8_8_8 from an 8_8_8_8 target
-  } else if (dest_format == 32 && host == VK_FORMAT_R16G16B16A16_SFLOAT) {
-    dest_bytes = 8, source_bytes = 8;  // k_16_16_16_16_FLOAT from a 16_16_16_16_FLOAT target
+  if (is_depth) {
+    if (!ResolveDepth(*surface, source_key.format == 1, x0, y0, width, height, dest_base, dest_pitch, dest_endian, dest_format)) {
+      return;
+    }
   } else {
-    Fail("resolve from host format " + std::to_string(host) + " to format " + std::to_string(dest_format) + " (not yet)");
-    return;
-  }
-  Buffer readback;
-  if (!CreateBuffer(device_, VkDeviceSize(width) * height * source_bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback)) {
-    Fail("resolve readback buffer");
-    return;
-  }
-  bool ok = device_.Submit([&](VkCommandBuffer cb) {
-    Transition(cb, surface->image, surface->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
-    VkBufferImageCopy region{};
-    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    region.imageOffset = {x0, y0, 0};
-    region.imageExtent = {width, height, 1};
-    f.vkCmdCopyImageToBuffer(cb, surface->image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1, &region);
-  });
-  if (ok) {
-    const uint8_t* src = static_cast<const uint8_t*>(readback.mapped);
-    const float scale = std::ldexp(1.0f, dest_bias);
-    const uint32_t bpp_log2 = dest_bytes == 8 ? 3 : 2;
-    if (dest_bytes == 4 && !dest_bias && !dest_swap) {
-      // The common case (a 32-bit target copied as it is): in the Xenos tiling, 4 texels starting at a multiple of
-      // 4 in x are contiguous, so rows go 16 bytes at a time; the rows are spread over threads.
-      auto rows = [&](uint32_t first, uint32_t last) {
-        for (uint32_t y = first; y < last; ++y) {
-          const uint32_t ty = uint32_t(y0) + y;
-          for (uint32_t x = 0; x + 4 <= width; x += 4) {
-            const uint32_t address = dest_base + uint32_t(TiledOffset2D(int32_t(uint32_t(x0) + x), int32_t(ty), dest_pitch, 2));
-            if (address + 16 > mirror_bytes_) continue;
-            uint32_t run[4];
-            std::memcpy(run, src + (size_t(y) * width + x) * 4, 16);
-            for (uint32_t& v : run) v = GpuSwap(v, Endian(dest_endian <= 3 ? dest_endian : 0));
-            std::memcpy(physical_ + address, run, 16);
+    const VkFormat host = surface->image.format;
+    uint32_t dest_bytes = 0, source_bytes = 0;
+    if (dest_format == 6 && host == VK_FORMAT_R8G8B8A8_UNORM) {
+      dest_bytes = 4, source_bytes = 4;  // k_8_8_8_8 from an 8_8_8_8 target
+    } else if (dest_format == 32 && host == VK_FORMAT_R16G16B16A16_SFLOAT) {
+      dest_bytes = 8, source_bytes = 8;  // k_16_16_16_16_FLOAT from a 16_16_16_16_FLOAT target
+    } else {
+      Fail("resolve from host format " + std::to_string(host) + " to format " + std::to_string(dest_format) + " (not yet)");
+      return;
+    }
+    Buffer readback;
+    if (!CreateBuffer(device_, VkDeviceSize(width) * height * source_bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback)) {
+      Fail("resolve readback buffer");
+      return;
+    }
+    bool ok = device_.Submit([&](VkCommandBuffer cb) {
+      Transition(cb, surface->image, surface->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+      VkBufferImageCopy region{};
+      region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      region.imageOffset = {x0, y0, 0};
+      region.imageExtent = {width, height, 1};
+      f.vkCmdCopyImageToBuffer(cb, surface->image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1, &region);
+    });
+    if (ok) {
+      const uint8_t* src = static_cast<const uint8_t*>(readback.mapped);
+      const float scale = std::ldexp(1.0f, dest_bias);
+      const uint32_t bpp_log2 = dest_bytes == 8 ? 3 : 2;
+      if (dest_bytes == 4 && !dest_bias && !dest_swap) {
+        // The common case (a 32-bit target copied as it is): in the Xenos tiling, 4 texels starting at a multiple of
+        // 4 in x are contiguous, so rows go 16 bytes at a time; the rows are spread over threads.
+        auto rows = [&](uint32_t first, uint32_t last) {
+          for (uint32_t y = first; y < last; ++y) {
+            const uint32_t ty = uint32_t(y0) + y;
+            for (uint32_t x = 0; x + 4 <= width; x += 4) {
+              const uint32_t address = dest_base + uint32_t(TiledOffset2D(int32_t(uint32_t(x0) + x), int32_t(ty), dest_pitch, 2));
+              if (address + 16 > mirror_bytes_) continue;
+              uint32_t run[4];
+              std::memcpy(run, src + (size_t(y) * width + x) * 4, 16);
+              for (uint32_t& v : run) v = GpuSwap(v, Endian(dest_endian <= 3 ? dest_endian : 0));
+              std::memcpy(physical_ + address, run, 16);
+            }
           }
+        };
+        const uint32_t threads = std::clamp<uint32_t>(std::thread::hardware_concurrency(), 1, 8);
+        std::vector<std::thread> workers;
+        const uint32_t step = (height + threads - 1) / threads;
+        for (uint32_t t = 1; t < threads && t * step < height; ++t) workers.emplace_back(rows, t * step, std::min(height, (t + 1) * step));
+        rows(0, std::min(height, step));
+        for (std::thread& w : workers) w.join();
+      } else for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+          uint8_t element[8];
+          const uint8_t* texel = src + (size_t(y) * width + x) * source_bytes;
+          if (dest_bytes == 4) {
+            uint8_t c[4];
+            for (int i = 0; i < 4; ++i) {
+              c[i] = dest_bias ? uint8_t(std::clamp(std::lround(texel[i] * scale), 0L, 255L)) : texel[i];
+            }
+            if (dest_swap) std::swap(c[0], c[2]);
+            std::memcpy(element, c, 4);  // component 0 in the low byte, as the GPU writes
+          } else {
+            uint16_t c[4];
+            std::memcpy(c, texel, 8);
+            if (dest_bias) {
+              for (uint16_t& h : c) h = FloatToHalf(HalfToFloat(h) * scale);
+            }
+            if (dest_swap) std::swap(c[0], c[2]);
+            std::memcpy(element, c, 8);
+          }
+          SwapElement(element, dest_bytes, dest_endian);
+          const uint32_t tx = uint32_t(x0) + x, ty = uint32_t(y0) + y;
+          const uint32_t address = dest_base + uint32_t(TiledOffset2D(int32_t(tx), int32_t(ty), dest_pitch, bpp_log2));
+          if (address + dest_bytes <= mirror_bytes_) std::memcpy(physical_ + address, element, dest_bytes);
         }
-      };
-      const uint32_t threads = std::clamp<uint32_t>(std::thread::hardware_concurrency(), 1, 8);
-      std::vector<std::thread> workers;
-      const uint32_t step = (height + threads - 1) / threads;
-      for (uint32_t t = 1; t < threads && t * step < height; ++t) workers.emplace_back(rows, t * step, std::min(height, (t + 1) * step));
-      rows(0, std::min(height, step));
-      for (std::thread& w : workers) w.join();
-    } else for (uint32_t y = 0; y < height; ++y) {
-      for (uint32_t x = 0; x < width; ++x) {
-        uint8_t element[8];
-        const uint8_t* texel = src + (size_t(y) * width + x) * source_bytes;
-        if (dest_bytes == 4) {
-          uint8_t c[4];
-          for (int i = 0; i < 4; ++i) {
-            c[i] = dest_bias ? uint8_t(std::clamp(std::lround(texel[i] * scale), 0L, 255L)) : texel[i];
-          }
-          if (dest_swap) std::swap(c[0], c[2]);
-          std::memcpy(element, c, 4);  // component 0 in the low byte, as the GPU writes
-        } else {
-          uint16_t c[4];
-          std::memcpy(c, texel, 8);
-          if (dest_bias) {
-            for (uint16_t& h : c) h = FloatToHalf(HalfToFloat(h) * scale);
-          }
-          if (dest_swap) std::swap(c[0], c[2]);
-          std::memcpy(element, c, 8);
-        }
-        SwapElement(element, dest_bytes, dest_endian);
-        const uint32_t tx = uint32_t(x0) + x, ty = uint32_t(y0) + y;
-        const uint32_t address = dest_base + uint32_t(TiledOffset2D(int32_t(tx), int32_t(ty), dest_pitch, bpp_log2));
-        if (address + dest_bytes <= mirror_bytes_) std::memcpy(physical_ + address, element, dest_bytes);
       }
     }
-  }
-  DestroyBuffer(device_, readback);
-  if (!ok) {
-    Fail("resolve copy");
-    return;
+    DestroyBuffer(device_, readback);
+    if (!ok) {
+      Fail("resolve copy");
+      return;
+    }
   }
 
   // The clears: the colour source and the depth target over the same rectangle, with the values RB_COLOR_CLEAR /
@@ -1301,7 +1347,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       const float depth = ((depth_info >> 16) & 1) ? Float20e4ToFloat(clear >> 8) : float(clear >> 8) / float(0xFFFFFF);
       depth_value.depthStencil = {depth, clear & 0xFF};
     }
-    ok = device_.Submit([&](VkCommandBuffer cb) {
+    const bool ok = device_.Submit([&](VkCommandBuffer cb) {
       // A render pass over the rectangle that clears on load and stores: clears exactly the rectangle.
       VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO}, depth{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
       if (color_target) {
@@ -1337,7 +1383,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     }
   }
   last_resolve_ = {surface, dest_base, dest_endian, uint32_t(x0), uint32_t(y0), width, height,
-                   dest_format == 6 && !dest_bias && !dest_swap};
+                   !is_depth && dest_format == 6 && !dest_bias && !dest_swap};
   ++stats_.resolves;
 }
 
