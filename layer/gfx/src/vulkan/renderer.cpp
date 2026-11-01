@@ -1520,17 +1520,32 @@ void VulkanRenderer::RecordFrameBlit(VkCommandBuffer cb, VkImage target, VkOffse
                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 }
 
+void VulkanRenderer::GammaRamp(const uint32_t* table, const uint32_t*) {
+  // An 8-bit value through the 256-entry table: its 10-bit output scaled back to 8 bits (red from bit 20, green from
+  // bit 10, blue from bit 0).
+  for (uint32_t c = 0; c < 3; ++c) {
+    for (uint32_t i = 0; i < 256; ++i) {
+      const uint32_t v10 = (table[i] >> (10 * (2 - c))) & 0x3FF;
+      gamma_lut_[c][i] = uint8_t((v10 * 255 + 511) / 1023);
+    }
+  }
+}
+
 bool VulkanRenderer::ReadFrame(std::vector<uint32_t>& pixels) {
   if (!frame_.on_gpu) {
     pixels = frame_.pixels;
-    return !pixels.empty();
+  } else {
+    if (!frame_surface_) return false;
+    std::vector<uint8_t> bytes;
+    if (frame_x_ || frame_y_ || !ReadBack(frame_surface_->key, frame_.width, frame_.height, bytes)) return false;
+    pixels.resize(size_t(frame_.width) * frame_.height);
+    std::memcpy(pixels.data(), bytes.data(), pixels.size() * 4);
   }
-  if (!frame_surface_) return false;
-  std::vector<uint8_t> bytes;
-  if (frame_x_ || frame_y_ || !ReadBack(frame_surface_->key, frame_.width, frame_.height, bytes)) return false;
-  pixels.resize(size_t(frame_.width) * frame_.height);
-  std::memcpy(pixels.data(), bytes.data(), pixels.size() * 4);
-  return true;
+  for (uint32_t& p : pixels) {
+    p = (p & 0xFF000000u) | gamma_lut_[0][p & 0xFF] | uint32_t(gamma_lut_[1][(p >> 8) & 0xFF]) << 8 |
+        uint32_t(gamma_lut_[2][(p >> 16) & 0xFF]) << 16;
+  }
+  return !pixels.empty();
 }
 
 }  // namespace any360::gfx::vk

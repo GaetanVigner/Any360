@@ -2,6 +2,8 @@
 
 #include "any360/gfx/capture.h"
 
+#include <algorithm>
+
 #include <atomic>
 #include <bit>
 #include <chrono>
@@ -49,7 +51,17 @@ uint32_t GpuSwap(uint32_t value, Endian endian) {
   }
 }
 
-CommandProcessor::CommandProcessor(uint8_t* physical) : physical_(physical), registers_(reg::kRegisterCount, 0) {}
+CommandProcessor::CommandProcessor(uint8_t* physical) : physical_(physical), registers_(reg::kRegisterCount, 0) {
+  // The gamma ramps' defaults (linear), as the reference starts with them.
+  for (uint32_t i = 0; i < 256; ++i) {
+    const uint32_t v = i * 0x3FF / 0xFF;
+    gamma_table_[i] = v | v << 10 | v << 20;
+  }
+  for (uint32_t i = 0; i < 128; ++i) {
+    const uint32_t entry = ((i * 0xFFFF / 0x7F) & ~0x3Fu) | (i < 0x7F ? 0x200u : 0u) << 16;
+    for (uint32_t j = 0; j < 3; ++j) gamma_pwl_[i * 3 + j] = entry;
+  }
+}
 
 CommandProcessor::~CommandProcessor() { Stop(); }
 
@@ -86,6 +98,7 @@ void CommandProcessor::EnableReadPointerWriteBack(sys::Guest, uint32_t address, 
 void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
   if (index >= reg::kRegisterCount) return;
   std::atomic_ref<uint32_t>(registers_[index]).store(value, std::memory_order_release);
+  if (index >= reg::DC_LUT_RW_INDEX && index <= reg::DC_LUT_30_COLOR) GammaRampWrite(index);
   if (index == reg::CP_RB_WPTR) {
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -121,6 +134,10 @@ void CommandProcessor::Interrupt(uint32_t source, uint32_t cpu) {
 void CommandProcessor::SetRegister(uint32_t index, uint32_t value) {
   if (index >= reg::kRegisterCount) return;
   std::atomic_ref<uint32_t>(registers_[index]).store(value, std::memory_order_release);
+  if (index >= reg::DC_LUT_RW_INDEX && index <= reg::DC_LUT_30_COLOR) {
+    GammaRampWrite(index);
+    return;
+  }
   if (index >= reg::SCRATCH_REG0 && index < reg::SCRATCH_REG0 + 8) {
     // A scratch register the CPU watches: mirrored to memory when its bit of SCRATCH_UMSK is set.
     const uint32_t n = index - reg::SCRATCH_REG0;
@@ -132,6 +149,54 @@ void CommandProcessor::SetRegister(uint32_t index, uint32_t value) {
     // A coherency request: pending (bit 31) until a WAIT_REG_MEM on this register completes it.
     std::atomic_ref<uint32_t>(registers_[index]).fetch_or(0x80000000u, std::memory_order_acq_rel);
   }
+}
+
+void CommandProcessor::GammaRampWrite(uint32_t index) {
+  // As the reference keeps the ramps: DC_LUT_RW_INDEX selects an entry (and restarts at red); DC_LUT_SEQ_COLOR and
+  // DC_LUT_PWL_DATA take red, green, blue in turn, then move to the next entry; DC_LUT_30_COLOR takes a whole entry.
+  // DC_LUT_WRITE_EN_MASK enables blue, green, red (bits 0-2).
+  const uint32_t rw_index = reg(reg::DC_LUT_RW_INDEX), enable = reg(reg::DC_LUT_WRITE_EN_MASK) & 7;
+  auto next_index = [&](uint32_t value) {
+    std::atomic_ref<uint32_t>(registers_[reg::DC_LUT_RW_INDEX]).store(value, std::memory_order_release);
+    gamma_component_ = 0;
+  };
+  switch (index) {
+    case reg::DC_LUT_RW_INDEX:
+      gamma_component_ = 0;
+      break;
+    case reg::DC_LUT_SEQ_COLOR: {
+      if (enable & (1u << (2 - gamma_component_))) {
+        const uint32_t shift = 10 * (2 - gamma_component_), value = ((reg(reg::DC_LUT_SEQ_COLOR) & 0xFFFF) >> 6) & 0x3FF;
+        uint32_t& entry = gamma_table_[rw_index & 0xFF];
+        entry = (entry & ~(0x3FFu << shift)) | value << shift;
+      }
+      if (++gamma_component_ >= 3) next_index((rw_index & ~0xFFu) | ((rw_index + 1) & 0xFF));
+      break;
+    }
+    case reg::DC_LUT_PWL_DATA: {
+      if (enable & (1u << (2 - gamma_component_))) {
+        gamma_pwl_[(rw_index & 0x7F) * 3 + gamma_component_] = reg(reg::DC_LUT_PWL_DATA) & 0xFFC0FFC0u;
+      }
+      if (++gamma_component_ >= 3) next_index((rw_index & ~0x7Fu) | ((rw_index + 1) & 0x7F));
+      break;
+    }
+    case reg::DC_LUT_30_COLOR: {
+      uint32_t& entry = gamma_table_[rw_index & 0xFF];
+      const uint32_t value = reg(reg::DC_LUT_30_COLOR);
+      for (uint32_t c = 0; c < 3; ++c) {
+        if (enable & (1u << c)) entry = (entry & ~(0x3FFu << (10 * c))) | (value & (0x3FFu << (10 * c)));
+      }
+      next_index((rw_index & ~0xFFu) | ((rw_index + 1) & 0xFF));
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+void CommandProcessor::RestoreGammaRamp(const uint32_t* table, const uint32_t* pwl) {
+  std::copy(table, table + 256, gamma_table_.begin());
+  std::copy(pwl, pwl + 128 * 3, gamma_pwl_.begin());
 }
 
 void CommandProcessor::MakeCoherent() {
@@ -289,7 +354,10 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
       if (has(4)) {
         Next(r);  // 'SWAP'
         const uint32_t frontbuffer = Next(r), width = Next(r), height = Next(r);
-        if (renderer_) renderer_->Swap(frontbuffer & 0x1FFFFFFF, width, height, registers_.data());
+        if (renderer_) {
+          renderer_->GammaRamp(gamma_table_.data(), gamma_pwl_.data());
+          renderer_->Swap(frontbuffer & 0x1FFFFFFF, width, height, registers_.data());
+        }
         ++counter_;  // the counter fences read moves with swaps as well as vertical blanks
       }
       break;

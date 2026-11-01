@@ -7,6 +7,9 @@
 namespace any360::gfx::reg {
 
 constexpr uint32_t kRegisterCount = 0x5003;
+// The display gamma ramp (written by the D3D runtime through MMIO).
+constexpr uint32_t DC_LUT_RW_MODE = 0x1921, DC_LUT_RW_INDEX = 0x1922, DC_LUT_SEQ_COLOR = 0x1923, DC_LUT_PWL_DATA = 0x1924,
+                   DC_LUT_30_COLOR = 0x1925, DC_LUT_WRITE_EN_MASK = 0x1927;
 
 constexpr uint32_t CP_RB_BASE = 0x01C0, CP_RB_CNTL = 0x01C1, CP_RB_RPTR_ADDR = 0x01C3, CP_RB_RPTR = 0x01C4, CP_RB_WPTR = 0x01C5;
 constexpr uint32_t SCRATCH_UMSK = 0x01DC, SCRATCH_ADDR = 0x01DD, SCRATCH_REG0 = 0x0578;

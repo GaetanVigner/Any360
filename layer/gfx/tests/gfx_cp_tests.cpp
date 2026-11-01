@@ -338,10 +338,54 @@ void ReferenceDetails() {
   CHECK(cp.reg(0x2062) == 0x63);
 }
 
+// The display gamma ramp, kept as the reference keeps it from the DC_LUT_* writes (through MMIO here; PM4 register
+// writes reach it the same way), and handed to the renderer before each swap.
+void GammaRamp() {
+  CommandProcessor cp(g_physical.data());
+  // The defaults: linear.
+  CHECK(cp.gamma_table()[255] == (0x3FFu | 0x3FFu << 10 | 0x3FFu << 20) && cp.gamma_table()[0] == 0);
+  cp.WriteRegister(reg::DC_LUT_RW_MODE, 0);
+  cp.WriteRegister(reg::DC_LUT_WRITE_EN_MASK, 7);
+  // A whole entry (DC_LUT_30_COLOR), then one red, green, blue at a time (DC_LUT_SEQ_COLOR: 16-bit values, the top
+  // 10 bits kept); each moves the index on.
+  cp.WriteRegister(reg::DC_LUT_RW_INDEX, 5);
+  cp.WriteRegister(reg::DC_LUT_30_COLOR, 0x3FFu | 0x155u << 10 | 0x2AAu << 20);
+  cp.WriteRegister(reg::DC_LUT_SEQ_COLOR, 0x100u << 6);
+  cp.WriteRegister(reg::DC_LUT_SEQ_COLOR, 0x040u << 6);
+  cp.WriteRegister(reg::DC_LUT_SEQ_COLOR, 0x3FFu << 6);
+  CHECK(cp.gamma_table()[5] == (0x3FFu | 0x155u << 10 | 0x2AAu << 20));
+  CHECK(cp.gamma_table()[6] == (0x3FFu | 0x040u << 10 | 0x100u << 20) && cp.reg(reg::DC_LUT_RW_INDEX) == 7);
+  // Disabled components keep their value.
+  cp.WriteRegister(reg::DC_LUT_WRITE_EN_MASK, 0b100);  // red only
+  cp.WriteRegister(reg::DC_LUT_RW_INDEX, 5);
+  cp.WriteRegister(reg::DC_LUT_30_COLOR, 0);
+  CHECK(cp.gamma_table()[5] == (0x3FFu | 0x155u << 10));
+  // The PWL ramp: three values an entry (red, green, blue), bit 7 of the index ignored, bits 0-5 of each half zero.
+  cp.WriteRegister(reg::DC_LUT_RW_MODE, 1);
+  cp.WriteRegister(reg::DC_LUT_WRITE_EN_MASK, 7);
+  cp.WriteRegister(reg::DC_LUT_RW_INDEX, 0x80 | 3);
+  for (uint32_t v : {0x0200FFFFu, 0x04001234u, 0x0600ABCDu}) cp.WriteRegister(reg::DC_LUT_PWL_DATA, v);
+  CHECK(cp.gamma_pwl()[9] == 0x0200FFC0u && cp.gamma_pwl()[10] == 0x04001200u && cp.gamma_pwl()[11] == 0x0600ABC0u);
+  CHECK(cp.reg(reg::DC_LUT_RW_INDEX) == (0x80u | 4));
+  // A swap hands the ramp to the renderer first.
+  struct RampRecorder : Renderer {
+    uint32_t entry6 = 0, swaps = 0;
+    void GammaRamp(const uint32_t* table, const uint32_t*) override { entry6 = table[6]; }
+    void Swap(uint32_t, uint32_t, uint32_t, const uint32_t*) override { swaps += entry6 != 0; }
+  } recorder;
+  Ring ring{cp};
+  cp.SetRenderer(&recorder);
+  Fresh(cp, ring);
+  ring.Put({Type3(pm4::XE_SWAP, 4), 0x53574150, 0x100000, 640, 480});
+  ring.Run();
+  CHECK(recorder.swaps == 1 && recorder.entry6 == (0x3FFu | 0x040u << 10 | 0x100u << 20));
+}
+
 }  // namespace
 
 int main() {
   ReferenceDetails();
+  GammaRamp();
   RingAndRegisters();
   Memory();
   Constants();

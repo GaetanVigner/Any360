@@ -52,6 +52,11 @@ void Writer::Shaders(const std::vector<uint32_t>& vertex, const std::vector<uint
   Chunk(kShaders, payload.data(), payload.size() * 4);
 }
 
+void Writer::GammaRamp(const uint32_t* table, const uint32_t* pwl) {
+  if (!file_) return;
+  Chunk(kGammaRamp, table, 256 * 4, pwl, 384 * 4);
+}
+
 void Writer::WriteChangedPages() {
   // Hashing all of memory at every kick is the capture's cost (512 MB: tens of milliseconds): split over threads.
   const uint32_t pages = uint32_t(page_hashes_.size());
@@ -193,6 +198,12 @@ bool Replay(const std::string& path, CommandProcessor& cp, uint8_t* physical, ui
           std::memcpy(physical + size_t(page) * kPageBytes, entry + 4, kPageBytes);
           ++stats.pages;
         }
+        break;
+      }
+      case kGammaRamp: {
+        if (payload.size() < (256 + 384) * 4) return error = "damaged gamma ramp chunk", false;
+        const uint32_t* words = reinterpret_cast<const uint32_t*>(payload.data());
+        cp.RestoreGammaRamp(words, words + 256);
         break;
       }
       case kKick:

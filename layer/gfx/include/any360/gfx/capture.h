@@ -16,6 +16,9 @@
 //               frame at a swap (optional)
 //   kShaders    u32 vertex dwords, u32 pixel dwords, then the active shaders' microcode (host order) when the
 //               capture starts (optional: a capture starting mid-stream otherwise lacks them until the next load)
+//   kGammaRamp  256 u32 (the 256-entry table, DC_LUT_30_COLOR values) then 384 u32 (the PWL ramp: 128 entries of
+//               red, green, blue DC_LUT_PWL_DATA values) when the capture starts (optional: the ramp is written long
+//               before, through registers the register file does not keep)
 // The pages hold the title's data: captures stay on the machine that made them, never in a repository.
 #pragma once
 
@@ -32,7 +35,7 @@ class CommandProcessor;
 namespace any360::gfx::capture {
 
 constexpr uint32_t kVersion = 1, kPageBytes = 4096;
-enum ChunkType : uint32_t { kInfo = 1, kMemory = 2, kRegisters = 3, kPages = 4, kKick = 5, kFrame = 6, kShaders = 7 };
+enum ChunkType : uint32_t { kInfo = 1, kMemory = 2, kRegisters = 3, kPages = 4, kKick = 5, kFrame = 6, kShaders = 7, kGammaRamp = 8 };
 
 class Writer {
  public:
@@ -43,6 +46,8 @@ class Writer {
             const std::string& info);
   // The active shaders when the capture starts (host-order microcode), if the producer knows them.
   void Shaders(const std::vector<uint32_t>& vertex, const std::vector<uint32_t>& pixel);
+  // The display gamma ramp when the capture starts (256 table entries, 384 PWL values).
+  void GammaRamp(const uint32_t* table, const uint32_t* pwl);
   // Before the GPU runs the ring from `read` to `write`: the pages written since the last kick, then the kick.
   void Kick(uint32_t ring_base, uint32_t ring_dwords, uint32_t read, uint32_t write);
   // The reference's frame at a swap.

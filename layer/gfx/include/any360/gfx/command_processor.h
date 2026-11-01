@@ -69,6 +69,9 @@ class Renderer {
   virtual void Flush() {}
   // The CPU wrote [base, base + size) (COHER_*_HOST): cached copies of that memory are stale.
   virtual void Invalidate(uint32_t /*base*/, uint32_t /*size*/) {}
+  // The display gamma ramp at a swap, before Swap: the 256-entry table (DC_LUT_30_COLOR values: 10-bit blue, green,
+  // red from bit 0) and the piecewise linear one (128 entries of red, green, blue DC_LUT_PWL_DATA values).
+  virtual void GammaRamp(const uint32_t* /*table*/, const uint32_t* /*pwl*/) {}
 };
 
 class CommandProcessor : public sys::GpuBackend {
@@ -114,6 +117,10 @@ class CommandProcessor : public sys::GpuBackend {
   void RestoreShader(uint32_t type, std::vector<uint32_t> microcode);
   bool Replay(uint32_t ring_base, uint32_t ring_dwords, uint32_t read, uint32_t write);
   uint32_t replay_skipped_waits() const { return replay_skipped_waits_; }
+  // The display gamma ramp the title wrote through DC_LUT_* (the reference's defaults until it does).
+  const uint32_t* gamma_table() const { return gamma_table_.data(); }
+  const uint32_t* gamma_pwl() const { return gamma_pwl_.data(); }
+  void RestoreGammaRamp(const uint32_t* table, const uint32_t* pwl);
   // Type-3 packets executed, by opcode: what a title's frames use.
   const std::array<uint64_t, 128>& opcode_counts() const { return opcode_counts_; }
 
@@ -125,6 +132,7 @@ class CommandProcessor : public sys::GpuBackend {
   bool ExecutePacket(Reader& r, int depth);
   bool ExecuteType3(Reader& r, uint32_t packet, int depth);
   void SetRegister(uint32_t index, uint32_t value);
+  void GammaRampWrite(uint32_t index);  // after a DC_LUT_* register write
   bool Wait(uint32_t wait_info, uint32_t poll, uint32_t reference, uint32_t mask, uint32_t interval);
   bool Test(uint32_t wait_info, uint32_t poll, uint32_t reference, uint32_t mask, bool coherent);
   void MakeCoherent();
@@ -152,6 +160,9 @@ class CommandProcessor : public sys::GpuBackend {
   bool replaying_ = false;
   uint32_t replay_skipped_waits_ = 0;
   std::array<uint64_t, 128> opcode_counts_{};
+  std::array<uint32_t, 256> gamma_table_{};
+  std::array<uint32_t, 128 * 3> gamma_pwl_{};
+  uint32_t gamma_component_ = 0;  // the next red, green or blue of DC_LUT_SEQ_COLOR / DC_LUT_PWL_DATA
   std::mutex mutex_;
   std::condition_variable kicked_;
   std::thread worker_;

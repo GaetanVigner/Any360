@@ -97,6 +97,7 @@ class VulkanRenderer : public gfx::Renderer {
   void Copy(const uint32_t* registers) override;
   // A swap: the front buffer (texture fetch constant 0, as VdSwap writes it) read into the presented frame.
   void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* registers) override;
+  void GammaRamp(const uint32_t* table, const uint32_t* pwl) override;
 
   // The last presented frame: RGBA8 pixels (R in the low byte), row after row; `number` counts swaps.
   // A frame is either still on the GPU (the surface the front buffer was resolved from, when guest memory holds
@@ -108,8 +109,11 @@ class VulkanRenderer : public gfx::Renderer {
     bool on_gpu = false;
   };
   const Frame& frame() const { return frame_; }
-  // The frame's pixels whichever way it is held (a GPU frame is read back: for tests and screenshots).
+  // The frame's pixels whichever way it is held (a GPU frame is read back: for tests and screenshots), through the
+  // display gamma ramp as the reference presents them (k_8_8_8_8 front buffers: the 256-entry table).
   bool ReadFrame(std::vector<uint32_t>& pixels);
+  // The 8-bit output of each 8-bit input through the gamma ramp's table, per channel (red, green, blue).
+  const std::array<std::array<uint8_t, 256>, 3>& gamma_lut() const { return gamma_lut_; }
   // Records the GPU frame's blit onto `target` (in TRANSFER_DST layout) over [dst0, dst1).
   void RecordFrameBlit(VkCommandBuffer cb, VkImage target, VkOffset3D dst0, VkOffset3D dst1);
 
@@ -192,6 +196,13 @@ class VulkanRenderer : public gfx::Renderer {
   uint32_t frame_x_ = 0, frame_y_ = 0;
   std::string last_error_;
   std::map<std::string, uint32_t> failures_;
+  std::array<std::array<uint8_t, 256>, 3> gamma_lut_ = [] {
+    std::array<std::array<uint8_t, 256>, 3> lut{};
+    for (auto& channel : lut) {
+      for (uint32_t i = 0; i < 256; ++i) channel[i] = uint8_t(i);
+    }
+    return lut;
+  }();
 };
 
 }  // namespace any360::gfx::vk

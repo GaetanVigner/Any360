@@ -20,6 +20,7 @@ The format is defined in `layer/gfx/include/any360/gfx/capture.h`. Everything is
 | `kShaders` (7) | Optional. u32 vertex dwords, u32 pixel dwords, then the active shaders' microcode in host order, when the capture starts |
 | `kPages` (4) | u32 count, then count entries of `{u32 page index, 4096 bytes}`: the physical pages that changed since the last kick. At the first kick, this is every non-zero page |
 | `kKick` (5) | u32 ring base (physical), u32 ring dwords, u32 read index, u32 write index: the ring span the GPU then ran |
+| `kGammaRamp` (8) | Optional. 256 u32 (the 256-entry table, `DC_LUT_30_COLOR` values) then 384 u32 (the PWL ramp, 128 entries of red, green and blue `DC_LUT_PWL_DATA`): the display gamma ramp when the capture starts. The title writes it long before, through registers the register file does not keep |
 | `kFrame` (6) | Optional. u32 width, u32 height, then RGBA8 pixels (R in the low byte): the reference's presented frame, after the kick that swapped |
 
 Changes to memory are found by hashing each 4 KB page at every kick, split across threads. For 512 MB this costs
@@ -58,6 +59,7 @@ Any front end can produce a capture through `capture::Writer`. Writing one takes
 capture::Writer writer;
 writer.Open(path, physical_base, physical_bytes, register_file, register_count, info);  // when capturing starts
 writer.Shaders(active_vertex_microcode, active_pixel_microcode);                         // optional
+writer.GammaRamp(gamma_table, gamma_pwl);                                               // optional
 // For every kick, before it runs:
 writer.Kick(ring_base, ring_dwords, read_index, write_index);
 // After each swap, optional:

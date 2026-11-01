@@ -223,8 +223,12 @@ mip address, the packed mip tail's offsets, as texture_util lays them out): the 
 to the reference's (mean difference 21.7 per channel). Signed textures then (a signed view of the same bits,
 SNORM, bound to the shader's signed binding when a component is signed): every draw of the capture is drawn (12,857,
 none refused, NVIDIA and AMD). What is left of the difference (21 per channel) is uniform: ours is about 17 brighter
-in each channel, which points at the display gamma ramp the reference applies when it presents (DC_LUT registers),
-a presentation step still to add; then resolves from MSAA surfaces (averaging samples).
+in each channel, along a monotonic curve (0 stays 0, mid-tones darker: 136 against 114, white close to white): the
+display gamma ramp the reference applies when it presents. The command processor now keeps the ramp from the DC_LUT
+writes as the reference does (the 256-entry table and the PWL ramp) and hands it to the renderer at each swap, whose
+frame reads go through the table (k_8_8_8_8 front buffers); captures record the ramp (kGammaRamp), since the title
+writes it long before a capture starts. The ramp still has to be applied on the GPU path to the window; then
+resolves from MSAA surfaces (averaging samples).
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames

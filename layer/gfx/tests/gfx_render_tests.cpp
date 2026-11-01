@@ -743,6 +743,7 @@ int main(int argc, char** argv) {
     capture::Writer writer;
     CHECK(writer.Open(path, g_memory, kMemory, cp.registers(), reg::kRegisterCount, "gfx_render_tests"));
     writer.Shaders(cp.shader(0).microcode, cp.shader(1).microcode);
+    writer.GammaRamp(cp.gamma_table(), cp.gamma_pwl());
     cp.SetCapture(&writer);
     s.Defaults();
     s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
