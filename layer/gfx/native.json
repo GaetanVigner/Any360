@@ -22,6 +22,12 @@
   "render features:vertex fetch (shared memory)",
   "render features:index buffers (DMA)",
   "render features:auto indices",
-  "render features:shader constants (float)"
+  "render features:shader constants (float)",
+  "render features:multiple render targets",
+  "render features:render targets from RB_* registers",
+  "render features:colour exponent bias",
+  "render target formats:k_8_8_8_8",
+  "render target formats:k_16_16_16_16_FLOAT",
+  "render target formats:kD24S8"
  ]
 }

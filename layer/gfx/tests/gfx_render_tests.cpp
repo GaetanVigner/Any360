@@ -84,6 +84,8 @@ struct Scene {
   // The state every scenario starts from: colour+depth, a D3D viewport over the target (y up, W as is), the full
   // target as screen and window scissor, no depth, stencil or blending, all colour written, no culling.
   void Defaults() {
+    // Surfaces: pitch 64, colour 0 at EDRAM tile 0 (k_8_8_8_8), depth at tile 1024 (D24S8).
+    Put({Type0(0x2000, 3), kSize, 0u << 16 | 0, 0u << 16 | 1024});
     Reg(0x2208, 4);
     Reg(0x2206, 0x3F | 1u << 10);
     Put({Type0(0x210F, 6), Bits(kSize / 2.0f), Bits(kSize / 2.0f), Bits(-float(kSize) / 2.0f), Bits(kSize / 2.0f), Bits(1), Bits(0)});
@@ -91,6 +93,7 @@ struct Scene {
     Put({Type0(0x2080, 3), 0, 0, kSize << 16 | kSize});
     Reg(kRbDepthControl, 0);
     Reg(kRbBlendControl0, 0x00010001);
+    Put({Type0(0x2209, 3), 0x00010001, 0x00010001, 0x00010001});  // RB_BLENDCONTROL1-3: 0 would blend ZERO + ZERO
     Reg(kRbColorMask, 0xF);
     Reg(kPaSuScModeCntl, 0);
   }
@@ -127,7 +130,16 @@ int main(int argc, char** argv) {
     return 0;
   }
   vk::VulkanRenderer renderer(device, g_physical.data(), kMemory);
-  CHECK(renderer.Initialize(kSize, kSize));
+  CHECK(renderer.Initialize());
+  const vk::SurfaceKey color0{0, kSize, 0, 0}, depth{1024, kSize, 0, 1};
+  auto read = [&](const vk::SurfaceKey& key) {
+    Pixels p;
+    std::vector<uint8_t> bytes;
+    CHECK(renderer.ReadBack(key, kSize, kSize, bytes));
+    p.data.assign(kSize * kSize, 0);
+    if (bytes.size() == kSize * kSize * 4) std::memcpy(p.data.data(), bytes.data(), bytes.size());
+    return p;
+  };
   CommandProcessor cp(g_physical.data());
   cp.SetRenderer(&renderer);
   cp.InitializeRingBuffer({}, kRing, 12);  // 32 KB: 8192 dwords
@@ -147,15 +159,13 @@ int main(int argc, char** argv) {
   const float black[4] = {0, 0, 0, 1};
   auto scenario = [&](const char* name, const float* clear, const std::function<void()>& packets) {
     const uint32_t failed_before = renderer.stats().failed;
-    CHECK(renderer.Clear(clear ? clear : black));
-    CHECK(renderer.ClearDepthStencil(1.0f, 0));
+    CHECK(renderer.ClearColor(color0, clear ? clear : black));
+    CHECK(renderer.ClearDepthStencil(depth, 1.0f, 0));
     s.Defaults();
     packets();
     s.Run();
     if (renderer.stats().failed != failed_before) std::printf("gfx_render_tests: %s: %s\n", name, renderer.last_error().c_str());
-    Pixels p;
-    CHECK(renderer.ReadBack(p.data));
-    if (p.data.size() != kSize * kSize) p.data.assign(kSize * kSize, 0);
+    Pixels p = read(color0);
     return p;
   };
 
@@ -267,12 +277,59 @@ int main(int argc, char** argv) {
     CHECK(p.At(4, 59) == yellow && p.At(59, 4) == kBlack && wrong == 0);
   }
 
+  // Several targets and formats: a pixel shader writing oC0 = c0 and oC1 = c1; colour 1 a k_16_16_16_16_FLOAT
+  // surface at EDRAM tile 512 (its own host image, apart from colour 0's).
+
+  {
+    const vk::SurfaceKey color1{512, kSize, 7, 0};
+    const float zero[4] = {0, 0, 0, 0};
+    CHECK(renderer.ClearColor(color1, zero));
+    Pixels p = scenario("two targets", nullptr, [&] {
+      s.Shader(1, t::BuildTwoTargetPixelShader());
+      s.Reg(0x2003, 7u << 16 | 512);  // RB_COLOR1_INFO
+      s.Reg(kRbColorMask, 0xFF);
+      s.Put({Type3(pm4::SET_CONSTANT, 9), 0u << 16 | 1024, Bits(51 / 255.0f), Bits(102 / 255.0f), Bits(153 / 255.0f), Bits(1),
+             Bits(0.5f), Bits(-2.0f), Bits(1024.0f), Bits(0.125f)});
+      s.Vertices(0);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    CHECK(p.Count(Rgba(51, 102, 153, 255)) == kSize * kSize);
+    std::vector<uint8_t> bytes;
+    CHECK(renderer.ReadBack(color1, kSize, kSize, bytes));
+    // Half floats: 0.5 = 0x3800, -2 = 0xC000, 1024 = 0x6400, 0.125 = 0x3000.
+    uint32_t exact = 0;
+    for (size_t i = 0; i + 8 <= bytes.size(); i += 8) {
+      uint16_t h[4];
+      std::memcpy(h, bytes.data() + i, 8);
+      exact += h[0] == 0x3800 && h[1] == 0xC000 && h[2] == 0x6400 && h[3] == 0x3000;
+    }
+    if (bytes.size() >= 8) {
+      uint16_t h[4];
+      std::memcpy(h, bytes.data(), 8);
+      std::printf("gfx_render_tests: colour 1 first pixel %04X %04X %04X %04X\n", h[0], h[1], h[2], h[3]);
+    }
+    std::printf("gfx_render_tests: two targets: colour 1 (16_16_16_16_FLOAT) %u of %u pixels exact\n", exact, kSize * kSize);
+    CHECK(exact == kSize * kSize);
+  }
+  // The colour exponent bias of RB_COLOR_INFO: +1 doubles what the shader writes (0.2 -> 0.4).
+  {
+    Pixels p = scenario("exponent bias", nullptr, [&] {
+      s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+      s.Reg(0x2001, 1u << 20 | 0u << 16 | 0);  // bias +1, k_8_8_8_8, tile 0
+      s.Vertices(0);
+      s.Color(51, 102, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    std::printf("gfx_render_tests: exponent bias +1: %08X\n", p.At(10, 10));
+    CHECK(p.Count(Rgba(102, 204, 0, 255)) == kSize * kSize);
+  }
+
   const vk::RendererStats& stats = renderer.stats();
-  std::printf("gfx_render_tests: %s (depth %s), %u draws, %u skipped, %u failed%s%s, %u shaders, %u pipelines\n",
+  std::printf("gfx_render_tests: %s (depth %s), %u draws, %u skipped, %u failed%s%s, %u shaders, %u pipelines, %u render targets\n",
               device.properties().deviceName, renderer.depth_format() == VK_FORMAT_D24_UNORM_S8_UINT ? "D24S8" : "D32S8",
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
-              stats.translations, stats.pipelines);
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.translations == 2);
+              stats.translations, stats.pipelines, stats.render_targets);
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.translations == 3 && stats.render_targets == 3);
   std::printf("gfx_render_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;
 }

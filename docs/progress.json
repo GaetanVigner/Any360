@@ -81,8 +81,8 @@
  },
  "gpu": {
   "total": 323,
-  "native": 58,
-  "reference": 251,
+  "native": 64,
+  "reference": 245,
   "by_family": {
    "command processor": {
     "native": 36,
@@ -93,11 +93,12 @@
     "native": 2
    },
    "render features": {
-    "native": 14,
-    "reference": 41
+    "native": 17,
+    "reference": 38
    },
    "render target formats": {
-    "reference": 14
+    "native": 3,
+    "reference": 11
    },
    "shader ALU scalar": {
     "reference": 49,

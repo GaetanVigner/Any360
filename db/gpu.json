@@ -1782,7 +1782,7 @@
 "name":"k_8_8_8_8",
 "family":"render target formats",
 "value":0,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:k_8_8_8_8_GAMMA",
@@ -1831,7 +1831,7 @@
 "name":"k_16_16_16_16_FLOAT",
 "family":"render target formats",
 "value":7,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:k_2_10_10_10_AS_10_10_10_10",
@@ -1866,7 +1866,7 @@
 "name":"kD24S8",
 "family":"render target formats",
 "value":0,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:kD24FS8",
@@ -1971,7 +1971,7 @@
 "name":"colour exponent bias",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:culling",
@@ -2027,7 +2027,7 @@
 "name":"multiple render targets",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:MSAA 2x",
@@ -2048,7 +2048,7 @@
 "name":"render targets from RB_* registers",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:gamma render targets",

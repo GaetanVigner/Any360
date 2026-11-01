@@ -19,8 +19,10 @@ constexpr uint32_t kRbDepthInfo = 0x2002, kPaScScreenScissorTl = 0x200E, kPaScSc
                    kPaScWindowOffset = 0x2080, kPaScWindowScissorTl = 0x2081, kPaScWindowScissorBr = 0x2082,
                    kRbColorMask = 0x2104, kRbBlendRed = 0x2105, kRbStencilRefMaskBf = 0x210C,
                    kRbStencilRefMask = 0x210D, kPaClVportXScale = 0x210F, kRbDepthControl = 0x2200,
-                   kRbBlendControl0 = 0x2201, kRbColorControl = 0x2202, kPaSuScModeCntl = 0x2205, kPaClVteCntl = 0x2206,
-                   kRbModeControl = 0x2208, kPaSuPolyOffsetFrontScale = 0x2380;
+                   kRbColorControl = 0x2202, kPaSuScModeCntl = 0x2205, kPaClVteCntl = 0x2206,
+                   kRbModeControl = 0x2208, kPaSuPolyOffsetFrontScale = 0x2380, kRbSurfaceInfo = 0x2000;
+constexpr uint32_t kRbColorInfo[4] = {0x2001, 0x2003, 0x2004, 0x2005};
+constexpr uint32_t kRbBlendControl[4] = {0x2201, 0x2209, 0x220A, 0x220B};
 // Bytes each constant buffer can hold (the most a shader can address).
 constexpr uint32_t kFloatBufferBytes = 256 * 16, kBoolLoopBytes = (8 + 32) * 4, kFetchBytes = 32 * 6 * 4;
 // RB_BLENDCONTROL with 1 * source + 0 * destination for colour and alpha: no blending.
@@ -106,8 +108,7 @@ VulkanRenderer::~VulkanRenderer() {
   DestroyBuffer(device_, shared_memory_);
   DestroyBuffer(device_, constants_);
   DestroyBuffer(device_, indices_);
-  DestroyImage(device_, target_);
-  DestroyImage(device_, depth_);
+  for (auto& [key, surface] : surfaces_) DestroyImage(device_, surface->image);
 }
 
 bool VulkanRenderer::Fail(const std::string& why) {
@@ -116,7 +117,7 @@ bool VulkanRenderer::Fail(const std::string& why) {
   return false;
 }
 
-bool VulkanRenderer::Initialize(uint32_t width, uint32_t height) {
+bool VulkanRenderer::Initialize() {
   const Functions& f = device_.fn();
   VkDevice d = device_.device();
   const VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -191,22 +192,55 @@ bool VulkanRenderer::Initialize(uint32_t width, uint32_t height) {
   }
   f.vkUpdateDescriptorSets(d, 1 + SpirvShaderTranslator::kConstantBufferCount, writes, 0, nullptr);
 
-  // Targets: colour, and depth/stencil in D24S8 where the device has it (NVIDIA), else D32S8 (AMD).
-  if (!CreateImage2D(device_, width, height, VK_FORMAT_R8G8B8A8_UNORM,
-                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                     VK_IMAGE_ASPECT_COLOR_BIT, target_)) {
-    return Fail("render target");
-  }
-  VkFormat depth_format = VK_FORMAT_D32_SFLOAT_S8_UINT;
+  // Depth/stencil surfaces: D24S8 where the device has it (NVIDIA), else D32S8 (AMD).
+  depth_format_ = VK_FORMAT_D32_SFLOAT_S8_UINT;
   VkFormatProperties props;
   f.vkGetPhysicalDeviceFormatProperties(device_.physical(), VK_FORMAT_D24_UNORM_S8_UINT, &props);
-  if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) depth_format = VK_FORMAT_D24_UNORM_S8_UINT;
-  if (!CreateImage2D(device_, width, height, depth_format,
-                     VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                     VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, depth_)) {
-    return Fail("depth target");
-  }
+  if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) depth_format_ = VK_FORMAT_D24_UNORM_S8_UINT;
   return true;
+}
+
+VkFormat ColorTargetFormat(uint32_t color_format) {
+  switch (color_format) {
+    case 0: return VK_FORMAT_R8G8B8A8_UNORM;            // k_8_8_8_8
+    case 1: return VK_FORMAT_R8G8B8A8_UNORM;            // k_8_8_8_8_GAMMA (gamma applied in the shader)
+    case 2: case 10: return VK_FORMAT_A8B8G8R8_UNORM_PACK32;  // k_2_10_10_10 (and AS_10_10_10_10), as the reference
+    case 3: case 12: return VK_FORMAT_R16G16B16A16_SFLOAT;   // k_2_10_10_10_FLOAT (and AS_16_16_16_16)
+    case 4: return VK_FORMAT_R16G16_SNORM;              // k_16_16: -32...32 scaled to -1...1 by the exponent bias
+    case 5: return VK_FORMAT_R16G16B16A16_SNORM;        // k_16_16_16_16: likewise
+    case 6: return VK_FORMAT_R16G16_SFLOAT;             // k_16_16_FLOAT
+    case 7: return VK_FORMAT_R16G16B16A16_SFLOAT;       // k_16_16_16_16_FLOAT
+    case 14: return VK_FORMAT_R32_SFLOAT;               // k_32_FLOAT
+    case 15: return VK_FORMAT_R32G32_SFLOAT;            // k_32_32_FLOAT
+    default: return VK_FORMAT_UNDEFINED;
+  }
+}
+
+namespace {
+bool Is64bpp(uint32_t color_format) { return color_format == 5 || color_format == 7 || color_format == 15; }
+}  // namespace
+
+VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& key) {
+  auto& slot = surfaces_[key];
+  if (slot) return slot->image.image ? slot.get() : nullptr;
+  slot = std::make_unique<Surface>();
+  slot->key = key;
+  const VkFormat format = key.depth ? depth_format_ : ColorTargetFormat(key.format);
+  if (format == VK_FORMAT_UNDEFINED || key.pitch == 0 || key.base >= 2048) return nullptr;
+  // The rows the surface can span from its base to the end of EDRAM (2048 tiles of 80x16 samples at 32 bpp).
+  const uint32_t tiles_per_row = (key.pitch + 79) / 80 * (!key.depth && Is64bpp(key.format) ? 2 : 1);
+  const uint32_t height = std::min<uint32_t>(4096, (2048 - key.base) / tiles_per_row * 16);
+  if (!height) return nullptr;
+  const VkImageUsageFlags usage = (key.depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) |
+                                  VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  const VkImageAspectFlags aspect =
+      key.depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+  if (!CreateImage2D(device_, key.pitch, height, format, usage, aspect, slot->image)) {
+    DestroyImage(device_, slot->image);
+    return nullptr;
+  }
+  ++stats_.render_targets;
+  return slot.get();
 }
 
 void VulkanRenderer::Transition(VkCommandBuffer cb, Image& image, VkImageLayout& layout, VkImageLayout to,
@@ -229,43 +263,55 @@ void VulkanRenderer::Transition(VkCommandBuffer cb, Image& image, VkImageLayout&
   layout = to;
 }
 
-bool VulkanRenderer::Clear(const float clear[4]) {
+bool VulkanRenderer::ClearColor(const SurfaceKey& key, const float rgba[4]) {
+  Surface* s = GetSurface(key);
+  if (!s || key.depth) return false;
   const Functions& f = device_.fn();
   return device_.Submit([&](VkCommandBuffer cb) {
-    Transition(cb, target_, target_layout_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    Transition(cb, s->image, s->layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
     VkClearColorValue color;
-    std::memcpy(color.float32, clear, sizeof(color.float32));
+    std::memcpy(color.float32, rgba, sizeof(color.float32));
     VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    f.vkCmdClearColorImage(cb, target_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &range);
+    f.vkCmdClearColorImage(cb, s->image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &range);
   });
 }
 
-bool VulkanRenderer::ClearDepthStencil(float depth, uint32_t stencil) {
+bool VulkanRenderer::ClearDepthStencil(const SurfaceKey& key, float depth, uint32_t stencil) {
+  Surface* s = GetSurface(key);
+  if (!s || !key.depth) return false;
   const Functions& f = device_.fn();
   return device_.Submit([&](VkCommandBuffer cb) {
     const VkImageAspectFlags aspects = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-    Transition(cb, depth_, depth_layout_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, aspects);
+    Transition(cb, s->image, s->layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, aspects);
     const VkClearDepthStencilValue value{depth, stencil};
     VkImageSubresourceRange range{aspects, 0, 1, 0, 1};
-    f.vkCmdClearDepthStencilImage(cb, depth_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value, 1, &range);
+    f.vkCmdClearDepthStencilImage(cb, s->image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value, 1, &range);
   });
 }
 
-bool VulkanRenderer::ReadBack(std::vector<uint32_t>& pixels) {
+bool VulkanRenderer::ReadBack(const SurfaceKey& key, uint32_t width, uint32_t height, std::vector<uint8_t>& bytes) {
+  Surface* s = GetSurface(key);
+  if (!s || key.depth || width > s->image.width || height > s->image.height) return false;
   const Functions& f = device_.fn();
+  // Every host colour format is 4 bytes a texel but the four-component 16-bit and two-component 32-bit ones.
+  const VkFormat format = ColorTargetFormat(key.format);
+  const uint32_t texel_bytes = format == VK_FORMAT_R16G16B16A16_SFLOAT || format == VK_FORMAT_R16G16B16A16_SNORM ||
+                                       format == VK_FORMAT_R32G32_SFLOAT
+                                   ? 8
+                                   : 4;
   Buffer readback;
-  const VkDeviceSize bytes = VkDeviceSize(target_.width) * target_.height * 4;
-  if (!CreateBuffer(device_, bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback)) return false;
+  const VkDeviceSize size = VkDeviceSize(width) * height * texel_bytes;
+  if (!CreateBuffer(device_, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback)) return false;
   const bool ok = device_.Submit([&](VkCommandBuffer cb) {
-    Transition(cb, target_, target_layout_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    Transition(cb, s->image, s->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
     VkBufferImageCopy region{};
     region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    region.imageExtent = {target_.width, target_.height, 1};
-    f.vkCmdCopyImageToBuffer(cb, target_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1, &region);
+    region.imageExtent = {width, height, 1};
+    f.vkCmdCopyImageToBuffer(cb, s->image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1, &region);
   });
   if (ok) {
-    pixels.resize(size_t(target_.width) * target_.height);
-    std::memcpy(pixels.data(), readback.mapped, bytes);
+    bytes.resize(size_t(size));
+    std::memcpy(bytes.data(), readback.mapped, size_t(size));
   }
   DestroyBuffer(device_, readback);
   return ok;
@@ -334,22 +380,27 @@ VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key, const TranslatedS
   depth_stencil.front = StencilState((dc >> 8) & 7, (dc >> 11) & 7, (dc >> 14) & 7, (dc >> 17) & 7);
   depth_stencil.back = ((dc >> 7) & 1) ? StencilState((dc >> 20) & 7, (dc >> 23) & 7, (dc >> 26) & 7, (dc >> 29) & 7)
                                        : depth_stencil.front;
-  // Render target 0: blending (none when it is 1 * source + 0 * destination) and write mask.
-  const uint32_t bc = key.blend_control;
-  VkPipelineColorBlendAttachmentState blend_attachment{};
-  blend_attachment.colorWriteMask = key.color_mask;
-  if (bc != kNoBlending) {
-    blend_attachment.blendEnable = VK_TRUE;
-    blend_attachment.srcColorBlendFactor = BlendFactor(bc & 0x1F);
-    blend_attachment.colorBlendOp = BlendOp((bc >> 5) & 7);
-    blend_attachment.dstColorBlendFactor = BlendFactor((bc >> 8) & 0x1F);
-    blend_attachment.srcAlphaBlendFactor = BlendFactor((bc >> 16) & 0x1F);
-    blend_attachment.alphaBlendOp = BlendOp((bc >> 21) & 7);
-    blend_attachment.dstAlphaBlendFactor = BlendFactor((bc >> 24) & 0x1F);
+  // Colour targets 0-3: blending (none when it is 1 * source + 0 * destination) and write mask of each.
+  VkPipelineColorBlendAttachmentState blend_attachments[4] = {};
+  VkFormat color_formats[4];
+  for (uint32_t i = 0; i < 4; ++i) {
+    color_formats[i] = VkFormat(key.color_formats[i]);
+    VkPipelineColorBlendAttachmentState& a = blend_attachments[i];
+    a.colorWriteMask = (key.color_masks >> (4 * i)) & 0xF;
+    const uint32_t bc = key.blend_controls[i];
+    if (bc != kNoBlending && color_formats[i] != VK_FORMAT_UNDEFINED) {
+      a.blendEnable = VK_TRUE;
+      a.srcColorBlendFactor = BlendFactor(bc & 0x1F);
+      a.colorBlendOp = BlendOp((bc >> 5) & 7);
+      a.dstColorBlendFactor = BlendFactor((bc >> 8) & 0x1F);
+      a.srcAlphaBlendFactor = BlendFactor((bc >> 16) & 0x1F);
+      a.alphaBlendOp = BlendOp((bc >> 21) & 7);
+      a.dstAlphaBlendFactor = BlendFactor((bc >> 24) & 0x1F);
+    }
   }
   VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-  blend.attachmentCount = 1;
-  blend.pAttachments = &blend_attachment;
+  blend.attachmentCount = 4;
+  blend.pAttachments = blend_attachments;
   const VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
                                            VK_DYNAMIC_STATE_DEPTH_BIAS, VK_DYNAMIC_STATE_BLEND_CONSTANTS,
                                            VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK, VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
@@ -357,12 +408,12 @@ VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key, const TranslatedS
   VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
   dynamic.dynamicStateCount = uint32_t(std::size(dynamic_states));
   dynamic.pDynamicStates = dynamic_states;
-  const VkFormat color_format = target_.format;
+  // Unbound locations are VK_FORMAT_UNDEFINED: the shader's writes to them go nowhere.
   VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
-  rendering.colorAttachmentCount = 1;
-  rendering.pColorAttachmentFormats = &color_format;
-  rendering.depthAttachmentFormat = depth_.format;
-  rendering.stencilAttachmentFormat = depth_.format;
+  rendering.colorAttachmentCount = 4;
+  rendering.pColorAttachmentFormats = color_formats;
+  rendering.depthAttachmentFormat = VkFormat(key.depth_format);
+  rendering.stencilAttachmentFormat = VkFormat(key.depth_format);
   VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, &rendering};
   info.stageCount = ps ? 2 : 1;
   info.pStages = stages;
@@ -408,8 +459,61 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
   const bool polygonal = IsPolygonal(topology);
 
+  TranslatedShader* vs = GetShader(*draw.vertex_shader);
+  const bool wants_ps = edram_mode == 4 && draw.pixel_shader && !draw.pixel_shader->microcode.empty();
+  TranslatedShader* ps = wants_ps ? GetShader(*draw.pixel_shader) : nullptr;
+  if (!vs || (wants_ps && !ps)) {
+    Fail("shader translation");
+    return;
+  }
+
+  // The surfaces: colour targets the pixel shader writes and RB_COLOR_MASK enables, the depth/stencil target when
+  // the depth or stencil test is on; all at the pitch of RB_SURFACE_INFO.
+  const uint32_t surface_info = regs[kRbSurfaceInfo];
+  if ((surface_info >> 16) & 3) {
+    Fail("MSAA surfaces (not yet)");
+    return;
+  }
+  const uint32_t pitch = surface_info & 0x3FFF;
+  uint32_t depth_control = regs[kRbDepthControl];
+  // Depth tested always without writes does nothing (the reference drops it the same way).
+  if ((depth_control & 2) && !(depth_control & 4) && ((depth_control >> 4) & 7) == 7) depth_control &= ~2u;
+  if (!polygonal) depth_control &= ~(1u << 7);  // back-face stencil only for polygons
+  Surface* colors[4] = {};
+  uint32_t color_infos[4] = {};
+  Surface* depth_surface = nullptr;
+  uint32_t width = UINT32_MAX, height = UINT32_MAX;
+  const uint32_t color_mask_register = regs[kRbColorMask];
+  for (uint32_t i = 0; i < 4; ++i) {
+    color_infos[i] = regs[kRbColorInfo[i]];
+    if (!ps || !ps->shader->writes_color_target(i) || !((color_mask_register >> (4 * i)) & 0xF)) continue;
+    colors[i] = GetSurface({color_infos[i] & 0xFFF, pitch, (color_infos[i] >> 16) & 0xF, 0});
+    if (!colors[i]) {
+      Fail("colour target " + std::to_string(i) + " format " + std::to_string((color_infos[i] >> 16) & 0xF));
+      return;
+    }
+    width = std::min(width, colors[i]->image.width);
+    height = std::min(height, colors[i]->image.height);
+  }
+  if (depth_control & 3) {
+    const uint32_t depth_info = regs[kRbDepthInfo];
+    depth_surface = GetSurface({depth_info & 0xFFF, pitch, (depth_info >> 16) & 1, 1});
+    if (!depth_surface) {
+      Fail("depth target");
+      return;
+    }
+    width = std::min(width, depth_surface->image.width);
+    height = std::min(height, depth_surface->image.height);
+  } else {
+    depth_control = 0;
+  }
+  if (width == UINT32_MAX) {
+    ++stats_.skipped;  // nothing bound: no target this draw could change
+    return;
+  }
+
   // The scissor: the window scissor (moved by the window offset unless it says not to) within the screen scissor
-  // and the target.
+  // and the targets.
   const uint32_t window_offset = regs[kPaScWindowOffset];
   const int32_t offset_x = int32_t(window_offset << 17) >> 17, offset_y = int32_t(window_offset << 1) >> 17;
   const uint32_t window_tl = regs[kPaScWindowScissorTl], window_br = regs[kPaScWindowScissorBr];
@@ -420,18 +524,10 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   int32_t bottom = int32_t((window_br >> 16) & 0x3FFF) + (offset_scissor ? offset_y : 0);
   left = std::max({left, int32_t(regs[kPaScScreenScissorTl] & 0x7FFF), 0});
   top = std::max({top, int32_t((regs[kPaScScreenScissorTl] >> 16) & 0x7FFF), 0});
-  right = std::min({right, int32_t(regs[kPaScScreenScissorBr] & 0x7FFF), int32_t(target_.width)});
-  bottom = std::min({bottom, int32_t((regs[kPaScScreenScissorBr] >> 16) & 0x7FFF), int32_t(target_.height)});
+  right = std::min({right, int32_t(regs[kPaScScreenScissorBr] & 0x7FFF), int32_t(width)});
+  bottom = std::min({bottom, int32_t((regs[kPaScScreenScissorBr] >> 16) & 0x7FFF), int32_t(height)});
   if (right <= left || bottom <= top) {
     ++stats_.skipped;
-    return;
-  }
-
-  TranslatedShader* vs = GetShader(*draw.vertex_shader);
-  const bool wants_ps = edram_mode == 4 && draw.pixel_shader && !draw.pixel_shader->microcode.empty();
-  TranslatedShader* ps = wants_ps ? GetShader(*draw.pixel_shader) : nullptr;
-  if (!vs || (wants_ps && !ps)) {
-    Fail("shader translation");
     return;
   }
 
@@ -453,13 +549,13 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       if (type < 2) key.polygon_mode = VK_POLYGON_MODE_LINE;
     }
   }
-  uint32_t depth_control = regs[kRbDepthControl];
-  // Depth tested always without writes does nothing (the reference drops it the same way).
-  if ((depth_control & 2) && !(depth_control & 4) && ((depth_control >> 4) & 7) == 7) depth_control &= ~2u;
-  if (!polygonal) depth_control &= ~(1u << 7);  // back-face stencil only for polygons
   key.depth_control = depth_control;
-  key.blend_control = edram_mode == 4 ? (regs[kRbBlendControl0] & 0x1FFF1FFF) : kNoBlending;
-  key.color_mask = edram_mode == 4 ? (regs[kRbColorMask] & 0xF) : 0;
+  key.depth_format = depth_surface ? depth_format_ : VK_FORMAT_UNDEFINED;
+  for (uint32_t i = 0; i < 4; ++i) {
+    key.color_formats[i] = colors[i] ? colors[i]->image.format : VK_FORMAT_UNDEFINED;
+    key.blend_controls[i] = colors[i] ? (regs[kRbBlendControl[i]] & 0x1FFF1FFF) : kNoBlending;
+    if (colors[i]) key.color_masks |= color_mask_register & (0xFu << (4 * i));
+  }
   const VkPipeline pipeline = GetPipeline(key, *vs, ps);
   if (!pipeline) {
     Fail("pipeline creation");
@@ -484,7 +580,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   if (vte & (1u << 8)) system->flags |= SpirvShaderTranslator::kSysFlag_XYDividedByW;
   if (vte & (1u << 9)) system->flags |= SpirvShaderTranslator::kSysFlag_ZDividedByW;
   if (vte & (1u << 10)) system->flags |= SpirvShaderTranslator::kSysFlag_WNotReciprocal;
-  const float size[2] = {float(target_.width), float(target_.height)};
+  const float size[2] = {float(width), float(height)};
   // The window offset moves vertices too when PA_SU_SC_MODE_CNTL asks for it.
   const float window_shift[2] = {(mode_cntl >> 16) & 1 ? float(offset_x) : 0.0f, (mode_cntl >> 16) & 1 ? float(offset_y) : 0.0f};
   for (int i = 0; i < 3; ++i) {
@@ -505,8 +601,16 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t color_control = regs[kRbColorControl];
   const uint32_t alpha_func = (color_control & (1u << 3)) ? (color_control & 7) : 7;
   system->flags |= alpha_func << SpirvShaderTranslator::kSysFlag_AlphaPassIfLess_Shift;
-  // The colour exponent bias is a multiplier: 2^bias, 1 for none.
-  for (float& bias : system->color_exp_bias) bias = 1.0f;
+  // Per colour target: the exponent bias of RB_COLOR_INFO as a 2^bias multiplier (the fixed-point 16-bit formats'
+  // -32...32 range scaled into the host's -1...1 by 2^-5 more, as the reference does), and the gamma conversion
+  // of k_8_8_8_8_GAMMA targets.
+  for (uint32_t i = 0; i < 4; ++i) {
+    int32_t bias = int32_t(color_infos[i] << 6) >> 26;  // bits 20-25, signed
+    const uint32_t format = (color_infos[i] >> 16) & 0xF;
+    if (format == 4 || format == 5) bias -= 5;
+    system->color_exp_bias[i] = std::bit_cast<float>(uint32_t(int32_t(0x3F800000) + bias * (1 << 23)));
+    if (colors[i] && format == 1) system->flags |= SpirvShaderTranslator::kSysFlag_ConvertColor0ToGamma << i;
+  }
   // Float constants, packed as each shader uses them (all 256 when it addresses them dynamically).
   auto pack_floats = [&](uint32_t index, const TranslatedShader* shader, uint32_t first_register) {
     uint8_t* out = reserve(index, kFloatBufferBytes);
@@ -570,26 +674,32 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
 
   const bool submitted = device_.Submit([&](VkCommandBuffer cb) {
-    Transition(cb, target_, target_layout_, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
-    Transition(cb, depth_, depth_layout_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-               VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
-    VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-    color.imageView = target_.view;
-    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    VkRenderingAttachmentInfo color[4];
+    for (uint32_t i = 0; i < 4; ++i) {
+      color[i] = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+      if (!colors[i]) continue;  // no view: the location is unused
+      Transition(cb, colors[i]->image, colors[i]->layout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+      color[i].imageView = colors[i]->image.view;
+      color[i].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+      color[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+      color[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    }
     VkRenderingAttachmentInfo depth{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-    depth.imageView = depth_.view;
-    depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depth.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    if (depth_surface) {
+      Transition(cb, depth_surface->image, depth_surface->layout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                 VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+      depth.imageView = depth_surface->image.view;
+      depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+      depth.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+      depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    }
     VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
-    rendering.renderArea = {{0, 0}, {target_.width, target_.height}};
+    rendering.renderArea = {{0, 0}, {width, height}};
     rendering.layerCount = 1;
-    rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachments = &color;
-    rendering.pDepthAttachment = &depth;
-    rendering.pStencilAttachment = &depth;
+    rendering.colorAttachmentCount = 4;
+    rendering.pColorAttachments = color;
+    rendering.pDepthAttachment = depth_surface ? &depth : nullptr;
+    rendering.pStencilAttachment = depth_surface ? &depth : nullptr;
     f.vkCmdBeginRendering(cb, &rendering);
     f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     VkDescriptorSet sets[SpirvShaderTranslator::kDescriptorSetCount];

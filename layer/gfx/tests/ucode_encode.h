@@ -80,6 +80,17 @@ inline std::vector<uint32_t> BuildSingleExportShader(uc::AllocType alloc, uint32
   return words;
 }
 
+// A pixel shader writing two colour targets: oC0 = c0, oC1 = c1.
+inline std::vector<uint32_t> BuildTwoTargetPixelShader() {
+  std::vector<uint32_t> words;
+  PushCfPair(words, CfAlloc(uc::AllocType::kPsColors, 0), CfExec(uc::ControlFlowOpcode::kExecEnd, 1, 2, 0));
+  PushAluVector(words, uc::AluVectorOpcode::kMax, uint32_t(uc::ExportRegister::kPSColor0), true, 0b1111, {0, false},
+                {0, false});
+  PushAluVector(words, uc::AluVectorOpcode::kMax, uint32_t(uc::ExportRegister::kPSColor1), true, 0b1111, {1, false},
+                {1, false});
+  return words;
+}
+
 // A vertex shader: r1 = vfetch(fetch constant 0, r0.x = vertex index, float4, stride 4); oPos = r1.
 inline std::vector<uint32_t> BuildFetchPositionShader() {
   std::vector<uint32_t> words;

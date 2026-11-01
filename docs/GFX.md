@@ -122,11 +122,19 @@ From the Crackdown runs (each one cost a debugging session there):
    target 0, culling and front face (D3D semantics checked: the `face` bit means clockwise front), wireframe fill,
    polygon offset in the depth format's unit, the scissor (window scissor with the window offset, within the screen
    scissor), as the reference reads them; dynamic state per draw. Depth is D24S8, or D32S8 where the device lacks it
-   (the AMD driver). `gfx_render_tests` checks each feature to the pixel on NVIDIA and AMD. Next: render targets from
-   `RB_SURFACE_INFO` / `RB_COLOR_INFO` / `RB_DEPTH_INFO` (several targets, formats, MSAA), then textures, then
-   resolves as copies between host targets and to guest memory where the CPU reads them.
-4. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
-5. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; the swap goes to a
+   (the AMD driver). `gfx_render_tests` checks each feature to the pixel on NVIDIA and AMD.
+4. **Render targets** (done, 2026-11-01): one host image per EDRAM surface the title binds, keyed by base tile,
+   pitch (`RB_SURFACE_INFO`) and format (`RB_COLOR{,1,2,3}_INFO`, `RB_DEPTH_INFO`), sized to the rows the surface
+   can span in EDRAM. Colour targets 0-3 are bound when `RB_COLOR_MASK` enables them and the pixel shader writes
+   them; the depth/stencil target when its test is on. Host formats as the reference maps them; the exponent bias
+   of `RB_COLOR_INFO` (with the 16-bit fixed-point formats scaled into -1...1) and the gamma conversion go through the
+   system constants. Learned: `RB_BLENDCONTROL1-3` at 0 blend ZERO + ZERO, so a target the title leaves at 0 is
+   written black (the reference does the same). Still open: MSAA, and surfaces that alias the same EDRAM in other
+   formats or pitches (the reference copies contents between them; here each keeps its own).
+5. **Textures, then resolves**: texture fetch constants to untiled host textures; resolves as copies between host
+   targets and to guest memory where the CPU or a later draw reads them.
+6. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
+7. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; the swap goes to a
    window through SDL3.
 
 It avoids geometry shaders and rasterizer-ordered views so that it runs through MoltenVK and on mobile GPUs:

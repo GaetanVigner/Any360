@@ -5065,7 +5065,7 @@
 <text x="278" y="741" font-size="11" fill="#8b949e">reference (hooked by name)</text>
 <rect x="450" y="732" width="10" height="10" rx="2" fill="#f85149"/>
 <text x="464" y="741" font-size="11" fill="#8b949e">to do</text>
-<text x="0" y="763" font-size="16" fill="#c9d1d9" font-weight="600">GPU (Xenos) native: 18.0% (58/323) <tspan font-size="12" font-weight="400" fill="#8b949e">· 95.7% handled by the reference GPU · one square per opcode, format or feature</tspan></text>
+<text x="0" y="763" font-size="16" fill="#c9d1d9" font-weight="600">GPU (Xenos) native: 19.8% (64/323) <tspan font-size="12" font-weight="400" fill="#8b949e">· 95.7% handled by the reference GPU · one square per opcode, format or feature</tspan></text>
 <rect x="0" y="772" width="1000" height="150" fill="#0d1117"/>
 <a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>texture formats: 64 (0% native; 64 reference)</title>
 <rect x="0.00" y="772.00" width="21.52" height="18.25" fill="#8957e5"/>
@@ -5135,7 +5135,7 @@
 <rect x="0.0" y="772.0" width="198.1" height="150.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="4.0" y="785.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">texture formats</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>render features: 55 (25% native; 14 native, 41 reference)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>render features: 55 (31% native; 17 native, 38 reference)</title>
 <rect x="198.14" y="772.00" width="20.78" height="20.93" fill="#2ea043"/>
 <rect x="219.43" y="772.00" width="20.78" height="20.93" fill="#2ea043"/>
 <rect x="240.71" y="772.00" width="20.78" height="20.93" fill="#2ea043"/>
@@ -5150,9 +5150,9 @@
 <rect x="262.00" y="793.43" width="20.78" height="20.93" fill="#2ea043"/>
 <rect x="283.28" y="793.43" width="20.78" height="20.93" fill="#2ea043"/>
 <rect x="304.57" y="793.43" width="20.78" height="20.93" fill="#2ea043"/>
-<rect x="325.85" y="793.43" width="20.78" height="20.93" fill="#8957e5"/>
-<rect x="347.14" y="793.43" width="20.78" height="20.93" fill="#8957e5"/>
-<rect x="198.14" y="814.86" width="20.78" height="20.93" fill="#8957e5"/>
+<rect x="325.85" y="793.43" width="20.78" height="20.93" fill="#2ea043"/>
+<rect x="347.14" y="793.43" width="20.78" height="20.93" fill="#2ea043"/>
+<rect x="198.14" y="814.86" width="20.78" height="20.93" fill="#2ea043"/>
 <rect x="219.43" y="814.86" width="20.78" height="20.93" fill="#8957e5"/>
 <rect x="240.71" y="814.86" width="20.78" height="20.93" fill="#8957e5"/>
 <rect x="262.00" y="814.86" width="20.78" height="20.93" fill="#8957e5"/>
@@ -5399,10 +5399,10 @@
 <rect x="879.3" y="772.0" width="120.7" height="61.5" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="883.3" y="785.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">vertex formats</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>render target formats: 14 (0% native; 14 reference)</title>
-<rect x="879.26" y="833.54" width="24.00" height="17.19" fill="#8957e5"/>
-<rect x="903.76" y="833.54" width="24.00" height="17.19" fill="#8957e5"/>
-<rect x="928.25" y="833.54" width="24.00" height="17.19" fill="#8957e5"/>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>render target formats: 14 (21% native; 3 native, 11 reference)</title>
+<rect x="879.26" y="833.54" width="24.00" height="17.19" fill="#2ea043"/>
+<rect x="903.76" y="833.54" width="24.00" height="17.19" fill="#2ea043"/>
+<rect x="928.25" y="833.54" width="24.00" height="17.19" fill="#2ea043"/>
 <rect x="879.26" y="851.23" width="24.00" height="17.19" fill="#8957e5"/>
 <rect x="903.76" y="851.23" width="24.00" height="17.19" fill="#8957e5"/>
 <rect x="928.25" y="851.23" width="24.00" height="17.19" fill="#8957e5"/>
