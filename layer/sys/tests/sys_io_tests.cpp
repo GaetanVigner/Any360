@@ -74,6 +74,7 @@ REFERENCE(RtlUnwind)
 REFERENCE(__C_specific_handler)
 REFERENCE(VdShutdownEngines)
 REFERENCE(VdSetSystemCommandBufferGpuIdentifierAddress)
+REFERENCE(XeCryptSha)
 
 namespace {
 
@@ -454,6 +455,17 @@ const Case kCases[] = {
     CASE(__C_specific_handler, nullptr),
     CASE(VdShutdownEngines, nullptr),
     CASE(VdSetSystemCommandBufferGpuIdentifierAddress, nullptr),
+    // Batch 11.
+    CASE(XeCryptSha, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 6 ? kBlockA + rng() % 0x100 : 0;
+      ctx.r4.u64 = rng() % 0x900;
+      ctx.r5.u64 = rng() % 2 ? kBlockA + 0x1000 + rng() % 0x100 : 0;
+      ctx.r6.u64 = rng() % 200;
+      ctx.r7.u64 = rng() % 3 ? kBlockA + 0x2000 : 0;
+      ctx.r8.u64 = rng() % 64;
+      ctx.r9.u64 = kBlockB + 0x3000;
+      ctx.r10.u64 = rng() % 24;
+    }),
 };
 
 struct Result {

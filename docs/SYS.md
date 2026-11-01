@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (208 system calls)
+## What is verified (242 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -96,6 +96,15 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   (`DbgBreakPoint`, `KeEnableFpuExceptions`, `KeLockL2`, `KeUnlockL2`, `KiApcNormalRoutineNop`); and the network of a
   console without a connection (`NetDll_WSAStartup`, `NetDll_XNetStartup`, `NetDll_XNetGetTitleXnAddr` with no address,
   sockets that fail with `WSAENETDOWN`, `NetDll_WSAGetLastError`).
+- **The rest of Sonic '06** (MVP reached: all 178 of its system calls outside graphics and audio): `XeCryptSha` (equal to
+  the reference), `XexGetModuleSection` (the title's resource sections), the kernel pool (`ExAllocatePool*`,
+  `ExFreePool`: whole pages), `RtlUnicodeStringToAnsiString` / `RtlFreeAnsiString` (NT semantics: the length is set and
+  characters above 0xFF become `?`; the reference converts to UTF-8 and leaves the length, which is why it is not the
+  oracle here), `RtlUpcaseUnicodeChar`, `NtReadFileScatter`, launch data, device data, content creator, the file system
+  cache size, inactivity, a title driver's device object and the `Io*` share-access calls, `ObIsTitleObject`,
+  `ObReferenceObject`, the STFS device calls, and the console-key operations answered as a machine without its keys
+  (`XeCryptBnQwBeSigVerify` accepts, `XeKeysGetKey` refuses, `XeCryptRotSumSha` zeroes its digest: no known title
+  depends on that value, and Sonic '06's own port runs with it stubbed).
 - **Offline networking**: `NetDll_inet_addr` (the Winsock parser), `NetDll___WSAFDIsSet`, `NetDll_XNetInAddrToString`,
   the XNet address conversions.
 
@@ -126,6 +135,8 @@ are known only by their import list, read from a XenonRecomp port's own minimal 
 MarathonRecomp, Test Drive Unlimited from TDURecomp; `titles/<title>/imports.json`, names only): a kernel that small runs
 the game, so those lists say what a native port needs first. Small ReXGlue recomps do not publish their generated code,
 so their import tables are not available without the game.
+
+**MVP reached for Sonic the Hedgehog (2006)**: all 178 of its system calls outside graphics and audio are native (2026-11-01).
 
 **MVP**: one title with every system call except the graphics and audio ones native, so it can run on `any360::sys`
 with only those left to the reference. The progress page shows the MVP per title; the closest title is the target, and

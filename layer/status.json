@@ -202,7 +202,7 @@
    "name": "any360::sys: the system calls, verified against the reference runtime",
    "state": "in progress",
    "source": "any360: layer/sys (any360_sys, any360_sys_ppc, sys_io_tests)",
-   "note": "208 system calls native: 76 equal to the reference, 132 proven against the NT / XDK semantics by scenario tests (objects, scheduler, memory, files, XAM, offline network). MVP (system calls except graphics and audio): Sonic 06 146/178, Crackdown 173/226; 95% of Crackdown call sites, 97% of the Simpsons"
+   "note": "242 system calls native: 77 equal to the reference, 165 proven against the NT / XDK semantics by scenario tests. MVP reached for Sonic '06 (178/178 outside graphics and audio); Crackdown 183/226, TDU 210/255, Simpsons 190/277"
   }
  ]
 }

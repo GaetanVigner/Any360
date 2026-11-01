@@ -345,6 +345,22 @@ uint32_t MemoryManager::XamAlloc(Guest g, uint32_t, uint32_t size, uint32_t out_
   return kStatusSuccess;
 }
 
+uint32_t MemoryManager::AllocatePages(Guest g, uint32_t size) {
+  Heap* heap = ByPageSize(false, 0x1000);
+  const uint32_t bytes = RoundUp(std::max<uint32_t>(size, 1), 0x1000);
+  uint32_t address = 0;
+  if (!heap || !AllocRange(*heap, heap->spec.base, heap->spec.base + heap->spec.size - 1, bytes, 0x1000, kCommitted, kPageReadWrite,
+                           false, address)) {
+    return 0;
+  }
+  std::memset(g.host(address), 0, bytes);
+  return address;
+}
+
+void MemoryManager::FreePages(uint32_t address) {
+  if (Heap* heap = Find(address)) Release(*heap, address, nullptr);
+}
+
 uint32_t MemoryManager::XamFree(Guest, uint32_t address) {
   if (Heap* heap = Find(address)) Release(*heap, address, nullptr);
   return kStatusSuccess;

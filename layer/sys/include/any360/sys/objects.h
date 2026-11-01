@@ -77,6 +77,7 @@ class ObjectManager {
   // Writes the object's guest address; the current-thread pseudo handle resolves to `thread`.
   uint32_t ReferenceObjectByHandle(Guest g, uint32_t handle, uint32_t thread, uint32_t object_out);
   uint32_t DereferenceObject(Guest g, uint32_t object);
+  void ReferenceObject(uint32_t object) { ++references_[object]; }
 
   // Waits. A null timeout waits for ever; a relative timeout (negative, 100 ns units) polls that long; zero does not
   // wait. Returns STATUS_SUCCESS when the object was (or became) signalled and consumed, STATUS_TIMEOUT otherwise.

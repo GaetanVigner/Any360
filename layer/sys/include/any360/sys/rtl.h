@@ -40,6 +40,13 @@ uint32_t RtlUnicodeToMultiByteN(Guest g, uint32_t destination, uint32_t destinat
 void RtlTimeToTimeFields(Guest g, uint32_t time, uint32_t time_fields);
 uint32_t RtlTimeFieldsToTime(Guest g, uint32_t time_fields, uint32_t time);
 uint32_t RtlComputeCrc32(Guest g, uint32_t seed, uint32_t buffer, uint32_t length);
+// UNICODE_STRING to ANSI_STRING with NT semantics: characters above 0xFF become '?', the length is set; with `allocate`
+// the buffer comes from the kernel pool (RtlFreeAnsiString gives it back), otherwise STATUS_BUFFER_OVERFLOW when the
+// destination is too small (it then holds what fits).
+uint32_t RtlUnicodeStringToAnsiString(Guest g, uint32_t destination, uint32_t source, uint32_t allocate);
+void RtlFreeAnsiString(Guest g, uint32_t string);
+// Upper case for the Basic Latin and Latin-1 ranges (the console's table beyond them maps characters to themselves).
+uint32_t RtlUpcaseUnicodeChar(uint32_t c);
 // The number of leading bytes that are equal.
 uint32_t RtlCompareMemory(Guest g, uint32_t source1, uint32_t source2, uint32_t length);
 // Structured exception handling is not provided yet: these do nothing, as the reference runtime does.

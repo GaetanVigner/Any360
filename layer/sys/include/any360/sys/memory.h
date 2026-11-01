@@ -57,6 +57,9 @@ class MemoryManager {
   uint32_t XamFree(Guest g, uint32_t address);
 
   bool QueryRegion(uint32_t address, RegionInfo& info) const;
+  // Committed, zeroed read-write pages from the 4 KB heap (the kernel pool, strings the kernel allocates); 0 when full.
+  uint32_t AllocatePages(Guest g, uint32_t size);
+  void FreePages(uint32_t address);
 
  private:
   struct Page {

@@ -13,6 +13,8 @@
 #include <fstream>
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
+#include "any360/sys/crypt.h"
+#include "any360/sys/rtl.h"
 #include "any360/sys/xam.h"
 
 #include <atomic>
@@ -742,9 +744,135 @@ void XamTests() {
   fs::remove_all(content, ec);
 }
 
+// The calls Sonic '06 still needed.
+void SonicTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  XamState().Reset();
+  Files().Reset();
+  std::vector<uint8_t> memory(0x200000);
+  const Guest gm{memory.data()};
+  Memory().Reset({{0x00000000, 0x80000, 0x1000, false}, {0x80000, 0x80000, 0x10000, false}});
+  Objects().SetKernelHeap(0x100000, 0x10000);
+  Objects().SetGuest(gm);
+  Objects().Reset();
+  const uint32_t s = 0x1000, out = 0x1800, buf = 0x2000;
+  // SHA-1 of the classic test vector, split over three buffers.
+  std::memcpy(gm.host(s), "abc", 3);
+  XeCryptSha(gm, s, 1, s + 1, 1, s + 2, 1, out, 20);
+  const uint8_t abc[20] = {0xA9, 0x99, 0x3E, 0x36, 0x47, 0x06, 0x81, 0x6A, 0xBA, 0x3E, 0x25, 0x71, 0x78, 0x50, 0xC2, 0x6C, 0x9C, 0xD0, 0xD8, 0x9D};
+  CHECK(std::memcmp(gm.host(out), abc, 20) == 0);
+  XeCryptSha(gm, 0, 0, 0, 0, 0, 0, out, 4);
+  const uint8_t empty[4] = {0xDA, 0x39, 0xA3, 0xEE};
+  CHECK(std::memcmp(gm.host(out), empty, 4) == 0);
+  CHECK(XeCryptBnQwBeSigVerify() == 1);
+  gm.Store32(out, 16);
+  CHECK(XeKeysGetKey(gm, buf, out) == 0xC0000001u);
+  // Strings the kernel allocates, freed again; NT semantics of the length and of characters above 0xFF.
+  const uint32_t wide = 0x3000, ustr = 0x3100, astr = 0x3200;
+  const uint16_t text[] = {'S', 'o', 'n', 'i', 'c', 0x00E9, 0x4E2D};
+  for (uint32_t i = 0; i < 7; ++i) gm.Store16(wide + 2 * i, text[i]);
+  gm.Store16(ustr, 14);
+  gm.Store16(ustr + 2, 16);
+  gm.Store32(ustr + 4, wide);
+  CHECK(RtlUnicodeStringToAnsiString(gm, astr, ustr, 1) == 0);
+  const uint32_t allocated = gm.Load32(astr + 4);
+  CHECK(allocated && gm.Load16(astr) == 7 && gm.Load16(astr + 2) == 8 && std::memcmp(gm.host(allocated), "Sonic\xE9?", 8) == 0);
+  RtlFreeAnsiString(gm, astr);
+  CHECK(gm.Load32(astr + 4) == 0 && Memory().QueryAllocationSize(allocated) == 0);
+  gm.Store16(astr + 2, 4);
+  gm.Store32(astr + 4, buf);
+  CHECK(RtlUnicodeStringToAnsiString(gm, astr, ustr, 0) == 0x80000005u && gm.Load16(astr) == 3 && std::strcmp(reinterpret_cast<const char*>(gm.host(buf)), "Son") == 0);
+  CHECK(RtlUpcaseUnicodeChar('a') == 'A' && RtlUpcaseUnicodeChar(0xE9) == 0xC9 && RtlUpcaseUnicodeChar(0xF7) == 0xF7 &&
+        RtlUpcaseUnicodeChar(0xFF) == 0x178 && RtlUpcaseUnicodeChar('1') == '1');
+  // Pool blocks: whole pages, freed by any address inside.
+  const uint32_t pool = XamState().AllocatePool(gm, 100);
+  CHECK(pool && pool % 0x1000 == 0 && Memory().QueryAllocationSize(pool) == 0x1000);
+  XamState().FreePool(pool + 0x10);
+  CHECK(Memory().QueryAllocationSize(pool) == 0);
+  // Launch data.
+  CHECK(XamState().LoaderGetLaunchDataSize(gm, out) == kErrorNotFound && gm.Load32(out) == 0);
+  std::memcpy(gm.host(s), "level=3", 7);
+  CHECK(XamState().LoaderSetLaunchData(gm, s, 7) == 0);
+  CHECK(XamState().LoaderGetLaunchDataSize(gm, out) == 0 && gm.Load32(out) == 7);
+  CHECK(XamState().LoaderGetLaunchData(gm, buf, 16) == 0 && std::memcmp(gm.host(buf), "level=3", 7) == 0);
+  // Resource sections from the XEX header.
+  const uint32_t xex = 0x4000;
+  std::memset(gm.host(xex), 0, 0x200);
+  gm.Store32(xex + 0x14, 1);
+  gm.Store32(xex + 0x18, 0x000002FF);
+  gm.Store32(xex + 0x1C, 0x100);
+  gm.Store32(xex + 0x100, 4 + 2 * 16);
+  std::memcpy(gm.host(xex + 0x104), "SONICRES", 8);
+  gm.Store32(xex + 0x10C, 0x82A00000);
+  gm.Store32(xex + 0x110, 0x4000);
+  std::memcpy(gm.host(xex + 0x114), "4D5307E6", 8);
+  gm.Store32(xex + 0x11C, 0x82B00000);
+  gm.Store32(xex + 0x120, 0x200);
+  XamState().title().xex_header = xex;
+  XamState().title().module_handle = xex;
+  std::memcpy(gm.host(s), "4D5307E6", 9);
+  CHECK(XamState().GetModuleSection(gm, xex, s, out, out + 4) == 0 && gm.Load32(out) == 0x82B00000 && gm.Load32(out + 4) == 0x200);
+  std::memcpy(gm.host(s), "NOPE", 5);
+  CHECK(XamState().GetModuleSection(gm, xex, s, out, out + 4) == 0xC0000225u);
+  CHECK(XamState().GetModuleSection(gm, 0x1234, s, out, out + 4) == 0xC0000008u);
+  // Devices, the creator of a save, the cache size, a driver's device object.
+  CHECK(XamState().ContentGetDeviceData(gm, 1, buf) == 0 && gm.Load32(buf) == 1 && gm.Load64(buf + 8) > 0 && gm.Load16(buf + 24) == 'H');
+  CHECK(XamState().ContentGetDeviceData(gm, 2, buf) == 0 && gm.Load64(buf + 16) == 0);
+  CHECK(XamState().ContentGetDeviceData(gm, 9, buf) == kErrorDeviceNotConnected);
+  const fs::path content = fs::temp_directory_path() / "any360-sys-content2";
+  std::error_code ec;
+  fs::remove_all(content, ec);
+  fs::create_directories(content / "00000001" / "slot1");
+  XamState().title().content_root = content;
+  const uint32_t data = 0x5000;
+  std::memset(gm.host(data), 0, 0x134);
+  gm.Store32(data + 4, 1);
+  std::memcpy(gm.host(data + 0x108), "slot1", 5);
+  CHECK(XamState().ContentGetCreator(gm, 0, data, out, out + 8, 0) == 0 && gm.Load32(out) == 1 && gm.Load64(out + 8) == XamState().title().xuid);
+  std::memcpy(gm.host(data + 0x108), "slot9", 5);
+  CHECK(XamState().ContentGetCreator(gm, 0, data, out, out + 8, 0) == kErrorFileNotFound);
+  fs::remove_all(content, ec);
+  CHECK(XamState().SetCacheElementCount(64) == 0 && XamState().GetCacheElementCount() == 64);
+  CHECK(XamState().CreateDevice(gm, out) == 0 && gm.Load32(gm.Load32(out) + 0x18) != 0);
+  // Scatter reads: a file read into pages listed one pointer each.
+  const fs::path root = fs::temp_directory_path() / "any360-sys-scatter";
+  fs::remove_all(root, ec);
+  fs::create_directories(root);
+  {
+    std::ofstream f(root / "big.bin", std::ios::binary);
+    for (int i = 0; i < 0x1800; ++i) f.put(char(i * 7));
+  }
+  Files().Mount("\\Device\\Cdrom0", root, true);
+  const uint32_t attrs = 0x6000;
+  gm.Store32(attrs, 0);
+  gm.Store32(attrs + 4, attrs + 0x10);
+  gm.Store16(attrs + 0x10, 22);
+  gm.Store32(attrs + 0x14, attrs + 0x20);
+  std::memcpy(gm.host(attrs + 0x20), "\\Device\\Cdrom0\\big.bin", 22);
+  CHECK(Files().CreateFile(gm, out, 0x80000000, attrs, 0, 0, kOpen, 0) == 0);
+  const uint32_t pages = 0x7000, page_a = 0x10000, page_b = 0x20000, iosb = 0x7100;
+  gm.Store32(pages, page_a);
+  gm.Store32(pages + 4, page_b);
+  CHECK(Files().ReadFileScatter(gm, gm.Load32(out), 0, iosb, pages, 0x1800, 0) == 0 && gm.Load32(iosb + 4) == 0x1800);
+  CHECK(gm.Load8(page_a + 5) == uint8_t(5 * 7) && gm.Load8(page_b + 0x7FF) == uint8_t(0x17FF * 7));
+  CHECK(Files().ReadFileScatter(gm, gm.Load32(out), 0, iosb, pages, 0x10, 0) == kStatusEndOfFile);
+  CHECK(Objects().Close(gm.Load32(out)) == 0);
+  // Ob references keep an object counted.
+  CHECK(Objects().CreateEvent(gm, out, 0, 0, 0) == 0);
+  const uint32_t ev = Objects().Lookup(gm.Load32(out));
+  Objects().ReferenceObject(ev);
+  CHECK(Objects().DereferenceObject(gm, ev) == 0);
+  Files().Reset();
+  fs::remove_all(root, ec);
+  XamState().Reset();
+  Memory().Reset();
+}
+
 }  // namespace
 
 int main() {
+  SonicTests();
   XamTests();
   FileTests();
   MemoryTests();

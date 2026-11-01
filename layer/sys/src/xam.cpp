@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "any360/sys/files.h"
+#include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
 
 namespace any360::sys {
@@ -56,6 +57,9 @@ void Xam::Reset() {
   terminate_notifications_.clear();
   open_content_.clear();
   packet_number_ = 0;
+  launch_data_.clear();
+  launch_data_present_ = false;
+  cache_elements_ = 0;
 }
 
 // --- overlapped ------------------------------------------------------------------------------------------------
@@ -514,6 +518,97 @@ void Xam::RegisterTitleTerminateNotification(uint32_t registration, uint32_t cre
   auto it = std::find(terminate_notifications_.begin(), terminate_notifications_.end(), registration);
   if (create && it == terminate_notifications_.end()) terminate_notifications_.push_back(registration);
   if (!create && it != terminate_notifications_.end()) terminate_notifications_.erase(it);
+}
+
+// --- launch data, sections, devices, pool ---------------------------------------------------------------------------
+
+uint32_t Xam::LoaderSetLaunchData(Guest g, uint32_t data, uint32_t size) {
+  launch_data_present_ = size != 0;
+  launch_data_.assign(g.host(data), g.host(data) + size);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::LoaderGetLaunchDataSize(Guest g, uint32_t size_ptr) {
+  if (!size_ptr) return kErrorInvalidParameter;
+  g.Store32(size_ptr, launch_data_present_ ? uint32_t(launch_data_.size()) : 0);
+  return launch_data_present_ ? kErrorSuccess : kErrorNotFound;
+}
+
+uint32_t Xam::LoaderGetLaunchData(Guest g, uint32_t buffer, uint32_t size) {
+  if (!launch_data_present_) return kErrorNotFound;
+  std::memcpy(g.host(buffer), launch_data_.data(), std::min<size_t>(size, launch_data_.size()));
+  return kErrorSuccess;
+}
+
+uint32_t Xam::GetModuleSection(Guest g, uint32_t module, uint32_t name, uint32_t data_ptr, uint32_t size_ptr) {
+  if (module != title_.module_handle || !title_.xex_header) return 0xC0000008;  // STATUS_INVALID_HANDLE
+  // XEX_HEADER_RESOURCE_INFO: the total size, then (8-character name, address, size) per section.
+  const uint32_t info = ImageXexHeaderField(g, title_.xex_header, 0x000002FF);
+  if (!info) return kStatusNotFound;
+  const std::string wanted = GuestString(g, name, 8);
+  const uint32_t count = (g.Load32(info) - 4) / 16;
+  for (uint32_t i = 0; i < count && i < 256; ++i) {
+    const uint32_t entry = info + 4 + 16 * i;
+    if (GuestString(g, entry, 8) != wanted) continue;
+    if (data_ptr) g.Store32(data_ptr, g.Load32(entry + 8));
+    if (size_ptr) g.Store32(size_ptr, g.Load32(entry + 12));
+    return kStatusSuccess;
+  }
+  return kStatusNotFound;
+}
+
+uint32_t Xam::ContentGetDeviceData(Guest g, uint32_t device_id, uint32_t data) {
+  if (device_id != 1 && device_id != 2) return kErrorDeviceNotConnected;
+  // XDEVICE_DATA: id, type, total bytes, free bytes, 28 wide characters of name.
+  std::memset(g.host(data), 0, 80);
+  uint64_t total = 20ull << 30, available = 3ull << 30;
+  std::error_code error;
+  if (device_id == 1 && !title_.content_root.empty()) {
+    const auto space = std::filesystem::space(title_.content_root.root_path(), error);
+    if (!error) {
+      total = space.capacity;
+      available = space.available;
+    }
+  }
+  if (device_id == 2) {
+    total = 7ull << 30;
+    available = 0;
+  }
+  g.Store32(data, device_id);
+  g.Store32(data + 4, device_id);  // 1 hard drive, 2 optical disc
+  g.Store64(data + 8, total);
+  g.Store64(data + 16, available);
+  const char* label = device_id == 1 ? "Hard Drive" : "Disc";
+  for (uint32_t i = 0; label[i]; ++i) g.Store16(data + 24 + 2 * i, uint16_t(label[i]));
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ContentGetCreator(Guest g, uint32_t, uint32_t content_data, uint32_t is_creator_ptr, uint32_t xuid_ptr, uint32_t overlapped) {
+  std::error_code error;
+  if (!std::filesystem::exists(ContentPath(g, content_data), error)) return Finish(g, overlapped, kErrorFileNotFound);
+  // The local profile made its saved games; other content (DLC) has no creator.
+  const bool saved_game = g.Load32(content_data + 4) == 1;
+  if (is_creator_ptr) g.Store32(is_creator_ptr, saved_game ? 1 : 0);
+  if (xuid_ptr) g.Store64(xuid_ptr, saved_game ? title_.xuid : 0);
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::SetCacheElementCount(uint32_t count) {
+  cache_elements_ = count;
+  return kStatusSuccess;
+}
+
+uint32_t Xam::AllocatePool(Guest g, uint32_t size) { return Memory().AllocatePages(g, size); }
+
+void Xam::FreePool(uint32_t address) { Memory().FreePages(address & ~0xFFFu); }
+
+uint32_t Xam::CreateDevice(Guest g, uint32_t device_out) {
+  const uint32_t device = Objects().AllocateObject(0x24), extension = AllocatePool(g, 0x1000);
+  if (!device || !extension) return 0xC0000017;
+  std::memset(g.host(device), 0, 0x24);
+  g.Store32(device + 0x18, extension);
+  if (device_out) g.Store32(device_out, device);
+  return kStatusSuccess;
 }
 
 // --- stops --------------------------------------------------------------------------------------------------------

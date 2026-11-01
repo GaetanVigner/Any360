@@ -53,6 +53,9 @@ class FileSystem {
   uint32_t CreateFile(Guest g, uint32_t handle_out, uint32_t access, uint32_t attributes, uint32_t io_status, uint32_t file_attributes,
                       uint32_t disposition, uint32_t options);
   uint32_t ReadFile(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length, uint32_t offset_ptr);
+  // NtReadFileScatter: `length` bytes into the 4 KB pages listed (one 32-bit pointer each) at `segments`.
+  uint32_t ReadFileScatter(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t segments, uint32_t length,
+                           uint32_t offset_ptr);
   uint32_t WriteFile(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length, uint32_t offset_ptr);
   uint32_t QueryInformation(Guest g, uint32_t handle, uint32_t io_status, uint32_t info, uint32_t length, uint32_t info_class);
   uint32_t SetInformation(Guest g, uint32_t handle, uint32_t io_status, uint32_t info, uint32_t length, uint32_t info_class);

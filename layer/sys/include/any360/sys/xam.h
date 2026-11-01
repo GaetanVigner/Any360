@@ -111,6 +111,24 @@ class Xam {
   uint32_t GetExecutionId(Guest g, uint32_t info_ptr) const;
   void RegisterTitleTerminateNotification(uint32_t registration, uint32_t create);
 
+  // Launch data handed from one title to the next (none until a title sets it).
+  uint32_t LoaderSetLaunchData(Guest g, uint32_t data, uint32_t size);
+  uint32_t LoaderGetLaunchDataSize(Guest g, uint32_t size_ptr);
+  uint32_t LoaderGetLaunchData(Guest g, uint32_t buffer, uint32_t size);
+  // A named section of the title's resources (XEX_HEADER_RESOURCE_INFO): its address and size.
+  uint32_t GetModuleSection(Guest g, uint32_t module, uint32_t name, uint32_t data_ptr, uint32_t size_ptr);
+  // XDEVICE_DATA of the hard drive (1) and the disc (2).
+  uint32_t ContentGetDeviceData(Guest g, uint32_t device_id, uint32_t data);
+  uint32_t ContentGetCreator(Guest g, uint32_t user, uint32_t content_data, uint32_t is_creator_ptr, uint32_t xuid_ptr, uint32_t overlapped);
+  // The file system cache size a title asks for.
+  uint32_t SetCacheElementCount(uint32_t count);
+  uint32_t GetCacheElementCount() const { return cache_elements_; }
+  // The kernel pool: whole pages, so a block is freed by its address alone.
+  uint32_t AllocatePool(Guest g, uint32_t size);
+  void FreePool(uint32_t address);
+  // A device object for a title's own driver: 0x24 bytes and a page of extension at +0x18.
+  uint32_t CreateDevice(Guest g, uint32_t device_out);
+
   // Stops.
   void Stop(const char* reason, uint32_t code);
   uint32_t RaiseException(Guest g, uint32_t record);
@@ -150,6 +168,9 @@ class Xam {
   std::vector<uint32_t> terminate_notifications_;
   std::vector<std::string> open_content_;
   uint32_t packet_number_ = 0;
+  std::vector<uint8_t> launch_data_;
+  bool launch_data_present_ = false;
+  uint32_t cache_elements_ = 0;
 };
 
 Xam& XamState();

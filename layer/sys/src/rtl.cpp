@@ -1,5 +1,7 @@
 #include "any360/sys/rtl.h"
 
+#include "any360/sys/memory.h"
+
 #include <algorithm>
 #include <cstring>
 
@@ -230,6 +232,45 @@ uint32_t RtlCompareMemory(Guest g, uint32_t source1, uint32_t source2, uint32_t 
     if (g.Load8(source1 + i) == g.Load8(source2 + i)) ++n;
   }
   return n;
+}
+
+uint32_t RtlUnicodeStringToAnsiString(Guest g, uint32_t destination, uint32_t source, uint32_t allocate) {
+  const uint32_t chars = source ? g.Load16(source) / 2 : 0, from = source ? g.Load32(source + 4) : 0;
+  if (chars > 0xFFFE) return 0xC00000F0;  // STATUS_INVALID_PARAMETER_2
+  uint32_t buffer, capacity;
+  if (allocate) {
+    buffer = Memory().AllocatePages(g, chars + 1);
+    if (!buffer) return 0xC0000017;  // STATUS_NO_MEMORY
+    capacity = chars + 1;
+    g.Store16(destination + 2, uint16_t(capacity));
+    g.Store32(destination + 4, buffer);
+  } else {
+    capacity = g.Load16(destination + 2);
+    buffer = g.Load32(destination + 4);
+  }
+  const uint32_t n = std::min(chars, capacity ? capacity - 1 : 0);
+  for (uint32_t i = 0; i < n; ++i) {
+    const uint16_t c = g.Load16(from + 2 * i);
+    g.Store8(buffer + i, c < 0x100 ? uint8_t(c) : '?');
+  }
+  if (capacity) g.Store8(buffer + n, 0);
+  g.Store16(destination, uint16_t(n));
+  return n < chars ? 0x80000005 : 0;  // STATUS_BUFFER_OVERFLOW
+}
+
+void RtlFreeAnsiString(Guest g, uint32_t string) {
+  if (const uint32_t buffer = g.Load32(string + 4)) Memory().FreePages(buffer);
+  g.Store32(string, 0);
+  g.Store32(string + 4, 0);
+}
+
+uint32_t RtlUpcaseUnicodeChar(uint32_t c) {
+  c &= 0xFFFF;
+  if (c >= 'a' && c <= 'z') return c - 0x20;
+  if (c >= 0xE0 && c <= 0xFE && c != 0xF7) return c - 0x20;
+  if (c == 0xFF) return 0x178;
+  if (c == 0xB5) return 0x39C;
+  return c;
 }
 
 void RtlCaptureContext() {}

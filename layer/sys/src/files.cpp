@@ -332,6 +332,34 @@ uint32_t FileSystem::ReadFile(Guest g, uint32_t handle, uint32_t event, uint32_t
   return Transfer(g, handle, event, io_status, buffer, length, offset_ptr, false);
 }
 
+uint32_t FileSystem::ReadFileScatter(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t segments, uint32_t length,
+                                     uint32_t offset_ptr) {
+  if (event && !Objects().Lookup(event)) return kStatusInvalidHandle;
+  Open* file = Find(handle);
+  if (!file) return kStatusInvalidHandle;
+  uint64_t offset = offset_ptr ? g.Load64(offset_ptr) : ~0ull;
+  if (offset >= 0xFFFFFFFFFFFFFFFEull) offset = file->position;
+  std::error_code error;
+  const uint64_t size = std::filesystem::file_size(file->host, error);
+  uint32_t done = 0, status = kStatusSuccess;
+  if (length && offset >= size) {
+    status = kStatusEndOfFile;
+  } else {
+    std::ifstream stream(file->host, std::ios::binary);
+    stream.seekg(std::streamoff(offset));
+    for (uint32_t page = 0; done < length && offset + done < size; ++page) {
+      const uint32_t n = uint32_t(std::min<uint64_t>({0x1000, length - done, size - offset - done}));
+      stream.read(reinterpret_cast<char*>(g.host(g.Load32(segments + 4 * page))), n);
+      done += uint32_t(stream.gcount());
+      if (stream.gcount() != std::streamsize(n)) break;
+    }
+  }
+  file->position = offset + done;
+  StoreStatus(g, io_status, status, done);
+  if (event) Objects().NtSetEvent(g, event, 0);
+  return status;
+}
+
 uint32_t FileSystem::WriteFile(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length,
                                uint32_t offset_ptr) {
   return Transfer(g, handle, event, io_status, buffer, length, offset_ptr, true);

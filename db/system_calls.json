@@ -2831,7 +2831,7 @@
 "kind":"function",
 "group":"input",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -2846,7 +2846,7 @@
 "kind":"function",
 "group":"input",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -2917,7 +2917,7 @@
 "kind":"function",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "sonic06",
@@ -2935,7 +2935,7 @@
 "kind":"function",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -2950,7 +2950,7 @@
 "kind":"function",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -5346,7 +5346,7 @@
 "kind":"function",
 "group":"content device",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "simpsons",
 "sonic06",
@@ -5413,7 +5413,7 @@
 "kind":"function",
 "group":"content",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "simpsons",
 "sonic06",
@@ -6989,7 +6989,7 @@
 "kind":"function",
 "group":"ui",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "simpsons",
 "sonic06",
@@ -24976,7 +24976,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "simpsons",
 "tdu"
@@ -24993,7 +24993,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "simpsons"
 ],
@@ -25009,7 +25009,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -25068,7 +25068,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "simpsons",
 "sonic06",
@@ -25302,7 +25302,7 @@
 "kind":"function",
 "group":"io",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "simpsons",
 "sonic06"
@@ -25319,7 +25319,7 @@
 "kind":"function",
 "group":"io",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "simpsons",
 "sonic06",
@@ -25561,7 +25561,7 @@
 "kind":"function",
 "group":"io",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -25576,7 +25576,7 @@
 "kind":"function",
 "group":"io",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -25603,7 +25603,7 @@
 "kind":"function",
 "group":"io",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -25630,7 +25630,7 @@
 "kind":"function",
 "group":"io",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -25738,7 +25738,7 @@
 "kind":"function",
 "group":"io",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -25789,7 +25789,7 @@
 "kind":"function",
 "group":"io",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -25816,7 +25816,7 @@
 "kind":"function",
 "group":"io",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -28324,7 +28324,7 @@
 "kind":"function",
 "group":"io",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "simpsons",
 "sonic06",
@@ -28728,7 +28728,7 @@
 "kind":"function",
 "group":"ob",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -28816,7 +28816,7 @@
 "kind":"function",
 "group":"ob",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -29156,7 +29156,7 @@
 "kind":"function",
 "group":"rtl",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "sonic06",
@@ -29599,7 +29599,7 @@
 "kind":"function",
 "group":"rtl",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "sonic06",
@@ -29705,7 +29705,7 @@
 "kind":"function",
 "group":"rtl",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "sonic06",
 "tdu"
@@ -30107,7 +30107,7 @@
 "kind":"function",
 "group":"crypt",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "sonic06",
@@ -30593,7 +30593,7 @@
 "kind":"function",
 "group":"crypt",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "sonic06",
@@ -30647,7 +30647,7 @@
 "kind":"function",
 "group":"crypt",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "sonic06",
@@ -30717,7 +30717,7 @@
 "kind":"function",
 "group":"modules",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "simpsons",
@@ -33121,7 +33121,7 @@
 "kind":"function",
 "group":"crypt",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "sonic06",
@@ -33389,7 +33389,7 @@
 "kind":"function",
 "group":"io",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "sonic06",
@@ -33407,7 +33407,7 @@
 "kind":"function",
 "group":"io",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[
 "crackdown",
 "sonic06",

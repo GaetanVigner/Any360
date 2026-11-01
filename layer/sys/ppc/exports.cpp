@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "any360/sys/config.h"
+#include "any360/sys/crypt.h"
 #include "any360/sys/exports.h"
 #include "any360/sys/files.h"
 #include "any360/sys/format.h"
@@ -401,6 +402,52 @@ ANY360_SYS_EXPORT(NetDll_send) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u3
 ANY360_SYS_EXPORT(NetDll_sendto) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
 ANY360_SYS_EXPORT(NetDll_ioctlsocket) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
 
+// Batch 11: what Sonic '06 still needed (sys_io_tests for XeCryptSha, sys_object_tests for the rest).
+ANY360_SYS_EXPORT(XexGetModuleSection) { ctx.r3.u64 = XamState().GetModuleSection({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(StfsCreateDevice) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(StfsControlDevice) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(ExAllocatePoolTypeWithTag) { ctx.r3.u64 = XamState().AllocatePool({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(ExAllocatePoolWithTag) { ctx.r3.u64 = XamState().AllocatePool({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(ExAllocatePool) { ctx.r3.u64 = XamState().AllocatePool({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(ExFreePool) { XamState().FreePool(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XeCryptSha) {
+  XeCryptSha({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+}
+ANY360_SYS_EXPORT(XeCryptRotSumSha) { XeCryptRotSumSha({base}, ctx.r7.u32, ctx.r8.u32); }
+ANY360_SYS_EXPORT(XeCryptBnQwBeSigVerify) { ctx.r3.u64 = XeCryptBnQwBeSigVerify(); }
+ANY360_SYS_EXPORT(XeKeysGetKey) { ctx.r3.u64 = XeKeysGetKey({base}, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamLoaderSetLaunchData) { ctx.r3.u64 = XamState().LoaderSetLaunchData({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamLoaderGetLaunchDataSize) { ctx.r3.u64 = XamState().LoaderGetLaunchDataSize({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamLoaderGetLaunchData) { ctx.r3.u64 = XamState().LoaderGetLaunchData({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamContentGetDeviceData) { ctx.r3.u64 = XamState().ContentGetDeviceData({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamContentGetCreator) {
+  ctx.r3.u64 = XamState().ContentGetCreator({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(XamShowDirtyDiscErrorUI) { XamState().Stop("disc read error", 0); }
+ANY360_SYS_EXPORT(FscSetCacheElementCount) { ctx.r3.u64 = XamState().SetCacheElementCount(ctx.r4.u32); }
+ANY360_SYS_EXPORT(FscGetCacheElementCount) { ctx.r3.u64 = XamState().GetCacheElementCount(); }
+ANY360_SYS_EXPORT(RtlFreeAnsiString) { RtlFreeAnsiString({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(RtlUnicodeStringToAnsiString) { ctx.r3.u64 = RtlUnicodeStringToAnsiString({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(RtlUpcaseUnicodeChar) { ctx.r3.u64 = RtlUpcaseUnicodeChar(ctx.r3.u32); }
+ANY360_SYS_EXPORT(NtReadFileScatter) {
+  // (handle, event, APC routine, APC context, I/O status, segments, length, offset)
+  ctx.r3.u64 = Files().ReadFileScatter({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+}
+ANY360_SYS_EXPORT(XamEnableInactivityProcessing) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamResetInactivity) {}
+ANY360_SYS_EXPORT(IoCreateDevice) { ctx.r3.u64 = XamState().CreateDevice({base}, ctx.r8.u32); }
+ANY360_SYS_EXPORT(IoDeleteDevice) {}
+ANY360_SYS_EXPORT(IoCheckShareAccess) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(IoSetShareAccess) {}
+ANY360_SYS_EXPORT(IoRemoveShareAccess) {}
+ANY360_SYS_EXPORT(IoCompleteRequest) {}
+ANY360_SYS_EXPORT(IoInvalidDeviceRequest) { ctx.r3.u64 = 0xC0000010; }  // STATUS_INVALID_DEVICE_REQUEST
+ANY360_SYS_EXPORT(ObIsTitleObject) { ctx.r3.u64 = 1; }
+ANY360_SYS_EXPORT(ObReferenceObject) {
+  Objects().ReferenceObject(ctx.r3.u32);
+  ctx.r3.u64 = 0;
+}
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -609,6 +656,41 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(NetDll_send),
     ANY360_SYS_ENTRY(NetDll_sendto),
     ANY360_SYS_ENTRY(NetDll_ioctlsocket),
+    // Batch 11: the rest of Sonic '06.
+    ANY360_SYS_ENTRY(XexGetModuleSection),
+    ANY360_SYS_ENTRY(StfsCreateDevice),
+    ANY360_SYS_ENTRY(StfsControlDevice),
+    ANY360_SYS_ENTRY(ExAllocatePoolTypeWithTag),
+    ANY360_SYS_ENTRY(ExAllocatePoolWithTag),
+    ANY360_SYS_ENTRY(ExAllocatePool),
+    ANY360_SYS_ENTRY(ExFreePool),
+    ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(XeCryptRotSumSha),
+    ANY360_SYS_ENTRY(XeCryptBnQwBeSigVerify),
+    ANY360_SYS_ENTRY(XeKeysGetKey),
+    ANY360_SYS_ENTRY(XamLoaderSetLaunchData),
+    ANY360_SYS_ENTRY(XamLoaderGetLaunchDataSize),
+    ANY360_SYS_ENTRY(XamLoaderGetLaunchData),
+    ANY360_SYS_ENTRY(XamContentGetDeviceData),
+    ANY360_SYS_ENTRY(XamContentGetCreator),
+    ANY360_SYS_ENTRY(XamShowDirtyDiscErrorUI),
+    ANY360_SYS_ENTRY(FscSetCacheElementCount),
+    ANY360_SYS_ENTRY(FscGetCacheElementCount),
+    ANY360_SYS_ENTRY(RtlFreeAnsiString),
+    ANY360_SYS_ENTRY(RtlUnicodeStringToAnsiString),
+    ANY360_SYS_ENTRY(RtlUpcaseUnicodeChar),
+    ANY360_SYS_ENTRY(NtReadFileScatter),
+    ANY360_SYS_ENTRY(XamEnableInactivityProcessing),
+    ANY360_SYS_ENTRY(XamResetInactivity),
+    ANY360_SYS_ENTRY(IoCreateDevice),
+    ANY360_SYS_ENTRY(IoDeleteDevice),
+    ANY360_SYS_ENTRY(IoCheckShareAccess),
+    ANY360_SYS_ENTRY(IoSetShareAccess),
+    ANY360_SYS_ENTRY(IoRemoveShareAccess),
+    ANY360_SYS_ENTRY(IoCompleteRequest),
+    ANY360_SYS_ENTRY(IoInvalidDeviceRequest),
+    ANY360_SYS_ENTRY(ObIsTitleObject),
+    ANY360_SYS_ENTRY(ObReferenceObject),
 };
 const unsigned kExportCount = sizeof(kExports) / sizeof(kExports[0]);
 
