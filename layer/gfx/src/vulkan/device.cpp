@@ -193,11 +193,26 @@ bool Device::Create(const DeviceOptions& options) {
   VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, &enabled};
   device_info.queueCreateInfoCount = 1;
   device_info.pQueueCreateInfos = &queue_info;
-  const char* swapchain_extension = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
-  if (surface_) {
-    device_info.enabledExtensionCount = 1;
-    device_info.ppEnabledExtensionNames = &swapchain_extension;
+  std::vector<const char*> device_extensions;
+  if (surface_) device_extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+  // Importing host memory: the renderer then reads guest memory in place instead of copying it.
+  {
+    uint32_t count = 0;
+    fn_.vkEnumerateDeviceExtensionProperties(physical_, nullptr, &count, nullptr);
+    std::vector<VkExtensionProperties> available(count);
+    fn_.vkEnumerateDeviceExtensionProperties(physical_, nullptr, &count, available.data());
+    for (const VkExtensionProperties& e : available) {
+      if (std::strcmp(e.extensionName, VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME) == 0) {
+        device_extensions.push_back(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
+        VkPhysicalDeviceExternalMemoryHostPropertiesEXT host{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT};
+        VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &host};
+        fn_.vkGetPhysicalDeviceProperties2(physical_, &props2);
+        host_pointer_alignment_ = host.minImportedHostPointerAlignment;
+      }
+    }
   }
+  device_info.enabledExtensionCount = uint32_t(device_extensions.size());
+  device_info.ppEnabledExtensionNames = device_extensions.data();
   if (fn_.vkCreateDevice(physical_, &device_info, nullptr, &device_) != VK_SUCCESS) {
     error_ = "vkCreateDevice failed";
     return false;

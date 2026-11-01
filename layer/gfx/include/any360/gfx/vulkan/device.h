@@ -48,6 +48,8 @@ class Device {
   VkDevice device() const { return device_; }
   VkQueue queue() const { return queue_; }
   VkSurfaceKHR surface() const { return surface_; }
+  // VK_EXT_external_memory_host: the alignment a host allocation must have to be imported (0: not available).
+  VkDeviceSize host_pointer_alignment() const { return host_pointer_alignment_; }
   uint32_t queue_family() const { return queue_family_; }
   const VkPhysicalDeviceProperties& properties() const { return properties_; }
   const std::string& error() const { return error_; }
@@ -75,6 +77,7 @@ class Device {
   VkDevice device_ = VK_NULL_HANDLE;
   VkQueue queue_ = VK_NULL_HANDLE;
   VkSurfaceKHR surface_ = VK_NULL_HANDLE;
+  VkDeviceSize host_pointer_alignment_ = 0;
   uint32_t queue_family_ = 0;
   VkCommandPool pool_ = VK_NULL_HANDLE;
   VkPhysicalDeviceProperties properties_{};

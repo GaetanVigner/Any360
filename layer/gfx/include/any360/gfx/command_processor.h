@@ -59,6 +59,9 @@ class Renderer {
   virtual void Copy(const uint32_t* /*registers*/) {}
   // A swap (XE_SWAP): the front buffer is the texture fetch constant 0 of `registers` describes (VdSwap writes it).
   virtual void Swap(uint32_t /*frontbuffer*/, uint32_t /*width*/, uint32_t /*height*/, const uint32_t* /*registers*/) {}
+  // The command processor is about to make GPU progress visible to the CPU (a fence, a memory write, an interrupt,
+  // the read pointer): every draw so far must have run, as the CPU may then reuse what they read.
+  virtual void Flush() {}
   // The CPU wrote [base, base + size) (COHER_*_HOST): cached copies of that memory are stale.
   virtual void Invalidate(uint32_t /*base*/, uint32_t /*size*/) {}
 };

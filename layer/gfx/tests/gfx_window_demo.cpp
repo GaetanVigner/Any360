@@ -3,12 +3,14 @@
 // over it, drawn into a 1280x720 EDRAM surface, resolved to guest memory, swapped as VdSwap would, and presented in
 // an SDL3 window through the Presenter.
 //
-//   gfx_window_demo [--frames N] [--gpu NAME]
+//   gfx_window_demo [--frames N] [--draws N] [--gpu NAME]
+#include <algorithm>
 #include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -37,13 +39,18 @@ using pm4::Type3;
 namespace t = any360::gfx::test;
 namespace uc = rex::graphics::ucode;
 
-constexpr uint32_t kMemory = 8 << 20, kRing = 0x10000, kQuad = 0x40000, kTriangle = 0x41000, kRect = 0x42000,
+constexpr uint32_t kMemory = 8 << 20, kRing = 0x10000, kQuad = 0x40000, kTriangle = 0x500000, kRect = 0x42000,
                    kTexture = 0x50000, kFrontBuffer = 0x100000, kWidth = 1280, kHeight = 720;
-std::vector<uint8_t> g_physical(kMemory);
+// Guest memory: page-aligned so the renderer imports it in place.
+uint8_t* const g_memory = [] {
+  auto* p = static_cast<uint8_t*>(::operator new(kMemory, std::align_val_t(65536)));
+  std::memset(p, 0, kMemory);
+  return p;
+}();
 
 void SetBig(uint32_t address, uint32_t value) {
   value = std::byteswap(value);
-  std::memcpy(g_physical.data() + address, &value, 4);
+  std::memcpy(g_memory + address, &value, 4);
 }
 uint32_t Bits(float f) { return std::bit_cast<uint32_t>(f); }
 uint32_t Rgba(uint32_t r, uint32_t g, uint32_t b) { return 0xFF000000u | b << 16 | g << 8 | r; }
@@ -63,7 +70,7 @@ struct Ring {
 };
 
 // One frame's PM4: state, the textured quad, the moving triangle, the resolve, the swap.
-void WriteFrame(Ring& r, float time) {
+void WriteFrame(Ring& r, float time, uint32_t count) {
   // Surfaces: pitch 1280, colour 0 at tile 0 (k_8_8_8_8); viewport over 1280x720 (y up, W as is); scissors.
   r.Put({Type0(0x2000, 3), kWidth, 0, 0});
   r.Reg(0x2208, 4);
@@ -82,18 +89,24 @@ void WriteFrame(Ring& r, float time) {
   r.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 1u << 22 | 1u << 31, 6u | 2u << 6 | kTexture, 31u | 31u << 13,
          0x688u << 1 | 1u << 19 | 1u << 21, 0, 1u << 9});
   r.Put({Type3(pm4::DRAW_INDX_2, 1), 4u << 16 | 2u << 6 | 6});
-  // The triangle, moving in a circle, in a colour that cycles.
-  const float cx = 0.5f * std::cos(time), cy = 0.5f * std::sin(time);
-  const float tri[3][4] = {{cx - 0.2f, cy - 0.2f, 0, 1}, {cx + 0.2f, cy - 0.2f, 0, 1}, {cx, cy + 0.25f, 0, 1}};
-  for (uint32_t i = 0; i < 3; ++i) {
-    for (uint32_t c = 0; c < 4; ++c) SetBig(kTriangle + 16 * i + 4 * c, Bits(tri[i][c]));
-  }
+  // Triangles moving in circles, each in a colour that cycles: one by default, `count` to measure the cost per draw
+  // at a game's scale (each its own vertex buffer and constants, as a game's draws have).
   r.Shader(0, t::BuildFetchPositionShader());
   r.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
-  r.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, kTriangle | 3, 2u | 12u << 2});
-  r.Put({Type3(pm4::SET_CONSTANT, 5), 0u << 16 | 1024, Bits(0.5f + 0.5f * std::sin(time * 1.3f)),
-         Bits(0.5f + 0.5f * std::sin(time * 1.7f + 2)), Bits(0.5f + 0.5f * std::sin(time * 2.3f + 4)), Bits(1)});
-  r.Put({Type3(pm4::DRAW_INDX_2, 1), 3u << 16 | 2u << 6 | 4});
+  for (uint32_t n = 0; n < count; ++n) {
+    const float phase = time + 6.2832f * float(n) / float(count), radius = count > 1 ? 0.2f + 0.6f * float(n % 7) / 7 : 0.5f;
+    const float size = count > 1 ? 0.05f : 0.2f;
+    const float cx = radius * std::cos(phase), cy = radius * std::sin(phase);
+    const float tri[3][4] = {{cx - size, cy - size, 0, 1}, {cx + size, cy - size, 0, 1}, {cx, cy + 1.25f * size, 0, 1}};
+    const uint32_t at = kTriangle + 48 * n;
+    for (uint32_t i = 0; i < 3; ++i) {
+      for (uint32_t c = 0; c < 4; ++c) SetBig(at + 16 * i + 4 * c, Bits(tri[i][c]));
+    }
+    r.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, at | 3, 2u | 12u << 2});
+    r.Put({Type3(pm4::SET_CONSTANT, 5), 0u << 16 | 1024, Bits(0.5f + 0.5f * std::sin(phase * 1.3f)),
+           Bits(0.5f + 0.5f * std::sin(phase * 1.7f + 2)), Bits(0.5f + 0.5f * std::sin(phase * 2.3f + 4)), Bits(1)});
+    r.Put({Type3(pm4::DRAW_INDX_2, 1), 3u << 16 | 2u << 6 | 4});
+  }
   // Resolve colour 0 to the front buffer (k_8_8_8_8, 8-in-32, tiled, pitch 1280), no clear.
   r.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, kRect | 3, 2u | 6u << 2});
   r.Put({Type0(0x2318, 4), 0, kFrontBuffer, kWidth | kHeight << 16, 2u | 6u << 7});
@@ -110,9 +123,11 @@ void WriteFrame(Ring& r, float time) {
 
 int main(int argc, char** argv) {
   uint64_t frames_wanted = 0;
+  uint32_t triangles = 1;
   vk::DeviceOptions options;
   for (int i = 1; i + 1 < argc; ++i) {
     if (!std::strcmp(argv[i], "--frames")) frames_wanted = std::strtoull(argv[++i], nullptr, 10);
+    else if (!std::strcmp(argv[i], "--draws")) triangles = uint32_t(std::strtoul(argv[++i], nullptr, 10));
     else if (!std::strcmp(argv[i], "--gpu")) options.prefer = argv[++i];
   }
   if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -142,7 +157,7 @@ int main(int argc, char** argv) {
     std::printf("gfx_window_demo: no device: %s\n", device.error().c_str());
     return 1;
   }
-  vk::VulkanRenderer renderer(device, g_physical.data(), kMemory);
+  vk::VulkanRenderer renderer(device, g_memory, kMemory);
   if (!renderer.Initialize()) {
     std::printf("gfx_window_demo: renderer: %s\n", renderer.last_error().c_str());
     return 1;
@@ -169,7 +184,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  CommandProcessor cp(g_physical.data());
+  CommandProcessor cp(g_memory);
   cp.SetRenderer(&renderer);
   const auto start = std::chrono::steady_clock::now();
   auto window_start = start;
@@ -188,9 +203,9 @@ int main(int argc, char** argv) {
       resize = false;
     }
     const float time = std::chrono::duration<float>(std::chrono::steady_clock::now() - start).count();
-    cp.InitializeRingBuffer({}, kRing, 13);
+    cp.InitializeRingBuffer({}, kRing, 15);  // 256 KB
     Ring ring{cp};
-    WriteFrame(ring, time);
+    WriteFrame(ring, time, triangles);
     cp.WriteRegister(reg::CP_RB_WPTR, ring.write);
     cp.Execute();
     if (renderer.stats().failed) {
@@ -198,7 +213,11 @@ int main(int argc, char** argv) {
       break;
     }
     const vk::VulkanRenderer::Frame& frame = renderer.frame();
-    if (!presenter.Present(frame.pixels.data(), frame.width, frame.height)) {
+    const bool shown = frame.on_gpu ? presenter.Present([&](VkCommandBuffer cb, VkImage target, VkOffset3D a, VkOffset3D b) {
+                                        renderer.RecordFrameBlit(cb, target, a, b);
+                                      }, frame.width, frame.height)
+                                    : presenter.Present(frame.pixels.data(), frame.width, frame.height);
+    if (!shown) {
       if (presenter.error().find("out of date") != std::string::npos) {
         resize = true;
         continue;
@@ -221,6 +240,10 @@ int main(int argc, char** argv) {
               device.properties().deviceName, (unsigned long long)presenter.presented(), total, presenter.presented() / total,
               renderer.stats().draws, renderer.stats().resolves, int(presenter.format()), failure.empty() ? "" : ", stopped: ",
               failure.c_str());
+  const vk::RendererStats& st = renderer.stats();
+  const double n = double(std::max<uint64_t>(1, presenter.presented())) * 1e6;
+  std::printf("gfx_window_demo: per frame (ms): draws %.2f (guest memory copy %.2f, submit %.2f), resolve %.2f, swap %.2f\n",
+              st.ns_draws / n, st.ns_memory / n, st.ns_submit / n, st.ns_resolves / n, st.ns_swaps / n);
   SDL_DestroyWindow(window);
   SDL_Quit();
   return failure.empty() ? 0 : 1;

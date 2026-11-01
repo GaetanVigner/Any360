@@ -51,6 +51,9 @@ struct RendererStats {
   uint32_t render_targets = 0;
   uint32_t texture_uploads = 0;
   uint32_t resolves = 0;
+  uint32_t flushes = 0;
+  // Time spent (nanoseconds, summed): draws in all, of which copying guest memory and submitting; resolves; swaps.
+  uint64_t ns_draws = 0, ns_memory = 0, ns_submit = 0, ns_resolves = 0, ns_swaps = 0;
 };
 
 // An EDRAM surface: base in tiles, pitch in pixels, a ColorRenderTargetFormat (or DepthRenderTargetFormat with
@@ -84,6 +87,10 @@ class VulkanRenderer : public gfx::Renderer {
   bool ReadBack(const SurfaceKey& key, uint32_t width, uint32_t height, std::vector<uint8_t>& bytes);
 
   void Draw(const DrawCall& draw) override;
+  // Draws are recorded into one command buffer, the render pass kept open while the targets stay the same; Flush
+  // submits them and waits (the command processor calls it before the CPU can observe GPU progress; resolves,
+  // swaps, clears, readbacks and texture uploads call it first).
+  void Flush() override;
   // A resolve: the EDRAM surface RB_COPY_CONTROL selects, over the rectangle of the copy draw's vertices, converted to
   // RB_COPY_DEST_INFO's format and written tiled to guest memory at RB_COPY_DEST_BASE; then the cleared targets.
   void Copy(const uint32_t* registers) override;
@@ -91,15 +98,23 @@ class VulkanRenderer : public gfx::Renderer {
   void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* registers) override;
 
   // The last presented frame: RGBA8 pixels (R in the low byte), row after row; `number` counts swaps.
+  // A frame is either still on the GPU (the surface the front buffer was resolved from, when guest memory holds
+  // exactly that resolve: presented with RecordFrameBlit, no CPU work) or CPU pixels read from guest memory.
   struct Frame {
     uint32_t width = 0, height = 0;
-    std::vector<uint32_t> pixels;
+    std::vector<uint32_t> pixels;  // CPU frames only
     uint64_t number = 0;
+    bool on_gpu = false;
   };
   const Frame& frame() const { return frame_; }
+  // The frame's pixels whichever way it is held (a GPU frame is read back: for tests and screenshots).
+  bool ReadFrame(std::vector<uint32_t>& pixels);
+  // Records the GPU frame's blit onto `target` (in TRANSFER_DST layout) over [dst0, dst1).
+  void RecordFrameBlit(VkCommandBuffer cb, VkImage target, VkOffset3D dst0, VkOffset3D dst1);
 
   const RendererStats& stats() const { return stats_; }
   const std::string& last_error() const { return last_error_; }
+  bool guest_memory_in_place() const { return shared_memory_imported_; }
   VkFormat depth_format() const { return depth_format_; }
 
  private:
@@ -126,6 +141,9 @@ class VulkanRenderer : public gfx::Renderer {
   VkDescriptorSetLayout TextureSetLayout(bool vertex, uint32_t textures, uint32_t samplers);
   VkPipelineLayout PipelineLayout(uint32_t vs_textures, uint32_t vs_samplers, uint32_t ps_textures, uint32_t ps_samplers);
   bool Fail(const std::string& why);
+  bool ImportGuestMemory();
+  VkCommandBuffer Record();  // the batch's command buffer, begun when needed
+  void EndRendering();
   void Transition(VkCommandBuffer cb, Image& image, VkImageLayout& layout, VkImageLayout to, VkImageAspectFlags aspect);
 
   Device& device_;
@@ -145,9 +163,26 @@ class VulkanRenderer : public gfx::Renderer {
   VkDescriptorPool draw_pool_ = VK_NULL_HANDLE;  // texture sets, reset after each draw
   VkDescriptorSet shared_set_ = VK_NULL_HANDLE, constants_set_ = VK_NULL_HANDLE, empty_set_ = VK_NULL_HANDLE;
   Buffer shared_memory_, constants_, indices_;
+  bool shared_memory_imported_ = false;  // guest memory read in place (no copy per draw)
+  uint32_t constant_head_ = 0, index_head_ = 0;  // ring allocation of the batch's constants and indices
+  static constexpr uint32_t kDrawSets = 8192, kDrawDescriptors = 32768;  // texture sets and descriptors a batch holds
+  uint32_t draw_sets_ = 0, draw_images_ = 0, draw_samplers_ = 0;
+  VkCommandPool batch_pool_ = VK_NULL_HANDLE;
+  VkCommandBuffer batch_ = VK_NULL_HANDLE;
+  VkFence batch_fence_ = VK_NULL_HANDLE;
+  bool batch_open_ = false, rendering_open_ = false;
+  std::array<uint64_t, 7> rendering_key_{};  // the open render pass: 4 colour views, depth view, width, height
   uint32_t constant_alignment_ = 256;
   RendererStats stats_;
   Frame frame_;
+  // The last resolve, to present a front buffer straight from its source surface.
+  struct LastResolve {
+    Surface* surface = nullptr;
+    uint32_t dest_base = 0, endian = 0, x = 0, y = 0, width = 0, height = 0;
+    bool plain = false;  // k_8_8_8_8 copied as it is (no exponent bias, no red/blue swap)
+  } last_resolve_;
+  Surface* frame_surface_ = nullptr;
+  uint32_t frame_x_ = 0, frame_y_ = 0;
   std::string last_error_;
 };
 

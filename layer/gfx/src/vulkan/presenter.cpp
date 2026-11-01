@@ -122,15 +122,19 @@ bool Presenter::Resize(uint32_t width, uint32_t height) {
   return true;
 }
 
-bool Presenter::Present(const uint32_t* rgba, uint32_t width, uint32_t height) {
+bool Presenter::Present(const uint32_t* rgba, uint32_t width, uint32_t height) { return PresentWith(rgba, nullptr, width, height); }
+
+bool Presenter::Present(const BlitFn& blit, uint32_t width, uint32_t height) { return PresentWith(nullptr, &blit, width, height); }
+
+bool Presenter::PresentWith(const uint32_t* rgba, const BlitFn* blit_source, uint32_t width, uint32_t height) {
   const Functions& f = device_.fn();
   VkDevice d = device_.device();
   if (!swapchain_) return extent_.width && extent_.height ? Fail("no swapchain (call Resize)") : true;
   if (!width || !height) return Fail("empty frame");
 
   f.vkWaitForFences(d, 1, &fence_, VK_TRUE, UINT64_MAX);
-  // The frame image (RGBA8, the front buffer's size) and its staging memory.
-  if (frame_.width != width || frame_.height != height) {
+  // The frame image (RGBA8, the front buffer's size) and its staging memory, for CPU frames.
+  if (rgba && (frame_.width != width || frame_.height != height)) {
     DestroyImage(device_, frame_);
     DestroyBuffer(device_, staging_);
     if (!CreateImage2D(device_, width, height, VK_FORMAT_R8G8B8A8_UNORM,
@@ -139,7 +143,7 @@ bool Presenter::Present(const uint32_t* rgba, uint32_t width, uint32_t height) {
       return Fail("frame image");
     }
   }
-  std::memcpy(staging_.mapped, rgba, size_t(width) * height * 4);
+  if (rgba) std::memcpy(staging_.mapped, rgba, size_t(width) * height * 4);
 
   uint32_t index = 0;
   const VkResult acquired = f.vkAcquireNextImageKHR(d, swapchain_, UINT64_MAX, acquired_, VK_NULL_HANDLE, &index);
@@ -151,12 +155,14 @@ bool Presenter::Present(const uint32_t* rgba, uint32_t width, uint32_t height) {
   VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
   f.vkBeginCommandBuffer(cb_, &begin);
-  Barrier(f, cb_, frame_.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-  VkBufferImageCopy upload{};
-  upload.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-  upload.imageExtent = {width, height, 1};
-  f.vkCmdCopyBufferToImage(cb_, staging_.buffer, frame_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &upload);
-  Barrier(f, cb_, frame_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+  if (rgba) {
+    Barrier(f, cb_, frame_.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    VkBufferImageCopy upload{};
+    upload.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    upload.imageExtent = {width, height, 1};
+    f.vkCmdCopyBufferToImage(cb_, staging_.buffer, frame_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &upload);
+    Barrier(f, cb_, frame_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+  }
   const VkImage target = images_[index];
   Barrier(f, cb_, target, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
   const VkClearColorValue black{{0, 0, 0, 1}};
@@ -166,14 +172,18 @@ bool Presenter::Present(const uint32_t* rgba, uint32_t width, uint32_t height) {
   const float scale = std::min(float(extent_.width) / width, float(extent_.height) / height);
   const int32_t w = std::max(1, int32_t(width * scale)), h = std::max(1, int32_t(height * scale));
   const int32_t x = (int32_t(extent_.width) - w) / 2, y = (int32_t(extent_.height) - h) / 2;
-  VkImageBlit blit{};
-  blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-  blit.srcOffsets[1] = {int32_t(width), int32_t(height), 1};
-  blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-  blit.dstOffsets[0] = {x, y, 0};
-  blit.dstOffsets[1] = {x + w, y + h, 1};
-  f.vkCmdBlitImage(cb_, frame_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                   &blit, VK_FILTER_LINEAR);
+  if (blit_source) {
+    (*blit_source)(cb_, target, VkOffset3D{x, y, 0}, VkOffset3D{x + w, y + h, 1});
+  } else {
+    VkImageBlit blit{};
+    blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    blit.srcOffsets[1] = {int32_t(width), int32_t(height), 1};
+    blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    blit.dstOffsets[0] = {x, y, 0};
+    blit.dstOffsets[1] = {x + w, y + h, 1};
+    f.vkCmdBlitImage(cb_, frame_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                     &blit, VK_FILTER_LINEAR);
+  }
   Barrier(f, cb_, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
   f.vkEndCommandBuffer(cb_);
 

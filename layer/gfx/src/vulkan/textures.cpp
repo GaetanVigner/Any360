@@ -245,6 +245,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], std::string& error) {
   }
 
   if (slot->content_hash != hash) {
+    if (before_upload_) before_upload_();  // draws recorded earlier must sample the old content
     std::vector<uint8_t> blocks;
     if (!LoadBlocks(fetch, blocks, error)) return VK_NULL_HANDLE;
     Buffer staging;

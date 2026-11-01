@@ -122,7 +122,10 @@ void CommandProcessor::SetRegister(uint32_t index, uint32_t value) {
   if (index >= reg::SCRATCH_REG0 && index < reg::SCRATCH_REG0 + 8) {
     // A scratch register the CPU watches: mirrored to memory when its bit of SCRATCH_UMSK is set.
     const uint32_t n = index - reg::SCRATCH_REG0;
-    if (reg(reg::SCRATCH_UMSK) & (1u << n)) StoreBig(reg(reg::SCRATCH_ADDR) + 4 * n, value);
+    if (reg(reg::SCRATCH_UMSK) & (1u << n)) {
+      if (renderer_) renderer_->Flush();
+      StoreBig(reg(reg::SCRATCH_ADDR) + 4 * n, value);
+    }
   } else if (index == reg::COHER_STATUS_HOST) {
     // A coherency request: pending (bit 31) until a WAIT_REG_MEM on this register completes it.
     std::atomic_ref<uint32_t>(registers_[index]).fetch_or(0x80000000u, std::memory_order_acq_rel);
@@ -183,7 +186,10 @@ bool CommandProcessor::Execute() {
   if (!stopped) {
     read_index_ = write;
     SetRegister(reg::CP_RB_RPTR, write);
-    if (write_back_) StoreBig(write_back_, write);
+    if (write_back_) {
+      if (renderer_) renderer_->Flush();  // the CPU may reuse what the read pointer passed
+      StoreBig(write_back_, write);
+    }
   }
   busy_ = false;
   return !stopped;
@@ -245,6 +251,16 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     for (uint32_t i = 0; i < n; ++i) SetRegister(kBase[type] + index + i, value_at(i));
   };
 
+  // What the CPU can observe of the GPU's progress: the draws so far must have run first (the CPU may then reuse
+  // the memory they read).
+  switch (opcode) {
+    case pm4::INTERRUPT: case pm4::REG_TO_MEM: case pm4::MEM_WRITE: case pm4::COND_WRITE: case pm4::EVENT_WRITE_SHD:
+    case pm4::EVENT_WRITE_EXT: case pm4::EVENT_WRITE_ZPD:
+      if (renderer_) renderer_->Flush();
+      break;
+    default:
+      break;
+  }
   switch (opcode) {
     case pm4::ME_INIT:
     case pm4::NOP:

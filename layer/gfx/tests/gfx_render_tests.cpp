@@ -5,6 +5,7 @@
 #include <bit>
 #include <cstdio>
 #include <cstring>
+#include <new>
 #include <functional>
 #include <string>
 #include <vector>
@@ -31,7 +32,14 @@ int g_failures = 0;
   } while (0)
 
 constexpr uint32_t kMemory = 0x200000, kRing = 0x10000, kVertices = 0x40000, kIndices = 0x48000, kSize = 64;
-std::vector<uint8_t> g_physical(kMemory);
+// Guest memory: page-aligned so the renderer can import it in place (--copy shifts it off alignment, so the
+// renderer takes its copying path instead).
+uint8_t* const g_storage = [] {
+  auto* p = static_cast<uint8_t*>(::operator new(kMemory + 64, std::align_val_t(65536)));
+  std::memset(p, 0, kMemory + 64);
+  return p;
+}();
+uint8_t* g_memory = g_storage;
 
 // Register indices the scenarios write.
 constexpr uint32_t kRbDepthControl = 0x2200, kRbBlendControl0 = 0x2201, kRbColorMask = 0x2104,
@@ -42,7 +50,7 @@ constexpr uint32_t kTriangleList = 4, kTriangleStrip = 6;
 
 void SetBig(uint32_t address, uint32_t value) {
   value = std::byteswap(value);
-  std::memcpy(g_physical.data() + address, &value, 4);
+  std::memcpy(g_memory + address, &value, 4);
 }
 uint32_t Bits(float f) { return std::bit_cast<uint32_t>(f); }
 uint32_t Rgba(uint32_t r, uint32_t g, uint32_t b, uint32_t a) { return a << 24 | b << 16 | g << 8 | r; }
@@ -124,12 +132,15 @@ bool OnDiagonal(uint32_t x, uint32_t y) { return x + (kSize - 1 - y) == kSize - 
 int main(int argc, char** argv) {
   vk::Device device;
   vk::DeviceOptions options;
-  if (argc > 1) options.prefer = argv[1];
+  for (int i = 1; i < argc; ++i) {
+    if (!std::strcmp(argv[i], "--copy")) g_memory = g_storage + 64;
+    else options.prefer = argv[i];
+  }
   if (!device.Create(options)) {
     std::printf("gfx_render_tests: skipped (%s)\n", device.error().c_str());
     return 0;
   }
-  vk::VulkanRenderer renderer(device, g_physical.data(), kMemory);
+  vk::VulkanRenderer renderer(device, g_memory, kMemory);
   CHECK(renderer.Initialize());
   const vk::SurfaceKey color0{0, kSize, 0, 0}, depth{1024, kSize, 0, 1};
   auto read = [&](const vk::SurfaceKey& key) {
@@ -140,7 +151,7 @@ int main(int argc, char** argv) {
     if (bytes.size() == kSize * kSize * 4) std::memcpy(p.data.data(), bytes.data(), bytes.size());
     return p;
   };
-  CommandProcessor cp(g_physical.data());
+  CommandProcessor cp(g_memory);
   cp.SetRenderer(&renderer);
   cp.InitializeRingBuffer({}, kRing, 12);  // 32 KB: 8192 dwords
   Scene s{cp};
@@ -151,7 +162,7 @@ int main(int argc, char** argv) {
   const uint16_t indices[3] = {1, 3, 2};  // the upper-right triangle of a quad
   for (uint32_t i = 0; i < 3; ++i) {
     const uint16_t big = uint16_t(indices[i] << 8 | indices[i] >> 8);
-    std::memcpy(g_physical.data() + kIndices + 2 * i, &big, 2);
+    std::memcpy(g_memory + kIndices + 2 * i, &big, 2);
   }
   s.Shader(0, t::BuildFetchPositionShader());
   s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
@@ -357,7 +368,7 @@ int main(int argc, char** argv) {
             const uint32_t at = uint32_t(vk::TiledOffset2D(int32_t(bx), int32_t(by), 8, 3));
             const uint16_t color = quadrant565[quadrant_of(bx, by, 4)];
             const uint8_t block[8] = {uint8_t(color >> 8), uint8_t(color), 0, 0, 0, 0, 0, 0};  // 8-in-16: big-endian halves
-            std::memcpy(g_physical.data() + c.base + at, block, 8);
+            std::memcpy(g_memory + c.base + at, block, 8);
           }
         }
       }
@@ -387,7 +398,7 @@ int main(int argc, char** argv) {
       SetBig(rect + 8 * i, Bits(rv[i][0]));
       SetBig(rect + 8 * i + 4, Bits(rv[i][1]));
     }
-    std::memset(g_physical.data() + resolved, 0xCD, 64 * 64 * 4);
+    std::memset(g_memory + resolved, 0xCD, 64 * 64 * 4);
     auto textured = [&](uint32_t base, uint32_t size) {
       s.Shader(0, t::BuildTexturedVertexShader());
       s.Shader(1, t::BuildTexturedPixelShader(1));
@@ -421,7 +432,7 @@ int main(int argc, char** argv) {
     for (uint32_t y = 0; y < kSize; ++y) {
       for (uint32_t x = 0; x < kSize; ++x) {
         uint32_t big;
-        std::memcpy(&big, g_physical.data() + resolved + vk::TiledOffset2D(int32_t(x), int32_t(y), 64, 2), 4);
+        std::memcpy(&big, g_memory + resolved + vk::TiledOffset2D(int32_t(x), int32_t(y), 64, 2), 4);
         wrong_texels += std::byteswap(big) != quadrant[quadrant_of(x, y, 32)];
       }
     }
@@ -441,13 +452,32 @@ int main(int argc, char** argv) {
     s.Put({Type3(pm4::XE_SWAP, 4), 0x53574150, resolved, kSize, kSize});
     s.Run();
     const vk::VulkanRenderer::Frame& frame = renderer.frame();
-    uint32_t frame_wrong = frame.pixels.size() == kSize * kSize ? 0 : kSize * kSize;
+    std::vector<uint32_t> frame_pixels;
+    CHECK(renderer.ReadFrame(frame_pixels));
+    uint32_t frame_wrong = frame_pixels.size() == kSize * kSize ? 0 : kSize * kSize;
     for (uint32_t y = 0; y < kSize && !frame_wrong; ++y) {
-      for (uint32_t x = 0; x < kSize; ++x) frame_wrong += frame.pixels[y * kSize + x] != quadrant[quadrant_of(x, y, 32)];
+      for (uint32_t x = 0; x < kSize; ++x) frame_wrong += frame_pixels[y * kSize + x] != quadrant[quadrant_of(x, y, 32)];
     }
+    std::printf("gfx_render_tests: swap: frame held %s\n", frame.on_gpu ? "on the GPU (the resolve's source)" : "on the CPU");
     std::printf("gfx_render_tests: swap: frame %llu, %ux%u, %u pixels wrong\n", (unsigned long long)frame.number, frame.width,
                 frame.height, frame_wrong);
     CHECK(frame.number == 1 && frame.width == kSize && frame.height == kSize && frame_wrong == 0);
+    // The same front buffer swizzled blue-green-red: no longer the resolve as it is, so read from guest memory on the
+    // CPU, with red and blue exchanged.
+    s.Put({Type0(0x4800, 6), 2u | 2u << 10 | 2u << 13 | 2u << 22 | 1u << 31, 6u | 2u << 6 | resolved, 63u | 63u << 13,
+           (2u | 1u << 3 | 0u << 6 | 3u << 9) << 1, 0, 1u << 9});
+    s.Put({Type3(pm4::XE_SWAP, 4), 0x53574150, resolved, kSize, kSize});
+    s.Run();
+    CHECK(renderer.ReadFrame(frame_pixels) && !renderer.frame().on_gpu && renderer.frame().number == 2);
+    uint32_t swizzled_wrong = frame_pixels.size() == kSize * kSize ? 0 : kSize * kSize;
+    for (uint32_t y = 0; y < kSize && !swizzled_wrong; ++y) {
+      for (uint32_t x = 0; x < kSize; ++x) {
+        const uint32_t q = quadrant[quadrant_of(x, y, 32)];
+        swizzled_wrong += frame_pixels[y * kSize + x] != ((q & 0xFF00FF00u) | (q >> 16 & 0xFF) | (q & 0xFF) << 16);
+      }
+    }
+    std::printf("gfx_render_tests: swap: swizzled front buffer read on the CPU, %u pixels wrong\n", swizzled_wrong);
+    CHECK(swizzled_wrong == 0);
     s.Shader(0, t::BuildFetchPositionShader());
   }
 
@@ -457,6 +487,7 @@ int main(int argc, char** argv) {
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
   CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 3 && stats.texture_uploads == 4 && stats.resolves == 1);
+  std::printf("gfx_render_tests: guest memory %s\n", renderer.guest_memory_in_place() ? "read in place" : "copied per draw");
   std::printf("gfx_render_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;
 }

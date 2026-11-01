@@ -10,6 +10,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -58,6 +59,8 @@ class TextureCache {
                  std::string& error) const;
 
   uint32_t uploads() const { return uploads_; }
+  // Called before an upload replaces a texture's content (the renderer runs its pending draws first).
+  void SetBeforeUpload(std::function<void()> callback) { before_upload_ = std::move(callback); }
 
  private:
   // The guest bytes the base level spans, and its blocks endian-swapped and untiled into rows.
@@ -77,6 +80,7 @@ class TextureCache {
   std::map<std::array<uint32_t, 8>, VkSampler> samplers_;
   std::vector<uint8_t> scratch_;
   uint32_t uploads_ = 0;
+  std::function<void()> before_upload_;
 };
 
 }  // namespace any360::gfx::vk

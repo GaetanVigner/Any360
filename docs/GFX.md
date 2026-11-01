@@ -157,9 +157,36 @@ From the Crackdown runs (each one cost a debugging session there):
    renderer's `frame()`, checked headless in `gfx_render_tests`), then the `Presenter` shows it in a window. The
    window comes from SDL3 and the platform layer makes the Vulkan surface from its native handle (Win32 for now,
    X11 / Wayland next), which also works with SDL builds that lack SDL's own Vulkan support (the reference SDK's).
-   `gfx_window_demo` runs the whole chain at 77 FPS (RTX 5070 Ti) and 61 FPS (Radeon integrated) for a 1280x720
-   frame; the time goes into the deliberately simple paths (all mirrored memory copied per draw, one submission
-   per draw, CPU untiling and readback). Learned: readback buffers need cached host memory (from 3 to 77 FPS).
+   Learned: readback buffers need cached host memory (from 3 to 77 FPS on the first version).
+### Speed (2026-11-01)
+
+Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured
+1280x720 quad, a resolve, a swap, a present per frame), per frame:
+
+| Step | 2,000 draws before | After |
+|---|---|---|
+| Guest memory to the GPU | 381 ms (8 MB copied per draw) | 0 (imported in place) |
+| Draw recording and submission | 178 ms (a submit and a wait per draw) | 2.5 ms (one batch) |
+| Resolve | 6.0 ms (texel by texel) | 1.5 ms (4-texel runs, threads) |
+| Swap | 6.0 ms (read back, untiled, swizzled on the CPU) | 0 (presented from the resolved surface) |
+| Frame rate, RTX 5070 Ti | 2 FPS | 214 FPS |
+| Frame rate, Radeon integrated | | 153 FPS |
+
+- **Guest memory in place**: with `VK_EXT_external_memory_host` (NVIDIA, AMD, RADV; 4 KB alignment) the guest's
+  physical memory is imported as the storage buffer the translated shaders fetch from; nothing is copied. Without
+  it, the mirror is copied once per batch.
+- **Batches**: draws are recorded into one command buffer, the render pass kept open while the targets stay the
+  same; constants, indices and texture descriptor sets come from rings and pools reset at each flush. The batch
+  runs before anything the CPU can observe of the GPU's progress (fences, memory writes, scratch registers,
+  interrupts, the read pointer: `Renderer::Flush`, called by the command processor), so a title never rewrites
+  memory pending draws still read; resolves, swaps, clears, readbacks and texture uploads flush first.
+- **Swap from the GPU**: when the front buffer is exactly the last resolve's destination (same address, format and
+  endianness, colour components unswizzled), the frame is that resolve's source surface, blitted to the window
+  without any readback; otherwise it is read from guest memory as before (both paths tested).
+
+What remains on the CPU: the resolve's readback and tiling into guest memory (needed while the CPU or a later
+texture can read it), texture untiling and hashing, and translating shaders the first time.
+
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames
    then reach the window.

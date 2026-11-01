@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,10 @@ class Presenter {
   // Shows `rgba` (width x height, R in the low byte). False with error() on failure; a swapchain the window has
   // outgrown is recreated on the next Resize.
   bool Present(const uint32_t* rgba, uint32_t width, uint32_t height);
+  // Shows a width x height image already on the GPU: `blit` records its blit onto the swapchain image (in
+  // TRANSFER_DST layout) over the rectangle given.
+  using BlitFn = std::function<void(VkCommandBuffer, VkImage target, VkOffset3D dst0, VkOffset3D dst1)>;
+  bool Present(const BlitFn& blit, uint32_t width, uint32_t height);
 
   uint64_t presented() const { return presented_; }
   VkFormat format() const { return format_; }
@@ -32,6 +37,7 @@ class Presenter {
     return false;
   }
   void DestroySwapchain();
+  bool PresentWith(const uint32_t* rgba, const BlitFn* blit, uint32_t width, uint32_t height);
 
   Device& device_;
   VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
