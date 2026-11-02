@@ -311,6 +311,15 @@ class VulkanRenderer : public gfx::Renderer {
     }
   };
   std::unordered_map<std::vector<uint64_t>, VkDescriptorSet, SetKeyHash> batch_sets_;
+  // Reused by each draw (thousands a frame): each stage's views and samplers, a texture set's key and writes.
+  struct StageTextures {
+    std::vector<VkImageView> views;
+    std::vector<VkSampler> samplers;
+  } stage_textures_[2];
+  std::vector<uint64_t> set_key_;
+  std::vector<std::function<void()>> finished_actions_;  // the completion thread's, swapped with a batch's
+  std::vector<VkDescriptorImageInfo> set_infos_;
+  std::vector<VkWriteDescriptorSet> set_writes_;
   // Dynamic state last recorded into the open batch, so a draw records only what changed.
   struct RecordedState {
     VkPipeline pipeline = VK_NULL_HANDLE;

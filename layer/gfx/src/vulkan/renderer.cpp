@@ -720,10 +720,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
 
   // Textures and samplers of each stage, in the order the translated shader binds them.
-  struct StageTextures {
-    std::vector<VkImageView> views;
-    std::vector<VkSampler> samplers;
-  } stage_textures[2];
+  StageTextures (&stage_textures)[2] = stage_textures_;
+  for (StageTextures& st : stage_textures) st.views.clear(), st.samplers.clear();
   uint32_t swizzled_signs[8] = {};
   for (uint32_t stage = 0; stage < 2; ++stage) {
     TranslatedShader* shader = stage ? ps : vs;
@@ -1133,8 +1131,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     const StageTextures& st = stage_textures[stage];
     if (st.views.empty() && st.samplers.empty()) continue;
     VkDescriptorSetLayout layout = TextureSetLayout(stage == 0, uint32_t(st.views.size()), uint32_t(st.samplers.size()));
-    std::vector<uint64_t> set_key;
-    set_key.reserve(1 + st.views.size() + st.samplers.size());
+    std::vector<uint64_t>& set_key = set_key_;
+    set_key.clear();
     set_key.push_back(uint64_t(layout));
     for (VkImageView v : st.views) set_key.push_back(uint64_t(v));
     for (VkSampler s : st.samplers) set_key.push_back(uint64_t(s));
@@ -1151,8 +1149,10 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       return;
     }
     ++draw_sets_;
-    std::vector<VkDescriptorImageInfo> infos(st.views.size() + st.samplers.size());
-    std::vector<VkWriteDescriptorSet> writes(infos.size());
+    std::vector<VkDescriptorImageInfo>& infos = set_infos_;
+    std::vector<VkWriteDescriptorSet>& writes = set_writes_;
+    infos.resize(st.views.size() + st.samplers.size());
+    writes.resize(infos.size());
     for (size_t i = 0; i < infos.size(); ++i) {
       const bool is_image = i < st.views.size();
       infos[i] = is_image ? VkDescriptorImageInfo{VK_NULL_HANDLE, st.views[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
@@ -1161,7 +1161,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
                    is_image ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLER, &infos[i], nullptr, nullptr};
     }
     f.vkUpdateDescriptorSets(device_.device(), uint32_t(writes.size()), writes.data(), 0, nullptr);
-    batch_sets_.emplace(std::move(set_key), texture_sets[stage]);
+    batch_sets_.emplace(set_key, texture_sets[stage]);  // a copy: the key's buffer stays for the next draw
   }
 
   {
@@ -1377,7 +1377,7 @@ void VulkanRenderer::Complete() {
     FinishBatch(b);
     // Actions WhenDone attached while these ran, until none is left: then the batch is done.
     for (;;) {
-      std::vector<std::function<void()>> late;
+      std::vector<std::function<void()>>& late = finished_actions_;
       {
         std::lock_guard lock(done_mutex_);
         if (b.actions.empty()) {
@@ -1388,6 +1388,7 @@ void VulkanRenderer::Complete() {
         late.swap(b.actions);
       }
       for (auto& action : late) action();
+      late.clear();
     }
     done_cv_.notify_all();
   }
@@ -1395,16 +1396,21 @@ void VulkanRenderer::Complete() {
 
 void VulkanRenderer::FinishBatch(Batch& b) {
   FinishWriteBacks(b);
-  for (Buffer& staging : b.staging) DestroyBuffer(device_, staging);
-  b.staging.clear();
+  if (textures_) {
+    textures_->RecycleStaging(b.staging);  // for later uploads
+  } else {
+    for (Buffer& staging : b.staging) DestroyBuffer(device_, staging);
+    b.staging.clear();
+  }
   for (Image& image : b.retired) DestroyImage(device_, image);
   b.retired.clear();
-  std::vector<std::function<void()>> actions;
+  std::vector<std::function<void()>>& actions = finished_actions_;  // reused: no allocation per batch
   {
     std::lock_guard lock(done_mutex_);
     actions.swap(b.actions);
   }
   for (auto& action : actions) action();
+  actions.clear();
 }
 
 namespace {
@@ -1896,7 +1902,8 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
 }
 
 void VulkanRenderer::Invalidate(uint32_t base, uint32_t size) {
-  if (textures_) textures_->MemoryChanged(base & 0x1FFFFFFF, uint32_t(std::min<uint64_t>(uint64_t(base & 0x1FFFFFFF) + size, mirror_bytes_)));
+  // A coherency request (hundreds a frame): with the CPU's writes watched, the textures already know.
+  if (textures_ && !textures_->watching()) textures_->MemoryChanged(base & 0x1FFFFFFF, uint32_t(std::min<uint64_t>(uint64_t(base & 0x1FFFFFFF) + size, mirror_bytes_)));
 }
 
 bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t pitch, uint32_t rows,

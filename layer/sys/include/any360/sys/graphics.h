@@ -28,6 +28,8 @@ class GpuBackend {
   virtual uint32_t ReadRegister(uint32_t /*index*/) { return 0; }
   // A vertical blank, before the title's interrupt callback runs (the GPU's vblank counter moves).
   virtual void Vblank() {}
+  // After the vertical blank's callback has run: what the GPU waits on in memory may have changed.
+  virtual void GuestProgress() {}
 };
 
 // The GPU register index an MMIO address (0x7FC80000 - 0x7FCFFFFF) names.

@@ -94,6 +94,7 @@ class TextureCache {
   // `watch(begin, end)` arms a one-shot watch, and the host reports writes with QueueMemoryChanged. Watched textures
   // are hashed again only after such a write, not at every frame.
   void SetMemoryWatch(std::function<void(uint32_t, uint32_t)> watch) { watch_ = std::move(watch); }
+  bool watching() const { return bool(watch_); }
   void MemoryChanged(uint32_t begin, uint32_t end);
   // Where uploads are recorded: the renderer's open batch (outside rendering), so an upload is one more command in it
   // rather than a submission waited for; draws recorded before it still read the old content, in GPU order. Without
@@ -101,6 +102,8 @@ class TextureCache {
   void SetRecorder(std::function<VkCommandBuffer()> recorder) { recorder_ = std::move(recorder); }
   // The staging buffers of the uploads recorded since the last call, for the batch that reads them to free.
   void TakeStaging(std::vector<Buffer>& out);
+  // Staging buffers back from a batch that has run (any thread): kept for later uploads instead of freed.
+  void RecycleStaging(std::vector<Buffer>& buffers);
   // MemoryChanged from another thread (the renderer's completion thread): applied before the next texture use.
   void QueueMemoryChanged(uint32_t begin, uint32_t end);
 
@@ -172,6 +175,14 @@ class TextureCache {
   std::unordered_map<std::array<uint32_t, 8>, FastView, FastKeyHash> fast_;
   std::function<VkCommandBuffer()> recorder_;
   std::vector<Buffer> pending_staging_;  // staging buffers of uploads recorded in the open batch
+  // Staging buffers free for uploads (a video plane each frame would otherwise allocate device memory each frame).
+  bool AcquireStaging(VkDeviceSize size, Buffer& out);
+  std::mutex staging_mutex_;
+  std::vector<Buffer> free_staging_;
+  VkDeviceSize free_staging_bytes_ = 0;
+  // Reused by each upload: the levels' blocks and copy regions.
+  std::vector<uint8_t> upload_blocks_, upload_level_;
+  std::vector<VkBufferImageCopy> upload_regions_;
   std::mutex changed_mutex_;
   std::vector<std::pair<uint32_t, uint32_t>> changed_;  // queued MemoryChanged ranges
   std::map<uint32_t, GpuSource> gpu_sources_;  // by base

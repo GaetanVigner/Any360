@@ -14,8 +14,11 @@
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <mutex>
+#include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "any360/sys/graphics.h"
@@ -98,6 +101,16 @@ class CommandProcessor : public sys::GpuBackend {
   void WriteRegister(uint32_t index, uint32_t value) override;
   uint32_t ReadRegister(uint32_t index) override;
   void Vblank() override;
+  void GuestProgress() override { NotifyProgress(); }
+
+  // WAIT_REG_MEM polls, then sleeps until the guest makes progress (a vertical blank's callback, a CPU register
+  // write, a fence written after draws), at most 1 ms. Spinning: it only yields, never sleeps (as ReXGlue without
+  // vsync: the lowest latency for the most CPU).
+  void SetSpinWaits(bool spin) { spin_waits_ = spin; }
+  // What the CPU sees of the GPU's progress (fences, memory writes, interrupts): once the draws before them have run
+  // (true, the default), or as the stream reaches them (false, as the reference: no GPU round trip per fence).
+  void SetWritesAfterDraws(bool after) { writes_after_draws_ = after; }
+  void NotifyProgress();
 
   // Executes the ring from the read pointer to the write pointer; false when stopped in a wait.
   bool Execute();
@@ -122,6 +135,22 @@ class CommandProcessor : public sys::GpuBackend {
   void RestoreShader(uint32_t type, std::vector<uint32_t> microcode);
   bool Replay(uint32_t ring_base, uint32_t ring_dwords, uint32_t read, uint32_t write);
   uint32_t replay_skipped_waits() const { return replay_skipped_waits_; }
+  // Where its time goes (nanoseconds, summed; the rest it had nothing to run): executing the ring (draws included),
+  // and within that, held in WAIT_REG_MEM by the CPU; and the kicks.
+  uint64_t ns_busy() const { return ns_busy_; }
+  uint64_t ns_waiting() const { return ns_waiting_; }
+  uint64_t kicks() const { return kicks_; }
+  // For diagnostics: the WAIT_REG_MEM packets by what they poll (bit 4 of wait_info: memory), how often, how long
+  // they held the ring, and how many a write queued after earlier draws satisfied ahead of the GPU. Taken and reset.
+  struct WaitSite {
+    uint32_t wait_info, poll, reference, count;
+    uint64_t ns;
+    uint32_t ahead;
+  };
+  std::vector<WaitSite> TakeWaitSites();
+  // For diagnostics: the first slow memory waits (over 0.5 ms), each with the packets before it and when the write
+  // queued at its address landed. Taken.
+  std::vector<std::string> TakeWaitTraces();
   // The display gamma ramp the title wrote through DC_LUT_* (the reference's defaults until it does).
   const uint32_t* gamma_table() const { return gamma_table_.data(); }
   const uint32_t* gamma_pwl() const { return gamma_pwl_.data(); }
@@ -148,8 +177,11 @@ class CommandProcessor : public sys::GpuBackend {
   uint8_t* Host(uint32_t address) const { return physical_ + (address & 0x1FFFFFFF); }
   // What the CPU sees of the GPU's progress, once the draws so far have run (the renderer decides when).
   void AfterDraws(std::function<void()> action) {
-    if (renderer_) {
-      renderer_->WhenDone(std::move(action));
+    if (renderer_ && writes_after_draws_) {
+      renderer_->WhenDone([this, action = std::move(action)] {
+        action();
+        NotifyProgress();
+      });
     } else {
       action();
     }
@@ -158,6 +190,28 @@ class CommandProcessor : public sys::GpuBackend {
   void StoreRaw(uint32_t address, uint32_t value);
   uint32_t LoadBig(uint32_t address) const;
   void StoreBig(uint32_t address, uint32_t value);
+  // Guest memory the stream writes after earlier draws (fences, MEM_WRITE, REG_TO_MEM...): queued here as it is
+  // recorded, until written. A wait in the same stream on one of them compares against the queued value: the GPU
+  // runs its commands in order, so what follows the wait still runs after those draws.
+  void StoreAfterDraws(uint32_t address, std::vector<uint32_t> raw_values);
+  bool Queued(uint32_t address, uint32_t& raw_value);
+  struct QueuedWrite {
+    uint32_t raw;
+    uint64_t sequence;
+  };
+  std::mutex queued_mutex_;
+  std::unordered_map<uint32_t, QueuedWrite> queued_;
+  uint64_t queued_sequence_ = 0;
+  std::mutex wait_sites_mutex_;
+  std::map<uint64_t, WaitSite> wait_sites_;
+  struct Recent {
+    uint32_t opcode, first, second;
+  };
+  std::array<Recent, 12> recent_{};
+  uint32_t recent_next_ = 0;
+  std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> landed_;  // under queued_mutex_
+  std::vector<std::string> wait_traces_;  // under wait_sites_mutex_
+  uint32_t wait_traces_taken_ = 0;
 
   uint8_t* physical_;
   Renderer* renderer_ = nullptr;
@@ -166,6 +220,7 @@ class CommandProcessor : public sys::GpuBackend {
   uint32_t display_ = 1280u << 16 | 720u;
   uint32_t ring_base_ = 0, ring_dwords_ = 0, write_back_ = 0, write_back_block_log2_ = 0;
   std::atomic<uint32_t> read_index_{0}, write_index_{0}, counter_{0};
+  std::atomic<uint64_t> ns_busy_{0}, ns_waiting_{0}, kicks_{0};
   std::atomic<bool> busy_{false}, stopping_{false};
   uint64_t bin_mask_ = ~0ull, bin_select_ = ~0ull;
   Shader shaders_[2];
@@ -178,6 +233,11 @@ class CommandProcessor : public sys::GpuBackend {
   uint32_t gamma_component_ = 0;  // the next red, green or blue of DC_LUT_SEQ_COLOR / DC_LUT_PWL_DATA
   std::mutex mutex_;
   std::condition_variable kicked_;
+  std::mutex progress_mutex_;
+  std::condition_variable progress_cv_;
+  std::atomic<uint64_t> progress_{0};
+  std::atomic<bool> spin_waits_{false};
+  bool writes_after_draws_ = true;
   std::thread worker_;
 };
 

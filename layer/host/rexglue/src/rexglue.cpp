@@ -5,6 +5,7 @@
 // thread, which creates it).
 #include "any360/host/rexglue.h"
 
+#include <rex/cvar.h>
 #include <rex/runtime.h>
 #include <rex/system/function_dispatcher.h>
 #include <rex/system/kernel_state.h>
@@ -144,6 +145,29 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
                   (s.ns_submit - last_.ns_submit) / ms, (s.ns_resolves - last_.ns_resolves) / ms,
                   (s.ns_swaps - last_.ns_swaps) / ms, guest_memory_in_place() ? "in place" : "copied");
     log_(line);
+    if (cp_) {
+      const uint64_t busy = cp_->ns_busy(), waiting = cp_->ns_waiting(), kicks = cp_->kicks();
+      char line_cp[256];
+      std::snprintf(line_cp, sizeof(line_cp),
+                    "Any360: command processor per frame: %.2f ms running the ring (%.2f ms of it in WAIT_REG_MEM), "
+                    "%.1f kicks; %.1f%% of the time with nothing to run",
+                    (busy - last_busy_) / ms, (waiting - last_waiting_) / ms, (kicks - last_kicks_) / n,
+                    100.0 * (1.0 - (busy - last_busy_) / 1e9 / seconds));
+      log_(line_cp);
+      last_busy_ = busy, last_waiting_ = waiting, last_kicks_ = kicks;
+      auto sites = cp_->TakeWaitSites();
+      std::sort(sites.begin(), sites.end(), [](const auto& a, const auto& b) { return a.ns > b.ns; });
+      std::string waits = "Any360: WAIT_REG_MEM per frame by site:";
+      for (size_t i = 0; i < sites.size() && i < 6; ++i) {
+        char line[200];
+        std::snprintf(line, sizeof(line), " %s %08X func %u ref %08X: %.1f waits %.2f ms (%.1f queued ahead);",
+                      (sites[i].wait_info & 0x10) ? "memory" : "register", sites[i].poll, sites[i].wait_info & 7,
+                      sites[i].reference, sites[i].count / double(n), sites[i].ns / ms, sites[i].ahead / double(n));
+        waits += line;
+      }
+      log_(waits);
+      for (const std::string& trace : cp_->TakeWaitTraces()) log_("Any360: " + trace);
+    }
     char detail[512];
     std::snprintf(detail, sizeof(detail),
                   "Any360: per frame: resolves %.1f on the GPU, %.1f read back, %.1f depth, %.1f written back later; "
@@ -193,6 +217,10 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
 
   std::function<void(const std::string&)> log_;
   double stats_seconds_;
+ public:
+  gfx::CommandProcessor* cp_ = nullptr;  // for the report: where the command processor's time goes
+ private:
+  uint64_t last_busy_ = 0, last_waiting_ = 0, last_kicks_ = 0;
   uint64_t frames_ = 0;
   std::chrono::steady_clock::time_point since_;
   gfx::vk::RendererStats last_;
@@ -407,6 +435,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   }
   binding->cp = std::make_unique<gfx::CommandProcessor>(physical);
   binding->cp->SetRenderer(binding->renderer.get());
+  binding->renderer->cp_ = binding->cp.get();
   binding->cp->SetDisplaySize(options.width, options.height);
 
   // any360::sys's graphics kernel: the command processor as its backend, interrupts through the runtime's thread.
@@ -426,7 +455,13 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   range->write = &WriteGpuRegister;
 
   binding->cp->Start();
-  sys::Graphics().StartVblank(options.vblank_hz);
+  double vblank_hz = options.vblank_hz;
+  const bool vsync = rex::cvar::GetFlagByName("vsync") == "true";
+  if (vblank_hz <= 0.0) vblank_hz = vsync ? 60.0 : 1000.0;
+  // As the runtime's own command processor: without vsync, waits spin.
+  binding->cp->SetSpinWaits(!vsync);
+  binding->cp->SetWritesAfterDraws(options.writes_after_draws);
+  sys::Graphics().StartVblank(vblank_hz);
   g_binding = binding.release();
   g_bound = true;
   return true;

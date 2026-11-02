@@ -101,6 +101,7 @@ void GraphicsKernel::StartVblank(double hz) {
       next += period;
       if (backend_) backend_->Vblank();
       RaiseInterrupt(Objects().guest(), 0);
+      if (backend_) backend_->GuestProgress();
     }
   });
 }

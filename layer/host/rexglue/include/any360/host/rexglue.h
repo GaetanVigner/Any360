@@ -33,11 +33,17 @@ namespace any360::host::rexglue {
 struct GraphicsOptions {
   std::string gpu;  // a substring of the Vulkan device name to prefer ("NVIDIA", "Radeon"); else discrete first
   uint32_t width = 1280, height = 720;  // the display mode the GPU reports, and the window's first size
-  double vblank_hz = 60.0;
+  // Vertical blanks a second; 0: as the runtime's own GPU does (60 with its vsync setting on, else 1000: titles pace
+  // their presents on vertical blanks, and the runtime runs them uncapped that way).
+  double vblank_hz = 0.0;
   // Frames drawn inside the title's own window (the visible top-level window of the thread calling StartGraphics,
   // the runtime's UI thread), as a child covering its client area that leaves input and focus to it: the runtime's
   // input (SDL) only reads controllers while one of its windows has the focus. False: a window of its own.
   bool embed = true;
+  // Fences, memory writes and interrupts of the command stream: false, as the runtime's own GPU, when the stream
+  // reaches them (the CPU may see a fence before the draws before it are on screen, never waits on the GPU); true,
+  // once those draws have run (what the CPU reads after them is there, at the cost of a GPU round trip each).
+  bool writes_after_draws = false;
   // Where the binding reports, every `stats_seconds`: frames per second and the renderer's cost per frame, the
   // draws it could not draw by reason. None: nothing reported.
   std::function<void(const std::string&)> log;

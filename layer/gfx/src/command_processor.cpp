@@ -99,6 +99,7 @@ void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
   if (index >= reg::kRegisterCount) return;
   std::atomic_ref<uint32_t>(registers_[index]).store(value, std::memory_order_release);
   if (index >= reg::DC_LUT_RW_INDEX && index <= reg::DC_LUT_30_COLOR) GammaRampWrite(index);
+  NotifyProgress();
   if (index == reg::CP_RB_WPTR) {
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -123,6 +124,56 @@ uint32_t CommandProcessor::ReadRegister(uint32_t index) {
 
 void CommandProcessor::Vblank() { ++counter_; }
 
+void CommandProcessor::StoreAfterDraws(uint32_t address, std::vector<uint32_t> raw_values) {
+  address &= ~3u;
+  uint64_t first;
+  {
+    std::lock_guard<std::mutex> lock(queued_mutex_);
+    first = queued_sequence_ + 1;
+    for (uint32_t i = 0; i < raw_values.size(); ++i) queued_[(address + 4 * i) & 0x1FFFFFFF] = {raw_values[i], ++queued_sequence_};
+  }
+  AfterDraws([this, address, first, raw_values = std::move(raw_values)] {
+    std::lock_guard<std::mutex> lock(queued_mutex_);
+    for (uint32_t i = 0; i < raw_values.size(); ++i) {
+      const uint32_t at = (address + 4 * i) & 0x1FFFFFFF;
+      StoreRaw(at, raw_values[i]);
+      landed_[at] = std::chrono::steady_clock::now();
+      // Written: no longer queued, unless a later write to it is.
+      if (const auto q = queued_.find(at); q != queued_.end() && q->second.sequence == first + i) queued_.erase(q);
+    }
+  });
+}
+
+bool CommandProcessor::Queued(uint32_t address, uint32_t& raw_value) {
+  std::lock_guard<std::mutex> lock(queued_mutex_);
+  const auto q = queued_.find(address & 0x1FFFFFFF);
+  if (q == queued_.end()) return false;
+  raw_value = q->second.raw;
+  return true;
+}
+
+std::vector<std::string> CommandProcessor::TakeWaitTraces() {
+  std::lock_guard<std::mutex> lock(wait_sites_mutex_);
+  wait_traces_taken_ = 0;  // a few more for the next report
+  return std::move(wait_traces_);
+}
+
+std::vector<CommandProcessor::WaitSite> CommandProcessor::TakeWaitSites() {
+  std::lock_guard<std::mutex> lock(wait_sites_mutex_);
+  std::vector<WaitSite> sites;
+  for (const auto& [key, site] : wait_sites_) sites.push_back(site);
+  wait_sites_.clear();
+  return sites;
+}
+
+void CommandProcessor::NotifyProgress() {
+  {
+    std::lock_guard<std::mutex> lock(progress_mutex_);
+    ++progress_;
+  }
+  progress_cv_.notify_all();
+}
+
 void CommandProcessor::Interrupt(uint32_t source, uint32_t cpu) {
   if (interrupt_) {
     interrupt_(source, cpu);
@@ -143,7 +194,7 @@ void CommandProcessor::SetRegister(uint32_t index, uint32_t value) {
     const uint32_t n = index - reg::SCRATCH_REG0;
     if (reg(reg::SCRATCH_UMSK) & (1u << n)) {
       const uint32_t address = reg(reg::SCRATCH_ADDR) + 4 * n;
-      AfterDraws([this, address, value] { StoreBig(address, value); });
+      StoreAfterDraws(address, {std::byteswap(value)});
     }
   } else if (index == reg::COHER_STATUS_HOST) {
     // A coherency request: pending (bit 31) until a WAIT_REG_MEM on this register completes it.
@@ -209,7 +260,9 @@ void CommandProcessor::MakeCoherent() {
 bool CommandProcessor::Test(uint32_t wait_info, uint32_t poll, uint32_t reference, uint32_t mask, bool coherent) {
   uint32_t value;
   if (wait_info & 0x10) {
-    value = GpuSwap(LoadRaw(poll & ~3u), Endian(poll & 3));
+    uint32_t raw;
+    if (!Queued(poll & ~3u, raw)) raw = LoadRaw(poll & ~3u);
+    value = GpuSwap(raw, Endian(poll & 3));
   } else {
     // The register file itself, not the MMIO view.
     if (coherent && poll == reg::COHER_STATUS_HOST) MakeCoherent();
@@ -220,7 +273,61 @@ bool CommandProcessor::Test(uint32_t wait_info, uint32_t poll, uint32_t referenc
 
 bool CommandProcessor::Wait(uint32_t wait_info, uint32_t poll, uint32_t reference, uint32_t mask, uint32_t interval) {
   bool submitted = false;
-  while (!Test(wait_info, poll, reference, mask, true)) {
+  const auto wait_start = std::chrono::steady_clock::now();
+  struct WaitTime {
+    std::atomic<uint64_t>& total;
+    std::chrono::steady_clock::time_point start;
+    ~WaitTime() {
+      total += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+    }
+  } wait_time{ns_waiting_, wait_start};
+  // For diagnostics, by site: held how long, and whether a queued write met it.
+  struct Site {
+    CommandProcessor* cp;
+    uint32_t wait_info, poll, reference;
+    std::chrono::steady_clock::time_point start;
+    bool ahead = false;
+    ~Site() {
+      const uint64_t ns =
+          uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+      if ((wait_info & 0x10) && ns > 500000) {
+        std::chrono::steady_clock::time_point landed{};
+        {
+          std::lock_guard<std::mutex> lock(cp->queued_mutex_);
+          if (const auto l = cp->landed_.find(poll & 0x1FFFFFFC); l != cp->landed_.end()) landed = l->second;
+        }
+        std::lock_guard<std::mutex> lock(cp->wait_sites_mutex_);
+        if (cp->wait_traces_taken_ < 3) {
+          ++cp->wait_traces_taken_;
+          char text[160];
+          std::snprintf(text, sizeof(text), "wait %08X==%08X held %.3f ms, queued write %s, landed %.3f ms after the wait began; before:",
+                        poll, reference, ns / 1e6, ahead ? "yes" : "no",
+                        landed > start ? std::chrono::duration<double, std::milli>(landed - start).count() : -1.0);
+          std::string trace = text;
+          for (uint32_t i = 0; i < cp->recent_.size(); ++i) {
+            const Recent& p = cp->recent_[(cp->recent_next_ + i) % cp->recent_.size()];
+            std::snprintf(text, sizeof(text), " %02X(%08X %08X)", p.opcode, p.first, p.second);
+            trace += text;
+          }
+          cp->wait_traces_.push_back(std::move(trace));
+        }
+      }
+      std::lock_guard<std::mutex> lock(cp->wait_sites_mutex_);
+      WaitSite& s = cp->wait_sites_[uint64_t(wait_info & 0x17) << 32 | poll];
+      s.wait_info = wait_info, s.poll = poll, s.reference = reference;
+      ++s.count, s.ns += ns, s.ahead += ahead;
+    }
+  } site{this, wait_info, poll, reference, wait_start};
+  if (wait_info & 0x10) {
+    uint32_t raw;
+    site.ahead = Queued(poll & ~3u, raw);
+  }
+  // The interval (1/256 ms) is only a hint: sleeping it out would hold the ring long after the value is there.
+  constexpr uint32_t kYieldPolls = 16;
+  uint32_t polls = 0;
+  for (;;) {
+    const uint64_t progress = progress_.load(std::memory_order_acquire);
+    if (Test(wait_info, poll, reference, mask, true)) return true;
     // What the wait may depend on (a fence written after earlier draws) starts on the GPU first.
     if (!submitted && renderer_) renderer_->Flush(), submitted = true;
     if (stopping_) return false;
@@ -228,14 +335,15 @@ bool CommandProcessor::Wait(uint32_t wait_info, uint32_t poll, uint32_t referenc
       ++replay_skipped_waits_;
       return true;
     }
-    // The interval is in units of 1/256 ms: long waits sleep, short ones yield.
-    if (interval >= 0x100) {
-      std::this_thread::sleep_for(std::chrono::microseconds(interval * 1000 / 0x100));
-    } else {
+    if (interval < 0x100 || polls < kYieldPolls || spin_waits_) {
+      ++polls;
       std::this_thread::yield();
+    } else {
+      // Progress since the test above is not lost: the count has moved.
+      std::unique_lock<std::mutex> lock(progress_mutex_);
+      progress_cv_.wait_for(lock, std::chrono::milliseconds(1), [&] { return progress_ != progress || stopping_; });
     }
   }
-  return true;
 }
 
 uint32_t CommandProcessor::Next(Reader& r) const {
@@ -250,6 +358,15 @@ bool CommandProcessor::Execute() {
   const uint32_t read = read_index_;
   if (!ring_dwords_ || write == read) return true;
   busy_ = true;
+  ++kicks_;
+  const auto busy_start = std::chrono::steady_clock::now();
+  struct BusyTime {
+    std::atomic<uint64_t>& total;
+    std::chrono::steady_clock::time_point start;
+    ~BusyTime() {
+      total += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+    }
+  } busy_time{ns_busy_, busy_start};
   if (capture_) capture_->Kick(ring_base_, ring_dwords_, read, write);
   Reader r{ring_base_, ring_dwords_, read, (write + ring_dwords_ - read) % ring_dwords_};
   bool ok = true;
@@ -318,6 +435,8 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     return true;
   }
   ++opcode_counts_[opcode];
+  recent_[recent_next_++ % recent_.size()] = {opcode, count > 0 && r.remaining > 0 ? LoadBig(r.base + 4 * (r.offset % r.capacity)) : 0,
+                                               count > 1 && r.remaining > 1 ? LoadBig(r.base + 4 * ((r.offset + 1) % r.capacity)) : 0};
   auto has = [&](uint32_t n) { return end - r.offset >= n; };
   auto write_constants = [&](uint32_t type, uint32_t index, uint32_t n, auto value_at) {
     static constexpr uint32_t kBase[] = {reg::kAluConstants, reg::kFetchConstants, reg::kBoolConstants, reg::kLoopConstants,
@@ -385,8 +504,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     case pm4::REG_TO_MEM:
       if (has(2)) {
         const uint32_t index = Next(r), address = Next(r);
-        const uint32_t value = GpuSwap(reg(index), Endian(address & 3));
-        AfterDraws([this, address, value] { StoreRaw(address & ~3u, value); });
+        StoreAfterDraws(address, {GpuSwap(reg(index), Endian(address & 3))});
       }
       break;
     case pm4::MEM_WRITE:
@@ -394,10 +512,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
         const uint32_t target = Next(r);
         std::vector<uint32_t> values;
         while (r.offset < end) values.push_back(GpuSwap(Next(r), Endian(target & 3)));
-        AfterDraws([this, target, values = std::move(values)] {
-          uint32_t address = target & ~3u;
-          for (uint32_t value : values) StoreRaw(address, value), address += 4;
-        });
+        StoreAfterDraws(target, std::move(values));
       }
       break;
     case pm4::COND_WRITE:
@@ -406,8 +521,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
                        data = Next(r);
         if (Test(wait_info, poll, reference, mask, false)) {
           if (wait_info & 0x100) {
-            const uint32_t value = GpuSwap(data, Endian(target & 3));
-            AfterDraws([this, target, value] { StoreRaw(target & ~3u, value); });
+            StoreAfterDraws(target, {GpuSwap(data, Endian(target & 3))});
           } else {
             SetRegister(target, data);
           }
@@ -423,7 +537,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
         const uint32_t initiator = Next(r), address = Next(r), value = Next(r);
         SetRegister(reg::VGT_EVENT_INITIATOR, initiator & 0x3F);
         const uint32_t fence = GpuSwap((initiator >> 31) ? counter_.load() : value, Endian(address & 3));
-        AfterDraws([this, address, fence] { StoreRaw(address & ~3u, fence); });
+        StoreAfterDraws(address, {fence});
       }
       break;
     case pm4::EVENT_WRITE_EXT:
@@ -634,6 +748,7 @@ void CommandProcessor::Stop() {
     stopping_ = true;
   }
   kicked_.notify_all();
+  NotifyProgress();
   if (worker_.joinable()) worker_.join();
   stopping_ = false;
 }

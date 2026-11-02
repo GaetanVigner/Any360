@@ -352,6 +352,8 @@ TextureCache::~TextureCache() {
   f.vkDeviceWaitIdle(d);
   for (Buffer& staging : pending_staging_) DestroyBuffer(device_, staging);
   pending_staging_.clear();
+  for (Buffer& staging : free_staging_) DestroyBuffer(device_, staging);
+  free_staging_.clear();
   for (auto& [key, t] : textures_) {
     if (!t) continue;
     for (auto& [swizzle, view] : t->views) f.vkDestroyImageView(d, view, nullptr);
@@ -610,10 +612,12 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     // Every level's blocks, one after the other (levels below the first are never sampled: left as they are).
     ++upload_log_[{t.base & 0x1FFFFFFF, t.format, t.width, t.height}];
     const auto load_start = std::chrono::steady_clock::now();
-    std::vector<uint8_t> blocks;
-    std::vector<VkBufferImageCopy> regions;
+    std::vector<uint8_t>& blocks = upload_blocks_;
+    std::vector<VkBufferImageCopy>& regions = upload_regions_;
+    blocks.clear();
+    regions.clear();
     for (uint32_t level = first_level; level <= last_level; ++level) {
-      std::vector<uint8_t> level_blocks;
+      std::vector<uint8_t>& level_blocks = upload_level_;
       if (!LoadLevel(t, *info, level, level_blocks, error)) return VK_NULL_HANDLE;
       VkBufferImageCopy region{};
       region.bufferOffset = blocks.size();
@@ -625,7 +629,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     }
     ns_load_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - load_start).count());
     Buffer staging;
-    if (!CreateBuffer(device_, blocks.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, staging)) {
+    if (!AcquireStaging(blocks.size(), staging)) {
       return error = "texture staging", VK_NULL_HANDLE;
     }
     std::memcpy(staging.mapped, blocks.data(), blocks.size());
@@ -659,7 +663,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       pending_staging_.push_back(staging);  // freed when the batch has run
     } else {
       const bool ok = device_.Submit(record);
-      DestroyBuffer(device_, staging);
+      std::vector<Buffer> done{staging};
+      RecycleStaging(done);
       if (!ok) return error = "texture upload", VK_NULL_HANDLE;
     }
     slot->content_hash = hash;
@@ -731,6 +736,41 @@ void TextureCache::DropGpuSources(uint32_t begin, uint32_t end) {
   }
 }
 
+bool TextureCache::AcquireStaging(VkDeviceSize size, Buffer& out) {
+  {
+    // The smallest free one that fits.
+    std::lock_guard<std::mutex> lock(staging_mutex_);
+    size_t best = free_staging_.size();
+    for (size_t i = 0; i < free_staging_.size(); ++i) {
+      if (free_staging_[i].size >= size && (best == free_staging_.size() || free_staging_[i].size < free_staging_[best].size)) best = i;
+    }
+    if (best != free_staging_.size()) {
+      out = free_staging_[best];
+      free_staging_[best] = free_staging_.back();
+      free_staging_.pop_back();
+      free_staging_bytes_ -= out.size;
+      return true;
+    }
+  }
+  // None: a new one, rounded up to a power of two (64 KB at least) so it serves other sizes later.
+  return CreateBuffer(device_, std::max<VkDeviceSize>(VkDeviceSize(1) << (64 - std::countl_zero(uint64_t(size - 1) | 0xFFFF)), size),
+                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, out);
+}
+
+void TextureCache::RecycleStaging(std::vector<Buffer>& buffers) {
+  constexpr VkDeviceSize kMaxFreeBytes = 64ull << 20;
+  std::lock_guard<std::mutex> lock(staging_mutex_);
+  for (Buffer& b : buffers) {
+    if (free_staging_bytes_ + b.size > kMaxFreeBytes) {
+      DestroyBuffer(device_, b);
+    } else {
+      free_staging_bytes_ += b.size;
+      free_staging_.push_back(b);
+    }
+  }
+  buffers.clear();
+}
+
 void TextureCache::TakeStaging(std::vector<Buffer>& out) {
   out.insert(out.end(), pending_staging_.begin(), pending_staging_.end());
   pending_staging_.clear();
@@ -742,11 +782,12 @@ void TextureCache::QueueMemoryChanged(uint32_t begin, uint32_t end) {
 }
 
 void TextureCache::MemoryChanged(uint32_t begin, uint32_t end) {
-  ++version_;
+  bool changed = false;
   for (auto& [key, texture] : textures_) {
     // (A texture being created right now has no entry yet: View reads memory after this.)
-    if (texture && texture->begin < end && begin < texture->end) texture->validated = 0;
+    if (texture && texture->begin < end && begin < texture->end) texture->validated = 0, changed = true;
   }
+  if (changed) ++version_;  // the views cached by fetch constant are checked again
 }
 
 }  // namespace any360::gfx::vk
