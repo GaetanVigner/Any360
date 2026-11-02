@@ -28,6 +28,9 @@ class Presenter {
   bool Present(const BlitFn& blit, uint32_t width, uint32_t height);
 
   uint64_t presented() const { return presented_; }
+  // Vertical sync (FIFO). Off (the default): frames as fast as they come, MAILBOX where the driver has it (no tearing),
+  // else IMMEDIATE. Takes effect at the next Resize.
+  void SetVsync(bool on) { vsync_ = on; }
   VkFormat format() const { return format_; }
   const std::string& error() const { return error_; }
 
@@ -52,6 +55,7 @@ class Presenter {
   Image frame_;
   Buffer staging_;
   uint64_t presented_ = 0;
+  bool vsync_ = false;
   std::string error_;
 };
 

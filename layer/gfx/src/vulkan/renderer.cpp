@@ -108,15 +108,29 @@ VulkanRenderer::~VulkanRenderer() {
   const Functions& f = device_.fn();
   VkDevice d = device_.device();
   if (!d) return;
-  if (batch_) Flush();
+  if (batches_[0].cb) {
+    Flush();
+    WaitIdle();
+  }
+  {
+    std::lock_guard lock(done_mutex_);
+    stopping_ = true;
+  }
+  work_cv_.notify_all();
+  if (completer_.joinable()) completer_.join();
   f.vkDeviceWaitIdle(d);
-  if (batch_fence_) f.vkDestroyFence(d, batch_fence_, nullptr);
+  for (Batch& b : batches_) {
+    if (b.fence) f.vkDestroyFence(d, b.fence, nullptr);
+    if (b.draw_pool) f.vkDestroyDescriptorPool(d, b.draw_pool, nullptr);
+    if (b.depth_pool) f.vkDestroyDescriptorPool(d, b.depth_pool, nullptr);
+    DestroyBuffer(device_, b.constants);
+    DestroyBuffer(device_, b.indices);
+  }
   if (gamma_pipeline_) f.vkDestroyPipeline(d, gamma_pipeline_, nullptr);
   if (gamma_pipeline_layout_) f.vkDestroyPipelineLayout(d, gamma_pipeline_layout_, nullptr);
   if (gamma_pool_) f.vkDestroyDescriptorPool(d, gamma_pool_, nullptr);
   if (depth_pipeline_) f.vkDestroyPipeline(d, depth_pipeline_, nullptr);
   if (depth_pipeline_layout_) f.vkDestroyPipelineLayout(d, depth_pipeline_layout_, nullptr);
-  if (depth_pool_) f.vkDestroyDescriptorPool(d, depth_pool_, nullptr);
   if (depth_layout_) f.vkDestroyDescriptorSetLayout(d, depth_layout_, nullptr);
   if (gamma_layout_) f.vkDestroyDescriptorSetLayout(d, gamma_layout_, nullptr);
   DestroyBuffer(device_, gamma_lut_buffer_);
@@ -129,7 +143,6 @@ VulkanRenderer::~VulkanRenderer() {
     }
   }
   if (pool_) f.vkDestroyDescriptorPool(d, pool_, nullptr);
-  if (draw_pool_) f.vkDestroyDescriptorPool(d, draw_pool_, nullptr);
   for (auto& [key, layout] : pipeline_layouts_) f.vkDestroyPipelineLayout(d, layout, nullptr);
   for (auto& [key, layout] : texture_layouts_) f.vkDestroyDescriptorSetLayout(d, layout, nullptr);
   for (VkDescriptorSetLayout l : {shared_layout_, constants_layout_, empty_layout_}) {
@@ -137,8 +150,6 @@ VulkanRenderer::~VulkanRenderer() {
   }
   textures_.reset();
   DestroyBuffer(device_, shared_memory_);
-  DestroyBuffer(device_, constants_);
-  DestroyBuffer(device_, indices_);
   for (auto& [key, surface] : surfaces_) {
     if (surface->depth_view) f.vkDestroyImageView(d, surface->depth_view, nullptr);
     DestroyImage(device_, surface->image);
@@ -189,7 +200,8 @@ bool VulkanRenderer::Initialize() {
         if (r.stale) {
           WriteBackResolved(base, r);
         } else {
-          Flush();  // its write is recorded in the batch
+          Flush();  // its write is recorded in a batch: done once that has run
+          WaitIdle();
         }
       }
     }
@@ -199,13 +211,15 @@ bool VulkanRenderer::Initialize() {
     EndRendering();  // transfers and barriers are recorded outside rendering
     return cb;
   });
-  // Texture sets: allocated per draw, the pool reset once the draw has run.
+  // Texture sets: allocated per draw, each batch's pool reset once the batch has run.
   VkDescriptorPoolSize draw_sizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kDrawDescriptors}, {VK_DESCRIPTOR_TYPE_SAMPLER, kDrawDescriptors}};
   VkDescriptorPoolCreateInfo draw_pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
   draw_pool_info.maxSets = kDrawSets;
   draw_pool_info.poolSizeCount = 2;
   draw_pool_info.pPoolSizes = draw_sizes;
-  if (f.vkCreateDescriptorPool(d, &draw_pool_info, nullptr, &draw_pool_) != VK_SUCCESS) return Fail("texture descriptor pool");
+  for (Batch& b : batches_) {
+    if (f.vkCreateDescriptorPool(d, &draw_pool_info, nullptr, &b.draw_pool) != VK_SUCCESS) return Fail("texture descriptor pool");
+  }
 
   // Guest memory for the shaders: imported in place when the device can (VK_EXT_external_memory_host, an aligned
   // allocation), so nothing is copied; otherwise a mirror copied before each draw.
@@ -213,59 +227,65 @@ bool VulkanRenderer::Initialize() {
   if (!shared_memory_imported_ && !CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, shared_memory_)) {
     return Fail("guest memory buffer");
   }
-  // One draw's constants, indices.
-  // The batch's rings: constants and indices of every draw until the next flush.
-  if (!CreateBuffer(device_, 32u << 20, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, constants_) ||
-      !CreateBuffer(device_, 16u << 20, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true, indices_)) {
-    return Fail("buffers");
+  // Each batch's rings: constants and indices of every draw until the next flush.
+  for (Batch& b : batches_) {
+    if (!CreateBuffer(device_, 32u << 20, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, b.constants) ||
+        !CreateBuffer(device_, 16u << 20, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true, b.indices)) {
+      return Fail("buffers");
+    }
   }
 
   // Descriptor sets, written once: dynamic offsets select each draw's constants.
   VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-                                  {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, SpirvShaderTranslator::kConstantBufferCount}};
+                                  {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, SpirvShaderTranslator::kConstantBufferCount * kBatches}};
   VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-  pool_info.maxSets = 3;
+  pool_info.maxSets = 2 + kBatches;
   pool_info.poolSizeCount = 2;
   pool_info.pPoolSizes = sizes;
   if (f.vkCreateDescriptorPool(d, &pool_info, nullptr, &pool_) != VK_SUCCESS) return Fail("descriptor pool");
-  VkDescriptorSetLayout to_allocate[] = {shared_layout_, constants_layout_, empty_layout_};
-  VkDescriptorSet allocated[3];
+  VkDescriptorSetLayout to_allocate[2 + kBatches] = {shared_layout_, empty_layout_};
+  for (uint32_t i = 0; i < kBatches; ++i) to_allocate[2 + i] = constants_layout_;
+  VkDescriptorSet allocated[2 + kBatches];
   VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
   alloc.descriptorPool = pool_;
-  alloc.descriptorSetCount = 3;
+  alloc.descriptorSetCount = 2 + kBatches;
   alloc.pSetLayouts = to_allocate;
   if (f.vkAllocateDescriptorSets(d, &alloc, allocated) != VK_SUCCESS) return Fail("descriptor sets");
   shared_set_ = allocated[0];
-  constants_set_ = allocated[1];
-  empty_set_ = allocated[2];
+  empty_set_ = allocated[1];
+  for (uint32_t i = 0; i < kBatches; ++i) batches_[i].constants_set = allocated[2 + i];
   VkDescriptorBufferInfo shared_info{shared_memory_.buffer, 0, VK_WHOLE_SIZE};
   const uint32_t ranges[SpirvShaderTranslator::kConstantBufferCount] = {
       uint32_t(sizeof(SpirvShaderTranslator::SystemConstants)), kFloatBufferBytes, kFloatBufferBytes, kBoolLoopBytes, kFetchBytes};
-  VkDescriptorBufferInfo constant_infos[SpirvShaderTranslator::kConstantBufferCount];
-  VkWriteDescriptorSet writes[1 + SpirvShaderTranslator::kConstantBufferCount] = {};
-  writes[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, shared_set_, 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-               nullptr, &shared_info, nullptr};
-  for (uint32_t i = 0; i < SpirvShaderTranslator::kConstantBufferCount; ++i) {
-    constant_infos[i] = {constants_.buffer, 0, ranges[i]};
-    writes[1 + i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, constants_set_, i, 0, 1,
-                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, nullptr, &constant_infos[i], nullptr};
+  const VkWriteDescriptorSet shared_write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, shared_set_, 0, 0, 1,
+                                          VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &shared_info, nullptr};
+  f.vkUpdateDescriptorSets(d, 1, &shared_write, 0, nullptr);
+  for (Batch& b : batches_) {
+    VkDescriptorBufferInfo constant_infos[SpirvShaderTranslator::kConstantBufferCount];
+    VkWriteDescriptorSet writes[SpirvShaderTranslator::kConstantBufferCount] = {};
+    for (uint32_t i = 0; i < SpirvShaderTranslator::kConstantBufferCount; ++i) {
+      constant_infos[i] = {b.constants.buffer, 0, ranges[i]};
+      writes[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, b.constants_set, i, 0, 1,
+                   VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, nullptr, &constant_infos[i], nullptr};
+    }
+    f.vkUpdateDescriptorSets(d, SpirvShaderTranslator::kConstantBufferCount, writes, 0, nullptr);
   }
-  f.vkUpdateDescriptorSets(d, 1 + SpirvShaderTranslator::kConstantBufferCount, writes, 0, nullptr);
 
-  // The batch: one command buffer and its fence.
+  // The batches: a command buffer and a fence each; the completion thread that waits for them.
   VkCommandPoolCreateInfo batch_pool{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
   batch_pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
   batch_pool.queueFamilyIndex = device_.queue_family();
   VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-  if (f.vkCreateCommandPool(d, &batch_pool, nullptr, &batch_pool_) != VK_SUCCESS ||
-      f.vkCreateFence(d, &fence, nullptr, &batch_fence_) != VK_SUCCESS) {
-    return Fail("batch objects");
+  if (f.vkCreateCommandPool(d, &batch_pool, nullptr, &batch_pool_) != VK_SUCCESS) return Fail("batch objects");
+  for (Batch& b : batches_) {
+    if (f.vkCreateFence(d, &fence, nullptr, &b.fence) != VK_SUCCESS) return Fail("batch objects");
+    VkCommandBufferAllocateInfo batch_alloc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    batch_alloc.commandPool = batch_pool_;
+    batch_alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    batch_alloc.commandBufferCount = 1;
+    if (f.vkAllocateCommandBuffers(d, &batch_alloc, &b.cb) != VK_SUCCESS) return Fail("batch command buffer");
   }
-  VkCommandBufferAllocateInfo batch_alloc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-  batch_alloc.commandPool = batch_pool_;
-  batch_alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  batch_alloc.commandBufferCount = 1;
-  if (f.vkAllocateCommandBuffers(d, &batch_alloc, &batch_) != VK_SUCCESS) return Fail("batch command buffer");
+  completer_ = std::thread([this] { Complete(); });
   // Depth/stencil surfaces: D24S8 where the device has it (NVIDIA), else D32S8 (AMD).
   depth_format_ = VK_FORMAT_D32_SFLOAT_S8_UINT;
   VkFormatProperties props;
@@ -413,6 +433,7 @@ bool VulkanRenderer::ClearDepthStencil(const SurfaceKey& key, float depth, uint3
 
 bool VulkanRenderer::ReadBack(const SurfaceKey& key, uint32_t width, uint32_t height, std::vector<uint8_t>& bytes) {
   Flush();  // what was drawn before comes first
+  WaitIdle();  // and guest memory has what the batches write into it
   Surface* s = GetSurface(key);
   if (!s || key.depth || width > s->image.width || height > s->image.height) return false;
   const Functions& f = device_.fn();
@@ -594,6 +615,12 @@ VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key) {
 
 void VulkanRenderer::Draw(const DrawCall& draw) {
   Timer draw_timer(stats_.ns_draws);
+  auto section = std::chrono::steady_clock::now();
+  auto mark = [&](uint64_t& total) {
+    const auto now = std::chrono::steady_clock::now();
+    total += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(now - section).count());
+    section = now;
+  };
   const Functions& f = device_.fn();
   const uint32_t* regs = draw.registers;
   // EDRAM mode: 4 colour and depth, 5 depth only; anything else leaves the targets alone.
@@ -755,6 +782,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     return;
   }
 
+  mark(stats_.ns_draw_setup);
   // The surfaces: colour targets the pixel shader writes and RB_COLOR_MASK enables, the depth/stencil target when
   // the depth or stencil test is on; all at the pitch of RB_SURFACE_INFO.
   // An MSAA surface is drawn as its samples: EDRAM holds a 4x surface of pitch P like a 1x surface of pitch 2P
@@ -873,18 +901,19 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
                                                                 : 0;
   const uint32_t images_need = uint32_t(stage_textures[0].views.size() + stage_textures[1].views.size());
   const uint32_t samplers_need = uint32_t(stage_textures[0].samplers.size() + stage_textures[1].samplers.size());
-  if (constant_head_ + most > constants_.size || index_head_ + index_need > indices_.size || draw_sets_ + 2 > kDrawSets ||
+  if (constant_head_ + most > batch().constants.size || index_head_ + index_need > batch().indices.size || draw_sets_ + 2 > kDrawSets ||
       draw_images_ + images_need > kDrawDescriptors || draw_samplers_ + samplers_need > kDrawDescriptors) {
     Flush();
   }
   draw_images_ += images_need;
   draw_samplers_ += samplers_need;
-  uint8_t* base = static_cast<uint8_t*>(constants_.mapped);
+  mark(stats_.ns_draw_targets);
+  uint8_t* base = static_cast<uint8_t*>(batch().constants.mapped);
   uint32_t offsets[SpirvShaderTranslator::kConstantBufferCount];
   uint32_t& at = constant_head_;
+  // Each buffer filled in full by what follows (the system constants cleared first).
   auto reserve = [&](uint32_t index, uint32_t bytes) {
     offsets[index] = at;
-    std::memset(base + at, 0, bytes);
     at = AlignUp(at + bytes, constant_alignment_);
     return base + offsets[index];
   };
@@ -892,6 +921,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // offset for a host viewport covering the target.
   auto* system = reinterpret_cast<SpirvShaderTranslator::SystemConstants*>(
       reserve(SpirvShaderTranslator::kConstantBufferSystem, sizeof(SpirvShaderTranslator::SystemConstants)));
+  std::memset(system, 0, sizeof(*system));
   const uint32_t vte = regs[kPaClVteCntl];
   if (vte & (1u << 8)) system->flags |= SpirvShaderTranslator::kSysFlag_XYDividedByW;
   if (vte & (1u << 9)) system->flags |= SpirvShaderTranslator::kSysFlag_ZDividedByW;
@@ -957,12 +987,23 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     const auto& map = shader ? shader->shader->constant_register_map() : vs->shader->constant_register_map();
     const uint32_t count = !shader ? 1 : map.float_dynamic_addressing ? 256 : std::max(1u, map.float_count);
     uint8_t* out = reserve(index, 16 * count);
-    if (!shader) return;
-    uint32_t packed = 0;
-    for (uint32_t c = 0; c < 256; ++c) {
-      if (!map.float_dynamic_addressing && !(map.float_bitmap[c / 64] & (uint64_t(1) << (c % 64)))) continue;
-      std::memcpy(out + 16 * packed++, regs + first_register + 4 * c, 16);
+    if (!shader) {
+      std::memset(out, 0, 16);
+      return;
     }
+    if (map.float_dynamic_addressing) {
+      std::memcpy(out, regs + first_register, 256 * 16);
+      return;
+    }
+    // The registers the shader uses, set bit by set bit.
+    uint32_t packed = 0;
+    for (uint32_t word = 0; word < 4; ++word) {
+      for (uint64_t bits = map.float_bitmap[word]; bits; bits &= bits - 1) {
+        const uint32_t c = 64 * word + uint32_t(std::countr_zero(bits));
+        std::memcpy(out + 16 * packed++, regs + first_register + 4 * c, 16);
+      }
+    }
+    if (!packed) std::memset(out, 0, 16);
   };
   pack_floats(SpirvShaderTranslator::kConstantBufferFloatVertex, vs, 0x4000);
   pack_floats(SpirvShaderTranslator::kConstantBufferFloatPixel, ps, 0x4000 + 256 * 4);
@@ -987,6 +1028,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t stencil_back = (depth_control >> 7) & 1 ? regs[kRbStencilRefMaskBf] : stencil_front;
 
   // The indices (endian-swapped to host order) into the batch's ring.
+  const auto indices_start = std::chrono::steady_clock::now();
   VkIndexType index_type = VK_INDEX_TYPE_NONE_KHR;
   VkDeviceSize index_offset = 0;
   if (rectangle_list || quad_list) {
@@ -997,7 +1039,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     index_type = VK_INDEX_TYPE_UINT32;
     index_offset = index_head_;
     index_head_ = AlignUp(index_head_ + host_index_count * 4, 4);
-    uint32_t* dst = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(indices_.mapped) + index_offset);
+    uint32_t* dst = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(batch().indices.mapped) + index_offset);
     if (rectangle_list) {
       // Four strip vertices a rectangle, a restart between rectangles.
       for (uint32_t r = 0; r < primitives; ++r) {
@@ -1026,44 +1068,82 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       }
     }
   } else if (draw.source == DrawSource::kDma) {
-    if (uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_ || draw.index_bytes > indices_.size) {
+    if (uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_ || draw.index_bytes > batch().indices.size) {
       Fail("index buffer outside the mirrored memory");
       return;
     }
     index_offset = index_head_;
     index_head_ = AlignUp(index_head_ + draw.index_bytes, 4);
     const uint8_t* src = physical_ + draw.index_base;
-    uint8_t* dst = static_cast<uint8_t*>(indices_.mapped) + index_offset;
-    // With primitive reset, the guest's reset index becomes the host's (all ones).
+    uint8_t* dst = static_cast<uint8_t*>(batch().indices.mapped) + index_offset;
+    // With primitive reset, the guest's reset index becomes the host's (all ones). Loops without per-index branches
+    // where they can (they vectorize): a copy, or a byte swap, and the reset test only when reset is on.
     if (draw.index_32) {
       index_type = VK_INDEX_TYPE_UINT32;
-      for (uint32_t i = 0; i < draw.index_bytes / 4; ++i) {
-        uint32_t v;
-        std::memcpy(&v, src + 4 * i, 4);
-        v = GpuSwap(v, draw.index_endian);
-        if (restart && v == reset_index) v = UINT32_MAX;
-        std::memcpy(dst + 4 * i, &v, 4);
+      const uint32_t n = draw.index_bytes / 4;
+      if (draw.index_endian == Endian::kNone && !restart) {
+        std::memcpy(dst, src, size_t(n) * 4);
+      } else if (draw.index_endian == Endian::k8in32 && !restart) {
+        for (uint32_t i = 0; i < n; ++i) {
+          uint32_t v;
+          std::memcpy(&v, src + 4 * i, 4);
+          v = std::byteswap(v);
+          std::memcpy(dst + 4 * i, &v, 4);
+        }
+      } else {
+        for (uint32_t i = 0; i < n; ++i) {
+          uint32_t v;
+          std::memcpy(&v, src + 4 * i, 4);
+          v = GpuSwap(v, draw.index_endian);
+          if (restart && v == reset_index) v = UINT32_MAX;
+          std::memcpy(dst + 4 * i, &v, 4);
+        }
       }
     } else {
       index_type = VK_INDEX_TYPE_UINT16;
-      for (uint32_t i = 0; i < draw.index_bytes / 2; ++i) {
-        uint16_t v;
-        std::memcpy(&v, src + 2 * i, 2);
-        if (draw.index_endian == Endian::k8in16 || draw.index_endian == Endian::k8in32) v = uint16_t(v << 8 | v >> 8);
-        if (restart && v == reset_index) v = UINT16_MAX;
-        std::memcpy(dst + 2 * i, &v, 2);
+      const uint32_t n = draw.index_bytes / 2;
+      const bool swap = draw.index_endian == Endian::k8in16 || draw.index_endian == Endian::k8in32;
+      if (!swap && !restart) {
+        std::memcpy(dst, src, size_t(n) * 2);
+      } else if (!restart) {
+        for (uint32_t i = 0; i < n; ++i) {
+          uint16_t v;
+          std::memcpy(&v, src + 2 * i, 2);
+          v = uint16_t(v << 8 | v >> 8);
+          std::memcpy(dst + 2 * i, &v, 2);
+        }
+      } else {
+        for (uint32_t i = 0; i < n; ++i) {
+          uint16_t v;
+          std::memcpy(&v, src + 2 * i, 2);
+          if (swap) v = uint16_t(v << 8 | v >> 8);
+          if (v == reset_index) v = UINT16_MAX;
+          std::memcpy(dst + 2 * i, &v, 2);
+        }
       }
     }
   }
 
+  stats_.ns_draw_indices +=
+      uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - indices_start).count());
+  mark(stats_.ns_draw_constants);
   // The texture sets of both stages: sampled images, then samplers (empty sets for a stage without textures).
   VkDescriptorSet texture_sets[2] = {empty_set_, empty_set_};
   for (uint32_t stage = 0; stage < 2; ++stage) {
     const StageTextures& st = stage_textures[stage];
     if (st.views.empty() && st.samplers.empty()) continue;
     VkDescriptorSetLayout layout = TextureSetLayout(stage == 0, uint32_t(st.views.size()), uint32_t(st.samplers.size()));
+    std::vector<uint64_t> set_key;
+    set_key.reserve(1 + st.views.size() + st.samplers.size());
+    set_key.push_back(uint64_t(layout));
+    for (VkImageView v : st.views) set_key.push_back(uint64_t(v));
+    for (VkSampler s : st.samplers) set_key.push_back(uint64_t(s));
+    if (const auto known = batch_sets_.find(set_key); known != batch_sets_.end()) {
+      texture_sets[stage] = known->second;
+      continue;
+    }
     VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-    alloc.descriptorPool = draw_pool_;
+    alloc.descriptorPool = batch().draw_pool;
     alloc.descriptorSetCount = 1;
     alloc.pSetLayouts = &layout;
     if (f.vkAllocateDescriptorSets(device_.device(), &alloc, &texture_sets[stage]) != VK_SUCCESS) {
@@ -1081,6 +1161,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
                    is_image ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLER, &infos[i], nullptr, nullptr};
     }
     f.vkUpdateDescriptorSets(device_.device(), uint32_t(writes.size()), writes.data(), 0, nullptr);
+    batch_sets_.emplace(std::move(set_key), texture_sets[stage]);
   }
 
   {
@@ -1127,51 +1208,78 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       rendering_open_ = true;
       rendering_key_ = key;
     }
-    f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    // Only what changed since the last draw of this batch (the state stays across render passes).
+    RecordedState& rs = recorded_;
+    if (!rs.valid || rs.pipeline != pipeline) f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     VkDescriptorSet sets[SpirvShaderTranslator::kDescriptorSetCount];
     sets[SpirvShaderTranslator::kDescriptorSetSharedMemoryAndEdram] = shared_set_;
-    sets[SpirvShaderTranslator::kDescriptorSetConstants] = constants_set_;
+    sets[SpirvShaderTranslator::kDescriptorSetConstants] = batch().constants_set;
     sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex] = texture_sets[0];
     sets[SpirvShaderTranslator::kDescriptorSetTexturesPixel] = texture_sets[1];
     f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, SpirvShaderTranslator::kDescriptorSetCount,
                               sets, SpirvShaderTranslator::kConstantBufferCount, offsets);
     const VkViewport viewport{0, 0, size[0], size[1], 0, 1};
     const VkRect2D scissor{{left, top}, {uint32_t(right - left), uint32_t(bottom - top)}};
-    f.vkCmdSetViewport(cb, 0, 1, &viewport);
-    f.vkCmdSetScissor(cb, 0, 1, &scissor);
-    f.vkCmdSetDepthBias(cb, bias_offset, 0.0f, bias_scale);
-    f.vkCmdSetBlendConstants(cb, blend_constants);
-    f.vkCmdSetStencilCompareMask(cb, VK_STENCIL_FACE_FRONT_BIT, (stencil_front >> 8) & 0xFF);
-    f.vkCmdSetStencilCompareMask(cb, VK_STENCIL_FACE_BACK_BIT, (stencil_back >> 8) & 0xFF);
-    f.vkCmdSetStencilWriteMask(cb, VK_STENCIL_FACE_FRONT_BIT, (stencil_front >> 16) & 0xFF);
-    f.vkCmdSetStencilWriteMask(cb, VK_STENCIL_FACE_BACK_BIT, (stencil_back >> 16) & 0xFF);
-    f.vkCmdSetStencilReference(cb, VK_STENCIL_FACE_FRONT_BIT, stencil_front & 0xFF);
-    f.vkCmdSetStencilReference(cb, VK_STENCIL_FACE_BACK_BIT, stencil_back & 0xFF);
+    if (!rs.valid || std::memcmp(&rs.viewport, &viewport, sizeof(viewport))) f.vkCmdSetViewport(cb, 0, 1, &viewport);
+    if (!rs.valid || std::memcmp(&rs.scissor, &scissor, sizeof(scissor))) f.vkCmdSetScissor(cb, 0, 1, &scissor);
+    if (!rs.valid || rs.depth_bias[0] != bias_offset || rs.depth_bias[1] != bias_scale) {
+      f.vkCmdSetDepthBias(cb, bias_offset, 0.0f, bias_scale);
+    }
+    if (!rs.valid || std::memcmp(rs.blend, blend_constants, sizeof(rs.blend))) f.vkCmdSetBlendConstants(cb, blend_constants);
+    if (!rs.valid || rs.stencil[0] != stencil_front) {
+      f.vkCmdSetStencilCompareMask(cb, VK_STENCIL_FACE_FRONT_BIT, (stencil_front >> 8) & 0xFF);
+      f.vkCmdSetStencilWriteMask(cb, VK_STENCIL_FACE_FRONT_BIT, (stencil_front >> 16) & 0xFF);
+      f.vkCmdSetStencilReference(cb, VK_STENCIL_FACE_FRONT_BIT, stencil_front & 0xFF);
+    }
+    if (!rs.valid || rs.stencil[1] != stencil_back) {
+      f.vkCmdSetStencilCompareMask(cb, VK_STENCIL_FACE_BACK_BIT, (stencil_back >> 8) & 0xFF);
+      f.vkCmdSetStencilWriteMask(cb, VK_STENCIL_FACE_BACK_BIT, (stencil_back >> 16) & 0xFF);
+      f.vkCmdSetStencilReference(cb, VK_STENCIL_FACE_BACK_BIT, stencil_back & 0xFF);
+    }
+    rs.pipeline = pipeline;
+    rs.viewport = viewport;
+    rs.scissor = scissor;
+    rs.depth_bias[0] = bias_offset, rs.depth_bias[1] = bias_scale;
+    std::memcpy(rs.blend, blend_constants, sizeof(rs.blend));
+    rs.stencil[0] = stencil_front, rs.stencil[1] = stencil_back;
+    rs.valid = true;
     if (index_type != VK_INDEX_TYPE_NONE_KHR) {
-      f.vkCmdBindIndexBuffer(cb, indices_.buffer, index_offset, index_type);
+      f.vkCmdBindIndexBuffer(cb, batch().indices.buffer, index_offset, index_type);
       f.vkCmdDrawIndexed(cb, host_index_count, 1, 0, 0, 0);
     } else {
       f.vkCmdDraw(cb, host_index_count, 1, 0, 0);
     }
   }
+  mark(stats_.ns_draw_record);
   ++stats_.draws;
 }
 
 VkCommandBuffer VulkanRenderer::Record() {
+  Batch& b = batch();
   if (!batch_open_) {
     const Functions& f = device_.fn();
-    f.vkResetCommandBuffer(batch_, 0);
+    f.vkResetCommandBuffer(b.cb, 0);
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    f.vkBeginCommandBuffer(batch_, &begin);
+    f.vkBeginCommandBuffer(b.cb, &begin);
+    // After everything submitted before (batches overlap on the queue otherwise).
+    VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    barrier.srcStageMask = barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependency.memoryBarrierCount = 1;
+    dependency.pMemoryBarriers = &barrier;
+    f.vkCmdPipelineBarrier2(b.cb, &dependency);
+    recorded_.valid = false;  // a new command buffer has no state
     batch_open_ = true;
   }
-  return batch_;
+  return b.cb;
 }
 
 void VulkanRenderer::EndRendering() {
   if (!rendering_open_) return;
-  device_.fn().vkCmdEndRendering(batch_);
+  device_.fn().vkCmdEndRendering(batch().cb);
   rendering_open_ = false;
 }
 
@@ -1179,8 +1287,10 @@ void VulkanRenderer::Flush() {
   if (!batch_open_) return;
   Timer submit_timer(stats_.ns_submit);
   const Functions& f = device_.fn();
+  const VkDevice d = device_.device();
+  Batch& b = batch();
   EndRendering();
-  f.vkEndCommandBuffer(batch_);
+  f.vkEndCommandBuffer(b.cb);
   // Guest memory the batch's shaders fetch from: read in place, or copied once here (the draws run now, so they
   // see memory as it is now either way).
   if (!shared_memory_imported_) {
@@ -1197,29 +1307,104 @@ void VulkanRenderer::Flush() {
     }
     batch_ranges_.clear();
   }
+  if (textures_) textures_->TakeStaging(b.staging);  // the batch's uploads read them
   VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
   submit.commandBufferCount = 1;
-  submit.pCommandBuffers = &batch_;
-  f.vkResetFences(device_.device(), 1, &batch_fence_);
-  if (f.vkQueueSubmit(device_.queue(), 1, &submit, batch_fence_) != VK_SUCCESS) {
-    Fail("batch submission");
-  } else {
-    f.vkWaitForFences(device_.device(), 1, &batch_fence_, VK_TRUE, UINT64_MAX);
-  }
+  submit.pCommandBuffers = &b.cb;
+  if (f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence) != VK_SUCCESS) Fail("batch submission");
   batch_open_ = false;
-  FinishWriteBacks();
-  for (Image& image : retired_images_) DestroyImage(device_, image);
-  retired_images_.clear();
-  // Everything the batch used is free again.
-  if (textures_) textures_->BatchDone();
-  if (depth_pool_ && depth_sets_) {
-    f.vkResetDescriptorPool(device_.device(), depth_pool_, 0);
-    depth_sets_ = 0;
+  const uint32_t submitted = current_;
+  {
+    std::lock_guard lock(done_mutex_);
+    b.done = false;
+    in_flight_.push_back(submitted);
+    last_submitted_ = int32_t(submitted);
   }
+  work_cv_.notify_one();
+  if (!shared_memory_imported_) WaitBatch(submitted);  // the mirror is rewritten for the next batch
+  // The next batch: the oldest of the ring, once the GPU has run it; what it used is free again.
+  current_ = (current_ + 1) % kBatches;
+  WaitBatch(current_);
+  Batch& next = batch();
+  f.vkResetFences(d, 1, &next.fence);
+  f.vkResetDescriptorPool(d, next.draw_pool, 0);
+  batch_sets_.clear();
+  if (next.depth_pool) f.vkResetDescriptorPool(d, next.depth_pool, 0);
+  depth_sets_ = 0;
   constant_head_ = index_head_ = 0;
   draw_sets_ = draw_images_ = draw_samplers_ = 0;
-  f.vkResetDescriptorPool(device_.device(), draw_pool_, 0);
   ++stats_.flushes;
+}
+
+void VulkanRenderer::WhenDone(std::function<void()> action) {
+  if (batch_open_) {
+    // After the draws recorded so far: with the batch that holds them.
+    batch().actions.push_back(std::move(action));
+    Flush();
+    return;
+  }
+  {
+    // Nothing recorded since the last submission: after that one, or now if it has run.
+    std::lock_guard lock(done_mutex_);
+    if (last_submitted_ >= 0 && !batches_[last_submitted_].done) {
+      batches_[last_submitted_].actions.push_back(std::move(action));
+      return;
+    }
+  }
+  action();
+}
+
+void VulkanRenderer::WaitBatch(uint32_t index) {
+  std::unique_lock lock(done_mutex_);
+  done_cv_.wait(lock, [&] { return batches_[index].done; });
+}
+
+void VulkanRenderer::WaitIdle() {
+  for (uint32_t i = 0; i < kBatches; ++i) WaitBatch(i);
+}
+
+void VulkanRenderer::Complete() {
+  for (;;) {
+    uint32_t index;
+    {
+      std::unique_lock lock(done_mutex_);
+      work_cv_.wait(lock, [&] { return stopping_ || !in_flight_.empty(); });
+      if (in_flight_.empty()) return;
+      index = in_flight_.front();
+    }
+    Batch& b = batches_[index];
+    device_.fn().vkWaitForFences(device_.device(), 1, &b.fence, VK_TRUE, UINT64_MAX);
+    FinishBatch(b);
+    // Actions WhenDone attached while these ran, until none is left: then the batch is done.
+    for (;;) {
+      std::vector<std::function<void()>> late;
+      {
+        std::lock_guard lock(done_mutex_);
+        if (b.actions.empty()) {
+          b.done = true;
+          in_flight_.pop_front();
+          break;
+        }
+        late.swap(b.actions);
+      }
+      for (auto& action : late) action();
+    }
+    done_cv_.notify_all();
+  }
+}
+
+void VulkanRenderer::FinishBatch(Batch& b) {
+  FinishWriteBacks(b);
+  for (Buffer& staging : b.staging) DestroyBuffer(device_, staging);
+  b.staging.clear();
+  for (Image& image : b.retired) DestroyImage(device_, image);
+  b.retired.clear();
+  std::vector<std::function<void()>> actions;
+  {
+    std::lock_guard lock(done_mutex_);
+    actions.swap(b.actions);
+  }
+  for (auto& action : actions) action();
 }
 
 namespace {
@@ -1738,11 +1923,8 @@ bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t p
                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
   }
   if (r.image.image) {
-    if (batch_open_) {
-      retired_images_.push_back(r.image);  // the batch may still read it
-    } else {
-      DestroyImage(device_, r.image);
-    }
+    Record();
+    batch().retired.push_back(r.image);  // batches may still read it: freed after this one has run
   }
   r.image = grown;
   r.layout = grown_layout;
@@ -1751,7 +1933,9 @@ bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t p
 
 bool VulkanRenderer::WriteBackResolved(uint32_t base, Resolved& r) {
   if (!QueueWriteBack(base, r)) return false;
+  const uint32_t index = current_;
   Flush();
+  WaitBatch(index);
   return true;
 }
 
@@ -1779,12 +1963,12 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
   region.imageExtent = {r.width, r.height, 1};
   device_.fn().vkCmdCopyImageToBuffer(cb, r.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, w.buffer.buffer, 1, &region);
   r.pending = true;
-  pending_write_backs_.push_back(w);
+  batch().write_backs.push_back(w);
   return true;
 }
 
-void VulkanRenderer::FinishWriteBacks() {
-  for (PendingWriteBack& w : pending_write_backs_) {
+void VulkanRenderer::FinishWriteBacks(Batch& b) {
+  for (PendingWriteBack& w : b.write_backs) {
     const uint8_t* src = static_cast<const uint8_t*>(w.buffer.mapped);
     const uint32_t element = w.element;
     const bool depth = w.depth;
@@ -1808,16 +1992,17 @@ void VulkanRenderer::FinishWriteBacks() {
         if (address + element <= mirror_bytes_) std::memcpy(physical_ + address, bytes, element);
       }
     }
-    if (textures_) textures_->MemoryChanged(w.base, w.base + w.pitch * ((w.y + w.height + 31) & ~31u) * element);
+    if (textures_) textures_->QueueMemoryChanged(w.base, w.base + w.pitch * ((w.y + w.height + 31) & ~31u) * element);
     w.resolved->pending = false;
     DestroyBuffer(device_, w.buffer);
   }
-  pending_write_backs_.clear();
+  b.write_backs.clear();
 }
 
 bool VulkanRenderer::ReadImageRGBA8(Image& image, VkImageLayout& layout, uint32_t x, uint32_t y, uint32_t width,
                                     uint32_t height, std::vector<uint32_t>& pixels) {
   Flush();
+  WaitIdle();
   Buffer readback;
   if (!CreateBuffer(device_, VkDeviceSize(width) * height * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback)) return false;
   const bool ok = device_.Submit([&](VkCommandBuffer cb) {
@@ -1893,6 +2078,7 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
   std::string error;
   std::vector<uint32_t> texels;
   uint32_t tw = 0, th = 0;
+  WaitIdle();  // the front buffer read from guest memory: resolves written into it first
   if (!textures_ || !textures_->ReadRGBA8(regs + reg::kFetchConstants, tw, th, texels, error)) {
     Fail("swap: " + error);
     return;
@@ -1954,7 +2140,9 @@ bool VulkanRenderer::DepthPass() {
   pool_info.maxSets = kDepthSets;
   pool_info.poolSizeCount = 2;
   pool_info.pPoolSizes = sizes;
-  if (f.vkCreateDescriptorPool(d, &pool_info, nullptr, &depth_pool_) != VK_SUCCESS) return Fail("depth copy pool");
+  for (Batch& b : batches_) {
+    if (f.vkCreateDescriptorPool(d, &pool_info, nullptr, &b.depth_pool) != VK_SUCCESS) return Fail("depth copy pool");
+  }
   return true;
 }
 
@@ -1983,7 +2171,7 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   if (depth_sets_ >= kDepthSets) Flush();  // resets the pool
   VkDescriptorSet set = VK_NULL_HANDLE;
   VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-  alloc.descriptorPool = depth_pool_;
+  alloc.descriptorPool = batch().depth_pool;
   alloc.descriptorSetCount = 1;
   alloc.pSetLayouts = &depth_layout_;
   if (f.vkAllocateDescriptorSets(d, &alloc, &set) != VK_SUCCESS) return Fail("depth resolve set");

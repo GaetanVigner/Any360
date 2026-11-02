@@ -13,7 +13,9 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "device.h"
@@ -88,12 +90,19 @@ class TextureCache {
   // between two such events): a new frame (the CPU may have written anywhere), or [begin, end) written by the GPU
   // (a resolve) or reported by the title (coherency).
   void NewFrame() { ++epoch_; }
+  // A host that can watch guest memory for CPU writes (the reference runtime's physical memory access callbacks):
+  // `watch(begin, end)` arms a one-shot watch, and the host reports writes with QueueMemoryChanged. Watched textures
+  // are hashed again only after such a write, not at every frame.
+  void SetMemoryWatch(std::function<void(uint32_t, uint32_t)> watch) { watch_ = std::move(watch); }
   void MemoryChanged(uint32_t begin, uint32_t end);
   // Where uploads are recorded: the renderer's open batch (outside rendering), so an upload is one more command in it
   // rather than a submission waited for; draws recorded before it still read the old content, in GPU order. Without
   // one, each upload is submitted and waited for. BatchDone: the batch ran, its staging buffers are free.
   void SetRecorder(std::function<VkCommandBuffer()> recorder) { recorder_ = std::move(recorder); }
-  void BatchDone();
+  // The staging buffers of the uploads recorded since the last call, for the batch that reads them to free.
+  void TakeStaging(std::vector<Buffer>& out);
+  // MemoryChanged from another thread (the renderer's completion thread): applied before the next texture use.
+  void QueueMemoryChanged(uint32_t begin, uint32_t end);
 
   // Guest memory a resolve left on the GPU (its texels at their coordinates in `image`, kept in TRANSFER_SRC_OPTIMAL
   // layout): a texture that reads exactly that destination (same base, pitch, host format and endianness; tiled 2D,
@@ -106,7 +115,10 @@ class TextureCache {
     uint64_t generation = 0;
     bool depth = false;  // a depth resolve (R32F depth values): read by the depth formats (k_24_8, k_24_8_FLOAT)
   };
-  void SetGpuSource(const GpuSource& source) { gpu_sources_[source.base] = source; }
+  void SetGpuSource(const GpuSource& source) {
+    gpu_sources_[source.base] = source;
+    ++version_;
+  }
   // Called before a texture's memory [begin, end) is read on the CPU: the renderer writes there what a resolve left
   // on the GPU only, when the texture does not read it as it is (another layout, stacked slices...).
   void SetBeforeMemoryRead(std::function<void(uint32_t, uint32_t)> callback) { before_read_ = std::move(callback); }
@@ -142,8 +154,26 @@ class TextureCache {
   uint64_t ns_hash_ = 0, ns_load_ = 0;
   std::map<std::array<uint32_t, 4>, uint32_t> upload_log_;
   uint64_t epoch_ = 1;
+  std::function<void(uint32_t, uint32_t)> watch_;
+  // Views already checked, by fetch constant, view type and signedness: valid until the next frame or the next change
+  // of guest memory or GPU sources (version_), so most draws skip parsing, placing and hashing.
+  uint64_t version_ = 1;
+  struct FastKeyHash {
+    size_t operator()(const std::array<uint32_t, 8>& key) const {
+      uint64_t h = 0xCBF29CE484222325ull;
+      for (uint32_t v : key) h = (h ^ v) * 0x100000001B3ull;
+      return size_t(h ^ (h >> 31));
+    }
+  };
+  struct FastView {
+    VkImageView view;
+    uint64_t epoch, version;
+  };
+  std::unordered_map<std::array<uint32_t, 8>, FastView, FastKeyHash> fast_;
   std::function<VkCommandBuffer()> recorder_;
   std::vector<Buffer> pending_staging_;  // staging buffers of uploads recorded in the open batch
+  std::mutex changed_mutex_;
+  std::vector<std::pair<uint32_t, uint32_t>> changed_;  // queued MemoryChanged ranges
   std::map<uint32_t, GpuSource> gpu_sources_;  // by base
   std::function<void(uint32_t, uint32_t)> before_read_;
   uint32_t gpu_copies_ = 0;

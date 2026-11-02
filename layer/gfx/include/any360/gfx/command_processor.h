@@ -64,9 +64,14 @@ class Renderer {
   virtual void Copy(const uint32_t* /*registers*/) {}
   // A swap (XE_SWAP): the front buffer is the texture fetch constant 0 of `registers` describes (VdSwap writes it).
   virtual void Swap(uint32_t /*frontbuffer*/, uint32_t /*width*/, uint32_t /*height*/, const uint32_t* /*registers*/) {}
-  // The command processor is about to make GPU progress visible to the CPU (a fence, a memory write, an interrupt,
-  // the read pointer): every draw so far must have run, as the CPU may then reuse what they read.
+  // Sends what is recorded so far to the GPU (without waiting for it).
   virtual void Flush() {}
+  // GPU progress the CPU sees (a fence, a memory write, an interrupt): `action` once every draw so far has run (the
+  // CPU may then reuse what they read). A renderer with work in flight runs it later, on a thread of its own.
+  virtual void WhenDone(std::function<void()> action) {
+    Flush();
+    action();
+  }
   // The CPU wrote [base, base + size) (COHER_*_HOST): cached copies of that memory are stale.
   virtual void Invalidate(uint32_t /*base*/, uint32_t /*size*/) {}
   // The display gamma ramp at a swap, before Swap: the 256-entry table (DC_LUT_30_COLOR values: 10-bit blue, green,
@@ -141,6 +146,14 @@ class CommandProcessor : public sys::GpuBackend {
   void Interrupt(uint32_t source, uint32_t cpu);
 
   uint8_t* Host(uint32_t address) const { return physical_ + (address & 0x1FFFFFFF); }
+  // What the CPU sees of the GPU's progress, once the draws so far have run (the renderer decides when).
+  void AfterDraws(std::function<void()> action) {
+    if (renderer_) {
+      renderer_->WhenDone(std::move(action));
+    } else {
+      action();
+    }
+  }
   uint32_t LoadRaw(uint32_t address) const;
   void StoreRaw(uint32_t address, uint32_t value);
   uint32_t LoadBig(uint32_t address) const;

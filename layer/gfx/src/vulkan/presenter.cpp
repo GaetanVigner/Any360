@@ -93,7 +93,7 @@ bool Presenter::Resize(uint32_t width, uint32_t height) {
 
   VkSwapchainCreateInfoKHR info{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
   info.surface = device_.surface();
-  info.minImageCount = std::max(caps.minImageCount, 2u);
+  info.minImageCount = std::max(caps.minImageCount, vsync_ ? 2u : 3u);
   if (caps.maxImageCount) info.minImageCount = std::min(info.minImageCount, caps.maxImageCount);
   info.imageFormat = chosen.format;
   info.imageColorSpace = chosen.colorSpace;
@@ -104,6 +104,18 @@ bool Presenter::Resize(uint32_t width, uint32_t height) {
   info.preTransform = caps.currentTransform;
   info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
   info.presentMode = VK_PRESENT_MODE_FIFO_KHR;  // always available
+  if (!vsync_) {
+    uint32_t mode_count = 0;
+    f.vkGetPhysicalDeviceSurfacePresentModesKHR(device_.physical(), device_.surface(), &mode_count, nullptr);
+    std::vector<VkPresentModeKHR> modes(mode_count);
+    f.vkGetPhysicalDeviceSurfacePresentModesKHR(device_.physical(), device_.surface(), &mode_count, modes.data());
+    for (VkPresentModeKHR preferred : {VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR}) {
+      if (std::find(modes.begin(), modes.end(), preferred) != modes.end()) {
+        info.presentMode = preferred;
+        break;
+      }
+    }
+  }
   info.clipped = VK_TRUE;
   info.oldSwapchain = swapchain_;
   VkSwapchainKHR next = VK_NULL_HANDLE;

@@ -12,6 +12,7 @@
 //                 resolves' words as DIR/resolve_N.bin)
 //     --watch ADDR    with --trace, prints the texture fetch constants that read the 4 KB page at ADDR (hex)
 #include <algorithm>
+#include <chrono>
 #include <bit>
 #include <array>
 #include <cstdio>
@@ -277,6 +278,7 @@ int main(int argc, char** argv) {
 #endif
   std::string path, out;
   bool trace = false;
+  int repeat = 1;  // --repeat N: the capture replayed N times, the timings of the last (warm caches, as in a game)
   std::string dump;
   uint32_t watch = 0;
   vk::DeviceOptions options;
@@ -284,6 +286,7 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[i], "--gpu") && i + 1 < argc) options.prefer = argv[++i];
     else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
     else if (!std::strcmp(argv[i], "--trace")) trace = true;
+    else if (!std::strcmp(argv[i], "--repeat") && i + 1 < argc) repeat = std::max(1, std::atoi(argv[++i]));
     else if (!std::strcmp(argv[i], "--dump-resolves") && i + 1 < argc) dump = argv[++i];
     else if (!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = uint32_t(std::strtoul(argv[++i], nullptr, 16)) & 0x1FFFF000;
     else path = argv[i];
@@ -348,8 +351,21 @@ int main(int argc, char** argv) {
   };
   capture::ReplayStats stats;
   std::string error;
-  const bool ok = capture::Replay(path, cp, physical, kPhysicalBytes, on_frame, stats, error);
-  renderer.Flush();
+  bool ok = true;
+  vk::RendererStats before;
+  auto replay_start = std::chrono::steady_clock::now();
+  for (int pass = 0; pass < repeat && ok; ++pass) {
+    if (pass == repeat - 1) {
+      before = renderer.stats();
+      replay_start = std::chrono::steady_clock::now();
+    }
+    stats = {};
+    ok = capture::Replay(path, cp, physical, kPhysicalBytes, on_frame, stats, error);
+    renderer.Flush();
+    renderer.WaitIdle();
+  }
+  const double replay_ms =
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - replay_start).count();
 
   std::printf("gfx_replay: %s\n", stats.info.empty() ? path.c_str() : stats.info.c_str());
   std::printf("gfx_replay: %u kicks (%u stopped early), %u pages (%u outside), %u reference frames, %u compared, %llu presented\n",
@@ -357,6 +373,26 @@ int main(int argc, char** argv) {
               (unsigned long long)renderer.frame().number);
   if (cp.replay_skipped_waits()) std::printf("gfx_replay: %u waits on the CPU passed\n", cp.replay_skipped_waits());
   const vk::RendererStats& r = renderer.stats();
+  {
+    // Where the time goes in the last pass (the frames' comparisons and PNGs included in the total).
+    const double ms = 1e6;
+    vk::RendererStats d = r;
+    d.draws -= before.draws;
+    for (auto [field, base] : {std::pair{&d.ns_draws, before.ns_draws}, {&d.ns_draw_setup, before.ns_draw_setup},
+                               {&d.ns_textures, before.ns_textures}, {&d.ns_draw_targets, before.ns_draw_targets},
+                               {&d.ns_draw_constants, before.ns_draw_constants}, {&d.ns_draw_record, before.ns_draw_record},
+                               {&d.ns_draw_indices, before.ns_draw_indices}, {&d.ns_texture_hash, before.ns_texture_hash},
+                               {&d.ns_submit, before.ns_submit}, {&d.ns_resolves, before.ns_resolves},
+                               {&d.ns_swaps, before.ns_swaps}}) {
+      *field -= base;
+    }
+    std::printf("gfx_replay: %.1f ms in all; renderer ms: draws %.1f (setup %.1f with textures %.1f and their hashing %.1f, targets %.1f, "
+                "constants %.1f with indices %.1f, record %.1f), submit %.1f, resolves %.1f, swaps %.1f; %.2f us a draw\n",
+                replay_ms, d.ns_draws / ms, d.ns_draw_setup / ms, d.ns_textures / ms, d.ns_texture_hash / ms,
+                d.ns_draw_targets / ms,
+                d.ns_draw_constants / ms, d.ns_draw_indices / ms, d.ns_draw_record / ms, d.ns_submit / ms, d.ns_resolves / ms, d.ns_swaps / ms,
+                d.draws ? d.ns_draws / 1e3 / d.draws : 0.0);
+  }
   std::printf("gfx_replay: %s: %u draws, %u skipped, %u failed; %u resolves, %u shaders, %u pipelines, %u render targets, "
               "%u texture uploads\n",
               device.properties().deviceName, r.draws, r.skipped, r.failed, r.resolves, r.translations, r.pipelines,

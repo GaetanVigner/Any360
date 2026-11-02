@@ -142,8 +142,8 @@ void CommandProcessor::SetRegister(uint32_t index, uint32_t value) {
     // A scratch register the CPU watches: mirrored to memory when its bit of SCRATCH_UMSK is set.
     const uint32_t n = index - reg::SCRATCH_REG0;
     if (reg(reg::SCRATCH_UMSK) & (1u << n)) {
-      if (renderer_) renderer_->Flush();
-      StoreBig(reg(reg::SCRATCH_ADDR) + 4 * n, value);
+      const uint32_t address = reg(reg::SCRATCH_ADDR) + 4 * n;
+      AfterDraws([this, address, value] { StoreBig(address, value); });
     }
   } else if (index == reg::COHER_STATUS_HOST) {
     // A coherency request: pending (bit 31) until a WAIT_REG_MEM on this register completes it.
@@ -219,7 +219,10 @@ bool CommandProcessor::Test(uint32_t wait_info, uint32_t poll, uint32_t referenc
 }
 
 bool CommandProcessor::Wait(uint32_t wait_info, uint32_t poll, uint32_t reference, uint32_t mask, uint32_t interval) {
+  bool submitted = false;
   while (!Test(wait_info, poll, reference, mask, true)) {
+    // What the wait may depend on (a fence written after earlier draws) starts on the GPU first.
+    if (!submitted && renderer_) renderer_->Flush(), submitted = true;
     if (stopping_) return false;
     if (replaying_) {
       ++replay_skipped_waits_;
@@ -258,10 +261,9 @@ bool CommandProcessor::Execute() {
   if (!stopped) {
     read_index_ = write;
     SetRegister(reg::CP_RB_RPTR, write);
-    if (write_back_) {
-      if (renderer_) renderer_->Flush();  // the CPU may reuse what the read pointer passed
-      StoreBig(write_back_, write);
-    }
+    // The commands it passed were read (constants, indices and microcode copied as they were): no draw to wait for.
+    if (write_back_) StoreBig(write_back_, write);
+    if (renderer_) renderer_->Flush();  // what this kick recorded starts on the GPU
   }
   busy_ = false;
   return !stopped;
@@ -324,16 +326,9 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     for (uint32_t i = 0; i < n; ++i) SetRegister(kBase[type] + index + i, value_at(i));
   };
 
-  // What the CPU can observe of the GPU's progress: the draws so far must have run first (the CPU may then reuse
-  // the memory they read). Not the occlusion query and screen extent reports: their values are fixed (as the
-  // reference's), not results of the draws, and titles issue them around many draws (thousands a frame).
-  switch (opcode) {
-    case pm4::INTERRUPT: case pm4::REG_TO_MEM: case pm4::MEM_WRITE: case pm4::COND_WRITE: case pm4::EVENT_WRITE_SHD:
-      if (renderer_) renderer_->Flush();
-      break;
-    default:
-      break;
-  }
+  // What the CPU can observe of the GPU's progress (fences, memory writes, interrupts) happens once the draws before
+  // it have run (AfterDraws), without holding the stream. Not the occlusion query and screen extent reports: their
+  // values are fixed (as the reference's), not results of the draws.
   switch (opcode) {
     case pm4::ME_INIT:
     case pm4::NOP:
@@ -346,7 +341,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
       if (has(1)) {
         const uint32_t cpus = Next(r);
         for (uint32_t cpu = 0; cpu < 6; ++cpu) {
-          if (cpus & (1u << cpu)) Interrupt(1, cpu);
+          if (cpus & (1u << cpu)) AfterDraws([this, cpu] { Interrupt(1, cpu); });
         }
       }
       break;
@@ -390,17 +385,19 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     case pm4::REG_TO_MEM:
       if (has(2)) {
         const uint32_t index = Next(r), address = Next(r);
-        StoreRaw(address & ~3u, GpuSwap(reg(index), Endian(address & 3)));
+        const uint32_t value = GpuSwap(reg(index), Endian(address & 3));
+        AfterDraws([this, address, value] { StoreRaw(address & ~3u, value); });
       }
       break;
     case pm4::MEM_WRITE:
       if (has(1)) {
         const uint32_t target = Next(r);
-        uint32_t address = target & ~3u;
-        while (r.offset < end) {
-          StoreRaw(address, GpuSwap(Next(r), Endian(target & 3)));
-          address += 4;
-        }
+        std::vector<uint32_t> values;
+        while (r.offset < end) values.push_back(GpuSwap(Next(r), Endian(target & 3)));
+        AfterDraws([this, target, values = std::move(values)] {
+          uint32_t address = target & ~3u;
+          for (uint32_t value : values) StoreRaw(address, value), address += 4;
+        });
       }
       break;
     case pm4::COND_WRITE:
@@ -409,7 +406,8 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
                        data = Next(r);
         if (Test(wait_info, poll, reference, mask, false)) {
           if (wait_info & 0x100) {
-            StoreRaw(target & ~3u, GpuSwap(data, Endian(target & 3)));
+            const uint32_t value = GpuSwap(data, Endian(target & 3));
+            AfterDraws([this, target, value] { StoreRaw(target & ~3u, value); });
           } else {
             SetRegister(target, data);
           }
@@ -424,7 +422,8 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
         // A fence: the value, or the vertical blank counter, written once the shaders are done.
         const uint32_t initiator = Next(r), address = Next(r), value = Next(r);
         SetRegister(reg::VGT_EVENT_INITIATOR, initiator & 0x3F);
-        StoreRaw(address & ~3u, GpuSwap((initiator >> 31) ? counter_.load() : value, Endian(address & 3)));
+        const uint32_t fence = GpuSwap((initiator >> 31) ? counter_.load() : value, Endian(address & 3));
+        AfterDraws([this, address, fence] { StoreRaw(address & ~3u, fence); });
       }
       break;
     case pm4::EVENT_WRITE_EXT:

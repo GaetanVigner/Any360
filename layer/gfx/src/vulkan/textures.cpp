@@ -350,7 +350,8 @@ TextureCache::~TextureCache() {
   VkDevice d = device_.device();
   if (!d) return;
   f.vkDeviceWaitIdle(d);
-  BatchDone();
+  for (Buffer& staging : pending_staging_) DestroyBuffer(device_, staging);
+  pending_staging_.clear();
   for (auto& [key, t] : textures_) {
     if (!t) continue;
     for (auto& [swizzle, view] : t->views) f.vkDestroyImageView(d, view, nullptr);
@@ -427,6 +428,21 @@ VkImageView TextureCache::Empty(ViewType type, std::string& error) {
 }
 
 VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::string& error, bool is_signed) {
+  {
+    // Ranges the renderer's completion thread reported (resolves written into guest memory).
+    std::vector<std::pair<uint32_t, uint32_t>> changed;
+    {
+      std::lock_guard lock(changed_mutex_);
+      changed.swap(changed_);
+    }
+    for (const auto& [begin, end] : changed) MemoryChanged(begin, end);
+  }
+  const std::array<uint32_t, 8> fast_key = {fetch[0], fetch[1], fetch[2], fetch[3], fetch[4], fetch[5], uint32_t(type),
+                                            uint32_t(is_signed)};
+  if (const auto hit = fast_.find(fast_key);
+      hit != fast_.end() && (watch_ || hit->second.epoch == epoch_) && hit->second.version == version_) {
+    return hit->second.view;
+  }
   const TextureFetch t = TextureFetch::Parse(fetch);
   if (t.type != 2) return error = "fetch constant is not a texture", VK_NULL_HANDLE;
   // The data dimension (fetch constant word 5): 0 1D, 1 2D or stacked, 2 3D, 3 cube.
@@ -500,8 +516,11 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   uint64_t hash = slot ? slot->content_hash : 0;
   // Memory only: the key holds what lays the data out, and sampling fields (clamp, filters) the title changes
   // between uses of one texture must not make it look new.
-  if (!source && (!slot || slot->validated != epoch_ || slot->gpu_generation)) {
+  // Watched memory: hashed again only once a write was reported (validated reset to 0); otherwise once a frame.
+  const bool stale = !slot || (watch_ ? slot->validated == 0 : slot->validated != epoch_) || slot->gpu_generation;
+  if (!source && stale) {
     if (before_read_) before_read_(span_begin, span_end);
+    if (watch_) watch_(span_begin, span_end);  // armed before reading: a write from now on is reported
     hash = 0xCBF29CE484222325ull;
     const auto hash_start = std::chrono::steady_clock::now();
     for (uint32_t level = first_level; level <= last_level; ++level) {
@@ -667,6 +686,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       return error = "texture view", VK_NULL_HANDLE;
     }
   }
+  if (fast_.size() > 65536) fast_.clear();
+  fast_[fast_key] = {view, epoch_, version_};
   return view;
 }
 
@@ -704,17 +725,24 @@ VkSampler TextureCache::Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t 
 }
 
 void TextureCache::DropGpuSources(uint32_t begin, uint32_t end) {
+  ++version_;
   for (auto it = gpu_sources_.begin(); it != gpu_sources_.end();) {
     it = it->first >= begin && it->first < end ? gpu_sources_.erase(it) : std::next(it);
   }
 }
 
-void TextureCache::BatchDone() {
-  for (Buffer& staging : pending_staging_) DestroyBuffer(device_, staging);
+void TextureCache::TakeStaging(std::vector<Buffer>& out) {
+  out.insert(out.end(), pending_staging_.begin(), pending_staging_.end());
   pending_staging_.clear();
 }
 
+void TextureCache::QueueMemoryChanged(uint32_t begin, uint32_t end) {
+  std::lock_guard lock(changed_mutex_);
+  changed_.emplace_back(begin, end);
+}
+
 void TextureCache::MemoryChanged(uint32_t begin, uint32_t end) {
+  ++version_;
   for (auto& [key, texture] : textures_) {
     // (A texture being created right now has no entry yet: View reads memory after this.)
     if (texture && texture->begin < end && begin < texture->end) texture->validated = 0;

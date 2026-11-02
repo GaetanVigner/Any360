@@ -28,6 +28,13 @@
 #pragma once
 
 #include <array>
+#include <thread>
+#include <unordered_map>
+#include <mutex>
+#include <functional>
+#include <deque>
+#include <condition_variable>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <map>
@@ -65,6 +72,10 @@ struct RendererStats {
   uint64_t ns_draws = 0, ns_memory = 0, ns_submit = 0, ns_resolves = 0, ns_swaps = 0;
   // Within draws: texture views (upload, untiling, hashing), shader translation, pipeline lookup and creation.
   uint64_t ns_textures = 0, ns_shaders = 0, ns_pipelines = 0;
+  // Draws in four parts: shaders, textures and fixed state; targets, scissor and pipeline; constants and indices;
+  // descriptor sets and recording.
+  uint64_t ns_draw_setup = 0, ns_draw_targets = 0, ns_draw_constants = 0, ns_draw_record = 0;
+  uint64_t ns_draw_indices = 0;  // within constants: the indices copied and swapped
 };
 
 // An EDRAM surface: base in tiles, pitch in pixels, a ColorRenderTargetFormat (or DepthRenderTargetFormat with
@@ -103,6 +114,9 @@ class VulkanRenderer : public gfx::Renderer {
   // submits them and waits (the command processor calls it before the CPU can observe GPU progress; resolves,
   // swaps, clears, readbacks and texture uploads call it first).
   void Flush() override;
+  void WhenDone(std::function<void()> action) override;
+  // Waits until every batch submitted so far has run and what follows each is done (guest memory up to date).
+  void WaitIdle();
   // A resolve: the EDRAM surface RB_COPY_CONTROL selects, over the rectangle of the copy draw's vertices, converted to
   // RB_COPY_DEST_INFO's format and written tiled to guest memory at RB_COPY_DEST_BASE; then the cleared targets.
   void Copy(const uint32_t* registers) override;
@@ -195,9 +209,8 @@ class VulkanRenderer : public gfx::Renderer {
   std::map<std::array<uint32_t, 3>, VkDescriptorSetLayout> texture_layouts_;
   std::map<std::array<uint32_t, 4>, VkPipelineLayout> pipeline_layouts_;
   VkDescriptorPool pool_ = VK_NULL_HANDLE;
-  VkDescriptorPool draw_pool_ = VK_NULL_HANDLE;  // texture sets, reset after each draw
-  VkDescriptorSet shared_set_ = VK_NULL_HANDLE, constants_set_ = VK_NULL_HANDLE, empty_set_ = VK_NULL_HANDLE;
-  Buffer shared_memory_, constants_, indices_;
+  VkDescriptorSet shared_set_ = VK_NULL_HANDLE, empty_set_ = VK_NULL_HANDLE;
+  Buffer shared_memory_;
   bool shared_memory_imported_ = false;  // guest memory read in place (no copy per draw)
   // Without the import: the guest memory ranges the batch's shaders read (vertex buffers, indices a rectangle list's
   // vertex shader loads), copied into the mirror when the batch is submitted.
@@ -210,7 +223,7 @@ class VulkanRenderer : public gfx::Renderer {
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
     uint32_t pitch = 0, endian = 0, x = 0, y = 0, width = 0, height = 0;  // the last resolve's rectangle
     bool stale = false;    // guest memory lacks it (a resolve kept on the GPU only)
-    bool pending = false;  // its write into guest memory is recorded in the batch, done when the batch has run
+    std::atomic<bool> pending{false};  // its write into guest memory is recorded in a batch, done when it has run
     bool float24 = false;  // a depth resolve from a D24FS8 surface (written back as float24 words)
   };
   // Writes a resolve kept on the GPU into guest memory: now (WriteBackResolved: the batch runs), or when the batch
@@ -220,16 +233,42 @@ class VulkanRenderer : public gfx::Renderer {
   // The resolve image for `base` in `format`, at least `pitch` x `rows`: made, or grown keeping what earlier
   // resolves wrote there (copied in the batch; the old image freed once the batch has run).
   bool EnsureResolveImage(Resolved& r, VkFormat format, uint32_t pitch, uint32_t rows, VkImageUsageFlags usage);
-  std::vector<Image> retired_images_;  // freed when the batch has run
   bool QueueWriteBack(uint32_t base, Resolved& r);
-  void FinishWriteBacks();
   struct PendingWriteBack {
     Buffer buffer;
     Resolved* resolved;
     uint32_t base, x, y, width, height, pitch, endian, element;
     bool depth, float24;
   };
-  std::vector<PendingWriteBack> pending_write_backs_;
+  // Batches in flight: each submission keeps what its commands use until the GPU has run it. A completion thread
+  // waits for them in order, then does what was to follow each (guest memory writes of resolves, the command
+  // processor's fences and interrupts) and frees what it used (staging buffers, retired images).
+  struct Batch {
+    VkCommandBuffer cb = VK_NULL_HANDLE;
+    VkFence fence = VK_NULL_HANDLE;
+    Buffer constants, indices;
+    VkDescriptorSet constants_set = VK_NULL_HANDLE;
+    VkDescriptorPool draw_pool = VK_NULL_HANDLE, depth_pool = VK_NULL_HANDLE;
+    std::vector<Buffer> staging;
+    std::vector<Image> retired;
+    std::vector<PendingWriteBack> write_backs;
+    std::vector<std::function<void()>> actions;
+    bool done = true;  // run, and what follows it done (guarded by done_mutex_)
+  };
+  static constexpr uint32_t kBatches = 8;
+  int32_t last_submitted_ = -1;  // the batch submitted last (its actions take what follows it)
+  std::array<Batch, kBatches> batches_;
+  uint32_t current_ = 0;  // the batch being recorded (not in flight)
+  Batch& batch() { return batches_[current_]; }
+  void FinishBatch(Batch& b);  // on the completion thread
+  void FinishWriteBacks(Batch& b);
+  void WaitBatch(uint32_t index);
+  void Complete();  // the completion thread
+  std::mutex done_mutex_;
+  std::condition_variable done_cv_, work_cv_;
+  std::deque<uint32_t> in_flight_;
+  bool stopping_ = false;
+  std::thread completer_;
   std::set<uint32_t> front_on_gpu_;  // front buffers presented from their resolve image (not read back)
   // Reads `image` (RGBA8 or BGRA8) over a rectangle as RGBA8 pixels.
   bool ReadImageRGBA8(Image& image, VkImageLayout& layout, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
@@ -241,7 +280,6 @@ class VulkanRenderer : public gfx::Renderer {
   VkDescriptorSetLayout depth_layout_ = VK_NULL_HANDLE;
   VkPipelineLayout depth_pipeline_layout_ = VK_NULL_HANDLE;
   VkPipeline depth_pipeline_ = VK_NULL_HANDLE;
-  VkDescriptorPool depth_pool_ = VK_NULL_HANDLE;  // reset with each batch
   static constexpr uint32_t kDepthSets = 64;
   uint32_t depth_sets_ = 0;
   std::map<uint32_t, Resolved> resolved_;
@@ -263,9 +301,27 @@ class VulkanRenderer : public gfx::Renderer {
   uint32_t constant_head_ = 0, index_head_ = 0;  // ring allocation of the batch's constants and indices
   static constexpr uint32_t kDrawSets = 8192, kDrawDescriptors = 32768;  // texture sets and descriptors a batch holds
   uint32_t draw_sets_ = 0, draw_images_ = 0, draw_samplers_ = 0;
+  // Texture sets of the open batch by their contents (layout, views, samplers): draws with the same textures share
+  // one, written once.
+  struct SetKeyHash {
+    size_t operator()(const std::vector<uint64_t>& key) const {
+      uint64_t h = 0xCBF29CE484222325ull;
+      for (uint64_t v : key) h = (h ^ v) * 0x100000001B3ull;
+      return size_t(h ^ (h >> 29));
+    }
+  };
+  std::unordered_map<std::vector<uint64_t>, VkDescriptorSet, SetKeyHash> batch_sets_;
+  // Dynamic state last recorded into the open batch, so a draw records only what changed.
+  struct RecordedState {
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkViewport viewport{};
+    VkRect2D scissor{};
+    float depth_bias[2] = {};
+    float blend[4] = {};
+    uint32_t stencil[2] = {~0u, ~0u};
+    bool valid = false;
+  } recorded_;
   VkCommandPool batch_pool_ = VK_NULL_HANDLE;
-  VkCommandBuffer batch_ = VK_NULL_HANDLE;
-  VkFence batch_fence_ = VK_NULL_HANDLE;
   bool batch_open_ = false, rendering_open_ = false;
   std::array<uint64_t, 7> rendering_key_{};  // the open render pass: 4 colour views, depth view, width, height
   uint32_t constant_alignment_ = 256;
