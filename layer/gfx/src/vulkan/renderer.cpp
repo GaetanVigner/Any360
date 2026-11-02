@@ -708,8 +708,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // the depth or stencil test is on; all at the pitch of RB_SURFACE_INFO.
   // An MSAA surface is drawn as its samples: EDRAM holds a 4x surface of pitch P like a 1x surface of pitch 2P
   // with twice the rows (2x: the same pitch, twice the rows), so the title's MSAA draws (its fast clears among them)
-  // reach the same host image as its 1x draws to that EDRAM. Coordinates are scaled to samples; resolves from MSAA
-  // surfaces (which average samples) are a later step.
+  // reach the same host image as its 1x draws to that EDRAM. Coordinates are scaled to samples; resolves pick or
+  // average a pixel's samples.
   const uint32_t surface_info = regs[kRbSurfaceInfo];
   const uint32_t msaa = (surface_info >> 16) & 3;
   if (msaa > 2) {
@@ -1188,16 +1188,21 @@ void SwapElement(uint8_t* bytes, uint32_t size, uint32_t endian) {
 }  // namespace
 
 bool VulkanRenderer::ResolveDepth(Surface& surface, bool float24, int32_t x0, int32_t y0, uint32_t width, uint32_t height,
-                                  uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian, uint32_t dest_format) {
+                                  uint32_t sample_x, uint32_t sample_y, uint32_t sample, uint32_t dest_base,
+                                  uint32_t dest_pitch, uint32_t dest_endian, uint32_t dest_format) {
   // The EDRAM depth word as the title reads it back: depth (24-bit unorm, or float24 for D24FS8) << 8 | stencil,
   // into a 32-bit destination format (k_8_8_8_8, k_24_8, k_24_8_FLOAT, k_32_FLOAT), endian-swapped and tiled.
   if (dest_format != 6 && dest_format != 22 && dest_format != 23 && dest_format != 36) {
     return Fail("depth resolve to format " + std::to_string(dest_format) + " (not yet)");
   }
   const Functions& f = device_.fn();
-  const VkDeviceSize depth_bytes = VkDeviceSize(width) * height * 4;
+  // The samples of the rectangle are read back; the sample's position in its pixel: bit 0 down, bit 1 right.
+  const uint32_t samples_wide = width * sample_x, samples_high = height * sample_y;
+  const uint32_t offset_x = sample >> 1, offset_y = sample & 1;
+  const VkDeviceSize depth_bytes = VkDeviceSize(samples_wide) * samples_high * 4;
   Buffer readback;
-  if (!CreateBuffer(device_, depth_bytes + VkDeviceSize(width) * height, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback)) {
+  if (!CreateBuffer(device_, depth_bytes + VkDeviceSize(samples_wide) * samples_high, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    true, readback)) {
     return Fail("resolve readback buffer");
   }
   const bool ok = device_.Submit([&](VkCommandBuffer cb) {
@@ -1205,8 +1210,8 @@ bool VulkanRenderer::ResolveDepth(Surface& surface, bool float24, int32_t x0, in
                VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
     VkBufferImageCopy regions[2]{};
     regions[0].imageSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
-    regions[0].imageOffset = {x0, y0, 0};
-    regions[0].imageExtent = {width, height, 1};
+    regions[0].imageOffset = {x0 * int32_t(sample_x), y0 * int32_t(sample_y), 0};
+    regions[0].imageExtent = {samples_wide, samples_high, 1};
     regions[1] = regions[0];
     regions[1].bufferOffset = depth_bytes;
     regions[1].imageSubresource.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
@@ -1219,7 +1224,7 @@ bool VulkanRenderer::ResolveDepth(Surface& surface, bool float24, int32_t x0, in
     const bool unorm24 = surface.image.format == VK_FORMAT_D24_UNORM_S8_UINT;
     for (uint32_t y = 0; y < height; ++y) {
       for (uint32_t x = 0; x < width; ++x) {
-        const size_t i = size_t(y) * width + x;
+        const size_t i = size_t(y * sample_y + offset_y) * samples_wide + x * sample_x + offset_x;
         uint32_t raw;
         std::memcpy(&raw, depth + i * 4, 4);
         const float value = unorm24 ? float(raw & 0xFFFFFF) / float(0xFFFFFF) : std::bit_cast<float>(raw);
@@ -1248,11 +1253,14 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     Fail("resolve copy command " + std::to_string(copy_command) + " (not yet)");
     return;
   }
+  // An MSAA source is drawn as its samples (see Draw): the rectangle is in pixels, the surface in samples.
   const uint32_t surface_info = regs[kRbSurfaceInfo];
-  if ((surface_info >> 16) & 3) {
-    Fail("MSAA resolve (not yet)");
+  const uint32_t msaa = (surface_info >> 16) & 3;
+  if (msaa > 2) {
+    Fail("MSAA mode 3");
     return;
   }
+  const uint32_t sample_x = msaa == 2 ? 2 : 1, sample_y = msaa ? 2 : 1;
   const uint32_t pitch = surface_info & 0x3FFF;
 
   // The rectangle: the copy draw's three vertices (vertex fetch constant 0, float2 window coordinates), with the
@@ -1301,15 +1309,30 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   const bool is_depth = source >= 4;
   const uint32_t color_info = is_depth ? 0 : regs[kRbColorInfo[source]];
   const uint32_t depth_info = regs[kRbDepthInfo];
-  const SurfaceKey source_key = is_depth ? SurfaceKey{depth_info & 0xFFF, pitch, (depth_info >> 16) & 1, 1}
-                                         : SurfaceKey{color_info & 0xFFF, pitch, (color_info >> 16) & 0xF, 0};
+  const SurfaceKey source_key = is_depth ? SurfaceKey{depth_info & 0xFFF, pitch * sample_x, (depth_info >> 16) & 1, 1}
+                                         : SurfaceKey{color_info & 0xFFF, pitch * sample_x, (color_info >> 16) & 0xF, 0};
   Surface* surface = GetSurface(source_key);
   if (!surface) {
     Fail("resolve source surface");
     return;
   }
-  const uint32_t width = uint32_t(std::min<int32_t>(x1, int32_t(surface->image.width)) - x0);
-  const uint32_t height = uint32_t(std::min<int32_t>(y1, int32_t(surface->image.height)) - y0);
+  const uint32_t width = uint32_t(std::min<int32_t>(x1, int32_t(surface->image.width / sample_x)) - x0);
+  const uint32_t height = uint32_t(std::min<int32_t>(y1, int32_t(surface->image.height / sample_y)) - y0);
+  // The samples the copy takes of each pixel (RB_COPY_CONTROL copy_sample_select: 0-3 one sample, 4 samples 0 and 1,
+  // 5 samples 2 and 3, 6 all four), made valid for the sample count as the reference does: depth is never averaged.
+  // Samples are numbered top-left, bottom-left, top-right, bottom-right.
+  uint32_t sample_select = (copy_control >> 4) & 7;
+  if (msaa == 2) {
+    sample_select = std::min(sample_select, 6u);
+    if (is_depth) sample_select = sample_select == 4 || sample_select == 6 ? 0 : sample_select == 5 ? 2 : sample_select;
+  } else if (msaa == 1) {
+    sample_select = sample_select == 2 ? 0 : sample_select == 3 ? 1 : std::min(sample_select, 4u);
+    if (is_depth && sample_select == 4) sample_select = 0;
+  } else {
+    sample_select = 0;
+  }
+  const uint32_t first_sample = sample_select < 4 ? sample_select : sample_select == 5 ? 2 : 0;
+  const uint32_t sample_count = sample_select < 4 ? 1 : sample_select == 6 ? 4 : 2;
 
   // The copy: the region read back, converted, tiled into guest memory (destination texels at the source's
   // coordinates, at RB_COPY_DEST_BASE with RB_COPY_DEST_PITCH).
@@ -1322,7 +1345,8 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     return;
   }
   if (is_depth) {
-    if (!ResolveDepth(*surface, source_key.format == 1, x0, y0, width, height, dest_base, dest_pitch, dest_endian, dest_format)) {
+    if (!ResolveDepth(*surface, source_key.format == 1, x0, y0, width, height, sample_x, sample_y, first_sample, dest_base,
+                      dest_pitch, dest_endian, dest_format)) {
       return;
     }
   } else {
@@ -1336,8 +1360,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       Fail("resolve from host format " + std::to_string(host) + " to format " + std::to_string(dest_format) + " (not yet)");
       return;
     }
+    const uint32_t samples_wide = width * sample_x, samples_high = height * sample_y;
     Buffer readback;
-    if (!CreateBuffer(device_, VkDeviceSize(width) * height * source_bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback)) {
+    if (!CreateBuffer(device_, VkDeviceSize(samples_wide) * samples_high * source_bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      true, readback)) {
       Fail("resolve readback buffer");
       return;
     }
@@ -1345,12 +1371,48 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       Transition(cb, surface->image, surface->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
       VkBufferImageCopy region{};
       region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-      region.imageOffset = {x0, y0, 0};
-      region.imageExtent = {width, height, 1};
+      region.imageOffset = {x0 * int32_t(sample_x), y0 * int32_t(sample_y), 0};
+      region.imageExtent = {samples_wide, samples_high, 1};
       f.vkCmdCopyImageToBuffer(cb, surface->image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1, &region);
     });
+    std::vector<uint8_t> resolved;
+    if (ok && sample_x * sample_y > 1) {
+      // One texel a pixel: the selected sample, or the average of the selected samples (8-bit components rounded to
+      // nearest, half floats averaged as floats).
+      const uint8_t* samples = static_cast<const uint8_t*>(readback.mapped);
+      resolved.resize(size_t(width) * height * source_bytes);
+      for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+          const uint8_t* taken[4];
+          for (uint32_t s = 0; s < sample_count; ++s) {
+            const uint32_t sample = first_sample + s;
+            taken[s] = samples +
+                       (size_t(y * sample_y + (sample & 1)) * samples_wide + x * sample_x + (sample >> 1)) * source_bytes;
+          }
+          uint8_t* out = resolved.data() + (size_t(y) * width + x) * source_bytes;
+          if (source_bytes == 4) {
+            for (uint32_t c = 0; c < 4; ++c) {
+              uint32_t sum = 0;
+              for (uint32_t s = 0; s < sample_count; ++s) sum += taken[s][c];
+              out[c] = uint8_t((sum + sample_count / 2) / sample_count);
+            }
+          } else {
+            for (uint32_t c = 0; c < 4; ++c) {
+              float sum = 0.0f;
+              for (uint32_t s = 0; s < sample_count; ++s) {
+                uint16_t half;
+                std::memcpy(&half, taken[s] + 2 * c, 2);
+                sum += HalfToFloat(half);
+              }
+              const uint16_t half = FloatToHalf(sum / float(sample_count));
+              std::memcpy(out + 2 * c, &half, 2);
+            }
+          }
+        }
+      }
+    }
     if (ok) {
-      const uint8_t* src = static_cast<const uint8_t*>(readback.mapped);
+      const uint8_t* src = resolved.empty() ? static_cast<const uint8_t*>(readback.mapped) : resolved.data();
       const float scale = std::ldexp(1.0f, dest_bias);
       const uint32_t bpp_log2 = dest_bytes == 8 ? 3 : 2;
       if (dest_bytes == 4 && !dest_bias && !dest_swap) {
@@ -1413,7 +1475,8 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   // RB_DEPTH_CLEAR give in the targets' formats (as the reference decodes them).
   if (clear_color || clear_depth) {
     Surface* color_target = clear_color ? surface : nullptr;
-    Surface* depth_target = clear_depth ? GetSurface({depth_info & 0xFFF, pitch, (depth_info >> 16) & 1, 1}) : nullptr;
+    Surface* depth_target =
+        clear_depth ? GetSurface({depth_info & 0xFFF, pitch * sample_x, (depth_info >> 16) & 1, 1}) : nullptr;
     VkClearValue color_value{}, depth_value{};
     if (color_target) {
       const uint64_t clear = regs[kRbColorClear] | uint64_t(regs[kRbColorClearLo]) << 32;
@@ -1460,7 +1523,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
         depth.clearValue = depth_value;
       }
       VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
-      rendering.renderArea = {{x0, y0}, {width, height}};
+      rendering.renderArea = {{x0 * int32_t(sample_x), y0 * int32_t(sample_y)}, {width * sample_x, height * sample_y}};
       rendering.layerCount = 1;
       rendering.colorAttachmentCount = color_target ? 1 : 0;
       rendering.pColorAttachments = color_target ? &color : nullptr;
@@ -1475,7 +1538,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     }
   }
   last_resolve_ = {surface, dest_base, dest_endian, uint32_t(x0), uint32_t(y0), width, height,
-                   !is_depth && dest_format == 6 && !dest_bias && !dest_swap};
+                   !is_depth && !msaa && dest_format == 6 && !dest_bias && !dest_swap};
   ++stats_.resolves;
 }
 

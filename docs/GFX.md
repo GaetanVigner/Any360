@@ -152,8 +152,14 @@ From the Crackdown runs (each one cost a debugging session there):
    the CPU and the texture cache see it; then it clears the colour and depth targets over the rectangle with
    `RB_COLOR_CLEAR` / `RB_DEPTH_CLEAR` decoded per format. `gfx_render_tests` draws a texture, resolves it with
    clears, checks every texel in guest memory and the cleared targets, and samples the result back, on NVIDIA and
-   AMD. Next: depth resolves, more destination formats, MSAA, 3D / array destinations, and host-to-host copies so
-   a resolved texture need not go through guest memory; then a frame can be presented.
+   AMD. Depth resolves followed (depth << 8 | stencil, float24 for D24FS8), then resolves from MSAA surfaces
+   (2026-11-02): the rectangle is in pixels and the surface holds samples (top-left, bottom-left, top-right,
+   bottom-right in each 2x2 block at 4x; top and bottom at 2x); `RB_COPY_CONTROL`'s sample select takes one sample
+   or averages two or four (8-bit components rounded to nearest, half floats as floats), made valid for the sample
+   count as the reference does (depth takes one sample, never an average), and the clears cover the rectangle's
+   samples. `gfx_render_tests` resolves a 4x surface three ways (averaged, sample 1, sample 2) and checks every
+   texel, on NVIDIA and AMD. Next: more destination formats, 3D / array destinations, and host-to-host copies so a
+   resolved texture need not go through guest memory.
 7. **Present** (first step done, 2026-11-01): `XE_SWAP` presents the texture of fetch constant 0, as `VdSwap` (now
    native in any360::sys) writes it: the front buffer is read from guest memory as RGBA8 with its swizzle (the
    renderer's `frame()`, checked headless in `gfx_render_tests`), then the `Presenter` shows it in a window. The
@@ -237,7 +243,9 @@ What looked like softer distant textures was an offset: the per-pixel difference
 included, and was smallest with our frame moved by one pixel. D3D's pixel centres (PA_SU_VTX_CNTL pix_center 0) are
 at integer window coordinates; the reference moves the window coordinates by half a pixel then, which the renderer
 now does too: on the second capture, mean difference 0.09 per channel, 0.21% of pixels off by more than 8 (NVIDIA
-and AMD), from 9.6 and 31%. Next: resolves from MSAA surfaces (averaging samples).
+and AMD), from 9.6 and 31%. Resolves from MSAA surfaces followed (step 6); neither capture has one, and both
+replay as before. The first capture (hle_gpu_49, recorded before the ramp was) stays at 17 per channel: the ramp is
+missing, not a feature.
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames

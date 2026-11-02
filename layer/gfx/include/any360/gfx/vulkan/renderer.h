@@ -20,8 +20,11 @@
 // declare; resolves (Copy) write guest memory; swaps keep the frame on the GPU when it is the last resolve.
 // Guest memory is imported in place when the device allows it, and draws run in batches (Flush).
 //
-// Still narrow: 1x MSAA only; surfaces that alias the same EDRAM in another format do not share contents; colour
-// resolves of a few formats only; the viewport without resolution scale. Each limit is a later step.
+// MSAA surfaces are drawn as their samples (2x: twice the rows; 4x: twice the columns too), and resolves pick or
+// average a pixel's samples as RB_COPY_CONTROL asks.
+//
+// Still narrow: surfaces that alias the same EDRAM in another format do not share contents; colour resolves of a
+// few formats only; the viewport without resolution scale. Each limit is a later step.
 #pragma once
 
 #include <array>
@@ -151,10 +154,12 @@ class VulkanRenderer : public gfx::Renderer {
   VkDescriptorSetLayout TextureSetLayout(bool vertex, uint32_t textures, uint32_t samplers);
   VkPipelineLayout PipelineLayout(uint32_t vs_textures, uint32_t vs_samplers, uint32_t ps_textures, uint32_t ps_samplers);
   bool Fail(const std::string& why);
-  // A depth resolve's copy: the surface's depth and stencil over the rectangle, written as the EDRAM words.
   bool GammaPass();  // the gamma pass's pipeline and resources, made on first use
+  // A depth resolve's copy: the surface's depth and stencil over the rectangle (in pixels; one sample of each pixel
+  // of an MSAA surface, `sample_x` x `sample_y` samples a pixel), written as the EDRAM words.
   bool ResolveDepth(Surface& surface, bool float24, int32_t x0, int32_t y0, uint32_t width, uint32_t height,
-                    uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian, uint32_t dest_format);
+                    uint32_t sample_x, uint32_t sample_y, uint32_t sample, uint32_t dest_base, uint32_t dest_pitch,
+                    uint32_t dest_endian, uint32_t dest_format);
   bool ImportGuestMemory();
   VkCommandBuffer Record();  // the batch's command buffer, begun when needed
   void EndRendering();

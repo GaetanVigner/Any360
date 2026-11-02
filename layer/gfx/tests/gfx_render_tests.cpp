@@ -794,6 +794,59 @@ int main(int argc, char** argv) {
     CHECK(half_wrong == 0);
     s.Shader(0, t::BuildFetchPositionShader());
   }
+  // MSAA resolves: the lower-left triangle drawn at 1x over the 64x64 samples, then resolved as a 4x surface of
+  // pitch 32 (32x32 pixels, 2x2 samples each: top-left, bottom-left, top-right, bottom-right) three times, to
+  // k_8_8_8_8 at pitch 32: all four samples averaged, the bottom-left sample alone, the top-right sample alone.
+  // A pixel left of the diagonal (x < y) is the triangle's colour, right of it black; a diagonal pixel has its
+  // bottom-left sample inside, its top-right one outside, and its other two (on the edge) on the same side.
+  {
+    const uint32_t rect = kVertices + 0x900, dests[3] = {0xD0000, 0xD1000, 0xD2000}, selects[3] = {6, 1, 2};
+    const float rv[3][2] = {{0, 0}, {32, 0}, {32, 32}};
+    for (uint32_t i = 0; i < 3; ++i) {
+      SetBig(rect + 8 * i, Bits(rv[i][0]));
+      SetBig(rect + 8 * i + 4, Bits(rv[i][1]));
+    }
+    for (uint32_t d : dests) std::memset(g_memory + d, 0xCD, 32 * 32 * 4);
+    const uint32_t a = Rgba(200, 100, 0, 255);
+    scenario("MSAA resolves", nullptr, [&] {
+      s.Shader(0, t::BuildFetchPositionShader());
+      s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+      s.Vertices(0);
+      s.Color(200, 100, 0, 255);
+      s.DrawAuto(kTriangleList, 3);
+      s.Reg(0x2000, 32u | 2u << 16);  // RB_SURFACE_INFO: pitch 32, 4x MSAA
+      s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});
+      for (uint32_t i = 0; i < 3; ++i) {
+        s.Put({Type0(0x2318, 4), selects[i] << 4, dests[i], 32u | 32u << 16, 2u | 6u << 7});  // colour 0, k_8_8_8_8
+        s.Reg(0x2208, 6);
+        s.DrawAuto(8, 3);
+        s.Reg(0x2208, 4);
+      }
+    });
+    uint32_t wrong[3] = {}, diagonal = 0;
+    for (uint32_t y = 0; y < 32; ++y) {
+      for (uint32_t x = 0; x < 32; ++x) {
+        uint32_t texel[3];
+        for (uint32_t i = 0; i < 3; ++i) {
+          uint32_t big;
+          std::memcpy(&big, g_memory + dests[i] + vk::TiledOffset2D(int32_t(x), int32_t(y), 32, 2), 4);
+          texel[i] = std::byteswap(big);
+        }
+        if (x == y) {
+          // One or three of four samples inside: 200/4 or 600/4 red (rounded), 100/4 or 300/4 green.
+          wrong[0] += texel[0] != Rgba(50, 25, 0, 255) && texel[0] != Rgba(150, 75, 0, 255);
+          if (x == 5) diagonal = texel[0];
+        } else {
+          wrong[0] += texel[0] != (x < y ? a : kBlack);
+        }
+        wrong[1] += texel[1] != (x <= y ? a : kBlack);
+        wrong[2] += texel[2] != (x < y ? a : kBlack);
+      }
+    }
+    std::printf("gfx_render_tests: MSAA resolves: %u / %u / %u of 1024 texels wrong (averaged, sample 1, sample 2), "
+                "diagonal %08X\n", wrong[0], wrong[1], wrong[2], diagonal);
+    CHECK(wrong[0] == 0 && wrong[1] == 0 && wrong[2] == 0);
+  }
   // Capture and replay: a frame (two triangles, a resolve, a swap) captured as it runs, then replayed into fresh
   // memory, a fresh command processor and a fresh renderer; the replayed frame must be the captured one.
   {
