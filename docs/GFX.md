@@ -227,8 +227,11 @@ in each channel, along a monotonic curve (0 stays 0, mid-tones darker: 136 again
 display gamma ramp the reference applies when it presents. The command processor now keeps the ramp from the DC_LUT
 writes as the reference does (the 256-entry table and the PWL ramp) and hands it to the renderer at each swap, whose
 frame reads go through the table (k_8_8_8_8 front buffers); captures record the ramp (kGammaRamp), since the title
-writes it long before a capture starts. The ramp still has to be applied on the GPU path to the window; then
-resolves from MSAA surfaces (averaging samples).
+writes it long before a capture starts. Second capture (2026-11-02, with the ramp recorded; 14,518 draws, none
+refused): the brightness bias is gone (mean signed difference -0.6 per channel, from +17), the mean difference is 9.6
+per channel (from 21) and the frame matches the reference's by eye, the beam effect included; what remains is
+slightly softer distant textures (anisotropic filtering or LOD bias, likely). Next: the ramp on the GPU path to the
+window, resolves from MSAA surfaces (averaging samples), texture filtering details.
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames
