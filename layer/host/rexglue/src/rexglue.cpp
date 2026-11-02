@@ -170,6 +170,12 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       }
       log_(uploads);
       textures->upload_log().clear();
+      if (!textures->source_misses().empty()) {
+        std::string misses = "Any360: textures over a GPU resolve not using it:";
+        for (const auto& [why, count] : textures->source_misses()) misses += " " + why + " x" + std::to_string(count) + ";";
+        log_(misses);
+        textures->source_misses().clear();
+      }
     }
     std::string paths = "Any360: resolves by path:";
     for (const auto& [path, count] : resolve_paths()) paths += " " + path + " x" + std::to_string(count) + ";";

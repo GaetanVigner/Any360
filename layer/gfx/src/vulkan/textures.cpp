@@ -460,18 +460,40 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   const std::array<uint32_t, 5> key = {fetch[0] & 0xFFC00003, fetch[1], fetch[2], fetch[5] & 0xFFFFFE00, fetch[4] & 0x3FC};
   auto& slot = textures_[key];
   // A resolve's destination left on the GPU, read as it is: copied from there (no memory read, no hash).
-  const GpuSource* source = nullptr;
-  if (t.tiled && t.dimension == 1 && t.depth == 1 && first_level == 0 && last_level == 0 &&
+  // Each slice of a 2D or stacked texture (one level) that a resolve wrote there: all of them, or none.
+  std::vector<const GpuSource*> sources;
+  uint64_t source_generation = 0;
+  if (t.tiled && t.dimension == 1 && first_level == 0 && last_level == 0 &&
       info->convert != TextureFormatInfo::kSwapRedBlue565) {
-    const auto it = gpu_sources_.find(t.base & 0x1FFFFFFF);
-    const bool same_bytes = it != gpu_sources_.end() &&
-                            (it->second.format == info->format ||
-                             (it->second.format == VK_FORMAT_B8G8R8A8_UNORM && info->format == VK_FORMAT_R8G8B8A8_UNORM));
     const bool depth_texture = info->convert == TextureFormatInfo::kDepthUnorm24 ||
                                info->convert == TextureFormatInfo::kDepthFloat24;
-    if (same_bytes && it->second.depth == depth_texture && it->second.pitch == t.pitch &&
-        it->second.endian == t.endian && t.width <= it->second.width && t.height <= it->second.height) {
-      source = &it->second;
+    const uint32_t slice_stride = Place(t, *info, 0).slice_stride;
+    for (uint32_t slice = 0; slice < t.depth; ++slice) {
+      const auto it = gpu_sources_.find((t.base & 0x1FFFFFFF) + slice * slice_stride);
+      const bool same_bytes =
+          it != gpu_sources_.end() &&
+          (it->second.format == info->format ||
+           (it->second.format == VK_FORMAT_B8G8R8A8_UNORM && info->format == VK_FORMAT_R8G8B8A8_UNORM));
+      if (!same_bytes || it->second.depth != depth_texture || it->second.pitch != t.pitch ||
+          it->second.endian != t.endian || t.width > it->second.width || t.height > it->second.height) {
+        sources.clear();
+        break;
+      }
+      sources.push_back(&it->second);
+      source_generation = source_generation * 0x9E3779B97F4A7C15ull + it->second.generation;
+    }
+  }
+  const bool source = !sources.empty();
+  if (!source) {
+    // For diagnostics: a GPU source within this texture's memory it could not use, and why.
+    const auto near = gpu_sources_.lower_bound(span_begin);
+    if (near != gpu_sources_.end() && near->first < span_end) {
+      const GpuSource& s = near->second;
+      char why[200];
+      std::snprintf(why, sizeof(why), "fmt %u %ux%u depth %u dim %u tiled %u levels %u-%u pitch %u/%u at +0x%X (source %s %ux%u)",
+                    t.format, t.width, t.height, t.depth, t.dimension, t.tiled, first_level, last_level, t.pitch, s.pitch,
+                    near->first - (t.base & 0x1FFFFFFF), s.depth ? "depth" : "colour", s.width, s.height);
+      ++source_misses_[why];
     }
   }
   // The content is hashed again only when memory may have changed since it last was (MemoryChanged, NewFrame).
@@ -521,7 +543,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   slot->validated = epoch_;
   slot->begin = span_begin, slot->end = span_end;
   if (source) {
-    if (slot->gpu_generation != source->generation) {
+    if (slot->gpu_generation != source_generation) {
       Image& image = slot->image;
       const uint32_t layers = t.depth;
       auto copy = [&](VkCommandBuffer cb) {
@@ -539,11 +561,14 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
         dependency.pImageMemoryBarriers = &barrier;
         f.vkCmdPipelineBarrier2(cb, &dependency);
         // The destination's bytes as they are (a B8G8R8A8 source is an 8-bit resolve with the red/blue swap).
-        VkImageCopy region{};
-        region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.extent = {t.width, t.height, 1};
-        f.vkCmdCopyImage(cb, source->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.image,
-                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        for (uint32_t slice = 0; slice < uint32_t(sources.size()); ++slice) {
+          VkImageCopy region{};
+          region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+          region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, slice, 1};
+          region.extent = {t.width, t.height, 1};
+          f.vkCmdCopyImage(cb, sources[slice]->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        }
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
         barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
@@ -557,7 +582,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       } else if (!device_.Submit(copy)) {
         return error = "texture copy from a resolve", VK_NULL_HANDLE;
       }
-      slot->gpu_generation = source->generation;
+      slot->gpu_generation = source_generation;
       slot->content_hash = 0;  // read from memory again once the source is gone
       ++gpu_copies_;
     }

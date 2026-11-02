@@ -1208,6 +1208,8 @@ void VulkanRenderer::Flush() {
   }
   batch_open_ = false;
   FinishWriteBacks();
+  for (Image& image : retired_images_) DestroyImage(device_, image);
+  retired_images_.clear();
   // Everything the batch used is free again.
   if (textures_) textures_->BatchDone();
   if (depth_pool_ && depth_sets_) {
@@ -1320,18 +1322,10 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   const Functions& f = device_.fn();
   const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(y0) + height + 31) & ~31u;
   Resolved& r = resolved_[dest_base];
-  if (!r.image.image || r.image.format != format || r.image.width < pitch || r.image.height < rows) {
-    if (r.image.image) {
-      Flush();  // the batch may still read the old image
-      DestroyImage(device_, r.image);
-    }
-    if (!CreateImage2D(device_, pitch, std::max(rows, 32u), format,
-                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                       VK_IMAGE_ASPECT_COLOR_BIT, r.image)) {
-      resolved_.erase(dest_base);
-      return Fail("resolve image");
-    }
-    r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  if (!EnsureResolveImage(r, format, pitch, rows,
+                          VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)) {
+    resolved_.erase(dest_base);
+    return Fail("resolve image");
   }
   // After the draws in the batch: the surface's samples over the rectangle into the destination's texels, one sample
   // copied as it is, or the samples averaged (a linear blit to half the size averages each 2x2 or 1x2 block).
@@ -1720,6 +1714,41 @@ void VulkanRenderer::Invalidate(uint32_t base, uint32_t size) {
   if (textures_) textures_->MemoryChanged(base & 0x1FFFFFFF, uint32_t(std::min<uint64_t>(uint64_t(base & 0x1FFFFFFF) + size, mirror_bytes_)));
 }
 
+bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t pitch, uint32_t rows,
+                                        VkImageUsageFlags usage) {
+  if (r.image.image && r.image.format == format && r.image.width >= pitch && r.image.height >= rows) return true;
+  Image grown;
+  const bool keep = r.image.image && r.image.format == format;
+  if (!CreateImage2D(device_, std::max(pitch, keep ? r.image.width : 0u), std::max({rows, 32u, keep ? r.image.height : 0u}),
+                     format, usage, VK_IMAGE_ASPECT_COLOR_BIT, grown)) {
+    DestroyImage(device_, grown);
+    return false;
+  }
+  VkImageLayout grown_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  if (keep) {
+    // What earlier resolves to this base wrote stays (a second rectangle below the first, say).
+    EndRendering();
+    VkCommandBuffer cb = Record();
+    Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    Transition(cb, grown, grown_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    VkImageCopy region{};
+    region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.extent = {r.image.width, r.image.height, 1};
+    device_.fn().vkCmdCopyImage(cb, r.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, grown.image,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+  }
+  if (r.image.image) {
+    if (batch_open_) {
+      retired_images_.push_back(r.image);  // the batch may still read it
+    } else {
+      DestroyImage(device_, r.image);
+    }
+  }
+  r.image = grown;
+  r.layout = grown_layout;
+  return true;
+}
+
 bool VulkanRenderer::WriteBackResolved(uint32_t base, Resolved& r) {
   if (!QueueWriteBack(base, r)) return false;
   Flush();
@@ -1945,19 +1974,11 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   }
   const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(y0) + height + 31) & ~31u;
   Resolved& r = resolved_[dest_base];
-  if (!r.image.image || r.image.format != VK_FORMAT_R32_SFLOAT || r.image.width < pitch || r.image.height < rows) {
-    if (r.image.image) {
-      Flush();  // the batch may still read the old image
-      DestroyImage(device_, r.image);
-    }
-    if (!CreateImage2D(device_, pitch, std::max(rows, 32u), VK_FORMAT_R32_SFLOAT,
-                       VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                           VK_IMAGE_USAGE_SAMPLED_BIT,
-                       VK_IMAGE_ASPECT_COLOR_BIT, r.image)) {
-      resolved_.erase(dest_base);
-      return Fail("depth resolve image");
-    }
-    r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  if (!EnsureResolveImage(r, VK_FORMAT_R32_SFLOAT, pitch, rows,
+                          VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                              VK_IMAGE_USAGE_SAMPLED_BIT)) {
+    resolved_.erase(dest_base);
+    return Fail("depth resolve image");
   }
   if (depth_sets_ >= kDepthSets) Flush();  // resets the pool
   VkDescriptorSet set = VK_NULL_HANDLE;

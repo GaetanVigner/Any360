@@ -217,6 +217,10 @@ class VulkanRenderer : public gfx::Renderer {
   // has run (QueueWriteBack: its copy recorded in the batch; the CPU reads guest memory only after a fence, which runs
   // the batch first).
   bool WriteBackResolved(uint32_t base, Resolved& r);
+  // The resolve image for `base` in `format`, at least `pitch` x `rows`: made, or grown keeping what earlier
+  // resolves wrote there (copied in the batch; the old image freed once the batch has run).
+  bool EnsureResolveImage(Resolved& r, VkFormat format, uint32_t pitch, uint32_t rows, VkImageUsageFlags usage);
+  std::vector<Image> retired_images_;  // freed when the batch has run
   bool QueueWriteBack(uint32_t base, Resolved& r);
   void FinishWriteBacks();
   struct PendingWriteBack {

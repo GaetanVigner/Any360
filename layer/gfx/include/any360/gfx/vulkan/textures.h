@@ -112,6 +112,8 @@ class TextureCache {
   void SetBeforeMemoryRead(std::function<void(uint32_t, uint32_t)> callback) { before_read_ = std::move(callback); }
   void DropGpuSources(uint32_t begin, uint32_t end);
   uint32_t gpu_copies() const { return gpu_copies_; }
+  // For diagnostics: textures over a GPU source that could not use it, by reason.
+  std::map<std::string, uint32_t>& source_misses() { return source_misses_; }
 
  private:
   // A level's blocks in host order, slice after slice (level 0: the base).
@@ -145,6 +147,7 @@ class TextureCache {
   std::map<uint32_t, GpuSource> gpu_sources_;  // by base
   std::function<void(uint32_t, uint32_t)> before_read_;
   uint32_t gpu_copies_ = 0;
+  std::map<std::string, uint32_t> source_misses_;
 };
 
 }  // namespace any360::gfx::vk

@@ -361,6 +361,12 @@ int main(int argc, char** argv) {
               "%u texture uploads\n",
               device.properties().deviceName, r.draws, r.skipped, r.failed, r.resolves, r.translations, r.pipelines,
               r.render_targets, r.texture_uploads);
+  // Textures over a resolve kept on the GPU that could not copy from it, and why (they read guest memory instead).
+  if (renderer.texture_cache()) {
+    for (const auto& [why, count] : renderer.texture_cache()->source_misses()) {
+      std::printf("gfx_replay: texture over a GPU resolve, not using it: %s x%u\n", why.c_str(), count);
+    }
+  }
   if (!renderer.failures().empty()) {
     std::vector<std::pair<uint32_t, std::string>> reasons;
     for (const auto& [why, count] : renderer.failures()) reasons.push_back({count, why});
