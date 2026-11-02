@@ -31,7 +31,7 @@ constexpr uint32_t kRbDepthInfo = 0x2002, kPaScScreenScissorTl = 0x200E, kPaScSc
                    kPaScWindowOffset = 0x2080, kPaScWindowScissorTl = 0x2081, kPaScWindowScissorBr = 0x2082,
                    kRbColorMask = 0x2104, kRbBlendRed = 0x2105, kRbStencilRefMaskBf = 0x210C,
                    kRbStencilRefMask = 0x210D, kPaClVportXScale = 0x210F, kRbDepthControl = 0x2200,
-                   kRbColorControl = 0x2202, kPaSuScModeCntl = 0x2205, kPaClVteCntl = 0x2206,
+                   kRbColorControl = 0x2202, kPaSuScModeCntl = 0x2205, kPaClVteCntl = 0x2206, kPaSuVtxCntl = 0x2302,
                    kRbModeControl = 0x2208, kPaSuPolyOffsetFrontScale = 0x2380, kRbSurfaceInfo = 0x2000,
                    kSqProgramCntl = 0x2180, kSqContextMisc = 0x2181, kVgtMaxVtxIndx = 0x2100, kVgtMinVtxIndx = 0x2101,
                    kVgtIndxOffset = 0x2102, kVgtMultiPrimIbResetIndx = 0x2103;
@@ -848,6 +848,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
   const float size[2] = {float(width), float(height)};
   // The window offset moves vertices too when PA_SU_SC_MODE_CNTL asks for it.
+  // D3D's pixel centres (PA_SU_VTX_CNTL pix_center 0) are at integer window coordinates, the host's at .5: the
+  // reference moves the window coordinates by half a pixel then.
+  const float half_pixel = (regs[kPaSuVtxCntl] & 1) ? 0.0f : 0.5f;
   const float window_shift[2] = {(mode_cntl >> 16) & 1 ? float(offset_x) : 0.0f, (mode_cntl >> 16) & 1 ? float(offset_y) : 0.0f};
   for (int i = 0; i < 3; ++i) {
     // Guest window coordinate = position * scale + offset (pixels for x and y, depth for z).
@@ -856,7 +859,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     if (i < 2) {
       const float samples = float(i ? sample_y : sample_x);  // guest pixels to surface samples
       system->ndc_scale[i] = scale * samples * 2.0f / size[i];
-      system->ndc_offset[i] = (offset + window_shift[i]) * samples * 2.0f / size[i] - 1.0f;
+      system->ndc_offset[i] = (offset + window_shift[i] + half_pixel) * samples * 2.0f / size[i] - 1.0f;
     } else {
       system->ndc_scale[i] = scale;
       system->ndc_offset[i] = offset;
@@ -1148,7 +1151,7 @@ void VulkanRenderer::Flush() {
 namespace {
 // Resolve registers.
 constexpr uint32_t kRbCopyControl = 0x2318, kRbCopyDestBase = 0x2319, kRbCopyDestPitch = 0x231A, kRbCopyDestInfo = 0x231B,
-                   kRbDepthClear = 0x231D, kRbColorClear = 0x231E, kRbColorClearLo = 0x231F, kPaSuVtxCntl = 0x2302;
+                   kRbDepthClear = 0x231D, kRbColorClear = 0x231E, kRbColorClearLo = 0x231F;
 
 uint16_t FloatToHalf(float f) {
   // Round-to-nearest-even IEEE half (finite values; the resolve path carries what the target holds).

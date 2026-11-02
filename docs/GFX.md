@@ -233,7 +233,11 @@ per channel (from 21) and the frame matches the reference's by eye, the beam eff
 slightly softer distant textures (anisotropic filtering or LOD bias, likely). The window path applies the ramp too: a GPU frame goes through a compute pass
 (the frame's surface, the ramp as a 3 x 256 LUT, an intermediate image, then the blit; its SPIR-V is built in code
 with the vendored glslang builder, so no shader compiler is needed), and CPU frames go through the LUT at the swap.
-Next: resolves from MSAA surfaces (averaging samples), texture filtering details.
+What looked like softer distant textures was an offset: the per-pixel difference sat on every edge, the HUD's
+included, and was smallest with our frame moved by one pixel. D3D's pixel centres (PA_SU_VTX_CNTL pix_center 0) are
+at integer window coordinates; the reference moves the window coordinates by half a pixel then, which the renderer
+now does too: on the second capture, mean difference 0.09 per channel, 0.21% of pixels off by more than 8 (NVIDIA
+and AMD), from 9.6 and 31%. Next: resolves from MSAA surfaces (averaging samples).
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames

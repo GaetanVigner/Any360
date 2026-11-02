@@ -255,12 +255,14 @@ int main(int argc, char** argv) {
     const uint32_t color = Rgba(200, 120, 10, 255);
     Pixels p = scenario("MSAA as samples", nullptr, [&] {
       s.Reg(0x2000, 32u | 2u << 16);  // RB_SURFACE_INFO: pitch 32, 4x MSAA
+      s.Reg(0x2302, 1);               // PA_SU_VTX_CNTL: OpenGL pixel centres (D3D's would move the quad half a pixel)
       s.Put({Type0(0x210F, 6), Bits(16), Bits(16), Bits(-16), Bits(16), Bits(1), Bits(0)});
       s.Put({Type0(0x200E, 2), 0, 32u << 16 | 32u});
       s.Put({Type0(0x2080, 3), 0, 0, 32u << 16 | 32u});
       s.Vertices(0);
       s.Color(200, 120, 10, 255);
       s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2302, 0);
     });
     std::printf("gfx_render_tests: MSAA as samples: %u of %u samples\n", p.Count(color), kSize * kSize);
     CHECK(p.Count(color) == kSize * kSize);
