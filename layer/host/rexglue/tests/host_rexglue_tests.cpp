@@ -28,6 +28,7 @@
 #include "any360/host/rexglue.h"
 
 ANY360_REXGLUE_GRAPHICS_EXPORTS()
+ANY360_REXGLUE_BIND_GRAPHICS(VdSwap)
 
 namespace {
 

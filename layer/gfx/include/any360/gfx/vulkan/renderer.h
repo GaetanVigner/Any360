@@ -58,6 +58,8 @@ struct RendererStats {
   uint32_t flushes = 0;
   // Time spent (nanoseconds, summed): draws in all, of which copying guest memory and submitting; resolves; swaps.
   uint64_t ns_draws = 0, ns_memory = 0, ns_submit = 0, ns_resolves = 0, ns_swaps = 0;
+  // Within draws: texture views (upload, untiling, hashing), shader translation, pipeline lookup and creation.
+  uint64_t ns_textures = 0, ns_shaders = 0, ns_pipelines = 0;
 };
 
 // An EDRAM surface: base in tiles, pitch in pixels, a ColorRenderTargetFormat (or DepthRenderTargetFormat with
@@ -100,6 +102,7 @@ class VulkanRenderer : public gfx::Renderer {
   void Copy(const uint32_t* registers) override;
   // A swap: the front buffer (texture fetch constant 0, as VdSwap writes it) read into the presented frame.
   void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* registers) override;
+  void Invalidate(uint32_t base, uint32_t size) override;
   void GammaRamp(const uint32_t* table, const uint32_t* pwl) override;
 
   // The last presented frame: RGBA8 pixels (R in the low byte), row after row; `number` counts swaps.
@@ -183,6 +186,10 @@ class VulkanRenderer : public gfx::Renderer {
   VkDescriptorSet shared_set_ = VK_NULL_HANDLE, constants_set_ = VK_NULL_HANDLE, empty_set_ = VK_NULL_HANDLE;
   Buffer shared_memory_, constants_, indices_;
   bool shared_memory_imported_ = false;  // guest memory read in place (no copy per draw)
+  // Without the import: the guest memory ranges the batch's shaders read (vertex buffers, indices a rectangle list's
+  // vertex shader loads), copied into the mirror when the batch is submitted.
+  std::vector<std::pair<uint32_t, uint32_t>> batch_ranges_;  // begin, end
+  void ReadsGuestMemory(uint32_t address, uint32_t bytes);
   uint32_t constant_head_ = 0, index_head_ = 0;  // ring allocation of the batch's constants and indices
   static constexpr uint32_t kDrawSets = 8192, kDrawDescriptors = 32768;  // texture sets and descriptors a batch holds
   uint32_t draw_sets_ = 0, draw_images_ = 0, draw_samplers_ = 0;

@@ -248,6 +248,11 @@ bool VulkanRenderer::Initialize() {
   return true;
 }
 
+void VulkanRenderer::ReadsGuestMemory(uint32_t address, uint32_t bytes) {
+  if (shared_memory_imported_ || !bytes || address >= mirror_bytes_) return;
+  batch_ranges_.emplace_back(address, uint32_t(std::min<uint64_t>(uint64_t(address) + bytes, mirror_bytes_)));
+}
+
 bool VulkanRenderer::ImportGuestMemory() {
   const Functions& f = device_.fn();
   const VkDeviceSize alignment = device_.host_pointer_alignment();
@@ -421,6 +426,7 @@ VulkanRenderer::TranslatedShader* VulkanRenderer::GetShader(const gfx::Shader& s
 }
 
 VkShaderModule VulkanRenderer::GetModule(TranslatedShader& shader, uint64_t modification) {
+  Timer shader_timer(stats_.ns_shaders);
   auto it = shader.modules.find(modification);
   if (it != shader.modules.end()) return it->second;
   VkShaderModule& module = shader.modules[modification];
@@ -607,6 +613,17 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     Fail("shader analysis");
     return;
   }
+  // The vertex buffers the vertex shader fetches from (vertex fetch constants: address in dword 0, size in words in
+  // dword 1, and as far again as VGT_INDX_OFFSET moves the indices), for the copy into the mirror when guest memory
+  // is not read in place.
+  if (!shared_memory_imported_) {
+    const uint64_t index_offset = regs[kVgtIndxOffset] & 0xFFFFFF;
+    for (const auto& binding : vs->shader->vertex_bindings()) {
+      const uint32_t* fetch = regs + reg::kFetchConstants + 2 * binding.fetch_constant;
+      const uint64_t bytes = uint64_t((fetch[1] >> 2) & 0xFFFFFF) * 4 + index_offset * binding.stride_words * 4;
+      ReadsGuestMemory(fetch[0] & 0x1FFFFFFC, uint32_t(std::min<uint64_t>(bytes, mirror_bytes_)));
+    }
+  }
   // The translations for this draw: the interpolators the vertex shader writes and the pixel shader reads
   // (SQ_PROGRAM_CNTL, SQ_CONTEXT_MISC), and the register counts dynamic addressing may reach.
   rg::reg::SQ_PROGRAM_CNTL program_cntl;
@@ -669,7 +686,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
           binding.dimension == rg::xenos::FetchOpDimension::kCube           ? TextureCache::ViewType::kCube
           : binding.dimension == rg::xenos::FetchOpDimension::k3DOrStacked ? TextureCache::ViewType::k3D
                                                                            : TextureCache::ViewType::k2DArray;
-      const VkImageView view = textures_->View(fetch, view_type, error, signed_view);
+      VkImageView view;
+      {
+        Timer texture_timer(stats_.ns_textures);
+        view = textures_->View(fetch, view_type, error, signed_view);
+      }
       if (!view) {
         Fail("texture " + std::to_string(binding.fetch_constant) + ": " + error);
         return;
@@ -801,7 +822,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     key.blend_controls[i] = colors[i] ? (regs[kRbBlendControl[i]] & 0x1FFF1FFF) : kNoBlending;
     if (colors[i]) key.color_masks |= color_mask_register & (0xFu << (4 * i));
   }
-  const VkPipeline pipeline = GetPipeline(key);
+  VkPipeline pipeline;
+  {
+    Timer pipeline_timer(stats_.ns_pipelines);
+    pipeline = GetPipeline(key);
+  }
   if (!pipeline) {
     Fail("pipeline creation");
     return;
@@ -874,6 +899,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     system->flags |= SpirvShaderTranslator::kSysFlag_ComputeOrPrimitiveVertexIndexLoad;
     if (draw.index_32) system->flags |= SpirvShaderTranslator::kSysFlag_ComputeOrPrimitiveVertexIndexLoad32Bit;
     system->vertex_index_load_address = draw.index_base;
+    ReadsGuestMemory(draw.index_base, draw.index_count * (draw.index_32 ? 4 : 2));
     // 16-bit indices swap within 16 bits (as the reference normalizes 32-bit swap modes for them).
     Endian endian = draw.index_endian;
     if (!draw.index_32) endian = endian == Endian::k8in32 ? Endian::k8in16 : endian == Endian::k16in32 ? Endian::kNone : endian;
@@ -1128,8 +1154,18 @@ void VulkanRenderer::Flush() {
   // Guest memory the batch's shaders fetch from: read in place, or copied once here (the draws run now, so they
   // see memory as it is now either way).
   if (!shared_memory_imported_) {
+    // Only what the batch reads: copying all of guest memory at every submission (several a frame: each resolve
+    // submits) costs far more than the draws.
     Timer memory_timer(stats_.ns_memory);
-    std::memcpy(shared_memory_.mapped, physical_, mirror_bytes_);
+    std::sort(batch_ranges_.begin(), batch_ranges_.end());
+    uint32_t copied_to = 0;
+    for (auto [begin, end] : batch_ranges_) {
+      begin = std::max(begin, copied_to);
+      if (begin >= end) continue;
+      std::memcpy(static_cast<uint8_t*>(shared_memory_.mapped) + begin, physical_ + begin, end - begin);
+      copied_to = end;
+    }
+    batch_ranges_.clear();
   }
   VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
   submit.commandBufferCount = 1;
@@ -1537,13 +1573,25 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       return;
     }
   }
+  // Textures over the destination are hashed again before their next use (the tiled rows the rectangle reaches).
+  if (textures_) {
+    const uint32_t element = is_depth ? 4 : (dest_format == 32 ? 8 : 4);
+    const uint64_t rows = (uint64_t(y0) + height + 31) & ~uint64_t(31);
+    textures_->MemoryChanged(dest_base, uint32_t(std::min<uint64_t>(dest_base + rows * ((dest_pitch + 31) & ~31u) * element,
+                                                                    mirror_bytes_)));
+  }
   last_resolve_ = {surface, dest_base, dest_endian, uint32_t(x0), uint32_t(y0), width, height,
                    !is_depth && !msaa && dest_format == 6 && !dest_bias && !dest_swap};
   ++stats_.resolves;
 }
 
+void VulkanRenderer::Invalidate(uint32_t base, uint32_t size) {
+  if (textures_) textures_->MemoryChanged(base & 0x1FFFFFFF, uint32_t(std::min<uint64_t>(uint64_t(base & 0x1FFFFFFF) + size, mirror_bytes_)));
+}
+
 void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint32_t* regs) {
   Flush();  // a frame boundary: nothing stays pending across it
+  if (textures_) textures_->NewFrame();  // the CPU may have written any texture since
   Timer swap_timer(stats_.ns_swaps);
   // The front buffer is a texture in guest memory, usually the last resolve's destination. When it is exactly that
   // (same address, k_8_8_8_8 read with the endianness it was written with, the colour components unswizzled), the

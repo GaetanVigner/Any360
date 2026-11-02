@@ -3,7 +3,8 @@
 # when ANY360_REFERENCE_SDK names a runtime install. A title adds layer/sys with EXCLUDE_FROM_ALL and links this.
 add_library(any360_host_rexglue STATIC src/rexglue.cpp)
 target_include_directories(any360_host_rexglue PUBLIC include)
-target_link_libraries(any360_host_rexglue PUBLIC any360_sys_ppc any360_gfx_vulkan)
+# The renderer stays private: its vendored headers (fmt among them) must not reach the title's sources.
+target_link_libraries(any360_host_rexglue PUBLIC any360_sys_ppc PRIVATE any360_gfx_vulkan)
 target_compile_options(any360_host_rexglue PRIVATE -Wall -Wextra)
 
 # The binding inside a running reference runtime (tool mode), with a ring, interrupts and vertical blanks.

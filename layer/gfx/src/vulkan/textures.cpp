@@ -43,10 +43,24 @@ VkSamplerAddressMode AddressMode(uint32_t clamp) {
   }
 }
 
-uint64_t Fnv1a(const uint8_t* data, size_t size) {
-  uint64_t hash = 0xCBF29CE484222325ull;
-  for (size_t i = 0; i < size; ++i) hash = (hash ^ data[i]) * 0x100000001B3ull;
-  return hash;
+// A content hash of guest memory, 32 bytes a step over four independent lanes (a texture is hashed whenever it may
+// have changed: byte-wise hashing cost milliseconds a texture).
+uint64_t HashMemory(const uint8_t* data, size_t size) {
+  constexpr uint64_t k = 0x9E3779B97F4A7C15ull;
+  uint64_t lanes[4] = {k, k * 3, k * 5, k * 7};
+  size_t i = 0;
+  for (; i + 32 <= size; i += 32) {
+    for (int lane = 0; lane < 4; ++lane) {
+      uint64_t v;
+      std::memcpy(&v, data + i + 8 * lane, 8);
+      lanes[lane] = (lanes[lane] ^ v) * 0xFF51AFD7ED558CCDull;
+      lanes[lane] ^= lanes[lane] >> 29;
+    }
+  }
+  uint64_t hash = size;
+  for (uint64_t lane : lanes) hash = (hash ^ lane) * 0xC4CEB9FE1A85EC53ull;
+  for (; i < size; ++i) hash = (hash ^ data[i]) * 0x100000001B3ull;
+  return hash ^ (hash >> 33);
 }
 }  // namespace
 
@@ -430,17 +444,28 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   // The levels, and a hash of the guest memory each spans (a level's slices at its stride, the packed tail's tile).
   uint32_t first_level, last_level;
   t.Levels(first_level, last_level);
-  uint64_t hash = (uint64_t(fetch[0]) << 32 | fetch[1]) ^ (uint64_t(fetch[2]) << 7) ^ (uint64_t(fetch[4]) << 21) ^ fetch[5];
+  const uint64_t seed = (uint64_t(fetch[0]) << 32 | fetch[1]) ^ (uint64_t(fetch[2]) << 7) ^ (uint64_t(fetch[4]) << 21) ^ fetch[5];
+  uint32_t span_begin = UINT32_MAX, span_end = 0;
   for (uint32_t level = first_level; level <= last_level; ++level) {
     const Placement p = Place(t, *info, level);
     const uint64_t bytes = uint64_t(p.slice_stride) * t.slices();
     if (!p.address || p.address + bytes > mirror_bytes_) return error = "texture outside the mirrored memory", VK_NULL_HANDLE;
-    hash = hash * 0x100000001B3ull ^ Fnv1a(physical_ + p.address, size_t(bytes));
+    span_begin = std::min(span_begin, p.address);
+    span_end = std::max(span_end, uint32_t(p.address + bytes));
   }
   const uint32_t levels = last_level + 1;
 
   const std::array<uint32_t, 5> key = {fetch[0] & 0xFFC00003, fetch[1], fetch[2], fetch[5] & 0xFFFFFE00, fetch[4] & 0x3FC};
   auto& slot = textures_[key];
+  // The content is hashed again only when memory may have changed since it last was (MemoryChanged, NewFrame).
+  uint64_t hash = slot ? slot->content_hash : 0;
+  if (!slot || slot->validated != epoch_ || slot->seed != seed) {
+    hash = seed;
+    for (uint32_t level = first_level; level <= last_level; ++level) {
+      const Placement p = Place(t, *info, level);
+      hash = hash * 0x100000001B3ull ^ HashMemory(physical_ + p.address, size_t(uint64_t(p.slice_stride) * t.slices()));
+    }
+  }
   const Functions& f = device_.fn();
   if (!slot) {
     slot = std::make_unique<Texture>();
@@ -471,6 +496,9 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     slot->image.height = t.height;
   }
 
+  slot->seed = seed;
+  slot->validated = epoch_;
+  slot->begin = span_begin, slot->end = span_end;
   if (slot->content_hash != hash) {
     if (before_upload_) before_upload_();  // draws recorded earlier must sample the old content
     // Every level's blocks, one after the other (levels below the first are never sampled: left as they are).
@@ -577,6 +605,12 @@ VkSampler TextureCache::Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t 
                                          : VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
   if (device_.fn().vkCreateSampler(device_.device(), &si, nullptr, &sampler) != VK_SUCCESS) sampler = VK_NULL_HANDLE;
   return sampler;
+}
+
+void TextureCache::MemoryChanged(uint32_t begin, uint32_t end) {
+  for (auto& [key, texture] : textures_) {
+    if (texture->begin < end && begin < texture->end) texture->validated = 0;
+  }
 }
 
 }  // namespace any360::gfx::vk

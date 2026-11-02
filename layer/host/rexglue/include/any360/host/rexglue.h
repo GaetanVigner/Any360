@@ -11,6 +11,8 @@
 //
 //   #include "any360/host/rexglue.h"
 //   ANY360_REXGLUE_GRAPHICS_EXPORTS()   // once, at namespace scope: the Vd* overrides
+//   ANY360_REXGLUE_BIND_GRAPHICS(VdSwap)  // unless the title hooks VdSwap itself: its hook then calls
+//                                         // any360_VdSwap when GraphicsBound(), the runtime's VdSwap otherwise
 //
 //   // When the runtime is set up (ReXApp::OnPostSetup), before the title's first Vd* call, when a setting asks:
 //   std::string error;
@@ -23,6 +25,7 @@
 #include <rex/ppc.h>
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 namespace any360::host::rexglue {
@@ -31,6 +34,14 @@ struct GraphicsOptions {
   std::string gpu;  // a substring of the Vulkan device name to prefer ("NVIDIA", "Radeon"); else discrete first
   uint32_t width = 1280, height = 720;  // the display mode the GPU reports, and the window's first size
   double vblank_hz = 60.0;
+  // Frames drawn inside the title's own window (the visible top-level window of the thread calling StartGraphics,
+  // the runtime's UI thread), as a child covering its client area that leaves input and focus to it: the runtime's
+  // input (SDL) only reads controllers while one of its windows has the focus. False: a window of its own.
+  bool embed = true;
+  // Where the binding reports, every `stats_seconds`: frames per second and the renderer's cost per frame, the
+  // draws it could not draw by reason. None: nothing reported.
+  std::function<void(const std::string&)> log;
+  double stats_seconds = 5.0;
 };
 
 // Binds the graphics to Any360: makes the window, the Vulkan device and renderer, the command processor; takes over
@@ -58,8 +69,9 @@ void CallGraphicsExport(const char* symbol, GuestFunction any360, PPCContext& ct
     any360::host::rexglue::CallGraphicsExport("__imp__" #name, &any360_##name, ctx, base);          \
   }
 
-// The GPU's system calls: the ring buffer and its read-pointer write-back, the interrupt callback, the swap, the
-// system and scaler command buffers, the engines. VdPersistDisplay stays the runtime's (it allocates guest memory,
+// The GPU's system calls: the ring buffer and its read-pointer write-back, the interrupt callback, the system and
+// scaler command buffers, the engines. VdSwap is bound on its own (ANY360_REXGLUE_BIND_GRAPHICS(VdSwap)), since titles
+// often hook it already (frame pacing, frame counting). VdPersistDisplay stays the runtime's (it allocates guest memory,
 // which the runtime still owns), and so do the display-mode queries (the runtime's window and the title agree on them).
 #define ANY360_REXGLUE_GRAPHICS_EXPORTS()                                  \
   ANY360_REXGLUE_BIND_GRAPHICS(VdInitializeEngines)                        \
@@ -67,8 +79,11 @@ void CallGraphicsExport(const char* symbol, GuestFunction any360, PPCContext& ct
   ANY360_REXGLUE_BIND_GRAPHICS(VdInitializeRingBuffer)                     \
   ANY360_REXGLUE_BIND_GRAPHICS(VdEnableRingBufferRPtrWriteBack)            \
   ANY360_REXGLUE_BIND_GRAPHICS(VdSetGraphicsInterruptCallback)             \
-  ANY360_REXGLUE_BIND_GRAPHICS(VdSwap)                                     \
+\
   ANY360_REXGLUE_BIND_GRAPHICS(VdGetSystemCommandBuffer)                   \
   ANY360_REXGLUE_BIND_GRAPHICS(VdSetSystemCommandBufferGpuIdentifierAddress) \
   ANY360_REXGLUE_BIND_GRAPHICS(VdInitializeScalerCommandBuffer)            \
   ANY360_REXGLUE_BIND_GRAPHICS(VdCallGraphicsNotificationRoutines)
+
+// any360::sys's VdSwap, for a title whose own __imp__VdSwap hook forwards to it when the graphics are bound.
+extern "C" void any360_VdSwap(PPCContext& ctx, uint8_t* base);

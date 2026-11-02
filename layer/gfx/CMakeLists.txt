@@ -37,7 +37,10 @@ add_library(any360_xenos_shader STATIC
 # The shim and vendored include trees hold disjoint headers; SYSTEM keeps upstream warnings out of our targets.
 target_include_directories(any360_xenos_shader SYSTEM PUBLIC ${ANY360_XS}/shim/include ${ANY360_XS}/include
                            ${ANY360_GLSLANG} ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fmt/include)
+# Our fmt copy lives in an inline namespace of its own, so a title that links its own fmt (another 12.x, say) keeps
+# both apart instead of mixing two definitions of the same symbols.
 target_compile_definitions(any360_xenos_shader PUBLIC FMT_HEADER_ONLY
+                           "FMT_BEGIN_NAMESPACE=namespace fmt { inline namespace any360_v12 {" "FMT_END_NAMESPACE=}}"
                            $<$<BOOL:${WIN32}>:NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS>)
 # Third-party code: upstream warnings are not ours to fix.
 target_compile_options(any360_xenos_shader PRIVATE -w)

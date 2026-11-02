@@ -79,6 +79,11 @@ class TextureCache {
                  std::string& error) const;
 
   uint32_t uploads() const { return uploads_; }
+  // When guest memory may have changed, so a texture's content is hashed again before its next use (at most once
+  // between two such events): a new frame (the CPU may have written anywhere), or [begin, end) written by the GPU
+  // (a resolve) or reported by the title (coherency).
+  void NewFrame() { ++epoch_; }
+  void MemoryChanged(uint32_t begin, uint32_t end);
   // Called before an upload replaces a texture's content (the renderer runs its pending draws first).
   void SetBeforeUpload(std::function<void()> callback) { before_upload_ = std::move(callback); }
 
@@ -91,6 +96,9 @@ class TextureCache {
   struct Texture {
     Image image;  // the view member is unused: views are per swizzle
     uint64_t content_hash = 0;
+    uint64_t seed = 0;            // the fetch constant's part of the hash
+    uint64_t validated = 0;       // the epoch its content was last hashed in
+    uint32_t begin = 0, end = 0;  // the guest memory its levels span
     std::map<uint32_t, VkImageView> views;  // by host swizzle, bit 16: signed
   };
 
@@ -103,6 +111,7 @@ class TextureCache {
   Image empty_[3];  // 1x1 black textures by ViewType, made on first use
   VkImageView Empty(ViewType type, std::string& error);
   uint32_t uploads_ = 0;
+  uint64_t epoch_ = 1;
   std::function<void()> before_upload_;
 };
 
