@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <cstring>
 #include <map>
+#include <set>
 #include <memory>
 #include <string>
 #include <vector>
@@ -54,7 +55,11 @@ struct RendererStats {
   uint32_t pipelines = 0;
   uint32_t render_targets = 0;
   uint32_t texture_uploads = 0;
+  uint32_t texture_gpu_copies = 0;  // textures copied from a resolve kept on the GPU
   uint32_t resolves = 0;
+  uint32_t resolves_on_gpu = 0, resolves_read_back = 0, resolves_depth = 0;  // kinds of resolves among them
+  uint32_t resolve_write_backs = 0;  // GPU resolves written into guest memory later (read by a texture otherwise)
+  uint64_t ns_texture_hash = 0, ns_texture_load = 0;  // within textures: hashing, loading levels for uploads
   uint32_t flushes = 0;
   // Time spent (nanoseconds, summed): draws in all, of which copying guest memory and submitting; resolves; swaps.
   uint64_t ns_draws = 0, ns_memory = 0, ns_submit = 0, ns_resolves = 0, ns_swaps = 0;
@@ -85,6 +90,7 @@ class VulkanRenderer : public gfx::Renderer {
     SurfaceKey key;
     Image image;
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageView depth_view = VK_NULL_HANDLE;  // a depth surface's depth aspect, sampled by depth resolves
   };
   Surface* GetSurface(const SurfaceKey& key);
   bool ClearColor(const SurfaceKey& key, const float rgba[4]);
@@ -130,6 +136,13 @@ class VulkanRenderer : public gfx::Renderer {
   // Every failure so far, by reason (last_error's text).
   const std::map<std::string, uint32_t>& failures() const { return failures_; }
   bool guest_memory_in_place() const { return shared_memory_imported_; }
+  // For diagnostics: the textures uploaded so far by (base, format, width, height), and whether a base is the
+  // destination of a resolve (with its destination format, or UINT32_MAX).
+  TextureCache* texture_cache() { return textures_.get(); }
+  uint32_t ResolveFormatAt(uint32_t base) const {
+    const auto it = resolve_formats_.find(base);
+    return it == resolve_formats_.end() ? UINT32_MAX : it->second;
+  }
   VkFormat depth_format() const { return depth_format_; }
 
  private:
@@ -189,6 +202,59 @@ class VulkanRenderer : public gfx::Renderer {
   // Without the import: the guest memory ranges the batch's shaders read (vertex buffers, indices a rectangle list's
   // vertex shader loads), copied into the mirror when the batch is submitted.
   std::vector<std::pair<uint32_t, uint32_t>> batch_ranges_;  // begin, end
+  // Resolves kept on the GPU, by destination base: the destination's texels at their coordinates (an image as wide
+  // as the destination pitch), which textures reading that destination copy from. A resolve of more than
+  // kReadBackMaxBytes is not read back into guest memory (the CPU reads small ones: exposure, picking).
+  struct Resolved {
+    Image image;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    uint32_t pitch = 0, endian = 0, x = 0, y = 0, width = 0, height = 0;  // the last resolve's rectangle
+    bool stale = false;    // guest memory lacks it (a resolve kept on the GPU only)
+    bool pending = false;  // its write into guest memory is recorded in the batch, done when the batch has run
+    bool float24 = false;  // a depth resolve from a D24FS8 surface (written back as float24 words)
+  };
+  // Writes a resolve kept on the GPU into guest memory: now (WriteBackResolved: the batch runs), or when the batch
+  // has run (QueueWriteBack: its copy recorded in the batch; the CPU reads guest memory only after a fence, which runs
+  // the batch first).
+  bool WriteBackResolved(uint32_t base, Resolved& r);
+  bool QueueWriteBack(uint32_t base, Resolved& r);
+  void FinishWriteBacks();
+  struct PendingWriteBack {
+    Buffer buffer;
+    Resolved* resolved;
+    uint32_t base, x, y, width, height, pitch, endian, element;
+    bool depth, float24;
+  };
+  std::vector<PendingWriteBack> pending_write_backs_;
+  std::set<uint32_t> front_on_gpu_;  // front buffers presented from their resolve image (not read back)
+  // Reads `image` (RGBA8 or BGRA8) over a rectangle as RGBA8 pixels.
+  bool ReadImageRGBA8(Image& image, VkImageLayout& layout, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+                      std::vector<uint32_t>& pixels);
+  // A depth resolve kept on the GPU: the depth of one sample a pixel into an R32F image (DepthPass, depth_shader.cpp).
+  bool ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0, uint32_t width, uint32_t height, uint32_t sample_x,
+                         uint32_t sample_y, uint32_t sample, uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian);
+  bool DepthPass();
+  VkDescriptorSetLayout depth_layout_ = VK_NULL_HANDLE;
+  VkPipelineLayout depth_pipeline_layout_ = VK_NULL_HANDLE;
+  VkPipeline depth_pipeline_ = VK_NULL_HANDLE;
+  VkDescriptorPool depth_pool_ = VK_NULL_HANDLE;  // reset with each batch
+  static constexpr uint32_t kDepthSets = 64;
+  uint32_t depth_sets_ = 0;
+  std::map<uint32_t, Resolved> resolved_;
+  std::map<uint32_t, uint32_t> resolve_formats_;  // destination base: format of the last resolve there
+ public:
+  // For diagnostics: resolves by path taken (GPU or CPU, source and destination formats, what kept it off the GPU).
+  std::map<std::string, uint32_t>& resolve_paths() { return resolve_paths_; }
+
+ private:
+  std::map<std::string, uint32_t> resolve_paths_;
+  uint64_t resolve_generation_ = 0;
+  static constexpr uint64_t kReadBackMaxBytes = 256 * 1024;
+  // `format`: the resolve image's format, the destination's bytes as a texture reads them (B8G8R8A8 for an 8-bit
+  // resolve with the red/blue swap: the blit places each component, the texture copies the bytes as they are).
+  bool ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint32_t width, uint32_t height, uint32_t sample_x,
+                    uint32_t sample_y, uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian, VkFormat format);
+  std::set<uint32_t> front_buffers_;  // bases swapped as front buffers: resolves there are always read back
   void ReadsGuestMemory(uint32_t address, uint32_t bytes);
   uint32_t constant_head_ = 0, index_head_ = 0;  // ring allocation of the batch's constants and indices
   static constexpr uint32_t kDrawSets = 8192, kDrawDescriptors = 32768;  // texture sets and descriptors a batch holds
@@ -208,6 +274,7 @@ class VulkanRenderer : public gfx::Renderer {
     bool plain = false;  // k_8_8_8_8 copied as it is (no exponent bias, no red/blue swap)
   } last_resolve_;
   Surface* frame_surface_ = nullptr;
+  Resolved* frame_resolved_ = nullptr;  // the frame's image when it is a resolve kept on the GPU
   uint32_t frame_x_ = 0, frame_y_ = 0;
   std::string last_error_;
   std::map<std::string, uint32_t> failures_;

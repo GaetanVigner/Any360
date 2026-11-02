@@ -79,13 +79,39 @@ class TextureCache {
                  std::string& error) const;
 
   uint32_t uploads() const { return uploads_; }
+  // Time spent hashing texture memory and loading levels for uploads (untiling, conversion), in nanoseconds.
+  uint64_t ns_hash() const { return ns_hash_; }
+  uint64_t ns_load() const { return ns_load_; }
+  // The textures uploaded, by (base, format, width, height): count, for finding what is uploaded again and again.
+  std::map<std::array<uint32_t, 4>, uint32_t>& upload_log() { return upload_log_; }
   // When guest memory may have changed, so a texture's content is hashed again before its next use (at most once
   // between two such events): a new frame (the CPU may have written anywhere), or [begin, end) written by the GPU
   // (a resolve) or reported by the title (coherency).
   void NewFrame() { ++epoch_; }
   void MemoryChanged(uint32_t begin, uint32_t end);
-  // Called before an upload replaces a texture's content (the renderer runs its pending draws first).
-  void SetBeforeUpload(std::function<void()> callback) { before_upload_ = std::move(callback); }
+  // Where uploads are recorded: the renderer's open batch (outside rendering), so an upload is one more command in it
+  // rather than a submission waited for; draws recorded before it still read the old content, in GPU order. Without
+  // one, each upload is submitted and waited for. BatchDone: the batch ran, its staging buffers are free.
+  void SetRecorder(std::function<VkCommandBuffer()> recorder) { recorder_ = std::move(recorder); }
+  void BatchDone();
+
+  // Guest memory a resolve left on the GPU (its texels at their coordinates in `image`, kept in TRANSFER_SRC_OPTIMAL
+  // layout): a texture that reads exactly that destination (same base, pitch, host format and endianness; tiled 2D,
+  // one level) is copied from the image on the GPU instead of being read from memory, which a large resolve does not
+  // write. A new resolve to the base replaces it (with a new generation); DropGpuSources forgets those in a range.
+  struct GpuSource {
+    VkImage image = VK_NULL_HANDLE;
+    VkFormat format = VK_FORMAT_UNDEFINED;
+    uint32_t base = 0, pitch = 0, endian = 0, width = 0, height = 0;
+    uint64_t generation = 0;
+    bool depth = false;  // a depth resolve (R32F depth values): read by the depth formats (k_24_8, k_24_8_FLOAT)
+  };
+  void SetGpuSource(const GpuSource& source) { gpu_sources_[source.base] = source; }
+  // Called before a texture's memory [begin, end) is read on the CPU: the renderer writes there what a resolve left
+  // on the GPU only, when the texture does not read it as it is (another layout, stacked slices...).
+  void SetBeforeMemoryRead(std::function<void(uint32_t, uint32_t)> callback) { before_read_ = std::move(callback); }
+  void DropGpuSources(uint32_t begin, uint32_t end);
+  uint32_t gpu_copies() const { return gpu_copies_; }
 
  private:
   // A level's blocks in host order, slice after slice (level 0: the base).
@@ -96,9 +122,9 @@ class TextureCache {
   struct Texture {
     Image image;  // the view member is unused: views are per swizzle
     uint64_t content_hash = 0;
-    uint64_t seed = 0;            // the fetch constant's part of the hash
     uint64_t validated = 0;       // the epoch its content was last hashed in
     uint32_t begin = 0, end = 0;  // the guest memory its levels span
+    uint64_t gpu_generation = 0;  // the GPU source generation it was copied from (0: from memory)
     std::map<uint32_t, VkImageView> views;  // by host swizzle, bit 16: signed
   };
 
@@ -111,8 +137,14 @@ class TextureCache {
   Image empty_[3];  // 1x1 black textures by ViewType, made on first use
   VkImageView Empty(ViewType type, std::string& error);
   uint32_t uploads_ = 0;
+  uint64_t ns_hash_ = 0, ns_load_ = 0;
+  std::map<std::array<uint32_t, 4>, uint32_t> upload_log_;
   uint64_t epoch_ = 1;
-  std::function<void()> before_upload_;
+  std::function<VkCommandBuffer()> recorder_;
+  std::vector<Buffer> pending_staging_;  // staging buffers of uploads recorded in the open batch
+  std::map<uint32_t, GpuSource> gpu_sources_;  // by base
+  std::function<void(uint32_t, uint32_t)> before_read_;
+  uint32_t gpu_copies_ = 0;
 };
 
 }  // namespace any360::gfx::vk

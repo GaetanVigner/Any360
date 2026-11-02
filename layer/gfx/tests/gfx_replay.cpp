@@ -264,6 +264,17 @@ class TracingRenderer : public Renderer {
 }  // namespace
 
 int main(int argc, char** argv) {
+  std::setvbuf(stdout, nullptr, _IONBF, 0);  // a crash keeps what was printed
+#ifdef _WIN32
+  // A crash reports where it happened (the module offset, for llvm-symbolizer).
+  SetUnhandledExceptionFilter([](EXCEPTION_POINTERS* e) -> LONG {
+    const auto address = reinterpret_cast<uintptr_t>(e->ExceptionRecord->ExceptionAddress);
+    const auto base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
+    std::printf("gfx_replay: exception %08lX at %p (gfx_replay.exe+0x%llX)\n", e->ExceptionRecord->ExceptionCode,
+                e->ExceptionRecord->ExceptionAddress, (unsigned long long)(address - base));
+    return EXCEPTION_EXECUTE_HANDLER;
+  });
+#endif
   std::string path, out;
   bool trace = false;
   std::string dump;

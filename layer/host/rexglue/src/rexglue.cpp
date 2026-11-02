@@ -12,6 +12,8 @@
 #include <rex/system/xmemory.h>
 #include <rex/system/xthread.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -130,10 +132,11 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     char line[768];
     std::snprintf(line, sizeof(line),
                   "Any360: %.1f FPS; per frame: %.0f draws, %.0f skipped, %.0f failed, %.0f resolves, %.1f texture uploads, "
-                  "%.1f translations, %.1f pipelines, %.1f flushes; ms: draws %.2f (textures %.2f, shaders %.2f, "
+                  "%.1f texture copies from resolves, %.1f translations, %.1f pipelines, %.1f flushes; ms: draws %.2f (textures %.2f, shaders %.2f, "
                   "pipelines %.2f, guest memory %.2f, submit %.2f), resolves %.2f, swaps %.2f; guest memory %s",
                   n / seconds, (s.draws - last_.draws) / n, (s.skipped - last_.skipped) / n, (s.failed - last_.failed) / n,
                   (s.resolves - last_.resolves) / n, (s.texture_uploads - last_.texture_uploads) / n,
+                  (s.texture_gpu_copies - last_.texture_gpu_copies) / n,
                   (s.translations - last_.translations) / n, (s.pipelines - last_.pipelines) / n,
                   (s.flushes - last_.flushes) / n, (s.ns_draws - last_.ns_draws) / ms,
                   (s.ns_textures - last_.ns_textures) / ms, (s.ns_shaders - last_.ns_shaders) / ms,
@@ -141,6 +144,37 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
                   (s.ns_submit - last_.ns_submit) / ms, (s.ns_resolves - last_.ns_resolves) / ms,
                   (s.ns_swaps - last_.ns_swaps) / ms, guest_memory_in_place() ? "in place" : "copied");
     log_(line);
+    char detail[512];
+    std::snprintf(detail, sizeof(detail),
+                  "Any360: per frame: resolves %.1f on the GPU, %.1f read back, %.1f depth, %.1f written back later; "
+                  "textures ms: hashing %.2f, "
+                  "loading for uploads %.2f",
+                  (s.resolves_on_gpu - last_.resolves_on_gpu) / n, (s.resolves_read_back - last_.resolves_read_back) / n,
+                  (s.resolves_depth - last_.resolves_depth) / n, (s.resolve_write_backs - last_.resolve_write_backs) / n,
+                  (s.ns_texture_hash - last_.ns_texture_hash) / ms,
+                  (s.ns_texture_load - last_.ns_texture_load) / ms);
+    log_(detail);
+    if (gfx::vk::TextureCache* textures = texture_cache()) {
+      // The textures uploaded most since the last report: base, format, size, and what last resolved there.
+      std::vector<std::pair<uint32_t, std::array<uint32_t, 4>>> top;
+      for (const auto& [key, count] : textures->upload_log()) top.emplace_back(count, key);
+      std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+      std::string uploads = "Any360: uploaded most:";
+      for (size_t i = 0; i < top.size() && i < 10; ++i) {
+        const auto& [count, key] = top[i];
+        const uint32_t resolved = ResolveFormatAt(key[0]);
+        char item[160];
+        std::snprintf(item, sizeof(item), " %08X fmt %u %ux%u x%u%s;", key[0], key[1], key[2], key[3], count,
+                      resolved == UINT32_MAX ? "" : (resolved & 0x100 ? " (depth resolve dest)" : " (resolve dest)"));
+        uploads += item;
+      }
+      log_(uploads);
+      textures->upload_log().clear();
+    }
+    std::string paths = "Any360: resolves by path:";
+    for (const auto& [path, count] : resolve_paths()) paths += " " + path + " x" + std::to_string(count) + ";";
+    log_(paths);
+    resolve_paths().clear();
     if (s.failed != last_.failed) {
       std::string reasons = "Any360: draws not drawn so far:";
       for (const auto& [reason, count] : failures()) reasons += " " + reason + " (" + std::to_string(count) + ");";

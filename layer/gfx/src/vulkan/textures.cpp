@@ -1,6 +1,7 @@
 #include "any360/gfx/vulkan/textures.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <bit>
 #include <cstring>
@@ -349,7 +350,9 @@ TextureCache::~TextureCache() {
   VkDevice d = device_.device();
   if (!d) return;
   f.vkDeviceWaitIdle(d);
+  BatchDone();
   for (auto& [key, t] : textures_) {
+    if (!t) continue;
     for (auto& [swizzle, view] : t->views) f.vkDestroyImageView(d, view, nullptr);
     DestroyImage(device_, t->image);
   }
@@ -444,7 +447,6 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   // The levels, and a hash of the guest memory each spans (a level's slices at its stride, the packed tail's tile).
   uint32_t first_level, last_level;
   t.Levels(first_level, last_level);
-  const uint64_t seed = (uint64_t(fetch[0]) << 32 | fetch[1]) ^ (uint64_t(fetch[2]) << 7) ^ (uint64_t(fetch[4]) << 21) ^ fetch[5];
   uint32_t span_begin = UINT32_MAX, span_end = 0;
   for (uint32_t level = first_level; level <= last_level; ++level) {
     const Placement p = Place(t, *info, level);
@@ -457,14 +459,34 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
 
   const std::array<uint32_t, 5> key = {fetch[0] & 0xFFC00003, fetch[1], fetch[2], fetch[5] & 0xFFFFFE00, fetch[4] & 0x3FC};
   auto& slot = textures_[key];
+  // A resolve's destination left on the GPU, read as it is: copied from there (no memory read, no hash).
+  const GpuSource* source = nullptr;
+  if (t.tiled && t.dimension == 1 && t.depth == 1 && first_level == 0 && last_level == 0 &&
+      info->convert != TextureFormatInfo::kSwapRedBlue565) {
+    const auto it = gpu_sources_.find(t.base & 0x1FFFFFFF);
+    const bool same_bytes = it != gpu_sources_.end() &&
+                            (it->second.format == info->format ||
+                             (it->second.format == VK_FORMAT_B8G8R8A8_UNORM && info->format == VK_FORMAT_R8G8B8A8_UNORM));
+    const bool depth_texture = info->convert == TextureFormatInfo::kDepthUnorm24 ||
+                               info->convert == TextureFormatInfo::kDepthFloat24;
+    if (same_bytes && it->second.depth == depth_texture && it->second.pitch == t.pitch &&
+        it->second.endian == t.endian && t.width <= it->second.width && t.height <= it->second.height) {
+      source = &it->second;
+    }
+  }
   // The content is hashed again only when memory may have changed since it last was (MemoryChanged, NewFrame).
   uint64_t hash = slot ? slot->content_hash : 0;
-  if (!slot || slot->validated != epoch_ || slot->seed != seed) {
-    hash = seed;
+  // Memory only: the key holds what lays the data out, and sampling fields (clamp, filters) the title changes
+  // between uses of one texture must not make it look new.
+  if (!source && (!slot || slot->validated != epoch_ || slot->gpu_generation)) {
+    if (before_read_) before_read_(span_begin, span_end);
+    hash = 0xCBF29CE484222325ull;
+    const auto hash_start = std::chrono::steady_clock::now();
     for (uint32_t level = first_level; level <= last_level; ++level) {
       const Placement p = Place(t, *info, level);
       hash = hash * 0x100000001B3ull ^ HashMemory(physical_ + p.address, size_t(uint64_t(p.slice_stride) * t.slices()));
     }
+    ns_hash_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - hash_start).count());
   }
   const Functions& f = device_.fn();
   if (!slot) {
@@ -496,12 +518,54 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     slot->image.height = t.height;
   }
 
-  slot->seed = seed;
   slot->validated = epoch_;
   slot->begin = span_begin, slot->end = span_end;
-  if (slot->content_hash != hash) {
-    if (before_upload_) before_upload_();  // draws recorded earlier must sample the old content
+  if (source) {
+    if (slot->gpu_generation != source->generation) {
+      Image& image = slot->image;
+      const uint32_t layers = t.depth;
+      auto copy = [&](VkCommandBuffer cb) {
+        VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image.image;
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, layers};
+        VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        dependency.imageMemoryBarrierCount = 1;
+        dependency.pImageMemoryBarriers = &barrier;
+        f.vkCmdPipelineBarrier2(cb, &dependency);
+        // The destination's bytes as they are (a B8G8R8A8 source is an 8-bit resolve with the red/blue swap).
+        VkImageCopy region{};
+        region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.extent = {t.width, t.height, 1};
+        f.vkCmdCopyImage(cb, source->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.image,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        f.vkCmdPipelineBarrier2(cb, &dependency);
+      };
+      if (recorder_) {
+        copy(recorder_());
+      } else if (!device_.Submit(copy)) {
+        return error = "texture copy from a resolve", VK_NULL_HANDLE;
+      }
+      slot->gpu_generation = source->generation;
+      slot->content_hash = 0;  // read from memory again once the source is gone
+      ++gpu_copies_;
+    }
+  } else if (slot->content_hash != hash) {
+    slot->gpu_generation = 0;
     // Every level's blocks, one after the other (levels below the first are never sampled: left as they are).
+    ++upload_log_[{t.base & 0x1FFFFFFF, t.format, t.width, t.height}];
+    const auto load_start = std::chrono::steady_clock::now();
     std::vector<uint8_t> blocks;
     std::vector<VkBufferImageCopy> regions;
     for (uint32_t level = first_level; level <= last_level; ++level) {
@@ -515,13 +579,14 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       blocks.insert(blocks.end(), level_blocks.begin(), level_blocks.end());
       blocks.resize((blocks.size() + 15) & ~size_t(15));  // offsets aligned for any texel size
     }
+    ns_load_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - load_start).count());
     Buffer staging;
     if (!CreateBuffer(device_, blocks.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, staging)) {
       return error = "texture staging", VK_NULL_HANDLE;
     }
     std::memcpy(staging.mapped, blocks.data(), blocks.size());
     Image& image = slot->image;
-    const bool ok = device_.Submit([&](VkCommandBuffer cb) {
+    auto record = [&](VkCommandBuffer cb) {
       VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
       barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
       barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
@@ -544,9 +609,15 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
       barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
       f.vkCmdPipelineBarrier2(cb, &dependency);
-    });
-    DestroyBuffer(device_, staging);
-    if (!ok) return error = "texture upload", VK_NULL_HANDLE;
+    };
+    if (recorder_) {
+      record(recorder_());
+      pending_staging_.push_back(staging);  // freed when the batch has run
+    } else {
+      const bool ok = device_.Submit(record);
+      DestroyBuffer(device_, staging);
+      if (!ok) return error = "texture upload", VK_NULL_HANDLE;
+    }
     slot->content_hash = hash;
     ++uploads_;
   }
@@ -607,9 +678,21 @@ VkSampler TextureCache::Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t 
   return sampler;
 }
 
+void TextureCache::DropGpuSources(uint32_t begin, uint32_t end) {
+  for (auto it = gpu_sources_.begin(); it != gpu_sources_.end();) {
+    it = it->first >= begin && it->first < end ? gpu_sources_.erase(it) : std::next(it);
+  }
+}
+
+void TextureCache::BatchDone() {
+  for (Buffer& staging : pending_staging_) DestroyBuffer(device_, staging);
+  pending_staging_.clear();
+}
+
 void TextureCache::MemoryChanged(uint32_t begin, uint32_t end) {
   for (auto& [key, texture] : textures_) {
-    if (texture->begin < end && begin < texture->end) texture->validated = 0;
+    // (A texture being created right now has no entry yet: View reads memory after this.)
+    if (texture && texture->begin < end && begin < texture->end) texture->validated = 0;
   }
 }
 

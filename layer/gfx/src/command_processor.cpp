@@ -325,10 +325,10 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
   };
 
   // What the CPU can observe of the GPU's progress: the draws so far must have run first (the CPU may then reuse
-  // the memory they read).
+  // the memory they read). Not the occlusion query and screen extent reports: their values are fixed (as the
+  // reference's), not results of the draws, and titles issue them around many draws (thousands a frame).
   switch (opcode) {
     case pm4::INTERRUPT: case pm4::REG_TO_MEM: case pm4::MEM_WRITE: case pm4::COND_WRITE: case pm4::EVENT_WRITE_SHD:
-    case pm4::EVENT_WRITE_EXT: case pm4::EVENT_WRITE_ZPD:
       if (renderer_) renderer_->Flush();
       break;
     default:

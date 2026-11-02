@@ -733,7 +733,8 @@ int main(int argc, char** argv) {
               device.properties().deviceName, renderer.depth_format() == VK_FORMAT_D24_UNORM_S8_UINT ? "D24S8" : "D32S8",
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 4 && stats.texture_uploads == 7 && stats.resolves == 1);
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 4 && stats.texture_uploads == 6 && stats.resolves == 1);
+  // (The resolved texture is copied from the resolve on the GPU, not uploaded: 6 uploads, not 7.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.
   // The float24 conversions round-trip first.
