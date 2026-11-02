@@ -63,6 +63,8 @@ try {
     if ($LASTEXITCODE) { throw "sys_io_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_runtime_tests.exe') --trials $Trials | Out-Host
     if ($LASTEXITCODE) { throw "sys_runtime_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'host/rexglue/host_rexglue_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "host_rexglue_tests failed ($LASTEXITCODE)" }
 } finally {
     foreach ($name in @([Environment]::GetEnvironmentVariables().Keys)) {
         if (-not $saved.Contains($name)) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }

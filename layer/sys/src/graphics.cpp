@@ -20,6 +20,8 @@ GraphicsKernel& Graphics() {
 void GraphicsKernel::Reset() {
   StopVblank();
   backend_ = nullptr;
+  dispatch_ = nullptr;
+  dispatch_user_ = nullptr;
   ring_base_ = ring_size_log2_ = write_back_ = write_back_block_log2_ = 0;
   callback_ = user_data_ = 0;
   context_ = {};
@@ -42,8 +44,8 @@ void GraphicsKernel::EnableReadPointerWriteBack(Guest g, uint32_t address, uint3
 void GraphicsKernel::SetInterruptCallback(Guest g, uint32_t callback, uint32_t user_data) {
   callback_ = callback;
   user_data_ = user_data;
-  // The callback runs on a context of its own, as the kernel's interrupt handler does.
-  if (callback && !context_.pcr) Threads().CreateContext(g, 0x10000, context_);
+  // The callback runs on a context of its own, as the kernel's interrupt handler does (unless the host runs it).
+  if (callback && !dispatch_ && !context_.pcr) Threads().CreateContext(g, 0x10000, context_);
 }
 
 uint32_t GraphicsKernel::PersistDisplay(Guest g, uint32_t block_ptr) {
@@ -74,6 +76,10 @@ bool GraphicsKernel::Swap(Guest g, uint32_t buffer, uint32_t fetch, uint32_t fro
 }
 
 bool GraphicsKernel::RaiseInterrupt(Guest g, uint32_t source) {
+  if (callback_ && dispatch_) {
+    dispatch_(callback_, source, user_data_, dispatch_user_);
+    return true;
+  }
   if (!callback_ || !context_.pcr) return false;
   // At dispatch level, as a DPC: the title's handler checks this through KeGetCurrentProcessType and the IRQL.
   g.Store32(context_.pcr + kPrcbDpcActive, 1);

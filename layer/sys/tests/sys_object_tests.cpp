@@ -940,6 +940,23 @@ void GraphicsAudioTests() {
   std::this_thread::sleep_for(std::chrono::milliseconds(60));
   Graphics().StopVblank();
   CHECK(interrupts > 5 && source == 0);
+  // A host's interrupt dispatch runs the callback instead of the layer's context.
+  {
+    struct Raised {
+      uint32_t callback = 0, source = 0, user_data = 0, count = 0;
+    } raised;
+    Graphics().SetInterruptDispatch(
+        [](uint32_t callback, uint32_t source, uint32_t user_data, void* user) {
+          auto& r = *static_cast<Raised*>(user);
+          r = {callback, source, user_data, r.count + 1};
+        },
+        &raised);
+    const int before = interrupts;
+    CHECK(Graphics().RaiseInterrupt(gm, 1));
+    CHECK(raised.count == 1 && raised.callback == 0x5000 && raised.source == 1 && raised.user_data == 0x1234);
+    CHECK(interrupts == before);
+    Graphics().SetInterruptDispatch(nullptr, nullptr);
+  }
   // VdPersistDisplay: a 64-byte physical block, then 1.
   const uint32_t out = 0x1800;
   CHECK(Graphics().PersistDisplay(gm, out) == 1);

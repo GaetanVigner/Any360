@@ -248,8 +248,30 @@ replay as before. The first capture (hle_gpu_49, recorded before the ramp was) s
 missing, not a feature.
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
-9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames
-   then reach the window.
+9. **Binding** (first step done, 2026-11-02): a title still built on the ReXGlue runtime reaches any360::gfx
+   through any360::sys, graphics first (`layer/host/rexglue`, `any360/host/rexglue.h`); the rest of the kernel
+   stays the runtime's until it moves too, the end state being the whole title on Any360's layers.
+   - The title's GPU system calls (`VdInitializeRingBuffer`, `VdEnableRingBufferRPtrWriteBack`,
+     `VdSetGraphicsInterruptCallback`, `VdSwap`, the system and scaler command buffers, the engines) are overridden
+     in the title's executable (`ANY360_REXGLUE_GRAPHICS_EXPORTS()`): the generated code calls `__imp__Vd*`, which
+     the title's own definition takes from the runtime's import library. Each override calls `any360_Vd*` once
+     the graphics are bound, the runtime's export (looked up in its library by name) otherwise, so one build runs
+     either way. `VdPersistDisplay` and the display-mode queries stay the runtime's (guest memory is still its own).
+   - The GPU MMIO range the runtime registered (0x7FC80000) is taken over in place (`MMIOHandler::LookupRange`
+     hands out the range), so the title's stores to `CP_RB_WPTR` reach `GraphicsKernel::WriteRegister` and the
+     command processor. No SDK patch is needed for either.
+   - The title's interrupt callback calls the runtime's kernel, which needs a runtime thread: `GraphicsKernel` got an
+     interrupt dispatch (`SetInterruptDispatch`), and the binding runs the callback on a runtime host thread through
+     `ExecuteInterrupt`, synchronously for the thread that raised it (the command processor's, the vertical
+     blank's), as the reference does.
+   - `StartGraphics` makes a Vulkan device presenting to a plain Win32 window of its own (the runtime has its own
+     SDL inside its library), the renderer over the guest's physical memory, the command processor (on its worker
+     thread), and starts vertical blanks; each swap is presented on the command processor's thread.
+   `host_rexglue_tests` runs it inside the reference runtime (tool mode): before the binding the overrides reach the
+   runtime's exports; after it, a ring set up through the Vd* calls and kicked through the MMIO handler runs, its
+   read pointer is written back, and the title's callback (a guest function) runs on a runtime thread for the
+   ring's INTERRUPT and for vertical blanks, while the placeholder range is never reached. Next: wire it into the
+   Crackdown build behind a setting and play a frame.
 
 It avoids geometry shaders and rasterizer-ordered views so that it runs through MoltenVK and on mobile GPUs:
 rectangle and quad lists are expanded in the vertex stage.

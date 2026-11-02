@@ -32,6 +32,9 @@ if(ANY360_REFERENCE_SDK)
     target_include_directories(any360_sys_ppc SYSTEM PUBLIC "${ANY360_REFERENCE_SDK}/include")
     target_compile_definitions(any360_sys_ppc PUBLIC SPDLOG_COMPILED_LIB SPDLOG_FMT_EXTERNAL $<$<BOOL:${WIN32}>:NOMINMAX WIN32_LEAN_AND_MEAN>)
 
+    # The binding of a ReXGlue title to these layers (graphics first): built here to keep it compiling.
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../host/rexglue ${CMAKE_CURRENT_BINARY_DIR}/host/rexglue)
+
     enable_testing()
     add_executable(sys_io_tests tests/sys_io_tests.cpp)
     target_include_directories(sys_io_tests PRIVATE tests)

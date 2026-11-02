@@ -43,5 +43,30 @@
    "total": 323
   },
   "toolkit_done": 7
+ },
+ {
+  "date": "2026-11-02",
+  "system_calls": {
+   "native": 255,
+   "ported": 0,
+   "runnable": 506,
+   "total": 2914
+  },
+  "instructions": {
+   "native": 0,
+   "reference": 497,
+   "total": 1842
+  },
+  "xdk": {
+   "native": 0,
+   "ported": 0,
+   "total": 31
+  },
+  "gpu": {
+   "native": 77,
+   "reference": 232,
+   "total": 323
+  },
+  "toolkit_done": 7
  }
 ]

@@ -2,6 +2,8 @@
 // its read-pointer write-back are handed to a GpuBackend (the command processor and renderer: any360::gfx, or the
 // reference's GPU while stage 0 lasts); the title's interrupt callback is run on a guest context of its own at
 // dispatch level, for vertical blanks (source 0) and command-processor interrupts (source 1) the backend raises.
+// A host whose guest threads are still the reference runtime's (a title bound to the layer for its graphics only)
+// runs the callback on one of those instead, through an interrupt dispatch.
 #pragma once
 
 #include <atomic>
@@ -36,6 +38,13 @@ class GraphicsKernel {
  public:
   void Reset();
   void SetBackend(GpuBackend* backend) { backend_ = backend; }
+  // Runs the title's interrupt callback (`callback(source, user_data)`) on a guest thread of the host's, at dispatch
+  // level as the host's kernel does it; null: on the layer's own context (the default).
+  using InterruptDispatch = void (*)(uint32_t callback, uint32_t source, uint32_t user_data, void* user);
+  void SetInterruptDispatch(InterruptDispatch dispatch, void* user) {
+    dispatch_ = dispatch;
+    dispatch_user_ = user;
+  }
 
   uint32_t InitializeEngines();
   void InitializeRingBuffer(Guest g, uint32_t base, uint32_t size_log2);
@@ -68,6 +77,8 @@ class GraphicsKernel {
 
  private:
   GpuBackend* backend_ = nullptr;
+  InterruptDispatch dispatch_ = nullptr;
+  void* dispatch_user_ = nullptr;
   uint32_t ring_base_ = 0, ring_size_log2_ = 0, write_back_ = 0, write_back_block_log2_ = 0;
   uint32_t callback_ = 0, user_data_ = 0;
   GuestContext context_{};

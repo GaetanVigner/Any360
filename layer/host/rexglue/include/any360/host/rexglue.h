@@ -1,0 +1,74 @@
+// any360::host::rexglue: a title built on the ReXGlue runtime (stage 0) bound to Any360's layers, a piece at a time.
+//
+// First piece, the graphics: the title's GPU system calls (the Vd* exports below) go to any360::sys's GraphicsKernel
+// instead of the runtime's, and its GPU MMIO (0x7FC80000-0x7FC8FFFF: the ring's write pointer above all) to the same
+// kernel, whose backend is any360::gfx (CommandProcessor and VulkanRenderer), presenting into a window of its own.
+// The rest of the kernel stays the runtime's for now: the title's guest threads are the runtime's, so the graphics
+// interrupt callback runs on a runtime host thread (an interrupt dispatch), not on a context of the layer's. The end
+// state is the whole title on Any360's layers; every piece moved here is one less the runtime provides.
+//
+// Use, in the title's sources:
+//
+//   #include "any360/host/rexglue.h"
+//   ANY360_REXGLUE_GRAPHICS_EXPORTS()   // once, at namespace scope: the Vd* overrides
+//
+//   // When the runtime is set up (ReXApp::OnPostSetup), before the title's first Vd* call, when a setting asks:
+//   std::string error;
+//   if (!any360::host::rexglue::StartGraphics({}, error)) { /* log; the runtime's GPU stays in use */ }
+//
+// Until StartGraphics succeeds (and when it is never called), each override calls the runtime's own export, found in
+// the runtime library by name, so one build runs either way.
+#pragma once
+
+#include <rex/ppc.h>
+
+#include <cstdint>
+#include <string>
+
+namespace any360::host::rexglue {
+
+struct GraphicsOptions {
+  std::string gpu;  // a substring of the Vulkan device name to prefer ("NVIDIA", "Radeon"); else discrete first
+  uint32_t width = 1280, height = 720;  // the display mode the GPU reports, and the window's first size
+  double vblank_hz = 60.0;
+};
+
+// Binds the graphics to Any360: makes the window, the Vulkan device and renderer, the command processor; takes over
+// the GPU MMIO range; starts the command processor's thread, the interrupt thread and vertical blanks. False with
+// `error` when something is missing (no Vulkan 1.3 device, no window): nothing is bound then.
+bool StartGraphics(const GraphicsOptions& options, std::string& error);
+// Stops the threads (call before the runtime goes away).
+void StopGraphics();
+// Whether the Vd* overrides go to Any360 (fixed by the first StartGraphics, before the title's first Vd* call).
+bool GraphicsBound();
+
+using GuestFunction = void (*)(PPCContext&, uint8_t*);
+// The runtime's own implementation of an export (`__imp__VdSwap`), looked up in its library by name; null when absent.
+GuestFunction ReferenceExport(const char* symbol);
+// Runs `any360` when the graphics are bound, the runtime's `symbol` otherwise.
+void CallGraphicsExport(const char* symbol, GuestFunction any360, PPCContext& ctx, uint8_t* base);
+
+}  // namespace any360::host::rexglue
+
+// One override: the title's generated code calls `__imp__<name>`, which a definition in the title takes from the
+// runtime's import library.
+#define ANY360_REXGLUE_BIND_GRAPHICS(name)                                                          \
+  extern "C" void any360_##name(PPCContext& ctx, uint8_t* base);                                    \
+  extern "C" void __imp__##name(PPCContext& __restrict ctx, uint8_t* base) {                        \
+    any360::host::rexglue::CallGraphicsExport("__imp__" #name, &any360_##name, ctx, base);          \
+  }
+
+// The GPU's system calls: the ring buffer and its read-pointer write-back, the interrupt callback, the swap, the
+// system and scaler command buffers, the engines. VdPersistDisplay stays the runtime's (it allocates guest memory,
+// which the runtime still owns), and so do the display-mode queries (the runtime's window and the title agree on them).
+#define ANY360_REXGLUE_GRAPHICS_EXPORTS()                                  \
+  ANY360_REXGLUE_BIND_GRAPHICS(VdInitializeEngines)                        \
+  ANY360_REXGLUE_BIND_GRAPHICS(VdShutdownEngines)                          \
+  ANY360_REXGLUE_BIND_GRAPHICS(VdInitializeRingBuffer)                     \
+  ANY360_REXGLUE_BIND_GRAPHICS(VdEnableRingBufferRPtrWriteBack)            \
+  ANY360_REXGLUE_BIND_GRAPHICS(VdSetGraphicsInterruptCallback)             \
+  ANY360_REXGLUE_BIND_GRAPHICS(VdSwap)                                     \
+  ANY360_REXGLUE_BIND_GRAPHICS(VdGetSystemCommandBuffer)                   \
+  ANY360_REXGLUE_BIND_GRAPHICS(VdSetSystemCommandBufferGpuIdentifierAddress) \
+  ANY360_REXGLUE_BIND_GRAPHICS(VdInitializeScalerCommandBuffer)            \
+  ANY360_REXGLUE_BIND_GRAPHICS(VdCallGraphicsNotificationRoutines)
