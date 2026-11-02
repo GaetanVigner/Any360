@@ -230,8 +230,10 @@ frame reads go through the table (k_8_8_8_8 front buffers); captures record the 
 writes it long before a capture starts. Second capture (2026-11-02, with the ramp recorded; 14,518 draws, none
 refused): the brightness bias is gone (mean signed difference -0.6 per channel, from +17), the mean difference is 9.6
 per channel (from 21) and the frame matches the reference's by eye, the beam effect included; what remains is
-slightly softer distant textures (anisotropic filtering or LOD bias, likely). Next: the ramp on the GPU path to the
-window, resolves from MSAA surfaces (averaging samples), texture filtering details.
+slightly softer distant textures (anisotropic filtering or LOD bias, likely). The window path applies the ramp too: a GPU frame goes through a compute pass
+(the frame's surface, the ramp as a 3 x 256 LUT, an intermediate image, then the blit; its SPIR-V is built in code
+with the vendored glslang builder, so no shader compiler is needed), and CPU frames go through the LUT at the swap.
+Next: resolves from MSAA surfaces (averaging samples), texture filtering details.
 
 8. **Records**: the Crackdown record model, so a title bound at the D3D level skips PM4 entirely.
 9. **Binding**: the title's MMIO stores to 0x7FC8xxxx go to `GraphicsKernel::WriteRegister`; a title's frames

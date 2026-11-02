@@ -110,11 +110,13 @@ class VulkanRenderer : public gfx::Renderer {
   };
   const Frame& frame() const { return frame_; }
   // The frame's pixels whichever way it is held (a GPU frame is read back: for tests and screenshots), through the
-  // display gamma ramp as the reference presents them (k_8_8_8_8 front buffers: the 256-entry table).
+  // display gamma ramp as the reference presents them (k_8_8_8_8 front buffers: the 256-entry table). CPU frames'
+  // pixels are already through it.
   bool ReadFrame(std::vector<uint32_t>& pixels);
   // The 8-bit output of each 8-bit input through the gamma ramp's table, per channel (red, green, blue).
   const std::array<std::array<uint8_t, 256>, 3>& gamma_lut() const { return gamma_lut_; }
-  // Records the GPU frame's blit onto `target` (in TRANSFER_DST layout) over [dst0, dst1).
+  // Records the GPU frame's blit onto `target` (in TRANSFER_DST layout) over [dst0, dst1), through the gamma ramp (a
+  // compute pass into an intermediate image, then the blit).
   void RecordFrameBlit(VkCommandBuffer cb, VkImage target, VkOffset3D dst0, VkOffset3D dst1);
 
   const RendererStats& stats() const { return stats_; }
@@ -150,6 +152,7 @@ class VulkanRenderer : public gfx::Renderer {
   VkPipelineLayout PipelineLayout(uint32_t vs_textures, uint32_t vs_samplers, uint32_t ps_textures, uint32_t ps_samplers);
   bool Fail(const std::string& why);
   // A depth resolve's copy: the surface's depth and stencil over the rectangle, written as the EDRAM words.
+  bool GammaPass();  // the gamma pass's pipeline and resources, made on first use
   bool ResolveDepth(Surface& surface, bool float24, int32_t x0, int32_t y0, uint32_t width, uint32_t height,
                     uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian, uint32_t dest_format);
   bool ImportGuestMemory();
@@ -196,6 +199,15 @@ class VulkanRenderer : public gfx::Renderer {
   uint32_t frame_x_ = 0, frame_y_ = 0;
   std::string last_error_;
   std::map<std::string, uint32_t> failures_;
+  // The gamma pass of GPU frames: the shader's set (source surface, output image, LUT), the output image.
+  VkDescriptorSetLayout gamma_layout_ = VK_NULL_HANDLE;
+  VkPipelineLayout gamma_pipeline_layout_ = VK_NULL_HANDLE;
+  VkPipeline gamma_pipeline_ = VK_NULL_HANDLE;
+  VkDescriptorPool gamma_pool_ = VK_NULL_HANDLE;
+  VkDescriptorSet gamma_set_ = VK_NULL_HANDLE;
+  Buffer gamma_lut_buffer_;
+  Image gamma_image_;
+  VkImageLayout gamma_image_layout_ = VK_IMAGE_LAYOUT_UNDEFINED;
   std::array<std::array<uint8_t, 256>, 3> gamma_lut_ = [] {
     std::array<std::array<uint8_t, 256>, 3> lut{};
     for (auto& channel : lut) {

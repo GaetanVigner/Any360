@@ -111,6 +111,12 @@ VulkanRenderer::~VulkanRenderer() {
   if (batch_) Flush();
   f.vkDeviceWaitIdle(d);
   if (batch_fence_) f.vkDestroyFence(d, batch_fence_, nullptr);
+  if (gamma_pipeline_) f.vkDestroyPipeline(d, gamma_pipeline_, nullptr);
+  if (gamma_pipeline_layout_) f.vkDestroyPipelineLayout(d, gamma_pipeline_layout_, nullptr);
+  if (gamma_pool_) f.vkDestroyDescriptorPool(d, gamma_pool_, nullptr);
+  if (gamma_layout_) f.vkDestroyDescriptorSetLayout(d, gamma_layout_, nullptr);
+  DestroyBuffer(device_, gamma_lut_buffer_);
+  DestroyImage(device_, gamma_image_);
   if (batch_pool_) f.vkDestroyCommandPool(d, batch_pool_, nullptr);
   for (auto& [key, pipeline] : pipelines_) f.vkDestroyPipeline(d, pipeline, nullptr);
   for (auto& [key, shader] : shaders_) {
@@ -311,7 +317,9 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& key) {
   const uint32_t tiles_per_row = (key.pitch + 79) / 80 * (!key.depth && Is64bpp(key.format) ? 2 : 1);
   const uint32_t height = std::min<uint32_t>(4096, (2048 - key.base) / tiles_per_row * 16);
   if (!height) return nullptr;
-  const VkImageUsageFlags usage = (key.depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) |
+  // Colour surfaces are also sampled: the gamma pass reads the presented frame from its surface.
+  const VkImageUsageFlags usage = (key.depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                                             : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT) |
                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
   const VkImageAspectFlags aspect =
       key.depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1502,22 +1510,121 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
   for (uint32_t y = 0; y < next.height; ++y) {
     std::memcpy(&next.pixels[size_t(y) * next.width], &texels[size_t(y) * tw], size_t(next.width) * 4);
   }
+  // Through the gamma ramp, as presented.
+  for (uint32_t& px : next.pixels) {
+    px = (px & 0xFF000000u) | gamma_lut_[0][px & 0xFF] | uint32_t(gamma_lut_[1][(px >> 8) & 0xFF]) << 8 |
+         uint32_t(gamma_lut_[2][(px >> 16) & 0xFF]) << 16;
+  }
   next.number = frame_.number + 1;
   frame_ = std::move(next);
 }
 
+std::vector<uint32_t> BuildGammaShader();  // gamma_shader.cpp
+
+bool VulkanRenderer::GammaPass() {
+  if (gamma_pipeline_) return true;
+  const Functions& f = device_.fn();
+  const VkDevice d = device_.device();
+  VkDescriptorSetLayoutBinding bindings[3] = {
+      {0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+      {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+      {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
+  VkDescriptorSetLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+  layout_info.bindingCount = 3;
+  layout_info.pBindings = bindings;
+  if (f.vkCreateDescriptorSetLayout(d, &layout_info, nullptr, &gamma_layout_) != VK_SUCCESS) return Fail("gamma set layout");
+  const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 16};
+  VkPipelineLayoutCreateInfo pipeline_layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  pipeline_layout_info.setLayoutCount = 1;
+  pipeline_layout_info.pSetLayouts = &gamma_layout_;
+  pipeline_layout_info.pushConstantRangeCount = 1;
+  pipeline_layout_info.pPushConstantRanges = &push;
+  if (f.vkCreatePipelineLayout(d, &pipeline_layout_info, nullptr, &gamma_pipeline_layout_) != VK_SUCCESS) {
+    return Fail("gamma pipeline layout");
+  }
+  const std::vector<uint32_t> code = BuildGammaShader();
+  VkShaderModuleCreateInfo module_info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+  module_info.codeSize = code.size() * 4;
+  module_info.pCode = code.data();
+  VkShaderModule module = VK_NULL_HANDLE;
+  if (f.vkCreateShaderModule(d, &module_info, nullptr, &module) != VK_SUCCESS) return Fail("gamma shader");
+  VkComputePipelineCreateInfo pipeline_info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+  pipeline_info.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+  pipeline_info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+  pipeline_info.stage.module = module;
+  pipeline_info.stage.pName = "main";
+  pipeline_info.layout = gamma_pipeline_layout_;
+  const VkResult created = f.vkCreateComputePipelines(d, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &gamma_pipeline_);
+  f.vkDestroyShaderModule(d, module, nullptr);
+  if (created != VK_SUCCESS) return Fail("gamma pipeline");
+  const VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
+                                         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}};
+  VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+  pool_info.maxSets = 1;
+  pool_info.poolSizeCount = 3;
+  pool_info.pPoolSizes = sizes;
+  if (f.vkCreateDescriptorPool(d, &pool_info, nullptr, &gamma_pool_) != VK_SUCCESS) return Fail("gamma pool");
+  VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+  alloc.descriptorPool = gamma_pool_;
+  alloc.descriptorSetCount = 1;
+  alloc.pSetLayouts = &gamma_layout_;
+  if (f.vkAllocateDescriptorSets(d, &alloc, &gamma_set_) != VK_SUCCESS) return Fail("gamma set");
+  if (!CreateBuffer(device_, 3 * 256 * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, gamma_lut_buffer_)) return Fail("gamma LUT");
+  return true;
+}
+
 void VulkanRenderer::RecordFrameBlit(VkCommandBuffer cb, VkImage target, VkOffset3D dst0, VkOffset3D dst1) {
-  if (!frame_.on_gpu || !frame_surface_) return;
-  Transition(cb, frame_surface_->image, frame_surface_->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+  if (!frame_.on_gpu || !frame_surface_ || !GammaPass()) return;
+  const Functions& f = device_.fn();
+  // The output image, as large as the frame.
+  if (gamma_image_.width < frame_.width || gamma_image_.height < frame_.height) {
+    f.vkDeviceWaitIdle(device_.device());
+    DestroyImage(device_, gamma_image_);
+    gamma_image_layout_ = VK_IMAGE_LAYOUT_UNDEFINED;
+    if (!CreateImage2D(device_, frame_.width, frame_.height, VK_FORMAT_R8G8B8A8_UNORM,
+                       VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT, gamma_image_)) {
+      Fail("gamma image");
+      return;
+    }
+  }
+  // The ramp as 8-bit outputs (the shader's LUT), and the set (the frame's surface may change from frame to frame).
+  uint32_t* lut = static_cast<uint32_t*>(gamma_lut_buffer_.mapped);
+  for (uint32_t ch = 0; ch < 3; ++ch) {
+    for (uint32_t i = 0; i < 256; ++i) lut[ch * 256 + i] = gamma_lut_[ch][i];
+  }
+  const VkDescriptorImageInfo source{VK_NULL_HANDLE, frame_surface_->image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  const VkDescriptorImageInfo dest{VK_NULL_HANDLE, gamma_image_.view, VK_IMAGE_LAYOUT_GENERAL};
+  const VkDescriptorBufferInfo lut_info{gamma_lut_buffer_.buffer, 0, VK_WHOLE_SIZE};
+  VkWriteDescriptorSet writes[3] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET},
+                                    {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
+  const VkDescriptorType types[3] = {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER};
+  for (uint32_t i = 0; i < 3; ++i) {
+    writes[i].dstSet = gamma_set_;
+    writes[i].dstBinding = i;
+    writes[i].descriptorCount = 1;
+    writes[i].descriptorType = types[i];
+  }
+  writes[0].pImageInfo = &source;
+  writes[1].pImageInfo = &dest;
+  writes[2].pBufferInfo = &lut_info;
+  f.vkUpdateDescriptorSets(device_.device(), 3, writes, 0, nullptr);
+
+  Transition(cb, frame_surface_->image, frame_surface_->layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+  Transition(cb, gamma_image_, gamma_image_layout_, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
+  f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, gamma_pipeline_);
+  f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, gamma_pipeline_layout_, 0, 1, &gamma_set_, 0, nullptr);
+  const int32_t region[4] = {int32_t(frame_x_), int32_t(frame_y_), int32_t(frame_.width), int32_t(frame_.height)};
+  f.vkCmdPushConstants(cb, gamma_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(region), region);
+  f.vkCmdDispatch(cb, (frame_.width + 7) / 8, (frame_.height + 7) / 8, 1);
+  Transition(cb, gamma_image_, gamma_image_layout_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   VkImageBlit blit{};
   blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-  blit.srcOffsets[0] = {int32_t(frame_x_), int32_t(frame_y_), 0};
-  blit.srcOffsets[1] = {int32_t(frame_x_ + frame_.width), int32_t(frame_y_ + frame_.height), 1};
+  blit.srcOffsets[1] = {int32_t(frame_.width), int32_t(frame_.height), 1};
   blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
   blit.dstOffsets[0] = dst0;
   blit.dstOffsets[1] = dst1;
-  device_.fn().vkCmdBlitImage(cb, frame_surface_->image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target,
-                              VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+  f.vkCmdBlitImage(cb, gamma_image_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                   &blit, VK_FILTER_LINEAR);
 }
 
 void VulkanRenderer::GammaRamp(const uint32_t* table, const uint32_t*) {
@@ -1534,13 +1641,13 @@ void VulkanRenderer::GammaRamp(const uint32_t* table, const uint32_t*) {
 bool VulkanRenderer::ReadFrame(std::vector<uint32_t>& pixels) {
   if (!frame_.on_gpu) {
     pixels = frame_.pixels;
-  } else {
-    if (!frame_surface_) return false;
-    std::vector<uint8_t> bytes;
-    if (frame_x_ || frame_y_ || !ReadBack(frame_surface_->key, frame_.width, frame_.height, bytes)) return false;
-    pixels.resize(size_t(frame_.width) * frame_.height);
-    std::memcpy(pixels.data(), bytes.data(), pixels.size() * 4);
+    return !pixels.empty();
   }
+  if (!frame_surface_) return false;
+  std::vector<uint8_t> bytes;
+  if (frame_x_ || frame_y_ || !ReadBack(frame_surface_->key, frame_.width, frame_.height, bytes)) return false;
+  pixels.resize(size_t(frame_.width) * frame_.height);
+  std::memcpy(pixels.data(), bytes.data(), pixels.size() * 4);
   for (uint32_t& p : pixels) {
     p = (p & 0xFF000000u) | gamma_lut_[0][p & 0xFF] | uint32_t(gamma_lut_[1][(p >> 8) & 0xFF]) << 8 |
         uint32_t(gamma_lut_[2][(p >> 16) & 0xFF]) << 16;

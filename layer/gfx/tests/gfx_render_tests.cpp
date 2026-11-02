@@ -650,6 +650,63 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: swap: frame %llu, %ux%u, %u pixels wrong\n", (unsigned long long)frame.number, frame.width,
                 frame.height, frame_wrong);
     CHECK(frame.number == 1 && frame.width == kSize && frame.height == kSize && frame_wrong == 0);
+    // The window path: the GPU frame through the gamma ramp (an inverting ramp here) by the compute pass, blitted
+    // into an image the size of the frame, read back: the same pixels as ReadFrame gives through the ramp on the CPU.
+    {
+      uint32_t table[256];
+      for (uint32_t i = 0; i < 256; ++i) {
+        const uint32_t v = 0x3FF - i * 0x3FF / 0xFF;
+        table[i] = v | v << 10 | v << 20;
+      }
+      renderer.GammaRamp(table, nullptr);
+      std::vector<uint32_t> through_cpu;
+      CHECK(renderer.ReadFrame(through_cpu) && through_cpu.size() == kSize * kSize);
+      vk::Image target;
+      vk::Buffer readback;
+      CHECK(vk::CreateImage2D(device, kSize, kSize, VK_FORMAT_R8G8B8A8_UNORM,
+                              VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT, target));
+      CHECK(vk::CreateBuffer(device, kSize * kSize * 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback));
+      const auto& f = device.fn();
+      auto barrier = [&](VkCommandBuffer cb, VkImageLayout from, VkImageLayout to) {
+        VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+        b.srcStageMask = b.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        b.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+        b.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+        b.oldLayout = from;
+        b.newLayout = to;
+        b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = target.image;
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VkDependencyInfo dep{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        dep.imageMemoryBarrierCount = 1;
+        dep.pImageMemoryBarriers = &b;
+        f.vkCmdPipelineBarrier2(cb, &dep);
+      };
+      CHECK(device.Submit([&](VkCommandBuffer cb) {
+        barrier(cb, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        renderer.RecordFrameBlit(cb, target.image, {0, 0, 0}, {int32_t(kSize), int32_t(kSize), 1});
+        barrier(cb, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        VkBufferImageCopy region{};
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.imageExtent = {kSize, kSize, 1};
+        f.vkCmdCopyImageToBuffer(cb, target.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1, &region);
+      }));
+      uint32_t differ = through_cpu.size() == kSize * kSize ? 0 : kSize * kSize;
+      const uint32_t* through_gpu = static_cast<const uint32_t*>(readback.mapped);
+      for (size_t i = 0; i < through_cpu.size() && !differ; ++i) {
+        differ += (through_gpu[i] & 0xFFFFFF) != (through_cpu[i] & 0xFFFFFF);
+      }
+      std::printf("gfx_render_tests: window path through the gamma ramp: %u of %u pixels differ from ReadFrame (first %08X)\n", differ,
+                  kSize * kSize, through_gpu[0]);
+      CHECK(differ == 0 && (through_gpu[0] & 0xFFFFFF) != (quadrant[0] & 0xFFFFFF));
+      vk::DestroyImage(device, target);
+      vk::DestroyBuffer(device, readback);
+      for (uint32_t i = 0; i < 256; ++i) {
+        const uint32_t v = i * 0x3FF / 0xFF;
+        table[i] = v | v << 10 | v << 20;
+      }
+      renderer.GammaRamp(table, nullptr);
+    }
     // The same front buffer swizzled blue-green-red: no longer the resolve as it is, so read from guest memory on the
     // CPU, with red and blue exchanged.
     s.Put({Type0(0x4800, 6), 2u | 2u << 10 | 2u << 13 | 2u << 22 | 1u << 31, 6u | 2u << 6 | resolved, 63u | 63u << 13,
