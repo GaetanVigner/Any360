@@ -5,6 +5,8 @@
 // thread, which creates it).
 #include "any360/host/rexglue.h"
 
+#include "any360/gfx/async_renderer.h"
+
 #include <rex/cvar.h>
 #include <rex/runtime.h>
 #include <rex/system/function_dispatcher.h>
@@ -527,6 +529,7 @@ struct Binding {
   gfx::vk::Device device;
   std::unique_ptr<PresentingRenderer> renderer;
   std::unique_ptr<gfx::CommandProcessor> cp;
+  std::unique_ptr<gfx::AsyncRenderer> async;
   InterruptThread interrupts;
   std::unique_ptr<Sampler> sampler;
 };
@@ -637,7 +640,12 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
     });
   }
   binding->cp = std::make_unique<gfx::CommandProcessor>(physical);
-  binding->cp->SetRenderer(binding->renderer.get());
+  if (options.async_renderer) {
+    binding->async = std::make_unique<gfx::AsyncRenderer>(*binding->cp, *binding->renderer);
+    binding->cp->SetRenderer(binding->async.get());
+  } else {
+    binding->cp->SetRenderer(binding->renderer.get());
+  }
   binding->renderer->cp_ = binding->cp.get();
   if (options.log) binding->renderer->swap_cost_ = MeasureSwapCost();  // for the report (~0.1 s)
   binding->cp->SetDisplaySize(options.width, options.height);
@@ -682,6 +690,7 @@ void StopGraphics() {
   g_binding->interrupts.Stop();
   g_binding->sampler.reset();  // its samples written
   g_binding->cp->Stop();
+  if (g_binding->async) g_binding->async->Drain();
   // The window, device and renderer stay until the process ends: the runtime may still be tearing down around them.
 }
 

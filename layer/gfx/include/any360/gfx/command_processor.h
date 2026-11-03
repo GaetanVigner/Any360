@@ -129,6 +129,16 @@ class CommandProcessor : public sys::GpuBackend {
 
   uint32_t reg(uint32_t index) const;
   const uint32_t* registers() const { return registers_.data(); }
+  // Registers written since the last TakeDirtyBlocks, by block of 32 (bit b of word w: registers 32 * (64w + b) on):
+  // what a renderer on another thread needs copied. Written on the command processor's thread (and MMIO writes from
+  // others, kept apart); taken on the command processor's thread.
+  static constexpr uint32_t kDirtyWords = (reg::kRegisterCount + 2047) / 2048;
+  void TakeDirtyBlocks(uint64_t (&blocks)[kDirtyWords]) {
+    for (uint32_t w = 0; w < kDirtyWords; ++w) {
+      blocks[w] = dirty_[w] | mmio_dirty_[w].exchange(0, std::memory_order_acq_rel);
+      dirty_[w] = 0;
+    }
+  }
   uint32_t counter() const { return counter_; }
   uint32_t read_pointer() const { return read_index_; }
   uint32_t ring_dwords() const { return ring_dwords_; }
@@ -248,6 +258,14 @@ class CommandProcessor : public sys::GpuBackend {
   std::atomic<uint64_t> progress_{0};
   std::atomic<bool> spin_waits_{false};
   std::array<std::atomic<uint64_t>, 129> opcode_ticks_{};
+  void MarkDirty(uint32_t index) { dirty_[index >> 11] |= 1ull << ((index >> 5) & 63); }
+  void MarkDirty(uint32_t first, uint32_t count) {
+    for (uint32_t block = first >> 5, last = (first + count - 1) >> 5; block <= last; ++block) {
+      dirty_[block >> 6] |= 1ull << (block & 63);
+    }
+  }
+  uint64_t dirty_[kDirtyWords] = {};
+  std::array<std::atomic<uint64_t>, kDirtyWords> mmio_dirty_{};
   // Shaders loaded before, by address: their guest bytes as they were and their hash. A load of the same bytes reuses
   // them (titles load the same shaders many times a frame) instead of swapping and hashing the microcode again.
   struct LoadedShader {

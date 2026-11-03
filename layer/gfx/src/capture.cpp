@@ -154,7 +154,7 @@ void Reader::Close() {
 }
 
 bool Replay(const std::string& path, CommandProcessor& cp, uint8_t* physical, uint64_t bytes, const FrameHandler& frame,
-            ReplayStats& stats, std::string& error) {
+            ReplayStats& stats, std::string& error, const std::function<void()>& before_memory) {
   Reader reader;
   if (!reader.Open(path)) return error = reader.error(), false;
   uint32_t type;
@@ -186,6 +186,7 @@ bool Replay(const std::string& path, CommandProcessor& cp, uint8_t* physical, ui
         break;
       }
       case kPages: {
+        if (before_memory) before_memory();
         const uint32_t count = u32(0);
         if (4 + uint64_t(count) * (4 + kPageBytes) > payload.size()) return error = "damaged pages chunk", false;
         for (uint32_t i = 0; i < count; ++i) {

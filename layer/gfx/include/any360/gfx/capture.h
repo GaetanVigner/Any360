@@ -95,8 +95,9 @@ struct ReplayStats {
 // Set while a replay runs a kick (for a profiler to sample only that).
 inline std::atomic<bool> g_replaying_kick{false};
 using FrameHandler = std::function<void(uint32_t width, uint32_t height, const uint32_t* rgba)>;
+// `before_memory`: called before the replay rewrites guest memory (a renderer on another thread finishes first).
 bool Replay(const std::string& path, CommandProcessor& cp, uint8_t* physical, uint64_t bytes, const FrameHandler& frame,
-            ReplayStats& stats, std::string& error);
+            ReplayStats& stats, std::string& error, const std::function<void()>& before_memory = {});
 
 // A fast 64-bit hash of a page (change detection, not security).
 uint64_t PageHash(const uint8_t* page);

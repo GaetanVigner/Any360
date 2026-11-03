@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include "any360/gfx/async_renderer.h"
 #include "any360/gfx/capture.h"
 #include "any360/gfx/command_processor.h"
 #include "any360/gfx/vulkan/renderer.h"
@@ -285,7 +286,8 @@ int main(int argc, char** argv) {
   int repeat = 1;  // --repeat N: the capture replayed N times, the timings of the last (warm caches, as in a game)
   std::string dump;
   uint32_t watch = 0;
-  bool bench = false;  // --bench: as in a title (diagnostics off, textures watched instead of hashed), kick time only
+  bool bench = false;
+  bool async = false;  // --async: the renderer on a thread of its own (AsyncRenderer), as in a title  // --bench: as in a title (diagnostics off, textures watched instead of hashed), kick time only
   std::string profile;  // --profile FILE: the main thread's instruction pointer sampled during the last pass
   vk::DeviceOptions options;
   for (int i = 1; i < argc; ++i) {
@@ -296,6 +298,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--dump-resolves") && i + 1 < argc) dump = argv[++i];
     else if (!std::strcmp(argv[i], "--profile") && i + 1 < argc) profile = argv[++i];
     else if (!std::strcmp(argv[i], "--bench")) bench = true;
+    else if (!std::strcmp(argv[i], "--async")) async = true;
     else if (!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = uint32_t(std::strtoul(argv[++i], nullptr, 16)) & 0x1FFFF000;
     else path = argv[i];
   }
@@ -320,11 +323,22 @@ int main(int argc, char** argv) {
   }
   CommandProcessor cp(physical);
   TracingRenderer tracing(renderer, physical, dump, watch);
-  cp.SetRenderer(trace ? static_cast<Renderer*>(&tracing) : &renderer);
+  Renderer* target = trace ? static_cast<Renderer*>(&tracing) : &renderer;
+  std::unique_ptr<AsyncRenderer> async_renderer;
+  if (async) async_renderer = std::make_unique<AsyncRenderer>(cp, *target);
+  cp.SetRenderer(async_renderer ? static_cast<Renderer*>(async_renderer.get()) : target);
+  uint64_t drain_ns = 0;  // waiting for the renderer's thread (part of the work with --async)
+  auto drain = [&] {
+    if (!async_renderer) return;
+    const auto start = std::chrono::steady_clock::now();
+    async_renderer->Drain();
+    drain_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+  };
   cp.SetInterruptHandler([](uint32_t, uint32_t) {});
 
   uint32_t compared = 0, frame_index = 0;
   auto on_frame = [&](uint32_t width, uint32_t height, const uint32_t* reference) {
+    drain();  // the frame is read on this thread
     const uint32_t n = frame_index++;
     std::vector<uint32_t> ours;
     if (!renderer.ReadFrame(ours) || ours.empty()) {
@@ -439,8 +453,21 @@ int main(int argc, char** argv) {
     sampling = !profile.empty() && pass >= repeat / 2;  // the warm half
 #endif
     stats = {};
-    ok = capture::Replay(path, cp, physical, kPhysicalBytes, on_frame, stats, error);
+    drain_ns = 0;
+    ok = capture::Replay(path, cp, physical, kPhysicalBytes, on_frame, stats, error, drain);
+    drain();
     if (bench) {
+      if (async_renderer) {
+        static uint64_t last_busy = 0, last_bytes = 0;
+        const uint64_t busy = async_renderer->busy_ns(), bytes = async_renderer->queued_bytes();
+        std::printf("gfx_replay: pass %d: %.2f MB queued a frame%c", pass, (bytes - last_bytes) / 1e6 / std::max(1u, stats.frames), 10);
+        last_bytes = bytes;
+        std::printf("gfx_replay: pass %d: %.3f ms a frame on the command processor's thread, %.3f on the renderer's, %.3f waiting for it%c",
+                    pass, stats.ns_kicks / 1e6 / std::max(1u, stats.frames), (busy - last_busy) / 1e6 / std::max(1u, stats.frames),
+                    drain_ns / 1e6 / std::max(1u, stats.frames), 10);
+        last_busy = busy;
+      }
+      stats.ns_kicks += drain_ns;  // with --async: the kicks and the waits for the renderer's thread to finish them
       std::printf("gfx_replay: pass %d: %.2f ms running the kicks (%.3f ms a frame over %u frames)\n", pass, stats.ns_kicks / 1e6,
                   stats.frames ? stats.ns_kicks / 1e6 / stats.frames : 0.0, stats.frames);
     }

@@ -47,6 +47,8 @@ struct GraphicsOptions {
   // EVENT_WRITE_SHD fences apart: once the shaders before them are done, as on the console (the title reuses the
   // memory the GPU reads in place after them). False: when the stream reaches them, as the runtime.
   bool fences_after_draws = true;
+  // The renderer on a thread of its own (gfx::AsyncRenderer): the command processor reads the stream meanwhile.
+  bool async_renderer = true;
   // A file to write samples of the command processor's thread to (module offsets of the executable, while the
   // diagnostics are off: what it costs without them), for llvm-symbolizer. Empty: no sampling.
   std::string profile_path;

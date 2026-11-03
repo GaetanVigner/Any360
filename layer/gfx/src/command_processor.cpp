@@ -100,6 +100,7 @@ void CommandProcessor::EnableReadPointerWriteBack(sys::Guest, uint32_t address, 
 void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
   if (index >= reg::kRegisterCount) return;
   std::atomic_ref<uint32_t>(registers_[index]).store(value, std::memory_order_release);
+  mmio_dirty_[index >> 11].fetch_or(1ull << ((index >> 5) & 63), std::memory_order_acq_rel);
   if (index >= reg::DC_LUT_RW_INDEX && index <= reg::DC_LUT_30_COLOR) GammaRampWrite(index);
   NotifyProgress();
   if (index == reg::CP_RB_WPTR) {
@@ -193,6 +194,7 @@ void CommandProcessor::Interrupt(uint32_t source, uint32_t cpu) {
 void CommandProcessor::SetRegister(uint32_t index, uint32_t value) {
   if (index >= reg::kRegisterCount) return;
   std::atomic_ref<uint32_t>(registers_[index]).store(value, std::memory_order_release);
+  MarkDirty(index);
   if (index >= reg::DC_LUT_RW_INDEX && index <= reg::DC_LUT_30_COLOR) {
     GammaRampWrite(index);
     return;
@@ -425,6 +427,7 @@ bool CommandProcessor::ExecutePacket(Reader& r, int depth) {
         const uint32_t* source = reinterpret_cast<const uint32_t*>(Host(r.base + 4 * at));
         uint32_t* target = registers_.data() + first;
         for (uint32_t i = 0; i < count; ++i) target[i] = std::byteswap(source[i]);
+        MarkDirty(first, count);
         CountSwapped(g_swapped.registers, 4 * uint64_t(count));
         r.offset += count;
         r.remaining -= count;
@@ -754,6 +757,7 @@ void CommandProcessor::Restore(const uint32_t* registers, uint32_t count) {
   for (uint32_t i = 0; i < count && i < reg::kRegisterCount; ++i) {
     std::atomic_ref<uint32_t>(registers_[i]).store(registers[i], std::memory_order_release);
   }
+  MarkDirty(0, reg::kRegisterCount);
   ring_base_ = reg(reg::CP_RB_BASE) & 0x1FFFFFFF;
   // A pending coherency request was the CPU's: done by now.
   std::atomic_ref<uint32_t>(registers_[reg::COHER_STATUS_HOST]).store(0, std::memory_order_release);
