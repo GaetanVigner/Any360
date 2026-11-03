@@ -3738,7 +3738,7 @@
 "kind":"function",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -3750,7 +3750,7 @@
 "kind":"function",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -7778,7 +7778,7 @@
 "kind":"function",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -7864,7 +7864,7 @@
 "kind":"function",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -7876,7 +7876,7 @@
 "kind":"function",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -7888,7 +7888,7 @@
 "kind":"function",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -7912,7 +7912,7 @@
 "kind":"function",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -12672,7 +12672,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -13800,7 +13800,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -14700,7 +14700,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -14712,7 +14712,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -14724,7 +14724,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -14736,7 +14736,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -14748,7 +14748,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -14808,7 +14808,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -14820,7 +14820,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -15120,7 +15120,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -15132,7 +15132,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -15144,7 +15144,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -15156,7 +15156,7 @@
 "kind":"function",
 "group":"locale",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false

@@ -13,6 +13,7 @@
 #include "any360/sys/memory.h"
 #include <filesystem>
 #include <fstream>
+#include "any360/sys/info.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
 #include "any360/sys/threading.h"
@@ -685,6 +686,32 @@ void Win32FileTests() {
   CHECK(Files().Win32DeleteFile(g, str(text2, "game:\\Media\\a.txt")) == 0);  // read-only
   Files().Reset();
   fs::remove_all(root, ec);
+}
+
+// XAM strings the reference cannot be compared on: dates and times of a FILETIME, locators with guest names.
+void LocaleTests() {
+  Fresh();
+  const uint32_t buf = kScratch + 0x400, name = kScratch + 0x300;
+  auto wide = [&](uint32_t at) {
+    std::string out;
+    for (; g.Load16(at); at += 2) out += char(g.Load16(at));
+    return out;
+  };
+  const uint64_t noon_2020 = 132223104000000000ull + 12 * 36000000000ull;  // 2020-01-01 12:00 UTC
+  XamFormatDateString(g, noon_2020, buf, 16);
+  const std::string date = wide(buf);
+  CHECK(date.size() == 10 && date[2] == '/' && date[5] == '/' && (date.substr(0, 5) == "01/01" || date.substr(0, 5) == "12/31"));
+  XamFormatTimeString(g, noon_2020, buf, 16);
+  const std::string time = wide(buf);
+  CHECK(time.size() == 5 && time[2] == ':' && time.substr(3) == "00");
+  XamFormatTimeString(g, noon_2020, buf, 3);
+  CHECK(wide(buf).size() == 2);
+  const char16_t file[] = u"skin.xur";
+  for (size_t i = 0; i < 9; ++i) g.Store16(name + 2 * uint32_t(i), uint16_t(file[i]));
+  CHECK(XamBuildSystemResourceLocator(g, u"xam", name, buf, 64) == 0 && wide(buf) == "file://media:/xam.xzp#skin.xur");
+  CHECK(XamBuildResourceLocator(g, 0x1234ABCD, std::u16string(u"pkg"), std::u16string(u"a.png"), buf, 64) == 0 &&
+        wide(buf) == "section://1234ABCD,pkg#a.png");
+  CHECK(XamBuildSystemResourceLocator(g, u"xam", name, buf, 8) == 0 && wide(buf) == "file://");
 }
 
 void FileTests() {
@@ -1740,6 +1767,7 @@ int main() {
   SonicTests();
   XamTests();
   FileTests();
+  LocaleTests();
   Win32FileTests();
   MemoryTests();
   SchedulerTests();

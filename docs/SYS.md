@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (448 system calls)
+## What is verified (468 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -179,6 +179,16 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XMACreateContext` / `XMAReleaseContext` (64-byte contexts in physical memory, announced to an `XmaBackend`). Guest
   callbacks run through `Scheduler::CreateContext` and `Scheduler::Dispatch`. The renderer, the audio output and the
   XMA decoder are the backends still to write.
+- **XAM's locales, dates and resource locators** (`sys_io_tests` against the reference, `sys_object_tests`):
+  `XamGetLocale`, `XamGetLocaleEx` (the console's country gives the locale, else the game region), the id
+  conversions (`XamGetOnlineCountryFromLocale`, `XamGetLocaleFromOnlineCountry`, `XamGetLanguageFromOnlineLanguage`,
+  `XamGetCountryFromOnlineCountry`) and the strings (`XamGetCountryString`, `XamGetOnlineCountryString`,
+  `XamGetLanguageString`, `XamGetOnlineLanguageString`, `XamGetLocaleString`, `XamGetLanguageLocaleString`,
+  `XamGetOnlineLanguageAndCountryString`), from XAM's tables as the reference has them; `XamFormatDateString` /
+  `XamFormatTimeString` ("MM/DD/YYYY", "HH:MM" in the host's time zone); `XamBuildResourceLocator` and its gamercard,
+  shared, legacy and XAM forms. The reference byte-swaps the characters it copies from guest names into a locator, and
+  formats dates as if the FILETIME were 0: the layer copies the names as they are and formats the FILETIME in r4, so
+  those parts are checked by scenario tests only.
 - **Read/write locks and interlocked lists** (`sys_runtime_tests` against the reference where no call waits,
   `sys_object_tests` across threads): `ExInitializeReadWriteLock`, `ExAcquireReadWriteLockExclusive` /
   `Shared`, `ExTryToAcquireReadWriteLock*`, `ExReleaseReadWriteLock` (the reference's algorithm on the ERWLOCK's

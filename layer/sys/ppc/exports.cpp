@@ -795,6 +795,28 @@ ANY360_SYS_EXPORT(InterlockedPushEntrySList) { ctx.r3.u64 = InterlockedPushEntry
 ANY360_SYS_EXPORT(InterlockedPopEntrySList) { ctx.r3.u64 = InterlockedPopEntrySList({base}, ctx.r3.u32); }
 ANY360_SYS_EXPORT(InterlockedFlushSList) { ctx.r3.u64 = InterlockedFlushSList({base}, ctx.r3.u32); }
 
+// Batch 22: XAM's locales, date and time strings and resource locators (sys_io_tests against the reference).
+ANY360_SYS_EXPORT(XamGetLocale) { ctx.r3.u64 = XamGetLocale(); }
+ANY360_SYS_EXPORT(XamGetLocaleEx) { ctx.r3.u64 = XamGetLocaleEx(ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamGetOnlineCountryFromLocale) { ctx.r3.u64 = XamGetOnlineCountryFromLocale(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamGetLocaleFromOnlineCountry) { ctx.r3.u64 = XamGetLocaleFromOnlineCountry(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamGetLanguageFromOnlineLanguage) { ctx.r3.u64 = XamGetLanguageFromOnlineLanguage(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamGetCountryFromOnlineCountry) { ctx.r3.u64 = XamGetCountryFromOnlineCountry(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamGetOnlineCountryString) { ctx.r3.u64 = XamGetOnlineCountryString({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamGetCountryString) { ctx.r3.u64 = XamGetCountryString({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamGetLanguageString) { ctx.r3.u64 = XamGetLanguageString({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamGetLocaleString) { ctx.r3.u64 = XamGetLocaleString({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamGetOnlineLanguageString) { ctx.r3.u64 = XamGetOnlineLanguageString({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamGetLanguageLocaleString) { ctx.r3.u64 = XamGetLanguageLocaleString({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XamGetOnlineLanguageAndCountryString) { ctx.r3.u64 = XamGetOnlineLanguageAndCountryString({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XamFormatDateString) { XamFormatDateString({base}, ctx.r4.u64, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XamFormatTimeString) { XamFormatTimeString({base}, ctx.r4.u64, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XamBuildResourceLocator) { ctx.r3.u64 = XamBuildResourceLocator({base}, ctx.r3.u64, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32); }
+ANY360_SYS_EXPORT(XamBuildGamercardResourceLocator) { ctx.r3.u64 = XamBuildSystemResourceLocator({base}, u"gamercrd", ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamBuildSharedSystemResourceLocator) { ctx.r3.u64 = XamBuildSystemResourceLocator({base}, u"shrdres", ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamBuildLegacySystemResourceLocator) { ctx.r3.u64 = XamBuildSystemResourceLocator({base}, u"shrdres", ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamBuildXamResourceLocator) { ctx.r3.u64 = XamBuildSystemResourceLocator({base}, u"xam", ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1128,6 +1150,26 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ExAllocatePool),
     ANY360_SYS_ENTRY(ExFreePool),
     ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(XamGetLocale),
+    ANY360_SYS_ENTRY(XamGetLocaleEx),
+    ANY360_SYS_ENTRY(XamGetOnlineCountryFromLocale),
+    ANY360_SYS_ENTRY(XamGetLocaleFromOnlineCountry),
+    ANY360_SYS_ENTRY(XamGetLanguageFromOnlineLanguage),
+    ANY360_SYS_ENTRY(XamGetCountryFromOnlineCountry),
+    ANY360_SYS_ENTRY(XamGetOnlineCountryString),
+    ANY360_SYS_ENTRY(XamGetCountryString),
+    ANY360_SYS_ENTRY(XamGetLanguageString),
+    ANY360_SYS_ENTRY(XamGetLocaleString),
+    ANY360_SYS_ENTRY(XamGetOnlineLanguageString),
+    ANY360_SYS_ENTRY(XamGetLanguageLocaleString),
+    ANY360_SYS_ENTRY(XamGetOnlineLanguageAndCountryString),
+    ANY360_SYS_ENTRY(XamFormatDateString),
+    ANY360_SYS_ENTRY(XamFormatTimeString),
+    ANY360_SYS_ENTRY(XamBuildResourceLocator),
+    ANY360_SYS_ENTRY(XamBuildGamercardResourceLocator),
+    ANY360_SYS_ENTRY(XamBuildSharedSystemResourceLocator),
+    ANY360_SYS_ENTRY(XamBuildLegacySystemResourceLocator),
+    ANY360_SYS_ENTRY(XamBuildXamResourceLocator),
     ANY360_SYS_ENTRY(ExInitializeReadWriteLock),
     ANY360_SYS_ENTRY(ExAcquireReadWriteLockExclusive),
     ANY360_SYS_ENTRY(ExTryToAcquireReadWriteLockExclusive),

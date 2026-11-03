@@ -75,6 +75,24 @@ REFERENCE(__C_specific_handler)
 REFERENCE(VdShutdownEngines)
 REFERENCE(VdSetSystemCommandBufferGpuIdentifierAddress)
 REFERENCE(XeCryptSha)
+REFERENCE(XamGetLocale)
+REFERENCE(XamGetLocaleEx)
+REFERENCE(XamGetOnlineCountryFromLocale)
+REFERENCE(XamGetLocaleFromOnlineCountry)
+REFERENCE(XamGetLanguageFromOnlineLanguage)
+REFERENCE(XamGetCountryFromOnlineCountry)
+REFERENCE(XamGetOnlineCountryString)
+REFERENCE(XamGetCountryString)
+REFERENCE(XamGetLanguageString)
+REFERENCE(XamGetLocaleString)
+REFERENCE(XamGetOnlineLanguageString)
+REFERENCE(XamGetLanguageLocaleString)
+REFERENCE(XamGetOnlineLanguageAndCountryString)
+REFERENCE(XamBuildResourceLocator)
+REFERENCE(XamBuildGamercardResourceLocator)
+REFERENCE(XamBuildSharedSystemResourceLocator)
+REFERENCE(XamBuildLegacySystemResourceLocator)
+REFERENCE(XamBuildXamResourceLocator)
 REFERENCE(XeCryptShaInit)
 REFERENCE(XeCryptShaUpdate)
 REFERENCE(XeCryptShaFinal)
@@ -588,6 +606,87 @@ const Case kCases[] = {
       ctx.r5.u64 = rng() % 32;
     }),
     CASE(XeCryptBnDwLePkcs1Verify, nullptr),
+    // XAM's locales: ids in and out of the tables (and past 255, which wrap), buffers too short or the right size.
+    CASE(XamGetLocale, nullptr),
+    CASE(XamGetLocaleEx, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 0x140;
+      ctx.r4.u64 = rng() % 0x40;
+    }),
+    CASE(XamGetOnlineCountryFromLocale, [](Scene&, PPCContext& ctx, std::mt19937& rng) { ctx.r3.u64 = rng() % 0x140; }),
+    CASE(XamGetLocaleFromOnlineCountry, [](Scene&, PPCContext& ctx, std::mt19937& rng) { ctx.r3.u64 = rng() % 0x140; }),
+    CASE(XamGetLanguageFromOnlineLanguage, [](Scene&, PPCContext& ctx, std::mt19937& rng) { ctx.r3.u64 = rng() % 0x140; }),
+    CASE(XamGetCountryFromOnlineCountry, [](Scene&, PPCContext& ctx, std::mt19937& rng) { ctx.r3.u64 = rng() % 0x140; }),
+    CASE(XamGetOnlineCountryString, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 0x140;
+      ctx.r4.u64 = rng() % 8 ? rng() % 12 : 0x80000000u + rng() % 4;
+      ctx.r5.u64 = kBlockB + 0x100;
+    }),
+    CASE(XamGetCountryString, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 0x140;
+      ctx.r4.u64 = rng() % 8 ? rng() % 12 : 0x80000000u + rng() % 4;
+      ctx.r5.u64 = kBlockB + 0x100;
+    }),
+    CASE(XamGetLanguageString, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 0x140;
+      ctx.r4.u64 = rng() % 8 ? rng() % 12 : 0x80000000u + rng() % 4;
+      ctx.r5.u64 = kBlockB + 0x100;
+    }),
+    CASE(XamGetLocaleString, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 0x140;
+      ctx.r4.u64 = rng() % 8 ? rng() % 12 : 0x80000000u + rng() % 4;
+      ctx.r5.u64 = kBlockB + 0x100;
+    }),
+    CASE(XamGetOnlineLanguageString, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 0x140;
+      ctx.r4.u64 = rng() % 8 ? rng() % 12 : 0x80000000u + rng() % 4;
+      ctx.r5.u64 = kBlockB + 0x100;
+    }),
+    CASE(XamGetLanguageLocaleString, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 0x140;
+      ctx.r4.u64 = rng() % 0x140;
+      ctx.r5.u64 = rng() % 8 ? rng() % 12 : 0x80000000u + rng() % 4;
+      ctx.r6.u64 = kBlockB + 0x100;
+    }),
+    CASE(XamGetOnlineLanguageAndCountryString, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 0x140;
+      ctx.r4.u64 = rng() % 0x140;
+      ctx.r5.u64 = rng() % 8 ? rng() % 12 : 0x80000000u + rng() % 4;
+      ctx.r6.u64 = kBlockB + 0x100;
+    }),
+    CASE(XamBuildResourceLocator, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 2 ? 0 : uint64_t(rng()) << 32 | rng();
+      // Empty container and resource: the reference byte-swaps the characters it copies from guest strings.
+      s.WideText(kWide, rng, 0);
+      s.WideText(kBlockA + 0x900, rng, 0);
+      ctx.r4.u64 = kWide;
+      ctx.r5.u64 = kBlockA + 0x900;
+      ctx.r6.u64 = kBlockB + 0x1000;
+      ctx.r7.u64 = rng() % 64;
+    }),
+    CASE(XamBuildGamercardResourceLocator, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      s.WideText(kWide, rng, 0);  // see XamBuildResourceLocator
+      ctx.r3.u64 = kWide;
+      ctx.r4.u64 = kBlockB + 0x1000;
+      ctx.r5.u64 = rng() % 64;
+    }),
+    CASE(XamBuildSharedSystemResourceLocator, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      s.WideText(kWide, rng, 0);  // see XamBuildResourceLocator
+      ctx.r3.u64 = kWide;
+      ctx.r4.u64 = kBlockB + 0x1000;
+      ctx.r5.u64 = rng() % 64;
+    }),
+    CASE(XamBuildLegacySystemResourceLocator, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      s.WideText(kWide, rng, 0);  // see XamBuildResourceLocator
+      ctx.r3.u64 = kWide;
+      ctx.r4.u64 = kBlockB + 0x1000;
+      ctx.r5.u64 = rng() % 64;
+    }),
+    CASE(XamBuildXamResourceLocator, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      s.WideText(kWide, rng, 0);  // see XamBuildResourceLocator
+      ctx.r3.u64 = kWide;
+      ctx.r4.u64 = kBlockB + 0x1000;
+      ctx.r5.u64 = rng() % 64;
+    }),
     CASE(XeKeysHmacSha, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
       ctx.r3.u64 = rng() % 2 ? 0x19 : rng() % 0x40;
       ctx.r4.u64 = kBlockB + rng() % 0x100;
@@ -686,6 +785,19 @@ int main(int argc, char** argv) {
         } else if (native.b[i] != reference.b[i]) {
           std::printf("%s: trial %d: byte %08X native %02X, reference %02X\n", c.name, trial, kBlockB + i, native.b[i], reference.b[i]);
           ok = false;
+        }
+        if (!ok) {
+          // The bytes around the difference, printable ones as they are.
+          const std::vector<uint8_t>& n = native.a[i] != reference.a[i] ? native.a : native.b;
+          const std::vector<uint8_t>& r = native.a[i] != reference.a[i] ? reference.a : reference.b;
+          auto show = [&](const std::vector<uint8_t>& block) {
+            std::string out;
+            for (uint32_t k = i > 32 ? i - 32 : 0; k < std::min<uint32_t>(i + 32, kBlockSize); ++k) {
+              out += block[k] >= 32 && block[k] < 127 ? char(block[k]) : '.';
+            }
+            return out;
+          };
+          std::printf("  native    \"%s\"\n  reference \"%s\"\n", show(n).c_str(), show(r).c_str());
         }
       }
       if (!ok && std::strstr(c.name, "printf")) {
