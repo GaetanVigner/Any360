@@ -5,7 +5,9 @@
 #include <bit>
 #include <chrono>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <optional>
 #include <thread>
 
@@ -122,6 +124,15 @@ VulkanRenderer::~VulkanRenderer() {
   }
   work_cv_.notify_all();
   if (completer_.joinable()) completer_.join();
+  {
+    std::lock_guard lock(compile_mutex_);
+    compile_stop_ = true;
+    compile_queue_.clear();
+  }
+  compile_cv_.notify_all();
+  for (std::thread& t : compilers_) t.join();
+  TakeCompiledPipelines();
+  SavePipelineCache();
   f.vkDeviceWaitIdle(d);
   for (Batch& b : batches_) {
     if (b.fence) f.vkDestroyFence(d, b.fence, nullptr);
@@ -143,7 +154,10 @@ VulkanRenderer::~VulkanRenderer() {
   DestroyBuffer(device_, gamma_lut_buffer_);
   DestroyImage(device_, gamma_image_);
   if (batch_pool_) f.vkDestroyCommandPool(d, batch_pool_, nullptr);
-  for (auto& [key, pipeline] : pipelines_) f.vkDestroyPipeline(d, pipeline, nullptr);
+  for (auto& [key, pipeline] : pipelines_) {
+    if (pipeline) f.vkDestroyPipeline(d, pipeline, nullptr);
+  }
+  if (pipeline_cache_) f.vkDestroyPipelineCache(d, pipeline_cache_, nullptr);
   for (auto& [key, shader] : shaders_) {
     for (auto& [modification, module] : shader->modules) {
       if (module) f.vkDestroyShaderModule(d, module, nullptr);
@@ -309,6 +323,43 @@ bool VulkanRenderer::Initialize() {
   VkFormatProperties props;
   f.vkGetPhysicalDeviceFormatProperties(device_.physical(), VK_FORMAT_D24_UNORM_S8_UINT, &props);
   if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) depth_format_ = VK_FORMAT_D24_UNORM_S8_UINT;
+  // The pipeline cache, from the file of an earlier run when it is this device's and driver's (its header says).
+  std::vector<uint8_t> cache_data;
+  if (!pipeline_cache_path_.empty()) {
+    if (FILE* file = std::fopen(pipeline_cache_path_.c_str(), "rb")) {
+      std::fseek(file, 0, SEEK_END);
+      const long bytes = std::ftell(file);
+      std::fseek(file, 0, SEEK_SET);
+      if (bytes > 0) {
+        cache_data.resize(size_t(bytes));
+        if (std::fread(cache_data.data(), 1, cache_data.size(), file) != cache_data.size()) cache_data.clear();
+      }
+      std::fclose(file);
+    }
+    VkPipelineCacheHeaderVersionOne header{};
+    const VkPhysicalDeviceProperties& p = device_.properties();
+    if (cache_data.size() < sizeof(header)) {
+      cache_data.clear();
+    } else {
+      std::memcpy(&header, cache_data.data(), sizeof(header));
+      if (header.headerVersion != VK_PIPELINE_CACHE_HEADER_VERSION_ONE || header.vendorID != p.vendorID ||
+          header.deviceID != p.deviceID || std::memcmp(header.pipelineCacheUUID, p.pipelineCacheUUID, VK_UUID_SIZE)) {
+        cache_data.clear();
+      }
+    }
+  }
+  VkPipelineCacheCreateInfo cache_info{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+  cache_info.initialDataSize = cache_data.size();
+  cache_info.pInitialData = cache_data.data();
+  if (f.vkCreatePipelineCache(d, &cache_info, nullptr, &pipeline_cache_) != VK_SUCCESS) {
+    cache_info.initialDataSize = 0;
+    if (f.vkCreatePipelineCache(d, &cache_info, nullptr, &pipeline_cache_) != VK_SUCCESS) pipeline_cache_ = VK_NULL_HANDLE;
+  }
+  if (async_pipelines_) {
+    // A few threads: pipelines come in bursts (a new area), and the title's own threads keep the rest busy.
+    const uint32_t threads = std::clamp(std::thread::hardware_concurrency() / 4, 1u, 3u);
+    for (uint32_t i = 0; i < threads; ++i) compilers_.emplace_back([this] { CompilePipelines(); });
+  }
   return true;
 }
 
@@ -542,9 +593,91 @@ VkPipelineLayout VulkanRenderer::PipelineLayout(uint32_t vs_textures, uint32_t v
   return layout;
 }
 
-VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key) {
+VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key, bool& pending) {
+  pending = false;
   auto it = pipelines_.find(key);
   if (it != pipelines_.end()) return it->second;
+  if (compilers_.empty()) {
+    const VkPipeline pipeline = CreatePipeline(key);
+    if (pipeline) {
+      ++stats_.pipelines;
+      pipelines_[key] = pipeline;
+    }
+    return pipeline;
+  }
+  // Queued unless it already is, then waited for a moment: a pipeline the driver has in its caches takes far less.
+  std::unique_lock lock(compile_mutex_);
+  TakeCompiledPipelines();
+  it = pipelines_.find(key);
+  if (it != pipelines_.end()) return it->second;
+  if (compiling_.insert(key).second) {
+    compile_queue_.push_back(key);
+    compile_cv_.notify_one();
+  }
+  compiled_cv_.wait_for(lock, std::chrono::milliseconds(1), [&] {
+    return std::any_of(compiled_.begin(), compiled_.end(), [&](const auto& c) { return c.first == key; });
+  });
+  TakeCompiledPipelines();
+  it = pipelines_.find(key);
+  if (it != pipelines_.end()) return it->second;
+  pending = true;
+  ++stats_.pipeline_waits;
+  return VK_NULL_HANDLE;
+}
+
+void VulkanRenderer::TakeCompiledPipelines() {
+  for (const auto& [key, pipeline] : compiled_) {
+    compiling_.erase(key);
+    pipelines_[key] = pipeline;
+    if (pipeline) ++stats_.pipelines;
+  }
+  compiled_.clear();
+}
+
+void VulkanRenderer::CompilePipelines() {
+  std::unique_lock lock(compile_mutex_);
+  for (;;) {
+    compile_cv_.wait(lock, [this] { return compile_stop_ || !compile_queue_.empty(); });
+    if (compile_stop_) return;
+    const PipelineKey key = compile_queue_.front();
+    compile_queue_.pop_front();
+    lock.unlock();
+    const VkPipeline pipeline = CreatePipeline(key);
+    lock.lock();
+    compiled_.emplace_back(key, pipeline);
+    ++compiled_total_;
+    compiled_cv_.notify_all();
+    // The file written once a burst is over (the title may end without the renderer's destructor).
+    if (compile_queue_.empty() && compiled_total_ >= compiled_saved_ + 16) {
+      compiled_saved_ = compiled_total_;
+      lock.unlock();
+      SavePipelineCache();
+      lock.lock();
+    }
+  }
+}
+
+void VulkanRenderer::SavePipelineCache() {
+  if (!pipeline_cache_ || pipeline_cache_path_.empty()) return;
+  std::lock_guard lock(save_mutex_);
+  const Functions& f = device_.fn();
+  size_t bytes = 0;
+  if (f.vkGetPipelineCacheData(device_.device(), pipeline_cache_, &bytes, nullptr) != VK_SUCCESS || !bytes) return;
+  std::vector<uint8_t> data(bytes);
+  const VkResult result = f.vkGetPipelineCacheData(device_.device(), pipeline_cache_, &bytes, data.data());
+  if (result != VK_SUCCESS && result != VK_INCOMPLETE) return;  // incomplete: what fits, still valid
+  // Written beside the file, then moved over it: a run cut short leaves the previous file whole.
+  std::error_code ec;
+  const std::filesystem::path path(pipeline_cache_path_);
+  if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), ec);
+  const std::string temp = pipeline_cache_path_ + ".tmp";
+  FILE* file = std::fopen(temp.c_str(), "wb");
+  if (!file) return;
+  const bool written = std::fwrite(data.data(), 1, bytes, file) == bytes;
+  if (std::fclose(file) == 0 && written) std::filesystem::rename(temp, path, ec);
+}
+
+VkPipeline VulkanRenderer::CreatePipeline(const PipelineKey& key) {
   VkPipelineShaderStageCreateInfo stages[2] = {{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO},
                                                {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
   stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -627,11 +760,9 @@ VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key) {
   info.pDynamicState = &dynamic;
   info.layout = VkPipelineLayout(key.layout);
   VkPipeline pipeline = VK_NULL_HANDLE;
-  if (device_.fn().vkCreateGraphicsPipelines(device_.device(), VK_NULL_HANDLE, 1, &info, nullptr, &pipeline) != VK_SUCCESS) {
+  if (device_.fn().vkCreateGraphicsPipelines(device_.device(), pipeline_cache_, 1, &info, nullptr, &pipeline) != VK_SUCCESS) {
     return VK_NULL_HANDLE;
   }
-  ++stats_.pipelines;
-  pipelines_[key] = pipeline;
   return pipeline;
 }
 
@@ -931,10 +1062,12 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     if (colors[i]) key.color_masks |= color_mask_register & (0xFu << (4 * i));
   }
   VkPipeline pipeline;
+  bool pending;
   {
     Timer pipeline_timer(stats_.ns_pipelines);
-    pipeline = GetPipeline(key);
+    pipeline = GetPipeline(key, pending);
   }
+  if (pending) return;  // drawn once its pipeline is ready
   if (!pipeline) {
     Fail("pipeline creation");
     return;

@@ -65,6 +65,7 @@ struct RendererStats {
   uint32_t failed = 0;      // draws not drawn (see last_error)
   uint32_t translations = 0;
   uint32_t pipelines = 0;
+  uint32_t pipeline_waits = 0;  // draws not drawn while their pipeline compiles (SetAsyncPipelines)
   uint32_t render_targets = 0;
   uint32_t texture_uploads = 0;
   uint32_t texture_gpu_copies = 0;  // textures copied from a resolve kept on the GPU
@@ -117,6 +118,12 @@ class VulkanRenderer : public gfx::Renderer {
   // pixels a guest pixel along each axis (1-4).
   VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirror_bytes, uint32_t resolution_scale = 1);
   uint32_t resolution_scale() const { return scale_; }
+  // Pipelines kept in the file at `path` across runs (read by Initialize, written as new ones are made and at the
+  // end). Before Initialize; empty: none kept.
+  void SetPipelineCache(std::string path) { pipeline_cache_path_ = std::move(path); }
+  // Pipelines compiled on threads of their own: a draw waits a millisecond at most for its pipeline, then is not
+  // drawn until it is ready (a frame or so without it rather than a stall of tens of milliseconds). Before Initialize.
+  void SetAsyncPipelines(bool on) { async_pipelines_ = on; }
   ~VulkanRenderer() override;
 
   bool Initialize();
@@ -210,7 +217,12 @@ class VulkanRenderer : public gfx::Renderer {
   // The analyzed shader (no translation yet), and its translation for a modification.
   TranslatedShader* GetShader(const gfx::Shader& shader);
   VkShaderModule GetModule(TranslatedShader& shader, uint64_t modification);
-  VkPipeline GetPipeline(const PipelineKey& key);
+  // The pipeline of a key; asynchronously, VK_NULL_HANDLE with `pending` set while it compiles.
+  VkPipeline GetPipeline(const PipelineKey& key, bool& pending);
+  VkPipeline CreatePipeline(const PipelineKey& key);  // any thread
+  void CompilePipelines();                            // a compiler thread
+  void TakeCompiledPipelines();                       // compile_mutex_ held
+  void SavePipelineCache();                           // any thread
   // Texture set layouts by stage and counts (sampled images, then samplers, as the reference lays them out) and
   // pipeline layouts by the four counts.
   VkDescriptorSetLayout TextureSetLayout(bool vertex, uint32_t textures, uint32_t samplers);
@@ -236,7 +248,21 @@ class VulkanRenderer : public gfx::Renderer {
     size_t operator()(const std::pair<uint32_t, uint64_t>& k) const { return size_t(k.second ^ (uint64_t(k.first) << 63)); }
   };
   std::unordered_map<std::pair<uint32_t, uint64_t>, std::unique_ptr<TranslatedShader>, ShaderKeyHash> shaders_;  // (type, hash)
-  std::unordered_map<PipelineKey, VkPipeline, BytesHash> pipelines_;
+  std::unordered_map<PipelineKey, VkPipeline, BytesHash> pipelines_;  // VK_NULL_HANDLE: creation failed
+  VkPipelineCache pipeline_cache_ = VK_NULL_HANDLE;
+  std::string pipeline_cache_path_;
+  std::mutex save_mutex_;
+  bool async_pipelines_ = false;
+  // Asynchronous pipelines: the keys to compile, those queued or compiling, those done (taken by GetPipeline), and
+  // the count made and the count in the file when it was last written.
+  std::mutex compile_mutex_;
+  std::condition_variable compile_cv_, compiled_cv_;
+  std::deque<PipelineKey> compile_queue_;
+  std::set<PipelineKey> compiling_;
+  std::vector<std::pair<PipelineKey, VkPipeline>> compiled_;
+  uint32_t compiled_total_ = 0, compiled_saved_ = 0;
+  bool compile_stop_ = false;
+  std::vector<std::thread> compilers_;
   std::unordered_map<SurfaceKey, std::unique_ptr<Surface>, BytesHash> surfaces_;
   std::unique_ptr<TextureCache> textures_;
   VkFormat depth_format_ = VK_FORMAT_UNDEFINED;

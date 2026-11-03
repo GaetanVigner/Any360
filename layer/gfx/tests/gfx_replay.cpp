@@ -13,6 +13,7 @@
 //     --watch ADDR    with --trace, prints the texture fetch constants that read the 4 KB page at ADDR (hex)
 //     --scale N   renders at N x N host pixels a guest pixel (resolution scale); frames are averaged down to the
 //                 reference's size to be compared
+//     --pipeline-cache FILE  keeps the pipelines in FILE across runs (the time spent creating them is printed)
 #include <algorithm>
 #include <atomic>
 #include <thread>
@@ -293,6 +294,7 @@ int main(int argc, char** argv) {
   std::string profile;  // --profile FILE: the main thread's instruction pointer sampled during the last pass
   uint32_t scale = 1;
   vk::DeviceOptions options;
+  std::string pipeline_cache;
   for (int i = 1; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--gpu") && i + 1 < argc) options.prefer = argv[++i];
     else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
@@ -302,6 +304,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--profile") && i + 1 < argc) profile = argv[++i];
     else if (!std::strcmp(argv[i], "--bench")) bench = true;
     else if (!std::strcmp(argv[i], "--async")) async = true;
+    else if (!std::strcmp(argv[i], "--pipeline-cache") && i + 1 < argc) pipeline_cache = argv[++i];
     else if (!std::strcmp(argv[i], "--scale") && i + 1 < argc) scale = uint32_t(std::clamp(std::atoi(argv[++i]), 1, 4));
     else if (!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = uint32_t(std::strtoul(argv[++i], nullptr, 16)) & 0x1FFFF000;
     else path = argv[i];
@@ -321,6 +324,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   vk::VulkanRenderer renderer(device, physical, uint32_t(kPhysicalBytes), scale);
+  renderer.SetPipelineCache(pipeline_cache);
   if (!renderer.Initialize()) {
     std::printf("gfx_replay: renderer: %s\n", renderer.last_error().c_str());
     return 1;
@@ -558,9 +562,9 @@ int main(int argc, char** argv) {
                 d.draws ? d.ns_draws / 1e3 / d.draws : 0.0);
   }
   std::printf("gfx_replay: %s: %u draws, %u skipped, %u failed; %u resolves, %u shaders, %u pipelines, %u render targets, "
-              "%u texture uploads\n",
+              "%u texture uploads; %.1f ms creating pipelines\n",
               device.properties().deviceName, r.draws, r.skipped, r.failed, r.resolves, r.translations, r.pipelines,
-              r.render_targets, r.texture_uploads);
+              r.render_targets, r.texture_uploads, r.ns_pipelines / 1e6);
   // Textures over a resolve kept on the GPU that could not copy from it, and why (they read guest memory instead).
   if (renderer.texture_cache()) {
     for (const auto& [why, count] : renderer.texture_cache()->source_misses()) {

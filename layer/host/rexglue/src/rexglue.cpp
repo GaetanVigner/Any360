@@ -282,12 +282,13 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     char line[768];
     std::snprintf(line, sizeof(line),
                   "Any360: %.1f FPS; per frame: %.0f draws, %.0f skipped, %.0f failed, %.0f resolves, %.1f texture uploads, "
-                  "%.1f texture copies from resolves, %.1f translations, %.1f pipelines, %.1f flushes; ms: draws %.2f (textures %.2f, shaders %.2f, "
+                  "%.1f texture copies from resolves, %.1f translations, %.1f pipelines (%.1f draws waiting), %.1f flushes; ms: draws %.2f (textures %.2f, shaders %.2f, "
                   "pipelines %.2f, guest memory %.2f, submit %.2f), resolves %.2f, swaps %.2f; guest memory %s",
                   n / seconds, (s.draws - last_.draws) / n, (s.skipped - last_.skipped) / n, (s.failed - last_.failed) / n,
                   (s.resolves - last_.resolves) / n, (s.texture_uploads - last_.texture_uploads) / n,
                   (s.texture_gpu_copies - last_.texture_gpu_copies) / n,
                   (s.translations - last_.translations) / n, (s.pipelines - last_.pipelines) / n,
+                  (s.pipeline_waits - last_.pipeline_waits) / n,
                   (s.flushes - last_.flushes) / n, (s.ns_draws - last_.ns_draws) / ms,
                   (s.ns_textures - last_.ns_textures) / ms, (s.ns_shaders - last_.ns_shaders) / ms,
                   (s.ns_pipelines - last_.ns_pipelines) / ms, (s.ns_memory - last_.ns_memory) / ms,
@@ -627,6 +628,8 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   uint8_t* physical = memory->TranslatePhysical<uint8_t*>(0);
   binding->renderer = std::make_unique<PresentingRenderer>(binding->device, physical, binding->window, binding->parent,
                                                           options.log, options.stats_seconds, options.resolution_scale);
+  binding->renderer->SetPipelineCache(options.pipeline_cache_path);
+  binding->renderer->SetAsyncPipelines(options.async_pipelines);
   if (!binding->renderer->Initialize() || !binding->renderer->Resize()) {
     error = "renderer: " + binding->renderer->last_error();
     binding->renderer.reset();

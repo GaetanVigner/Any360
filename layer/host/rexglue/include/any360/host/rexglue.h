@@ -38,6 +38,12 @@ struct GraphicsOptions {
   double vblank_hz = 0.0;
   // Host pixels a guest pixel along each axis (1-4): the title draws at its resolution times this.
   uint32_t resolution_scale = 1;
+  // A file the pipelines are kept in across runs (the driver's compiled code: a stall of tens of milliseconds each
+  // the first time). Empty: none kept.
+  std::string pipeline_cache_path;
+  // Pipelines compiled on threads of their own: a draw whose pipeline is not ready is left out a frame or so
+  // rather than stalling the frame.
+  bool async_pipelines = true;
   // Frames drawn inside the title's own window (the visible top-level window of the thread calling StartGraphics,
   // the runtime's UI thread), as a child covering its client area that leaves input and focus to it: the runtime's
   // input (SDL) only reads controllers while one of its windows has the focus. False: a window of its own.
