@@ -17,6 +17,7 @@
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
 #include "any360/sys/threading.h"
+#include "any360/sys/video.h"
 #include "any360/sys/crypt.h"
 #include "any360/sys/rtl.h"
 #include "any360/sys/xam.h"
@@ -689,6 +690,27 @@ void Win32FileTests() {
 }
 
 // XAM strings the reference cannot be compared on: dates and times of a FILETIME, locators with guest names.
+// The video queries' xam forms and the real mode agree with the Vd* ones; the display hardware a host has no
+// counterpart for answers success and writes nothing.
+void VideoTests() {
+  Fresh();
+  Video() = {};
+  for (const auto& [width, height] : {std::pair{1280u, 720u}, {640u, 480u}, {1920u, 1080u}}) {
+    Video().width = width, Video().height = height;
+    std::memset(g.host(kScratch), 0xCD, 0x100);
+    VdQueryVideoMode(g, kScratch);
+    VdQueryRealVideoMode(g, kScratch + 0x80);
+    CHECK(std::memcmp(g.host(kScratch), g.host(kScratch + 0x80), 48) == 0);
+    CHECK(XGetVideoFlags() == VdQueryVideoFlags());
+    CHECK(XGetVideoStandard() == g.Load32(kScratch + 24));
+  }
+  Video() = {};
+  CHECK(XGetVideoCapabilities() == 0);
+  const std::vector<uint8_t> before = g_memory;
+  CHECK(VdDisplayHardwareRequest() == 0);
+  CHECK(g_memory == before);
+}
+
 void LocaleTests() {
   Fresh();
   const uint32_t buf = kScratch + 0x400, name = kScratch + 0x300;
@@ -1768,6 +1790,7 @@ int main() {
   XamTests();
   FileTests();
   LocaleTests();
+  VideoTests();
   Win32FileTests();
   MemoryTests();
   SchedulerTests();
