@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 946" width="1000" height="946" font-family="sans-serif">
 <style>.blk:hover rect{opacity:.8}</style>
 <rect width="1000" height="946" fill="#0d1117"/>
-<text x="0" y="25" font-size="16" fill="#c9d1d9" font-weight="600">System calls native: 13.5% (393/2,914) <tspan font-size="12" font-weight="400" fill="#8b949e">· 19.1% run on the reference runtime · one square per export</tspan></text>
+<text x="0" y="25" font-size="16" fill="#c9d1d9" font-weight="600">System calls native: 14.3% (417/2,914) <tspan font-size="12" font-weight="400" fill="#8b949e">· 19.1% run on the reference runtime · one square per export</tspan></text>
 <rect x="0" y="34" width="1000" height="300" fill="#0d1117"/>
 <a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xam ui: 340 (5% native/ported; 18 native, 3 reference, 318 stub, 1 missing)</title>
 <rect x="0.00" y="34.00" width="9.71" height="9.58" fill="#2ea043"/>
@@ -1031,37 +1031,37 @@
 <rect x="204.2" y="203.8" width="143.1" height="130.2" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="208.2" y="216.8" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">xam misc</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl crypt: 155 (4% native/ported; 6 native, 25 reference, 124 stub)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl crypt: 155 (19% native/ported; 30 native, 1 reference, 124 stub)</title>
 <rect x="347.29" y="34.00" width="9.93" height="9.06" fill="#2ea043"/>
 <rect x="357.72" y="34.00" width="9.93" height="9.06" fill="#2ea043"/>
 <rect x="368.15" y="34.00" width="9.93" height="9.06" fill="#2ea043"/>
 <rect x="378.59" y="34.00" width="9.93" height="9.06" fill="#2ea043"/>
 <rect x="389.02" y="34.00" width="9.93" height="9.06" fill="#2ea043"/>
 <rect x="399.45" y="34.00" width="9.93" height="9.06" fill="#2ea043"/>
-<rect x="409.88" y="34.00" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="420.32" y="34.00" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="430.75" y="34.00" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="441.18" y="34.00" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="347.29" y="43.56" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="357.72" y="43.56" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="368.15" y="43.56" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="378.59" y="43.56" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="389.02" y="43.56" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="399.45" y="43.56" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="409.88" y="43.56" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="420.32" y="43.56" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="430.75" y="43.56" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="441.18" y="43.56" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="347.29" y="53.12" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="357.72" y="53.12" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="368.15" y="53.12" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="378.59" y="53.12" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="389.02" y="53.12" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="399.45" y="53.12" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="409.88" y="53.12" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="420.32" y="53.12" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="430.75" y="53.12" width="9.93" height="9.06" fill="#8957e5"/>
-<rect x="441.18" y="53.12" width="9.93" height="9.06" fill="#8957e5"/>
+<rect x="409.88" y="34.00" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="420.32" y="34.00" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="430.75" y="34.00" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="441.18" y="34.00" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="347.29" y="43.56" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="357.72" y="43.56" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="368.15" y="43.56" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="378.59" y="43.56" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="389.02" y="43.56" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="399.45" y="43.56" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="409.88" y="43.56" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="420.32" y="43.56" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="430.75" y="43.56" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="441.18" y="43.56" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="347.29" y="53.12" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="357.72" y="53.12" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="368.15" y="53.12" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="378.59" y="53.12" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="389.02" y="53.12" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="399.45" y="53.12" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="409.88" y="53.12" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="420.32" y="53.12" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="430.75" y="53.12" width="9.93" height="9.06" fill="#2ea043"/>
+<rect x="441.18" y="53.12" width="9.93" height="9.06" fill="#2ea043"/>
 <rect x="347.29" y="62.68" width="9.93" height="9.06" fill="#8957e5"/>
 <rect x="357.72" y="62.68" width="9.93" height="9.06" fill="#d29922"/>
 <rect x="368.15" y="62.68" width="9.93" height="9.06" fill="#d29922"/>

@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (390 system calls)
+## What is verified (417 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -179,6 +179,16 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XMACreateContext` / `XMAReleaseContext` (64-byte contexts in physical memory, announced to an `XmaBackend`). Guest
   callbacks run through `Scheduler::CreateContext` and `Scheduler::Dispatch`. The renderer, the audio output and the
   XMA decoder are the backends still to write.
+- **Cryptography** (`sys_io_tests`, equal to the reference over random states and data): SHA-1 and SHA-256 streamed
+  through their guest states (`XeCryptShaInit` / `Update` / `Final`, `XeCryptSha256*`), `XeCryptHmacSha`, RC4
+  (`XeCryptRc4Key`, `XeCryptRc4Ecb`, `XeCryptRc4`; the key schedule cycles over 16 key bytes whatever the size, as the
+  reference), AES-128 (`XeCryptAesKey` with the reference's decryption round keys, `XeCryptAesEcb`, `XeCryptAesCbc`),
+  triple DES (`XeCryptDes3Key`, its subkeys stored as the reference's little-endian words, `XeCryptDes3Ecb`,
+  `XeCryptDes3Cbc`), `XeCryptDesParity`, `XeCryptBnQw_SwapDwQwLeBe`, `XeCryptBnDwLePkcs1Verify` (accepted), and the
+  console-key forms `XeKeysHmacSha` (the retail key 0x19 only), `XeKeysObscureKey`, `XeKeysAesCbcUsingKey`,
+  `XeKeysHmacShaUsingKey` (the reference's zero key-obfuscation key). The reference's SHA-1 writes only the low 32 bits
+  of the bit count; the layer does the same. `XeCryptRandom` gives host random bytes (the reference fills 0xFD).
+  `XeCryptBnQwNeRsaPubCrypt` (RSA) is not ported yet.
 - **DPC and APC delivery** (scenario tests): the dispatcher a title binds takes up to 8 arguments (r3 to r10).
   - User APCs (`NtQueueApcThread`) run on their thread as routine(context, arg1, arg2) when it waits alertably
     (`KeDelayExecutionThread`, `KeWaitForSingleObject`, `NtWaitForSingleObjectEx`, `KeWaitForMultipleObjects`,

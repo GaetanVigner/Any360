@@ -721,6 +721,38 @@ ANY360_SYS_EXPORT(VdQuerySystemCommandBuffer) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(VdSetSystemCommandBuffer) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(XAudioQueryDriverPerformance) { ctx.r3.u64 = 0; }
 
+// Batch 19: the XeCrypt / XeKeys cryptography (sys_io_tests against the reference).
+ANY360_SYS_EXPORT(XeCryptShaInit) { XeCryptShaInit({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XeCryptShaUpdate) { XeCryptShaUpdate({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptShaFinal) { XeCryptShaFinal({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptSha256Init) { XeCryptSha256Init({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XeCryptSha256Update) { XeCryptSha256Update({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptSha256Final) { XeCryptSha256Final({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptHmacSha) {
+  XeCryptHmacSha({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32, StackArgument(ctx, base, 8), StackArgument(ctx, base, 9));
+}
+ANY360_SYS_EXPORT(XeCryptRc4Key) { XeCryptRc4Key({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptRc4Ecb) { XeCryptRc4Ecb({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptRc4) { XeCryptRc4({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XeCryptAesKey) { XeCryptAesKey({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XeCryptAesEcb) { XeCryptAesEcb({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XeCryptAesCbc) { XeCryptAesCbc({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32); }
+ANY360_SYS_EXPORT(XeCryptDes3Key) { XeCryptDes3Key({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XeCryptDes3Ecb) { XeCryptDes3Ecb({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XeCryptDes3Cbc) { XeCryptDes3Cbc({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32); }
+ANY360_SYS_EXPORT(XeCryptDesParity) { XeCryptDesParity({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
+ANY360_SYS_EXPORT(XeKeysHmacSha) {
+  ctx.r3.u64 = XeKeysHmacSha({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32, StackArgument(ctx, base, 8));
+}
+ANY360_SYS_EXPORT(XeKeysObscureKey) { ctx.r3.u64 = XeKeysObscureKey({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XeKeysAesCbcUsingKey) { ctx.r3.u64 = XeKeysAesCbcUsingKey({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32); }
+ANY360_SYS_EXPORT(XeKeysHmacShaUsingKey) {
+  ctx.r3.u64 = XeKeysHmacShaUsingKey({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32, StackArgument(ctx, base, 8));
+}
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1054,6 +1086,30 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ExAllocatePool),
     ANY360_SYS_ENTRY(ExFreePool),
     ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(XeCryptShaInit),
+    ANY360_SYS_ENTRY(XeCryptShaUpdate),
+    ANY360_SYS_ENTRY(XeCryptShaFinal),
+    ANY360_SYS_ENTRY(XeCryptSha256Init),
+    ANY360_SYS_ENTRY(XeCryptSha256Update),
+    ANY360_SYS_ENTRY(XeCryptSha256Final),
+    ANY360_SYS_ENTRY(XeCryptHmacSha),
+    ANY360_SYS_ENTRY(XeCryptRc4Key),
+    ANY360_SYS_ENTRY(XeCryptRc4Ecb),
+    ANY360_SYS_ENTRY(XeCryptRc4),
+    ANY360_SYS_ENTRY(XeCryptAesKey),
+    ANY360_SYS_ENTRY(XeCryptAesEcb),
+    ANY360_SYS_ENTRY(XeCryptAesCbc),
+    ANY360_SYS_ENTRY(XeCryptDes3Key),
+    ANY360_SYS_ENTRY(XeCryptDes3Ecb),
+    ANY360_SYS_ENTRY(XeCryptDes3Cbc),
+    ANY360_SYS_ENTRY(XeCryptDesParity),
+    ANY360_SYS_ENTRY(XeCryptBnQw_SwapDwQwLeBe),
+    ANY360_SYS_ENTRY(XeCryptRandom),
+    ANY360_SYS_ENTRY(XeCryptBnDwLePkcs1Verify),
+    ANY360_SYS_ENTRY(XeKeysHmacSha),
+    ANY360_SYS_ENTRY(XeKeysObscureKey),
+    ANY360_SYS_ENTRY(XeKeysAesCbcUsingKey),
+    ANY360_SYS_ENTRY(XeKeysHmacShaUsingKey),
     ANY360_SYS_ENTRY(XeCryptRotSumSha),
     ANY360_SYS_ENTRY(XeCryptBnQwBeSigVerify),
     ANY360_SYS_ENTRY(XeKeysGetKey),

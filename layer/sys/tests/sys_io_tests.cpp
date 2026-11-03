@@ -75,6 +75,29 @@ REFERENCE(__C_specific_handler)
 REFERENCE(VdShutdownEngines)
 REFERENCE(VdSetSystemCommandBufferGpuIdentifierAddress)
 REFERENCE(XeCryptSha)
+REFERENCE(XeCryptShaInit)
+REFERENCE(XeCryptShaUpdate)
+REFERENCE(XeCryptShaFinal)
+REFERENCE(XeCryptSha256Init)
+REFERENCE(XeCryptSha256Update)
+REFERENCE(XeCryptSha256Final)
+REFERENCE(XeCryptHmacSha)
+REFERENCE(XeCryptRc4Key)
+REFERENCE(XeCryptRc4Ecb)
+REFERENCE(XeCryptRc4)
+REFERENCE(XeCryptAesKey)
+REFERENCE(XeCryptAesEcb)
+REFERENCE(XeCryptAesCbc)
+REFERENCE(XeCryptDes3Key)
+REFERENCE(XeCryptDes3Ecb)
+REFERENCE(XeCryptDes3Cbc)
+REFERENCE(XeCryptDesParity)
+REFERENCE(XeCryptBnQw_SwapDwQwLeBe)
+REFERENCE(XeCryptBnDwLePkcs1Verify)
+REFERENCE(XeKeysHmacSha)
+REFERENCE(XeKeysObscureKey)
+REFERENCE(XeKeysAesCbcUsingKey)
+REFERENCE(XeKeysHmacShaUsingKey)
 
 namespace {
 
@@ -465,6 +488,139 @@ const Case kCases[] = {
       ctx.r8.u64 = rng() % 64;
       ctx.r9.u64 = kBlockB + 0x3000;
       ctx.r10.u64 = rng() % 24;
+    }),
+
+    // The cryptography: states taken from random memory as often as from their Init/Key call.
+    CASE(XeCryptShaInit, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = kBlockA + 0x100; }),
+    CASE(XeCryptShaUpdate, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x100;
+      ctx.r4.u64 = kBlockB + rng() % 0x100;
+      ctx.r5.u64 = rng() % 4 ? rng() % 0x300 : 0;
+    }),
+    CASE(XeCryptShaFinal, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x100;
+      ctx.r4.u64 = kBlockB + 0x2000;
+      ctx.r5.u64 = rng() % 24;
+    }),
+    CASE(XeCryptSha256Init, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = kBlockA + 0x100; }),
+    CASE(XeCryptSha256Update, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x100;
+      ctx.r4.u64 = kBlockB + rng() % 0x100;
+      ctx.r5.u64 = rng() % 4 ? rng() % 0x300 : 0;
+    }),
+    CASE(XeCryptSha256Final, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x100;
+      ctx.r4.u64 = kBlockB + 0x2000;
+      ctx.r5.u64 = rng() % 40;
+    }),
+    CASE(XeCryptHmacSha, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x200;
+      ctx.r4.u64 = rng() % 100;  // past 64 bytes the key is hashed first
+      ctx.r5.u64 = kBlockB + rng() % 0x100;
+      ctx.r6.u64 = rng() % 0x200;
+      ctx.r7.u64 = kBlockB + 0x800;
+      ctx.r8.u64 = rng() % 2 ? rng() % 80 : 0;
+      ctx.r9.u64 = kBlockA + 0x1000;
+      ctx.r10.u64 = rng() % 2 ? rng() % 80 : 0;
+      s.Word(ctx.r1.u32 + 0x54, kBlockB + 0x3000);
+      s.Word(ctx.r1.u32 + 0x5C, rng() % 24);
+    }),
+    CASE(XeCryptRc4Key, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x400;
+      ctx.r4.u64 = kBlockB + rng() % 0x100;
+      ctx.r5.u64 = rng() % 32;
+    }),
+    CASE(XeCryptRc4Ecb, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x400;
+      ctx.r4.u64 = kBlockB + 0x1000 + rng() % 0x100;
+      ctx.r5.u64 = rng() % 0x200;
+    }),
+    CASE(XeCryptRc4, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + rng() % 0x100;
+      ctx.r4.u64 = rng() % 32;
+      ctx.r5.u64 = kBlockB + 0x1000 + rng() % 0x100;
+      ctx.r6.u64 = rng() % 0x200;
+    }),
+    CASE(XeCryptAesKey, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x800;
+      ctx.r4.u64 = kBlockB + rng() % 0x100;
+    }),
+    CASE(XeCryptAesEcb, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x800;
+      ctx.r4.u64 = kBlockB + 0x100;
+      ctx.r5.u64 = rng() % 2 ? kBlockB + 0x100 : kBlockB + 0x2000;
+      ctx.r6.u64 = rng() % 2;
+    }),
+    CASE(XeCryptAesCbc, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x800;
+      ctx.r4.u64 = kBlockB + 0x100;
+      ctx.r5.u64 = 16 * (rng() % 9);
+      ctx.r6.u64 = rng() % 2 ? kBlockB + 0x100 : kBlockB + 0x2000;
+      ctx.r7.u64 = kBlockA + 0x3800;
+      ctx.r8.u64 = rng() % 2;
+    }),
+    CASE(XeCryptDes3Key, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x1000;
+      ctx.r4.u64 = kBlockB + 8 * (rng() % 32);
+    }),
+    CASE(XeCryptDes3Ecb, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x1000;
+      ctx.r4.u64 = kBlockB + 0x100;
+      ctx.r5.u64 = rng() % 2 ? kBlockB + 0x100 : kBlockB + 0x2000;
+      ctx.r6.u64 = rng() % 2;
+    }),
+    CASE(XeCryptDes3Cbc, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x1000;
+      ctx.r4.u64 = kBlockB + 0x100;
+      ctx.r5.u64 = 8 * (rng() % 9);
+      ctx.r6.u64 = rng() % 2 ? kBlockB + 0x100 : kBlockB + 0x2000;
+      ctx.r7.u64 = kBlockA + 0x3800;
+      ctx.r8.u64 = rng() % 2;
+    }),
+    CASE(XeCryptDesParity, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + rng() % 0x100;
+      ctx.r4.u64 = rng() % 64;
+      ctx.r5.u64 = kBlockB + 0x2000;
+    }),
+    CASE(XeCryptBnQw_SwapDwQwLeBe, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x100;
+      ctx.r4.u64 = rng() % 2 ? kBlockA + 0x100 : kBlockB + 0x2000;
+      ctx.r5.u64 = rng() % 32;
+    }),
+    CASE(XeCryptBnDwLePkcs1Verify, nullptr),
+    CASE(XeKeysHmacSha, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 2 ? 0x19 : rng() % 0x40;
+      ctx.r4.u64 = kBlockB + rng() % 0x100;
+      ctx.r5.u64 = rng() % 0x200;
+      ctx.r6.u64 = kBlockB + 0x800;
+      ctx.r7.u64 = rng() % 80;
+      ctx.r8.u64 = kBlockA + 0x1000;
+      ctx.r9.u64 = rng() % 80;
+      ctx.r10.u64 = kBlockB + 0x3000;
+      s.Word(ctx.r1.u32 + 0x54, rng() % 24);
+    }),
+    CASE(XeKeysObscureKey, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x100;
+      ctx.r4.u64 = rng() % 2 ? kBlockA + 0x100 : kBlockB + 0x2000;
+    }),
+    CASE(XeKeysAesCbcUsingKey, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = kBlockA + 0x200;
+      ctx.r4.u64 = kBlockB + 0x100;
+      ctx.r5.u64 = 16 * (rng() % 9);
+      ctx.r6.u64 = rng() % 2 ? kBlockB + 0x100 : kBlockB + 0x2000;
+      ctx.r7.u64 = kBlockA + 0x3800;
+      ctx.r8.u64 = rng() % 2;
+    }),
+    CASE(XeKeysHmacShaUsingKey, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 8 ? kBlockA + 0x200 : 0;
+      ctx.r4.u64 = kBlockB + rng() % 0x100;
+      ctx.r5.u64 = rng() % 0x200;
+      ctx.r6.u64 = kBlockB + 0x800;
+      ctx.r7.u64 = rng() % 80;
+      ctx.r8.u64 = kBlockA + 0x1000;
+      ctx.r9.u64 = rng() % 80;
+      ctx.r10.u64 = kBlockB + 0x3000;
+      s.Word(ctx.r1.u32 + 0x54, rng() % 24);
     }),
 };
 
