@@ -954,9 +954,11 @@ struct FakeSink : AudioSink {
   }
 };
 struct FakeXma : XmaBackend {
-  int allocated = 0, released = 0;
+  int allocated = 0, released = 0, enabled = 0, disabled = 0;
   void ContextAllocated(Guest, uint32_t) override { ++allocated; }
   void ContextReleased(Guest, uint32_t) override { ++released; }
+  void ContextEnabled(Guest, uint32_t) override { ++enabled; }
+  void ContextDisabled(Guest, uint32_t) override { ++disabled; }
 };
 
 uint32_t FloatBits(float f) {
@@ -1107,6 +1109,40 @@ void GraphicsAudioTests() {
   CHECK(Audio().XmaReleaseContext(gm, a) == 0);  // twice: nothing more
   CHECK(Audio().XmaCreateContext(gm, out) == 0 && gm.Load32(out) == a);
   CHECK(xma.allocated == 3 && xma.released == 1);
+
+  // A context initialised from its init block: buffers as physical addresses, fields packed into their words.
+  const uint32_t init = 0x2000;
+  std::memset(gm.host(init), 0, 56);
+  gm.Store32(init, 0x110000);       // input buffer 0
+  gm.Store32(init + 4, 3);          // its packets
+  gm.Store32(init + 0x10, 0x40);    // input read offset, in bits
+  gm.Store32(init + 0x14, 0x120000);  // output buffer
+  gm.Store32(init + 0x18, 8);       // output blocks
+  gm.Store32(init + 0x24, 1);       // stereo
+  gm.Store32(init + 0x28, 2);       // 44.1 kHz
+  gm.Store32(init + 0x2C, 0x100);   // loop start
+  gm.Store8(init + 0x34, 255);      // loop count
+  gm.Store32(a, 0xFFFFFFFF);
+  CHECK(Audio().XmaInitializeContext(gm, a, init) == 0);
+  CHECK(gm.Load32(a) == (3u | 255u << 12 | 8u << 22) && gm.Load32(a + 4) == (2u << 27 | 1u << 29) && gm.Load32(a + 8) == 0x40);
+  CHECK(gm.Load32(a + 12) == 0x100 && gm.Load32(a + 20) == 0x10000 && gm.Load32(a + 24) == 0 && gm.Load32(a + 28) == 0x20000);
+  gm.Store32(init + 0x14, 0x1000);  // an output buffer outside physical memory
+  CHECK(Audio().XmaInitializeContext(gm, a, init) == 0x80000000u && gm.Load32(a + 28) == 0x20000);
+  // Buffer validity and offsets, each in its own bits.
+  CHECK(Audio().XmaGet(gm, a, XmaField::kInput0Valid) == 0 && Audio().XmaGet(gm, a, XmaField::kOutputValid) == 0);
+  Audio().XmaSet(gm, a, XmaField::kInput0Valid, 1);
+  Audio().XmaSet(gm, a, XmaField::kOutputValid, 1);
+  Audio().XmaSet(gm, a, XmaField::kOutputReadOffset, 33);  // 5 bits: wraps to 1
+  CHECK(Audio().XmaGet(gm, a, XmaField::kInput0Valid) == 1 && Audio().XmaGet(gm, a, XmaField::kInput1Valid) == 0 &&
+        Audio().XmaGet(gm, a, XmaField::kInput0PacketCount) == 3 && gm.Load32(a + 4) >> 31 == 1);
+  CHECK(Audio().XmaGet(gm, a, XmaField::kOutputReadOffset) == 1 && Audio().XmaGet(gm, a, XmaField::kOutputWriteOffset) == 0);
+  CHECK(Audio().XmaSetInputBuffer(gm, a, 1, 0x130000, 5) == 0 && gm.Load32(a + 24) == 0x30000 &&
+        Audio().XmaGet(gm, a, XmaField::kInput1PacketCount) == 5);
+  CHECK(Audio().XmaSetInputBuffer(gm, a, 1, 0x1000, 5) == 0x80000000u);
+  // Enabled and disabled for the decoder; with no work buffer nothing is in use.
+  CHECK(Audio().XmaEnableContext(gm, a) == 0 && Audio().XmaEnabled(a) && !Audio().XmaEnabled(b));
+  CHECK(Audio().XmaDisableContext(gm, a) == 0 && !Audio().XmaEnabled(a) && xma.enabled == 1 && xma.disabled == 1);
+  CHECK(Audio().XmaBlockWhileInUse(gm, a) == 0);
 
   Audio().Reset();
   Graphics().Reset();

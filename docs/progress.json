@@ -7,13 +7,13 @@
  "system_calls": {
   "total": 2914,
   "used_by_titles": 374,
-  "native": 368,
+  "native": 390,
   "ported": 0,
-  "runnable": 553,
+  "runnable": 556,
   "by_state": {
-   "reference": 185,
-   "native": 368,
-   "stub": 2346,
+   "reference": 166,
+   "native": 390,
+   "stub": 2343,
    "missing": 15
   },
   "by_library": {
@@ -144,7 +144,7 @@
   },
   "simpsons": {
    "imports": 317,
-   "imports_native": 300,
+   "imports_native": 317,
    "mvp_total": 277,
    "mvp_native": 277,
    "mnemonics": 338,
@@ -154,7 +154,7 @@
    "source": "",
    "description": "",
    "sites": 4697,
-   "sites_native": 4666,
+   "sites_native": 4697,
    "mvp_sites": 4635,
    "mvp_sites_native": 4635
   },

@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (368 system calls)
+## What is verified (390 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -152,6 +152,14 @@ to the reference, or, where the reference is not faithful, when the scenario tes
     `NtSignalAndWaitForSingleObjectEx` (an event set, a semaphore or mutant released, then the wait),
     `ObOpenObjectByPointer`, `ObLookupThreadByThreadId` (the scheduler's threads), `NtQueueApcThread` (the APC queued
     on its thread; delivery needs alertable waits, which come later), `XexUnloadImageAndExitThread`.
+- **The kernel side of The Simpsons Game's audio and video** (all 317 of its system calls native; scenario tests):
+  the XMA context calls reading and writing the fields of the 64-byte context as the hardware packs them (big-endian
+  words, bitfields from the low bit): `XMAInitializeContext` from its 56-byte init block, the input and output buffers
+  as physical addresses (`0x80000000` for a buffer outside physical memory, as the reference), buffer validity, read
+  and write offsets, loop data, packet metadata; `XMAEnableContext` / `XMADisableContext` handed to the `XmaBackend`
+  (new optional `ContextEnabled` / `ContextDisabled`); `XMABlockWhileInUse`. `XMASetLoopData` reads an
+  `XMA_LOOP_DATA` (the reference reads it as a whole context). `VdQuerySystemCommandBuffer`,
+  `VdSetSystemCommandBuffer` and `XAudioQueryDriverPerformance` answer success and write nothing, as the reference.
 - **Graphics and audio, the kernel side** (`graphics.h`, `audio.h`; scenario tests with a fake GPU, sink and XMA
   decoder): `VdInitializeEngines`, `VdInitializeRingBuffer` and `VdEnableRingBufferRPtrWriteBack` (handed to a
   `GpuBackend`, the command processor), `VdSwap` (the front buffer's fetch constant, made physical, and `XE_SWAP` written into the ring as the reference does), `VdSetGraphicsInterruptCallback` (the title's handler runs on a guest context
@@ -203,9 +211,9 @@ the kernel side; its graphics already run through any360::gfx (`layer/host/rexgl
 **MVP reached for Test Drive Unlimited**: all 278 of its system calls are native (2026-11-03), graphics and audio
 included on the kernel side.
 
-**MVP reached for The Simpsons Game**: all 300 of its system calls outside graphics and audio are native
-(2026-11-03); 17 remain on the kernel side of audio and video (the XMA context calls, the system command buffer,
-`XAudioQueryDriverPerformance`). Every known title has now reached the MVP.
+**MVP reached for The Simpsons Game**: all 317 of its system calls are native (2026-11-03), graphics and audio
+included on the kernel side. Every known title has now reached the MVP, and every system call the four titles
+import (374) is native.
 
 **MVP**: one title with every system call except the graphics and audio ones native, so it can run on `any360::sys`
 with only those left to the reference. The progress page shows the MVP per title; the closest title is the target, and

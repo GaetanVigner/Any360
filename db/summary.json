@@ -23,7 +23,7 @@
   },
   "simpsons": {
    "imports": 317,
-   "imports_native": 300,
+   "imports_native": 317,
    "mvp_total": 277,
    "mvp_native": 277,
    "mnemonics": 338,
@@ -33,7 +33,7 @@
    "source": "",
    "description": "",
    "sites": 4697,
-   "sites_native": 4666,
+   "sites_native": 4697,
    "mvp_sites": 4635,
    "mvp_sites_native": 4635
   },
@@ -66,8 +66,8 @@
   "total": 2914,
   "used": 374,
   "any360": {
-   "todo": 2546,
-   "native": 368
+   "todo": 2524,
+   "native": 390
   },
   "reference": {
    "implemented": 493,

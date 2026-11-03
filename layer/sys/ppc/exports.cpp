@@ -656,6 +656,31 @@ ANY360_SYS_EXPORT(XAudioGetVoiceCategoryVolume) { ctx.r3.u64 = Audio().GetVoiceC
 ANY360_SYS_EXPORT(XMACreateContext) { ctx.r3.u64 = Audio().XmaCreateContext({base}, ctx.r3.u32); }
 ANY360_SYS_EXPORT(XMAReleaseContext) { ctx.r3.u64 = Audio().XmaReleaseContext({base}, ctx.r3.u32); }
 
+// Batch 18: the kernel side of The Simpsons Game's audio and video (sys_object_tests).
+ANY360_SYS_EXPORT(XMAInitializeContext) { ctx.r3.u64 = Audio().XmaInitializeContext({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XMASetLoopData) { ctx.r3.u64 = Audio().XmaSetLoopData({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XMASetInputBuffer0) { ctx.r3.u64 = Audio().XmaSetInputBuffer({base}, ctx.r3.u32, 0, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XMASetInputBuffer1) { ctx.r3.u64 = Audio().XmaSetInputBuffer({base}, ctx.r3.u32, 1, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XMAEnableContext) { ctx.r3.u64 = Audio().XmaEnableContext({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XMADisableContext) { ctx.r3.u64 = Audio().XmaDisableContext({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XMABlockWhileInUse) { ctx.r3.u64 = Audio().XmaBlockWhileInUse({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XMAIsInputBuffer0Valid) { ctx.r3.u64 = Audio().XmaGet({base}, ctx.r3.u32, XmaField::kInput0Valid); }
+ANY360_SYS_EXPORT(XMAIsInputBuffer1Valid) { ctx.r3.u64 = Audio().XmaGet({base}, ctx.r3.u32, XmaField::kInput1Valid); }
+ANY360_SYS_EXPORT(XMAIsOutputBufferValid) { ctx.r3.u64 = Audio().XmaGet({base}, ctx.r3.u32, XmaField::kOutputValid); }
+ANY360_SYS_EXPORT(XMAGetOutputBufferReadOffset) { ctx.r3.u64 = Audio().XmaGet({base}, ctx.r3.u32, XmaField::kOutputReadOffset); }
+ANY360_SYS_EXPORT(XMAGetOutputBufferWriteOffset) { ctx.r3.u64 = Audio().XmaGet({base}, ctx.r3.u32, XmaField::kOutputWriteOffset); }
+ANY360_SYS_EXPORT(XMAGetInputBufferReadOffset) { ctx.r3.u64 = Audio().XmaGet({base}, ctx.r3.u32, XmaField::kInputReadOffset); }
+ANY360_SYS_EXPORT(XMAGetPacketMetadata) { ctx.r3.u64 = Audio().XmaGet({base}, ctx.r3.u32, XmaField::kPacketMetadata); }
+ANY360_SYS_EXPORT(XMASetInputBuffer0Valid) { Audio().XmaSet({base}, ctx.r3.u32, XmaField::kInput0Valid, 1), ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XMASetInputBuffer1Valid) { Audio().XmaSet({base}, ctx.r3.u32, XmaField::kInput1Valid, 1), ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XMASetOutputBufferValid) { Audio().XmaSet({base}, ctx.r3.u32, XmaField::kOutputValid, 1), ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XMASetOutputBufferReadOffset) { Audio().XmaSet({base}, ctx.r3.u32, XmaField::kOutputReadOffset, ctx.r4.u32), ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XMASetInputBufferReadOffset) { Audio().XmaSet({base}, ctx.r3.u32, XmaField::kInputReadOffset, ctx.r4.u32), ctx.r3.u64 = 0; }
+// Undocumented; the reference answers success and writes nothing.
+ANY360_SYS_EXPORT(VdQuerySystemCommandBuffer) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(VdSetSystemCommandBuffer) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XAudioQueryDriverPerformance) { ctx.r3.u64 = 0; }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1026,6 +1051,28 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XAudioGetVoiceCategoryVolume),
     ANY360_SYS_ENTRY(XMACreateContext),
     ANY360_SYS_ENTRY(XMAReleaseContext),
+    ANY360_SYS_ENTRY(XMAInitializeContext),
+    ANY360_SYS_ENTRY(XMASetLoopData),
+    ANY360_SYS_ENTRY(XMASetInputBuffer0),
+    ANY360_SYS_ENTRY(XMASetInputBuffer1),
+    ANY360_SYS_ENTRY(XMAEnableContext),
+    ANY360_SYS_ENTRY(XMADisableContext),
+    ANY360_SYS_ENTRY(XMABlockWhileInUse),
+    ANY360_SYS_ENTRY(XMAIsInputBuffer0Valid),
+    ANY360_SYS_ENTRY(XMAIsInputBuffer1Valid),
+    ANY360_SYS_ENTRY(XMAIsOutputBufferValid),
+    ANY360_SYS_ENTRY(XMAGetOutputBufferReadOffset),
+    ANY360_SYS_ENTRY(XMAGetOutputBufferWriteOffset),
+    ANY360_SYS_ENTRY(XMAGetInputBufferReadOffset),
+    ANY360_SYS_ENTRY(XMAGetPacketMetadata),
+    ANY360_SYS_ENTRY(XMASetInputBuffer0Valid),
+    ANY360_SYS_ENTRY(XMASetInputBuffer1Valid),
+    ANY360_SYS_ENTRY(XMASetOutputBufferValid),
+    ANY360_SYS_ENTRY(XMASetOutputBufferReadOffset),
+    ANY360_SYS_ENTRY(XMASetInputBufferReadOffset),
+    ANY360_SYS_ENTRY(VdQuerySystemCommandBuffer),
+    ANY360_SYS_ENTRY(VdSetSystemCommandBuffer),
+    ANY360_SYS_ENTRY(XAudioQueryDriverPerformance),
 };
 const unsigned kExportCount = sizeof(kExports) / sizeof(kExports[0]);
 
