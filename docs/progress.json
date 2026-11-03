@@ -80,8 +80,8 @@
  },
  "gpu": {
   "total": 323,
-  "native": 77,
-  "reference": 232,
+  "native": 154,
+  "reference": 155,
   "by_family": {
    "command processor": {
     "native": 36,
@@ -100,12 +100,11 @@
     "reference": 11
    },
    "shader ALU scalar": {
-    "reference": 49,
-    "native": 1
+    "native": 50
    },
    "shader ALU vector": {
-    "reference": 29,
-    "native": 1
+    "native": 29,
+    "reference": 1
    },
    "shader control flow": {
     "reference": 13,

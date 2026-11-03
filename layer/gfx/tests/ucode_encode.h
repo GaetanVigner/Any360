@@ -58,6 +58,38 @@ inline void PushAluVector(std::vector<uint32_t>& words, uc::AluVectorOpcode opco
   words.push_back(w2);
 }
 
+// Any ALU instruction: a vector and a scalar operation co-issued, identity swizzles, no negation or predication.
+// Exporting, the vector operation writes `vector_mask` and the scalar `scalar_mask` of export `dest` (both: 1.0);
+// else the vector one writes temp `dest` and the scalar one temp `scalar_dest`. The scalar operation reads src3
+// (one operand: a = W; two: a = W, b = X).
+struct Alu {
+  uc::AluVectorOpcode vector = uc::AluVectorOpcode::kMax;
+  uint32_t vector_mask = 0;
+  uc::AluScalarOpcode scalar = uc::AluScalarOpcode::kRetainPrev;
+  uint32_t scalar_mask = 0;
+  uint32_t dest = 0, scalar_dest = 0;
+  bool is_export = false;
+  AluOperand src1{}, src2{}, src3{};
+  uint32_t src3_swizzle = 0;  // raw (constant-scalar operations keep a temp register's bits there)
+};
+inline void PushAlu(std::vector<uint32_t>& words, const Alu& a) {
+  words.push_back((a.dest & 0x3F) | (a.scalar_dest & 0x3F) << 8 | (a.is_export ? 1u : 0u) << 15 |
+                  (a.vector_mask & 0xF) << 16 | (a.scalar_mask & 0xF) << 20 | (uint32_t(a.scalar) & 0x3F) << 26);
+  words.push_back(a.src3_swizzle & 0xFF);
+  words.push_back((a.src3.reg & 0xFF) | (a.src2.reg & 0xFF) << 8 | (a.src1.reg & 0xFF) << 16 |
+                  (uint32_t(a.vector) & 0x1F) << 24 | (a.src3.is_temp ? 1u : 0u) << 29 |
+                  (a.src2.is_temp ? 1u : 0u) << 30 | (a.src1.is_temp ? 1u : 0u) << 31);
+}
+
+// A pixel shader of `alus` ALU instructions in one exec (at most 6), ending the shader.
+inline std::vector<uint32_t> BuildAluPixelShader(const std::vector<Alu>& alus) {
+  std::vector<uint32_t> words;
+  PushCfPair(words, CfAlloc(uc::AllocType::kPsColors, 0),
+             CfExec(uc::ControlFlowOpcode::kExecEnd, 1, uint32_t(alus.size()), 0));
+  for (const Alu& a : alus) PushAlu(words, a);
+  return words;
+}
+
 // vfetch_full: dest.xyzw = vertex fetch constant `fetch_constant` (0-95) at index src.x (floored), `format`, a
 // stride and offset in dwords (ucode::VertexFetchInstruction).
 inline void PushVertexFetch(std::vector<uint32_t>& words, uint32_t dest, uint32_t src, uint32_t fetch_constant,

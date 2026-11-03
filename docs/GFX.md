@@ -166,6 +166,10 @@ From the Crackdown runs (each one cost a debugging session there):
    window comes from SDL3 and the platform layer makes the Vulkan surface from its native handle (Win32 for now,
    X11 / Wayland next), which also works with SDL builds that lack SDL's own Vulkan support (the reference SDK's).
    Learned: readback buffers need cached host memory (from 3 to 77 FPS on the first version).
+   ALU opcodes (2026-11-04): `gfx_render_tests` runs every vector and scalar operation of the microcode but `cube`
+   (79 cases: the predicate setters, kills, previous-scalar and constant-scalar forms included) in a hand-encoded
+   pixel shader on constants, exports the result to a k_32_32_FLOAT target and checks it against the semantics
+   ucode.h documents; a killed pixel keeps the clear value. A scalar operation reads src3 as `a` = W, `b` = X.
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured

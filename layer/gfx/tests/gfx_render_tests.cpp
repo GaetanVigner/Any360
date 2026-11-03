@@ -2,6 +2,7 @@
 // the Vulkan renderer turns into host draws with translated shaders, vertices fetched from guest memory, constants
 // from the register file and indices by DMA; the render state comes from the registers. Each scenario clears the
 // targets, runs its packets and checks the pixels it read back. Skipped without a Vulkan 1.3 device.
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstdlib>
@@ -915,6 +916,197 @@ int main(int argc, char** argv) {
     }
     ::operator delete(fresh, std::align_val_t(65536));
     if (g_capture.empty()) std::remove(path.c_str());
+  }
+  // ALU opcodes: each operation of the microcode's vector and scalar units run by a pixel shader on constants c0-c3,
+  // its result exported to a k_32_32_FLOAT target over the whole target and read back, against the semantics
+  // ucode.h documents for it. A pixel killed keeps the clear value.
+  {
+    using V = uc::AluVectorOpcode;
+    using S = uc::AluScalarOpcode;
+    const uint32_t kColor0 = uint32_t(uc::ExportRegister::kPSColor0);
+    const vk::SurfaceKey target{1536, kSize, 15, 0};
+    constexpr float kMaxFloat = 3.402823466e+38f, kKilled = -9.0f;
+    struct Case {
+      std::string unit;
+      std::vector<t::Alu> alus;
+      float c[4][4];
+      float x, y, tolerance;
+    };
+    std::vector<Case> cases;
+    const t::AluOperand c0{0, false}, c1{1, false}, c2{2, false}, c3{3, false};
+    // A vector operation on c0, c1 (and c2), x and y exported.
+    auto vector = [&](V op, std::initializer_list<float> a, std::initializer_list<float> b, std::initializer_list<float> c,
+                      float x, float y, float tolerance = 0.0f) {
+      Case k{std::string("shader ALU vector:") , {}, {}, x, y, tolerance};
+      t::Alu alu;
+      alu.vector = op, alu.vector_mask = 0b0011, alu.dest = kColor0, alu.is_export = true;
+      alu.src1 = c0, alu.src2 = c1, alu.src3 = c2;
+      k.alus = {alu};
+      std::copy(a.begin(), a.end(), k.c[0]);
+      std::copy(b.begin(), b.end(), k.c[1]);
+      std::copy(c.begin(), c.end(), k.c[2]);
+      cases.push_back(k);
+      return &cases.back();
+    };
+    // A scalar operation on c2 (a = c2.w, b = c2.x), x and y exported.
+    auto scalar = [&](S op, float a, float b, float result, float tolerance = 0.0f) {
+      Case k{"shader ALU scalar:", {}, {}, result, result, tolerance};
+      t::Alu alu;
+      alu.scalar = op, alu.scalar_mask = 0b0011, alu.dest = kColor0, alu.is_export = true, alu.src3 = c2;
+      k.alus = {alu};
+      k.c[2][0] = b, k.c[2][3] = a;
+      cases.push_back(k);
+      return &cases.back();
+    };
+    // A scalar operation with the previous scalar result: first ps = c2.w + c2.x, then `op` on c3 (a = w, b = x).
+    auto previous = [&](S op, float first_a, float first_b, float a, float b, float result) {
+      Case k{"shader ALU scalar:", {}, {}, result, result, 0.0f};
+      t::Alu first, second;
+      first.scalar = S::kAdds, first.src3 = c2, first.dest = 1, first.scalar_dest = 1;
+      second.scalar = op, second.scalar_mask = 0b0011, second.dest = kColor0, second.is_export = true, second.src3 = c3;
+      k.alus = {first, second};
+      k.c[2][0] = first_b, k.c[2][3] = first_a, k.c[3][0] = b, k.c[3][3] = a;
+      cases.push_back(k);
+      return &cases.back();
+    };
+    // A constant-scalar operation: r<temp> = c3 first (temp 0 or 1), then `op` on c2.w and r<temp>.x (the temp
+    // register's index in the opcode's low bit, src3's selector and its swizzle bits).
+    auto constant = [&](S op, uint32_t temp, float constant_w, float temp_x, float result) {
+      Case k{"shader ALU scalar:", {}, {}, result, result, 0.0f};
+      t::Alu load, alu;
+      load.vector_mask = 0b1111, load.dest = temp, load.src1 = c3, load.src2 = c3;
+      alu.scalar = S(uint32_t(op) | temp), alu.scalar_mask = 0b0011, alu.dest = kColor0, alu.is_export = true;
+      alu.src3 = c2;
+      k.alus = {load, alu};
+      k.c[2][3] = constant_w, k.c[3][0] = temp_x;
+      cases.push_back(k);
+      return &cases.back();
+    };
+    const char* vnames[] = {"kAdd", "kMul", "kMax", "kMin", "kSeq", "kSgt", "kSge", "kSne", "kFrc", "kTrunc",
+                            "kFloor", "kMad", "kCndEq", "kCndGe", "kCndGt", "kDp4", "kDp3", "kDp2Add", "kCube",
+                            "kMax4", "kSetpEqPush", "kSetpNePush", "kSetpGtPush", "kSetpGePush", "kKillEq",
+                            "kKillGt", "kKillGe", "kKillNe", "kDst", "kMaxA"};
+    auto vname = [&](Case* k, V op) { k->unit += vnames[uint32_t(op)]; };
+    vname(vector(V::kAdd, {1.5f, -2.25f}, {0.25f, 4}, {}, 1.75f, 1.75f), V::kAdd);
+    vname(vector(V::kMul, {1.5f, -2}, {4, 0.5f}, {}, 6, -1), V::kMul);
+    vname(vector(V::kMax, {1, 5}, {3, 2}, {}, 3, 5), V::kMax);
+    vname(vector(V::kMin, {1, 5}, {3, 2}, {}, 1, 2), V::kMin);
+    vname(vector(V::kSeq, {1, 2}, {1, 3}, {}, 1, 0), V::kSeq);
+    vname(vector(V::kSgt, {2, 1}, {1, 1}, {}, 1, 0), V::kSgt);
+    vname(vector(V::kSge, {1, 0}, {1, 1}, {}, 1, 0), V::kSge);
+    vname(vector(V::kSne, {1, 2}, {1, 3}, {}, 0, 1), V::kSne);
+    vname(vector(V::kFrc, {1.25f, -1.25f}, {}, {}, 0.25f, 0.75f), V::kFrc);
+    vname(vector(V::kTrunc, {1.75f, -1.75f}, {}, {}, 1, -1), V::kTrunc);
+    vname(vector(V::kFloor, {1.75f, -1.25f}, {}, {}, 1, -2), V::kFloor);
+    vname(vector(V::kMad, {2, 3}, {4, -1}, {0.5f, 0.5f}, 8.5f, -2.5f), V::kMad);
+    vname(vector(V::kCndEq, {0, 1}, {5, 5}, {7, 7}, 5, 7), V::kCndEq);
+    vname(vector(V::kCndGe, {0, -1}, {5, 5}, {7, 7}, 5, 7), V::kCndGe);
+    vname(vector(V::kCndGt, {0, 1}, {5, 5}, {7, 7}, 7, 5), V::kCndGt);
+    vname(vector(V::kDp4, {1, 2, 3, 4}, {5, 6, 7, 8}, {}, 70, 70), V::kDp4);
+    vname(vector(V::kDp3, {1, 2, 3, 4}, {5, 6, 7, 8}, {}, 38, 38), V::kDp3);
+    vname(vector(V::kDp2Add, {1, 2, 3, 4}, {5, 6, 7, 8}, {0.5f, 9}, 17.5f, 17.5f), V::kDp2Add);
+    vname(vector(V::kMax4, {1, 9, 3, 4}, {}, {}, 9, 9), V::kMax4);
+    // setp_*_push: dest = 0 when src0.x == 0 and the comparison of src1.x holds, else src0.x + 1.
+    vname(vector(V::kSetpEqPush, {0, 0, 0, 0}, {0, 0, 0, 0}, {}, 0, 0), V::kSetpEqPush);
+    vname(vector(V::kSetpNePush, {2, 0, 0, 0}, {1, 0, 0, 0}, {}, 3, 3), V::kSetpNePush);
+    vname(vector(V::kSetpGtPush, {0, 0, 0, 0}, {1, 0, 0, 0}, {}, 0, 0), V::kSetpGtPush);
+    vname(vector(V::kSetpGePush, {0, 0, 0, 0}, {-1, 0, 0, 0}, {}, 1, 1), V::kSetpGePush);
+    // kill_*: any component comparing true discards the pixel; none, dest = 0.
+    vname(vector(V::kKillEq, {1, 2, 3, 4}, {9, 2, 9, 9}, {}, kKilled, kKilled), V::kKillEq);
+    vname(vector(V::kKillGt, {1, 2, 3, 4}, {1, 2, 3, 4}, {}, 0, 0), V::kKillGt);
+    vname(vector(V::kKillGe, {1, 2, 3, 4}, {1, 9, 9, 9}, {}, kKilled, kKilled), V::kKillGe);
+    vname(vector(V::kKillNe, {1, 2, 3, 4}, {1, 2, 3, 4}, {}, 0, 0), V::kKillNe);
+    vname(vector(V::kDst, {9, 2, 3, 9}, {9, 5, 9, 7}, {}, 1, 10), V::kDst);
+    vname(vector(V::kMaxA, {1.5f, 2}, {1, 3}, {}, 1.5f, 3), V::kMaxA);
+    const char* snames[] = {"kAdds", "kAddsPrev", "kMuls", "kMulsPrev", "kMulsPrev2", "kMaxs", "kMins", "kSeqs",
+                            "kSgts", "kSges", "kSnes", "kFrcs", "kTruncs", "kFloors", "kExp", "kLogc", "kLog",
+                            "kRcpc", "kRcpf", "kRcp", "kRsqc", "kRsqf", "kRsq", "kMaxAs", "kMaxAsf", "kSubs",
+                            "kSubsPrev", "kSetpEq", "kSetpNe", "kSetpGt", "kSetpGe", "kSetpInv", "kSetpPop",
+                            "kSetpClr", "kSetpRstr", "kKillsEq", "kKillsGt", "kKillsGe", "kKillsNe", "kKillsOne",
+                            "kSqrt", "", "kMulsc0", "kMulsc1", "kAddsc0", "kAddsc1", "kSubsc0", "kSubsc1", "kSin",
+                            "kCos", "kRetainPrev"};
+    auto sname = [&](Case* k, S op) { k->unit += snames[uint32_t(op)]; };
+    sname(scalar(S::kAdds, 1.5f, 2.25f, 3.75f), S::kAdds);
+    sname(scalar(S::kMuls, 1.5f, -2, -3), S::kMuls);
+    sname(scalar(S::kMaxs, 1, 3, 3), S::kMaxs);
+    sname(scalar(S::kMins, 1, 3, 1), S::kMins);
+    sname(scalar(S::kSeqs, 0, 5, 1), S::kSeqs);
+    sname(scalar(S::kSgts, 0.5f, 0, 1), S::kSgts);
+    sname(scalar(S::kSges, -0.5f, 0, 0), S::kSges);
+    sname(scalar(S::kSnes, 0, 5, 0), S::kSnes);
+    sname(scalar(S::kFrcs, -1.25f, 0, 0.75f), S::kFrcs);
+    sname(scalar(S::kTruncs, -1.75f, 0, -1), S::kTruncs);
+    sname(scalar(S::kFloors, -1.25f, 0, -2), S::kFloors);
+    sname(scalar(S::kExp, 3, 0, 8, 1e-5f), S::kExp);
+    sname(scalar(S::kLogc, 0, 0, -kMaxFloat), S::kLogc);
+    sname(scalar(S::kLog, 8, 0, 3, 1e-5f), S::kLog);
+    sname(scalar(S::kRcpc, 0, 0, kMaxFloat), S::kRcpc);
+    sname(scalar(S::kRcpf, 0, 0, 0), S::kRcpf);
+    sname(scalar(S::kRcp, 4, 0, 0.25f, 1e-6f), S::kRcp);
+    sname(scalar(S::kRsqc, 0, 0, kMaxFloat), S::kRsqc);
+    sname(scalar(S::kRsqf, 0, 0, 0), S::kRsqf);
+    sname(scalar(S::kRsq, 4, 0, 0.5f, 1e-6f), S::kRsq);
+    sname(scalar(S::kMaxAs, 5, 3, 5), S::kMaxAs);
+    sname(scalar(S::kMaxAsf, 2, 7, 7), S::kMaxAsf);
+    sname(scalar(S::kSubs, 5, 2, 3), S::kSubs);
+    sname(scalar(S::kSetpEq, 0, 0, 0), S::kSetpEq);
+    sname(scalar(S::kSetpNe, 0, 0, 1), S::kSetpNe);
+    sname(scalar(S::kSetpGt, 2, 0, 0), S::kSetpGt);
+    sname(scalar(S::kSetpGe, -2, 0, 1), S::kSetpGe);
+    sname(scalar(S::kSetpInv, 3, 0, 3), S::kSetpInv);
+    sname(scalar(S::kSetpPop, 3, 0, 2), S::kSetpPop);
+    sname(scalar(S::kSetpClr, 3, 0, kMaxFloat), S::kSetpClr);
+    sname(scalar(S::kSetpRstr, 3, 0, 3), S::kSetpRstr);
+    sname(scalar(S::kKillsEq, 0, 0, kKilled), S::kKillsEq);
+    sname(scalar(S::kKillsGt, 0, 0, 0), S::kKillsGt);
+    sname(scalar(S::kKillsGe, 0, 0, kKilled), S::kKillsGe);
+    sname(scalar(S::kKillsNe, 0, 0, 0), S::kKillsNe);
+    sname(scalar(S::kKillsOne, 1, 0, kKilled), S::kKillsOne);
+    sname(scalar(S::kSqrt, 9, 0, 3, 1e-6f), S::kSqrt);
+    sname(scalar(S::kSin, 1.57079633f, 0, 1, 1e-4f), S::kSin);
+    sname(scalar(S::kCos, 0, 0, 1, 1e-4f), S::kCos);
+    sname(previous(S::kAddsPrev, 1, 2, 0.5f, 0, 3.5f), S::kAddsPrev);
+    sname(previous(S::kMulsPrev, 1, 2, 4, 0, 12), S::kMulsPrev);
+    sname(previous(S::kSubsPrev, 1, 2, 10, 0, 7), S::kSubsPrev);
+    sname(previous(S::kMulsPrev2, 1, 2, 4, 1, 12), S::kMulsPrev2);
+    sname(previous(S::kRetainPrev, 1, 2, 0, 0, 3), S::kRetainPrev);
+    // Constant-scalar operations: both opcode numbers of each pair (the low bit chooses the temp register).
+    for (uint32_t temp : {0u, 1u}) {
+      sname(constant(S::kMulsc0, temp, 3, 4, 12), S(uint32_t(S::kMulsc0) | temp));
+      sname(constant(S::kAddsc0, temp, 3, 4, 7), S(uint32_t(S::kAddsc0) | temp));
+      sname(constant(S::kSubsc0, temp, 3, 4, -1), S(uint32_t(S::kSubsc0) | temp));
+    }
+
+    const float clear[4] = {kKilled, kKilled, 0, 0};
+    std::vector<std::string> passed;
+    for (const Case& k : cases) {
+      const uint32_t failed_before = renderer.stats().failed;
+      CHECK(renderer.ClearColor(target, clear));
+      s.Defaults();
+      s.Reg(0x2001, 15u << 16 | 1536);  // RB_COLOR_INFO: k_32_32_FLOAT at tile 1536
+      s.Shader(1, t::BuildAluPixelShader(k.alus));
+      s.Put({Type3(pm4::SET_CONSTANT, 17), 0u << 16 | 1024});
+      for (uint32_t i = 0; i < 16; ++i) s.Put(Bits(k.c[i / 4][i % 4]));
+      s.Vertices(0);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Run();
+      std::vector<uint8_t> bytes;
+      CHECK(renderer.ReadBack(target, kSize, kSize, bytes));
+      float got[2] = {};
+      if (bytes.size() == size_t(kSize) * kSize * 8) std::memcpy(got, bytes.data() + (32 * kSize + 32) * 8, 8);
+      auto near = [&](float g, float e) {
+        return g == e || std::fabs(g - e) <= k.tolerance * std::max(1.0f, std::fabs(e));
+      };
+      const bool ok = renderer.stats().failed == failed_before && near(got[0], k.x) && near(got[1], k.y);
+      if (ok) {
+        passed.push_back(k.unit);
+      } else {
+        std::printf("gfx_render_tests: %s: got (%g, %g), expected (%g, %g)\n", k.unit.c_str(), got[0], got[1], k.x, k.y);
+        ++g_failures;
+      }
+    }
+    std::printf("gfx_render_tests: ALU opcodes: %zu of %zu right\n", passed.size(), cases.size());
+    s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
   }
   std::printf("gfx_render_tests: guest memory %s\n", renderer.guest_memory_in_place() ? "read in place" : "copied per draw");
   std::printf("gfx_render_tests: %d failing checks\n", g_failures);

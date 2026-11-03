@@ -466,14 +466,14 @@
 "name":"kAdd",
 "family":"shader ALU vector",
 "value":0,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kMul",
 "name":"kMul",
 "family":"shader ALU vector",
 "value":1,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kMax",
@@ -487,105 +487,105 @@
 "name":"kMin",
 "family":"shader ALU vector",
 "value":3,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kSeq",
 "name":"kSeq",
 "family":"shader ALU vector",
 "value":4,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kSgt",
 "name":"kSgt",
 "family":"shader ALU vector",
 "value":5,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kSge",
 "name":"kSge",
 "family":"shader ALU vector",
 "value":6,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kSne",
 "name":"kSne",
 "family":"shader ALU vector",
 "value":7,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kFrc",
 "name":"kFrc",
 "family":"shader ALU vector",
 "value":8,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kTrunc",
 "name":"kTrunc",
 "family":"shader ALU vector",
 "value":9,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kFloor",
 "name":"kFloor",
 "family":"shader ALU vector",
 "value":10,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kMad",
 "name":"kMad",
 "family":"shader ALU vector",
 "value":11,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kCndEq",
 "name":"kCndEq",
 "family":"shader ALU vector",
 "value":12,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kCndGe",
 "name":"kCndGe",
 "family":"shader ALU vector",
 "value":13,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kCndGt",
 "name":"kCndGt",
 "family":"shader ALU vector",
 "value":14,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kDp4",
 "name":"kDp4",
 "family":"shader ALU vector",
 "value":15,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kDp3",
 "name":"kDp3",
 "family":"shader ALU vector",
 "value":16,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kDp2Add",
 "name":"kDp2Add",
 "family":"shader ALU vector",
 "value":17,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kCube",
@@ -599,420 +599,420 @@
 "name":"kMax4",
 "family":"shader ALU vector",
 "value":19,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kSetpEqPush",
 "name":"kSetpEqPush",
 "family":"shader ALU vector",
 "value":20,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kSetpNePush",
 "name":"kSetpNePush",
 "family":"shader ALU vector",
 "value":21,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kSetpGtPush",
 "name":"kSetpGtPush",
 "family":"shader ALU vector",
 "value":22,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kSetpGePush",
 "name":"kSetpGePush",
 "family":"shader ALU vector",
 "value":23,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kKillEq",
 "name":"kKillEq",
 "family":"shader ALU vector",
 "value":24,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kKillGt",
 "name":"kKillGt",
 "family":"shader ALU vector",
 "value":25,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kKillGe",
 "name":"kKillGe",
 "family":"shader ALU vector",
 "value":26,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kKillNe",
 "name":"kKillNe",
 "family":"shader ALU vector",
 "value":27,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kDst",
 "name":"kDst",
 "family":"shader ALU vector",
 "value":28,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kMaxA",
 "name":"kMaxA",
 "family":"shader ALU vector",
 "value":29,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kAdds",
 "name":"kAdds",
 "family":"shader ALU scalar",
 "value":0,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kAddsPrev",
 "name":"kAddsPrev",
 "family":"shader ALU scalar",
 "value":1,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kMuls",
 "name":"kMuls",
 "family":"shader ALU scalar",
 "value":2,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kMulsPrev",
 "name":"kMulsPrev",
 "family":"shader ALU scalar",
 "value":3,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kMulsPrev2",
 "name":"kMulsPrev2",
 "family":"shader ALU scalar",
 "value":4,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kMaxs",
 "name":"kMaxs",
 "family":"shader ALU scalar",
 "value":5,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kMins",
 "name":"kMins",
 "family":"shader ALU scalar",
 "value":6,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSeqs",
 "name":"kSeqs",
 "family":"shader ALU scalar",
 "value":7,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSgts",
 "name":"kSgts",
 "family":"shader ALU scalar",
 "value":8,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSges",
 "name":"kSges",
 "family":"shader ALU scalar",
 "value":9,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSnes",
 "name":"kSnes",
 "family":"shader ALU scalar",
 "value":10,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kFrcs",
 "name":"kFrcs",
 "family":"shader ALU scalar",
 "value":11,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kTruncs",
 "name":"kTruncs",
 "family":"shader ALU scalar",
 "value":12,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kFloors",
 "name":"kFloors",
 "family":"shader ALU scalar",
 "value":13,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kExp",
 "name":"kExp",
 "family":"shader ALU scalar",
 "value":14,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kLogc",
 "name":"kLogc",
 "family":"shader ALU scalar",
 "value":15,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kLog",
 "name":"kLog",
 "family":"shader ALU scalar",
 "value":16,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kRcpc",
 "name":"kRcpc",
 "family":"shader ALU scalar",
 "value":17,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kRcpf",
 "name":"kRcpf",
 "family":"shader ALU scalar",
 "value":18,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kRcp",
 "name":"kRcp",
 "family":"shader ALU scalar",
 "value":19,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kRsqc",
 "name":"kRsqc",
 "family":"shader ALU scalar",
 "value":20,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kRsqf",
 "name":"kRsqf",
 "family":"shader ALU scalar",
 "value":21,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kRsq",
 "name":"kRsq",
 "family":"shader ALU scalar",
 "value":22,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kMaxAs",
 "name":"kMaxAs",
 "family":"shader ALU scalar",
 "value":23,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kMaxAsf",
 "name":"kMaxAsf",
 "family":"shader ALU scalar",
 "value":24,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSubs",
 "name":"kSubs",
 "family":"shader ALU scalar",
 "value":25,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSubsPrev",
 "name":"kSubsPrev",
 "family":"shader ALU scalar",
 "value":26,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSetpEq",
 "name":"kSetpEq",
 "family":"shader ALU scalar",
 "value":27,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSetpNe",
 "name":"kSetpNe",
 "family":"shader ALU scalar",
 "value":28,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSetpGt",
 "name":"kSetpGt",
 "family":"shader ALU scalar",
 "value":29,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSetpGe",
 "name":"kSetpGe",
 "family":"shader ALU scalar",
 "value":30,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSetpInv",
 "name":"kSetpInv",
 "family":"shader ALU scalar",
 "value":31,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSetpPop",
 "name":"kSetpPop",
 "family":"shader ALU scalar",
 "value":32,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSetpClr",
 "name":"kSetpClr",
 "family":"shader ALU scalar",
 "value":33,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSetpRstr",
 "name":"kSetpRstr",
 "family":"shader ALU scalar",
 "value":34,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kKillsEq",
 "name":"kKillsEq",
 "family":"shader ALU scalar",
 "value":35,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kKillsGt",
 "name":"kKillsGt",
 "family":"shader ALU scalar",
 "value":36,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kKillsGe",
 "name":"kKillsGe",
 "family":"shader ALU scalar",
 "value":37,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kKillsNe",
 "name":"kKillsNe",
 "family":"shader ALU scalar",
 "value":38,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kKillsOne",
 "name":"kKillsOne",
 "family":"shader ALU scalar",
 "value":39,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSqrt",
 "name":"kSqrt",
 "family":"shader ALU scalar",
 "value":40,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kMulsc0",
 "name":"kMulsc0",
 "family":"shader ALU scalar",
 "value":42,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kMulsc1",
 "name":"kMulsc1",
 "family":"shader ALU scalar",
 "value":43,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kAddsc0",
 "name":"kAddsc0",
 "family":"shader ALU scalar",
 "value":44,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kAddsc1",
 "name":"kAddsc1",
 "family":"shader ALU scalar",
 "value":45,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSubsc0",
 "name":"kSubsc0",
 "family":"shader ALU scalar",
 "value":46,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSubsc1",
 "name":"kSubsc1",
 "family":"shader ALU scalar",
 "value":47,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kSin",
 "name":"kSin",
 "family":"shader ALU scalar",
 "value":48,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kCos",
 "name":"kCos",
 "family":"shader ALU scalar",
 "value":49,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU scalar:kRetainPrev",
