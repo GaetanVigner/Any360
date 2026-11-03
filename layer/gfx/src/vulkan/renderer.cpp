@@ -11,6 +11,8 @@
 #include <optional>
 #include <thread>
 
+#include <immintrin.h>
+
 #include <rex/graphics/pipeline/shader/spirv.h>
 #include <rex/graphics/pipeline/shader/spirv_translator.h>
 #include <rex/string/buffer.h>
@@ -2240,6 +2242,14 @@ float HalfToFloat(uint16_t h) {
   return std::bit_cast<float>(sign | (exponent - 15 + 127) << 23 | mantissa << 13);
 }
 // Endian128 of RB_COPY_DEST_INFO on a 32- or 64-bit element (as little-endian bytes in `bytes`).
+// SSSE3's byte shuffle (every x86-64 CPU this runs on has it; the build targets the baseline).
+#if defined(__clang__) || defined(__GNUC__)
+__attribute__((target("ssse3")))
+#endif
+__m128i ShuffleBytes(__m128i v, __m128i mask) {
+  return _mm_shuffle_epi8(v, mask);
+}
+
 void SwapElement(uint8_t* bytes, uint32_t size, uint32_t endian) {
   if (endian >= 1 && endian <= 3) {
     for (uint32_t i = 0; i < size; i += 4) {
@@ -2873,28 +2883,59 @@ void VulkanRenderer::ReleaseReadback(Buffer& buffer) {
 }
 
 void VulkanRenderer::FinishWriteBacks(Batch& b) {
+  // Byte orders as 16-byte shuffles: none, 8 in 16, 8 in 32, 16 in 32 (each 32-bit word), 8 in 64 (8-byte elements).
+  alignas(16) static constexpr uint8_t kShuffles[5][16] = {
+      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, {1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14},
+      {3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12}, {2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13},
+      {7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8}};
   for (PendingWriteBack& w : b.write_backs) {
     const uint8_t* src = static_cast<const uint8_t*>(w.buffer.mapped);
     const uint32_t element = w.element;
     const bool depth = w.depth;
+    const uint32_t bpp_log2 = element == 8 ? 3 : 2;
+    // 16 bytes of a tiled row are contiguous from an x aligned to their element count (4 of 4 bytes, 2 of 8): one
+    // tiled offset and one shuffle for them.
+    const uint32_t group = 16 / element;
+    const uint32_t shuffle = depth || w.endian > 4 || (w.endian == 4 && element != 8) ? 0 : w.endian;
+    const __m128i mask = _mm_load_si128(reinterpret_cast<const __m128i*>(kShuffles[shuffle]));
+    auto depth_word = [&](const uint8_t* at) {
+      // The guest's depth word (depth << 8, stencil not kept: 0), as the CPU depth resolve writes it.
+      float value;
+      std::memcpy(&value, at, 4);
+      const uint32_t guest =
+          w.float24 ? FloatTo20e4(value) : uint32_t(std::lround(std::clamp(value, 0.0f, 1.0f) * float(0xFFFFFF)));
+      return GpuSwap(guest << 8, Endian(w.endian <= 3 ? w.endian : 0));
+    };
     for (uint32_t y = 0; y < w.height; ++y) {
-      for (uint32_t x = 0; x < w.width; ++x) {
+      const uint8_t* row = src + size_t(y) * w.width * element;
+      for (uint32_t x = 0; x < w.width;) {
+        const uint32_t tx = w.x + x;
+        const uint32_t address = w.base + uint32_t(TiledOffset2D(int32_t(tx), int32_t(w.y + y), w.pitch, bpp_log2));
+        if (tx % group == 0 && x + group <= w.width) {
+          alignas(16) uint8_t bytes[16];
+          if (depth) {
+            for (uint32_t i = 0; i < 4; ++i) {
+              const uint32_t word = depth_word(row + size_t(x + i) * 4);
+              std::memcpy(bytes + 4 * i, &word, 4);
+            }
+          } else {
+            const __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(row + size_t(x) * element));
+            _mm_store_si128(reinterpret_cast<__m128i*>(bytes), ShuffleBytes(v, mask));
+          }
+          if (address + 16 <= mirror_bytes_) std::memcpy(physical_ + address, bytes, 16);
+          x += group;
+          continue;
+        }
         uint8_t bytes[8];
-        std::memcpy(bytes, src + (size_t(y) * w.width + x) * element, element);
+        std::memcpy(bytes, row + size_t(x) * element, element);
         if (depth) {
-          // The guest's depth word (depth << 8, stencil not kept: 0), as the CPU depth resolve writes it.
-          float value;
-          std::memcpy(&value, bytes, 4);
-          const uint32_t guest = w.float24 ? FloatTo20e4(value)
-                                           : uint32_t(std::lround(std::clamp(value, 0.0f, 1.0f) * float(0xFFFFFF)));
-          const uint32_t word = GpuSwap(guest << 8, Endian(w.endian <= 3 ? w.endian : 0));
+          const uint32_t word = depth_word(bytes);
           std::memcpy(bytes, &word, 4);
         } else {
           SwapElement(bytes, element, w.endian);
         }
-        const uint32_t address =
-            w.base + uint32_t(TiledOffset2D(int32_t(w.x + x), int32_t(w.y + y), w.pitch, element == 8 ? 3 : 2));
         if (address + element <= mirror_bytes_) std::memcpy(physical_ + address, bytes, element);
+        ++x;
       }
     }
     CountSwapped(g_swapped.write_backs, uint64_t(w.width) * w.height * element);

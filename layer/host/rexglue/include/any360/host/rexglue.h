@@ -62,8 +62,8 @@ struct GraphicsOptions {
   bool async_renderer = true;
   // Threads recording draws (secondary command buffers): -1 as many as the machine leaves (AutoRecordThreads), 0 none.
   int record_threads = -1;
-  // A file to write samples of the command processor's thread to (module offsets of the executable, while the
-  // diagnostics are off: what it costs without them), for llvm-symbolizer. Empty: no sampling.
+  // A file to write samples of every thread to (the title's included: by thread, module offsets of the executable,
+  // while the diagnostics are off: what it costs without them), for llvm-symbolizer. Empty: no sampling.
   std::string profile_path;
   // Where the binding reports, every `stats_seconds`: frames per second and the renderer's cost per frame, the
   // draws it could not draw by reason. None: nothing reported.

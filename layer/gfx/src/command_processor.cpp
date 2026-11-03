@@ -13,6 +13,21 @@
 
 #include "any360/sys/objects.h"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#pragma comment(lib, "synchronization.lib")
+#elif defined(__linux__)
+#include <linux/futex.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
+
 namespace any360::gfx {
 
 namespace {
@@ -21,6 +36,18 @@ constexpr int kMaxIndirectDepth = 8;
 constexpr uint32_t kQueryFinished = 0xFFFFFEED;
 // What an ended occlusion query reports: something was drawn.
 constexpr uint32_t kFakeSampleCount = 1000;
+
+// Threads blocked on a word of guest memory (WaitOnAddress, a futex: a title's GPU waits made to block instead of
+// spinning) wake when the GPU writes it, as they would see it change on the console.
+void WakeWaiters(uint32_t* word) {
+#if defined(_WIN32)
+  WakeByAddressAll(word);
+#elif defined(__linux__)
+  syscall(SYS_futex, word, FUTEX_WAKE_PRIVATE, INT32_MAX, nullptr, nullptr, 0);
+#else
+  (void)word;
+#endif
+}
 
 uint64_t Fnv1a(const std::vector<uint32_t>& words) {
   uint64_t hash = 0xCBF29CE484222325ull;
@@ -71,7 +98,9 @@ uint32_t CommandProcessor::LoadRaw(uint32_t address) const {
   return std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(Host(address & ~3u))).load(std::memory_order_acquire);
 }
 void CommandProcessor::StoreRaw(uint32_t address, uint32_t value) {
-  std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(Host(address & ~3u))).store(value, std::memory_order_release);
+  uint32_t* word = reinterpret_cast<uint32_t*>(Host(address & ~3u));
+  std::atomic_ref<uint32_t>(*word).store(value, std::memory_order_release);
+  WakeWaiters(word);
 }
 uint32_t CommandProcessor::LoadBig(uint32_t address) const { return std::byteswap(LoadRaw(address)); }
 void CommandProcessor::StoreBig(uint32_t address, uint32_t value) { StoreRaw(address, std::byteswap(value)); }

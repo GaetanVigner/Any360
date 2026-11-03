@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -46,6 +47,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <tlhelp32.h>
 #include <vulkan/vulkan_win32.h>
 #else
 #include <dlfcn.h>
@@ -68,77 +70,131 @@ constexpr uint32_t kGpuMmio = 0x7FC80000;
 struct SwapCost {
   double vectorized = 0, scalar = 0;
 };
-// Samples a thread's instruction pointer about every 100 us while the diagnostics are off: offsets in the executable,
-// or, in another module (the driver, the C runtime), the first caller in the executable (bit 63 set).
+// Samples every thread of the process (the title's, the runtime's, ours) every 2 ms while the diagnostics are off:
+// where each is, as offsets in the executable, or, in another module (waits in ntdll, the driver), the first caller in
+// the executable (bit 63 set), with the leaf's module counted apart.
 class Sampler {
  public:
-  Sampler(HANDLE thread, std::string path) : path_(std::move(path)) {
-    DuplicateHandle(GetCurrentProcess(), thread, GetCurrentProcess(), &thread_, 0, FALSE, DUPLICATE_SAME_ACCESS);
-    worker_ = std::thread([this] { Run(); });
-  }
+  explicit Sampler(std::string path) : path_(std::move(path)) { worker_ = std::thread([this] { Run(); }); }
   ~Sampler() {
     done_ = true;
     if (worker_.joinable()) worker_.join();
     Write();
-    CloseHandle(thread_);
   }
+  // Lines "thread 0xoffset" (0: nowhere in the executable), then "# thread module name count" (the leaf's module
+  // when outside the executable) and "# thread name name".
   void Write() {
     std::lock_guard lock(mutex_);
     if (FILE* f = std::fopen(path_.c_str(), "w")) {
-      for (uint64_t s : samples_) std::fprintf(f, "0x%llX%c", (unsigned long long)s, 10);
+      for (const auto& [tid, s] : samples_) std::fprintf(f, "%lu 0x%llX%c", tid, (unsigned long long)s, 10);
+      for (const auto& [key, count] : outside_) {
+        std::fprintf(f, "# %lu module %s %llu%c", key.first, key.second.c_str(), (unsigned long long)count, 10);
+      }
+      for (const auto& [tid, name] : names_) std::fprintf(f, "# %lu name %s%c", tid, name.c_str(), 10);
       std::fclose(f);
     }
   }
 
  private:
+  struct Target {
+    DWORD tid;
+    HANDLE handle;
+  };
+  // Every thread of the process but this one (threads come and go: refreshed now and then).
+  void Refresh(std::vector<Target>& targets) {
+    for (Target& t : targets) CloseHandle(t.handle);
+    targets.clear();
+    const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return;
+    THREADENTRY32 entry{sizeof(entry)};
+    const DWORD self = GetCurrentThreadId(), process = GetCurrentProcessId();
+    for (BOOL more = Thread32First(snapshot, &entry); more; more = Thread32Next(snapshot, &entry)) {
+      if (entry.th32OwnerProcessID != process || entry.th32ThreadID == self) continue;
+      const HANDLE h = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_LIMITED_INFORMATION, FALSE,
+                                  entry.th32ThreadID);
+      if (!h) continue;
+      targets.push_back({entry.th32ThreadID, h});
+      std::lock_guard lock(mutex_);
+      if (names_.count(entry.th32ThreadID)) continue;
+      PWSTR wide = nullptr;
+      std::string name;
+      if (SUCCEEDED(GetThreadDescription(h, &wide)) && wide) {
+        for (const wchar_t* c = wide; *c; ++c) name += *c > 32 && *c < 127 ? char(*c) : '_';
+        LocalFree(wide);
+      }
+      names_[entry.th32ThreadID] = name.empty() ? "-" : name;
+    }
+    CloseHandle(snapshot);
+  }
   void Run() {
     const auto base = reinterpret_cast<uint64_t>(GetModuleHandleA(nullptr));
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
     const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
     const uint64_t size = nt->OptionalHeader.SizeOfImage;
     auto inside = [&](uint64_t rip) { return rip >= base && rip < base + size; };
+    std::vector<Target> targets;
+    // Per thread: the sample and the leaf's address. Nothing is allocated or locked while a thread is suspended
+    // (it may hold the heap's lock).
+    std::vector<std::pair<uint64_t, uint64_t>> taken;
+    auto refreshed = std::chrono::steady_clock::time_point{};
     while (!done_) {
-      const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(100);
-      while (std::chrono::steady_clock::now() < until) YieldProcessor();
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
       if (gfx::Diagnosing()) continue;
-      if (SuspendThread(thread_) == DWORD(-1)) continue;
-      CONTEXT context{};
-      context.ContextFlags = CONTEXT_FULL;
-      uint64_t sample = 0;
-      if (GetThreadContext(thread_, &context)) {
-        if (inside(context.Rip)) {
-          sample = context.Rip - base;
-        } else {
-          CONTEXT walk = context;
-          for (int depth = 0; depth < 32 && walk.Rip; ++depth) {
-            if (inside(walk.Rip)) {
-              sample = (walk.Rip - base - 1) | (1ull << 63);
-              break;
+      if (std::chrono::steady_clock::now() - refreshed > std::chrono::milliseconds(500)) {
+        Refresh(targets);
+        refreshed = std::chrono::steady_clock::now();
+      }
+      taken.assign(targets.size(), {0, 0});
+      for (size_t i = 0; i < targets.size(); ++i) {
+        if (SuspendThread(targets[i].handle) == DWORD(-1)) continue;
+        CONTEXT context{};
+        context.ContextFlags = CONTEXT_FULL;
+        if (GetThreadContext(targets[i].handle, &context)) {
+          taken[i].second = context.Rip;
+          if (inside(context.Rip)) {
+            taken[i].first = context.Rip - base;
+          } else {
+            CONTEXT walk = context;
+            for (int depth = 0; depth < 32 && walk.Rip; ++depth) {
+              if (inside(walk.Rip)) {
+                taken[i].first = (walk.Rip - base - 1) | (1ull << 63);
+                break;
+              }
+              DWORD64 image = 0;
+              PRUNTIME_FUNCTION entry = RtlLookupFunctionEntry(walk.Rip, &image, nullptr);
+              if (!entry) break;  // no unwind data: stop rather than guess
+              void* handler_data = nullptr;
+              DWORD64 frame = 0;
+              RtlVirtualUnwind(UNW_FLAG_NHANDLER, image, walk.Rip, entry, &walk, &handler_data, &frame, nullptr);
             }
-            DWORD64 image = 0;
-            PRUNTIME_FUNCTION entry = RtlLookupFunctionEntry(walk.Rip, &image, nullptr);
-            if (!entry) {
-              walk.Rip = *reinterpret_cast<DWORD64*>(walk.Rsp);
-              walk.Rsp += 8;
-              continue;
-            }
-            void* handler_data = nullptr;
-            DWORD64 frame = 0;
-            RtlVirtualUnwind(UNW_FLAG_NHANDLER, image, walk.Rip, entry, &walk, &handler_data, &frame, nullptr);
           }
         }
+        ResumeThread(targets[i].handle);
       }
-      ResumeThread(thread_);
       std::lock_guard lock(mutex_);
-      samples_.push_back(sample);
+      for (size_t i = 0; i < targets.size(); ++i) {
+        if (!taken[i].second) continue;
+        samples_.push_back({targets[i].tid, taken[i].first});
+        if (inside(taken[i].second)) continue;
+        HMODULE module = nullptr;
+        char name[MAX_PATH] = "?";
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               reinterpret_cast<LPCSTR>(taken[i].second), &module)) {
+          GetModuleFileNameA(module, name, MAX_PATH);
+        }
+        const char* slash = std::strrchr(name, 92);
+        ++outside_[{targets[i].tid, slash ? slash + 1 : name}];
+      }
     }
+    for (Target& t : targets) CloseHandle(t.handle);
   }
   std::string path_;
-  HANDLE thread_ = nullptr;
   std::thread worker_;
   std::atomic<bool> done_{false};
   std::mutex mutex_;
-  std::vector<uint64_t> samples_;
+  std::vector<std::pair<DWORD, uint64_t>> samples_;
+  std::map<std::pair<DWORD, std::string>, uint64_t> outside_;
+  std::map<DWORD, std::string> names_;
 };
 
 SwapCost MeasureSwapCost() {
@@ -680,7 +736,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
 
   binding->cp->Start();
   if (!options.profile_path.empty()) {
-    binding->sampler = std::make_unique<Sampler>(binding->cp->worker_handle(), options.profile_path);
+    binding->sampler = std::make_unique<Sampler>(options.profile_path);
     binding->renderer->sampler_ = binding->sampler.get();
   }
   double vblank_hz = options.vblank_hz;
