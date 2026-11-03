@@ -563,6 +563,78 @@ void MemoryTests() {
 }
 
 // The file system on a temporary directory: a read-only "game" device and a writable "hdd" one.
+// The Win32 file calls XAM exports, on the same file system.
+void Win32FileTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "any360-sys-win32";
+  std::error_code ec;
+  fs::remove_all(root, ec);
+  fs::create_directories(root / "game" / "Media");
+  fs::create_directories(root / "hdd");
+  { std::ofstream(root / "game" / "Media" / "Data.BIN", std::ios::binary) << "0123456789ABCDEF"; }
+  { std::ofstream(root / "game" / "Media" / "b.txt", std::ios::binary) << "b"; }
+  { std::ofstream(root / "game" / "Media" / "a.txt", std::ios::binary) << "aa"; }
+  Files().Reset();
+  Files().Mount("\\Device\\Cdrom0", root / "game", true);
+  Files().Mount("\\Device\\Harddisk0\\Partition1", root / "hdd", false);
+  Files().Link("game:", "\\Device\\Cdrom0");
+  Files().Link("hdd:", "\\Device\\Harddisk0\\Partition1");
+  const uint32_t text = kScratch + 0x100, text2 = kScratch + 0x180, out = kScratch + 0x200, buf = kScratch + 0x400,
+                 ov = kScratch + 0x300, data = kScratch + 0x600;
+  auto str = [&](uint32_t at, const char* p) {
+    std::memcpy(g.host(at), p, std::strlen(p) + 1);
+    return at;
+  };
+  const uint32_t kRead = 0x80000000, kWrite = 0x40000000, kOpenExisting = 3, kCreateAlways = 2, kCreateNew = 1;
+  // Open, read in two steps, seek, read at an OVERLAPPED's offset, read past the end (TRUE, no bytes).
+  const uint32_t f = Files().Win32CreateFile(g, str(text, "game:\\MEDIA\\data.bin"), kRead, kOpenExisting);
+  CHECK(f != 0xFFFFFFFF && Files().Win32GetFileSize(g, f, out) == 16 && g.Load32(out) == 0);
+  CHECK(Files().Win32Transfer(g, f, buf, 4, out, 0, false) == 1 && g.Load32(out) == 4 && std::memcmp(g.host(buf), "0123", 4) == 0);
+  CHECK(Files().Win32Transfer(g, f, buf, 2, out, 0, false) == 1 && std::memcmp(g.host(buf), "45", 2) == 0);
+  CHECK(Files().Win32SetFilePointer(g, f, uint32_t(-3), 0, 2) == 13 && Files().Win32Transfer(g, f, buf, 8, out, 0, false) == 1 &&
+        g.Load32(out) == 3 && std::memcmp(g.host(buf), "DEF", 3) == 0);
+  CHECK(Files().Win32Transfer(g, f, buf, 8, out, 0, false) == 1 && g.Load32(out) == 0);
+  g.Store32(ov + 8, 10);
+  g.Store32(ov + 12, 0);
+  CHECK(Files().Win32Transfer(g, f, buf, 2, 0, ov, false) == 1 && g.Load32(ov) == 0 && g.Load32(ov + 4) == 2 &&
+        std::memcmp(g.host(buf), "AB", 2) == 0);
+  CHECK(Files().Win32SetFilePointerEx(g, f, 0, 5, out, 0) == 1 && g.Load32(out) == 5 && g.Load32(out + 4) == 0);
+  CHECK(Files().Win32GetFileSizeEx(g, f, out) == 1 && g.Load64(out) == 16);
+  CHECK(Files().Win32Transfer(g, f, buf, 1, out, 0, true) == 0);  // a read-only device
+  CHECK(Files().Win32CreateFile(g, str(text, "game:\\missing"), kRead, kOpenExisting) == 0xFFFFFFFF);
+  // Attributes; the disk's space; a search sorted by name.
+  CHECK(Files().Win32GetFileAttributes(g, str(text, "game:\\Media")) == kAttributeDirectory);
+  CHECK(Files().Win32GetFileAttributes(g, str(text, "game:\\Media\\nope")) == 0xFFFFFFFF);
+  CHECK(Files().Win32GetFileAttributesEx(g, str(text, "game:\\Media\\a.txt"), out) == 1 && g.Load32(out) == kAttributeNormal &&
+        g.Load32(out + 32) == 2 && g.Load32(out + 20) != 0);
+  CHECK(Files().Win32GetDiskFreeSpace(g, str(text, "hdd:\\"), out, out + 8, out + 16) == 1 && g.Load32(out + 8 + 4) + g.Load32(out + 8) != 0);
+  const uint32_t find = Files().Win32FindFirstFile(g, str(text, "game:\\Media\\*.txt"), data);
+  CHECK(find != 0xFFFFFFFF && std::string(reinterpret_cast<const char*>(g.host(data + 0x2C))) == "a.txt" && g.Load32(data + 32) == 2);
+  CHECK(Files().Win32FindNextFile(g, find, data) == 1 && std::string(reinterpret_cast<const char*>(g.host(data + 0x2C))) == "b.txt");
+  CHECK(Files().Win32FindNextFile(g, find, data) == 0 && Objects().Close(find) == 0);
+  CHECK(Files().Win32FindFirstFile(g, str(text, "game:\\Media\\*.zip"), data) == 0xFFFFFFFF);
+  CHECK(Objects().Close(f) == 0);
+  // Write, truncate, copy, move and delete on the hard drive.
+  CHECK(Files().Win32CreateDirectory(g, str(text, "hdd:\\save")) == 1 && Files().Win32CreateDirectory(g, text) == 0);
+  CHECK(Files().Win32CreateDirectory(g, str(text, "game:\\new")) == 0);
+  const uint32_t w = Files().Win32CreateFile(g, str(text, "hdd:\\save\\slot.dat"), kWrite, kCreateAlways);
+  std::memcpy(g.host(buf), "hello world", 11);
+  CHECK(w != 0xFFFFFFFF && Files().Win32Transfer(g, w, buf, 11, out, 0, true) == 1 && g.Load32(out) == 11);
+  CHECK(Files().Win32SetFilePointer(g, w, 5, 0, 0) == 5 && Files().Win32SetEndOfFile(w) == 1 && fs::file_size(root / "hdd" / "save" / "slot.dat", ec) == 5);
+  CHECK(Files().Win32FlushFileBuffers(w) == 1 && Objects().Close(w) == 0);
+  CHECK(Files().Win32CreateFile(g, text, kWrite, kCreateNew) == 0xFFFFFFFF);  // exists
+  CHECK(Files().Win32CopyFile(g, text, str(text2, "hdd:\\save\\copy.dat"), 1) == 1 && Files().Win32CopyFile(g, text, text2, 1) == 0);
+  CHECK(Files().Win32CopyFile(g, text, text2, 0) == 1);
+  CHECK(Files().Win32MoveFile(g, text2, str(kScratch + 0x1C0, "hdd:\\save\\moved.dat")) == 1 && fs::exists(root / "hdd" / "save" / "moved.dat"));
+  CHECK(Files().Win32MoveFile(g, kScratch + 0x1C0, text) == 0);  // the target exists
+  CHECK(Files().Win32DeleteFile(g, kScratch + 0x1C0) == 1 && Files().Win32DeleteFile(g, kScratch + 0x1C0) == 0);
+  CHECK(Files().Win32DeleteFile(g, str(text2, "hdd:\\save")) == 0);  // a directory
+  CHECK(Files().Win32DeleteFile(g, str(text2, "game:\\Media\\a.txt")) == 0);  // read-only
+  Files().Reset();
+  fs::remove_all(root, ec);
+}
+
 void FileTests() {
   Fresh();
   namespace fs = std::filesystem;
@@ -1616,6 +1688,7 @@ int main() {
   SonicTests();
   XamTests();
   FileTests();
+  Win32FileTests();
   MemoryTests();
   SchedulerTests();
   ReclaimTests();

@@ -753,6 +753,37 @@ ANY360_SYS_EXPORT(XeKeysHmacShaUsingKey) {
   ctx.r3.u64 = XeKeysHmacShaUsingKey({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32, StackArgument(ctx, base, 8));
 }
 
+// Batch 20: the Win32 file calls XAM exports, on any360::sys's file system (sys_object_tests).
+ANY360_SYS_EXPORT(CreateFileA) { ctx.r3.u64 = Files().Win32CreateFile({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32); }
+ANY360_SYS_EXPORT(ReadFile) { ctx.r3.u64 = Files().Win32Transfer({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, false); }
+ANY360_SYS_EXPORT(WriteFile) { ctx.r3.u64 = Files().Win32Transfer({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, true); }
+ANY360_SYS_EXPORT(SetFilePointer) { ctx.r3.u64 = Files().Win32SetFilePointer({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(SetFilePointerEx) { ctx.r3.u64 = Files().Win32SetFilePointerEx({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32); }
+ANY360_SYS_EXPORT(GetFileSize) { ctx.r3.u64 = Files().Win32GetFileSize({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(GetFileSizeEx) { ctx.r3.u64 = Files().Win32GetFileSizeEx({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(SetEndOfFile) { ctx.r3.u64 = Files().Win32SetEndOfFile(ctx.r3.u32); }
+ANY360_SYS_EXPORT(FlushFileBuffers) { ctx.r3.u64 = Files().Win32FlushFileBuffers(ctx.r3.u32); }
+ANY360_SYS_EXPORT(DeleteFileA) { ctx.r3.u64 = Files().Win32DeleteFile({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(CreateDirectoryA) { ctx.r3.u64 = Files().Win32CreateDirectory({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(MoveFileA) { ctx.r3.u64 = Files().Win32MoveFile({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(CopyFileA) { ctx.r3.u64 = Files().Win32CopyFile({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(GetFileAttributesA) { ctx.r3.u64 = Files().Win32GetFileAttributes({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(GetFileAttributesExA) { ctx.r3.u64 = Files().Win32GetFileAttributesEx({base}, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(GetDiskFreeSpaceExA) { ctx.r3.u64 = Files().Win32GetDiskFreeSpace({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(FindFirstFileA) { ctx.r3.u64 = Files().Win32FindFirstFile({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(FindNextFileA) { ctx.r3.u64 = Files().Win32FindNextFile({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(CloseHandle) { ctx.r3.u64 = ctx.r3.u32 && ctx.r3.u32 != 0xFFFFFFFF && Objects().Close(ctx.r3.u32) == 0; }
+// Attributes and times are not kept apart from the host's: accepted, as the reference.
+ANY360_SYS_EXPORT(SetFileAttributesA) { ctx.r3.u64 = 1; }
+ANY360_SYS_EXPORT(SetFileTime) { ctx.r3.u64 = 1; }
+ANY360_SYS_EXPORT(CompareFileTime) {
+  // FILETIMEs: low word, then high word.
+  const Guest g{base};
+  const uint64_t a = uint64_t(g.Load32(ctx.r3.u32 + 4)) << 32 | g.Load32(ctx.r3.u32);
+  const uint64_t b = uint64_t(g.Load32(ctx.r4.u32 + 4)) << 32 | g.Load32(ctx.r4.u32);
+  ctx.r3.u64 = a < b ? 0xFFFFFFFF : a > b ? 1 : 0;
+}
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1086,6 +1117,28 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ExAllocatePool),
     ANY360_SYS_ENTRY(ExFreePool),
     ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(CreateFileA),
+    ANY360_SYS_ENTRY(ReadFile),
+    ANY360_SYS_ENTRY(WriteFile),
+    ANY360_SYS_ENTRY(SetFilePointer),
+    ANY360_SYS_ENTRY(SetFilePointerEx),
+    ANY360_SYS_ENTRY(GetFileSize),
+    ANY360_SYS_ENTRY(GetFileSizeEx),
+    ANY360_SYS_ENTRY(SetEndOfFile),
+    ANY360_SYS_ENTRY(FlushFileBuffers),
+    ANY360_SYS_ENTRY(DeleteFileA),
+    ANY360_SYS_ENTRY(CreateDirectoryA),
+    ANY360_SYS_ENTRY(MoveFileA),
+    ANY360_SYS_ENTRY(CopyFileA),
+    ANY360_SYS_ENTRY(GetFileAttributesA),
+    ANY360_SYS_ENTRY(GetFileAttributesExA),
+    ANY360_SYS_ENTRY(GetDiskFreeSpaceExA),
+    ANY360_SYS_ENTRY(FindFirstFileA),
+    ANY360_SYS_ENTRY(FindNextFileA),
+    ANY360_SYS_ENTRY(CloseHandle),
+    ANY360_SYS_ENTRY(SetFileAttributesA),
+    ANY360_SYS_ENTRY(SetFileTime),
+    ANY360_SYS_ENTRY(CompareFileTime),
     ANY360_SYS_ENTRY(XeCryptShaInit),
     ANY360_SYS_ENTRY(XeCryptShaUpdate),
     ANY360_SYS_ENTRY(XeCryptShaFinal),

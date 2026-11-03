@@ -243,9 +243,18 @@ uint32_t FileSystem::CreateFile(Guest g, uint32_t handle_out, uint32_t access, u
   for (char c : guest) {
     if (uint8_t(c) < 32 || uint8_t(c) >= 127 || c == '"' || c == '<' || c == '>' || c == '|') return kStatusObjectNameInvalid;
   }
+  uint32_t handle = 0xFFFFFFFF, action = kDoesNotExist;
+  const uint32_t status = OpenPath(g, guest, access, disposition, options, handle, action);
+  StoreStatus(g, io_status, status, action);
+  if (handle_out) g.Store32(handle_out, handle);
+  return status;
+}
+
+uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access, uint32_t disposition, uint32_t options,
+                              uint32_t& handle_out, uint32_t& action_out) {
   auto fail = [&](uint32_t status, uint32_t action) {
-    StoreStatus(g, io_status, status, action);
-    if (handle_out) g.Store32(handle_out, 0xFFFFFFFF);
+    action_out = action;
+    handle_out = 0xFFFFFFFF;
     return status;
   };
   std::string rest;
@@ -286,20 +295,19 @@ uint32_t FileSystem::CreateFile(Guest g, uint32_t handle_out, uint32_t access, u
   file.directory = std::filesystem::is_directory(host, error);
   file.delete_on_close = (options & kFileDeleteOnClose) != 0;
   open_[object] = file;
-  const uint32_t handle = Objects().OpenHandle(object);
-  if (handle_out) g.Store32(handle_out, handle);
-  StoreStatus(g, io_status, kStatusSuccess, action);
+  handle_out = Objects().OpenHandle(object);
+  action_out = action;
   return kStatusSuccess;
 }
 
 uint32_t FileSystem::Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length,
-                              uint32_t offset_ptr, bool write) {
+                              uint32_t offset_ptr, bool write, const uint64_t* at) {
   if (event && !Objects().Lookup(event)) return kStatusInvalidHandle;
   Open* file = Find(handle);
   if (!file) return kStatusInvalidHandle;
   if (file->directory) return kStatusInvalidParameter;
-  uint64_t offset = offset_ptr ? g.Load64(offset_ptr) : ~0ull;
-  if (offset >= 0xFFFFFFFFFFFFFFFEull) offset = file->position;  // FILE_USE_FILE_POINTER_POSITION
+  uint64_t offset = at ? *at : offset_ptr ? g.Load64(offset_ptr) : ~0ull;
+  if (!at && offset >= 0xFFFFFFFFFFFFFFFEull) offset = file->position;  // FILE_USE_FILE_POINTER_POSITION
   uint32_t done = 0, status = kStatusSuccess;
   if (write) {
     if (file->mount->read_only) return kStatusAccessDenied;
@@ -651,6 +659,245 @@ void FileSystem::OnClose(uint32_t object) {
     std::filesystem::remove(it->second.host, error);
   }
   open_.erase(it);
+}
+
+// --- the Win32 file calls XAM exports, on the same open files ---------------------------------------------------
+
+namespace {
+
+constexpr uint32_t kInvalid = 0xFFFFFFFF;  // INVALID_HANDLE_VALUE, INVALID_FILE_ATTRIBUTES, INVALID_SET_FILE_POINTER
+
+std::string CString(Guest g, uint32_t string) {
+  return string ? std::string(reinterpret_cast<const char*>(g.host(string))) : std::string();
+}
+
+// A FILETIME as the console stores it: low word, then high word, each big-endian.
+void StoreFileTime(Guest g, uint32_t at, uint64_t time) {
+  g.Store32(at, uint32_t(time));
+  g.Store32(at + 4, uint32_t(time >> 32));
+}
+
+// The attributes, three times and size of WIN32_FILE_ATTRIBUTE_DATA, the start of WIN32_FIND_DATA too (36 bytes).
+void StoreAttributeData(Guest g, uint32_t at, const Stat& s) {
+  g.Store32(at, s.attributes);
+  for (uint32_t i = 0; i < 3; ++i) StoreFileTime(g, at + 4 + 8 * i, s.time);
+  g.Store32(at + 28, uint32_t(s.size >> 32));
+  g.Store32(at + 32, uint32_t(s.size));
+}
+
+}  // namespace
+
+uint32_t FileSystem::Win32CreateFile(Guest g, uint32_t name, uint32_t access, uint32_t disposition) {
+  // CREATE_NEW, CREATE_ALWAYS, OPEN_EXISTING, OPEN_ALWAYS, TRUNCATE_EXISTING; anything else opens.
+  static constexpr uint32_t kDispositions[] = {kOpen, kCreate, kOverwriteIf, kOpen, kOpenIf, kOverwrite};
+  uint32_t handle = kInvalid, action = 0;
+  OpenPath(g, CString(g, name), access, disposition < 6 ? kDispositions[disposition] : kOpen, 0, handle, action);
+  return handle;
+}
+
+uint32_t FileSystem::Win32Transfer(Guest g, uint32_t handle, uint32_t buffer, uint32_t length, uint32_t done_out, uint32_t overlapped,
+                                   bool write) {
+  Open* file = Find(handle);
+  if (!file || file->directory) {
+    if (done_out && !overlapped) g.Store32(done_out, 0);
+    return 0;
+  }
+  // With an OVERLAPPED the transfer happens at its offset (+8 low, +12 high) at once; its status and count are set.
+  uint64_t offset = overlapped ? uint64_t(g.Load32(overlapped + 12)) << 32 | g.Load32(overlapped + 8) : file->position;
+  uint64_t start = offset;
+  uint32_t status = Transfer(g, handle, 0, 0, buffer, length, 0, write, &start);
+  const uint32_t done = status == kStatusSuccess ? uint32_t(file->position - offset) : 0;
+  if (status == kStatusEndOfFile) status = kStatusSuccess;  // a read at the end is a success of no bytes
+  if (overlapped) {
+    g.Store32(overlapped, status);
+    g.Store32(overlapped + 4, done);
+  } else if (done_out) {
+    g.Store32(done_out, done);
+  }
+  return status == kStatusSuccess ? 1 : 0;
+}
+
+uint32_t FileSystem::Win32SetFilePointer(Guest g, uint32_t handle, uint32_t low, uint32_t high_ptr, uint32_t method) {
+  Open* file = Find(handle);
+  if (!file) return kInvalid;
+  int64_t distance = int32_t(low);
+  if (high_ptr) distance = int64_t(uint64_t(g.Load32(high_ptr)) << 32 | low);
+  std::error_code error;
+  const uint64_t size = file->directory ? 0 : std::filesystem::file_size(file->host, error);
+  uint64_t position;
+  switch (method) {
+    case 0: position = uint64_t(distance); break;
+    case 1: position = file->position + uint64_t(distance); break;
+    case 2: position = size + uint64_t(distance); break;
+    default: return kInvalid;
+  }
+  file->position = position;
+  if (high_ptr) g.Store32(high_ptr, uint32_t(position >> 32));
+  return uint32_t(position);
+}
+
+uint32_t FileSystem::Win32SetFilePointerEx(Guest g, uint32_t handle, uint32_t high, uint32_t low, uint32_t position_out, uint32_t method) {
+  Open* file = Find(handle);
+  if (!file) return 0;
+  const uint64_t distance = uint64_t(high) << 32 | low;
+  std::error_code error;
+  const uint64_t size = file->directory ? 0 : std::filesystem::file_size(file->host, error);
+  uint64_t position;
+  switch (method) {
+    case 0: position = distance; break;
+    case 1: position = file->position + distance; break;
+    case 2: position = size + distance; break;
+    default: return 0;
+  }
+  file->position = position;
+  if (position_out) {
+    // Low word first, as the reference writes it.
+    g.Store32(position_out, uint32_t(position));
+    g.Store32(position_out + 4, uint32_t(position >> 32));
+  }
+  return 1;
+}
+
+uint32_t FileSystem::Win32GetFileSize(Guest g, uint32_t handle, uint32_t high_out) {
+  Open* file = Find(handle);
+  if (!file) return kInvalid;
+  std::error_code error;
+  const uint64_t size = file->directory ? 0 : std::filesystem::file_size(file->host, error);
+  if (high_out) g.Store32(high_out, uint32_t(size >> 32));
+  return uint32_t(size);
+}
+
+uint32_t FileSystem::Win32GetFileSizeEx(Guest g, uint32_t handle, uint32_t size_out) {
+  Open* file = Find(handle);
+  if (!file) return 0;
+  std::error_code error;
+  const uint64_t size = file->directory ? 0 : std::filesystem::file_size(file->host, error);
+  if (size_out) g.Store64(size_out, size);
+  return 1;
+}
+
+uint32_t FileSystem::Win32SetEndOfFile(uint32_t handle) {
+  Open* file = Find(handle);
+  if (!file || file->directory || file->mount->read_only) return 0;
+  std::error_code error;
+  std::filesystem::resize_file(file->host, file->position, error);
+  return error ? 0 : 1;
+}
+
+uint32_t FileSystem::Win32FlushFileBuffers(uint32_t handle) { return Find(handle) ? 1 : 0; }
+
+uint32_t FileSystem::Win32DeleteFile(Guest g, uint32_t name) {
+  std::string rest;
+  const std::string guest = CString(g, name);
+  const Mounted* mount = MountOf(Canonical(guest), rest);
+  const std::filesystem::path host = Resolve(guest);
+  std::error_code error;
+  if (!mount || mount->read_only || host.empty() || !std::filesystem::is_regular_file(host, error)) return 0;
+  return std::filesystem::remove(host, error) ? 1 : 0;
+}
+
+uint32_t FileSystem::Win32CreateDirectory(Guest g, uint32_t name) {
+  std::string rest;
+  const std::string guest = CString(g, name);
+  const Mounted* mount = MountOf(Canonical(guest), rest);
+  bool parent = false;
+  const std::filesystem::path host = Resolve(guest, &parent);
+  std::error_code error;
+  if (!mount || mount->read_only || !parent || std::filesystem::exists(host, error)) return 0;
+  return std::filesystem::create_directory(host, error) ? 1 : 0;
+}
+
+uint32_t FileSystem::Win32MoveFile(Guest g, uint32_t from, uint32_t to) {
+  std::string rest;
+  const std::string source = CString(g, from), target = CString(g, to);
+  const Mounted* mount = MountOf(Canonical(source), rest);
+  bool parent = false;
+  const std::filesystem::path from_host = Resolve(source), to_host = Resolve(target, &parent);
+  std::error_code error;
+  if (!mount || mount->read_only || MountOf(Canonical(target), rest) != mount || from_host.empty() ||
+      !std::filesystem::exists(from_host, error) || !parent || std::filesystem::exists(to_host, error)) {
+    return 0;  // MoveFile never replaces an existing file
+  }
+  std::filesystem::rename(from_host, to_host, error);
+  return error ? 0 : 1;
+}
+
+uint32_t FileSystem::Win32CopyFile(Guest g, uint32_t from, uint32_t to, uint32_t fail_if_exists) {
+  std::string rest;
+  const std::string source = CString(g, from), target = CString(g, to);
+  const Mounted* mount = MountOf(Canonical(target), rest);
+  bool parent = false;
+  const std::filesystem::path from_host = Resolve(source), to_host = Resolve(target, &parent);
+  std::error_code error;
+  if (from_host.empty() || !std::filesystem::is_regular_file(from_host, error) || !mount || mount->read_only || !parent) return 0;
+  const auto options = fail_if_exists ? std::filesystem::copy_options::none : std::filesystem::copy_options::overwrite_existing;
+  return std::filesystem::copy_file(from_host, to_host, options, error) ? 1 : 0;
+}
+
+uint32_t FileSystem::Win32GetFileAttributes(Guest g, uint32_t name) {
+  const std::filesystem::path host = Resolve(CString(g, name));
+  std::error_code error;
+  if (host.empty() || !std::filesystem::exists(host, error)) return kInvalid;
+  return StatOf(host).attributes;
+}
+
+uint32_t FileSystem::Win32GetFileAttributesEx(Guest g, uint32_t name, uint32_t info) {
+  const std::filesystem::path host = Resolve(CString(g, name));
+  std::error_code error;
+  if (host.empty() || !std::filesystem::exists(host, error)) return 0;
+  StoreAttributeData(g, info, StatOf(host));
+  return 1;
+}
+
+uint32_t FileSystem::Win32GetDiskFreeSpace(Guest g, uint32_t name, uint32_t free_to_caller, uint32_t total, uint32_t free) {
+  std::string rest;
+  const std::string guest = CString(g, name);
+  const Mounted* mount = MountOf(Canonical(guest), rest);
+  const std::filesystem::path host = Resolve(guest);
+  std::error_code error;
+  if (!mount || host.empty() || !std::filesystem::exists(host, error)) return 0;
+  const auto space = std::filesystem::space(mount->host, error);
+  const uint64_t capacity = error ? 0 : space.capacity, available = error || mount->read_only ? 0 : space.available;
+  // Low word first, as the reference writes these.
+  for (const auto& [at, value] : {std::pair{free_to_caller, available}, std::pair{total, capacity}, std::pair{free, available}}) {
+    if (!at) continue;
+    g.Store32(at, uint32_t(value));
+    g.Store32(at + 4, uint32_t(value >> 32));
+  }
+  return 1;
+}
+
+uint32_t FileSystem::Win32FindFirstFile(Guest g, uint32_t name, uint32_t data) {
+  const std::string path = CString(g, name);
+  const size_t slash = path.find_last_of('\\');
+  const std::string directory = slash == std::string::npos ? std::string() : path.substr(0, slash);
+  const std::string pattern = slash == std::string::npos ? path : path.substr(slash + 1);
+  uint32_t handle = kInvalid, action = 0;
+  if (OpenPath(g, directory, 0x1, kOpen, kFileDirectoryFile, handle, action) != kStatusSuccess) return kInvalid;
+  Open* file = Find(handle);
+  file->pattern = pattern.empty() ? "*" : pattern;
+  std::error_code error;
+  for (const auto& entry : std::filesystem::directory_iterator(file->host, error)) {
+    const std::string entry_name = entry.path().filename().string();
+    if (Match(file->pattern, entry_name)) file->listing.push_back(entry_name);
+  }
+  std::sort(file->listing.begin(), file->listing.end(), [](const std::string& a, const std::string& b) { return Lower(a) < Lower(b); });
+  if (!Win32FindNextFile(g, handle, data)) {
+    Objects().Close(handle);
+    return kInvalid;
+  }
+  return handle;
+}
+
+uint32_t FileSystem::Win32FindNextFile(Guest g, uint32_t handle, uint32_t data) {
+  Open* file = Find(handle);
+  if (!file || !file->directory || file->next >= file->listing.size()) return 0;
+  const std::string& entry = file->listing[file->next++];
+  // WIN32_FIND_DATA (0x140 bytes): the attribute data, two reserved words, the name (260), the short name (14).
+  std::memset(g.host(data), 0, 0x140);
+  StoreAttributeData(g, data, StatOf(file->host / entry));
+  std::memcpy(g.host(data + 0x2C), entry.data(), std::min<size_t>(entry.size(), 259));
+  return 1;
 }
 
 }  // namespace any360::sys

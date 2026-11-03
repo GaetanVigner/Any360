@@ -72,6 +72,30 @@ class FileSystem {
   uint32_t QueryVolume(Guest g, uint32_t handle, uint32_t io_status, uint32_t info, uint32_t length, uint32_t info_class);
   uint32_t Flush(Guest g, uint32_t handle, uint32_t io_status);
 
+  // The Win32 file calls XAM exports (CreateFileA, ReadFile...), on the same open files and handles. They answer as
+  // Win32 does (a handle or INVALID_HANDLE_VALUE, TRUE or FALSE) without setting the last error, as the reference.
+  // Reads and writes with an OVERLAPPED complete at once at its offset, its status and count set.
+  uint32_t Win32CreateFile(Guest g, uint32_t name, uint32_t access, uint32_t disposition);
+  uint32_t Win32Transfer(Guest g, uint32_t handle, uint32_t buffer, uint32_t length, uint32_t done_out, uint32_t overlapped, bool write);
+  uint32_t Win32SetFilePointer(Guest g, uint32_t handle, uint32_t low, uint32_t high_ptr, uint32_t method);
+  // The distance comes as two words (high, low) and the new position is stored low word first, as the reference does.
+  uint32_t Win32SetFilePointerEx(Guest g, uint32_t handle, uint32_t high, uint32_t low, uint32_t position_out, uint32_t method);
+  uint32_t Win32GetFileSize(Guest g, uint32_t handle, uint32_t high_out);
+  uint32_t Win32GetFileSizeEx(Guest g, uint32_t handle, uint32_t size_out);
+  uint32_t Win32SetEndOfFile(uint32_t handle);
+  uint32_t Win32FlushFileBuffers(uint32_t handle);
+  uint32_t Win32DeleteFile(Guest g, uint32_t name);
+  uint32_t Win32CreateDirectory(Guest g, uint32_t name);
+  uint32_t Win32MoveFile(Guest g, uint32_t from, uint32_t to);
+  uint32_t Win32CopyFile(Guest g, uint32_t from, uint32_t to, uint32_t fail_if_exists);
+  uint32_t Win32GetFileAttributes(Guest g, uint32_t name);
+  uint32_t Win32GetFileAttributesEx(Guest g, uint32_t name, uint32_t info);
+  // Free and total bytes of the drive holding a path (its host volume; none free on a read-only device), low word first.
+  uint32_t Win32GetDiskFreeSpace(Guest g, uint32_t name, uint32_t free_to_caller, uint32_t total, uint32_t free);
+  // A search: "<directory>\<pattern>", the matches sorted; the handle is a directory handle, closed by CloseHandle.
+  uint32_t Win32FindFirstFile(Guest g, uint32_t name, uint32_t data);
+  uint32_t Win32FindNextFile(Guest g, uint32_t handle, uint32_t data);
+
   // The host path a guest path resolves to; empty when the device or a parent directory does not exist.
   std::filesystem::path Resolve(const std::string& guest_path, bool* parent_exists = nullptr) const;
   // Called by the object manager when the last handle of an object closes.
@@ -98,8 +122,12 @@ class FileSystem {
   std::string Canonical(const std::string& guest_path) const;
   std::string PathOf(Guest g, uint32_t attributes) const;
   uint32_t DeviceControl(Guest g, uint32_t code, uint32_t output, uint32_t output_length, uint32_t& written);
+  // `at`, when given, is the offset to use instead of `offset_ptr` or the file position.
   uint32_t Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length, uint32_t offset_ptr,
-                    bool write);
+                    bool write, const uint64_t* at = nullptr);
+  // Opens a guest path as NtCreateFile does: the handle (INVALID_HANDLE_VALUE on failure) and the action taken.
+  uint32_t OpenPath(Guest g, const std::string& guest, uint32_t access, uint32_t disposition, uint32_t options, uint32_t& handle,
+                    uint32_t& action);
 
   std::vector<Mounted> mounts_;
   std::map<std::string, std::string> links_;  // lower-case DOS name -> device path

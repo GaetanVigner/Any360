@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (417 system calls)
+## What is verified (439 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -179,6 +179,16 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XMACreateContext` / `XMAReleaseContext` (64-byte contexts in physical memory, announced to an `XmaBackend`). Guest
   callbacks run through `Scheduler::CreateContext` and `Scheduler::Dispatch`. The renderer, the audio output and the
   XMA decoder are the backends still to write.
+- **The Win32 file calls XAM exports** (scenario tests), on the same open files and handles as the Nt* calls:
+  `CreateFileA` (the five Win32 dispositions), `ReadFile` / `WriteFile` (at the file position, or at an OVERLAPPED's
+  offset completing at once; a read at the end is TRUE with no bytes, as Win32), `SetFilePointer`, `SetFilePointerEx`,
+  `GetFileSize`, `GetFileSizeEx`, `SetEndOfFile`, `FlushFileBuffers`, `CloseHandle` (any handle),
+  `FindFirstFileA` / `FindNextFileA` (`WIN32_FIND_DATA`, matches sorted by name), `CreateDirectoryA`, `DeleteFileA`
+  (files only), `MoveFileA` (never over an existing file), `CopyFileA`, `GetFileAttributesA`, `GetFileAttributesExA`,
+  `GetDiskFreeSpaceExA` (the host volume; nothing free on a read-only device), `CompareFileTime`; `SetFileAttributesA`
+  and `SetFileTime` accepted without effect, as the reference. As the reference, the last error is not set,
+  `SetFilePointerEx` takes its distance as two words (high, low), and it and `GetDiskFreeSpaceExA` store 64-bit values
+  low word first; whether the console does the same is not checked.
 - **Cryptography** (`sys_io_tests`, equal to the reference over random states and data): SHA-1 and SHA-256 streamed
   through their guest states (`XeCryptShaInit` / `Update` / `Final`, `XeCryptSha256*`), `XeCryptHmacSha`, RC4
   (`XeCryptRc4Key`, `XeCryptRc4Ecb`, `XeCryptRc4`; the key schedule cycles over 16 key bytes whatever the size, as the
