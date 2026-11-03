@@ -77,10 +77,24 @@ class Scheduler {
   // succeeded and both routine and context are given, as the reference; the routine's low bit (no completion port)
   // is dropped.
   void QueueIoApc(uint32_t kthread, uint32_t routine, uint32_t context, uint32_t io_status, uint32_t status);
+  // User-mode APCs queued on a thread (the ones an alertable wait runs).
   size_t PendingApcs(uint32_t kthread) const;
-  // Runs the user APCs queued on the thread of `pcr`, oldest first, as routine(context, arg1, arg2) on that thread,
-  // its stack continuing below `stack_pointer` (the caller's r1); returns how many ran.
-  size_t DeliverApcs(Guest g, uint32_t pcr, uint32_t stack_pointer);
+
+  // KAPC (40 bytes): type 18, mode (0 kernel, 1 user), enqueued flag, thread, list entry, kernel, rundown and normal
+  // routines, normal context, two arguments. Initialize lays it out as the reference (no normal routine: kernel mode,
+  // no context). Insert records the arguments and queues it on its thread (0 with no thread, a thread that may not
+  // queue APCs, or one already queued); Remove takes a queued one back (1) or answers 0.
+  void KeInitializeApc(Guest g, uint32_t apc, uint32_t kthread, uint32_t kernel_routine, uint32_t rundown_routine,
+                       uint32_t normal_routine, uint32_t mode, uint32_t normal_context);
+  uint32_t KeInsertQueueApc(Guest g, uint32_t apc, uint32_t arg1, uint32_t arg2);
+  uint32_t KeRemoveQueueApc(Guest g, uint32_t apc);
+
+  // Runs the APCs queued on the thread of `pcr` on that thread, its stack continuing below `stack_pointer` (the
+  // caller's r1): kernel-mode ones always (those without a normal routine first), user-mode ones when `user_mode`,
+  // oldest first. A KAPC's kernel routine runs first as kernel(apc, &normal, &context, &arg1, &arg2) and may change
+  // or clear what follows; the normal routine then runs as normal(context, arg1, arg2). Returns how many user-mode
+  // APCs ran.
+  size_t DeliverApcs(Guest g, uint32_t pcr, uint32_t stack_pointer, bool user_mode = true);
   // ObLookupThreadByThreadId: the KTHREAD of a thread id, referenced; STATUS_NOT_FOUND when no thread has it.
   uint32_t LookupThreadById(Guest g, uint32_t thread_id, uint32_t object_out) const;
 
@@ -101,6 +115,8 @@ class Scheduler {
   uint32_t next_thread_id_ = 1;
   struct Apc {
     uint32_t kthread, routine, context, arg1, arg2;
+    uint32_t kapc = 0;  // the guest KAPC, 0 for NtQueueApcThread and the kernel's own APCs
+    bool user = true;
   };
   mutable std::mutex apc_mutex_;
   std::vector<Apc> apcs_;

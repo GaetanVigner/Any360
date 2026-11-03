@@ -15,6 +15,10 @@ namespace any360::sys {
 
 namespace {
 
+// KAPC fields.
+constexpr uint32_t kApcType = 0, kApcMode = 2, kApcEnqueued = 3, kApcThread = 4, kApcKernelRoutine = 16,
+                   kApcRundownRoutine = 20, kApcNormalRoutine = 24, kApcNormalContext = 28, kApcArg1 = 32, kApcArg2 = 36;
+
 // KTHREAD fields.
 constexpr uint32_t kThreadSize = 0xAB0, kStackBase = 0x5C, kStackLimit = 0x60, kStackKernel = 0x64, kTlsAddress = 0x68,
                    kThreadState = 0x6C, kPriority = 0x70, kProcessTypeDup = 0x72, kProcessType = 0x73, kApcLists = 0x74,
@@ -107,7 +111,7 @@ void Scheduler::QueueApcTo(uint32_t kthread, uint32_t routine, uint32_t context,
 size_t Scheduler::PendingApcs(uint32_t kthread) const {
   std::lock_guard lock(apc_mutex_);
   size_t n = 0;
-  for (const Apc& apc : apcs_) n += apc.kthread == kthread;
+  for (const Apc& apc : apcs_) n += apc.kthread == kthread && apc.user;
   return n;
 }
 
@@ -190,22 +194,75 @@ uint64_t Scheduler::Dispatch(uint32_t address, const GuestContext& context, std:
   return dispatcher_(address, context.stack_top, context.pcr, args.begin(), uint32_t(args.size()), dispatcher_user_);
 }
 
-size_t Scheduler::DeliverApcs(Guest g, uint32_t pcr, uint32_t stack_pointer) {
+void Scheduler::KeInitializeApc(Guest g, uint32_t apc, uint32_t kthread, uint32_t kernel_routine, uint32_t rundown_routine,
+                                uint32_t normal_routine, uint32_t mode, uint32_t normal_context) {
+  g.Store16(apc + kApcType, 18);
+  g.Store8(apc + kApcMode, uint8_t(normal_routine ? mode : 0));
+  g.Store8(apc + kApcEnqueued, 0);
+  g.Store32(apc + kApcThread, kthread);
+  g.Store32(apc + kApcKernelRoutine, kernel_routine);
+  g.Store32(apc + kApcRundownRoutine, rundown_routine);
+  g.Store32(apc + kApcNormalRoutine, normal_routine);
+  g.Store32(apc + kApcNormalContext, normal_routine ? normal_context : 0);
+}
+
+uint32_t Scheduler::KeInsertQueueApc(Guest g, uint32_t apc, uint32_t arg1, uint32_t arg2) {
+  const uint32_t kthread = g.Load32(apc + kApcThread);
+  if (!kthread) return 0;
+  std::lock_guard lock(apc_mutex_);
+  if (!g.Load8(kthread + kMayQueueApcs) || g.Load8(apc + kApcEnqueued)) return 0;
+  g.Store32(apc + kApcArg1, arg1);
+  g.Store32(apc + kApcArg2, arg2);
+  g.Store8(apc + kApcEnqueued, 1);
+  apcs_.push_back({kthread, 0, 0, 0, 0, apc, g.Load8(apc + kApcMode) != 0});
+  return 1;
+}
+
+uint32_t Scheduler::KeRemoveQueueApc(Guest g, uint32_t apc) {
+  std::lock_guard lock(apc_mutex_);
+  const auto it = std::find_if(apcs_.begin(), apcs_.end(), [&](const Apc& a) { return a.kapc == apc; });
+  if (it == apcs_.end()) return 0;
+  apcs_.erase(it);
+  g.Store8(apc + kApcEnqueued, 0);
+  return 1;
+}
+
+size_t Scheduler::DeliverApcs(Guest g, uint32_t pcr, uint32_t stack_pointer, bool user_mode) {
   const uint32_t kthread = g.Load32(pcr + kPrcbCurrentThread);
-  // Below the caller's frame and the red zone its saved registers may use.
+  // Below the caller's frame and the red zone its saved registers may use; a KAPC's kernel routine gets pointers to
+  // the normal routine, context and arguments in the gap above that.
   const GuestContext context{kthread, pcr, (stack_pointer - 0x400) & ~0xFu};
+  const uint32_t scratch = context.stack_top + 0x40;
+  // Kernel-mode APCs without a normal routine, then the other kernel-mode ones, then user-mode ones.
+  auto rank = [&](const Apc& a) { return a.user ? 2 : a.kapc && g.Load32(a.kapc + kApcNormalRoutine) ? 1 : 0; };
   size_t delivered = 0;
   for (;;) {
     Apc apc;
     {
       std::lock_guard lock(apc_mutex_);
-      const auto it = std::find_if(apcs_.begin(), apcs_.end(), [&](const Apc& a) { return a.kthread == kthread; });
-      if (it == apcs_.end()) return delivered;
-      apc = *it;
-      apcs_.erase(it);
+      auto best = apcs_.end();
+      for (auto it = apcs_.begin(); it != apcs_.end(); ++it) {
+        if (it->kthread != kthread || (it->user && !user_mode)) continue;
+        if (best == apcs_.end() || rank(*it) < rank(*best)) best = it;
+      }
+      if (best == apcs_.end()) return delivered;
+      apc = *best;
+      apcs_.erase(best);
+      if (apc.kapc) g.Store8(apc.kapc + kApcEnqueued, 0);
     }
-    Dispatch(apc.routine, context, {apc.context, apc.arg1, apc.arg2});
-    ++delivered;
+    if (apc.kapc) {
+      g.Store32(scratch, g.Load32(apc.kapc + kApcNormalRoutine));
+      g.Store32(scratch + 4, g.Load32(apc.kapc + kApcNormalContext));
+      g.Store32(scratch + 8, g.Load32(apc.kapc + kApcArg1));
+      g.Store32(scratch + 12, g.Load32(apc.kapc + kApcArg2));
+      if (const uint32_t kernel = g.Load32(apc.kapc + kApcKernelRoutine)) {
+        Dispatch(kernel, context, {apc.kapc, scratch, scratch + 4, scratch + 8, scratch + 12});
+      }
+      apc.routine = g.Load32(scratch), apc.context = g.Load32(scratch + 4);
+      apc.arg1 = g.Load32(scratch + 8), apc.arg2 = g.Load32(scratch + 12);
+    }
+    if (apc.routine) Dispatch(apc.routine, context, {apc.context, apc.arg1, apc.arg2});
+    delivered += apc.user;
   }
 }
 

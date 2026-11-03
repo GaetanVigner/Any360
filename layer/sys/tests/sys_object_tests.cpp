@@ -1455,6 +1455,30 @@ void SimpsonsTests() {
   Threads().QueueIoApc(kthread, 1, 0x55, 0x1800, 0);
   CHECK(Threads().PendingApcs(kthread) == 1 && Threads().DeliverApcs(gm, pcr, 0x7F000) == 1 &&
         delivered.back() == std::vector<uint64_t>({0x55, 0x1800, 0}));
+  // Kernel APCs: laid out as the reference, queued once on a thread that may queue APCs, removable.
+  const uint32_t kapc = Objects().AllocateObject(40), kapc2 = Objects().AllocateObject(40);
+  Threads().KeInitializeApc(gm, kapc, kthread, 0x82000200, 0, 0x82000000, 1, 0x66);
+  Threads().KeInitializeApc(gm, kapc2, kthread, 0x82000200, 0, 0, 1, 5);
+  CHECK(gm.Load16(kapc) == 18 && gm.Load8(kapc + 2) == 1 && gm.Load32(kapc + 4) == kthread && gm.Load32(kapc + 28) == 0x66);
+  CHECK(gm.Load8(kapc2 + 2) == 0 && gm.Load32(kapc2 + 28) == 0);  // no normal routine: kernel mode, no context
+  CHECK(Threads().KeInsertQueueApc(gm, kapc, 7, 8) == 0);  // this thread may not queue APCs yet
+  gm.Store8(kthread + 0x8B, 1);
+  CHECK(Threads().KeInsertQueueApc(gm, kapc, 7, 8) == 1 && gm.Load8(kapc + 3) == 1 && gm.Load32(kapc + 32) == 7);
+  CHECK(Threads().KeInsertQueueApc(gm, kapc, 9, 9) == 0 && gm.Load32(kapc + 32) == 7);
+  CHECK(Threads().KeRemoveQueueApc(gm, kapc) == 1 && gm.Load8(kapc + 3) == 0 && Threads().KeRemoveQueueApc(gm, kapc) == 0);
+  // Kernel-mode APCs run at any wait, user-mode ones at alertable waits; the kernel routine may change the call.
+  std::vector<uint32_t> kernel_calls;
+  g_code_args[0x82000200] = [&](uint32_t, uint32_t, std::vector<uint64_t> args) -> uint64_t {
+    kernel_calls.push_back(uint32_t(args[0]));
+    if (args[0] == kapc) gm.Store32(uint32_t(args[2]), 0x99);  // the normal context
+    return 0;
+  };
+  CHECK(Threads().KeInsertQueueApc(gm, kapc, 7, 8) == 1 && Threads().KeInsertQueueApc(gm, kapc2, 1, 2) == 1);
+  delivered.clear();
+  CHECK(Threads().DeliverApcs(gm, pcr, 0x7F000, false) == 0 && kernel_calls == std::vector<uint32_t>({kapc2}) &&
+        delivered.empty() && Threads().PendingApcs(kthread) == 1 && gm.Load8(kapc2 + 3) == 0);
+  CHECK(Threads().DeliverApcs(gm, pcr, 0x7F000) == 1 && kernel_calls == std::vector<uint32_t>({kapc2, kapc}) &&
+        delivered.size() == 1 && delivered[0] == std::vector<uint64_t>({0x99, 7, 8}) && gm.Load8(kapc + 3) == 0);
   g_code_args.clear();
   CHECK(Threads().LookupThreadById(gm, 0x7777, out) == 0xC0000225u);
   Threads().Shutdown();

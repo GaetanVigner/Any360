@@ -186,7 +186,11 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   - I/O completion APCs (`NtReadFile`, `NtWriteFile`, `NtReadFileScatter`, `NtWriteFileGather`): routine(context,
     I/O status block, 0) queued on the caller when the transfer succeeded and both routine and context are given, the
     routine's low bit dropped, as the reference.
-  - Not delivered yet: kernel APCs (`KeInitializeApc` / `KeInsertQueueApc`).
+  - Kernel APCs (`KeInitializeApc`, `KeInsertQueueApc`, `KeRemoveQueueApc`): the 40-byte KAPC laid out and queued as
+    the reference (once, on a thread that may queue APCs). At delivery the kernel routine runs first as kernel(apc,
+    &normal routine, &context, &arg1, &arg2) and may change or clear the normal call that follows. User-mode ones run
+    at alertable waits like the others; kernel-mode ones (those without a normal routine first) run at the start of
+    every wait or delay, which the reference never does.
 - **Offline networking**: `NetDll_inet_addr` (the Winsock parser), `NetDll___WSAFDIsSet`, `NetDll_XNetInAddrToString`,
   the XNet address conversions.
 
@@ -238,7 +242,7 @@ the calls the four titles share come first.
 
 Next for the layer, in this order:
 
-1. **Object manager and scheduler, continued**: absolute wait timeouts, kernel APCs,
+1. **Object manager and scheduler, continued**: absolute wait timeouts,
    pre-emptive suspension, freeing kernel objects, `KeGetCurrentThread`-style queries.
 2. **Memory, continued**: `NtProtectVirtualMemory`, `MEM_RESET`, the executable's image range as a queryable heap,
    `ExAllocatePool*`, `MmCreateKernelStack`, `KeLockL2` / `KeUnlockL2`.

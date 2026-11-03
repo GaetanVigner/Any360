@@ -184,9 +184,10 @@ static uint32_t IoApc(PPCContext& ctx, uint8_t* base, uint32_t status) {
   Threads().QueueIoApc(ThreadOf(ctx, base), ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, status);
   return status;
 }
+// Kernel-mode APCs run at every wait.
 template <typename Wait>
 static uint32_t AlertableWait(PPCContext& ctx, uint8_t* base, uint32_t alertable, Wait wait) {
-  if (alertable && Threads().DeliverApcs({base}, ctx.r13.u32, ctx.r1.u32)) return kStatusUserApc;
+  if (Threads().DeliverApcs({base}, ctx.r13.u32, ctx.r1.u32, alertable != 0) && alertable) return kStatusUserApc;
   const uint32_t status = wait(alertable != 0);
   if (status == kStatusUserApc) Threads().DeliverApcs({base}, ctx.r13.u32, ctx.r1.u32);
   return status;
@@ -413,6 +414,12 @@ ANY360_SYS_EXPORT(KeEnableFpuExceptions) {}
 ANY360_SYS_EXPORT(KeLockL2) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(KeUnlockL2) {}
 ANY360_SYS_EXPORT(KiApcNormalRoutineNop) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(KeInitializeApc) {
+  // (apc, thread, kernel routine, rundown routine, normal routine, mode, normal context)
+  Threads().KeInitializeApc({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32);
+}
+ANY360_SYS_EXPORT(KeInsertQueueApc) { ctx.r3.u64 = Threads().KeInsertQueueApc({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(KeRemoveQueueApc) { ctx.r3.u64 = Threads().KeRemoveQueueApc({base}, ctx.r3.u32); }
 ANY360_SYS_EXPORT(NetDll_WSAStartup) { ctx.r3.u64 = XamState().WsaStartup({base}, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(NetDll_WSACleanup) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(NetDll_XNetStartup) { ctx.r3.u64 = XamState().XNetStartup({base}, ctx.r4.u32); }
@@ -902,6 +909,9 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(KeLockL2),
     ANY360_SYS_ENTRY(KeUnlockL2),
     ANY360_SYS_ENTRY(KiApcNormalRoutineNop),
+    ANY360_SYS_ENTRY(KeInitializeApc),
+    ANY360_SYS_ENTRY(KeInsertQueueApc),
+    ANY360_SYS_ENTRY(KeRemoveQueueApc),
     ANY360_SYS_ENTRY(NetDll_WSAStartup),
     ANY360_SYS_ENTRY(NetDll_WSACleanup),
     ANY360_SYS_ENTRY(NetDll_XNetStartup),
