@@ -66,6 +66,10 @@ struct RendererStats {
   uint32_t failed = 0;      // draws not drawn (see last_error)
   uint32_t translations = 0;
   uint32_t pipelines = 0;
+  uint32_t sample_resolves = 0;        // host MSAA: surfaces' samples resolved for a read
+  uint64_t sample_resolve_pixels = 0;  // and the host pixels they covered
+  uint32_t samples_dropped = 0;        // surfaces back to one sample (drawn without colour and depth together)
+  uint32_t samples_given_back = 0;     // and given their samples again (drawn with them together, then cleared)
   uint32_t pipeline_waits = 0;  // draws not drawn while their pipeline compiles (SetAsyncPipelines)
   uint32_t render_targets = 0;
   uint32_t texture_uploads = 0;
@@ -154,6 +158,9 @@ class VulkanRenderer : public gfx::Renderer {
     Image ms;
     VkImageLayout ms_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     int32_t drawn[4] = {INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN};
+    bool paired = false;               // drawn with colour and depth targets together this frame
+    bool unpaired_this_frame = false;  // a depth target drawn without colour targets this frame
+    int32_t written[4] = {INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN};  // what it holds: drawn or cleared since
     Image& target() { return ms.image ? ms : image; }  // what draws render into
     VkImageLayout& target_layout() { return ms.image ? ms_layout : layout; }
   };
@@ -231,8 +238,9 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t color_formats[4];  // host format of each colour attachment (VK_FORMAT_UNDEFINED: none)
     uint32_t blend_controls[4]; // RB_BLENDCONTROL0-3 (0x00010001: no blending)
     uint32_t color_masks;       // RB_COLOR_MASK of the bound targets
-    uint32_t primitive_restart; // strips cut where the index buffer holds the reset index (also keeps the key
-                                // free of implicit padding: it is compared with memcmp)
+    uint32_t primitive_restart; // strips cut where the index buffer holds the reset index
+    uint32_t samples;           // host MSAA samples of the pass's targets
+    uint32_t reserved;          // zero (keeps the key free of implicit padding: it is compared with memcmp)
     bool operator<(const PipelineKey& other) const { return std::memcmp(this, &other, sizeof(*this)) < 0; }
     bool operator==(const PipelineKey& other) const { return std::memcmp(this, &other, sizeof(*this)) == 0; }
   };
@@ -267,10 +275,21 @@ class VulkanRenderer : public gfx::Renderer {
   uint32_t scale_ = 1;  // resolution scale
   uint32_t msaa_ = 1;   // host MSAA asked for
   VkSampleCountFlagBits samples_ = VK_SAMPLE_COUNT_1_BIT;  // host MSAA the device has
-  // The samples drawn into a surface's multisampled image since its last resolve, into its image (outside a pass).
-  void ResolveSamples(VkCommandBuffer cb, Surface& surface);
+  // The samples drawn into a surface's multisampled image since its last resolve, within the host pixels x0-x1,
+  // y0-y1 (what is about to be read), into its image (outside a pass).
+  void ResolveSamples(VkCommandBuffer cb, Surface& surface, int32_t x0, int32_t y0, int32_t x1, int32_t y1);
+  // A surface back to one sample: its samples resolved, its multisampled image freed (nothing of it lost).
+  void DropSamples(Surface& surface);
+  // A surface's multisampled image (not yet drawn into).
+  bool CreateSamples(Surface& surface);
+  // A surface drawn back at one sample given its samples again, when a clear over `area` is about to cover all it
+  // holds (the multisampled image needs nothing of the single-sample one).
+  void GiveSamplesBack(Surface* surface, const int32_t area[4]);
   static void GrowDrawn(Surface* surface, int32_t left, int32_t top, int32_t right, int32_t bottom) {
-    if (!surface || !surface->ms.image) return;
+    if (!surface) return;
+    int32_t* w = surface->written;
+    w[0] = std::min(w[0], left), w[1] = std::min(w[1], top), w[2] = std::max(w[2], right), w[3] = std::max(w[3], bottom);
+    if (!surface->ms.image) return;
     surface->drawn[0] = std::min(surface->drawn[0], left), surface->drawn[1] = std::min(surface->drawn[1], top);
     surface->drawn[2] = std::max(surface->drawn[2], right), surface->drawn[3] = std::max(surface->drawn[3], bottom);
   }
@@ -526,6 +545,7 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t batch = 0;
     VkFormat formats[4] = {};  // the render pass's attachments
     VkFormat depth = VK_FORMAT_UNDEFINED;
+    VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
     VkCommandBuffer cb = VK_NULL_HANDLE;
     std::atomic<bool> done{false};
   };
@@ -600,6 +620,7 @@ class VulkanRenderer : public gfx::Renderer {
   bool segment_secondary_ = false;  // the open pass takes secondary command buffers
   VkFormat segment_formats_[4] = {};
   VkFormat segment_depth_ = VK_FORMAT_UNDEFINED;
+  VkSampleCountFlagBits segment_samples_ = VK_SAMPLE_COUNT_1_BIT;
   static constexpr uint32_t kChunkDraws = 32;
   // By texture fetch constant (32), view type (3) and signedness: the last view and swizzled signs for its six words,
   // reused while the texture cache says views stay valid (no search by the fetch constant's words then).

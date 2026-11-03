@@ -485,12 +485,7 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& key) {
     return nullptr;
   }
   // Host MSAA: draws render into a multisampled image, resolved into this one when it is read.
-  if (samples_ > VK_SAMPLE_COUNT_1_BIT &&
-      !CreateImage2D(device_, key.pitch * scale_, height * scale_, format,
-                     (key.depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) |
-                         VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                     aspect, slot->ms, samples_)) {
-    DestroyImage(device_, slot->ms);
+  if (samples_ > VK_SAMPLE_COUNT_1_BIT && !CreateSamples(*slot)) {
     DestroyImage(device_, slot->image);
     return nullptr;
   }
@@ -498,11 +493,25 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& key) {
   return slot.get();
 }
 
-void VulkanRenderer::ResolveSamples(VkCommandBuffer cb, Surface& s) {
-  const int32_t left = std::max(s.drawn[0], 0), top = std::max(s.drawn[1], 0);
-  const int32_t right = std::min(s.drawn[2], int32_t(s.image.width)), bottom = std::min(s.drawn[3], int32_t(s.image.height));
+void VulkanRenderer::ResolveSamples(VkCommandBuffer cb, Surface& s, int32_t x0, int32_t y0, int32_t x1, int32_t y1) {
+  // What was drawn within what is read (a draw's scissor usually spans the whole surface, far more than it covers).
+  const int32_t left = std::max({s.drawn[0], x0, 0}), top = std::max({s.drawn[1], y0, 0});
+  const int32_t right = std::min({s.drawn[2], x1, int32_t(s.image.width)});
+  const int32_t bottom = std::min({s.drawn[3], y1, int32_t(s.image.height)});
   if (!s.ms.image || right <= left || bottom <= top) return;
-  s.drawn[0] = s.drawn[1] = INT32_MAX, s.drawn[2] = s.drawn[3] = INT32_MIN;
+  // What stays to resolve: nothing once the read covers all that was drawn; less when it covers a band across it
+  // (the rows or columns it spans); else all of it (resolved again when read).
+  int32_t* d = s.drawn;
+  if (x0 <= d[0] && x1 >= d[2]) {
+    if (y0 <= d[1]) d[1] = std::max(d[1], y1);
+    if (y1 >= d[3]) d[3] = std::min(d[3], y0);
+  } else if (y0 <= d[1] && y1 >= d[3]) {
+    if (x0 <= d[0]) d[0] = std::max(d[0], x1);
+    if (x1 >= d[2]) d[2] = std::min(d[2], x0);
+  }
+  if (d[2] <= d[0] || d[3] <= d[1]) d[0] = d[1] = INT32_MAX, d[2] = d[3] = INT32_MIN;
+  ++stats_.sample_resolves;
+  stats_.sample_resolve_pixels += uint64_t(right - left) * uint64_t(bottom - top);
   const Functions& f = device_.fn();
   const bool depth = s.key.depth != 0;
   const VkImageLayout attachment =
@@ -538,6 +547,41 @@ void VulkanRenderer::ResolveSamples(VkCommandBuffer cb, Surface& s) {
   f.vkCmdBeginRendering(cb, &rendering);
   f.vkCmdEndRendering(cb);
   f.vkCmdPipelineBarrier2(cb, &dependency);  // the passes after it may draw the samples again
+}
+
+bool VulkanRenderer::CreateSamples(Surface& s) {
+  const VkImageUsageFlags usage =
+      (s.key.depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) |
+      VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  const VkImageAspectFlags aspect =
+      s.key.depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+  if (!CreateImage2D(device_, s.image.width, s.image.height, s.image.format, usage, aspect, s.ms, samples_)) {
+    DestroyImage(device_, s.ms);
+    return false;
+  }
+  s.ms_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  s.drawn[0] = s.drawn[1] = INT32_MAX, s.drawn[2] = s.drawn[3] = INT32_MIN;
+  return true;
+}
+
+void VulkanRenderer::GiveSamplesBack(Surface* s, const int32_t area[4]) {
+  if (!s || s->ms.image || !s->paired || samples_ == VK_SAMPLE_COUNT_1_BIT) return;
+  const int32_t* w = s->written;
+  if (w[2] > w[0] && w[3] > w[1] && (area[0] > w[0] || area[1] > w[1] || area[2] < w[2] || area[3] < w[3])) return;
+  if (!CreateSamples(*s)) return;
+  target_memo_.valid = false;  // its pipeline had one sample
+  ++stats_.samples_given_back;
+}
+
+void VulkanRenderer::DropSamples(Surface& s) {
+  if (!s.ms.image) return;
+  EndRendering();
+  ResolveSamples(Record(), s, INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX);
+  batch().retired.push_back(s.ms);  // the batch may still draw into it: freed after it has run
+  s.ms = Image{};
+  s.ms_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  target_memo_.valid = false;  // its pipeline had the samples
+  ++stats_.samples_dropped;
 }
 
 void VulkanRenderer::Transition(VkCommandBuffer cb, Image& image, VkImageLayout& layout, VkImageLayout to,
@@ -614,7 +658,7 @@ bool VulkanRenderer::ReadBack(const SurfaceKey& key, uint32_t width, uint32_t he
   const VkDeviceSize size = VkDeviceSize(width) * height * texel_bytes;
   if (!CreateBuffer(device_, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback)) return false;
   const bool ok = device_.Submit([&](VkCommandBuffer cb) {
-    ResolveSamples(cb, *s);
+    ResolveSamples(cb, *s, 0, 0, int32_t(width), int32_t(height));
     Transition(cb, s->image, s->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
     VkBufferImageCopy region{};
     region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -804,7 +848,7 @@ VkPipeline VulkanRenderer::CreatePipeline(const PipelineKey& key) {
   raster.depthBiasEnable = VK_TRUE;  // the bias itself is dynamic
   raster.lineWidth = 1.0f;
   VkPipelineMultisampleStateCreateInfo multisample{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-  multisample.rasterizationSamples = samples_;
+  multisample.rasterizationSamples = VkSampleCountFlagBits(key.samples ? key.samples : 1);
   // Depth and stencil from RB_DEPTHCONTROL (masks and references dynamic).
   const uint32_t dc = key.depth_control;
   VkPipelineDepthStencilStateCreateInfo depth_stencil{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
@@ -1157,6 +1201,31 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     ++stats_.skipped;  // nothing bound: no target this draw could change
     return;
   }
+  // Host MSAA where it smooths edges. A depth target drawn without colour targets through a whole frame (a shadow
+  // map; a depth pre-pass is drawn with them in the same frame) goes back to one sample at the swap, as do the
+  // multisampled targets of a pass that mixes both kinds (their samples resolved first: nothing lost).
+  VkSampleCountFlagBits pass_samples = VK_SAMPLE_COUNT_1_BIT;
+  if (samples_ > VK_SAMPLE_COUNT_1_BIT) {
+    Surface* const targets[5] = {colors[0], colors[1], colors[2], colors[3], depth_surface};
+    const bool paired = depth_surface && (colors[0] || colors[1] || colors[2] || colors[3]);
+    bool multisampled = false, single = false;
+    for (Surface* t : targets) {
+      if (!t) continue;
+      if (paired) {
+        t->paired = true;
+      } else if (t == depth_surface) {
+        t->unpaired_this_frame = true;
+      }
+      (t->ms.image ? multisampled : single) = true;
+    }
+    if (multisampled && single) {
+      for (Surface* t : targets) {
+        if (t && t->ms.image) DropSamples(*t);
+      }
+      multisampled = false;
+    }
+    if (multisampled) pass_samples = samples_;
+  }
 
   // The scissor: the window scissor (moved by the window offset unless it says not to) within the screen scissor
   // and the targets.
@@ -1196,6 +1265,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
   key.depth_control = depth_control;
   key.depth_format = depth_surface ? depth_format_ : VK_FORMAT_UNDEFINED;
+  key.samples = uint32_t(pass_samples);
   for (uint32_t i = 0; i < 4; ++i) {
     key.color_formats[i] = colors[i] ? colors[i]->image.format : VK_FORMAT_UNDEFINED;
     key.blend_controls[i] = colors[i] ? (regs[kRbBlendControl[i]] & 0x1FFF1FFF) : kNoBlending;
@@ -1513,6 +1583,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       }
       VkRenderingAttachmentInfo depth{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
       segment_depth_ = depth_surface ? depth_surface->image.format : VK_FORMAT_UNDEFINED;
+      Surface* first = depth_surface;
+      for (uint32_t i = 0; i < 4 && !first; ++i) first = colors[i];
+      segment_samples_ = first->ms.image ? samples_ : VK_SAMPLE_COUNT_1_BIT;  // the pass's targets all alike
       if (depth_surface) {
         Transition(cb, depth_surface->target(), depth_surface->target_layout(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                    VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
@@ -1562,6 +1635,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         open_task_->done = false;
         std::memcpy(open_task_->formats, segment_formats_, sizeof(segment_formats_));
         open_task_->depth = segment_depth_;
+        open_task_->samples = segment_samples_;
       }
       open_task_->jobs.push_back(job);
       if (open_task_->jobs.size() >= kChunkDraws) DispatchChunk();
@@ -1822,7 +1896,7 @@ void VulkanRenderer::RecordLoop(uint32_t index) {
     rendering.pColorAttachmentFormats = task->formats;
     rendering.depthAttachmentFormat = task->depth;
     rendering.stencilAttachmentFormat = task->depth;
-    rendering.rasterizationSamples = samples_;
+    rendering.rasterizationSamples = task->samples;
     VkCommandBufferInheritanceInfo inheritance{VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO, &rendering};
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
@@ -2360,7 +2434,8 @@ bool VulkanRenderer::ResolveDepth(Surface& surface, bool float24, int32_t x0, in
     return Fail("resolve readback buffer");
   }
   const bool ok = device_.Submit([&](VkCommandBuffer cb) {
-    ResolveSamples(cb, surface);
+    ResolveSamples(cb, surface, x0 * int32_t(sample_x), y0 * int32_t(sample_y),
+                   (x0 + int32_t(width)) * int32_t(sample_x), (y0 + int32_t(height)) * int32_t(sample_y));
     Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
     VkBufferImageCopy regions[2]{};
@@ -2420,7 +2495,8 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   // copied as it is, or the samples averaged (a linear blit to half the size averages each 2x2 or 1x2 block).
   EndRendering();
   VkCommandBuffer cb = Record();
-  ResolveSamples(cb, surface);
+  ResolveSamples(cb, surface, x0 * int32_t(sample_x) * s, y0 * int32_t(sample_y) * s,
+                 (x0 + int32_t(width)) * int32_t(sample_x) * s, (y0 + int32_t(height)) * int32_t(sample_y) * s);
   Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   VkImageBlit region{};
@@ -2619,7 +2695,8 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       return;
     }
     bool ok = device_.Submit([&](VkCommandBuffer cb) {
-      ResolveSamples(cb, *surface);
+      ResolveSamples(cb, *surface, x0 * int32_t(host_x), y0 * int32_t(host_y),
+                     x0 * int32_t(host_x) + int32_t(samples_wide), y0 * int32_t(host_y) + int32_t(samples_high));
       Transition(cb, surface->image, surface->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
       VkBufferImageCopy region{};
       region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -2759,6 +2836,11 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       // load and stores: clears exactly the rectangle.
       EndRendering();
       VkCommandBuffer cb = Record();
+      const int32_t area[4] = {x0 * int32_t(host_x), y0 * int32_t(host_y), (x0 + int32_t(width)) * int32_t(host_x),
+                               (y0 + int32_t(height)) * int32_t(host_y)};
+      // A clear over all a target holds: one drawn back at one sample may have its samples again.
+      GiveSamplesBack(color_target, area);
+      GiveSamplesBack(depth_target, area);
       VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO}, depth{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
       if (color_target) {
         Transition(cb, color_target->target(), color_target->target_layout(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -2778,20 +2860,32 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
         depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         depth.clearValue = depth_value;
       }
+      // What a target holds is the clear when it covers all it held.
+      for (Surface* t : {color_target, depth_target}) {
+        if (!t) continue;
+        int32_t* w = t->written;
+        if (area[0] <= w[0] && area[1] <= w[1] && area[2] >= w[2] && area[3] >= w[3]) {
+          w[0] = w[1] = INT32_MAX, w[2] = w[3] = INT32_MIN;
+        }
+        GrowDrawn(t, area[0], area[1], area[2], area[3]);
+      }
+      // A pass for each target: one may be multisampled and the other not.
       VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
-      rendering.renderArea = {{x0 * int32_t(host_x), y0 * int32_t(host_y)}, {width * host_x, height * host_y}};
-      const int32_t area[4] = {rendering.renderArea.offset.x, rendering.renderArea.offset.y,
-                               rendering.renderArea.offset.x + int32_t(width * host_x),
-                               rendering.renderArea.offset.y + int32_t(height * host_y)};
-      GrowDrawn(color_target, area[0], area[1], area[2], area[3]);
-      GrowDrawn(depth_target, area[0], area[1], area[2], area[3]);
+      rendering.renderArea = {{area[0], area[1]}, {width * host_x, height * host_y}};
       rendering.layerCount = 1;
-      rendering.colorAttachmentCount = color_target ? 1 : 0;
-      rendering.pColorAttachments = color_target ? &color : nullptr;
-      rendering.pDepthAttachment = depth_target ? &depth : nullptr;
-      rendering.pStencilAttachment = depth_target ? &depth : nullptr;
-      f.vkCmdBeginRendering(cb, &rendering);
-      f.vkCmdEndRendering(cb);
+      if (color_target) {
+        rendering.colorAttachmentCount = 1;
+        rendering.pColorAttachments = &color;
+        f.vkCmdBeginRendering(cb, &rendering);
+        f.vkCmdEndRendering(cb);
+      }
+      if (depth_target) {
+        rendering.colorAttachmentCount = 0;
+        rendering.pColorAttachments = nullptr;
+        rendering.pDepthAttachment = rendering.pStencilAttachment = &depth;
+        f.vkCmdBeginRendering(cb, &rendering);
+        f.vkCmdEndRendering(cb);
+      }
     }
   }
   // Textures over the destination are hashed again before their next use (the tiled rows the rectangle reaches).
@@ -3060,6 +3154,12 @@ bool VulkanRenderer::ReadImageRGBA8(Image& image, VkImageLayout& layout, uint32_
 void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint32_t* regs) {
   Flush();  // a frame boundary: nothing stays pending across it
   pipeline_waits_this_frame_ = 0;
+  if (samples_ > VK_SAMPLE_COUNT_1_BIT) {
+    for (auto& [key, s] : surfaces_) {
+      if (s->unpaired_this_frame && !s->paired && s->ms.image) DropSamples(*s);
+      s->unpaired_this_frame = s->paired = false;
+    }
+  }
   if (textures_) textures_->NewFrame();  // the CPU may have written any texture since
   Timer swap_timer(stats_.ns_swaps);
   // The front buffer is a texture in guest memory, usually the last resolve's destination. When it is exactly that
@@ -3234,7 +3334,8 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   // After the draws in the batch. The sample's position in its pixel: bit 0 down, bit 1 right.
   EndRendering();
   VkCommandBuffer cb = Record();
-  ResolveSamples(cb, surface);
+  ResolveSamples(cb, surface, x0 * int32_t(sample_x), y0 * int32_t(sample_y),
+                 (x0 + int32_t(width)) * int32_t(sample_x), (y0 + int32_t(height)) * int32_t(sample_y));
   Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
              VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -3314,7 +3415,8 @@ bool VulkanRenderer::GammaPass() {
 
 void VulkanRenderer::RecordFrameBlit(VkCommandBuffer cb, VkImage target, VkOffset3D dst0, VkOffset3D dst1) {
   if (!frame_.on_gpu || (!frame_surface_ && !frame_resolved_) || !GammaPass()) return;
-  if (frame_surface_) ResolveSamples(cb, *frame_surface_);
+  if (frame_surface_) ResolveSamples(cb, *frame_surface_, int32_t(frame_x_), int32_t(frame_y_),
+                                     int32_t(frame_x_ + frame_.width), int32_t(frame_y_ + frame_.height));
   Image& frame_image = frame_surface_ ? frame_surface_->image : frame_resolved_->image;
   VkImageLayout& frame_layout = frame_surface_ ? frame_surface_->layout : frame_resolved_->layout;
   const Functions& f = device_.fn();
