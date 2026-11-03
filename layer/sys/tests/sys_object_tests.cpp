@@ -416,6 +416,60 @@ void SchedulerTests() {
 
 // The memory manager on a small layout the test's buffer can hold: a 4 KB virtual heap, a 64 KB one, a 4 KB physical
 // view and a 64 KB physical view sharing one physical space.
+// Ended threads go back to the kernel heap with their PCR, TLS block and stack once no handle keeps them; XAM's objects
+// forget their state and are freed with their last handle.
+void ReclaimTests() {
+  Fresh();
+  Objects().SetKernelHeap(0x10000, 0x70000);
+  Objects().Reset();
+  const Guest gm{g_memory.data()};
+  Threads().SetDispatcher(&Dispatch, nullptr);
+  const uint32_t out = kScratch + 0x200;
+  // The heap's first free address, found by a block allocated and freed at once.
+  auto first_free = [] {
+    const uint32_t probe = Objects().AllocateObject(16, true);
+    Objects().FreeObject(probe);
+    return probe;
+  };
+  auto settles_at = [&](uint32_t expected) {
+    for (int i = 0; i < 1000; ++i) {
+      if (first_free() == expected) return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return false;
+  };
+  g_code[0x3000] = [](uint32_t, uint64_t, uint64_t) -> uint64_t { return 5; };
+  // A thread waited on, then its handle closed.
+  CHECK(Threads().CreateThread(gm, out, 0, out + 4, 0, 0x3000, 0, 0) == 0);
+  // The process the first thread creates stays; its KTHREAD comes right after.
+  const uint32_t handle = gm.Load32(out), base = Objects().Lookup(handle);
+  CHECK(base != 0 && first_free() != base);
+  CHECK(Objects().WaitForHandle(gm, handle, kMainThread, nullptr) == 0 && Objects().Close(handle) == 0);
+  CHECK(settles_at(base) && Threads().LookupThreadById(gm, gm.Load32(out + 4), out + 8) == 0xC0000225u);
+  // A thread with no handle frees itself when it ends.
+  CHECK(Threads().CreateThread(gm, 0, 0, 0, 0, 0x3000, 0, 0) == 0);
+  CHECK(settles_at(base));
+  // A thread whose handle is the KTHREAD itself stays.
+  CHECK(Threads().CreateThread(gm, out, 0, 0, 0, 0x3000, 0, kCreateHandleIsObject) == 0);
+  const uint32_t kept = gm.Load32(out);
+  CHECK(Objects().WaitForObject(gm, kept, kMainThread, nullptr) == 0 && kept == base);
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  CHECK(first_free() != base);
+  Threads().Shutdown();
+  // XAM: a closed listener's and enumerator's memory serves again, their state gone.
+  Objects().Reset();
+  XamState().Reset();
+  const uint32_t listener = XamState().NotifyCreateListener(gm, 1, 0), listener_at = Objects().Lookup(listener);
+  CHECK(Objects().Close(listener) == 0 && Objects().Lookup(XamState().NotifyCreateListener(gm, 1, 0)) == listener_at);
+  const uint32_t enumerator = XamState().CreateEnumerator(gm, 4, 1, {{1, 2, 3, 4}}), enumerator_at = Objects().Lookup(enumerator);
+  CHECK(Objects().Close(enumerator) == 0);
+  const uint32_t again = XamState().CreateEnumerator(gm, 4, 1, {{5, 6, 7, 8}});
+  CHECK(Objects().Lookup(again) == enumerator_at);
+  CHECK(XamState().Enumerate(gm, again, 0, kScratch + 0x400, 4, out, 0) == 0 && gm.Load8(kScratch + 0x400) == 5);
+  XamState().Reset();
+  g_code.clear();
+}
+
 void MemoryTests() {
   Fresh();
   std::vector<uint8_t> memory(0x200000);
@@ -1564,6 +1618,7 @@ int main() {
   FileTests();
   MemoryTests();
   SchedulerTests();
+  ReclaimTests();
   Timers();
   Lifetimes();
   MultipleWaits();

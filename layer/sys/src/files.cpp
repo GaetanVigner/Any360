@@ -124,7 +124,7 @@ void FileSystem::Reset() {
   mounts_.clear();
   links_.clear();
   open_.clear();
-  Objects().SetCloseHook([](uint32_t object) { Files().OnClose(object); });
+  Objects().AddCloseHook([](uint32_t object) { Files().OnClose(object); });
 }
 
 void FileSystem::Mount(const std::string& device, const std::filesystem::path& host, bool read_only) {

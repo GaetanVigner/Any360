@@ -117,8 +117,14 @@ class ObjectManager {
   uint32_t OpenHandle(uint32_t object) { return AddHandle(object, {}); }
   Guest guest() const { return guest_; }
   void SetGuest(Guest g) { guest_ = g; }
-  // Called with the object when its last handle closes (the file system frees an open file there).
-  void SetCloseHook(void (*hook)(uint32_t object)) { close_hook_ = hook; }
+  // Called with the object when its last handle closes (the file system frees an open file there, XAM its listeners
+  // and enumerators); a hook added twice is called once.
+  void AddCloseHook(void (*hook)(uint32_t object));
+  // Called with a freed-on-close object just before its memory returns to the heap (the scheduler frees a thread's
+  // other blocks there).
+  void AddFreeHook(void (*hook)(uint32_t object));
+  // Returns a freed-on-close block no handle or reference keeps to the heap at once.
+  void FreeObject(uint32_t object) { Release(object); }
 
  private:
   // One handle: a slot of the table, free again once closed. Ob* references are counted per object apart from
@@ -150,7 +156,7 @@ class ObjectManager {
   std::unordered_map<uint32_t, uint32_t> freeable_;  // freed-on-close object -> its size
   std::recursive_mutex lifetime_mutex_;              // allocation, references, release
   Guest guest_{nullptr};
-  void (*close_hook_)(uint32_t) = nullptr;
+  std::vector<void (*)(uint32_t)> close_hooks_, free_hooks_;
   void Closed(uint32_t object);
 };
 

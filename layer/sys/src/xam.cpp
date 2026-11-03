@@ -59,6 +59,7 @@ void Xam::Reset() {
   title_ = {};
   listeners_.clear();
   enumerators_.clear();
+  Objects().AddCloseHook([](uint32_t object) { XamState().OnClose(object); });
   system_module_ = 0;
   settings_.clear();
   terminate_notifications_.clear();
@@ -131,8 +132,13 @@ void Xam::Notify(uint32_t id, uint32_t param) {
   }
 }
 
+void Xam::OnClose(uint32_t object) {
+  std::erase_if(listeners_, [&](const Listener& l) { return l.object == object; });
+  std::erase_if(enumerators_, [&](const Enumerator& e) { return e.object == object; });
+}
+
 uint32_t Xam::NotifyCreateListener(Guest g, uint64_t mask, uint32_t) {
-  const uint32_t object = Objects().AllocateObject(16);
+  const uint32_t object = Objects().AllocateObject(16, true);
   if (!object) return 0;
   std::memset(g.host(object), 0, 16);
   Listener l{object, mask, {}};
@@ -271,7 +277,7 @@ uint32_t Xam::UserWriteProfileSettings(Guest g, uint32_t, uint32_t user, uint32_
 }
 
 uint32_t Xam::SessionCreateHandle(Guest g, uint32_t handle_ptr) {
-  const uint32_t object = Objects().AllocateObject(16);
+  const uint32_t object = Objects().AllocateObject(16, true);
   if (!object) return kErrorInvalidParameter;
   std::memset(g.host(object), 0, 16);
   g.Store32(handle_ptr, Objects().OpenHandle(object));
@@ -373,7 +379,7 @@ uint32_t Xam::ShowDeviceSelectorUI(Guest g, uint32_t device_id_ptr, uint32_t ove
 // --- enumerators --------------------------------------------------------------------------------------------------
 
 uint32_t Xam::CreateEnumerator(Guest g, uint32_t item_size, uint32_t per_call, std::vector<std::vector<uint8_t>> items) {
-  const uint32_t object = Objects().AllocateObject(16);
+  const uint32_t object = Objects().AllocateObject(16, true);
   if (!object) return 0;
   std::memset(g.host(object), 0, 16);
   enumerators_.push_back({object, item_size, std::max<uint32_t>(1, per_call), 0, std::move(items)});

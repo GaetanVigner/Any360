@@ -70,11 +70,17 @@ void Scheduler::SetDispatcher(Dispatcher dispatcher, void* user) {
 void Scheduler::SetProcess(uint32_t kprocess) { process_ = kprocess; }
 
 void Scheduler::Shutdown() {
-  for (Thread* t : threads_) {
+  // Joined outside the lock: a thread ending meanwhile frees itself through OnFree, which takes it.
+  std::vector<Thread*> threads;
+  {
+    std::lock_guard lock(threads_mutex_);
+    threads.swap(threads_);
+    blocks_.clear();
+  }
+  for (Thread* t : threads) {
     if (t->host.joinable()) t->host.join();
     delete t;
   }
-  threads_.clear();
   process_ = 0;
   next_thread_id_ = 1;
   ResetDpcs();  // the DPC thread runs guest code too
@@ -83,6 +89,7 @@ void Scheduler::Shutdown() {
 }
 
 Scheduler::Thread* Scheduler::Find(uint32_t kthread) const {
+  std::lock_guard lock(threads_mutex_);
   for (Thread* t : threads_) {
     if (t->kthread == kthread) return t;
   }
@@ -116,13 +123,17 @@ size_t Scheduler::PendingApcs(uint32_t kthread) const {
 }
 
 uint32_t Scheduler::LookupThreadById(Guest g, uint32_t thread_id, uint32_t object_out) const {
-  for (const Thread* t : threads_) {
-    if (g.Load32(t->kthread + kThreadId) != thread_id) continue;
-    Objects().ReferenceObject(t->kthread);
-    if (object_out) g.Store32(object_out, t->kthread);
-    return kStatusSuccess;
+  uint32_t kthread = 0;
+  {
+    std::lock_guard lock(threads_mutex_);
+    for (const Thread* t : threads_) {
+      if (g.Load32(t->kthread + kThreadId) == thread_id) kthread = t->kthread;
+    }
   }
-  return 0xC0000225;  // STATUS_NOT_FOUND
+  if (!kthread) return 0xC0000225;  // STATUS_NOT_FOUND
+  Objects().ReferenceObject(kthread);
+  if (object_out) g.Store32(object_out, kthread);
+  return kStatusSuccess;
 }
 
 uint32_t Scheduler::ThreadOf(Guest g, uint32_t pcr) const {
@@ -141,14 +152,25 @@ uint32_t Scheduler::EnsureProcess(Guest g) {
   return kStatusSuccess;
 }
 
-uint32_t Scheduler::CreateContext(Guest g, uint32_t stack_size, GuestContext& context, uint32_t creation_flags) {
+uint32_t Scheduler::CreateContext(Guest g, uint32_t stack_size, GuestContext& context, uint32_t creation_flags,
+                                  bool reclaimable) {
   if (EnsureProcess(g) != kStatusSuccess) return kStatusNoMemory;
   if (!stack_size) stack_size = default_stack_size_;
   stack_size = std::max<uint32_t>(0x4000, (stack_size + 0xFFF) & ~0xFFFu);
 
-  const uint32_t kthread = Objects().AllocateObject(kThreadSize), pcr = Objects().AllocateObject(kPcrSize),
-                 tls = Objects().AllocateObject(kTlsBytes), stack = Objects().AllocateObject(stack_size + 0x1000);
-  if (!kthread || !pcr || !tls || !stack) return kStatusNoMemory;
+  const uint32_t kthread = Objects().AllocateObject(kThreadSize, reclaimable),
+                 pcr = Objects().AllocateObject(kPcrSize, reclaimable), tls = Objects().AllocateObject(kTlsBytes, reclaimable),
+                 stack = Objects().AllocateObject(stack_size + 0x1000, reclaimable);
+  if (!kthread || !pcr || !tls || !stack) {
+    for (const uint32_t block : {kthread, pcr, tls, stack}) {
+      if (block && reclaimable) Objects().FreeObject(block);
+    }
+    return kStatusNoMemory;
+  }
+  if (reclaimable) {
+    std::lock_guard lock(threads_mutex_);
+    blocks_[kthread] = {pcr, tls, stack};
+  }
   std::memset(g.host(kthread), 0, kThreadSize);
   std::memset(g.host(pcr), 0, kPcrSize);
   std::memset(g.host(tls), 0, kTlsBytes);
@@ -270,8 +292,14 @@ uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_si
                                  uint32_t start_address, uint32_t start_context, uint32_t creation_flags) {
   if (!dispatcher_) return kStatusInvalidParameter;
   GuestContext context;
-  if (const uint32_t status = CreateContext(g, stack_size, context, creation_flags); status != kStatusSuccess) return status;
+  if (const uint32_t status = CreateContext(g, stack_size, context, creation_flags, true); status != kStatusSuccess) {
+    return status;
+  }
   const uint32_t kthread = context.kthread;
+  Objects().AddFreeHook([](uint32_t object) { Threads().OnFree(object); });
+  // The thread keeps its own object until it ends; a title given the KTHREAD itself (no handle) keeps it for good.
+  Objects().ReferenceObject(kthread);
+  if (creation_flags & kCreateHandleIsObject) Objects().ReferenceObject(kthread);
 
   Thread* t = new Thread;
   t->kthread = kthread;
@@ -280,10 +308,17 @@ uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_si
   t->start = start_address;
   t->context = start_context;
   t->xapi = xapi_startup;
-  threads_.push_back(t);
+  {
+    std::lock_guard lock(threads_mutex_);
+    threads_.push_back(t);
+  }
   if (handle_out) g.Store32(handle_out, (creation_flags & kCreateHandleIsObject) ? kthread : Objects().OpenHandle(kthread));
   if (thread_id_out) g.Store32(thread_id_out, g.Load32(kthread + kThreadId));
-  t->host = std::thread([this, t] { Run(t); });
+  {
+    // Run starts by taking this lock, so a thread that ends at once cannot free `t` before it holds its host thread.
+    std::lock_guard lock(t->mutex);
+    t->host = std::thread([this, t] { Run(t); });
+  }
   return kStatusSuccess;
 }
 
@@ -310,6 +345,39 @@ void Scheduler::Run(Thread* t) {
   g.Store8(t->kthread + kThreadState, 4);  // terminated
   g.Store32(t->kthread + kHeaderSignalState, 1);
   t->done = true;
+  // Last: with no handle left this frees the thread, `t` included.
+  Objects().DereferenceObject(g, t->kthread);
+}
+
+void Scheduler::OnFree(uint32_t kthread) {
+  Thread* thread = nullptr;
+  Blocks blocks{};
+  {
+    std::lock_guard lock(threads_mutex_);
+    const auto it = blocks_.find(kthread);
+    if (it == blocks_.end()) return;
+    blocks = it->second;
+    blocks_.erase(it);
+    for (auto t = threads_.begin(); t != threads_.end(); ++t) {
+      if ((*t)->kthread != kthread) continue;
+      thread = *t;
+      threads_.erase(t);
+      break;
+    }
+  }
+  for (const uint32_t block : {blocks.pcr, blocks.tls, blocks.stack}) Objects().FreeObject(block);
+  {
+    std::lock_guard lock(apc_mutex_);
+    std::erase_if(apcs_, [&](const Apc& apc) { return apc.kthread == kthread; });
+  }
+  if (!thread) return;
+  // Freed from its own last instruction (Run's dereference) or from another thread once it has ended.
+  if (thread->host.get_id() == std::this_thread::get_id()) {
+    thread->host.detach();
+  } else if (thread->host.joinable()) {
+    thread->host.join();
+  }
+  delete thread;
 }
 
 uint32_t Scheduler::TerminateThread(Guest g, uint32_t pcr, uint32_t exit_code) {

@@ -102,6 +102,7 @@ void ObjectManager::Release(uint32_t object) {
   timer_apcs_.erase(object);
   uint32_t at = object, size = owned->second;
   freeable_.erase(owned);
+  for (auto hook : free_hooks_) hook(object);
   // Merged with the free blocks on either side; one that reaches the untouched rest of the heap joins it.
   if (auto next = free_blocks_.find(at + size); next != free_blocks_.end()) {
     size += next->second;
@@ -418,12 +419,19 @@ uint32_t ObjectManager::NtCancelTimer(Guest g, uint32_t handle, uint32_t current
   return kStatusSuccess;
 }
 
+void ObjectManager::AddCloseHook(void (*hook)(uint32_t object)) {
+  if (std::find(close_hooks_.begin(), close_hooks_.end(), hook) == close_hooks_.end()) close_hooks_.push_back(hook);
+}
+
+void ObjectManager::AddFreeHook(void (*hook)(uint32_t object)) {
+  if (std::find(free_hooks_.begin(), free_hooks_.end(), hook) == free_hooks_.end()) free_hooks_.push_back(hook);
+}
+
 void ObjectManager::Closed(uint32_t object) {
-  if (!close_hook_) return;
   for (const Entry& e : entries_) {
     if (e.open && e.object == object) return;
   }
-  close_hook_(object);
+  for (auto hook : close_hooks_) hook(object);
 }
 
 uint32_t ObjectManager::Close(uint32_t handle) {

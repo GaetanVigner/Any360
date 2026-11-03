@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 #include "guest.h"
@@ -63,8 +64,10 @@ class Scheduler {
   uint32_t NtResumeThread(Guest g, uint32_t handle, uint32_t count_out);
   uint32_t NtSuspendThread(Guest g, uint32_t handle, uint32_t count_out);
 
-  // A context of its own for host-driven guest callbacks; not a scheduler thread (its handle is never opened).
-  uint32_t CreateContext(Guest g, uint32_t stack_size, GuestContext& context, uint32_t creation_flags = 0);
+  // A context of its own for host-driven guest callbacks; not a scheduler thread (its handle is never opened). A
+  // reclaimable one (a thread's) has its blocks freed with its KTHREAD.
+  uint32_t CreateContext(Guest g, uint32_t stack_size, GuestContext& context, uint32_t creation_flags = 0,
+                         bool reclaimable = false);
   // Runs guest code at `address` on `context` through the dispatcher; returns r3 (0 without a dispatcher).
   uint64_t Dispatch(uint32_t address, const GuestContext& context, std::initializer_list<uint64_t> args);
 
@@ -106,6 +109,8 @@ class Scheduler {
   Thread* Find(uint32_t kthread) const;
   uint32_t EnsureProcess(Guest g);
   void Run(Thread* thread);
+  // The free hook: a KTHREAD going back to the heap takes its PCR, TLS block, stack and host thread with it.
+  void OnFree(uint32_t kthread);
   void PauseWhileSuspended(Guest g, Thread* thread);
 
   Dispatcher dispatcher_ = nullptr;
@@ -120,7 +125,12 @@ class Scheduler {
   };
   mutable std::mutex apc_mutex_;
   std::vector<Apc> apcs_;
+  struct Blocks {
+    uint32_t pcr, tls, stack;
+  };
+  mutable std::mutex threads_mutex_;  // threads_ and blocks_
   std::vector<Thread*> threads_;
+  std::unordered_map<uint32_t, Blocks> blocks_;  // reclaimable KTHREAD -> its other blocks
 };
 
 Scheduler& Threads();

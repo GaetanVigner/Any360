@@ -47,7 +47,10 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   Nt-created objects are allocated from the kernel heap a title gives the layer (`ObjectManager::SetKernelHeap`); the
   events, semaphores, mutants and timers, open files and Winsock events go back to it (first fit, freed blocks merged)
   once no handle or Ob reference keeps them, an armed timer cancelled with it. A wait by handle holds a reference
-  while it waits. Threads, XAM's objects (listeners, enumerators, sessions) and pool blocks are not reclaimed yet.
+  while it waits. XAM's listeners, enumerators and sessions forget their state and go back with their last handle. A
+  thread keeps its KTHREAD while it runs; once it has ended and no handle or reference keeps it, the KTHREAD, PCR, TLS
+  block and stack are freed and its host thread joined (one created with the KTHREAD as its handle stays). Pool blocks
+  are not reclaimed yet.
   Timers (`KeInitializeTimerEx`, `NtCreateTimer`, `NtSetTimerEx`, `NtCancelTimer`: relative and absolute due times,
   periods, notification and synchronization types; expiry is noticed when the objects are polled by a wait or
   `Poll`), the guest clock (`KeQuerySystemTime`, FILETIME from the host clock) and the multiple-object waits
@@ -247,7 +250,7 @@ the calls the four titles share come first.
 
 Next for the layer, in this order:
 
-1. **Object manager and scheduler, continued**: pre-emptive suspension, reclaiming threads and XAM's objects, `KeGetCurrentThread`-style queries.
+1. **Object manager and scheduler, continued**: pre-emptive suspension, `KeGetCurrentThread`-style queries.
 2. **Memory, continued**: `NtProtectVirtualMemory`, `MEM_RESET`, the executable's image range as a queryable heap,
    `ExAllocatePool*`, `MmCreateKernelStack`, `KeLockL2` / `KeUnlockL2`.
 3. **Files, continued**: STFS / XContent packages (saves, DLC), I/O completion ports, APC completion.
