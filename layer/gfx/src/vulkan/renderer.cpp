@@ -628,7 +628,8 @@ VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key, bool& pending) {
     }
     return pipeline;
   }
-  // Queued unless it already is, then waited for a moment: a pipeline the driver has in its caches takes far less.
+  // Queued unless it already is. Waited for a moment when just queued (a pipeline the driver has in its caches takes
+  // far less), twice a frame at most: the draws after it, and a burst of new pipelines, are left out instead.
   std::unique_lock lock(compile_mutex_);
   TakeCompiledPipelines();
   it = pipelines_.find(key);
@@ -636,10 +637,13 @@ VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key, bool& pending) {
   if (compiling_.insert(key).second) {
     compile_queue_.push_back(key);
     compile_cv_.notify_one();
+    if (pipeline_waits_this_frame_ < 2) {
+      ++pipeline_waits_this_frame_;
+      compiled_cv_.wait_for(lock, std::chrono::milliseconds(1), [&] {
+        return std::any_of(compiled_.begin(), compiled_.end(), [&](const auto& c) { return c.first == key; });
+      });
+    }
   }
-  compiled_cv_.wait_for(lock, std::chrono::milliseconds(1), [&] {
-    return std::any_of(compiled_.begin(), compiled_.end(), [&](const auto& c) { return c.first == key; });
-  });
   TakeCompiledPipelines();
   it = pipelines_.find(key);
   if (it != pipelines_.end()) return it->second;
@@ -2929,6 +2933,7 @@ bool VulkanRenderer::ReadImageRGBA8(Image& image, VkImageLayout& layout, uint32_
 
 void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint32_t* regs) {
   Flush();  // a frame boundary: nothing stays pending across it
+  pipeline_waits_this_frame_ = 0;
   if (textures_) textures_->NewFrame();  // the CPU may have written any texture since
   Timer swap_timer(stats_.ns_swaps);
   // The front buffer is a texture in guest memory, usually the last resolve's destination. When it is exactly that

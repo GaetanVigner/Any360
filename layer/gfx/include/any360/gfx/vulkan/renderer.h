@@ -270,6 +270,7 @@ class VulkanRenderer : public gfx::Renderer {
   std::set<PipelineKey> compiling_;
   std::vector<std::pair<PipelineKey, VkPipeline>> compiled_;
   uint32_t compiled_total_ = 0, compiled_saved_ = 0;
+  uint32_t pipeline_waits_this_frame_ = 0;  // draws that waited for a pipeline since the last swap
   bool compile_stop_ = false;
   std::vector<std::thread> compilers_;
   std::unordered_map<SurfaceKey, std::unique_ptr<Surface>, BytesHash> surfaces_;
