@@ -49,6 +49,8 @@ struct GraphicsOptions {
   bool fences_after_draws = true;
   // The renderer on a thread of its own (gfx::AsyncRenderer): the command processor reads the stream meanwhile.
   bool async_renderer = true;
+  // Threads recording draws (secondary command buffers): -1 as many as the machine leaves (AutoRecordThreads), 0 none.
+  int record_threads = -1;
   // A file to write samples of the command processor's thread to (module offsets of the executable, while the
   // diagnostics are off: what it costs without them), for llvm-symbolizer. Empty: no sampling.
   std::string profile_path;

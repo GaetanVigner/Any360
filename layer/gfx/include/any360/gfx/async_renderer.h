@@ -27,6 +27,7 @@ class AsyncRenderer : public Renderer {
   void Drain();
   // Time the worker spent running calls (nanoseconds, summed): the renderer's thread's load.
   uint64_t busy_ns() const { return busy_ns_.load(std::memory_order_relaxed); }
+  std::thread::native_handle_type worker_handle() { return worker_.native_handle(); }
   uint64_t queued_bytes() const { return published_.load(std::memory_order_relaxed); }  // all calls so far
 
   void ShaderLoaded(const Shader& shader) override;

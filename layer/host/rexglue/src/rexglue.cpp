@@ -640,6 +640,10 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
     });
   }
   binding->cp = std::make_unique<gfx::CommandProcessor>(physical);
+  binding->renderer->SetRecordThreads(options.record_threads < 0 ? gfx::vk::VulkanRenderer::AutoRecordThreads()
+                                                                 : uint32_t(options.record_threads));
+  if (options.log) options.log("Any360: draws recorded on " + std::to_string(std::max(1u, binding->renderer->record_threads())) +
+                               " thread(s) (" + std::to_string(std::thread::hardware_concurrency()) + " hardware threads)");
   if (options.async_renderer) {
     binding->async = std::make_unique<gfx::AsyncRenderer>(*binding->cp, *binding->renderer);
     binding->cp->SetRenderer(binding->async.get());

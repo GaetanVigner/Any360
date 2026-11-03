@@ -287,7 +287,8 @@ int main(int argc, char** argv) {
   std::string dump;
   uint32_t watch = 0;
   bool bench = false;
-  bool async = false;  // --async: the renderer on a thread of its own (AsyncRenderer), as in a title  // --bench: as in a title (diagnostics off, textures watched instead of hashed), kick time only
+  bool async = false;
+  uint32_t record_threads = 0;  // --threads N: draws recorded on N threads (secondary command buffers)  // --async: the renderer on a thread of its own (AsyncRenderer), as in a title  // --bench: as in a title (diagnostics off, textures watched instead of hashed), kick time only
   std::string profile;  // --profile FILE: the main thread's instruction pointer sampled during the last pass
   vk::DeviceOptions options;
   for (int i = 1; i < argc; ++i) {
@@ -299,6 +300,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--profile") && i + 1 < argc) profile = argv[++i];
     else if (!std::strcmp(argv[i], "--bench")) bench = true;
     else if (!std::strcmp(argv[i], "--async")) async = true;
+    else if (!std::strcmp(argv[i], "--threads") && i + 1 < argc) record_threads = uint32_t(std::atoi(argv[++i]));
     else if (!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = uint32_t(std::strtoul(argv[++i], nullptr, 16)) & 0x1FFFF000;
     else path = argv[i];
   }
@@ -321,6 +323,7 @@ int main(int argc, char** argv) {
     std::printf("gfx_replay: renderer: %s\n", renderer.last_error().c_str());
     return 1;
   }
+  renderer.SetRecordThreads(record_threads);
   CommandProcessor cp(physical);
   TracingRenderer tracing(renderer, physical, dump, watch);
   Renderer* target = trace ? static_cast<Renderer*>(&tracing) : &renderer;
@@ -384,6 +387,12 @@ int main(int argc, char** argv) {
   std::map<std::string, uint32_t> outside;  // samples in other modules, by module name
   HANDLE main_thread = nullptr;
   DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &main_thread, 0, FALSE, DUPLICATE_SAME_ACCESS);
+  // With --async, the renderer's thread is the one sampled.
+  if (async_renderer) {
+    CloseHandle(main_thread);
+    DuplicateHandle(GetCurrentProcess(), HANDLE(async_renderer->worker_handle()), GetCurrentProcess(), &main_thread, 0, FALSE,
+                    DUPLICATE_SAME_ACCESS);
+  }
   std::thread sampler;
   if (!profile.empty()) {
     sampler = std::thread([&] {
@@ -395,7 +404,7 @@ int main(int argc, char** argv) {
         // About every 100 us (spinning: Sleep would wait a millisecond or more).
         const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(100);
         while (std::chrono::steady_clock::now() < until) YieldProcessor();
-        if (!sampling || !capture::g_replaying_kick) continue;
+        if (!sampling || (!capture::g_replaying_kick && !async_renderer)) continue;
         if (SuspendThread(main_thread) == DWORD(-1)) continue;
         CONTEXT context{};
         context.ContextFlags = CONTEXT_FULL;
