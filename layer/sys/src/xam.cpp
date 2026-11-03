@@ -934,7 +934,7 @@ uint32_t Xam::SocketFailure(uint32_t) {
 uint32_t Xam::WsaGetLastError() const { return t_wsa_error; }
 
 uint32_t Xam::WsaCreateEvent() {
-  const uint32_t event = Objects().AllocateObject(kEventSize);
+  const uint32_t event = Objects().AllocateObject(kEventSize, true);
   if (!event) return 0;
   Objects().InitializeEvent(Objects().guest(), event, kNotificationEvent, 0);
   return Objects().OpenHandle(event);

@@ -187,6 +187,54 @@ void References() {
   CHECK(Objects().Duplicate(g, h3, out + 12, 1) == 0 && Objects().Lookup(h3) == 0 && Objects().Lookup(g.Load32(out + 12)) != 0);
 }
 
+// Nt-created objects return to the kernel heap once no handle or Ob reference keeps them.
+void Lifetimes() {
+  Fresh();
+  const uint32_t out = kScratch + 0x200;
+  auto event = [&]() {
+    CHECK(Objects().CreateEvent(g, out, 0, 0, 0) == 0);
+    return g.Load32(out);
+  };
+  const uint32_t e1 = event(), e2 = event(), e3 = event();
+  const uint32_t a1 = Objects().Lookup(e1), a2 = Objects().Lookup(e2), a3 = Objects().Lookup(e3);
+  CHECK(a1 == kHeap && a2 > a1 && a3 > a2);
+  // A closed object's memory is reused; a duplicate handle or an Ob reference keeps it.
+  CHECK(Objects().Close(e2) == 0 && Objects().Lookup(event()) == a2);
+  uint32_t duplicate = 0;
+  CHECK(Objects().Duplicate(g, e1, out + 4, 0) == 0);
+  duplicate = g.Load32(out + 4);
+  CHECK(Objects().ReferenceObjectByHandle(g, e3, kMainThread, out + 8) == 0 && g.Load32(out + 8) == a3);
+  CHECK(Objects().Close(e1) == 0 && Objects().Close(e3) == 0);
+  const uint32_t e4 = event();
+  CHECK(Objects().Lookup(e4) != a1 && Objects().Lookup(e4) != a3);
+  CHECK(Objects().Close(duplicate) == 0 && Objects().Lookup(event()) == a1);
+  CHECK(Objects().DereferenceObject(g, a3) == 0 && Objects().Lookup(event()) == a3);
+  // A wait by handle keeps its object while another thread closes the handle.
+  const uint32_t waited = event(), waited_at = Objects().Lookup(waited);
+  std::thread closer([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    CHECK(Objects().Close(waited) == 0);
+    CHECK(Objects().AllocateObject(16, true) != waited_at);
+    g.Store32(waited_at + 4, 1);
+  });
+  const int64_t second = -10000000;
+  CHECK(Objects().WaitForHandle(g, waited, kMainThread, &second) == 0);
+  closer.join();
+  // An armed timer is cancelled with it; its memory serves again.
+  CHECK(Objects().CreateTimer(g, out, 0, 0) == 0);
+  const uint32_t timer = g.Load32(out), timer_at = Objects().Lookup(timer);
+  g.Store64(out + 8, uint64_t(int64_t(-10000)));  // 1 ms
+  CHECK(Objects().NtSetTimerEx(g, timer, out + 8, 0, 0, 0, 0, 0) == 0 && Objects().Close(timer) == 0);
+  CHECK(Objects().AllocateObject(kTimerSize, true) == timer_at);
+  std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  Objects().Poll(g);
+  CHECK(g.Load32(timer_at + 4) == 0);
+  // Objects of the other managers stay unless created freed-on-close.
+  const uint32_t kept = Objects().AllocateObject(16);
+  const uint32_t kept_handle = Objects().OpenHandle(kept);
+  CHECK(Objects().Close(kept_handle) == 0 && Objects().AllocateObject(16) != kept);
+}
+
 void Timers() {
   Fresh();
   const uint32_t out = kScratch + 0x200;
@@ -1517,6 +1565,7 @@ int main() {
   MemoryTests();
   SchedulerTests();
   Timers();
+  Lifetimes();
   MultipleWaits();
   Events();
   Semaphores();

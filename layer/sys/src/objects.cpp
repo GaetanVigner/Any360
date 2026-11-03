@@ -57,15 +57,69 @@ void ObjectManager::Reset() {
   references_.clear();
   timers_.clear();
   timer_apcs_.clear();
+  free_blocks_.clear();
+  freeable_.clear();
   heap_next_ = heap_begin_;
 }
 
-uint32_t ObjectManager::Allocate(uint32_t size) {
+uint32_t ObjectManager::Allocate(uint32_t size, bool freed_on_close) {
   const uint32_t aligned = (size + 15) & ~15u;
-  if (heap_next_ + aligned > heap_end_) return 0;
-  const uint32_t at = heap_next_;
-  heap_next_ += aligned;
+  std::lock_guard lock(lifetime_mutex_);
+  uint32_t at = 0;
+  // First fit among the freed blocks, then the untouched rest of the heap.
+  for (auto it = free_blocks_.begin(); it != free_blocks_.end(); ++it) {
+    if (it->second < aligned) continue;
+    at = it->first;
+    const uint32_t left = it->second - aligned;
+    free_blocks_.erase(it);
+    if (left) free_blocks_[at + aligned] = left;
+    break;
+  }
+  if (!at) {
+    if (heap_next_ + aligned > heap_end_) return 0;
+    at = heap_next_;
+    heap_next_ += aligned;
+  }
+  if (freed_on_close) freeable_[at] = aligned;
   return at;
+}
+
+uint32_t ObjectManager::AllocateObject(uint32_t size, bool freed_on_close) { return Allocate(size, freed_on_close); }
+
+void ObjectManager::ReferenceObject(uint32_t object) {
+  std::lock_guard lock(lifetime_mutex_);
+  ++references_[object];
+}
+
+void ObjectManager::Release(uint32_t object) {
+  std::lock_guard lock(lifetime_mutex_);
+  const auto owned = freeable_.find(object);
+  if (owned == freeable_.end() || references_.count(object)) return;
+  for (const Entry& e : entries_) {
+    if (e.open && e.object == object) return;
+  }
+  timers_.erase(std::remove(timers_.begin(), timers_.end(), object), timers_.end());
+  timer_apcs_.erase(object);
+  uint32_t at = object, size = owned->second;
+  freeable_.erase(owned);
+  // Merged with the free blocks on either side; one that reaches the untouched rest of the heap joins it.
+  if (auto next = free_blocks_.find(at + size); next != free_blocks_.end()) {
+    size += next->second;
+    free_blocks_.erase(next);
+  }
+  if (auto next = free_blocks_.lower_bound(at); next != free_blocks_.begin()) {
+    auto previous = std::prev(next);
+    if (previous->first + previous->second == at) {
+      at = previous->first;
+      size += previous->second;
+      free_blocks_.erase(previous);
+    }
+  }
+  if (at + size == heap_next_) {
+    heap_next_ = at;
+  } else {
+    free_blocks_[at] = size;
+  }
 }
 
 uint32_t ObjectManager::AddHandle(uint32_t object, const std::string& name) {
@@ -238,7 +292,7 @@ uint32_t ObjectManager::CreateEvent(Guest g, uint32_t handle_out, uint32_t attri
     if (handle_out) g.Store32(handle_out, AddHandle(existing->object, existing->name));
     return kStatusObjectNameExists;
   }
-  const uint32_t object = Allocate(kEventSize);
+  const uint32_t object = Allocate(kEventSize, true);
   if (!object) return kStatusNoMemory;
   InitializeEvent(g, object, type ? kSynchronizationEvent : kNotificationEvent, initial_state);
   const uint32_t handle = AddHandle(object, name);
@@ -254,7 +308,7 @@ uint32_t ObjectManager::CreateSemaphore(Guest g, uint32_t handle_out, uint32_t a
     return kStatusObjectNameExists;
   }
   if (count > limit) return kStatusInvalidParameter;
-  const uint32_t object = Allocate(kSemaphoreSize);
+  const uint32_t object = Allocate(kSemaphoreSize, true);
   if (!object) return kStatusNoMemory;
   InitializeSemaphore(g, object, count, limit);
   const uint32_t handle = AddHandle(object, name);
@@ -269,7 +323,7 @@ uint32_t ObjectManager::CreateMutant(Guest g, uint32_t handle_out, uint32_t attr
     if (handle_out) g.Store32(handle_out, AddHandle(existing->object, existing->name));
     return kStatusObjectNameExists;
   }
-  const uint32_t object = Allocate(kMutantSize);
+  const uint32_t object = Allocate(kMutantSize, true);
   if (!object) return kStatusNoMemory;
   InitializeMutant(g, object, initial_owner ? thread : 0);
   const uint32_t handle = AddHandle(object, name);
@@ -333,7 +387,7 @@ uint32_t ObjectManager::CreateTimer(Guest g, uint32_t handle_out, uint32_t attri
     if (handle_out) g.Store32(handle_out, AddHandle(existing->object, existing->name));
     return kStatusObjectNameExists;
   }
-  const uint32_t object = Allocate(kTimerSize);
+  const uint32_t object = Allocate(kTimerSize, true);
   if (!object) return kStatusNoMemory;
   InitializeTimer(g, object, type, 0);
   const uint32_t handle = AddHandle(object, name);
@@ -376,7 +430,9 @@ uint32_t ObjectManager::Close(uint32_t handle) {
   Entry* e = Find(handle);
   if (!e) return kStatusInvalidHandle;
   e->open = false;
-  Closed(e->object);
+  const uint32_t object = e->object;
+  Closed(object);
+  Release(object);
   return kStatusSuccess;
 }
 
@@ -397,7 +453,7 @@ uint32_t ObjectManager::ReferenceObjectByHandle(Guest g, uint32_t handle, uint32
   }
   Entry* e = Find(handle);
   if (!e) return kStatusInvalidHandle;
-  ++references_[e->object];
+  ReferenceObject(e->object);
   if (object_out) g.Store32(object_out, e->object);
   return kStatusSuccess;
 }
@@ -421,7 +477,7 @@ uint32_t ObjectManager::ReferenceObjectByName(Guest g, uint32_t name, uint32_t o
   const uint32_t pointer = g.Load32(name + 4);
   const Entry* e = pointer && length ? FindByName(std::string(reinterpret_cast<const char*>(g.host(pointer)), length)) : nullptr;
   if (!e) return kStatusObjectNameNotFound;
-  ++references_[e->object];
+  ReferenceObject(e->object);
   if (object_out) g.Store32(object_out, e->object);
   return kStatusSuccess;
 }
@@ -462,8 +518,12 @@ uint32_t ObjectManager::SignalAndWait(Guest g, uint32_t signal, uint32_t wait, u
 }
 
 uint32_t ObjectManager::DereferenceObject(Guest, uint32_t object) {
+  std::lock_guard lock(lifetime_mutex_);
   auto it = references_.find(object);
-  if (it != references_.end() && --it->second <= 0) references_.erase(it);
+  if (it != references_.end() && --it->second <= 0) {
+    references_.erase(it);
+    Release(object);
+  }
   return kStatusSuccess;
 }
 
@@ -544,7 +604,10 @@ uint32_t ObjectManager::WaitForHandles(Guest g, uint32_t count, uint32_t handles
     if (!e) return kStatusInvalidParameter;
     objects[i] = e->object;
   }
-  return WaitForObjects(g, count, objects.data(), wait_type, thread, timeout, alertable);
+  for (const uint32_t object : objects) ReferenceObject(object);
+  const uint32_t status = WaitForObjects(g, count, objects.data(), wait_type, thread, timeout, alertable);
+  for (const uint32_t object : objects) DereferenceObject(g, object);
+  return status;
 }
 
 uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread, const int64_t* timeout, bool alertable) {
@@ -565,7 +628,12 @@ uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread,
 uint32_t ObjectManager::WaitForHandle(Guest g, uint32_t handle, uint32_t thread, const int64_t* timeout, bool alertable) {
   const Entry* e = Find(handle);
   if (!e) return kStatusInvalidHandle;
-  return WaitForObject(g, e->object, thread, timeout, alertable);
+  // The wait keeps the object alive should its handle be closed meanwhile, as the kernel's wait does.
+  const uint32_t object = e->object;
+  ReferenceObject(object);
+  const uint32_t status = WaitForObject(g, object, thread, timeout, alertable);
+  DereferenceObject(g, object);
+  return status;
 }
 
 }  // namespace any360::sys

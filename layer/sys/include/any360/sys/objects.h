@@ -6,6 +6,8 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -92,7 +94,7 @@ class ObjectManager {
   // then waits on the other; STATUS_OBJECT_TYPE_MISMATCH for an object that cannot be signalled.
   uint32_t SignalAndWait(Guest g, uint32_t signal, uint32_t wait, uint32_t thread, const int64_t* timeout,
                          bool alertable = false);
-  void ReferenceObject(uint32_t object) { ++references_[object]; }
+  void ReferenceObject(uint32_t object);
 
   // Waits. A null timeout waits for ever; a relative timeout (negative, 100 ns units) polls that long, an absolute one
   // (a system time) until then; zero, or an absolute time already past, does not wait. Returns STATUS_SUCCESS when the object was (or became) signalled and consumed, STATUS_TIMEOUT otherwise. An
@@ -109,8 +111,9 @@ class ObjectManager {
   // The object a handle names (0 when none), for tests and binders.
   uint32_t Lookup(uint32_t handle);
   // For the other managers: a guest region from the kernel heap (0 when exhausted), a handle on an existing object,
-  // the guest memory the heap lives in.
-  uint32_t AllocateObject(uint32_t size) { return Allocate(size); }
+  // the guest memory the heap lives in. With `freed_on_close` the region goes back to the heap once its last handle is
+  // closed and its last Ob reference dropped (after the close hook), as the Nt-created objects do.
+  uint32_t AllocateObject(uint32_t size, bool freed_on_close = false);
   uint32_t OpenHandle(uint32_t object) { return AddHandle(object, {}); }
   Guest guest() const { return guest_; }
   void SetGuest(Guest g) { guest_ = g; }
@@ -119,13 +122,15 @@ class ObjectManager {
 
  private:
   // One handle: a slot of the table, free again once closed. Ob* references are counted per object apart from
-  // handles; objects stay allocated either way (the kernel heap does not reclaim yet).
+  // handles; an object created freed-on-close returns to the kernel heap when neither is left.
   struct Entry {
     uint32_t object = 0;  // guest address of the dispatcher structure
     bool open = false;
     std::string name;
   };
-  uint32_t Allocate(uint32_t size);
+  uint32_t Allocate(uint32_t size, bool freed_on_close = false);
+  // Frees a freed-on-close object no handle or reference keeps (an armed timer is cancelled first).
+  void Release(uint32_t object);
   uint32_t AddHandle(uint32_t object, const std::string& name);
   Entry* Find(uint32_t handle);
   Entry* FindByName(const std::string& name);
@@ -141,6 +146,9 @@ class ObjectManager {
   };
   std::unordered_map<uint32_t, TimerApc> timer_apcs_;  // timer -> the APC its expiries queue
   uint32_t heap_begin_ = 0, heap_end_ = 0, heap_next_ = 0;
+  std::map<uint32_t, uint32_t> free_blocks_;          // address -> size, coalesced
+  std::unordered_map<uint32_t, uint32_t> freeable_;  // freed-on-close object -> its size
+  std::recursive_mutex lifetime_mutex_;              // allocation, references, release
   Guest guest_{nullptr};
   void (*close_hook_)(uint32_t) = nullptr;
   void Closed(uint32_t object);

@@ -276,7 +276,7 @@ uint32_t FileSystem::CreateFile(Guest g, uint32_t handle_out, uint32_t access, u
     std::filesystem::resize_file(host, 0, error);
     action = disposition == kSupersede ? kSuperseded : kOverwritten;
   }
-  const uint32_t object = Objects().AllocateObject(16);
+  const uint32_t object = Objects().AllocateObject(16, true);
   if (!object) return fail(0xC0000017, kDoesNotExist);
   std::memset(g.host(object), 0, 16);
   Open file;
