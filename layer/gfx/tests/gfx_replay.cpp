@@ -13,6 +13,7 @@
 //     --watch ADDR    with --trace, prints the texture fetch constants that read the 4 KB page at ADDR (hex)
 //     --scale N   renders at N x N host pixels a guest pixel (resolution scale); frames are averaged down to the
 //                 reference's size to be compared
+//     --msaa N    draws with N samples a host pixel (host MSAA: 2, 4, 8)
 //     --pipeline-cache FILE  keeps the pipelines in FILE across runs (the time spent creating them is printed)
 #include <algorithm>
 #include <atomic>
@@ -297,6 +298,7 @@ int main(int argc, char** argv) {
   bool profile_cp = false;  // --profile-cp: with --async, the command processor's thread sampled (else the renderer's)
   vk::DeviceOptions options;
   std::string pipeline_cache;
+  uint32_t msaa = 1;
   for (int i = 1; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--gpu") && i + 1 < argc) options.prefer = argv[++i];
     else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
@@ -308,6 +310,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--bench")) bench = true;
     else if (!std::strcmp(argv[i], "--async")) async = true;
     else if (!std::strcmp(argv[i], "--pipeline-cache") && i + 1 < argc) pipeline_cache = argv[++i];
+    else if (!std::strcmp(argv[i], "--msaa") && i + 1 < argc) msaa = uint32_t(std::atoi(argv[++i]));
     else if (!std::strcmp(argv[i], "--scale") && i + 1 < argc) scale = uint32_t(std::clamp(std::atoi(argv[++i]), 1, 4));
     else if (!std::strcmp(argv[i], "--threads") && i + 1 < argc) record_threads = uint32_t(std::atoi(argv[++i]));
     else if (!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = uint32_t(std::strtoul(argv[++i], nullptr, 16)) & 0x1FFFF000;
@@ -329,6 +332,7 @@ int main(int argc, char** argv) {
   }
   vk::VulkanRenderer renderer(device, physical, uint32_t(kPhysicalBytes), scale);
   renderer.SetPipelineCache(pipeline_cache);
+  renderer.SetMsaa(msaa);
   if (!renderer.Initialize()) {
     std::printf("gfx_replay: renderer: %s\n", renderer.last_error().c_str());
     return 1;

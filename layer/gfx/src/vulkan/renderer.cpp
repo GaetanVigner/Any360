@@ -200,6 +200,7 @@ VulkanRenderer::~VulkanRenderer() {
   for (auto& [key, surface] : surfaces_) {
     if (surface->depth_view) f.vkDestroyImageView(d, surface->depth_view, nullptr);
     DestroyImage(device_, surface->image);
+    DestroyImage(device_, surface->ms);
   }
   for (auto& [base, r] : resolved_) DestroyImage(device_, r.image), DestroyImage(device_, r.small);
 }
@@ -348,6 +349,15 @@ bool VulkanRenderer::Initialize() {
   VkFormatProperties props;
   f.vkGetPhysicalDeviceFormatProperties(device_.physical(), VK_FORMAT_D24_UNORM_S8_UINT, &props);
   if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) depth_format_ = VK_FORMAT_D24_UNORM_S8_UINT;
+  // Host MSAA: the most samples up to the asked count that colour, depth and stencil targets all have.
+  {
+    const VkPhysicalDeviceLimits& limits = device_.properties().limits;
+    const VkSampleCountFlags counts =
+        limits.framebufferColorSampleCounts & limits.framebufferDepthSampleCounts & limits.framebufferStencilSampleCounts;
+    uint32_t n = std::bit_floor(std::clamp(msaa_, 1u, 8u));
+    while (n > 1 && !(counts & n)) n >>= 1;
+    samples_ = VkSampleCountFlagBits(n);
+  }
   // The pipeline cache, from the file of an earlier run when it is this device's and driver's (its header says).
   std::vector<uint8_t> cache_data;
   if (!pipeline_cache_path_.empty()) {
@@ -474,8 +484,60 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& key) {
     DestroyImage(device_, slot->image);
     return nullptr;
   }
+  // Host MSAA: draws render into a multisampled image, resolved into this one when it is read.
+  if (samples_ > VK_SAMPLE_COUNT_1_BIT &&
+      !CreateImage2D(device_, key.pitch * scale_, height * scale_, format,
+                     (key.depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) |
+                         VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                     aspect, slot->ms, samples_)) {
+    DestroyImage(device_, slot->ms);
+    DestroyImage(device_, slot->image);
+    return nullptr;
+  }
   ++stats_.render_targets;
   return slot.get();
+}
+
+void VulkanRenderer::ResolveSamples(VkCommandBuffer cb, Surface& s) {
+  const int32_t left = std::max(s.drawn[0], 0), top = std::max(s.drawn[1], 0);
+  const int32_t right = std::min(s.drawn[2], int32_t(s.image.width)), bottom = std::min(s.drawn[3], int32_t(s.image.height));
+  if (!s.ms.image || right <= left || bottom <= top) return;
+  s.drawn[0] = s.drawn[1] = INT32_MAX, s.drawn[2] = s.drawn[3] = INT32_MIN;
+  const Functions& f = device_.fn();
+  const bool depth = s.key.depth != 0;
+  const VkImageLayout attachment =
+      depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  const VkImageAspectFlags aspect = depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+  // After the passes that drew the samples (a pass reads and writes its attachments: nothing orders two passes).
+  VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+  barrier.srcStageMask = barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+  barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+  barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+  VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+  dependency.memoryBarrierCount = 1;
+  dependency.pMemoryBarriers = &barrier;
+  f.vkCmdPipelineBarrier2(cb, &dependency);
+  Transition(cb, s.ms, s.ms_layout, attachment, aspect);
+  Transition(cb, s.image, s.layout, attachment, aspect);
+  // An empty pass whose attachment resolves at its end: colour averaged, depth and stencil sample 0.
+  VkRenderingAttachmentInfo a{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+  a.imageView = s.ms.view;
+  a.imageLayout = attachment;
+  a.resolveMode = depth ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT : VK_RESOLVE_MODE_AVERAGE_BIT;
+  a.resolveImageView = s.image.view;
+  a.resolveImageLayout = attachment;
+  a.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+  a.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
+  rendering.renderArea = {{left, top}, {uint32_t(right - left), uint32_t(bottom - top)}};
+  rendering.layerCount = 1;
+  rendering.colorAttachmentCount = depth ? 0 : 1;
+  rendering.pColorAttachments = depth ? nullptr : &a;
+  rendering.pDepthAttachment = depth ? &a : nullptr;
+  rendering.pStencilAttachment = depth ? &a : nullptr;
+  f.vkCmdBeginRendering(cb, &rendering);
+  f.vkCmdEndRendering(cb);
+  f.vkCmdPipelineBarrier2(cb, &dependency);  // the passes after it may draw the samples again
 }
 
 void VulkanRenderer::Transition(VkCommandBuffer cb, Image& image, VkImageLayout& layout, VkImageLayout to,
@@ -509,6 +571,11 @@ bool VulkanRenderer::ClearColor(const SurfaceKey& key, const float rgba[4]) {
     std::memcpy(color.float32, rgba, sizeof(color.float32));
     VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     f.vkCmdClearColorImage(cb, s->image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &range);
+    if (s->ms.image) {
+      Transition(cb, s->ms, s->ms_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+      f.vkCmdClearColorImage(cb, s->ms.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &range);
+      s->drawn[0] = s->drawn[1] = INT32_MAX, s->drawn[2] = s->drawn[3] = INT32_MIN;
+    }
   });
 }
 
@@ -523,6 +590,11 @@ bool VulkanRenderer::ClearDepthStencil(const SurfaceKey& key, float depth, uint3
     const VkClearDepthStencilValue value{depth, stencil};
     VkImageSubresourceRange range{aspects, 0, 1, 0, 1};
     f.vkCmdClearDepthStencilImage(cb, s->image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value, 1, &range);
+    if (s->ms.image) {
+      Transition(cb, s->ms, s->ms_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, aspects);
+      f.vkCmdClearDepthStencilImage(cb, s->ms.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value, 1, &range);
+      s->drawn[0] = s->drawn[1] = INT32_MAX, s->drawn[2] = s->drawn[3] = INT32_MIN;
+    }
   });
 }
 
@@ -542,6 +614,7 @@ bool VulkanRenderer::ReadBack(const SurfaceKey& key, uint32_t width, uint32_t he
   const VkDeviceSize size = VkDeviceSize(width) * height * texel_bytes;
   if (!CreateBuffer(device_, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, readback)) return false;
   const bool ok = device_.Submit([&](VkCommandBuffer cb) {
+    ResolveSamples(cb, *s);
     Transition(cb, s->image, s->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
     VkBufferImageCopy region{};
     region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -731,7 +804,7 @@ VkPipeline VulkanRenderer::CreatePipeline(const PipelineKey& key) {
   raster.depthBiasEnable = VK_TRUE;  // the bias itself is dynamic
   raster.lineWidth = 1.0f;
   VkPipelineMultisampleStateCreateInfo multisample{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-  multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+  multisample.rasterizationSamples = samples_;
   // Depth and stencil from RB_DEPTHCONTROL (masks and references dynamic).
   const uint32_t dc = key.depth_control;
   VkPipelineDepthStencilStateCreateInfo depth_stencil{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
@@ -1416,12 +1489,14 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     // The render pass: kept open while this draw's targets are the open pass's; otherwise ended, the targets moved
     // to attachment layouts (outside any pass) and a new one begun.
     const std::array<uint64_t, 7> key = {
-        colors[0] ? uint64_t(colors[0]->image.view) : 0, colors[1] ? uint64_t(colors[1]->image.view) : 0,
-        colors[2] ? uint64_t(colors[2]->image.view) : 0, colors[3] ? uint64_t(colors[3]->image.view) : 0,
-        depth_surface ? uint64_t(depth_surface->image.view) : 0, width, height};
+        colors[0] ? uint64_t(colors[0]->target().view) : 0, colors[1] ? uint64_t(colors[1]->target().view) : 0,
+        colors[2] ? uint64_t(colors[2]->target().view) : 0, colors[3] ? uint64_t(colors[3]->target().view) : 0,
+        depth_surface ? uint64_t(depth_surface->target().view) : 0, width, height};
+    for (uint32_t i = 0; i < 4; ++i) GrowDrawn(colors[i], left, top, right, bottom);
+    GrowDrawn(depth_surface, left, top, right, bottom);
     bool layouts_ready = true;
-    for (uint32_t i = 0; i < 4; ++i) layouts_ready &= !colors[i] || colors[i]->layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    layouts_ready &= !depth_surface || depth_surface->layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    for (uint32_t i = 0; i < 4; ++i) layouts_ready &= !colors[i] || colors[i]->target_layout() == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    layouts_ready &= !depth_surface || depth_surface->target_layout() == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     if (rendering_open_ && (key != rendering_key_ || !layouts_ready)) EndRendering();
     if (!rendering_open_) {
       VkRenderingAttachmentInfo color[4];
@@ -1429,8 +1504,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         color[i] = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
         segment_formats_[i] = colors[i] ? colors[i]->image.format : VK_FORMAT_UNDEFINED;
         if (!colors[i]) continue;  // no view: the location is unused
-        Transition(cb, colors[i]->image, colors[i]->layout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
-        color[i].imageView = colors[i]->image.view;
+        Transition(cb, colors[i]->target(), colors[i]->target_layout(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                   VK_IMAGE_ASPECT_COLOR_BIT);
+        color[i].imageView = colors[i]->target().view;
         color[i].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
         color[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1438,9 +1514,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       VkRenderingAttachmentInfo depth{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
       segment_depth_ = depth_surface ? depth_surface->image.format : VK_FORMAT_UNDEFINED;
       if (depth_surface) {
-        Transition(cb, depth_surface->image, depth_surface->layout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        Transition(cb, depth_surface->target(), depth_surface->target_layout(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                    VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
-        depth.imageView = depth_surface->image.view;
+        depth.imageView = depth_surface->target().view;
         depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depth.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
         depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1746,7 +1822,7 @@ void VulkanRenderer::RecordLoop(uint32_t index) {
     rendering.pColorAttachmentFormats = task->formats;
     rendering.depthAttachmentFormat = task->depth;
     rendering.stencilAttachmentFormat = task->depth;
-    rendering.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    rendering.rasterizationSamples = samples_;
     VkCommandBufferInheritanceInfo inheritance{VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO, &rendering};
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
@@ -2284,6 +2360,7 @@ bool VulkanRenderer::ResolveDepth(Surface& surface, bool float24, int32_t x0, in
     return Fail("resolve readback buffer");
   }
   const bool ok = device_.Submit([&](VkCommandBuffer cb) {
+    ResolveSamples(cb, surface);
     Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
     VkBufferImageCopy regions[2]{};
@@ -2343,6 +2420,7 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   // copied as it is, or the samples averaged (a linear blit to half the size averages each 2x2 or 1x2 block).
   EndRendering();
   VkCommandBuffer cb = Record();
+  ResolveSamples(cb, surface);
   Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   VkImageBlit region{};
@@ -2541,6 +2619,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       return;
     }
     bool ok = device_.Submit([&](VkCommandBuffer cb) {
+      ResolveSamples(cb, *surface);
       Transition(cb, surface->image, surface->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
       VkBufferImageCopy region{};
       region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -2682,17 +2761,18 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       VkCommandBuffer cb = Record();
       VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO}, depth{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
       if (color_target) {
-        Transition(cb, color_target->image, color_target->layout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
-        color.imageView = color_target->image.view;
+        Transition(cb, color_target->target(), color_target->target_layout(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                   VK_IMAGE_ASPECT_COLOR_BIT);
+        color.imageView = color_target->target().view;
         color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         color.clearValue = color_value;
       }
       if (depth_target) {
-        Transition(cb, depth_target->image, depth_target->layout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        Transition(cb, depth_target->target(), depth_target->target_layout(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                    VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
-        depth.imageView = depth_target->image.view;
+        depth.imageView = depth_target->target().view;
         depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -2700,6 +2780,11 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       }
       VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
       rendering.renderArea = {{x0 * int32_t(host_x), y0 * int32_t(host_y)}, {width * host_x, height * host_y}};
+      const int32_t area[4] = {rendering.renderArea.offset.x, rendering.renderArea.offset.y,
+                               rendering.renderArea.offset.x + int32_t(width * host_x),
+                               rendering.renderArea.offset.y + int32_t(height * host_y)};
+      GrowDrawn(color_target, area[0], area[1], area[2], area[3]);
+      GrowDrawn(depth_target, area[0], area[1], area[2], area[3]);
       rendering.layerCount = 1;
       rendering.colorAttachmentCount = color_target ? 1 : 0;
       rendering.pColorAttachments = color_target ? &color : nullptr;
@@ -3149,6 +3234,7 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   // After the draws in the batch. The sample's position in its pixel: bit 0 down, bit 1 right.
   EndRendering();
   VkCommandBuffer cb = Record();
+  ResolveSamples(cb, surface);
   Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
              VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -3228,6 +3314,7 @@ bool VulkanRenderer::GammaPass() {
 
 void VulkanRenderer::RecordFrameBlit(VkCommandBuffer cb, VkImage target, VkOffset3D dst0, VkOffset3D dst1) {
   if (!frame_.on_gpu || (!frame_surface_ && !frame_resolved_) || !GammaPass()) return;
+  if (frame_surface_) ResolveSamples(cb, *frame_surface_);
   Image& frame_image = frame_surface_ ? frame_surface_->image : frame_resolved_->image;
   VkImageLayout& frame_layout = frame_surface_ ? frame_surface_->layout : frame_resolved_->layout;
   const Functions& f = device_.fn();

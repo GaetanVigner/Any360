@@ -327,7 +327,7 @@ void DestroyBuffer(const Device& d, Buffer& b) {
 }
 
 bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
-                   VkImageAspectFlags aspect, Image& out) {
+                   VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples) {
   const Functions& f = d.fn();
   VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
   info.imageType = VK_IMAGE_TYPE_2D;
@@ -335,7 +335,7 @@ bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat fo
   info.extent = {width, height, 1};
   info.mipLevels = 1;
   info.arrayLayers = 1;
-  info.samples = VK_SAMPLE_COUNT_1_BIT;
+  info.samples = samples;
   info.tiling = VK_IMAGE_TILING_OPTIMAL;
   info.usage = usage;
   info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;

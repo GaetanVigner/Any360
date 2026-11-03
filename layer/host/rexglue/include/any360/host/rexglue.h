@@ -30,6 +30,8 @@
 
 // GraphicsOptions has pipeline_cache_path and async_pipelines.
 #define ANY360_REXGLUE_PIPELINE_CACHE 1
+// GraphicsOptions has msaa_samples.
+#define ANY360_REXGLUE_MSAA 1
 
 namespace any360::host::rexglue {
 
@@ -41,6 +43,8 @@ struct GraphicsOptions {
   double vblank_hz = 0.0;
   // Host pixels a guest pixel along each axis (1-4): the title draws at its resolution times this.
   uint32_t resolution_scale = 1;
+  // Host MSAA: samples a host pixel (1, 2, 4, 8), apart from the resolution scale (supersampling).
+  uint32_t msaa_samples = 1;
   // A file the pipelines are kept in across runs (the driver's compiled code: a stall of tens of milliseconds each
   // the first time). Empty: none kept.
   std::string pipeline_cache_path;

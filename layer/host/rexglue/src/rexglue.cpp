@@ -687,6 +687,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
                                                           options.log, options.stats_seconds, options.resolution_scale);
   binding->renderer->SetPipelineCache(options.pipeline_cache_path);
   binding->renderer->SetAsyncPipelines(options.async_pipelines);
+  binding->renderer->SetMsaa(options.msaa_samples);
   if (!binding->renderer->Initialize() || !binding->renderer->Resize()) {
     error = "renderer: " + binding->renderer->last_error();
     binding->renderer.reset();
@@ -708,6 +709,10 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
                                                                  : uint32_t(options.record_threads));
   if (options.log) options.log("Any360: draws recorded on " + std::to_string(std::max(1u, binding->renderer->record_threads())) +
                                " thread(s) (" + std::to_string(std::thread::hardware_concurrency()) + " hardware threads)");
+  if (options.log) {
+    options.log("Any360: render targets at " + std::to_string(binding->renderer->resolution_scale()) + "x the title's resolution, " +
+                std::to_string(binding->renderer->msaa()) + " sample(s) a pixel (host MSAA)");
+  }
   if (options.async_renderer) {
     binding->async = std::make_unique<gfx::AsyncRenderer>(*binding->cp, *binding->renderer);
     binding->cp->SetRenderer(binding->async.get());
