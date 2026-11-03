@@ -13,7 +13,11 @@
 #include <rex/system/xmemory.h>
 #include <rex/system/xthread.h>
 
+#include <intrin.h>
+
 #include <algorithm>
+#include <bit>
+#include <cstring>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -56,6 +60,38 @@ namespace {
 
 constexpr uint32_t kPhysicalBytes = 0x20000000;  // 512 MB
 constexpr uint32_t kGpuMmio = 0x7FC80000;
+
+// What a byte swap costs over a plain copy on this machine, in ns a byte: vectorized (indices, register runs) and one
+// word at a time (texels and resolved elements, swapped between other work). Measured once, best of a few runs.
+struct SwapCost {
+  double vectorized = 0, scalar = 0;
+};
+SwapCost MeasureSwapCost() {
+  constexpr size_t kWords = size_t(4) << 20;  // 16 MB
+  std::vector<uint32_t> from(kWords), to(kWords);
+  for (size_t i = 0; i < kWords; ++i) from[i] = uint32_t(i * 2654435761u);
+  auto best = [&](auto&& body) {
+    double ns = 1e30;
+    for (int run = 0; run < 5; ++run) {
+      const auto start = std::chrono::steady_clock::now();
+      body();
+      ns = std::min(ns, std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count());
+    }
+    return ns;
+  };
+  const double copy = best([&] { std::memcpy(to.data(), from.data(), kWords * 4); });
+  const double vectorized = best([&] {
+    for (size_t i = 0; i < kWords; ++i) to[i] = std::byteswap(from[i]);
+  });
+  const double scalar = best([&] {
+#pragma clang loop vectorize(disable) unroll(disable)
+    for (size_t i = 0; i < kWords; ++i) to[i] = std::byteswap(from[i]);
+  });
+  volatile uint32_t keep = to[kWords / 2];
+  (void)keep;
+  const double bytes = double(kWords) * 4;
+  return {std::max(0.0, vectorized - copy) / bytes, std::max(0.0, scalar - copy) / bytes};
+}
 
 // The renderer that presents each frame it swaps, on the command processor's thread (the thread that renders).
 class PresentingRenderer : public gfx::vk::VulkanRenderer {
@@ -130,6 +166,43 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     if (seconds < stats_seconds_) return;
     const gfx::vk::RendererStats& s = stats();
     const double n = double(frames_ - 1), ms = 1e6 * n;
+    // Every other period runs without the diagnostics (timers, per-packet counts, wait sites, logs of uploads and
+    // resolves): only frames counted, to show what they cost, and what remains without byte swapping either.
+    const gfx::SwappedBytes& sw = gfx::g_swapped;
+    const uint64_t swapped[5] = {sw.registers, sw.indices, sw.textures, sw.write_backs, sw.shaders};
+    double swap_bytes = 0, vector_bytes = 0, per_kind[5];
+    for (int i = 0; i < 5; ++i) per_kind[i] = double(swapped[i] - last_swapped_[i]) / n, swap_bytes += per_kind[i];
+    vector_bytes = double(swapped[0] - last_swapped_[0] + swapped[1] - last_swapped_[1]) / n;  // registers, indices
+    const double swap_ms = (vector_bytes * swap_cost_.vectorized + (swap_bytes - vector_bytes) * swap_cost_.scalar) / 1e6;
+    for (int i = 0; i < 5; ++i) last_swapped_[i] = swapped[i];
+    if (!gfx::Diagnosing()) {
+      const double fps = n / seconds, frame_ms = 1e3 / fps;
+      char off[512];
+      std::snprintf(off, sizeof(off),
+                    "Any360: %.1f FPS with the diagnostics off (%.1f with them, the period before: %+.0f%%); byte swapping "
+                    "%.2f MB a frame, ~%.2f ms over plain copies: without it ~%.0f FPS (the command processor's thread bound)",
+                    fps, last_on_fps_, last_on_fps_ > 0 ? 100.0 * (fps / last_on_fps_ - 1.0) : 0.0, swap_bytes / 1e6, swap_ms,
+                    1e3 / std::max(0.1, frame_ms - swap_ms));
+      log_(off);
+      // What accumulated meanwhile is not reported: the next period starts clean.
+      if (cp_) {
+        last_busy_ = cp_->ns_busy(), last_waiting_ = cp_->ns_waiting(), last_kicks_ = cp_->kicks();
+        cp_->TakeWaitSites();
+        cp_->TakeWaitTraces();
+        for (uint32_t op = 0; op < 129; ++op) last_opcode_ticks_[op] = cp_->opcode_ticks(op);
+        last_tsc_ = __rdtsc();
+      }
+      if (gfx::vk::TextureCache* textures = texture_cache()) {
+        textures->upload_log().clear();
+        textures->source_misses().clear();
+      }
+      resolve_paths().clear();
+      frames_ = 1;
+      since_ = now;
+      last_ = s;
+      gfx::g_diagnostics = true;
+      return;
+    }
     char line[768];
     std::snprintf(line, sizeof(line),
                   "Any360: %.1f FPS; per frame: %.0f draws, %.0f skipped, %.0f failed, %.0f resolves, %.1f texture uploads, "
@@ -167,6 +240,32 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       }
       log_(waits);
       for (const std::string& trace : cp_->TakeWaitTraces()) log_("Any360: " + trace);
+      // The ring's time by packet type (time-stamp counter ticks, scaled by the ticks this report spans).
+      const uint64_t tsc = __rdtsc();
+      if (last_tsc_) {
+        const double ticks_per_ms = double(tsc - last_tsc_) / (seconds * 1e3);
+        std::vector<std::pair<uint64_t, uint32_t>> by_opcode;
+        for (uint32_t op = 0; op < 129; ++op) {
+          const uint64_t ticks = cp_->opcode_ticks(op);
+          if (ticks > last_opcode_ticks_[op]) by_opcode.push_back({ticks - last_opcode_ticks_[op], op});
+          last_opcode_ticks_[op] = ticks;
+        }
+        std::sort(by_opcode.begin(), by_opcode.end(), std::greater<>());
+        std::string ops = "Any360: ring ms per frame by packet:";
+        for (size_t i = 0; i < by_opcode.size() && i < 10; ++i) {
+          char item[64];
+          if (by_opcode[i].second == 128) {
+            std::snprintf(item, sizeof(item), " registers %.2f;", by_opcode[i].first / ticks_per_ms / n);
+          } else {
+            std::snprintf(item, sizeof(item), " %02X %.2f;", by_opcode[i].second, by_opcode[i].first / ticks_per_ms / n);
+          }
+          ops += item;
+        }
+        log_(ops);
+      } else {
+        for (uint32_t op = 0; op < 129; ++op) last_opcode_ticks_[op] = cp_->opcode_ticks(op);
+      }
+      last_tsc_ = tsc;
     }
     char detail[512];
     std::snprintf(detail, sizeof(detail),
@@ -210,6 +309,17 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       for (const auto& [reason, count] : failures()) reasons += " " + reason + " (" + std::to_string(count) + ");";
       log_(reasons);
     }
+    {
+      char swaps[320];
+      std::snprintf(swaps, sizeof(swaps),
+                    "Any360: byte swapping per frame: %.2f MB (registers %.2f, indices %.2f, textures %.2f, write-backs "
+                    "%.2f, shaders %.2f), ~%.2f ms over plain copies (%.3f / %.3f ns a byte vectorized / not)",
+                    swap_bytes / 1e6, per_kind[0] / 1e6, per_kind[1] / 1e6, per_kind[2] / 1e6, per_kind[3] / 1e6,
+                    per_kind[4] / 1e6, swap_ms, swap_cost_.vectorized, swap_cost_.scalar);
+      log_(swaps);
+    }
+    last_on_fps_ = n / seconds;
+    gfx::g_diagnostics = false;  // the next period without them
     frames_ = 1;
     since_ = now;
     last_ = s;
@@ -221,6 +331,13 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   gfx::CommandProcessor* cp_ = nullptr;  // for the report: where the command processor's time goes
  private:
   uint64_t last_busy_ = 0, last_waiting_ = 0, last_kicks_ = 0;
+  uint64_t last_tsc_ = 0;
+  uint64_t last_swapped_[5] = {};
+  double last_on_fps_ = 0;
+ public:
+  SwapCost swap_cost_;
+ private:
+  std::array<uint64_t, 129> last_opcode_ticks_{};
   uint64_t frames_ = 0;
   std::chrono::steady_clock::time_point since_;
   gfx::vk::RendererStats last_;
@@ -436,6 +553,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->cp = std::make_unique<gfx::CommandProcessor>(physical);
   binding->cp->SetRenderer(binding->renderer.get());
   binding->renderer->cp_ = binding->cp.get();
+  if (options.log) binding->renderer->swap_cost_ = MeasureSwapCost();  // for the report (~0.1 s)
   binding->cp->SetDisplaySize(options.width, options.height);
 
   // any360::sys's graphics kernel: the command processor as its backend, interrupts through the runtime's thread.

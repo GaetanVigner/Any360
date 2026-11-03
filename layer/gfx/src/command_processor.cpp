@@ -2,6 +2,8 @@
 
 #include "any360/gfx/capture.h"
 
+#include <intrin.h>
+
 #include <algorithm>
 
 #include <atomic>
@@ -287,7 +289,9 @@ bool CommandProcessor::Wait(uint32_t wait_info, uint32_t poll, uint32_t referenc
     uint32_t wait_info, poll, reference;
     std::chrono::steady_clock::time_point start;
     bool ahead = false;
+    const bool on = Diagnosing();
     ~Site() {
+      if (!on) return;
       const uint64_t ns =
           uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
       if ((wait_info & 0x10) && ns > 500000) {
@@ -318,7 +322,7 @@ bool CommandProcessor::Wait(uint32_t wait_info, uint32_t poll, uint32_t referenc
       ++s.count, s.ns += ns, s.ahead += ahead;
     }
   } site{this, wait_info, poll, reference, wait_start};
-  if (wait_info & 0x10) {
+  if (site.on && (wait_info & 0x10)) {
     uint32_t raw;
     site.ahead = Queued(poll & ~3u, raw);
   }
@@ -402,7 +406,26 @@ bool CommandProcessor::ExecutePacket(Reader& r, int depth) {
       const uint32_t count = ((packet >> 16) & 0x3FFF) + 1, first = packet & 0x7FFF;
       const bool one_register = packet & 0x8000;
       if (count > r.remaining) return false;
+      const bool timing = Diagnosing();
+      const uint64_t start = timing ? __rdtsc() : 0;
+      // A run of registers none of which the command processor acts on, not wrapping the ring: copied at once.
+      const uint32_t last = first + count, at = r.offset % r.capacity;
+      auto touches = [&](uint32_t lo, uint32_t hi) { return first < hi && lo < last; };
+      if (!one_register && last <= reg::kRegisterCount && at + count <= r.capacity &&
+          !touches(reg::DC_LUT_RW_INDEX, reg::DC_LUT_30_COLOR + 1) && !touches(reg::SCRATCH_REG0, reg::SCRATCH_REG0 + 8) &&
+          !touches(reg::COHER_STATUS_HOST, reg::COHER_STATUS_HOST + 1)) {
+        const uint32_t* source = reinterpret_cast<const uint32_t*>(Host(r.base + 4 * at));
+        uint32_t* target = registers_.data() + first;
+        for (uint32_t i = 0; i < count; ++i) target[i] = std::byteswap(source[i]);
+        CountSwapped(g_swapped.registers, 4 * uint64_t(count));
+        r.offset += count;
+        r.remaining -= count;
+        if (timing) opcode_ticks_[128].fetch_add(__rdtsc() - start, std::memory_order_relaxed);
+        return true;
+      }
       for (uint32_t i = 0; i < count; ++i) SetRegister(one_register ? first : first + i, Next(r));
+      CountSwapped(g_swapped.registers, 4 * uint64_t(count));
+      if (timing) opcode_ticks_[128].fetch_add(__rdtsc() - start, std::memory_order_relaxed);
       return true;
     }
     case 1: {
@@ -414,8 +437,16 @@ bool CommandProcessor::ExecutePacket(Reader& r, int depth) {
     }
     case 2:
       return true;
-    default:
-      return ExecuteType3(r, packet, depth);
+    default: {
+      const uint32_t opcode = (packet >> 8) & 0x7F;
+      if (opcode == pm4::INDIRECT_BUFFER || opcode == pm4::INDIRECT_BUFFER_PFD || !Diagnosing()) {
+        return ExecuteType3(r, packet, depth);
+      }
+      const uint64_t start = __rdtsc();
+      const bool ok = ExecuteType3(r, packet, depth);
+      opcode_ticks_[opcode].fetch_add(__rdtsc() - start, std::memory_order_relaxed);
+      return ok;
+    }
   }
 }
 
@@ -690,9 +721,21 @@ void CommandProcessor::LoadShader(uint32_t type, uint32_t address, uint32_t dwor
   Shader& shader = shaders_[type];
   shader.type = type;
   shader.address = address & 0x1FFFFFFF;
-  shader.microcode.resize(dwords);
-  for (uint32_t i = 0; i < dwords; ++i) shader.microcode[i] = LoadBig(shader.address + 4 * i);
-  shader.hash = Fnv1a(shader.microcode);
+  const uint32_t* guest = reinterpret_cast<const uint32_t*>(Host(shader.address));
+  if (loaded_shaders_.size() > 4096) loaded_shaders_.clear();  // immediate loads land all over the ring
+  LoadedShader& known = loaded_shaders_[uint64_t(shader.address) << 16 | dwords];
+  if (known.raw.size() == dwords && std::memcmp(known.raw.data(), guest, 4 * size_t(dwords)) == 0) {
+    shader.microcode = known.microcode;  // into its capacity: no allocation
+    shader.hash = known.hash;
+  } else {
+    shader.microcode.resize(dwords);
+    for (uint32_t i = 0; i < dwords; ++i) shader.microcode[i] = std::byteswap(guest[i]);
+    CountSwapped(g_swapped.shaders, 4 * uint64_t(dwords));
+    shader.hash = Fnv1a(shader.microcode);
+    known.raw.assign(guest, guest + dwords);
+    known.microcode = shader.microcode;
+    known.hash = shader.hash;
+  }
   if (renderer_) renderer_->ShaderLoaded(shader);
 }
 

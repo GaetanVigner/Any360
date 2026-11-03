@@ -430,14 +430,15 @@ VkImageView TextureCache::Empty(ViewType type, std::string& error) {
 }
 
 VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::string& error, bool is_signed) {
-  {
-    // Ranges the renderer's completion thread reported (resolves written into guest memory).
-    std::vector<std::pair<uint32_t, uint32_t>> changed;
+  if (any_changed_.load(std::memory_order_acquire)) {
+    // Ranges reported from other threads (CPU writes watched, resolves written into guest memory).
     {
       std::lock_guard lock(changed_mutex_);
-      changed.swap(changed_);
+      changed_taken_.swap(changed_);
+      any_changed_.store(false, std::memory_order_relaxed);
     }
-    for (const auto& [begin, end] : changed) MemoryChanged(begin, end);
+    for (const auto& [begin, end] : changed_taken_) MemoryChanged(begin, end);
+    changed_taken_.clear();
   }
   const std::array<uint32_t, 8> fast_key = {fetch[0], fetch[1], fetch[2], fetch[3], fetch[4], fetch[5], uint32_t(type),
                                             uint32_t(is_signed)};
@@ -446,7 +447,9 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     return hit->second.view;
   }
   const TextureFetch t = TextureFetch::Parse(fetch);
-  if (t.type != 2) return error = "fetch constant is not a texture", VK_NULL_HANDLE;
+  // Not a texture (a slot the title left unset): an empty texture, as the reference binds a null one, rather than
+  // the draw dropped.
+  if (t.type != 2) return Empty(type, error);
   // The data dimension (fetch constant word 5): 0 1D, 1 2D or stacked, 2 3D, 3 cube.
   const ViewType matching = t.dimension == 3 ? ViewType::kCube : t.dimension == 2 ? ViewType::k3D : ViewType::k2DArray;
   if (type != matching) return Empty(type, error);
@@ -511,7 +514,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       std::snprintf(why, sizeof(why), "fmt %u %ux%u depth %u dim %u tiled %u levels %u-%u pitch %u/%u at +0x%X (source %s %ux%u)",
                     t.format, t.width, t.height, t.depth, t.dimension, t.tiled, first_level, last_level, t.pitch, s.pitch,
                     near->first - (t.base & 0x1FFFFFFF), s.depth ? "depth" : "colour", s.width, s.height);
-      ++source_misses_[why];
+      if (Diagnosing()) ++source_misses_[why];
     }
   }
   // The content is hashed again only when memory may have changed since it last was (MemoryChanged, NewFrame).
@@ -610,7 +613,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   } else if (slot->content_hash != hash) {
     slot->gpu_generation = 0;
     // Every level's blocks, one after the other (levels below the first are never sampled: left as they are).
-    ++upload_log_[{t.base & 0x1FFFFFFF, t.format, t.width, t.height}];
+    if (Diagnosing()) ++upload_log_[{t.base & 0x1FFFFFFF, t.format, t.width, t.height}];
     const auto load_start = std::chrono::steady_clock::now();
     std::vector<uint8_t>& blocks = upload_blocks_;
     std::vector<VkBufferImageCopy>& regions = upload_regions_;
@@ -627,6 +630,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       blocks.insert(blocks.end(), level_blocks.begin(), level_blocks.end());
       blocks.resize((blocks.size() + 15) & ~size_t(15));  // offsets aligned for any texel size
     }
+    CountSwapped(g_swapped.textures, blocks.size());
     ns_load_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - load_start).count());
     Buffer staging;
     if (!AcquireStaging(blocks.size(), staging)) {
@@ -779,6 +783,7 @@ void TextureCache::TakeStaging(std::vector<Buffer>& out) {
 void TextureCache::QueueMemoryChanged(uint32_t begin, uint32_t end) {
   std::lock_guard lock(changed_mutex_);
   changed_.emplace_back(begin, end);
+  any_changed_.store(true, std::memory_order_release);
 }
 
 void TextureCache::MemoryChanged(uint32_t begin, uint32_t end) {

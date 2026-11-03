@@ -21,6 +21,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "any360/gfx/diagnostics.h"
 #include "any360/sys/graphics.h"
 #include "registers.h"
 
@@ -157,6 +158,9 @@ class CommandProcessor : public sys::GpuBackend {
   void RestoreGammaRamp(const uint32_t* table, const uint32_t* pwl);
   // Type-3 packets executed, by opcode: what a title's frames use.
   const std::array<uint64_t, 128>& opcode_counts() const { return opcode_counts_; }
+  // For diagnostics: time-stamp counter ticks spent in each type-3 opcode (indirect buffers excluded: their packets
+  // count by their own opcodes) and, at 128, in type-0/1 register writes.
+  uint64_t opcode_ticks(uint32_t opcode) const { return opcode_ticks_[opcode].load(std::memory_order_relaxed); }
 
  private:
   struct Reader {
@@ -237,6 +241,15 @@ class CommandProcessor : public sys::GpuBackend {
   std::condition_variable progress_cv_;
   std::atomic<uint64_t> progress_{0};
   std::atomic<bool> spin_waits_{false};
+  std::array<std::atomic<uint64_t>, 129> opcode_ticks_{};
+  // Shaders loaded before, by address: their guest bytes as they were and their hash. A load of the same bytes reuses
+  // them (titles load the same shaders many times a frame) instead of swapping and hashing the microcode again.
+  struct LoadedShader {
+    std::vector<uint32_t> raw;  // guest order
+    std::vector<uint32_t> microcode;
+    uint64_t hash;
+  };
+  std::unordered_map<uint64_t, LoadedShader> loaded_shaders_;
   bool writes_after_draws_ = true;
   std::thread worker_;
 };

@@ -291,6 +291,12 @@ class VulkanRenderer : public gfx::Renderer {
  private:
   std::map<std::string, uint32_t> resolve_paths_;
   uint64_t resolve_generation_ = 0;
+  // Readback buffers of resolve write-backs (a score a frame): back from the completion thread, kept for the next.
+  bool AcquireReadback(VkDeviceSize size, Buffer& out);
+  void ReleaseReadback(Buffer& buffer);
+  std::mutex readback_mutex_;
+  std::vector<Buffer> free_readbacks_;
+  VkDeviceSize free_readback_bytes_ = 0;
   static constexpr uint64_t kReadBackMaxBytes = 256 * 1024;
   // `format`: the resolve image's format, the destination's bytes as a texture reads them (B8G8R8A8 for an 8-bit
   // resolve with the red/blue swap: the blit places each component, the texture copies the bytes as they are).

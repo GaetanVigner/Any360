@@ -18,6 +18,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "any360/gfx/diagnostics.h"
 #include "device.h"
 
 namespace any360::gfx::vk {
@@ -185,6 +186,8 @@ class TextureCache {
   std::vector<VkBufferImageCopy> upload_regions_;
   std::mutex changed_mutex_;
   std::vector<std::pair<uint32_t, uint32_t>> changed_;  // queued MemoryChanged ranges
+  std::vector<std::pair<uint32_t, uint32_t>> changed_taken_;  // reused to apply them
+  std::atomic<bool> any_changed_{false};  // checked by each View without the lock
   std::map<uint32_t, GpuSource> gpu_sources_;  // by base
   std::function<void(uint32_t, uint32_t)> before_read_;
   uint32_t gpu_copies_ = 0;

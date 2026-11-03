@@ -22,9 +22,12 @@ namespace {
 // Adds the time from construction to destruction to a counter.
 struct Timer {
   uint64_t& total;
-  std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+  const bool on = Diagnosing();
+  std::chrono::steady_clock::time_point start = on ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
   explicit Timer(uint64_t& t) : total(t) {}
-  ~Timer() { total += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()); }
+  ~Timer() {
+    if (on) total += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+  }
 };
 // Register file indices the renderer reads.
 constexpr uint32_t kRbDepthInfo = 0x2002, kPaScScreenScissorTl = 0x200E, kPaScScreenScissorBr = 0x200F,
@@ -126,6 +129,8 @@ VulkanRenderer::~VulkanRenderer() {
     DestroyBuffer(device_, b.constants);
     DestroyBuffer(device_, b.indices);
   }
+  for (Buffer& b : free_readbacks_) DestroyBuffer(device_, b);
+  free_readbacks_.clear();
   if (gamma_pipeline_) f.vkDestroyPipeline(d, gamma_pipeline_, nullptr);
   if (gamma_pipeline_layout_) f.vkDestroyPipelineLayout(d, gamma_pipeline_layout_, nullptr);
   if (gamma_pool_) f.vkDestroyDescriptorPool(d, gamma_pool_, nullptr);
@@ -615,8 +620,10 @@ VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key) {
 
 void VulkanRenderer::Draw(const DrawCall& draw) {
   Timer draw_timer(stats_.ns_draws);
-  auto section = std::chrono::steady_clock::now();
+  const bool timing = draw_timer.on;
+  auto section = timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
   auto mark = [&](uint64_t& total) {
+    if (!timing) return;
     const auto now = std::chrono::steady_clock::now();
     total += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(now - section).count());
     section = now;
@@ -1026,7 +1033,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t stencil_back = (depth_control >> 7) & 1 ? regs[kRbStencilRefMaskBf] : stencil_front;
 
   // The indices (endian-swapped to host order) into the batch's ring.
-  const auto indices_start = std::chrono::steady_clock::now();
+  const auto indices_start = timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
   VkIndexType index_type = VK_INDEX_TYPE_NONE_KHR;
   VkDeviceSize index_offset = 0;
   if (rectangle_list || quad_list) {
@@ -1122,8 +1129,13 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     }
   }
 
-  stats_.ns_draw_indices +=
-      uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - indices_start).count());
+  if (draw.source == DrawSource::kDma && !rectangle_list && draw.index_endian != Endian::kNone) {
+    CountSwapped(g_swapped.indices, draw.index_bytes);
+  }
+  if (timing) {
+    stats_.ns_draw_indices +=
+        uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - indices_start).count());
+  }
   mark(stats_.ns_draw_constants);
   // The texture sets of both stages: sampled images, then samplers (empty sets for a stage without textures).
   VkDescriptorSet texture_sets[2] = {empty_set_, empty_set_};
@@ -1661,7 +1673,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   // A depth resolve: one sample a pixel, the depth value for the depth texture formats, on the GPU too.
   const bool depth_on_gpu = is_depth && (dest_format == 6 || dest_format == 22 || dest_format == 23 || dest_format == 36);
   const bool on_gpu = gpu_format != VK_FORMAT_UNDEFINED || depth_on_gpu;
-  {
+  if (Diagnosing()) {
     char path[192];
     std::snprintf(path, sizeof(path), "%s %s target format %u (host %d) to format %u%s%s%s, %ux%u",
                   on_gpu ? "GPU" : "CPU", is_depth ? "depth" : "colour", source_key.format, int(host_format), dest_format,
@@ -1957,8 +1969,7 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
   w.depth = r.image.format == VK_FORMAT_R32_SFLOAT;
   w.float24 = r.float24;
   w.element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
-  if (!r.width || !CreateBuffer(device_, VkDeviceSize(r.width) * r.height * w.element, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true,
-                                w.buffer)) {
+  if (!r.width || !AcquireReadback(VkDeviceSize(r.width) * r.height * w.element, w.buffer)) {
     return false;
   }
   EndRendering();
@@ -1972,6 +1983,41 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
   r.pending = true;
   batch().write_backs.push_back(w);
   return true;
+}
+
+bool VulkanRenderer::AcquireReadback(VkDeviceSize size, Buffer& out) {
+  {
+    // The smallest free one that fits.
+    std::lock_guard lock(readback_mutex_);
+    size_t best = free_readbacks_.size();
+    for (size_t i = 0; i < free_readbacks_.size(); ++i) {
+      if (free_readbacks_[i].size >= size && (best == free_readbacks_.size() || free_readbacks_[i].size < free_readbacks_[best].size)) {
+        best = i;
+      }
+    }
+    if (best != free_readbacks_.size()) {
+      out = free_readbacks_[best];
+      free_readbacks_[best] = free_readbacks_.back();
+      free_readbacks_.pop_back();
+      free_readback_bytes_ -= out.size;
+      return true;
+    }
+  }
+  // None: a new one, rounded up to a power of two (64 KB at least) so it serves other sizes later.
+  const VkDeviceSize rounded = VkDeviceSize(1) << (64 - std::countl_zero(uint64_t(size - 1) | 0xFFFF));
+  return CreateBuffer(device_, std::max(rounded, size), VK_BUFFER_USAGE_TRANSFER_DST_BIT, true, out);
+}
+
+void VulkanRenderer::ReleaseReadback(Buffer& buffer) {
+  constexpr VkDeviceSize kMaxFreeBytes = 128ull << 20;
+  std::lock_guard lock(readback_mutex_);
+  if (free_readback_bytes_ + buffer.size > kMaxFreeBytes) {
+    DestroyBuffer(device_, buffer);
+    return;
+  }
+  free_readback_bytes_ += buffer.size;
+  free_readbacks_.push_back(buffer);
+  buffer = Buffer{};
 }
 
 void VulkanRenderer::FinishWriteBacks(Batch& b) {
@@ -1999,9 +2045,10 @@ void VulkanRenderer::FinishWriteBacks(Batch& b) {
         if (address + element <= mirror_bytes_) std::memcpy(physical_ + address, bytes, element);
       }
     }
+    CountSwapped(g_swapped.write_backs, uint64_t(w.width) * w.height * element);
     if (textures_) textures_->QueueMemoryChanged(w.base, w.base + w.pitch * ((w.y + w.height + 31) & ~31u) * element);
     w.resolved->pending = false;
-    DestroyBuffer(device_, w.buffer);
+    ReleaseReadback(w.buffer);
   }
   b.write_backs.clear();
 }
