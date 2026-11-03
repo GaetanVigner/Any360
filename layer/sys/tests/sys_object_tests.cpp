@@ -722,7 +722,9 @@ void XamTests() {
   CHECK(XamState().GetModuleHandle(g, str, out) == 0 && g.Load32(out) == xex);
   CHECK(XamState().GetModuleHandle(g, 0, out) == 0 && g.Load32(out) == xex);
   std::memcpy(g.host(str), "xboxkrnl.exe", 13);
-  CHECK(XamState().GetModuleHandle(g, str, out) == 0xC0000225u);
+  CHECK(XamState().GetModuleHandle(g, str, out) == 0 && g.Load32(out) != 0);  // a system module, loaded
+  std::memcpy(g.host(str), "xbdm.xex", 9);
+  CHECK(XamState().GetModuleHandle(g, str, out) == 0xC0000225u);  // not on a retail console
   CHECK(XamState().GetProcedureAddress(g, 0x100, 5, out) == 0xC000007Au && g.Load32(out) == 0);
   XamState().host().procedure = [](const char*, uint32_t ordinal) { return ordinal == 5 ? 0x82001000u : 0u; };
   CHECK(XamState().GetProcedureAddress(g, 0x100, 5, out) == 0 && g.Load32(out) == 0x82001000);
@@ -741,6 +743,69 @@ void XamTests() {
   CHECK(XamState().Socket() == 0xFFFFFFFF && XamState().WsaGetLastError() == 10050);
   CHECK(XamState().SocketFailure(0xFFFFFFFF) == 0xFFFFFFFF && XamState().WsaGetLastError() == 10038);
   CHECK(XamState().XNetGetTitleXnAddr(g, buf) == 1 && g.Load32(buf) == 0);
+  // Winsock events: manual reset, waits by index, timeouts, bad handles.
+  {
+    const uint32_t a = XamState().WsaCreateEvent(), b = XamState().WsaCreateEvent();
+    CHECK(a && b && a != b);
+    g.Store32(buf, a);
+    g.Store32(buf + 4, b);
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 2, buf, 0, 0, kMainThread) == 0x102);
+    CHECK(Objects().NtSetEvent(g, b, 0) == 0);
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 2, buf, 0, 0, kMainThread) == 1);
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 2, buf, 0, 0, kMainThread) == 1);  // manual reset: still signalled
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 2, buf, 1, 0, kMainThread) == 0x102);  // all: a is not
+    CHECK(Objects().NtSetEvent(g, a, 0) == 0);
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 2, buf, 1, 5, kMainThread) == 0);
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 0, buf, 0, 0, kMainThread) == 0xFFFFFFFF && XamState().WsaGetLastError() == 87);
+    CHECK(XamState().WsaCloseEvent(a) == 1 && XamState().WsaCloseEvent(b) == 1);
+    CHECK(XamState().WsaCloseEvent(a) == 0 && XamState().WsaGetLastError() == 6);
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 2, buf, 0, 0, kMainThread) == 0xFFFFFFFF);
+  }
+  // XNet: random bytes and system link keys.
+  std::memset(g.host(buf), 0, 64);
+  CHECK(XamState().XNetRandom(g, buf, 64) == 0);
+  {
+    uint32_t nonzero = 0;
+    for (uint32_t i = 0; i < 64; ++i) nonzero += g.Load8(buf + i) != 0;
+    CHECK(nonzero > 32);
+  }
+  CHECK(XamState().XNetCreateKey(g, buf, buf + 8) == 0 && (g.Load8(buf) & 0xF0) == 0);
+  CHECK(XamState().XNetQosRelease(0) == kStatusInvalidParameter);
+  // The profile's Live answers, guide screens, gamer pictures, voice.
+  CHECK(XamState().UserAreUsersFriends(g, 0, buf, 0) == 0 && g.Load32(buf) == 0);
+  CHECK(XamState().UserAreUsersFriends(g, 1, buf, 0) == kErrorNoSuchUser);
+  CHECK(XamState().UserAreUsersFriends(g, 4, buf, 0) == kErrorInvalidParameter);
+  CHECK(XamState().UserCreateAchievementEnumerator(g, 0, 0, 8, out, out + 4) == 0 && g.Load32(out) == 8 * 0x24);
+  CHECK(XamState().Enumerate(g, g.Load32(out + 4), 0, buf, 8 * 0x24, out + 8, 0) == kErrorNoMoreFiles);
+  CHECK(XamState().UserCreateAchievementEnumerator(g, 0, 0, 0, out, out + 4) == kErrorInvalidParameter);
+  CHECK(XamState().ShowLiveUI() == 0);
+  CHECK(XamState().ParseGamerTileKey(g, buf, out, out + 4, out + 8) == 0 && g.Load32(out) == 0xC0DE0001);
+  CHECK(XamState().ReadTileToTexture(g, 0, buf, 16, 4, 0) == kErrorInvalidParameter);
+  CHECK(XamState().ReadTileToTexture(g, 0xC0DE0002, buf, 16, 4, 0) == 0 && g.Load32(buf + 60) == 0xFFFFFFFF);
+  g.Store32(out, 0xAAAA);
+  CHECK(XamState().VoiceCreate(g, out) == kErrorAccessDenied && g.Load32(out) == 0);
+  // Images: the title's own and the system modules, by name; nothing else loads.
+  std::memcpy(g.host(str), "d:\\Default.xex", sizeof("d:\\Default.xex"));
+  CHECK(XamState().LoadImage(g, str, out) == 0 && g.Load32(out) == XamState().title().module_handle);
+  std::memcpy(g.host(str), "xam.xex", sizeof("xam.xex"));
+  CHECK(XamState().LoadImage(g, str, out) == 0 && g.Load32(out) != 0);
+  const uint32_t xam_module = g.Load32(out);
+  CHECK(XamState().GetModuleHandle(g, str, out) == 0 && g.Load32(out) == xam_module);
+  CHECK(XamState().UnloadImage(xam_module) == 0 && XamState().UnloadImage(0x1234) == kStatusInvalidHandle);
+  std::memcpy(g.host(str), "game:\\dlc.xex", sizeof("game:\\dlc.xex"));
+  CHECK(XamState().LoadImage(g, str, out) == kStatusNoSuchFile && g.Load32(out) == 0);
+  // The cache partition's disk queries.
+  CHECK(Files().DeviceIoControl(g, ov, 0x70000, buf, 8) == 0 && g.Load32(buf) == 0xFF000 / 512 && g.Load32(buf + 4) == 512 &&
+        g.Load32(ov + 4) == 8);
+  CHECK(Files().DeviceIoControl(g, 0, 0x74004, buf, 16) == 0 && g.Load64(buf + 8) == 0xFF000);
+  CHECK(Files().DeviceIoControl(g, 0, 0x74004, buf, 8) == 0xC0000023u);
+  CHECK(Files().DeviceIoControl(g, 0, 0x12345, buf, 16) == kStatusInvalidParameter);
+  // The title id comes from the execution info of the XEX header the title set.
+  if (XamState().GetExecutionId(g, out) == 0) {
+    CHECK(XamState().TitleId(g) == g.Load32(g.Load32(out) + 12));
+  } else {
+    CHECK(XamState().TitleId(g) == 0);
+  }
   XamState().Reset();
   Files().Reset();
   fs::remove_all(content, ec);

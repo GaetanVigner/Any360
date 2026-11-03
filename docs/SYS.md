@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (255 system calls)
+## What is verified (298 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -105,6 +105,23 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `ObReferenceObject`, the STFS device calls, and the console-key operations answered as a machine without its keys
   (`XeCryptBnQwBeSigVerify` accepts, `XeKeysGetKey` refuses, `XeCryptRotSumSha` zeroes its digest: no known title
   depends on that value, and Sonic '06's own port runs with it stubbed).
+- **The rest of Crackdown** (MVP reached: all 248 of its system calls; scenario tests), answered as a retail
+  console with one local profile and no Xbox Live:
+  - the offline network: Winsock events (`NetDll_WSACreateEvent`, `WSACloseEvent`, `WSAWaitForMultipleEvents` with
+    NT wait semantics: millisecond timeouts, the index of the event taken, `WSA_WAIT_TIMEOUT`; the reference returns 0
+    whatever happened and reads the timeout in 100 ns units, so it is not the oracle there), the socket calls
+    failing like the others (`getsockname`, `getpeername`, `WSAEventSelect`), XNet random bytes and system link keys
+    (local: they work), key registration, and connections, server lookups and QoS failing with `WSAENETDOWN`, a lost
+    connection status, `XNetQosListen`'s `ERROR_FUNCTION_FAILED` as the reference; `XNetLogonGetTitleID` from the
+    XEX execution info;
+  - XAM: tasks on a new guest thread (`XamTaskSchedule`), no voice device, no Live friends, an empty achievement
+    enumerator, a failed stats enumerator (leaderboards are Live's), the gamer picture as placeholder ids and a plain
+    image, the Live guide screens opening and closing at once, the online country from the console settings;
+  - the kernel: `XexLoadImage` / `XexUnloadImage` for the title's module and the system modules (by name, a path's
+    directories ignored; `XexGetModuleHandle` now answers the system modules too, as a console and the reference do),
+    no other image; `NtDeviceIoControlFile` answering the cache partition's disk queries as the reference;
+    `IoDismountVolumeByFileHandle`; the console-key signature calls passing as the reference; the floating-point
+    state save and restore (the thread's own state, nothing to do); `XamContentLaunchImage` finding no image.
 - **Graphics and audio, the kernel side** (`graphics.h`, `audio.h`; scenario tests with a fake GPU, sink and XMA
   decoder): `VdInitializeEngines`, `VdInitializeRingBuffer` and `VdEnableRingBufferRPtrWriteBack` (handed to a
   `GpuBackend`, the command processor), `VdSwap` (the front buffer's fetch constant, made physical, and `XE_SWAP` written into the ring as the reference does), `VdSetGraphicsInterruptCallback` (the title's handler runs on a guest context
@@ -149,6 +166,9 @@ so their import tables are not available without the game.
 **MVP reached for Sonic the Hedgehog (2006)**: all 178 of its system calls outside graphics and audio are native (2026-11-01),
 and with the kernel side of graphics and audio, all 200 of its system calls (2026-11-01). What it still needs from
 outside the layer is the backends: the GPU command processor and renderer, the audio output and XMA decoding.
+
+**MVP reached for Crackdown**: all 248 of its system calls are native (2026-11-03), graphics and audio included on
+the kernel side; its graphics already run through any360::gfx (`layer/host/rexglue`).
 
 **MVP**: one title with every system call except the graphics and audio ones native, so it can run on `any360::sys`
 with only those left to the reference. The progress page shows the MVP per title; the closest title is the target, and

@@ -404,6 +404,77 @@ ANY360_SYS_EXPORT(NetDll_send) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u3
 ANY360_SYS_EXPORT(NetDll_sendto) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
 ANY360_SYS_EXPORT(NetDll_ioctlsocket) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
 
+// Batch 13: the rest of the offline network Crackdown, The Simpsons Game and TDU import (sys_object_tests).
+ANY360_SYS_EXPORT(NetDll_getsockname) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_getpeername) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_WSAEventSelect) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_WSACreateEvent) { ctx.r3.u64 = XamState().WsaCreateEvent(); }
+ANY360_SYS_EXPORT(NetDll_WSACloseEvent) { ctx.r3.u64 = XamState().WsaCloseEvent(ctx.r3.u32); }
+ANY360_SYS_EXPORT(NetDll_WSAWaitForMultipleEvents) {
+  // (count, events, wait all, timeout ms, alertable)
+  ctx.r3.u64 = XamState().WsaWaitForMultipleEvents({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ThreadOf(ctx, base));
+}
+ANY360_SYS_EXPORT(NetDll_XNetRandom) { ctx.r3.u64 = XamState().XNetRandom({base}, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(NetDll_XNetCreateKey) { ctx.r3.u64 = XamState().XNetCreateKey({base}, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(NetDll_XNetRegisterKey) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(NetDll_XNetUnregisterKey) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(NetDll_XNetServerToInAddr) { ctx.r3.u64 = 10050; }  // WSAENETDOWN
+ANY360_SYS_EXPORT(NetDll_XNetConnect) { ctx.r3.u64 = 10050; }
+ANY360_SYS_EXPORT(NetDll_XNetGetConnectStatus) { ctx.r3.u64 = 3; }  // XNET_CONNECT_STATUS_LOST
+ANY360_SYS_EXPORT(NetDll_XNetQosListen) { ctx.r3.u64 = 0x65B; }  // ERROR_FUNCTION_FAILED, as the reference
+ANY360_SYS_EXPORT(NetDll_XNetQosLookup) { ctx.r3.u64 = 10050; }
+ANY360_SYS_EXPORT(NetDll_XNetQosRelease) { ctx.r3.u64 = XamState().XNetQosRelease(ctx.r4.u32); }
+ANY360_SYS_EXPORT(XNetLogonGetTitleID) { ctx.r3.u64 = XamState().TitleId({base}); }
+
+// Batch 14: tasks, voice, the profile's Live answers, guide screens, console keys (sys_object_tests).
+ANY360_SYS_EXPORT(XamTaskSchedule) { ctx.r3.u64 = XamState().TaskSchedule({base}, ctx.r3.u32, ctx.r4.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XamTaskCloseHandle) {
+  Objects().Close(ctx.r3.u32);
+  ctx.r3.u64 = 0;
+}
+ANY360_SYS_EXPORT(XamTaskShouldExit) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamVoiceCreate) { ctx.r3.u64 = XamState().VoiceCreate({base}, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamVoiceClose) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamVoiceHeadsetPresent) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamVoiceSubmitPacket) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamUserAreUsersFriends) {
+  ctx.r3.u64 = XamState().UserAreUsersFriends({base}, ctx.r3.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(XamUserCreateAchievementEnumerator) {
+  // (title id, user, xuid, flags, offset, count, buffer size out, handle out)
+  ctx.r3.u64 = XamState().UserCreateAchievementEnumerator({base}, ctx.r4.u32, ctx.r6.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+}
+ANY360_SYS_EXPORT(XamUserCreateStatsEnumerator) { ctx.r3.u64 = kErrorFunctionFailed; }  // leaderboards are Live's
+ANY360_SYS_EXPORT(XamUserGetMembershipTierFromXUID) { ctx.r3.u64 = 0; }  // an offline profile has no tier
+ANY360_SYS_EXPORT(XamUserGetOnlineCountryFromXUID) { ctx.r3.u64 = Console().country; }
+ANY360_SYS_EXPORT(XamParseGamerTileKey) {
+  ctx.r3.u64 = XamState().ParseGamerTileKey({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+}
+ANY360_SYS_EXPORT(XamReadTileToTexture) {
+  // (unknown, title id, tile id (64-bit), user, buffer, stride, height, overlapped)
+  ctx.r3.u64 = XamState().ReadTileToTexture({base}, ctx.r5.u64, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+}
+ANY360_SYS_EXPORT(XamShowFriendsUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(XamShowGamerCardUIForXUID) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(XamShowMarketplaceUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(IoDismountVolumeByFileHandle) { ctx.r3.u64 = 0; }
+// The console's key pair is not there to sign with: signatures pass, as the reference answers.
+ANY360_SYS_EXPORT(XeKeysConsolePrivateKeySign) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XeKeysConsoleSignatureVerification) { ctx.r3.u64 = 0; }
+// The guest's floating-point state is the thread's own: nothing to save around a kernel-mode use.
+ANY360_SYS_EXPORT(KeSaveFloatingPointState) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(KeRestoreFloatingPointState) { ctx.r3.u64 = 0; }
+
+// Batch 15: the last of Crackdown's (sys_object_tests).
+ANY360_SYS_EXPORT(NtDeviceIoControlFile) {
+  // (handle, event, APC, APC context, IO status, code, input, input length, output, output length)
+  ctx.r3.u64 = Files().DeviceIoControl({base}, ctx.r7.u32, ctx.r8.u32, StackArgument(ctx, base, 8), StackArgument(ctx, base, 9));
+}
+ANY360_SYS_EXPORT(XexLoadImage) { ctx.r3.u64 = XamState().LoadImage({base}, ctx.r3.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XexUnloadImage) { ctx.r3.u64 = XamState().UnloadImage(ctx.r3.u32); }
+// Another executable from a content package (a demo, an offer): no image is loaded besides the title's.
+ANY360_SYS_EXPORT(XamContentLaunchImage) { ctx.r3.u64 = kErrorFileNotFound; }
+
 // Batch 11: what Sonic '06 still needed (sys_io_tests for XeCryptSha, sys_object_tests for the rest).
 ANY360_SYS_EXPORT(XexGetModuleSection) { ctx.r3.u64 = XamState().GetModuleSection({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
 ANY360_SYS_EXPORT(StfsCreateDevice) { ctx.r3.u64 = 0; }
@@ -666,6 +737,49 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(NetDll_XNetGetTitleXnAddr),
     ANY360_SYS_ENTRY(NetDll_WSAGetLastError),
     ANY360_SYS_ENTRY(NetDll_socket),
+    ANY360_SYS_ENTRY(NetDll_getsockname),
+    ANY360_SYS_ENTRY(NetDll_getpeername),
+    ANY360_SYS_ENTRY(NetDll_WSAEventSelect),
+    ANY360_SYS_ENTRY(NetDll_WSACreateEvent),
+    ANY360_SYS_ENTRY(NetDll_WSACloseEvent),
+    ANY360_SYS_ENTRY(NetDll_WSAWaitForMultipleEvents),
+    ANY360_SYS_ENTRY(NetDll_XNetRandom),
+    ANY360_SYS_ENTRY(NetDll_XNetCreateKey),
+    ANY360_SYS_ENTRY(NetDll_XNetRegisterKey),
+    ANY360_SYS_ENTRY(NetDll_XNetUnregisterKey),
+    ANY360_SYS_ENTRY(NetDll_XNetServerToInAddr),
+    ANY360_SYS_ENTRY(NetDll_XNetConnect),
+    ANY360_SYS_ENTRY(NetDll_XNetGetConnectStatus),
+    ANY360_SYS_ENTRY(NetDll_XNetQosListen),
+    ANY360_SYS_ENTRY(NetDll_XNetQosLookup),
+    ANY360_SYS_ENTRY(NetDll_XNetQosRelease),
+    ANY360_SYS_ENTRY(XNetLogonGetTitleID),
+    ANY360_SYS_ENTRY(XamTaskSchedule),
+    ANY360_SYS_ENTRY(XamTaskCloseHandle),
+    ANY360_SYS_ENTRY(XamTaskShouldExit),
+    ANY360_SYS_ENTRY(XamVoiceCreate),
+    ANY360_SYS_ENTRY(XamVoiceClose),
+    ANY360_SYS_ENTRY(XamVoiceHeadsetPresent),
+    ANY360_SYS_ENTRY(XamVoiceSubmitPacket),
+    ANY360_SYS_ENTRY(XamUserAreUsersFriends),
+    ANY360_SYS_ENTRY(XamUserCreateAchievementEnumerator),
+    ANY360_SYS_ENTRY(XamUserCreateStatsEnumerator),
+    ANY360_SYS_ENTRY(XamUserGetMembershipTierFromXUID),
+    ANY360_SYS_ENTRY(XamUserGetOnlineCountryFromXUID),
+    ANY360_SYS_ENTRY(XamParseGamerTileKey),
+    ANY360_SYS_ENTRY(XamReadTileToTexture),
+    ANY360_SYS_ENTRY(XamShowFriendsUI),
+    ANY360_SYS_ENTRY(XamShowGamerCardUIForXUID),
+    ANY360_SYS_ENTRY(XamShowMarketplaceUI),
+    ANY360_SYS_ENTRY(IoDismountVolumeByFileHandle),
+    ANY360_SYS_ENTRY(XeKeysConsolePrivateKeySign),
+    ANY360_SYS_ENTRY(XeKeysConsoleSignatureVerification),
+    ANY360_SYS_ENTRY(KeSaveFloatingPointState),
+    ANY360_SYS_ENTRY(KeRestoreFloatingPointState),
+    ANY360_SYS_ENTRY(NtDeviceIoControlFile),
+    ANY360_SYS_ENTRY(XexLoadImage),
+    ANY360_SYS_ENTRY(XexUnloadImage),
+    ANY360_SYS_ENTRY(XamContentLaunchImage),
     ANY360_SYS_ENTRY(NetDll_closesocket),
     ANY360_SYS_ENTRY(NetDll_shutdown),
     ANY360_SYS_ENTRY(NetDll_setsockopt),

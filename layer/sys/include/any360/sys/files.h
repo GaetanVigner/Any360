@@ -58,6 +58,9 @@ class FileSystem {
                            uint32_t offset_ptr);
   uint32_t WriteFile(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length, uint32_t offset_ptr);
   uint32_t QueryInformation(Guest g, uint32_t handle, uint32_t io_status, uint32_t info, uint32_t length, uint32_t info_class);
+  // NtDeviceIoControlFile: the disk queries the cache (utility) partition's mount makes, answered for a 1 MB
+  // partition of 512-byte sectors as the reference does (drive geometry, partition info); others are invalid.
+  uint32_t DeviceIoControl(Guest g, uint32_t io_status, uint32_t code, uint32_t output, uint32_t output_length);
   uint32_t SetInformation(Guest g, uint32_t handle, uint32_t io_status, uint32_t info, uint32_t length, uint32_t info_class);
   uint32_t QueryFullAttributes(Guest g, uint32_t attributes, uint32_t info);
   uint32_t QueryDirectory(Guest g, uint32_t handle, uint32_t io_status, uint32_t info, uint32_t length, uint32_t pattern, uint32_t restart);

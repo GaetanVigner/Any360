@@ -365,6 +365,30 @@ uint32_t FileSystem::WriteFile(Guest g, uint32_t handle, uint32_t event, uint32_
   return Transfer(g, handle, event, io_status, buffer, length, offset_ptr, true);
 }
 
+uint32_t FileSystem::DeviceIoControl(Guest g, uint32_t io_status, uint32_t code, uint32_t output, uint32_t output_length) {
+  constexpr uint32_t kGetDriveGeometry = 0x70000, kGetPartitionInfo = 0x74004, kCacheBytes = 0xFF000;
+  constexpr uint32_t kStatusBufferTooSmall = 0xC0000023;
+  uint32_t written = 0;
+  if (code == kGetDriveGeometry) {
+    if (output_length < 8) return kStatusBufferTooSmall;
+    g.Store32(output, kCacheBytes / 512);  // sectors
+    g.Store32(output + 4, 512);            // bytes a sector
+    written = 8;
+  } else if (code == kGetPartitionInfo) {
+    if (output_length < 16) return kStatusBufferTooSmall;
+    g.Store64(output, 0);                // starting offset
+    g.Store64(output + 8, kCacheBytes);  // length
+    written = 16;
+  } else {
+    return kStatusInvalidParameter;
+  }
+  if (io_status) {
+    g.Store32(io_status, kStatusSuccess);
+    g.Store32(io_status + 4, written);
+  }
+  return kStatusSuccess;
+}
+
 uint32_t FileSystem::QueryInformation(Guest g, uint32_t handle, uint32_t io_status, uint32_t info, uint32_t length, uint32_t info_class) {
   uint32_t minimum;
   switch (info_class) {
