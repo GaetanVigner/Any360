@@ -87,19 +87,21 @@ class ObjectManager {
   uint32_t OpenObjectByPointer(Guest g, uint32_t object, uint32_t handle_out);
   // NtSignalAndWaitForSingleObjectEx: signals one object (sets an event, releases a semaphore once or a mutant),
   // then waits on the other; STATUS_OBJECT_TYPE_MISMATCH for an object that cannot be signalled.
-  uint32_t SignalAndWait(Guest g, uint32_t signal, uint32_t wait, uint32_t thread, const int64_t* timeout);
+  uint32_t SignalAndWait(Guest g, uint32_t signal, uint32_t wait, uint32_t thread, const int64_t* timeout,
+                         bool alertable = false);
   void ReferenceObject(uint32_t object) { ++references_[object]; }
 
   // Waits. A null timeout waits for ever; a relative timeout (negative, 100 ns units) polls that long; zero does not
-  // wait. Returns STATUS_SUCCESS when the object was (or became) signalled and consumed, STATUS_TIMEOUT otherwise.
-  uint32_t WaitForObject(Guest g, uint32_t object, uint32_t thread, const int64_t* timeout);
-  uint32_t WaitForHandle(Guest g, uint32_t handle, uint32_t thread, const int64_t* timeout);
+  // wait. Returns STATUS_SUCCESS when the object was (or became) signalled and consumed, STATUS_TIMEOUT otherwise. An
+  // alertable wait ends with STATUS_USER_APC once a user APC is queued on the thread (the caller delivers it).
+  uint32_t WaitForObject(Guest g, uint32_t object, uint32_t thread, const int64_t* timeout, bool alertable = false);
+  uint32_t WaitForHandle(Guest g, uint32_t handle, uint32_t thread, const int64_t* timeout, bool alertable = false);
   // Several objects: wait-any returns the index of the object taken, wait-all 0; STATUS_TIMEOUT otherwise.
   uint32_t WaitForObjects(Guest g, uint32_t count, const uint32_t* objects, uint32_t wait_type, uint32_t thread,
-                          const int64_t* timeout);
+                          const int64_t* timeout, bool alertable = false);
   // The handles are read from guest memory; an unknown one is STATUS_INVALID_PARAMETER.
   uint32_t WaitForHandles(Guest g, uint32_t count, uint32_t handles, uint32_t wait_type, uint32_t thread,
-                          const int64_t* timeout);
+                          const int64_t* timeout, bool alertable = false);
 
   // The object a handle names (0 when none), for tests and binders.
   uint32_t Lookup(uint32_t handle);

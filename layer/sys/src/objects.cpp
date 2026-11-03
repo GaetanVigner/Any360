@@ -1,4 +1,5 @@
 #include "any360/sys/objects.h"
+#include "any360/sys/scheduler.h"
 
 #include <algorithm>
 #include <chrono>
@@ -421,7 +422,8 @@ uint32_t ObjectManager::OpenObjectByPointer(Guest g, uint32_t object, uint32_t h
   return kStatusSuccess;
 }
 
-uint32_t ObjectManager::SignalAndWait(Guest g, uint32_t signal, uint32_t wait, uint32_t thread, const int64_t* timeout) {
+uint32_t ObjectManager::SignalAndWait(Guest g, uint32_t signal, uint32_t wait, uint32_t thread, const int64_t* timeout,
+                                     bool alertable) {
   constexpr uint32_t kStatusObjectTypeMismatch = 0xC0000024;
   const uint32_t object = Lookup(signal);
   if (!object || !Lookup(wait)) return kStatusInvalidHandle;
@@ -434,7 +436,7 @@ uint32_t ObjectManager::SignalAndWait(Guest g, uint32_t signal, uint32_t wait, u
     default: return kStatusObjectTypeMismatch;
   }
   if (status != kStatusSuccess) return status;
-  return WaitForHandle(g, wait, thread, timeout);
+  return WaitForHandle(g, wait, thread, timeout, alertable);
 }
 
 uint32_t ObjectManager::DereferenceObject(Guest, uint32_t object) {
@@ -483,7 +485,7 @@ bool ObjectManager::IsSatisfiable(Guest g, uint32_t object, uint32_t thread) con
 }
 
 uint32_t ObjectManager::WaitForObjects(Guest g, uint32_t count, const uint32_t* objects, uint32_t wait_type, uint32_t thread,
-                                       const int64_t* timeout) {
+                                       const int64_t* timeout, bool alertable) {
   auto attempt = [&]() -> int32_t {
     Poll(g);
     if (wait_type == kWaitAny) {
@@ -507,22 +509,23 @@ uint32_t ObjectManager::WaitForObjects(Guest g, uint32_t count, const uint32_t* 
     std::this_thread::yield();
     taken = attempt();
     if (taken >= 0) return uint32_t(taken);
+    if (alertable && Threads().PendingApcs(thread)) return kStatusUserApc;
     if (timeout && std::chrono::steady_clock::now() - start >= limit) return kStatusTimeout;
   }
 }
 
 uint32_t ObjectManager::WaitForHandles(Guest g, uint32_t count, uint32_t handles, uint32_t wait_type, uint32_t thread,
-                                       const int64_t* timeout) {
+                                       const int64_t* timeout, bool alertable) {
   std::vector<uint32_t> objects(count);
   for (uint32_t i = 0; i < count; ++i) {
     const Entry* e = Find(g.Load32(handles + 4 * i));
     if (!e) return kStatusInvalidParameter;
     objects[i] = e->object;
   }
-  return WaitForObjects(g, count, objects.data(), wait_type, thread, timeout);
+  return WaitForObjects(g, count, objects.data(), wait_type, thread, timeout, alertable);
 }
 
-uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread, const int64_t* timeout) {
+uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread, const int64_t* timeout, bool alertable) {
   Poll(g);
   if (TrySatisfy(g, object, thread)) return kStatusSuccess;
   if (timeout && *timeout == 0) return kStatusTimeout;
@@ -534,14 +537,15 @@ uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread,
     std::this_thread::yield();
     Poll(g);
     if (TrySatisfy(g, object, thread)) return kStatusSuccess;
+    if (alertable && Threads().PendingApcs(thread)) return kStatusUserApc;
     if (timeout && std::chrono::steady_clock::now() - start >= limit) return kStatusTimeout;
   }
 }
 
-uint32_t ObjectManager::WaitForHandle(Guest g, uint32_t handle, uint32_t thread, const int64_t* timeout) {
+uint32_t ObjectManager::WaitForHandle(Guest g, uint32_t handle, uint32_t thread, const int64_t* timeout, bool alertable) {
   const Entry* e = Find(handle);
   if (!e) return kStatusInvalidHandle;
-  return WaitForObject(g, e->object, thread, timeout);
+  return WaitForObject(g, e->object, thread, timeout, alertable);
 }
 
 }  // namespace any360::sys

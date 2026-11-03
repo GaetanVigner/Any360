@@ -9,6 +9,7 @@
 #include <thread>
 
 #include "any360/sys/objects.h"
+#include "any360/sys/threading.h"
 
 namespace any360::sys {
 
@@ -72,6 +73,8 @@ void Scheduler::Shutdown() {
   threads_.clear();
   process_ = 0;
   next_thread_id_ = 1;
+  ResetDpcs();  // the DPC thread runs guest code too
+  std::lock_guard lock(apc_mutex_);
   apcs_.clear();
 }
 
@@ -88,11 +91,13 @@ uint32_t Scheduler::QueueApc(Guest g, uint32_t handle, uint32_t current, uint32_
   if (!kthread) return kStatusInvalidHandle;
   if (g.Load8(kthread) != kThread) return kStatusObjectTypeMismatch;
   if (!routine) return kStatusInvalidParameter;
+  std::lock_guard lock(apc_mutex_);
   apcs_.push_back({kthread, routine, context, arg1, arg2});
   return kStatusSuccess;
 }
 
 size_t Scheduler::PendingApcs(uint32_t kthread) const {
+  std::lock_guard lock(apc_mutex_);
   size_t n = 0;
   for (const Apc& apc : apcs_) n += apc.kthread == kthread;
   return n;
@@ -172,9 +177,28 @@ uint32_t Scheduler::CreateContext(Guest g, uint32_t stack_size, GuestContext& co
   return kStatusSuccess;
 }
 
-uint64_t Scheduler::Dispatch(uint32_t address, const GuestContext& context, uint64_t arg0, uint64_t arg1) {
+uint64_t Scheduler::Dispatch(uint32_t address, const GuestContext& context, std::initializer_list<uint64_t> args) {
   if (!dispatcher_ || !context.pcr) return 0;
-  return dispatcher_(address, context.stack_top, context.pcr, arg0, arg1, dispatcher_user_);
+  return dispatcher_(address, context.stack_top, context.pcr, args.begin(), uint32_t(args.size()), dispatcher_user_);
+}
+
+size_t Scheduler::DeliverApcs(Guest g, uint32_t pcr, uint32_t stack_pointer) {
+  const uint32_t kthread = g.Load32(pcr + kPrcbCurrentThread);
+  // Below the caller's frame and the red zone its saved registers may use.
+  const GuestContext context{kthread, pcr, (stack_pointer - 0x400) & ~0xFu};
+  size_t delivered = 0;
+  for (;;) {
+    Apc apc;
+    {
+      std::lock_guard lock(apc_mutex_);
+      const auto it = std::find_if(apcs_.begin(), apcs_.end(), [&](const Apc& a) { return a.kthread == kthread; });
+      if (it == apcs_.end()) return delivered;
+      apc = *it;
+      apcs_.erase(it);
+    }
+    Dispatch(apc.routine, context, {apc.context, apc.arg1, apc.arg2});
+    ++delivered;
+  }
 }
 
 uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_size, uint32_t thread_id_out, uint32_t xapi_startup,
@@ -210,8 +234,8 @@ void Scheduler::Run(Thread* t) {
   g.Store8(t->kthread + kThreadState, 2);  // running
   uint32_t exit_code;
   try {
-    const uint64_t r3 = t->xapi ? dispatcher_(t->xapi, t->stack_top, t->pcr, t->start, t->context, dispatcher_user_)
-                                : dispatcher_(t->start, t->stack_top, t->pcr, t->context, 0, dispatcher_user_);
+    const GuestContext context{t->kthread, t->pcr, t->stack_top};
+    const uint64_t r3 = t->xapi ? Dispatch(t->xapi, context, {t->start, t->context}) : Dispatch(t->start, context, {t->context});
     exit_code = t->xapi ? 0 : uint32_t(r3);
   } catch (const ThreadExit& exit) {
     exit_code = exit.code;
@@ -229,15 +253,28 @@ uint32_t Scheduler::TerminateThread(Guest g, uint32_t pcr, uint32_t exit_code) {
   return exit_code;  // not a thread of the scheduler: nothing to unwind
 }
 
-uint32_t Scheduler::Delay(Guest g, uint32_t pcr, int64_t interval) {
-  if (Thread* t = Find(g.Load32(pcr + kPrcbCurrentThread))) PauseWhileSuspended(g, t);
+uint32_t Scheduler::Delay(Guest g, uint32_t pcr, int64_t interval, bool alertable) {
+  const uint32_t kthread = g.Load32(pcr + kPrcbCurrentThread);
+  if (Thread* t = Find(kthread)) PauseWhileSuspended(g, t);
+  std::chrono::nanoseconds duration{0};
   if (interval < 0) {
-    std::this_thread::sleep_for(std::chrono::nanoseconds(-interval * 100));
+    duration = std::chrono::nanoseconds(-interval * 100);
   } else if (interval > 0) {
     const uint64_t now = SystemTime();
-    if (uint64_t(interval) > now) std::this_thread::sleep_for(std::chrono::nanoseconds((uint64_t(interval) - now) * 100));
-  } else {
+    if (uint64_t(interval) > now) duration = std::chrono::nanoseconds((uint64_t(interval) - now) * 100);
+  }
+  if (alertable && PendingApcs(kthread)) return kStatusUserApc;
+  if (duration.count() == 0) {
     std::this_thread::yield();
+  } else if (!alertable) {
+    std::this_thread::sleep_for(duration);
+  } else {
+    // Sleeps in slices short enough for a queued APC to end the delay.
+    const auto end = std::chrono::steady_clock::now() + duration;
+    for (auto now = std::chrono::steady_clock::now(); now < end; now = std::chrono::steady_clock::now()) {
+      if (PendingApcs(kthread)) return kStatusUserApc;
+      std::this_thread::sleep_for(std::min<std::chrono::nanoseconds>(end - now, std::chrono::milliseconds(1)));
+    }
   }
   return kStatusSuccess;
 }

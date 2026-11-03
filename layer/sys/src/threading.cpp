@@ -1,7 +1,11 @@
 #include "any360/sys/threading.h"
 
+#include "any360/sys/objects.h"
+#include "any360/sys/scheduler.h"
+
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -201,7 +205,30 @@ uint32_t KeTlsSetValue(Guest g, uint32_t pcr, uint32_t slot, uint32_t value) {
 namespace {
 constexpr uint32_t kDpcListEntry = 4, kDpcRoutine = 0xC, kDpcContext = 0x10, kDpcArg1 = 0x14, kDpcArg2 = 0x18;
 std::mutex dpc_mutex;
+std::condition_variable dpc_ready;
 std::vector<uint32_t> dpc_queue;
+std::thread dpc_thread;
+bool dpc_stop = false;
+
+void RunDpcs(Guest g, GuestContext context) {
+  std::unique_lock lock(dpc_mutex);
+  for (;;) {
+    dpc_ready.wait(lock, [] { return dpc_stop || !dpc_queue.empty(); });
+    if (dpc_stop) return;
+    // Off the queue before it runs, so the routine may queue it again.
+    const uint32_t dpc = dpc_queue.front();
+    dpc_queue.erase(dpc_queue.begin());
+    const uint32_t routine = g.Load32(dpc + kDpcRoutine), argument = g.Load32(dpc + kDpcContext);
+    const uint32_t arg1 = g.Load32(dpc + kDpcArg1), arg2 = g.Load32(dpc + kDpcArg2);
+    lock.unlock();
+    g.Store8(context.pcr + kPcrIrql, kIrqlDispatch);
+    g.Store32(context.pcr + kPrcbDpcActive, 1);
+    Threads().Dispatch(routine, context, {dpc, argument, arg1, arg2});
+    g.Store32(context.pcr + kPrcbDpcActive, 0);
+    g.Store8(context.pcr + kPcrIrql, 0);
+    lock.lock();
+  }
+}
 }  // namespace
 
 void KeInitializeDpc(Guest g, uint32_t dpc, uint32_t routine, uint32_t context) {
@@ -222,6 +249,14 @@ uint32_t KeInsertQueueDpc(Guest g, uint32_t dpc, uint32_t arg1, uint32_t arg2) {
   g.Store32(dpc + kDpcArg1, arg1);
   g.Store32(dpc + kDpcArg2, arg2);
   dpc_queue.push_back(dpc);
+  if (!dpc_thread.joinable()) {
+    GuestContext context;
+    if (Threads().CreateContext(g, 0x4000, context) == 0) {
+      dpc_stop = false;
+      dpc_thread = std::thread(RunDpcs, Objects().guest(), context);
+    }
+  }
+  dpc_ready.notify_one();
   return 1;
 }
 
@@ -234,8 +269,13 @@ uint32_t KeRemoveQueueDpc(Guest, uint32_t dpc) {
 }
 
 void ResetDpcs() {
-  std::lock_guard lock(dpc_mutex);
-  dpc_queue.clear();
+  {
+    std::lock_guard lock(dpc_mutex);
+    dpc_stop = true;
+    dpc_queue.clear();
+  }
+  dpc_ready.notify_all();
+  if (dpc_thread.joinable()) dpc_thread.join();
 }
 
 uint32_t KeQueryPerformanceFrequency() { return 50'000'000; }

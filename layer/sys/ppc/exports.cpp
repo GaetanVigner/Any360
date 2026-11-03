@@ -177,6 +177,15 @@ ANY360_SYS_EXPORT(KeQueryPerformanceFrequency) { ctx.r3.u64 = KeQueryPerformance
 
 // Batch 5: the object manager (verified by sys_object_tests against the NT semantics, see docs/SYS.md).
 static uint32_t ThreadOf(PPCContext& ctx, uint8_t* base) { return Guest{base}.Load32(ctx.r13.u32 + 0x100); }
+// An alertable wait first runs the user APCs queued on the calling thread and then returns STATUS_USER_APC without
+// waiting; one that an APC ends runs it the same way.
+template <typename Wait>
+static uint32_t AlertableWait(PPCContext& ctx, uint8_t* base, uint32_t alertable, Wait wait) {
+  if (alertable && Threads().DeliverApcs({base}, ctx.r13.u32, ctx.r1.u32)) return kStatusUserApc;
+  const uint32_t status = wait(alertable != 0);
+  if (status == kStatusUserApc) Threads().DeliverApcs({base}, ctx.r13.u32, ctx.r1.u32);
+  return status;
+}
 static const int64_t* Timeout(uint8_t* base, uint32_t pointer, int64_t& storage) {
   if (!pointer) return nullptr;
   storage = int64_t(Guest{base}.Load64(pointer));
@@ -210,12 +219,18 @@ ANY360_SYS_EXPORT(ObReferenceObjectByHandle) {
 }
 ANY360_SYS_EXPORT(ObDereferenceObject) { ctx.r3.u64 = Objects().DereferenceObject({base}, ctx.r3.u32); }
 ANY360_SYS_EXPORT(KeWaitForSingleObject) {
+  // (object, reason, mode, alertable, timeout)
   int64_t storage;
-  ctx.r3.u64 = Objects().WaitForObject({base}, ctx.r3.u32, ThreadOf(ctx, base), Timeout(base, ctx.r7.u32, storage));
+  ctx.r3.u64 = AlertableWait(ctx, base, ctx.r6.u32, [&](bool alertable) {
+    return Objects().WaitForObject({base}, ctx.r3.u32, ThreadOf(ctx, base), Timeout(base, ctx.r7.u32, storage), alertable);
+  });
 }
 ANY360_SYS_EXPORT(NtWaitForSingleObjectEx) {
+  // (handle, mode, alertable, timeout)
   int64_t storage;
-  ctx.r3.u64 = Objects().WaitForHandle({base}, ctx.r3.u32, ThreadOf(ctx, base), Timeout(base, ctx.r6.u32, storage));
+  ctx.r3.u64 = AlertableWait(ctx, base, ctx.r5.u32, [&](bool alertable) {
+    return Objects().WaitForHandle({base}, ctx.r3.u32, ThreadOf(ctx, base), Timeout(base, ctx.r6.u32, storage), alertable);
+  });
 }
 
 // Batch 6: the guest clock, timers, multiple-object waits (sys_object_tests).
@@ -225,7 +240,7 @@ ANY360_SYS_EXPORT(KeQuerySystemTime) {
 ANY360_SYS_EXPORT(KeInitializeTimerEx) { Objects().InitializeTimer({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(NtCreateTimer) { ctx.r3.u64 = Objects().CreateTimer({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(NtSetTimerEx) {
-  // (handle, due time, APC routine, 1, APC context, resume, period in ms, previous state out); APCs are not delivered yet.
+  // (handle, due time, APC routine, 1, APC context, resume, period in ms, previous state out); the timer's APC is not queued yet.
   ctx.r3.u64 = Objects().NtSetTimerEx({base}, ctx.r3.u32, ctx.r4.u32, ctx.r9.u32, ctx.r10.u32);
 }
 ANY360_SYS_EXPORT(NtCancelTimer) { ctx.r3.u64 = Objects().NtCancelTimer({base}, ctx.r3.u32, ctx.r4.u32); }
@@ -235,12 +250,18 @@ ANY360_SYS_EXPORT(KeWaitForMultipleObjects) {
   std::vector<uint32_t> objects(count);
   for (uint32_t i = 0; i < count; ++i) objects[i] = Guest{base}.Load32(ctx.r4.u32 + 4 * i);
   int64_t storage;
-  ctx.r3.u64 = Objects().WaitForObjects({base}, count, objects.data(), ctx.r5.u32, ThreadOf(ctx, base), Timeout(base, ctx.r9.u32, storage));
+  ctx.r3.u64 = AlertableWait(ctx, base, ctx.r8.u32, [&](bool alertable) {
+    return Objects().WaitForObjects({base}, count, objects.data(), ctx.r5.u32, ThreadOf(ctx, base), Timeout(base, ctx.r9.u32, storage),
+                                    alertable);
+  });
 }
 ANY360_SYS_EXPORT(NtWaitForMultipleObjectsEx) {
   // (count, handles, wait type, mode, alertable, timeout)
   int64_t storage;
-  ctx.r3.u64 = Objects().WaitForHandles({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ThreadOf(ctx, base), Timeout(base, ctx.r8.u32, storage));
+  ctx.r3.u64 = AlertableWait(ctx, base, ctx.r7.u32, [&](bool alertable) {
+    return Objects().WaitForHandles({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ThreadOf(ctx, base), Timeout(base, ctx.r8.u32, storage),
+                                    alertable);
+  });
 }
 
 // Batch 7: the scheduler (sys_object_tests).
@@ -249,7 +270,10 @@ ANY360_SYS_EXPORT(ExCreateThread) {
 }
 ANY360_SYS_EXPORT(ExTerminateThread) { ctx.r3.u64 = Threads().TerminateThread({base}, ctx.r13.u32, ctx.r3.u32); }
 ANY360_SYS_EXPORT(KeDelayExecutionThread) {
-  ctx.r3.u64 = Threads().Delay({base}, ctx.r13.u32, ctx.r5.u32 ? int64_t(Guest{base}.Load64(ctx.r5.u32)) : 0);
+  // (mode, alertable, interval)
+  ctx.r3.u64 = AlertableWait(ctx, base, ctx.r4.u32, [&](bool alertable) {
+    return Threads().Delay({base}, ctx.r13.u32, ctx.r5.u32 ? int64_t(Guest{base}.Load64(ctx.r5.u32)) : 0, alertable);
+  });
 }
 ANY360_SYS_EXPORT(NtYieldExecution) { ctx.r3.u64 = Threads().Yield({base}, ctx.r13.u32); }
 ANY360_SYS_EXPORT(KeResumeThread) { ctx.r3.u64 = Threads().Resume({base}, ctx.r3.u32, nullptr); }
@@ -578,8 +602,11 @@ ANY360_SYS_EXPORT(NtQueueApcThread) {
   ctx.r3.u64 = Threads().QueueApc({base}, ctx.r3.u32, ThreadOf(ctx, base), ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
 }
 ANY360_SYS_EXPORT(NtSignalAndWaitForSingleObjectEx) {
+  // (signal, wait, mode, alertable, timeout): the signal always happens, so APCs run only once the wait ends for them.
   int64_t storage;
-  ctx.r3.u64 = Objects().SignalAndWait({base}, ctx.r3.u32, ctx.r4.u32, ThreadOf(ctx, base), Timeout(base, ctx.r7.u32, storage));
+  ctx.r3.u64 = Objects().SignalAndWait({base}, ctx.r3.u32, ctx.r4.u32, ThreadOf(ctx, base), Timeout(base, ctx.r7.u32, storage),
+                                       ctx.r6.u32 != 0);
+  if (ctx.r3.u32 == kStatusUserApc) Threads().DeliverApcs({base}, ctx.r13.u32, ctx.r1.u32);
 }
 ANY360_SYS_EXPORT(ObLookupThreadByThreadId) { ctx.r3.u64 = Threads().LookupThreadById({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(ObOpenObjectByPointer) { ctx.r3.u64 = Objects().OpenObjectByPointer({base}, ctx.r3.u32, ctx.r4.u32); }

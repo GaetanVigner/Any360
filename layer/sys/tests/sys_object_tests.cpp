@@ -258,10 +258,13 @@ void MultipleWaits() {
 }
 
 // The test's "guest code": host functions by start address, run on the scheduler's threads.
+// Code that needs more than two arguments (APCs, DPCs) is looked up in g_code_args first.
 std::map<uint32_t, std::function<uint64_t(uint32_t pcr, uint64_t, uint64_t)>> g_code;
-uint64_t Dispatch(uint32_t address, uint32_t, uint32_t pcr, uint64_t a0, uint64_t a1, void*) {
+std::map<uint32_t, std::function<uint64_t(uint32_t pcr, uint32_t stack, std::vector<uint64_t>)>> g_code_args;
+uint64_t Dispatch(uint32_t address, uint32_t stack, uint32_t pcr, const uint64_t* args, uint32_t count, void*) {
+  if (auto it = g_code_args.find(address); it != g_code_args.end()) return it->second(pcr, stack, {args, args + count});
   auto it = g_code.find(address);
-  return it == g_code.end() ? 0xDEAD : it->second(pcr, a0, a1);
+  return it == g_code.end() ? 0xDEAD : it->second(pcr, count > 0 ? args[0] : 0, count > 1 ? args[1] : 0);
 }
 
 void SchedulerTests() {
@@ -1160,15 +1163,36 @@ void TduTests() {
   Files().Reset();
   std::error_code ec;
   const uint32_t out = kScratch + 0x200, ov = kScratch + 0x300, buf = kScratch + 0x400, str = kScratch + 0x800;
-  // DPCs: initialised as the kernel lays them out, queued once, removed once.
-  const uint32_t dpc = 0x30000;
+  // DPCs: initialised as the kernel lays them out, run in order on a context of their own at dispatch level; one queued
+  // behind a running DPC is queued once and can be removed.
+  Threads().SetDispatcher(&Dispatch, nullptr);
+  const uint32_t dpc = 0x30000, dpc2 = 0x30020;
   std::memset(g.host(dpc), 0xEE, 0x1C);
   KeInitializeDpc(g, dpc, 0x82000000, 0x1234);
+  KeInitializeDpc(g, dpc2, 0x82000100, 0x5678);
   CHECK(g.Load16(dpc) == 19 && g.Load32(dpc + 4) == 0 && g.Load32(dpc + 0xC) == 0x82000000 && g.Load32(dpc + 0x10) == 0x1234);
+  std::atomic<bool> release{false}, started{false};
+  std::vector<uint64_t> seen;
+  uint32_t dpc_irql = 0, dpc_active = 0;
+  g_code_args[0x82000000] = [&](uint32_t pcr, uint32_t, std::vector<uint64_t> args) -> uint64_t {
+    seen = args, dpc_irql = g.Load8(pcr + 0x18), dpc_active = g.Load32(pcr + 0x150);
+    started = true;
+    while (!release) std::this_thread::yield();
+    return 0;
+  };
+  std::atomic<int> second_runs{0};
+  g_code_args[0x82000100] = [&](uint32_t, uint32_t, std::vector<uint64_t>) -> uint64_t { return ++second_runs, 0; };
   CHECK(KeInsertQueueDpc(g, dpc, 7, 8) == 1 && g.Load32(dpc + 0x14) == 7 && g.Load32(dpc + 0x18) == 8);
-  CHECK(KeInsertQueueDpc(g, dpc, 9, 9) == 0 && g.Load32(dpc + 0x14) == 7);
-  CHECK(KeRemoveQueueDpc(g, dpc) == 1 && KeRemoveQueueDpc(g, dpc) == 0);
+  for (int i = 0; i < 1000 && !started; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  CHECK(started && seen == std::vector<uint64_t>({dpc, 0x1234, 7, 8}) && dpc_irql == 2 && dpc_active == 1);
+  CHECK(KeInsertQueueDpc(g, dpc2, 1, 2) == 1 && KeInsertQueueDpc(g, dpc2, 9, 9) == 0 && g.Load32(dpc2 + 0x14) == 1);
+  CHECK(KeRemoveQueueDpc(g, dpc2) == 1 && KeRemoveQueueDpc(g, dpc2) == 0);
+  CHECK(KeInsertQueueDpc(g, dpc2, 3, 4) == 1);
+  release = true;
+  for (int i = 0; i < 1000 && second_runs == 0; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  CHECK(second_runs == 1 && KeRemoveQueueDpc(g, dpc2) == 0);
   ResetDpcs();
+  g_code_args.clear();
   // Named objects: opened (a new handle) and referenced by name.
   CHECK(Objects().CreateEvent(g, out, Named("\\TduEvent"), 0, 0) == 0);
   const uint32_t named = g.Load32(out);
@@ -1389,6 +1413,33 @@ void SimpsonsTests() {
   CHECK(Threads().QueueApc(gm, kCurrentThreadHandle, kthread, 0x82000000, 1, 2, 3) == 0 && Threads().PendingApcs(kthread) == 2);
   CHECK(Threads().QueueApc(gm, sync, 0, 0x82000000, 0, 0, 0) == kStatusObjectTypeMismatch);
   CHECK(Threads().QueueApc(gm, 0x1234, 0, 0x82000000, 0, 0, 0) == kStatusInvalidHandle);
+  // Alertable delays and waits end once an APC is queued; delivery runs the thread's APCs in order below its stack.
+  const uint32_t pcr = Objects().AllocateObject(0x200);
+  gm.Store32(pcr + 0x100, kthread);
+  Threads().SetDispatcher(&Dispatch, nullptr);
+  std::vector<std::vector<uint64_t>> delivered;
+  uint32_t apc_stack = 0;
+  g_code_args[0x82000000] = [&](uint32_t, uint32_t stack, std::vector<uint64_t> args) -> uint64_t {
+    delivered.push_back(args), apc_stack = stack;
+    return 0;
+  };
+  const int64_t second = -10000000;
+  CHECK(Threads().Delay(gm, pcr, second, true) == kStatusUserApc);
+  CHECK(Objects().WaitForHandle(gm, sync, kthread, &second, true) == kStatusUserApc);
+  CHECK(Threads().DeliverApcs(gm, pcr, 0x7F000) == 2 && Threads().PendingApcs(kthread) == 0);
+  CHECK(delivered.size() == 2 && delivered[0] == std::vector<uint64_t>({1, 2, 3}) && apc_stack == 0x7EC00);
+  const int64_t short_wait = -20000;  // 2 ms
+  CHECK(Threads().Delay(gm, pcr, short_wait, true) == 0);
+  CHECK(Objects().WaitForHandle(gm, sync, kthread, &short_wait, true) == kStatusTimeout);
+  // An APC queued by another thread ends an alertable delay already under way.
+  std::thread queuer([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    Threads().QueueApc(gm, thread_handle, 0, 0x82000000, 4, 5, 6);
+  });
+  CHECK(Threads().Delay(gm, pcr, second, true) == kStatusUserApc);
+  queuer.join();
+  CHECK(Threads().DeliverApcs(gm, pcr, 0x7F000) == 1 && delivered.back() == std::vector<uint64_t>({4, 5, 6}));
+  g_code_args.clear();
   CHECK(Threads().LookupThreadById(gm, 0x7777, out) == 0xC0000225u);
   Threads().Shutdown();
   Files().Reset();

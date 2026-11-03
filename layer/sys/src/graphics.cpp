@@ -84,7 +84,7 @@ bool GraphicsKernel::RaiseInterrupt(Guest g, uint32_t source) {
   // At dispatch level, as a DPC: the title's handler checks this through KeGetCurrentProcessType and the IRQL.
   g.Store32(context_.pcr + kPrcbDpcActive, 1);
   g.Store8(context_.pcr + kPcrIrql, 2);
-  Threads().Dispatch(callback_, context_, source, user_data_);
+  Threads().Dispatch(callback_, context_, {source, user_data_});
   g.Store8(context_.pcr + kPcrIrql, 0);
   g.Store32(context_.pcr + kPrcbDpcActive, 0);
   return true;

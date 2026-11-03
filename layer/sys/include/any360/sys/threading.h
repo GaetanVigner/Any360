@@ -45,11 +45,13 @@ uint32_t KeTlsSetValue(Guest g, uint32_t pcr, uint32_t slot, uint32_t value);
 
 // KDPC (0x1C bytes): type 19, selected and desired processor, a list entry, routine, context and two system arguments.
 // Insert records the arguments and queues the DPC once (0 when already queued); Remove takes it off the queue. Queued
-// DPCs do not run yet: their routine takes four arguments and runs with the scheduler (the reference does not run them
-// either).
+// DPCs run in order on a guest context of their own (a host thread started with the first one, at dispatch level, the
+// PRCB's DPC-active flag set) as routine(dpc, context, arg1, arg2); the reference never runs them. Unlike the console
+// they run beside the thread that queued them, not in its place.
 void KeInitializeDpc(Guest g, uint32_t dpc, uint32_t routine, uint32_t context);
 uint32_t KeInsertQueueDpc(Guest g, uint32_t dpc, uint32_t arg1, uint32_t arg2);
 uint32_t KeRemoveQueueDpc(Guest g, uint32_t dpc);
+// Stops the DPC thread (after the routine it is running) and empties the queue; the scheduler's Shutdown calls it.
 void ResetDpcs();
 
 uint32_t KeQueryPerformanceFrequency();  // 50 MHz, the Xenon time base

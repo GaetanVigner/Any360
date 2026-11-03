@@ -130,8 +130,8 @@ to the reference, or, where the reference is not faithful, when the scenario tes
     once with its default text (the reference's headless answer), a package's thumbnail kept next to its folder, the
     license mask (0, as the reference), the gamer tile write accepted, the notification position and delay, the DVD
     tray closed with the disc;
-  - the kernel: DPCs (`KeInitializeDpc` lays the KDPC out, `KeInsertQueueDpc` / `KeRemoveQueueDpc` queue it once; a
-    queued DPC does not run yet, as in the reference), `ObOpenObjectByName` / `ObReferenceObjectByName` on named
+  - the kernel: DPCs (`KeInitializeDpc` lays the KDPC out, `KeInsertQueueDpc` / `KeRemoveQueueDpc` queue it once; queued
+    DPCs run, which the reference never does: see the DPC and APC delivery below), `ObOpenObjectByName` / `ObReferenceObjectByName` on named
     objects (the name an `ANSI_STRING`, which the reference reads as a C string), `NtWriteFileGather` (pages listed
     one pointer each, as `NtReadFileScatter`), `IoSynchronousDeviceIoControlRequest` (the cache partition's disk
     queries; the reference accepts any code and writes nothing), `IoDismountVolume` / `ByName`, `MmMapIoSpace`
@@ -151,7 +151,7 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   - the kernel: `NtProtectVirtualMemory` (whole committed pages, never execute rights, as the reference),
     `NtSignalAndWaitForSingleObjectEx` (an event set, a semaphore or mutant released, then the wait),
     `ObOpenObjectByPointer`, `ObLookupThreadByThreadId` (the scheduler's threads), `NtQueueApcThread` (the APC queued
-    on its thread; delivery needs alertable waits, which come later), `XexUnloadImageAndExitThread`.
+    on its thread and run at its next alertable wait, see below), `XexUnloadImageAndExitThread`.
 - **The kernel side of The Simpsons Game's audio and video** (all 317 of its system calls native; scenario tests):
   the XMA context calls reading and writing the fields of the 64-byte context as the hardware packs them (big-endian
   words, bitfields from the low bit): `XMAInitializeContext` from its 56-byte init block, the input and output buffers
@@ -170,6 +170,18 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XMACreateContext` / `XMAReleaseContext` (64-byte contexts in physical memory, announced to an `XmaBackend`). Guest
   callbacks run through `Scheduler::CreateContext` and `Scheduler::Dispatch`. The renderer, the audio output and the
   XMA decoder are the backends still to write.
+- **DPC and APC delivery** (scenario tests): the dispatcher a title binds takes up to 8 arguments (r3 to r10).
+  - User APCs (`NtQueueApcThread`) run on their thread as routine(context, arg1, arg2) when it waits alertably
+    (`KeDelayExecutionThread`, `KeWaitForSingleObject`, `NtWaitForSingleObjectEx`, `KeWaitForMultipleObjects`,
+    `NtWaitForMultipleObjectsEx`, `NtSignalAndWaitForSingleObjectEx`), below the caller's stack. As in the reference,
+    an alertable wait with APCs queued runs them and returns `STATUS_USER_APC` (0xC0) without waiting, and one that an
+    APC queued from another thread interrupts runs it and returns the same.
+  - DPCs run in order on a guest context of their own (a host thread started with the first one) as routine(dpc,
+    context, arg1, arg2), at dispatch level with the PRCB's DPC-active flag set; a DPC leaves the queue before it runs,
+    so it may queue itself again. The reference never runs them. On the console a DPC interrupts the processor that
+    queued it; here it runs beside that thread.
+  - Not delivered yet: timer APCs (`NtSetTimerEx`), I/O completion APCs, kernel APCs (`KeInitializeApc` /
+    `KeInsertQueueApc`).
 - **Offline networking**: `NetDll_inet_addr` (the Winsock parser), `NetDll___WSAFDIsSet`, `NetDll_XNetInAddrToString`,
   the XNet address conversions.
 
@@ -221,7 +233,7 @@ the calls the four titles share come first.
 
 Next for the layer, in this order:
 
-1. **Object manager and scheduler, continued**: absolute wait timeouts, APCs (timer and `NtQueueApcThread`),
+1. **Object manager and scheduler, continued**: absolute wait timeouts, timer and I/O completion APCs,
    pre-emptive suspension, freeing kernel objects, `KeGetCurrentThread`-style queries.
 2. **Memory, continued**: `NtProtectVirtualMemory`, `MEM_RESET`, the executable's image range as a queryable heap,
    `ExAllocatePool*`, `MmCreateKernelStack`, `KeLockL2` / `KeUnlockL2`.

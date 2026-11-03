@@ -106,7 +106,7 @@ uint32_t AudioKernel::GetVoiceCategoryVolume(Guest g, uint32_t out) {
 
 void AudioKernel::Pump(Guest) {
   for (const Client& c : clients_) {
-    if (c.used) Threads().Dispatch(c.callback, context_, c.argument, 0);
+    if (c.used) Threads().Dispatch(c.callback, context_, {c.argument, 0});
   }
 }
 
