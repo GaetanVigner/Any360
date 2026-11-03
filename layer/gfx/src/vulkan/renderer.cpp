@@ -124,6 +124,7 @@ VulkanRenderer::~VulkanRenderer() {
   f.vkDeviceWaitIdle(d);
   for (Batch& b : batches_) {
     if (b.fence) f.vkDestroyFence(d, b.fence, nullptr);
+    if (timestamps_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, timestamps_, nullptr);
     if (b.draw_pool) f.vkDestroyDescriptorPool(d, b.draw_pool, nullptr);
     if (b.depth_pool) f.vkDestroyDescriptorPool(d, b.depth_pool, nullptr);
     DestroyBuffer(device_, b.constants);
@@ -155,6 +156,7 @@ VulkanRenderer::~VulkanRenderer() {
   }
   textures_.reset();
   DestroyBuffer(device_, shared_memory_);
+  DestroyBuffer(device_, vram_guest_);
   for (auto& [key, surface] : surfaces_) {
     if (surface->depth_view) f.vkDestroyImageView(d, surface->depth_view, nullptr);
     DestroyImage(device_, surface->image);
@@ -229,6 +231,9 @@ bool VulkanRenderer::Initialize() {
   // Guest memory for the shaders: imported in place when the device can (VK_EXT_external_memory_host, an aligned
   // allocation), so nothing is copied; otherwise a mirror copied before each draw.
   shared_memory_imported_ = ImportGuestMemory();
+  vram_guest_on_ = shared_memory_imported_ &&
+                   CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                false, vram_guest_);
   if (!shared_memory_imported_ && !CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, shared_memory_)) {
     return Fail("guest memory buffer");
   }
@@ -259,7 +264,7 @@ bool VulkanRenderer::Initialize() {
   shared_set_ = allocated[0];
   empty_set_ = allocated[1];
   for (uint32_t i = 0; i < kBatches; ++i) batches_[i].constants_set = allocated[2 + i];
-  VkDescriptorBufferInfo shared_info{shared_memory_.buffer, 0, VK_WHOLE_SIZE};
+  VkDescriptorBufferInfo shared_info{vram_guest_on_ ? vram_guest_.buffer : shared_memory_.buffer, 0, VK_WHOLE_SIZE};
   const uint32_t ranges[SpirvShaderTranslator::kConstantBufferCount] = {
       uint32_t(sizeof(SpirvShaderTranslator::SystemConstants)), kFloatBufferBytes, kFloatBufferBytes, kBoolLoopBytes, kFetchBytes};
   const VkWriteDescriptorSet shared_write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, shared_set_, 0, 0, 1,
@@ -282,13 +287,20 @@ bool VulkanRenderer::Initialize() {
   batch_pool.queueFamilyIndex = device_.queue_family();
   VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
   if (f.vkCreateCommandPool(d, &batch_pool, nullptr, &batch_pool_) != VK_SUCCESS) return Fail("batch objects");
+  VkQueryPoolCreateInfo queries{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+  queries.queryType = VK_QUERY_TYPE_TIMESTAMP;
+  queries.queryCount = 2 * kBatches;
+  if (f.vkCreateQueryPool(d, &queries, nullptr, &timestamps_) != VK_SUCCESS) timestamps_ = VK_NULL_HANDLE;
   for (Batch& b : batches_) {
     if (f.vkCreateFence(d, &fence, nullptr, &b.fence) != VK_SUCCESS) return Fail("batch objects");
     VkCommandBufferAllocateInfo batch_alloc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
     batch_alloc.commandPool = batch_pool_;
     batch_alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     batch_alloc.commandBufferCount = 1;
-    if (f.vkAllocateCommandBuffers(d, &batch_alloc, &b.cb) != VK_SUCCESS) return Fail("batch command buffer");
+    if (f.vkAllocateCommandBuffers(d, &batch_alloc, &b.cb) != VK_SUCCESS ||
+        f.vkAllocateCommandBuffers(d, &batch_alloc, &b.upload_cb) != VK_SUCCESS) {
+      return Fail("batch command buffer");
+    }
   }
   completer_ = std::thread([this] { Complete(); });
   // Depth/stencil surfaces: D24S8 where the device has it (NVIDIA), else D32S8 (AMD).
@@ -300,7 +312,7 @@ bool VulkanRenderer::Initialize() {
 }
 
 void VulkanRenderer::ReadsGuestMemory(uint32_t address, uint32_t bytes) {
-  if (shared_memory_imported_ || !bytes || address >= mirror_bytes_) return;
+  if ((shared_memory_imported_ && !vram_guest_on_) || !bytes || address >= mirror_bytes_) return;
   batch_ranges_.emplace_back(address, uint32_t(std::min<uint64_t>(uint64_t(address) + bytes, mirror_bytes_)));
 }
 
@@ -315,7 +327,7 @@ bool VulkanRenderer::ImportGuestMemory() {
   external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT;
   VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, &external};
   info.size = mirror_bytes_;
-  info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+  info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
   if (f.vkCreateBuffer(device_.device(), &info, nullptr, &shared_memory_.buffer) != VK_SUCCESS) return false;
   VkMemoryRequirements req;
   f.vkGetBufferMemoryRequirements(device_.device(), shared_memory_.buffer, &req);
@@ -677,7 +689,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // The vertex buffers the vertex shader fetches from (vertex fetch constants: address in dword 0, size in words in
   // dword 1, and as far again as VGT_INDX_OFFSET moves the indices), for the copy into the mirror when guest memory
   // is not read in place.
-  if (!shared_memory_imported_) {
+  if (!shared_memory_imported_ || vram_guest_on_) {
     const uint64_t index_offset = regs[kVgtIndxOffset] & 0xFFFFFF;
     for (const auto& binding : vs->shader->vertex_bindings()) {
       const uint32_t* fetch = regs + reg::kFetchConstants + 2 * binding.fetch_constant;
@@ -916,17 +928,26 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   uint8_t* base = static_cast<uint8_t*>(batch().constants.mapped);
   uint32_t offsets[SpirvShaderTranslator::kConstantBufferCount];
   uint32_t& at = constant_head_;
-  // Each buffer filled in full by what follows (the system constants cleared first).
-  auto reserve = [&](uint32_t index, uint32_t bytes) {
+  // Each buffer: built in ordinary memory, then written into the batch's buffer unless it is the block the last
+  // draw of the batch wrote (that one is bound again).
+  static_assert(SpirvShaderTranslator::kConstantBufferCount <= 8);
+  auto put = [&](uint32_t index, const void* data, uint32_t bytes) {
+    LastConstants& last = last_constants_[index];
+    if (last.valid && last.bytes.size() == bytes && std::memcmp(last.bytes.data(), data, bytes) == 0) {
+      offsets[index] = last.offset;
+      return;
+    }
     offsets[index] = at;
+    std::memcpy(base + at, data, bytes);
     at = AlignUp(at + bytes, constant_alignment_);
-    return base + offsets[index];
+    last.bytes.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + bytes);
+    last.offset = offsets[index];
+    last.valid = true;
   };
   // System constants: the guest viewport transform (PA_CL_VTE_CNTL, PA_CL_VPORT_*) folded into the NDC scale and
   // offset for a host viewport covering the target.
-  auto* system = reinterpret_cast<SpirvShaderTranslator::SystemConstants*>(
-      reserve(SpirvShaderTranslator::kConstantBufferSystem, sizeof(SpirvShaderTranslator::SystemConstants)));
-  std::memset(system, 0, sizeof(*system));
+  SpirvShaderTranslator::SystemConstants system_constants{};
+  auto* system = &system_constants;
   const uint32_t vte = regs[kPaClVteCntl];
   if (vte & (1u << 8)) system->flags |= SpirvShaderTranslator::kSysFlag_XYDividedByW;
   if (vte & (1u << 9)) system->flags |= SpirvShaderTranslator::kSysFlag_ZDividedByW;
@@ -986,20 +1007,23 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     system->color_exp_bias[i] = std::bit_cast<float>(uint32_t(int32_t(0x3F800000) + bias * (1 << 23)));
     if (colors[i] && format == 1) system->flags |= SpirvShaderTranslator::kSysFlag_ConvertColor0ToGamma << i;
   }
+  put(SpirvShaderTranslator::kConstantBufferSystem, system, sizeof(*system));
   // Float constants, packed as each shader uses them (all 256 when it addresses them dynamically).
   auto pack_floats = [&](uint32_t index, const TranslatedShader* shader, uint32_t first_register) {
     // Only the constants the shader uses take room (the descriptor's 4 KB range reads past them harmlessly).
     const auto& map = shader ? shader->shader->constant_register_map() : vs->shader->constant_register_map();
     const uint32_t count = !shader ? 1 : map.float_dynamic_addressing ? 256 : std::max(1u, map.float_count);
-    uint8_t* out = reserve(index, 16 * count);
     if (!shader) {
-      std::memset(out, 0, 16);
+      static constexpr uint8_t kZero[16] = {};
+      put(index, kZero, 16);
       return;
     }
     if (map.float_dynamic_addressing) {
-      std::memcpy(out, regs + first_register, 256 * 16);
+      put(index, regs + first_register, 256 * 16);
       return;
     }
+    float_scratch_.resize(16 * size_t(count));
+    uint8_t* out = float_scratch_.data();
     // The registers the shader uses, set bit by set bit.
     uint32_t packed = 0;
     for (uint32_t word = 0; word < 4; ++word) {
@@ -1009,11 +1033,12 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       }
     }
     if (!packed) std::memset(out, 0, 16);
+    put(index, out, 16 * count);
   };
   pack_floats(SpirvShaderTranslator::kConstantBufferFloatVertex, vs, 0x4000);
   pack_floats(SpirvShaderTranslator::kConstantBufferFloatPixel, ps, 0x4000 + 256 * 4);
-  std::memcpy(reserve(SpirvShaderTranslator::kConstantBufferBoolLoop, kBoolLoopBytes), regs + 0x4900, kBoolLoopBytes);
-  std::memcpy(reserve(SpirvShaderTranslator::kConstantBufferFetch, kFetchBytes), regs + 0x4800, kFetchBytes);
+  put(SpirvShaderTranslator::kConstantBufferBoolLoop, regs + 0x4900, kBoolLoopBytes);
+  put(SpirvShaderTranslator::kConstantBufferFetch, regs + 0x4800, kFetchBytes);
 
   // Dynamic state: polygon offset (scaled to the depth format's unit), blend constants, stencil masks and refs.
   float bias_scale = 0.0f, bias_offset = 0.0f;
@@ -1283,6 +1308,11 @@ VkCommandBuffer VulkanRenderer::Record() {
     dependency.memoryBarrierCount = 1;
     dependency.pMemoryBarriers = &barrier;
     f.vkCmdPipelineBarrier2(b.cb, &dependency);
+    if (timestamps_) {
+      const uint32_t index = uint32_t(&b - batches_.data());
+      f.vkCmdResetQueryPool(b.cb, timestamps_, 2 * index, 2);
+      f.vkCmdWriteTimestamp2(b.cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, 2 * index);
+    }
     recorded_.valid = false;  // a new command buffer has no state
     batch_open_ = true;
   }
@@ -1302,7 +1332,11 @@ void VulkanRenderer::Flush() {
   const VkDevice d = device_.device();
   Batch& b = batch();
   EndRendering();
+  if (timestamps_) {
+    f.vkCmdWriteTimestamp2(b.cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, 2 * uint32_t(&b - batches_.data()) + 1);
+  }
   f.vkEndCommandBuffer(b.cb);
+  submitted_at_[uint32_t(&b - batches_.data())] = std::chrono::steady_clock::now();
   // Guest memory the batch's shaders fetch from: read in place, or copied once here (the draws run now, so they
   // see memory as it is now either way).
   if (!shared_memory_imported_) {
@@ -1319,10 +1353,45 @@ void VulkanRenderer::Flush() {
     }
     batch_ranges_.clear();
   }
+  // Into video memory: the ranges the batch's shaders read, merged (gaps under 64 KB copied along), copied from the
+  // imported guest memory by a command buffer that runs just before the batch.
+  bool upload = false;
+  if (vram_guest_on_ && !batch_ranges_.empty()) {
+    std::sort(batch_ranges_.begin(), batch_ranges_.end());
+    upload_regions_.clear();
+    for (auto [begin, end] : batch_ranges_) {
+      begin &= ~3u, end = (end + 3) & ~3u;
+      if (!upload_regions_.empty() && begin <= upload_regions_.back().srcOffset + upload_regions_.back().size + (64u << 10)) {
+        VkBufferCopy& last = upload_regions_.back();
+        last.size = std::max<VkDeviceSize>(last.size, end - last.srcOffset);
+      } else {
+        upload_regions_.push_back({begin, begin, end - begin});
+      }
+    }
+    batch_ranges_.clear();
+    VkCommandBufferBeginInfo begin_info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    f.vkBeginCommandBuffer(b.upload_cb, &begin_info);
+    // After the batches before (they may still read these ranges); the batch's own barrier orders its draws after.
+    VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    barrier.srcStageMask = barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT | VK_ACCESS_2_MEMORY_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependency.memoryBarrierCount = 1;
+    dependency.pMemoryBarriers = &barrier;
+    f.vkCmdPipelineBarrier2(b.upload_cb, &dependency);
+    f.vkCmdCopyBuffer(b.upload_cb, shared_memory_.buffer, vram_guest_.buffer, uint32_t(upload_regions_.size()),
+                      upload_regions_.data());
+    f.vkEndCommandBuffer(b.upload_cb);
+    for (const VkBufferCopy& region : upload_regions_) stats_.guest_upload_bytes += region.size;
+    upload = true;
+  }
   if (textures_) textures_->TakeStaging(b.staging);  // the batch's uploads read them
+  const VkCommandBuffer cbs[2] = {b.upload_cb, b.cb};
   VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-  submit.commandBufferCount = 1;
-  submit.pCommandBuffers = &b.cb;
+  submit.commandBufferCount = upload ? 2 : 1;
+  submit.pCommandBuffers = upload ? cbs : &b.cb;
   if (f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence) != VK_SUCCESS) Fail("batch submission");
   batch_open_ = false;
   const uint32_t submitted = current_;
@@ -1344,6 +1413,7 @@ void VulkanRenderer::Flush() {
   if (next.depth_pool) f.vkResetDescriptorPool(d, next.depth_pool, 0);
   depth_sets_ = 0;
   constant_head_ = index_head_ = 0;
+  for (LastConstants& last : last_constants_) last.valid = false;  // the next batch has its own buffer
   draw_sets_ = draw_images_ = draw_samplers_ = 0;
   ++stats_.flushes;
 }
@@ -1407,6 +1477,17 @@ void VulkanRenderer::Complete() {
 }
 
 void VulkanRenderer::FinishBatch(Batch& b) {
+  const uint32_t index = uint32_t(&b - batches_.data());
+  stats_.ns_gpu_latency += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::steady_clock::now() - submitted_at_[index]).count());
+  if (timestamps_) {
+    uint64_t stamps[2] = {};
+    if (device_.fn().vkGetQueryPoolResults(device_.device(), timestamps_, 2 * index, 2, sizeof(stamps), stamps, 8,
+                                           VK_QUERY_RESULT_64_BIT) == VK_SUCCESS && stamps[1] > stamps[0]) {
+      stats_.ns_gpu += uint64_t(double(stamps[1] - stamps[0]) * device_.properties().limits.timestampPeriod);
+    }
+  }
+  ++stats_.gpu_batches;
   FinishWriteBacks(b);
   if (textures_) {
     textures_->RecycleStaging(b.staging);  // for later uploads

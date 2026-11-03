@@ -126,15 +126,20 @@ uint32_t CommandProcessor::ReadRegister(uint32_t index) {
 
 void CommandProcessor::Vblank() { ++counter_; }
 
-void CommandProcessor::StoreAfterDraws(uint32_t address, std::vector<uint32_t> raw_values) {
+void CommandProcessor::StoreAfterDraws(uint32_t address, std::vector<uint32_t> raw_values, bool fence) {
   address &= ~3u;
+  if (!renderer_ || !(fence ? fences_after_draws_ : writes_after_draws_)) {
+    // Now, in stream order.
+    for (uint32_t i = 0; i < raw_values.size(); ++i) StoreRaw((address + 4 * i) & 0x1FFFFFFF, raw_values[i]);
+    return;
+  }
   uint64_t first;
   {
     std::lock_guard<std::mutex> lock(queued_mutex_);
     first = queued_sequence_ + 1;
     for (uint32_t i = 0; i < raw_values.size(); ++i) queued_[(address + 4 * i) & 0x1FFFFFFF] = {raw_values[i], ++queued_sequence_};
   }
-  AfterDraws([this, address, first, raw_values = std::move(raw_values)] {
+  renderer_->WhenDone([this, address, first, raw_values = std::move(raw_values)] {
     std::lock_guard<std::mutex> lock(queued_mutex_);
     for (uint32_t i = 0; i < raw_values.size(); ++i) {
       const uint32_t at = (address + 4 * i) & 0x1FFFFFFF;
@@ -143,6 +148,7 @@ void CommandProcessor::StoreAfterDraws(uint32_t address, std::vector<uint32_t> r
       // Written: no longer queued, unless a later write to it is.
       if (const auto q = queued_.find(at); q != queued_.end() && q->second.sequence == first + i) queued_.erase(q);
     }
+    NotifyProgress();
   });
 }
 
@@ -568,7 +574,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
         const uint32_t initiator = Next(r), address = Next(r), value = Next(r);
         SetRegister(reg::VGT_EVENT_INITIATOR, initiator & 0x3F);
         const uint32_t fence = GpuSwap((initiator >> 31) ? counter_.load() : value, Endian(address & 3));
-        StoreAfterDraws(address, {fence});
+        StoreAfterDraws(address, {fence}, true);
       }
       break;
     case pm4::EVENT_WRITE_EXT:

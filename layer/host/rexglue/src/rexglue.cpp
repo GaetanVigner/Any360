@@ -66,6 +66,79 @@ constexpr uint32_t kGpuMmio = 0x7FC80000;
 struct SwapCost {
   double vectorized = 0, scalar = 0;
 };
+// Samples a thread's instruction pointer about every 100 us while the diagnostics are off: offsets in the executable,
+// or, in another module (the driver, the C runtime), the first caller in the executable (bit 63 set).
+class Sampler {
+ public:
+  Sampler(HANDLE thread, std::string path) : path_(std::move(path)) {
+    DuplicateHandle(GetCurrentProcess(), thread, GetCurrentProcess(), &thread_, 0, FALSE, DUPLICATE_SAME_ACCESS);
+    worker_ = std::thread([this] { Run(); });
+  }
+  ~Sampler() {
+    done_ = true;
+    if (worker_.joinable()) worker_.join();
+    Write();
+    CloseHandle(thread_);
+  }
+  void Write() {
+    std::lock_guard lock(mutex_);
+    if (FILE* f = std::fopen(path_.c_str(), "w")) {
+      for (uint64_t s : samples_) std::fprintf(f, "0x%llX%c", (unsigned long long)s, 10);
+      std::fclose(f);
+    }
+  }
+
+ private:
+  void Run() {
+    const auto base = reinterpret_cast<uint64_t>(GetModuleHandleA(nullptr));
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    const uint64_t size = nt->OptionalHeader.SizeOfImage;
+    auto inside = [&](uint64_t rip) { return rip >= base && rip < base + size; };
+    while (!done_) {
+      const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(100);
+      while (std::chrono::steady_clock::now() < until) YieldProcessor();
+      if (gfx::Diagnosing()) continue;
+      if (SuspendThread(thread_) == DWORD(-1)) continue;
+      CONTEXT context{};
+      context.ContextFlags = CONTEXT_FULL;
+      uint64_t sample = 0;
+      if (GetThreadContext(thread_, &context)) {
+        if (inside(context.Rip)) {
+          sample = context.Rip - base;
+        } else {
+          CONTEXT walk = context;
+          for (int depth = 0; depth < 32 && walk.Rip; ++depth) {
+            if (inside(walk.Rip)) {
+              sample = (walk.Rip - base - 1) | (1ull << 63);
+              break;
+            }
+            DWORD64 image = 0;
+            PRUNTIME_FUNCTION entry = RtlLookupFunctionEntry(walk.Rip, &image, nullptr);
+            if (!entry) {
+              walk.Rip = *reinterpret_cast<DWORD64*>(walk.Rsp);
+              walk.Rsp += 8;
+              continue;
+            }
+            void* handler_data = nullptr;
+            DWORD64 frame = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, image, walk.Rip, entry, &walk, &handler_data, &frame, nullptr);
+          }
+        }
+      }
+      ResumeThread(thread_);
+      std::lock_guard lock(mutex_);
+      samples_.push_back(sample);
+    }
+  }
+  std::string path_;
+  HANDLE thread_ = nullptr;
+  std::thread worker_;
+  std::atomic<bool> done_{false};
+  std::mutex mutex_;
+  std::vector<uint64_t> samples_;
+};
+
 SwapCost MeasureSwapCost() {
   constexpr size_t kWords = size_t(4) << 20;  // 16 MB
   std::vector<uint32_t> from(kWords), to(kWords);
@@ -200,6 +273,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       frames_ = 1;
       since_ = now;
       last_ = s;
+      if (sampler_) sampler_->Write();  // the samples so far (the title may end without StopGraphics)
       gfx::g_diagnostics = true;
       return;
     }
@@ -218,6 +292,16 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
                   (s.ns_submit - last_.ns_submit) / ms, (s.ns_resolves - last_.ns_resolves) / ms,
                   (s.ns_swaps - last_.ns_swaps) / ms, guest_memory_in_place() ? "in place" : "copied");
     log_(line);
+    {
+      const double batches = double(s.gpu_batches - last_.gpu_batches);
+      char gpu[256];
+      std::snprintf(gpu, sizeof(gpu),
+                    "Any360: GPU per frame: %.2f ms running the batches (%.1f batches), %.2f ms from a batch's submission "
+                    "to its completion on average; %.2f MB of guest memory copied into video memory",
+                    (s.ns_gpu - last_.ns_gpu) / ms, batches / n, batches ? (s.ns_gpu_latency - last_.ns_gpu_latency) / 1e6 / batches : 0.0,
+                    (s.guest_upload_bytes - last_.guest_upload_bytes) / 1e6 / n);
+      log_(gpu);
+    }
     if (cp_) {
       const uint64_t busy = cp_->ns_busy(), waiting = cp_->ns_waiting(), kicks = cp_->kicks();
       char line_cp[256];
@@ -336,6 +420,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   double last_on_fps_ = 0;
  public:
   SwapCost swap_cost_;
+  Sampler* sampler_ = nullptr;
  private:
   std::array<uint64_t, 129> last_opcode_ticks_{};
   uint64_t frames_ = 0;
@@ -443,6 +528,7 @@ struct Binding {
   std::unique_ptr<PresentingRenderer> renderer;
   std::unique_ptr<gfx::CommandProcessor> cp;
   InterruptThread interrupts;
+  std::unique_ptr<Sampler> sampler;
 };
 
 std::atomic<bool> g_bound{false};
@@ -573,12 +659,17 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   range->write = &WriteGpuRegister;
 
   binding->cp->Start();
+  if (!options.profile_path.empty()) {
+    binding->sampler = std::make_unique<Sampler>(binding->cp->worker_handle(), options.profile_path);
+    binding->renderer->sampler_ = binding->sampler.get();
+  }
   double vblank_hz = options.vblank_hz;
   const bool vsync = rex::cvar::GetFlagByName("vsync") == "true";
   if (vblank_hz <= 0.0) vblank_hz = vsync ? 60.0 : 1000.0;
   // As the runtime's own command processor: without vsync, waits spin.
   binding->cp->SetSpinWaits(!vsync);
   binding->cp->SetWritesAfterDraws(options.writes_after_draws);
+  binding->cp->SetFencesAfterDraws(options.fences_after_draws);
   sys::Graphics().StartVblank(vblank_hz);
   g_binding = binding.release();
   g_bound = true;
@@ -589,6 +680,7 @@ void StopGraphics() {
   if (!g_binding) return;
   sys::Graphics().StopVblank();
   g_binding->interrupts.Stop();
+  g_binding->sampler.reset();  // its samples written
   g_binding->cp->Stop();
   // The window, device and renderer stay until the process ends: the runtime may still be tearing down around them.
 }

@@ -44,6 +44,12 @@ struct GraphicsOptions {
   // reaches them (the CPU may see a fence before the draws before it are on screen, never waits on the GPU); true,
   // once those draws have run (what the CPU reads after them is there, at the cost of a GPU round trip each).
   bool writes_after_draws = false;
+  // EVENT_WRITE_SHD fences apart: once the shaders before them are done, as on the console (the title reuses the
+  // memory the GPU reads in place after them). False: when the stream reaches them, as the runtime.
+  bool fences_after_draws = true;
+  // A file to write samples of the command processor's thread to (module offsets of the executable, while the
+  // diagnostics are off: what it costs without them), for llvm-symbolizer. Empty: no sampling.
+  std::string profile_path;
   // Where the binding reports, every `stats_seconds`: frames per second and the renderer's cost per frame, the
   // draws it could not draw by reason. None: nothing reported.
   std::function<void(const std::string&)> log;

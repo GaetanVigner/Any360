@@ -12,6 +12,8 @@
 //                 resolves' words as DIR/resolve_N.bin)
 //     --watch ADDR    with --trace, prints the texture fetch constants that read the 4 KB page at ADDR (hex)
 #include <algorithm>
+#include <atomic>
+#include <thread>
 #include <chrono>
 #include <bit>
 #include <array>
@@ -30,6 +32,8 @@
 // After any360's headers: windows.h defines macros (Yield) that clash with their names.
 #ifdef _WIN32
 #include <windows.h>
+#include <psapi.h>
+#include <timeapi.h>
 #else
 #include <sys/mman.h>
 #endif
@@ -281,6 +285,7 @@ int main(int argc, char** argv) {
   int repeat = 1;  // --repeat N: the capture replayed N times, the timings of the last (warm caches, as in a game)
   std::string dump;
   uint32_t watch = 0;
+  std::string profile;  // --profile FILE: the main thread's instruction pointer sampled during the last pass
   vk::DeviceOptions options;
   for (int i = 1; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--gpu") && i + 1 < argc) options.prefer = argv[++i];
@@ -288,6 +293,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--trace")) trace = true;
     else if (!std::strcmp(argv[i], "--repeat") && i + 1 < argc) repeat = std::max(1, std::atoi(argv[++i]));
     else if (!std::strcmp(argv[i], "--dump-resolves") && i + 1 < argc) dump = argv[++i];
+    else if (!std::strcmp(argv[i], "--profile") && i + 1 < argc) profile = argv[++i];
     else if (!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = uint32_t(std::strtoul(argv[++i], nullptr, 16)) & 0x1FFFF000;
     else path = argv[i];
   }
@@ -354,16 +360,95 @@ int main(int argc, char** argv) {
   bool ok = true;
   vk::RendererStats before;
   auto replay_start = std::chrono::steady_clock::now();
+#ifdef _WIN32
+  // A sampling profiler: another thread suspends this one about every millisecond and records where it was (module
+  // offsets of this executable; elsewhere: 0), for llvm-symbolizer.
+  std::atomic<bool> sampling{false}, sampler_done{false};
+  std::vector<uint64_t> samples;
+  std::map<std::string, uint32_t> outside;  // samples in other modules, by module name
+  HANDLE main_thread = nullptr;
+  DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &main_thread, 0, FALSE, DUPLICATE_SAME_ACCESS);
+  std::thread sampler;
+  if (!profile.empty()) {
+    sampler = std::thread([&] {
+      timeBeginPeriod(1);
+      const auto base = reinterpret_cast<uint64_t>(GetModuleHandleA(nullptr));
+      MODULEINFO info{};
+      GetModuleInformation(GetCurrentProcess(), GetModuleHandleA(nullptr), &info, sizeof(info));
+      while (!sampler_done) {
+        // About every 100 us (spinning: Sleep would wait a millisecond or more).
+        const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(100);
+        while (std::chrono::steady_clock::now() < until) YieldProcessor();
+        if (!sampling) continue;
+        if (SuspendThread(main_thread) == DWORD(-1)) continue;
+        CONTEXT context{};
+        context.ContextFlags = CONTEXT_FULL;
+        if (GetThreadContext(main_thread, &context)) {
+          const bool own = context.Rip >= base && context.Rip < base + info.SizeOfImage;
+          // Outside: the first caller in this executable (unwound), marked with bit 63.
+          uint64_t caller = 0;
+          if (!own) {
+            CONTEXT walk = context;
+            for (int depth = 0; depth < 32 && walk.Rip; ++depth) {
+              if (walk.Rip >= base && walk.Rip < base + info.SizeOfImage) {
+                caller = (walk.Rip - base - 1) | (1ull << 63);
+                break;
+              }
+              DWORD64 image = 0;
+              PRUNTIME_FUNCTION entry = RtlLookupFunctionEntry(walk.Rip, &image, nullptr);
+              if (!entry) {
+                walk.Rip = *reinterpret_cast<DWORD64*>(walk.Rsp);  // a leaf: the return address on top
+                walk.Rsp += 8;
+                continue;
+              }
+              void* handler_data = nullptr;
+              DWORD64 frame = 0;
+              RtlVirtualUnwind(UNW_FLAG_NHANDLER, image, walk.Rip, entry, &walk, &handler_data, &frame, nullptr);
+            }
+          }
+          samples.push_back(own ? context.Rip - base : caller);
+          if (!own) {
+            HMODULE module = nullptr;
+            char name[MAX_PATH] = "?";
+            if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                   reinterpret_cast<LPCSTR>(context.Rip), &module)) {
+              GetModuleBaseNameA(GetCurrentProcess(), module, name, sizeof(name));
+            }
+            ++outside[name];
+          }
+        }
+        ResumeThread(main_thread);
+      }
+      timeEndPeriod(1);
+    });
+  }
+#endif
   for (int pass = 0; pass < repeat && ok; ++pass) {
     if (pass == repeat - 1) {
       before = renderer.stats();
       replay_start = std::chrono::steady_clock::now();
     }
+#ifdef _WIN32
+    sampling = !profile.empty() && pass >= repeat / 2;  // the warm half
+#endif
     stats = {};
     ok = capture::Replay(path, cp, physical, kPhysicalBytes, on_frame, stats, error);
     renderer.Flush();
     renderer.WaitIdle();
   }
+#ifdef _WIN32
+  sampling = false;
+  sampler_done = true;
+  if (sampler.joinable()) sampler.join();
+  if (!profile.empty()) {
+    if (FILE* f = std::fopen(profile.c_str(), "w")) {
+      for (uint64_t s : samples) std::fprintf(f, "0x%llX\n", (unsigned long long)s);
+      std::fclose(f);
+    }
+    for (const auto& [name, count] : outside) std::printf("gfx_replay: outside: %s %u\n", name.c_str(), count);
+    std::printf("gfx_replay: %zu samples written to %s\n", samples.size(), profile.c_str());
+  }
+#endif
   const double replay_ms =
       std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - replay_start).count();
 

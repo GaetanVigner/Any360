@@ -70,6 +70,10 @@ struct RendererStats {
   uint32_t flushes = 0;
   // Time spent (nanoseconds, summed): draws in all, of which copying guest memory and submitting; resolves; swaps.
   uint64_t ns_draws = 0, ns_memory = 0, ns_submit = 0, ns_resolves = 0, ns_swaps = 0;
+  // The GPU's time running the batches (time stamps at each batch's start and end), and from each batch's submission
+  // to its completion seen on the CPU.
+  uint64_t ns_gpu = 0, ns_gpu_latency = 0, gpu_batches = 0;
+  uint64_t guest_upload_bytes = 0;  // guest memory copied into video memory for the shaders
   // Within draws: texture views (upload, untiling, hashing), shader translation, pipeline lookup and creation.
   uint64_t ns_textures = 0, ns_shaders = 0, ns_pipelines = 0;
   // Draws in four parts: shaders, textures and fixed state; targets, scissor and pipeline; constants and indices;
@@ -212,6 +216,11 @@ class VulkanRenderer : public gfx::Renderer {
   VkDescriptorSet shared_set_ = VK_NULL_HANDLE, empty_set_ = VK_NULL_HANDLE;
   Buffer shared_memory_;
   bool shared_memory_imported_ = false;  // guest memory read in place (no copy per draw)
+  // Guest memory the shaders read (vertices) from video memory: each batch first copies the ranges its draws fetch
+  // from the imported guest memory (one transfer over the bus, not a fetch per vertex attribute through it).
+  Buffer vram_guest_;
+  bool vram_guest_on_ = false;
+  std::vector<VkBufferCopy> upload_regions_;
   // Without the import: the guest memory ranges the batch's shaders read (vertex buffers, indices a rectangle list's
   // vertex shader loads), copied into the mirror when the batch is submitted.
   std::vector<std::pair<uint32_t, uint32_t>> batch_ranges_;  // begin, end
@@ -245,6 +254,7 @@ class VulkanRenderer : public gfx::Renderer {
   // processor's fences and interrupts) and frees what it used (staging buffers, retired images).
   struct Batch {
     VkCommandBuffer cb = VK_NULL_HANDLE;
+    VkCommandBuffer upload_cb = VK_NULL_HANDLE;  // guest memory the batch's shaders read, copied into video memory first
     VkFence fence = VK_NULL_HANDLE;
     Buffer constants, indices;
     VkDescriptorSet constants_set = VK_NULL_HANDLE;
@@ -304,7 +314,18 @@ class VulkanRenderer : public gfx::Renderer {
                     uint32_t sample_y, uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian, VkFormat format);
   std::set<uint32_t> front_buffers_;  // bases swapped as front buffers: resolves there are always read back
   void ReadsGuestMemory(uint32_t address, uint32_t bytes);
+  VkQueryPool timestamps_ = VK_NULL_HANDLE;  // two a batch: start, end
+  std::array<std::chrono::steady_clock::time_point, 8> submitted_at_{};
   uint32_t constant_head_ = 0, index_head_ = 0;  // ring allocation of the batch's constants and indices
+  // The last block of each constant buffer written in the open batch: a draw whose block is the same reuses it
+  // (most draws change only some constants; the batch's buffer is write-combined, slow to write and to read back).
+  struct LastConstants {
+    std::vector<uint8_t> bytes;
+    uint32_t offset = 0;
+    bool valid = false;
+  };
+  std::array<LastConstants, 8> last_constants_;  // by constant buffer (fewer than 8)
+  std::vector<uint8_t> float_scratch_;  // a stage's float constants packed, before they are compared
   static constexpr uint32_t kDrawSets = 8192, kDrawDescriptors = 32768;  // texture sets and descriptors a batch holds
   uint32_t draw_sets_ = 0, draw_images_ = 0, draw_samplers_ = 0;
   // Texture sets of the open batch by their contents (layout, views, samplers): draws with the same textures share

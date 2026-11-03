@@ -111,6 +111,10 @@ class CommandProcessor : public sys::GpuBackend {
   // What the CPU sees of the GPU's progress (fences, memory writes, interrupts): once the draws before them have run
   // (true, the default), or as the stream reaches them (false, as the reference: no GPU round trip per fence).
   void SetWritesAfterDraws(bool after) { writes_after_draws_ = after; }
+  // EVENT_WRITE_SHD fences apart (true by default): as on the console, they land once the shaders before them are
+  // done, while the other writes and interrupts happen when the stream reaches them. A title reuses its vertex and
+  // constant memory after such a fence; the GPU reads that memory in place, so the fence must wait for the draws.
+  void SetFencesAfterDraws(bool after) { fences_after_draws_ = after; }
   void NotifyProgress();
 
   // Executes the ring from the read pointer to the write pointer; false when stopped in a wait.
@@ -119,6 +123,8 @@ class CommandProcessor : public sys::GpuBackend {
   // A worker thread executing the ring whenever the write pointer moves.
   void Start();
   void Stop();
+  // The worker thread's native handle (for a sampling profiler).
+  std::thread::native_handle_type worker_handle() { return worker_.native_handle(); }
   bool Idle() const { return !busy_ && read_index_ == write_index_; }
 
   uint32_t reg(uint32_t index) const;
@@ -197,7 +203,7 @@ class CommandProcessor : public sys::GpuBackend {
   // Guest memory the stream writes after earlier draws (fences, MEM_WRITE, REG_TO_MEM...): queued here as it is
   // recorded, until written. A wait in the same stream on one of them compares against the queued value: the GPU
   // runs its commands in order, so what follows the wait still runs after those draws.
-  void StoreAfterDraws(uint32_t address, std::vector<uint32_t> raw_values);
+  void StoreAfterDraws(uint32_t address, std::vector<uint32_t> raw_values, bool fence = false);
   bool Queued(uint32_t address, uint32_t& raw_value);
   struct QueuedWrite {
     uint32_t raw;
@@ -250,7 +256,7 @@ class CommandProcessor : public sys::GpuBackend {
     uint64_t hash;
   };
   std::unordered_map<uint64_t, LoadedShader> loaded_shaders_;
-  bool writes_after_draws_ = true;
+  bool writes_after_draws_ = true, fences_after_draws_ = true;
   std::thread worker_;
 };
 

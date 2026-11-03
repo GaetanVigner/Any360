@@ -77,7 +77,7 @@ add_test(NAME gfx_render_tests COMMAND gfx_render_tests)
 
 # Replays a frame capture (capture.h) and reports what its frames need: gfx_replay CAPTURE [--gpu NAME] [--out DIR].
 add_executable(gfx_replay tests/gfx_replay.cpp)
-target_link_libraries(gfx_replay PRIVATE any360_gfx_vulkan)
+target_link_libraries(gfx_replay PRIVATE any360_gfx_vulkan $<$<BOOL:${WIN32}>:winmm psapi>)
 target_compile_options(gfx_replay PRIVATE -Wall -Wextra)
 target_compile_definitions(gfx_replay PRIVATE $<$<BOOL:${WIN32}>:_CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN>)
 
