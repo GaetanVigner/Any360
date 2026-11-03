@@ -62,6 +62,13 @@ class Scheduler {
   // Runs guest code at `address` on `context` through the dispatcher; returns r3 (0 without a dispatcher).
   uint64_t Dispatch(uint32_t address, const GuestContext& context, uint64_t arg0, uint64_t arg1);
 
+  // NtQueueApcThread: a user APC (routine, context, two arguments) queued on a thread by handle (the current-thread
+  // pseudo handle is `current`). Queued APCs are not delivered yet: that needs alertable waits.
+  uint32_t QueueApc(Guest g, uint32_t handle, uint32_t current, uint32_t routine, uint32_t context, uint32_t arg1, uint32_t arg2);
+  size_t PendingApcs(uint32_t kthread) const;
+  // ObLookupThreadByThreadId: the KTHREAD of a thread id, referenced; STATUS_NOT_FOUND when no thread has it.
+  uint32_t LookupThreadById(Guest g, uint32_t thread_id, uint32_t object_out) const;
+
   // The current KTHREAD of a PCR, 0 when the scheduler does not run that thread.
   uint32_t ThreadOf(Guest g, uint32_t pcr) const;
 
@@ -77,6 +84,10 @@ class Scheduler {
   uint32_t process_ = 0;
   uint32_t default_stack_size_ = 0x10000;
   uint32_t next_thread_id_ = 1;
+  struct Apc {
+    uint32_t kthread, routine, context, arg1, arg2;
+  };
+  std::vector<Apc> apcs_;
   std::vector<Thread*> threads_;
 };
 

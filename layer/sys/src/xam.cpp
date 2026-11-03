@@ -4,12 +4,17 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <random>
 
 #include "any360/sys/files.h"
 #include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
+#include "any360/sys/scheduler.h"
 
 namespace any360::sys {
+
+uint32_t RtlNtStatusToDosError(uint32_t status);  // config.h
 
 namespace {
 
@@ -17,7 +22,8 @@ constexpr uint32_t kStatusSuccess = 0, kStatusNotFound = 0xC0000225, kStatusProc
 constexpr uint32_t kXuserSize = 40;                    // X_USER_PROFILE_SETTING
 constexpr uint32_t kContentDataSize = 0x134;           // XCONTENT_DATA: device, type, 128 wide chars, 42-byte file name
 constexpr uint32_t kContentFileNameOffset = 0x108;
-constexpr uint32_t kWsaENetDown = 10050, kWsaENotSock = 10038;
+constexpr uint32_t kWsaENetDown = 10050, kWsaENotSock = 10038, kWsaInvalidHandle = 6, kWsaInvalidParameter = 87;
+constexpr uint32_t kWsaWaitTimeout = 0x102, kWsaWaitFailed = 0xFFFFFFFF;
 constexpr uint32_t kInputFlagGamepad = 1;
 
 thread_local uint32_t t_wsa_error = 0;
@@ -53,6 +59,7 @@ void Xam::Reset() {
   title_ = {};
   listeners_.clear();
   enumerators_.clear();
+  system_module_ = 0;
   settings_.clear();
   terminate_notifications_.clear();
   open_content_.clear();
@@ -60,6 +67,7 @@ void Xam::Reset() {
   launch_data_.clear();
   launch_data_present_ = false;
   cache_elements_ = 0;
+  startup_params_.clear();
 }
 
 // --- overlapped ------------------------------------------------------------------------------------------------
@@ -89,6 +97,32 @@ uint32_t Xam::MsgStartIORequest(Guest g, uint32_t, uint32_t, uint32_t overlapped
 uint32_t Xam::MsgInProcessCall(uint32_t, uint32_t, uint32_t, uint32_t) { return kErrorSuccess; }
 
 uint32_t Xam::MsgCancelIORequest(Guest, uint32_t, uint32_t) { return kErrorSuccess; }
+
+uint32_t Xam::MsgSystemProcessCall(uint32_t app, uint32_t message, uint32_t buffer, uint32_t length) {
+  return MsgInProcessCall(app, message, buffer, length);
+}
+
+uint32_t Xam::MsgCompleteIORequest(Guest g, uint32_t overlapped, uint32_t result, uint32_t extended_error, uint32_t length) {
+  g.Store32(overlapped + 0x00, result);
+  g.Store32(overlapped + 0x04, length);
+  g.Store32(overlapped + 0x18, extended_error);
+  const uint32_t event = g.Load32(overlapped + 0x0C);
+  if (event) Objects().NtSetEvent(g, event, 0);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::GetOverlappedResult(Guest g, uint32_t overlapped, uint32_t length_ptr, uint32_t wait, uint32_t thread) {
+  constexpr uint32_t kErrorIoIncomplete = 0x3E4;
+  uint32_t result = g.Load32(overlapped);
+  if (result == kErrorIoPending) {
+    const uint32_t event = g.Load32(overlapped + 0x0C);
+    if (!wait || !event) return kErrorIoIncomplete;
+    if (Objects().WaitForHandle(g, event, thread, nullptr) != kStatusSuccess) return kErrorInvalidParameter;
+    result = g.Load32(overlapped);
+  }
+  if (result == kErrorSuccess && length_ptr) g.Store32(length_ptr, g.Load32(overlapped + 0x04));
+  return result;
+}
 
 void Xam::Notify(uint32_t id, uint32_t param) {
   const uint32_t area = (id >> 25) & 0x3F;
@@ -258,8 +292,76 @@ uint32_t Xam::ShowSigninUI(uint32_t, uint32_t) {
   return kErrorSuccess;
 }
 
+uint32_t Xam::ShowLiveUI() {
+  Notify(kNotifySystemUi, 1);
+  Notify(kNotifySystemUi, 0);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::UserAreUsersFriends(Guest g, uint32_t user, uint32_t out, uint32_t overlapped) {
+  const uint32_t result = user >= 4 ? kErrorInvalidParameter : user != 0 ? kErrorNoSuchUser : kErrorSuccess;
+  if (out) {
+    g.Store32(out, 0);
+    return result;
+  }
+  return Finish(g, overlapped, result == kErrorSuccess ? kErrorSuccess : kErrorFunctionFailed);
+}
+
+uint32_t Xam::UserCreateAchievementEnumerator(Guest g, uint32_t user, uint32_t flags, uint32_t count, uint32_t size_ptr,
+                                              uint32_t handle_ptr) {
+  if (!count || !size_ptr || !handle_ptr || user >= 4) return kErrorInvalidParameter;
+  // XACHIEVEMENT_DETAILS (0x24 bytes), with room for its three strings when details are asked for.
+  const uint32_t item_size = 0x24 + ((flags & 7) ? 0x8A8 : 0);
+  g.Store32(size_ptr, item_size * count);
+  g.Store32(handle_ptr, CreateEnumerator(g, item_size, count, {}));
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ParseGamerTileKey(Guest g, uint32_t, uint32_t out1, uint32_t out2, uint32_t out3) {
+  g.Store32(out1, 0xC0DE0001);
+  g.Store32(out2, 0xC0DE0002);
+  g.Store32(out3, 0xC0DE0003);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ReadTileToTexture(Guest g, uint64_t tile_id, uint32_t buffer, uint32_t stride, uint32_t height, uint32_t overlapped) {
+  if (!tile_id) return kErrorInvalidParameter;
+  std::memset(g.host(buffer), 0xFF, size_t(stride) * height);  // opaque white
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::TitleId(Guest g) const {
+  const uint32_t info = title_.xex_header ? ImageXexHeaderField(g, title_.xex_header, 0x00040006) : 0;
+  return info ? g.Load32(info + 12) : 0;  // XEX_HEADER_EXECUTION_INFO: media id, version, base version, title id
+}
+
+uint32_t Xam::TaskSchedule(Guest g, uint32_t callback, uint32_t message, uint32_t handle_ptr) {
+  return Threads().CreateThread(g, handle_ptr, 0, 0, 0, callback, message, 0);
+}
+
+uint32_t Xam::VoiceCreate(Guest g, uint32_t voice_ptr) {
+  if (voice_ptr) g.Store32(voice_ptr, 0);
+  return kErrorAccessDenied;
+}
+
 uint32_t Xam::ShowMessageBoxUI(Guest g, uint32_t result_ptr, uint32_t overlapped) {
   if (result_ptr) g.Store32(result_ptr, 0);  // the first button
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::ShowKeyboardUI(Guest g, uint32_t default_text, uint32_t buffer, uint32_t length, uint32_t overlapped) {
+  if (!buffer || !length) return kErrorInvalidParameter;
+  Notify(kNotifySystemUi, 1);
+  uint32_t i = 0;
+  if (default_text) {
+    for (; i + 1 < length; ++i) {
+      const uint16_t c = g.Load16(default_text + 2 * i);
+      if (!c) break;
+      g.Store16(buffer + 2 * i, c);
+    }
+  }
+  std::memset(g.host(buffer + 2 * i), 0, size_t(length - i) * 2);
+  Notify(kNotifySystemUi, 0);
   return Finish(g, overlapped, kErrorSuccess);
 }
 
@@ -393,6 +495,72 @@ uint32_t Xam::ContentCreateEnumerator(Guest g, uint32_t, uint32_t device_id, uin
   return kErrorSuccess;
 }
 
+uint32_t Xam::ContentSetThumbnail(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size, uint32_t overlapped) {
+  if (!content_data || title_.content_root.empty()) return Finish(g, overlapped, kErrorInvalidParameter);
+  const std::filesystem::path path = ContentPath(g, content_data);
+  std::error_code error;
+  if (!std::filesystem::is_directory(path, error)) return Finish(g, overlapped, kErrorFileNotFound);
+  std::ofstream stream(path.parent_path() / (path.filename().string() + ".png"), std::ios::binary | std::ios::trunc);
+  if (size) stream.write(reinterpret_cast<const char*>(g.host(buffer)), size);
+  return Finish(g, overlapped, stream ? kErrorSuccess : kErrorAccessDenied);
+}
+
+uint32_t Xam::ContentGetThumbnail(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size_ptr, uint32_t overlapped) {
+  if (!content_data || !size_ptr || title_.content_root.empty()) return Finish(g, overlapped, kErrorInvalidParameter);
+  const std::filesystem::path path = ContentPath(g, content_data);
+  std::error_code error;
+  if (!std::filesystem::is_directory(path, error)) return Finish(g, overlapped, kErrorFileNotFound);
+  std::ifstream stream(path.parent_path() / (path.filename().string() + ".png"), std::ios::binary);
+  if (!stream) return Finish(g, overlapped, kErrorFileNotFound);
+  const std::vector<char> bytes((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+  const uint32_t room = g.Load32(size_ptr);
+  g.Store32(size_ptr, uint32_t(bytes.size()));
+  if (!buffer) return Finish(g, overlapped, kErrorSuccess);
+  if (room < bytes.size()) return Finish(g, overlapped, kErrorInsufficientBuffer);
+  if (!bytes.empty()) std::memcpy(g.host(buffer), bytes.data(), bytes.size());
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::ContentResolve(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size) {
+  if (!content_data || !buffer || title_.content_root.empty()) return kErrorInvalidParameter;
+  const std::filesystem::path path = ContentPath(g, content_data);
+  std::error_code error;
+  if (!std::filesystem::is_directory(path, error)) return kErrorFileNotFound;
+  const std::string device = "\\Device\\Content\\" + path.parent_path().filename().string() + "\\" + path.filename().string();
+  if (size < device.size() + 1) return kErrorInsufficientBuffer;
+  Files().Mount(device, path, false);
+  std::memcpy(g.host(buffer), device.c_str(), device.size() + 1);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ContentCreateDeviceEnumerator(Guest g, uint32_t per_call, uint32_t size_ptr, uint32_t handle_out) {
+  if (!handle_out) return kErrorInvalidParameter;
+  constexpr uint32_t kDeviceData = 80;
+  if (size_ptr) g.Store32(size_ptr, kDeviceData * per_call);
+  // XDEVICE_DATA of the hard drive, written straight into the item (a guest view whose address 0 is its first byte).
+  std::vector<uint8_t> item(kDeviceData);
+  ContentGetDeviceData(Guest{item.data()}, 1, 0);
+  const uint32_t handle = CreateEnumerator(g, kDeviceData, per_call, {std::move(item)});
+  if (!handle) return kErrorFunctionFailed;
+  g.Store32(handle_out, handle);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ContentGetDeviceName(Guest g, uint32_t device_id, uint32_t buffer, uint32_t capacity) {
+  if (device_id != 1 && device_id != 2) return kErrorDeviceNotConnected;
+  const char* label = device_id == 1 ? "Hard Drive" : "Disc";
+  const uint32_t length = uint32_t(std::strlen(label));
+  if (capacity < length + 1) return kErrorInsufficientBuffer;
+  for (uint32_t i = 0; i <= length; ++i) g.Store16(buffer + 2 * i, uint16_t(label[i]));
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ContentGetLicenseMask(Guest g, uint32_t mask_ptr, uint32_t overlapped) {
+  if (!mask_ptr) return Finish(g, overlapped, kErrorInvalidParameter);
+  g.Store32(mask_ptr, title_.license_mask);
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
 uint32_t Xam::ContentGetDeviceState(Guest g, uint32_t device_id, uint32_t overlapped) {
   return Finish(g, overlapped, device_id <= 1 ? kErrorSuccess : kErrorDeviceNotConnected);
 }
@@ -487,8 +655,54 @@ uint32_t Xam::GetModuleHandle(Guest g, uint32_t name, uint32_t handle_ptr) {
   for (char& c : lower) c = char(c >= 'A' && c <= 'Z' ? c + 32 : c);
   uint32_t handle = 0;
   if (module.empty() || lower == "default.xex" || lower == title_.module_name) handle = title_.module_handle;
+  else if (lower == "xam.xex" || lower == "xboxkrnl.exe") handle = SystemModule(g);
   if (handle_ptr) g.Store32(handle_ptr, handle);
   return handle ? kStatusSuccess : kStatusNotFound;
+}
+
+uint32_t Xam::SystemModule(Guest g) {
+  if (!system_module_) {
+    system_module_ = Objects().AllocateObject(0x60);  // LDR_DATA_TABLE_ENTRY-sized
+    if (system_module_) std::memset(g.host(system_module_), 0, 0x60);
+  }
+  return system_module_;
+}
+
+uint32_t Xam::LoadImage(Guest g, uint32_t name, uint32_t handle_ptr) {
+  std::string path = GuestString(g, name, 260);
+  for (char& c : path) c = char(c >= 'A' && c <= 'Z' ? c + 32 : c);
+  const size_t slash = path.find_last_of("\\/:");
+  const std::string file = slash == std::string::npos ? path : path.substr(slash + 1);
+  uint32_t handle = 0;
+  if (file == "default.xex" || file == title_.module_name) handle = title_.module_handle;
+  else if (file == "xam.xex" || file == "xboxkrnl.exe") handle = SystemModule(g);
+  if (handle_ptr) g.Store32(handle_ptr, handle);
+  return handle ? kStatusSuccess : kStatusNoSuchFile;
+}
+
+uint32_t Xam::UnloadImage(uint32_t handle) {
+  if (handle && (handle == title_.module_handle || handle == system_module_)) return kStatusSuccess;
+  return kStatusInvalidHandle;
+}
+
+uint32_t Xam::LoadImageHeaders(Guest g, uint32_t path, uint32_t buffer, uint32_t size) {
+  constexpr uint32_t kStatusInvalidImageFormat = 0xC000007B, kStatusBufferTooSmall = 0xC0000023, kXex2 = 0x58455832;
+  const uint16_t length = path ? g.Load16(path) : 0;
+  const uint32_t pointer = path ? g.Load32(path + 4) : 0;
+  if (!pointer || !length) return kStatusInvalidParameter;
+  const std::filesystem::path host = Files().Resolve(std::string(reinterpret_cast<const char*>(g.host(pointer)), length));
+  std::ifstream stream(host, std::ios::binary);
+  if (host.empty() || !stream) return kStatusNoSuchFile;
+  uint8_t head[0x18] = {};
+  stream.read(reinterpret_cast<char*>(head), sizeof head);
+  const auto be32 = [&](size_t at) { return uint32_t(head[at]) << 24 | uint32_t(head[at + 1]) << 16 | uint32_t(head[at + 2]) << 8 | head[at + 3]; };
+  if (stream.gcount() != std::streamsize(sizeof head) || be32(0) != kXex2) return kStatusInvalidImageFormat;
+  const uint32_t header_size = be32(8);  // the headers end where the PE image begins
+  if (header_size < sizeof head) return kStatusInvalidImageFormat;
+  if (header_size > size) return kStatusBufferTooSmall;
+  stream.seekg(0);
+  stream.read(reinterpret_cast<char*>(g.host(buffer)), header_size);
+  return stream.gcount() == std::streamsize(header_size) ? kStatusSuccess : kStatusInvalidImageFormat;
 }
 
 uint32_t Xam::GetProcedureAddress(Guest g, uint32_t module, uint32_t ordinal, uint32_t out) {
@@ -626,6 +840,77 @@ uint32_t Xam::RaiseException(Guest g, uint32_t record) {
 
 uint32_t Xam::NetStartup() { return 0; }
 
+uint32_t Xam::XNetStartup(Guest g, uint32_t params) {
+  // XNetStartupParams: its own size first (13 bytes in the SDKs the titles use).
+  if (params) {
+    const uint8_t size = std::min<uint8_t>(g.Load8(params), 13);
+    startup_params_.assign(g.host(params), g.host(params) + size);
+  }
+  return 0;
+}
+
+uint32_t Xam::XNetGetOpt(Guest g, uint32_t option, uint32_t buffer, uint32_t size_ptr) {
+  constexpr uint32_t kWsaEInval = 10022, kWsaEMsgSize = 10040, kStartupParams = 1, kParamsSize = 13;
+  if (option != kStartupParams || !size_ptr) return kWsaEInval;
+  if (g.Load32(size_ptr) < kParamsSize) {
+    g.Store32(size_ptr, kParamsSize);
+    return kWsaEMsgSize;
+  }
+  std::memset(g.host(buffer), 0, kParamsSize);
+  if (!startup_params_.empty()) std::memcpy(g.host(buffer), startup_params_.data(), startup_params_.size());
+  g.Store32(size_ptr, kParamsSize);
+  return 0;
+}
+
+uint32_t Xam::LogonGetMachineId(Guest g, uint32_t id_ptr) {
+  if (!id_ptr) return kErrorInvalidParameter;
+  g.Store64(id_ptr, title_.machine_id);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::WsaSetLastError(uint32_t error) {
+  t_wsa_error = error;
+  return 0;
+}
+
+uint32_t Xam::WsaSetEvent(Guest g, uint32_t handle) {
+  const uint32_t status = Objects().NtSetEvent(g, handle, 0);
+  if (status == kStatusSuccess) return 1;
+  t_wsa_error = RtlNtStatusToDosError(status);
+  return 0;
+}
+
+uint32_t Xam::WsaResetEvent(Guest g, uint32_t handle) {
+  const uint32_t status = Objects().NtClearEvent(g, handle);
+  if (status == kStatusSuccess) return 1;
+  t_wsa_error = RtlNtStatusToDosError(status);
+  return 0;
+}
+
+uint32_t Xam::XNetDnsLookup(Guest g, uint32_t event, uint32_t dns_ptr) {
+  if (dns_ptr) {
+    // XNDNS: status, address count, eight addresses.
+    const uint32_t dns = AllocatePool(g, 40);
+    if (dns) {
+      g.Store32(dns, kWsaENetDown);
+      g.Store32(dns + 4, 0);
+    }
+    g.Store32(dns_ptr, dns);
+  }
+  if (event) Objects().NtSetEvent(g, event, 0);
+  return 0;
+}
+
+uint32_t Xam::XNetQosServiceLookup(Guest g, uint32_t event, uint32_t qos_ptr) {
+  if (qos_ptr) {
+    // XNQOS: result count, pending count, then the results (none).
+    const uint32_t qos = AllocatePool(g, 0x40);
+    g.Store32(qos_ptr, qos);
+  }
+  if (event) Objects().NtSetEvent(g, event, 0);
+  return 0;
+}
+
 uint32_t Xam::WsaStartup(Guest g, uint32_t version, uint32_t data) {
   if (data) {
     // WSADATA: version, high version, then descriptions the titles do not read.
@@ -647,6 +932,57 @@ uint32_t Xam::SocketFailure(uint32_t) {
 }
 
 uint32_t Xam::WsaGetLastError() const { return t_wsa_error; }
+
+uint32_t Xam::WsaCreateEvent() {
+  const uint32_t event = Objects().AllocateObject(kEventSize);
+  if (!event) return 0;
+  Objects().InitializeEvent(Objects().guest(), event, kNotificationEvent, 0);
+  return Objects().OpenHandle(event);
+}
+
+uint32_t Xam::WsaCloseEvent(uint32_t handle) {
+  if (Objects().Close(handle) == kStatusSuccess) return 1;
+  t_wsa_error = kWsaInvalidHandle;
+  return 0;
+}
+
+uint32_t Xam::WsaWaitForMultipleEvents(Guest g, uint32_t count, uint32_t events, uint32_t wait_all, uint32_t timeout_ms,
+                                       uint32_t thread) {
+  if (!count || count > 64) {
+    t_wsa_error = kWsaInvalidParameter;
+    return kWsaWaitFailed;
+  }
+  // Milliseconds as a relative NT timeout (negative, 100 ns units); none for ever.
+  const int64_t relative = -int64_t(timeout_ms) * 10000;
+  const uint32_t status =
+      Objects().WaitForHandles(g, count, events, wait_all ? 0 : 1, thread, timeout_ms == 0xFFFFFFFF ? nullptr : &relative);
+  if (status == kStatusTimeout) return kWsaWaitTimeout;
+  if (status < 64) return status;  // WAIT_0 + index (wait-any), 0 (wait-all)
+  t_wsa_error = kWsaInvalidHandle;
+  return kWsaWaitFailed;
+}
+
+uint32_t Xam::XNetRandom(Guest g, uint32_t buffer, uint32_t length) {
+  thread_local std::mt19937 generator{std::random_device{}()};
+  uint8_t* out = g.host(buffer);
+  for (uint32_t i = 0; i < length; ++i) out[i] = uint8_t(generator());
+  return 0;
+}
+
+uint32_t Xam::XNetCreateKey(Guest g, uint32_t key_id, uint32_t key) {
+  // XNKID (8 bytes) and XNKEY (16 bytes), random; the key id's high nibble says what kind it is: 0, system link (the
+  // only kind a console without Live creates).
+  XNetRandom(g, key_id, 8);
+  XNetRandom(g, key, 16);
+  g.Store8(key_id, g.Load8(key_id) & 0x0F);
+  return 0;
+}
+
+uint32_t Xam::XNetQosRelease(uint32_t qos) {
+  if (!qos) return kStatusInvalidParameter;
+  FreePool(qos);
+  return 0;
+}
 
 uint32_t Xam::XNetGetTitleXnAddr(Guest g, uint32_t address) {
   if (address) std::memset(g.host(address), 0, 36);

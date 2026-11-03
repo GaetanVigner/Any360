@@ -15,6 +15,7 @@
 #include <fstream>
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
+#include "any360/sys/threading.h"
 #include "any360/sys/crypt.h"
 #include "any360/sys/rtl.h"
 #include "any360/sys/xam.h"
@@ -722,7 +723,9 @@ void XamTests() {
   CHECK(XamState().GetModuleHandle(g, str, out) == 0 && g.Load32(out) == xex);
   CHECK(XamState().GetModuleHandle(g, 0, out) == 0 && g.Load32(out) == xex);
   std::memcpy(g.host(str), "xboxkrnl.exe", 13);
-  CHECK(XamState().GetModuleHandle(g, str, out) == 0xC0000225u);
+  CHECK(XamState().GetModuleHandle(g, str, out) == 0 && g.Load32(out) != 0);  // a system module, loaded
+  std::memcpy(g.host(str), "xbdm.xex", 9);
+  CHECK(XamState().GetModuleHandle(g, str, out) == 0xC0000225u);  // not on a retail console
   CHECK(XamState().GetProcedureAddress(g, 0x100, 5, out) == 0xC000007Au && g.Load32(out) == 0);
   XamState().host().procedure = [](const char*, uint32_t ordinal) { return ordinal == 5 ? 0x82001000u : 0u; };
   CHECK(XamState().GetProcedureAddress(g, 0x100, 5, out) == 0 && g.Load32(out) == 0x82001000);
@@ -741,6 +744,69 @@ void XamTests() {
   CHECK(XamState().Socket() == 0xFFFFFFFF && XamState().WsaGetLastError() == 10050);
   CHECK(XamState().SocketFailure(0xFFFFFFFF) == 0xFFFFFFFF && XamState().WsaGetLastError() == 10038);
   CHECK(XamState().XNetGetTitleXnAddr(g, buf) == 1 && g.Load32(buf) == 0);
+  // Winsock events: manual reset, waits by index, timeouts, bad handles.
+  {
+    const uint32_t a = XamState().WsaCreateEvent(), b = XamState().WsaCreateEvent();
+    CHECK(a && b && a != b);
+    g.Store32(buf, a);
+    g.Store32(buf + 4, b);
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 2, buf, 0, 0, kMainThread) == 0x102);
+    CHECK(Objects().NtSetEvent(g, b, 0) == 0);
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 2, buf, 0, 0, kMainThread) == 1);
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 2, buf, 0, 0, kMainThread) == 1);  // manual reset: still signalled
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 2, buf, 1, 0, kMainThread) == 0x102);  // all: a is not
+    CHECK(Objects().NtSetEvent(g, a, 0) == 0);
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 2, buf, 1, 5, kMainThread) == 0);
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 0, buf, 0, 0, kMainThread) == 0xFFFFFFFF && XamState().WsaGetLastError() == 87);
+    CHECK(XamState().WsaCloseEvent(a) == 1 && XamState().WsaCloseEvent(b) == 1);
+    CHECK(XamState().WsaCloseEvent(a) == 0 && XamState().WsaGetLastError() == 6);
+    CHECK(XamState().WsaWaitForMultipleEvents(g, 2, buf, 0, 0, kMainThread) == 0xFFFFFFFF);
+  }
+  // XNet: random bytes and system link keys.
+  std::memset(g.host(buf), 0, 64);
+  CHECK(XamState().XNetRandom(g, buf, 64) == 0);
+  {
+    uint32_t nonzero = 0;
+    for (uint32_t i = 0; i < 64; ++i) nonzero += g.Load8(buf + i) != 0;
+    CHECK(nonzero > 32);
+  }
+  CHECK(XamState().XNetCreateKey(g, buf, buf + 8) == 0 && (g.Load8(buf) & 0xF0) == 0);
+  CHECK(XamState().XNetQosRelease(0) == kStatusInvalidParameter);
+  // The profile's Live answers, guide screens, gamer pictures, voice.
+  CHECK(XamState().UserAreUsersFriends(g, 0, buf, 0) == 0 && g.Load32(buf) == 0);
+  CHECK(XamState().UserAreUsersFriends(g, 1, buf, 0) == kErrorNoSuchUser);
+  CHECK(XamState().UserAreUsersFriends(g, 4, buf, 0) == kErrorInvalidParameter);
+  CHECK(XamState().UserCreateAchievementEnumerator(g, 0, 0, 8, out, out + 4) == 0 && g.Load32(out) == 8 * 0x24);
+  CHECK(XamState().Enumerate(g, g.Load32(out + 4), 0, buf, 8 * 0x24, out + 8, 0) == kErrorNoMoreFiles);
+  CHECK(XamState().UserCreateAchievementEnumerator(g, 0, 0, 0, out, out + 4) == kErrorInvalidParameter);
+  CHECK(XamState().ShowLiveUI() == 0);
+  CHECK(XamState().ParseGamerTileKey(g, buf, out, out + 4, out + 8) == 0 && g.Load32(out) == 0xC0DE0001);
+  CHECK(XamState().ReadTileToTexture(g, 0, buf, 16, 4, 0) == kErrorInvalidParameter);
+  CHECK(XamState().ReadTileToTexture(g, 0xC0DE0002, buf, 16, 4, 0) == 0 && g.Load32(buf + 60) == 0xFFFFFFFF);
+  g.Store32(out, 0xAAAA);
+  CHECK(XamState().VoiceCreate(g, out) == kErrorAccessDenied && g.Load32(out) == 0);
+  // Images: the title's own and the system modules, by name; nothing else loads.
+  std::memcpy(g.host(str), "d:\\Default.xex", sizeof("d:\\Default.xex"));
+  CHECK(XamState().LoadImage(g, str, out) == 0 && g.Load32(out) == XamState().title().module_handle);
+  std::memcpy(g.host(str), "xam.xex", sizeof("xam.xex"));
+  CHECK(XamState().LoadImage(g, str, out) == 0 && g.Load32(out) != 0);
+  const uint32_t xam_module = g.Load32(out);
+  CHECK(XamState().GetModuleHandle(g, str, out) == 0 && g.Load32(out) == xam_module);
+  CHECK(XamState().UnloadImage(xam_module) == 0 && XamState().UnloadImage(0x1234) == kStatusInvalidHandle);
+  std::memcpy(g.host(str), "game:\\dlc.xex", sizeof("game:\\dlc.xex"));
+  CHECK(XamState().LoadImage(g, str, out) == kStatusNoSuchFile && g.Load32(out) == 0);
+  // The cache partition's disk queries.
+  CHECK(Files().DeviceIoControl(g, ov, 0x70000, buf, 8) == 0 && g.Load32(buf) == 0xFF000 / 512 && g.Load32(buf + 4) == 512 &&
+        g.Load32(ov + 4) == 8);
+  CHECK(Files().DeviceIoControl(g, 0, 0x74004, buf, 16) == 0 && g.Load64(buf + 8) == 0xFF000);
+  CHECK(Files().DeviceIoControl(g, 0, 0x74004, buf, 8) == 0xC0000023u);
+  CHECK(Files().DeviceIoControl(g, 0, 0x12345, buf, 16) == kStatusInvalidParameter);
+  // The title id comes from the execution info of the XEX header the title set.
+  if (XamState().GetExecutionId(g, out) == 0) {
+    CHECK(XamState().TitleId(g) == g.Load32(g.Load32(out) + 12));
+  } else {
+    CHECK(XamState().TitleId(g) == 0);
+  }
   XamState().Reset();
   Files().Reset();
   fs::remove_all(content, ec);
@@ -888,9 +954,11 @@ struct FakeSink : AudioSink {
   }
 };
 struct FakeXma : XmaBackend {
-  int allocated = 0, released = 0;
+  int allocated = 0, released = 0, enabled = 0, disabled = 0;
   void ContextAllocated(Guest, uint32_t) override { ++allocated; }
   void ContextReleased(Guest, uint32_t) override { ++released; }
+  void ContextEnabled(Guest, uint32_t) override { ++enabled; }
+  void ContextDisabled(Guest, uint32_t) override { ++disabled; }
 };
 
 uint32_t FloatBits(float f) {
@@ -1020,6 +1088,7 @@ void GraphicsAudioTests() {
   gm.Store32(out, 0xFFFFFFFF);
   CHECK(Audio().GetVoiceCategoryVolumeChangeMask(gm, 0x41550000, out) == 0 && gm.Load32(out) == 0);
   CHECK(Audio().GetVoiceCategoryVolume(gm, out) == 0 && gm.Load32(out) == 0x3F800000);
+  CHECK(Audio().GetSpeakerConfig(gm, out) == 0 && gm.Load32(out) == 0x00010001);
   // The audio clock calls the client every 5.33 ms.
   const int before = mixes;
   Audio().Start();
@@ -1041,6 +1110,40 @@ void GraphicsAudioTests() {
   CHECK(Audio().XmaCreateContext(gm, out) == 0 && gm.Load32(out) == a);
   CHECK(xma.allocated == 3 && xma.released == 1);
 
+  // A context initialised from its init block: buffers as physical addresses, fields packed into their words.
+  const uint32_t init = 0x2000;
+  std::memset(gm.host(init), 0, 56);
+  gm.Store32(init, 0x110000);       // input buffer 0
+  gm.Store32(init + 4, 3);          // its packets
+  gm.Store32(init + 0x10, 0x40);    // input read offset, in bits
+  gm.Store32(init + 0x14, 0x120000);  // output buffer
+  gm.Store32(init + 0x18, 8);       // output blocks
+  gm.Store32(init + 0x24, 1);       // stereo
+  gm.Store32(init + 0x28, 2);       // 44.1 kHz
+  gm.Store32(init + 0x2C, 0x100);   // loop start
+  gm.Store8(init + 0x34, 255);      // loop count
+  gm.Store32(a, 0xFFFFFFFF);
+  CHECK(Audio().XmaInitializeContext(gm, a, init) == 0);
+  CHECK(gm.Load32(a) == (3u | 255u << 12 | 8u << 22) && gm.Load32(a + 4) == (2u << 27 | 1u << 29) && gm.Load32(a + 8) == 0x40);
+  CHECK(gm.Load32(a + 12) == 0x100 && gm.Load32(a + 20) == 0x10000 && gm.Load32(a + 24) == 0 && gm.Load32(a + 28) == 0x20000);
+  gm.Store32(init + 0x14, 0x1000);  // an output buffer outside physical memory
+  CHECK(Audio().XmaInitializeContext(gm, a, init) == 0x80000000u && gm.Load32(a + 28) == 0x20000);
+  // Buffer validity and offsets, each in its own bits.
+  CHECK(Audio().XmaGet(gm, a, XmaField::kInput0Valid) == 0 && Audio().XmaGet(gm, a, XmaField::kOutputValid) == 0);
+  Audio().XmaSet(gm, a, XmaField::kInput0Valid, 1);
+  Audio().XmaSet(gm, a, XmaField::kOutputValid, 1);
+  Audio().XmaSet(gm, a, XmaField::kOutputReadOffset, 33);  // 5 bits: wraps to 1
+  CHECK(Audio().XmaGet(gm, a, XmaField::kInput0Valid) == 1 && Audio().XmaGet(gm, a, XmaField::kInput1Valid) == 0 &&
+        Audio().XmaGet(gm, a, XmaField::kInput0PacketCount) == 3 && gm.Load32(a + 4) >> 31 == 1);
+  CHECK(Audio().XmaGet(gm, a, XmaField::kOutputReadOffset) == 1 && Audio().XmaGet(gm, a, XmaField::kOutputWriteOffset) == 0);
+  CHECK(Audio().XmaSetInputBuffer(gm, a, 1, 0x130000, 5) == 0 && gm.Load32(a + 24) == 0x30000 &&
+        Audio().XmaGet(gm, a, XmaField::kInput1PacketCount) == 5);
+  CHECK(Audio().XmaSetInputBuffer(gm, a, 1, 0x1000, 5) == 0x80000000u);
+  // Enabled and disabled for the decoder; with no work buffer nothing is in use.
+  CHECK(Audio().XmaEnableContext(gm, a) == 0 && Audio().XmaEnabled(a) && !Audio().XmaEnabled(b));
+  CHECK(Audio().XmaDisableContext(gm, a) == 0 && !Audio().XmaEnabled(a) && xma.enabled == 1 && xma.disabled == 1);
+  CHECK(Audio().XmaBlockWhileInUse(gm, a) == 0);
+
   Audio().Reset();
   Graphics().Reset();
   Threads().Shutdown();
@@ -1049,7 +1152,254 @@ void GraphicsAudioTests() {
 
 }  // namespace
 
+// The calls Test Drive Unlimited still needed.
+void TduTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  XamState().Reset();
+  Files().Reset();
+  std::error_code ec;
+  const uint32_t out = kScratch + 0x200, ov = kScratch + 0x300, buf = kScratch + 0x400, str = kScratch + 0x800;
+  // DPCs: initialised as the kernel lays them out, queued once, removed once.
+  const uint32_t dpc = 0x30000;
+  std::memset(g.host(dpc), 0xEE, 0x1C);
+  KeInitializeDpc(g, dpc, 0x82000000, 0x1234);
+  CHECK(g.Load16(dpc) == 19 && g.Load32(dpc + 4) == 0 && g.Load32(dpc + 0xC) == 0x82000000 && g.Load32(dpc + 0x10) == 0x1234);
+  CHECK(KeInsertQueueDpc(g, dpc, 7, 8) == 1 && g.Load32(dpc + 0x14) == 7 && g.Load32(dpc + 0x18) == 8);
+  CHECK(KeInsertQueueDpc(g, dpc, 9, 9) == 0 && g.Load32(dpc + 0x14) == 7);
+  CHECK(KeRemoveQueueDpc(g, dpc) == 1 && KeRemoveQueueDpc(g, dpc) == 0);
+  ResetDpcs();
+  // Named objects: opened (a new handle) and referenced by name.
+  CHECK(Objects().CreateEvent(g, out, Named("\\TduEvent"), 0, 0) == 0);
+  const uint32_t named = g.Load32(out);
+  CHECK(Objects().OpenObjectByName(g, Named("\\TduEvent"), out + 4) == 0);
+  CHECK(g.Load32(out + 4) != named && Objects().Lookup(g.Load32(out + 4)) == Objects().Lookup(named));
+  CHECK(Objects().ReferenceObjectByName(g, kScratch + 0x120, out + 8) == 0 && g.Load32(out + 8) == Objects().Lookup(named));
+  CHECK(Objects().DereferenceObject(g, g.Load32(out + 8)) == 0);
+  CHECK(Objects().OpenObjectByName(g, Named("\\Missing"), out + 4) == 0xC0000034u);
+  CHECK(Objects().ReferenceObjectByName(g, kScratch + 0x120, out + 8) == 0xC0000034u);
+  CHECK(Objects().OpenObjectByName(g, 0, out + 4) == kStatusInvalidParameter);
+  // Completing a request by hand, then reading its result back; a pending one, with and without waiting.
+  CHECK(Objects().CreateEvent(g, out, 0, 0, 0) == 0);
+  const uint32_t event = g.Load32(out);
+  std::memset(g.host(ov), 0, 0x1C);
+  g.Store32(ov + 0x0C, event);
+  CHECK(XamState().MsgCompleteIORequest(g, ov, 0, 0x5, 12) == 0 && g.Load32(ov) == 0 && g.Load32(ov + 4) == 12 && g.Load32(ov + 0x18) == 5);
+  const int64_t zero = 0;
+  CHECK(Objects().WaitForHandle(g, event, kMainThread, &zero) == 0);
+  CHECK(XamState().GetOverlappedResult(g, ov, out + 4, 0, kMainThread) == 0 && g.Load32(out + 4) == 12);
+  CHECK(Objects().NtClearEvent(g, event) == 0);
+  g.Store32(ov, kErrorIoPending);
+  CHECK(XamState().GetOverlappedResult(g, ov, out + 4, 0, kMainThread) == 0x3E4);
+  std::thread completer([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    XamState().MsgCompleteIORequest(g, ov, kErrorNoMoreFiles, 0, 0);
+  });
+  CHECK(XamState().GetOverlappedResult(g, ov, out + 4, 1, kMainThread) == kErrorNoMoreFiles);
+  completer.join();
+  // The virtual keyboard accepts its default text at once, truncated to the buffer.
+  const uint32_t l = XamState().NotifyCreateListener(g, 1, 0);
+  const char16_t hello[] = u"Hello";
+  for (int i = 0; i < 6; ++i) g.Store16(str + 2 * i, uint16_t(hello[i]));
+  std::memset(g.host(buf), 0xEE, 32);
+  CHECK(XamState().ShowKeyboardUI(g, str, buf, 3, 0) == 0 && g.Load16(buf) == 'H' && g.Load16(buf + 2) == 'e' && g.Load16(buf + 4) == 0);
+  CHECK(XamState().ShowKeyboardUI(g, str, buf, 16, 0) == 0 && g.Load16(buf + 8) == 'o' && g.Load16(buf + 10) == 0 && g.Load16(buf + 30) == 0);
+  CHECK(XamState().ShowKeyboardUI(g, 0, buf, 16, 0) == 0 && g.Load16(buf) == 0);
+  CHECK(XamState().ShowKeyboardUI(g, str, 0, 16, 0) == kErrorInvalidParameter);
+  std::memset(g.host(ov), 0xEE, 0x1C);
+  g.Store32(ov + 0x0C, 0);
+  CHECK(XamState().ShowKeyboardUI(g, str, buf, 16, ov) == kErrorIoPending && g.Load32(ov) == 0);
+  CHECK(XamState().NotifyGetNext(g, l, kNotifySystemUi, out + 4, out + 8) == 1 && g.Load32(out + 8) == 1);
+  // Content: the license mask, a package's thumbnail.
+  CHECK(XamState().ContentGetLicenseMask(g, out, 0) == 0 && g.Load32(out) == 0);
+  CHECK(XamState().ContentGetLicenseMask(g, out, ov) == kErrorIoPending && g.Load32(ov) == 0);
+  const fs::path content = fs::temp_directory_path() / "any360-sys-content3";
+  fs::remove_all(content, ec);
+  fs::create_directories(content / "00000001" / "slot1");
+  XamState().title().content_root = content;
+  const uint32_t data = 0x6000;
+  std::memset(g.host(data), 0, 0x134);
+  g.Store32(data + 4, 1);
+  std::memcpy(g.host(data + 0x108), "slot1", 5);
+  std::memcpy(g.host(buf), "\x89PNG", 4);
+  CHECK(XamState().ContentSetThumbnail(g, data, buf, 4, 0) == 0 && fs::file_size(content / "00000001" / "slot1.png", ec) == 4);
+  std::memcpy(g.host(data + 0x108), "slot9", 5);
+  CHECK(XamState().ContentSetThumbnail(g, data, buf, 4, 0) == kErrorFileNotFound);
+  // Gather writes and the image headers of an XEX, on a mounted folder.
+  const fs::path root = fs::temp_directory_path() / "any360-sys-tdu";
+  fs::remove_all(root, ec);
+  fs::create_directories(root);
+  {
+    std::ofstream f(root / "out.bin", std::ios::binary);
+    const uint8_t xex[0x40] = {'X', 'E', 'X', '2', 0, 0, 0, 1, 0, 0, 0, 0x20};
+    std::ofstream x(root / "default.xex", std::ios::binary);
+    x.write(reinterpret_cast<const char*>(xex), sizeof xex);
+    std::ofstream bad(root / "bad.xex", std::ios::binary);
+    bad.write("MZ\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 24);
+  }
+  Files().Mount("\\Device\\Harddisk0\\Partition1", root, false);
+  const uint32_t attrs = 0x6400;
+  const auto path = [&](const char* text) {
+    g.Store32(attrs, 0);
+    g.Store32(attrs + 4, attrs + 0x10);
+    g.Store16(attrs + 0x10, uint16_t(std::strlen(text)));
+    g.Store32(attrs + 0x14, attrs + 0x20);
+    std::memcpy(g.host(attrs + 0x20), text, std::strlen(text));
+    return attrs + 0x10;  // the ANSI_STRING
+  };
+  path("\\Device\\Harddisk0\\Partition1\\out.bin");
+  CHECK(Files().CreateFile(g, out, 0x40000000, attrs, 0, 0, kOpen, 0) == 0);
+  const uint32_t pages = 0x6800, page_a = 0x20000, page_b = 0x21000, iosb = 0x6900;
+  for (uint32_t i = 0; i < 0x1000; ++i) g.Store8(page_a + i, uint8_t(i)), g.Store8(page_b + i, uint8_t(i * 3));
+  g.Store32(pages, page_a);
+  g.Store32(pages + 4, page_b);
+  CHECK(Files().WriteFileGather(g, g.Load32(out), 0, iosb, pages, 0x1800, 0) == 0 && g.Load32(iosb + 4) == 0x1800);
+  CHECK(Objects().Close(g.Load32(out)) == 0);
+  {
+    std::ifstream f(root / "out.bin", std::ios::binary);
+    std::vector<char> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    CHECK(bytes.size() == 0x1800 && uint8_t(bytes[0x10]) == 0x10 && uint8_t(bytes[0x1010]) == uint8_t(0x10 * 3));
+  }
+  CHECK(Files().WriteFileGather(g, 0x1234, 0, iosb, pages, 0x10, 0) == kStatusInvalidHandle);
+  std::memset(g.host(buf), 0, 0x40);
+  CHECK(XamState().LoadImageHeaders(g, path("\\Device\\Harddisk0\\Partition1\\default.xex"), buf, 0x40) == 0 && g.Load32(buf) == 0x58455832 &&
+        g.Load32(buf + 8) == 0x20);
+  CHECK(XamState().LoadImageHeaders(g, path("\\Device\\Harddisk0\\Partition1\\default.xex"), buf, 0x10) == 0xC0000023u);
+  CHECK(XamState().LoadImageHeaders(g, path("\\Device\\Harddisk0\\Partition1\\bad.xex"), buf, 0x40) == 0xC000007Bu);
+  CHECK(XamState().LoadImageHeaders(g, path("\\Device\\Harddisk0\\Partition1\\none.xex"), buf, 0x40) == kStatusNoSuchFile);
+  // The synchronous form of the disk queries.
+  CHECK(Files().SynchronousDeviceIoControl(g, 0x70000, buf, 8, out) == 0 && g.Load32(out) == 8 && g.Load32(buf + 4) == 512);
+  CHECK(Files().SynchronousDeviceIoControl(g, 0x12345, buf, 8, out) == kStatusInvalidParameter);
+  Files().Reset();
+  XamState().Reset();
+  fs::remove_all(root, ec);
+  fs::remove_all(content, ec);
+}
+
+// The calls The Simpsons Game still needed outside graphics and audio.
+void SimpsonsTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  XamState().Reset();
+  Files().Reset();
+  std::error_code ec;
+  std::vector<uint8_t> memory(0x200000);
+  const Guest gm{memory.data()};
+  Memory().Reset({{0x00000000, 0x80000, 0x1000, false}, {0x80000, 0x80000, 0x10000, false}});
+  Objects().SetKernelHeap(0x100000, 0x10000);
+  Objects().SetGuest(gm);
+  Objects().Reset();
+  const uint32_t out = 0x1800, ov = 0x1900, buf = 0x2000;
+  // Winsock events set and reset by handle; a bad handle is FALSE and ERROR_INVALID_HANDLE.
+  const uint32_t ev = XamState().WsaCreateEvent();
+  CHECK(XamState().WsaSetEvent(gm, ev) == 1 && gm.Load32(Objects().Lookup(ev) + 4) == 1);
+  CHECK(XamState().WsaResetEvent(gm, ev) == 1 && gm.Load32(Objects().Lookup(ev) + 4) == 0);
+  CHECK(XamState().WsaSetEvent(gm, 0x1234) == 0 && XamState().WsaGetLastError() == 6);
+  XamState().WsaSetLastError(10035);
+  CHECK(XamState().WsaGetLastError() == 10035);
+  // Lookups complete at once with no answer; their records go back to the pool.
+  CHECK(XamState().XNetDnsLookup(gm, ev, out) == 0 && gm.Load32(gm.Load32(out)) == 10050 && gm.Load32(gm.Load32(out) + 4) == 0);
+  CHECK(gm.Load32(Objects().Lookup(ev) + 4) == 1 && XamState().XNetQosRelease(gm.Load32(out)) == 0);
+  CHECK(XamState().WsaResetEvent(gm, ev) == 1);
+  CHECK(XamState().XNetQosServiceLookup(gm, ev, out) == 0 && gm.Load32(out) != 0 && gm.Load32(gm.Load32(out)) == 0);
+  CHECK(gm.Load32(Objects().Lookup(ev) + 4) == 1 && XamState().XNetQosRelease(gm.Load32(out)) == 0);
+  // Startup parameters read back; another option, or a short buffer, refused.
+  gm.Store8(buf, 13);
+  gm.Store8(buf + 1, 0x01);
+  gm.Store8(buf + 2, 7);
+  CHECK(XamState().XNetStartup(gm, buf) == 0);
+  gm.Store32(out, 4);
+  CHECK(XamState().XNetGetOpt(gm, 1, buf + 0x100, out) == 10040 && gm.Load32(out) == 13);
+  CHECK(XamState().XNetGetOpt(gm, 1, buf + 0x100, out) == 0 && gm.Load8(buf + 0x100) == 13 && gm.Load8(buf + 0x102) == 7);
+  CHECK(XamState().XNetGetOpt(gm, 5, buf + 0x100, out) == 10022);
+  CHECK(XamState().LogonGetMachineId(gm, out) == 0 && gm.Load64(out) == XamState().title().machine_id);
+  CHECK(XamState().MsgSystemProcessCall(0xFE, 0x1234, buf, 4) == 0);
+  // Devices content can be stored on: the hard drive, by enumerator and by name.
+  CHECK(XamState().ContentCreateDeviceEnumerator(gm, 4, out, out + 4) == 0 && gm.Load32(out) == 80 * 4);
+  CHECK(XamState().Enumerate(gm, gm.Load32(out + 4), 0, buf, 80 * 4, out + 8, 0) == 0 && gm.Load32(out + 8) == 1 && gm.Load32(buf) == 1 &&
+        gm.Load16(buf + 24) == 'H');
+  CHECK(XamState().ContentGetDeviceName(gm, 1, buf, 32) == 0 && gm.Load16(buf) == 'H' && gm.Load16(buf + 20) == 0);
+  CHECK(XamState().ContentGetDeviceName(gm, 1, buf, 5) == kErrorInsufficientBuffer);
+  CHECK(XamState().ContentGetDeviceName(gm, 7, buf, 32) == kErrorDeviceNotConnected);
+  // A package's thumbnail read back, and its files reached through the path it resolves to.
+  const fs::path content = fs::temp_directory_path() / "any360-sys-content4";
+  fs::remove_all(content, ec);
+  fs::create_directories(content / "00000001" / "slot1");
+  {
+    std::ofstream f(content / "00000001" / "slot1" / "save.dat", std::ios::binary);
+    f << "data";
+  }
+  XamState().title().content_root = content;
+  const uint32_t data = 0x5000;
+  std::memset(gm.host(data), 0, 0x134);
+  gm.Store32(data + 4, 1);
+  std::memcpy(gm.host(data + 0x108), "slot1", 5);
+  gm.Store32(out, 64);
+  CHECK(XamState().ContentGetThumbnail(gm, data, buf, out, 0) == kErrorFileNotFound);
+  std::memcpy(gm.host(buf), "\x89PNG!", 5);
+  CHECK(XamState().ContentSetThumbnail(gm, data, buf, 5, 0) == 0);
+  std::memset(gm.host(buf), 0, 8);
+  gm.Store32(out, 0);
+  CHECK(XamState().ContentGetThumbnail(gm, data, 0, out, 0) == 0 && gm.Load32(out) == 5);
+  gm.Store32(out, 4);
+  CHECK(XamState().ContentGetThumbnail(gm, data, buf, out, 0) == kErrorInsufficientBuffer);
+  gm.Store32(out, 64);
+  gm.Store32(ov + 0x0C, 0);
+  CHECK(XamState().ContentGetThumbnail(gm, data, buf, out, ov) == kErrorIoPending && gm.Load32(ov) == 0 && gm.Load8(buf + 4) == '!');
+  CHECK(XamState().ContentResolve(gm, data, buf, 8) == kErrorInsufficientBuffer);
+  CHECK(XamState().ContentResolve(gm, data, buf, 260) == 0);
+  const std::string resolved(reinterpret_cast<const char*>(gm.host(buf)));
+  CHECK(resolved == "\\Device\\Content\\00000001\\slot1");
+  CHECK(Files().Resolve(resolved + "\\save.dat") == content / "00000001" / "slot1" / "save.dat");
+  std::memcpy(gm.host(data + 0x108), "slot9", 5);
+  CHECK(XamState().ContentResolve(gm, data, buf, 260) == kErrorFileNotFound);
+  // Protection changes on committed pages, rounded out to whole pages; never execute rights, never free pages.
+  gm.Store32(out, 0x10000);
+  gm.Store32(out + 4, 0x3000);
+  CHECK(Memory().AllocateVirtual(gm, out, out + 4, 0x3000, kPageReadWrite, 0) == 0);
+  gm.Store32(out, 0x10800);
+  gm.Store32(out + 4, 0x1000);
+  CHECK(Memory().ProtectVirtual(gm, out, out + 4, kPageReadOnly, out + 8) == 0 && gm.Load32(out + 8) == kPageReadWrite);
+  CHECK(gm.Load32(out) == 0x10000 && gm.Load32(out + 4) == 0x2000 && Memory().QueryProtect(0x11000) == kPageReadOnly &&
+        Memory().QueryProtect(0x12000) == kPageReadWrite);
+  gm.Store32(out, 0x10000);
+  gm.Store32(out + 4, 0x1000);
+  CHECK(Memory().ProtectVirtual(gm, out, out + 4, kPageExecuteRead, 0) == 0xC0000045u);
+  gm.Store32(out + 4, 0x8000);
+  CHECK(Memory().ProtectVirtual(gm, out, out + 4, kPageReadOnly, 0) == 0xC000002Du);
+  gm.Store32(out + 4, 0);
+  CHECK(Memory().ProtectVirtual(gm, out, out + 4, kPageReadOnly, 0) == kStatusInvalidParameter);
+  // Signal one object and wait on another.
+  CHECK(Objects().CreateEvent(gm, out, 0, 1, 0) == 0 && Objects().CreateSemaphore(gm, out + 4, 0, 1, 2) == 0);
+  const uint32_t sync = gm.Load32(out), sem = gm.Load32(out + 4);
+  const int64_t zero = 0;
+  CHECK(Objects().SignalAndWait(gm, sync, sem, kMainThread, &zero) == 0 && gm.Load32(Objects().Lookup(sync) + 4) == 1);
+  CHECK(Objects().SignalAndWait(gm, sem, sync, kMainThread, &zero) == 0 && gm.Load32(Objects().Lookup(sync) + 4) == 0 &&
+        gm.Load32(Objects().Lookup(sem) + 4) == 1);
+  CHECK(Objects().SignalAndWait(gm, sync, 0x1234, kMainThread, &zero) == kStatusInvalidHandle);
+  // Handles on objects by address; an unknown address is refused.
+  CHECK(Objects().OpenObjectByPointer(gm, Objects().Lookup(sync), out + 8) == 0 && gm.Load32(out + 8) != sync &&
+        Objects().Lookup(gm.Load32(out + 8)) == Objects().Lookup(sync));
+  CHECK(Objects().OpenObjectByPointer(gm, 0x7000, out + 8) == 0xC0000001u);
+  // APCs queue on a thread by handle; an event handle is no thread.
+  const uint32_t kthread = Objects().AllocateObject(0x200);
+  gm.Store8(kthread, kThread);
+  const uint32_t thread_handle = Objects().OpenHandle(kthread);
+  CHECK(Threads().QueueApc(gm, thread_handle, 0, 0x82000000, 1, 2, 3) == 0 && Threads().PendingApcs(kthread) == 1);
+  CHECK(Threads().QueueApc(gm, kCurrentThreadHandle, kthread, 0x82000000, 1, 2, 3) == 0 && Threads().PendingApcs(kthread) == 2);
+  CHECK(Threads().QueueApc(gm, sync, 0, 0x82000000, 0, 0, 0) == kStatusObjectTypeMismatch);
+  CHECK(Threads().QueueApc(gm, 0x1234, 0, 0x82000000, 0, 0, 0) == kStatusInvalidHandle);
+  CHECK(Threads().LookupThreadById(gm, 0x7777, out) == 0xC0000225u);
+  Threads().Shutdown();
+  Files().Reset();
+  XamState().Reset();
+  Memory().Reset();
+  fs::remove_all(content, ec);
+}
+
 int main() {
+  SimpsonsTests();
+  TduTests();
   GraphicsAudioTests();
   SonicTests();
   XamTests();

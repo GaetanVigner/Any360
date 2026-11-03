@@ -379,6 +379,64 @@ uint32_t ObjectManager::ReferenceObjectByHandle(Guest g, uint32_t handle, uint32
   return kStatusSuccess;
 }
 
+uint32_t ObjectManager::OpenObjectByName(Guest g, uint32_t attributes, uint32_t handle_out) {
+  constexpr uint32_t kStatusObjectNameNotFound = 0xC0000034;
+  if (!attributes) return kStatusInvalidParameter;
+  const Entry* e = FindByName(NameOf(g, attributes));
+  if (!e) return kStatusObjectNameNotFound;
+  const uint32_t object = e->object;
+  const std::string name = e->name;
+  const uint32_t handle = AddHandle(object, name);
+  if (handle_out) g.Store32(handle_out, handle);
+  return kStatusSuccess;
+}
+
+uint32_t ObjectManager::ReferenceObjectByName(Guest g, uint32_t name, uint32_t object_out) {
+  constexpr uint32_t kStatusObjectNameNotFound = 0xC0000034;
+  if (!name) return kStatusInvalidParameter;
+  const uint16_t length = g.Load16(name);
+  const uint32_t pointer = g.Load32(name + 4);
+  const Entry* e = pointer && length ? FindByName(std::string(reinterpret_cast<const char*>(g.host(pointer)), length)) : nullptr;
+  if (!e) return kStatusObjectNameNotFound;
+  ++references_[e->object];
+  if (object_out) g.Store32(object_out, e->object);
+  return kStatusSuccess;
+}
+
+uint32_t ObjectManager::OpenObjectByPointer(Guest g, uint32_t object, uint32_t handle_out) {
+  constexpr uint32_t kStatusUnsuccessful = 0xC0000001;
+  std::string name;
+  bool known = false;
+  for (const Entry& e : entries_) {
+    if (e.open && e.object == object) {
+      known = true;
+      name = e.name;
+      break;
+    }
+  }
+  if (!known && !(object >= heap_begin_ && object < heap_next_)) return kStatusUnsuccessful;
+  if (!object) return kStatusUnsuccessful;
+  const uint32_t handle = AddHandle(object, name);
+  if (handle_out) g.Store32(handle_out, handle);
+  return kStatusSuccess;
+}
+
+uint32_t ObjectManager::SignalAndWait(Guest g, uint32_t signal, uint32_t wait, uint32_t thread, const int64_t* timeout) {
+  constexpr uint32_t kStatusObjectTypeMismatch = 0xC0000024;
+  const uint32_t object = Lookup(signal);
+  if (!object || !Lookup(wait)) return kStatusInvalidHandle;
+  uint32_t status;
+  switch (g.Load8(object + kHeaderType)) {
+    case kNotificationEvent:
+    case kSynchronizationEvent: status = NtSetEvent(g, signal, 0); break;
+    case kSemaphore: status = NtReleaseSemaphore(g, signal, 1, 0); break;
+    case kMutant: status = NtReleaseMutant(g, signal, thread); break;
+    default: return kStatusObjectTypeMismatch;
+  }
+  if (status != kStatusSuccess) return status;
+  return WaitForHandle(g, wait, thread, timeout);
+}
+
 uint32_t ObjectManager::DereferenceObject(Guest, uint32_t object) {
   auto it = references_.find(object);
   if (it != references_.end() && --it->second <= 0) references_.erase(it);

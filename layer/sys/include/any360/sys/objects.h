@@ -77,6 +77,17 @@ class ObjectManager {
   // Writes the object's guest address; the current-thread pseudo handle resolves to `thread`.
   uint32_t ReferenceObjectByHandle(Guest g, uint32_t handle, uint32_t thread, uint32_t object_out);
   uint32_t DereferenceObject(Guest g, uint32_t object);
+  // Named objects (an open handle created with a name): ObOpenObjectByName opens a new handle on the one the
+  // OBJECT_ATTRIBUTES name, ObReferenceObjectByName takes an Ob reference on the one an ANSI_STRING names;
+  // STATUS_OBJECT_NAME_NOT_FOUND when no object has that name.
+  uint32_t OpenObjectByName(Guest g, uint32_t attributes, uint32_t handle_out);
+  uint32_t ReferenceObjectByName(Guest g, uint32_t name, uint32_t object_out);
+  // ObOpenObjectByPointer: a new handle on an object the manager knows (one with a handle open, or a dispatcher
+  // object of its heap); STATUS_UNSUCCESSFUL otherwise, as the reference.
+  uint32_t OpenObjectByPointer(Guest g, uint32_t object, uint32_t handle_out);
+  // NtSignalAndWaitForSingleObjectEx: signals one object (sets an event, releases a semaphore once or a mutant),
+  // then waits on the other; STATUS_OBJECT_TYPE_MISMATCH for an object that cannot be signalled.
+  uint32_t SignalAndWait(Guest g, uint32_t signal, uint32_t wait, uint32_t thread, const int64_t* timeout);
   void ReferenceObject(uint32_t object) { ++references_[object]; }
 
   // Waits. A null timeout waits for ever; a relative timeout (negative, 100 ns units) polls that long; zero does not

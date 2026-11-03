@@ -1,5 +1,5 @@
 {
- "date": "2026-11-02",
+ "date": "2026-11-03",
  "reference": {
   "sdk": "ReXGlue",
   "version": "0.10.0"
@@ -7,9 +7,9 @@
  "titles": {
   "crackdown": {
    "imports": 248,
-   "imports_native": 205,
+   "imports_native": 248,
    "mvp_total": 226,
-   "mvp_native": 183,
+   "mvp_native": 226,
    "mnemonics": 340,
    "instructions": 2667844,
    "sdk": "0.10.0",
@@ -17,15 +17,15 @@
    "source": "",
    "description": "",
    "sites": 1534,
-   "sites_native": 1484,
+   "sites_native": 1534,
    "mvp_sites": 1504,
-   "mvp_sites_native": 1454
+   "mvp_sites_native": 1504
   },
   "simpsons": {
    "imports": 317,
-   "imports_native": 212,
+   "imports_native": 317,
    "mvp_total": 277,
-   "mvp_native": 190,
+   "mvp_native": 277,
    "mnemonics": 338,
    "instructions": 2938230,
    "sdk": "0.8.0",
@@ -33,9 +33,9 @@
    "source": "",
    "description": "",
    "sites": 4697,
-   "sites_native": 4553,
+   "sites_native": 4697,
    "mvp_sites": 4635,
-   "mvp_sites_native": 4523
+   "mvp_sites_native": 4635
   },
   "sonic06": {
    "imports": 200,
@@ -51,9 +51,9 @@
   },
   "tdu": {
    "imports": 278,
-   "imports_native": 232,
+   "imports_native": 278,
    "mvp_total": 255,
-   "mvp_native": 210,
+   "mvp_native": 255,
    "mnemonics": 0,
    "instructions": 0,
    "sdk": "",
@@ -66,8 +66,8 @@
   "total": 2914,
   "used": 374,
   "any360": {
-   "todo": 2659,
-   "native": 255
+   "todo": 2524,
+   "native": 390
   },
   "reference": {
    "implemented": 493,

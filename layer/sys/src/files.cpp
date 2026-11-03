@@ -360,9 +360,70 @@ uint32_t FileSystem::ReadFileScatter(Guest g, uint32_t handle, uint32_t event, u
   return status;
 }
 
+uint32_t FileSystem::WriteFileGather(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t segments, uint32_t length,
+                                     uint32_t offset_ptr) {
+  if (event && !Objects().Lookup(event)) return kStatusInvalidHandle;
+  Open* file = Find(handle);
+  if (!file) return kStatusInvalidHandle;
+  if (file->directory) return kStatusInvalidParameter;
+  if (file->mount->read_only) return kStatusAccessDenied;
+  uint64_t offset = offset_ptr ? g.Load64(offset_ptr) : ~0ull;
+  if (offset >= 0xFFFFFFFFFFFFFFFEull) offset = file->position;
+  std::fstream stream(file->host, std::ios::binary | std::ios::in | std::ios::out);
+  stream.seekp(std::streamoff(offset));
+  uint32_t done = 0;
+  for (uint32_t page = 0; done < length && stream; ++page) {
+    const uint32_t n = std::min<uint32_t>(0x1000, length - done);
+    stream.write(reinterpret_cast<const char*>(g.host(g.Load32(segments + 4 * page))), n);
+    if (stream) done += n;
+  }
+  const uint32_t status = done == length ? kStatusSuccess : kStatusAccessDenied;
+  file->position = offset + done;
+  StoreStatus(g, io_status, status, done);
+  if (event) Objects().NtSetEvent(g, event, 0);
+  return status;
+}
+
 uint32_t FileSystem::WriteFile(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length,
                                uint32_t offset_ptr) {
   return Transfer(g, handle, event, io_status, buffer, length, offset_ptr, true);
+}
+
+uint32_t FileSystem::DeviceControl(Guest g, uint32_t code, uint32_t output, uint32_t output_length, uint32_t& written) {
+  constexpr uint32_t kGetDriveGeometry = 0x70000, kGetPartitionInfo = 0x74004, kCacheBytes = 0xFF000;
+  constexpr uint32_t kStatusBufferTooSmall = 0xC0000023;
+  written = 0;
+  if (code == kGetDriveGeometry) {
+    if (output_length < 8) return kStatusBufferTooSmall;
+    g.Store32(output, kCacheBytes / 512);  // sectors
+    g.Store32(output + 4, 512);            // bytes a sector
+    written = 8;
+  } else if (code == kGetPartitionInfo) {
+    if (output_length < 16) return kStatusBufferTooSmall;
+    g.Store64(output, 0);                // starting offset
+    g.Store64(output + 8, kCacheBytes);  // length
+    written = 16;
+  } else {
+    return kStatusInvalidParameter;
+  }
+  return kStatusSuccess;
+}
+
+uint32_t FileSystem::DeviceIoControl(Guest g, uint32_t io_status, uint32_t code, uint32_t output, uint32_t output_length) {
+  uint32_t written;
+  const uint32_t status = DeviceControl(g, code, output, output_length, written);
+  if (status == kStatusSuccess && io_status) {
+    g.Store32(io_status, kStatusSuccess);
+    g.Store32(io_status + 4, written);
+  }
+  return status;
+}
+
+uint32_t FileSystem::SynchronousDeviceIoControl(Guest g, uint32_t code, uint32_t output, uint32_t output_length, uint32_t returned) {
+  uint32_t written;
+  const uint32_t status = DeviceControl(g, code, output, output_length, written);
+  if (status == kStatusSuccess && returned) g.Store32(returned, written);
+  return status;
 }
 
 uint32_t FileSystem::QueryInformation(Guest g, uint32_t handle, uint32_t io_status, uint32_t info, uint32_t length, uint32_t info_class) {

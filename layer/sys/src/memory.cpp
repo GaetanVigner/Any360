@@ -302,6 +302,29 @@ void MemoryManager::SetProtect(uint32_t address, uint32_t size, uint32_t protect
   }
 }
 
+uint32_t MemoryManager::ProtectVirtual(Guest g, uint32_t base_ptr, uint32_t size_ptr, uint32_t protect, uint32_t old_protect_ptr) {
+  constexpr uint32_t kStatusNotCommitted = 0xC000002D, kStatusInvalidPageProtection = 0xC0000045;
+  if (!base_ptr || !size_ptr || !g.Load32(size_ptr)) return kStatusInvalidParameter;
+  if (protect & (kPageExecuteRead | kPageExecuteReadWrite | 0x10 | 0x80)) return kStatusInvalidPageProtection;
+  const uint32_t required = kPageNoAccess | kPageReadOnly | kPageReadWrite;
+  if (std::popcount(protect & required) != 1) return kStatusInvalidPageProtection;
+  const uint32_t address = g.Load32(base_ptr);
+  Heap* heap = Find(address);
+  if (!heap || heap->spec.physical) return kStatusInvalidParameter;
+  const uint32_t start = (address - heap->spec.base) >> heap->shift;
+  const uint64_t end_address = uint64_t(address) + g.Load32(size_ptr);
+  const uint32_t end = uint32_t((end_address - heap->spec.base + heap->spec.page_size - 1) >> heap->shift);
+  if (end > heap->pages.size()) return kStatusNotCommitted;
+  for (uint32_t p = start; p < end; ++p) {
+    if (heap->pages[p].state != kCommitted) return kStatusNotCommitted;
+  }
+  if (old_protect_ptr) g.Store32(old_protect_ptr, heap->pages[start].protect);
+  for (uint32_t p = start; p < end; ++p) heap->pages[p].protect = uint16_t(Normalize(protect));
+  g.Store32(base_ptr, heap->spec.base + (start << heap->shift));
+  g.Store32(size_ptr, (end - start) << heap->shift);
+  return kStatusSuccess;
+}
+
 uint32_t MemoryManager::QueryAllocationSize(uint32_t address) const {
   const Heap* heap = Find(address);
   if (!heap) return 0;

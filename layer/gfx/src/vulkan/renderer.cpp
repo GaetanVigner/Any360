@@ -118,6 +118,28 @@ VulkanRenderer::~VulkanRenderer() {
     Flush();
     WaitIdle();
   }
+  if (submitter_.joinable()) {
+    {
+      std::lock_guard lock(submit_mutex_);
+      submit_stopping_ = true;
+    }
+    submit_cv_.notify_all();
+    submitter_.join();
+  }
+  {
+    std::lock_guard lock(record_mutex_);
+    record_stopping_ = true;
+  }
+  record_cv_.notify_all();
+  for (auto& w : workers_) {
+    if (w->thread.joinable()) w->thread.join();
+    for (VkCommandPool pool : w->pools) {
+      if (pool) f.vkDestroyCommandPool(d, pool, nullptr);
+    }
+    for (auto& pools : w->set_pools) {
+      for (VkDescriptorPool pool : pools) f.vkDestroyDescriptorPool(d, pool, nullptr);
+    }
+  }
   {
     std::lock_guard lock(done_mutex_);
     stopping_ = true;
@@ -154,6 +176,7 @@ VulkanRenderer::~VulkanRenderer() {
   DestroyBuffer(device_, gamma_lut_buffer_);
   DestroyImage(device_, gamma_image_);
   if (batch_pool_) f.vkDestroyCommandPool(d, batch_pool_, nullptr);
+  if (submit_pool_) f.vkDestroyCommandPool(d, submit_pool_, nullptr);
   for (auto& [key, pipeline] : pipelines_) {
     if (pipeline) f.vkDestroyPipeline(d, pipeline, nullptr);
   }
@@ -815,9 +838,14 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const bool restart = rectangle_list || (draw.source == DrawSource::kDma && strip && ((regs[kPaSuScModeCntl] >> 21) & 1) &&
                                           (draw.index_32 || reset_index <= UINT16_MAX));
 
-  TranslatedShader* vs = GetShader(*draw.vertex_shader);
   const bool wants_ps = edram_mode == 4 && draw.pixel_shader && !draw.pixel_shader->microcode.empty();
-  TranslatedShader* ps = wants_ps ? GetShader(*draw.pixel_shader) : nullptr;
+  const uint64_t shader_key[4] = {draw.vertex_shader->hash, wants_ps ? draw.pixel_shader->hash : 0,
+                                  uint64_t(regs[kSqProgramCntl]) << 32 | regs[kSqContextMisc],
+                                  uint64_t(wants_ps) | uint64_t(rectangle_list) << 1 |
+                                      uint64_t(topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) << 2};
+  const bool shaders_known = shader_memo_.valid && std::memcmp(shader_memo_.key, shader_key, sizeof(shader_key)) == 0;
+  TranslatedShader* vs = shaders_known ? shader_memo_.vs : GetShader(*draw.vertex_shader);
+  TranslatedShader* ps = shaders_known ? shader_memo_.ps : wants_ps ? GetShader(*draw.pixel_shader) : nullptr;
   if (!vs || (wants_ps && !ps)) {
     Fail("shader analysis");
     return;
@@ -835,6 +863,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
   // The translations for this draw: the interpolators the vertex shader writes and the pixel shader reads
   // (SQ_PROGRAM_CNTL, SQ_CONTEXT_MISC), and the register counts dynamic addressing may reach.
+  VkShaderModule vs_module = shader_memo_.vs_module, ps_module = shader_memo_.ps_module;
+  if (!shaders_known) {
   rg::reg::SQ_PROGRAM_CNTL program_cntl;
   program_cntl.value = regs[kSqProgramCntl];
   rg::reg::SQ_CONTEXT_MISC context_misc;
@@ -856,8 +886,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       vs->shader->GetDynamicAddressableRegisterCount(program_cntl.vs_num_reg),
       rectangle_list ? rg::Shader::HostVertexShaderType::kRectangleListAsTriangleStrip : rg::Shader::HostVertexShaderType::kVertex));
   vs_modification.vertex.interpolator_mask = interpolators;
-  const VkShaderModule vs_module = GetModule(*vs, vs_modification.value);
-  VkShaderModule ps_module = VK_NULL_HANDLE;
+  vs_module = GetModule(*vs, vs_modification.value);
+  ps_module = VK_NULL_HANDLE;
   if (ps) {
     SpirvShaderTranslator::Modification ps_modification(
         translator_->GetDefaultPixelShaderModification(ps->shader->GetDynamicAddressableRegisterCount(program_cntl.ps_num_reg)));
@@ -872,6 +902,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   if (!vs_module || (ps && !ps_module)) {
     Fail("shader translation");
     return;
+  }
+  std::memcpy(shader_memo_.key, shader_key, sizeof(shader_key));
+  shader_memo_.vs = vs, shader_memo_.ps = ps;
+  shader_memo_.vs_module = vs_module, shader_memo_.ps_module = ps_module;
+  shader_memo_.valid = true;
   }
 
   // Textures and samplers of each stage, in the order the translated shader binds them.
@@ -953,9 +988,13 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   stats_.texture_gpu_copies = textures_->gpu_copies();
   stats_.ns_texture_hash = textures_->ns_hash();
   stats_.ns_texture_load = textures_->ns_load();
-  const VkPipelineLayout pipeline_layout =
-      PipelineLayout(uint32_t(stage_textures[0].views.size()), uint32_t(stage_textures[0].samplers.size()),
-                     uint32_t(stage_textures[1].views.size()), uint32_t(stage_textures[1].samplers.size()));
+  const uint32_t layout_counts[4] = {uint32_t(stage_textures[0].views.size()), uint32_t(stage_textures[0].samplers.size()),
+                                     uint32_t(stage_textures[1].views.size()), uint32_t(stage_textures[1].samplers.size())};
+  if (!layout_memo_.layout || std::memcmp(layout_memo_.counts, layout_counts, sizeof(layout_counts))) {
+    layout_memo_.layout = PipelineLayout(layout_counts[0], layout_counts[1], layout_counts[2], layout_counts[3]);
+    std::memcpy(layout_memo_.counts, layout_counts, sizeof(layout_counts));
+  }
+  const VkPipelineLayout pipeline_layout = layout_memo_.layout;
   if (!pipeline_layout) {
     Fail("pipeline layout");
     return;
@@ -969,26 +1008,51 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // reach the same host image as its 1x draws to that EDRAM. Coordinates are scaled to samples; resolves pick or
   // average a pixel's samples.
   const uint32_t surface_info = regs[kRbSurfaceInfo];
+  const uint32_t mode_cntl = regs[kPaSuScModeCntl];
+  // Everything the targets, the scissor and the pipeline come from (the surfaces stay while the renderer does).
+  uint32_t target_key[TargetMemo::kWords] = {
+      surface_info, regs[kRbDepthControl], regs[kRbColorMask], regs[kRbColorInfo[0]], regs[kRbColorInfo[1]],
+      regs[kRbColorInfo[2]], regs[kRbColorInfo[3]], regs[kRbDepthInfo], regs[kPaScWindowOffset],
+      regs[kPaScWindowScissorTl], regs[kPaScWindowScissorBr], regs[kPaScScreenScissorTl], regs[kPaScScreenScissorBr],
+      mode_cntl, regs[kRbBlendControl[0]], regs[kRbBlendControl[1]], regs[kRbBlendControl[2]], regs[kRbBlendControl[3]],
+      uint32_t(topology), uint32_t(restart), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  std::memcpy(target_key + 20, &vs_module, 8);
+  std::memcpy(target_key + 22, &ps_module, 8);
+  std::memcpy(target_key + 24, &pipeline_layout, 8);
+  std::memcpy(target_key + 26, &ps, sizeof(ps));
+  static_assert(sizeof(ps) <= 8 && 28 <= TargetMemo::kWords);
+  Surface* colors[4] = {};
+  uint32_t color_infos[4] = {};
+  Surface* depth_surface = nullptr;
+  uint32_t width = UINT32_MAX, height = UINT32_MAX;
+  int32_t left, top, right, bottom;
+  uint32_t depth_control;
+  VkPipeline pipeline;
+  const int32_t msaa_x = ((surface_info >> 16) & 3) == 2 ? 2 : 1, msaa_y = ((surface_info >> 16) & 3) ? 2 : 1;
+  // Host pixels a guest pixel: its samples, each scale x scale pixels (the scale is the renderer's: not in the key).
+  const int32_t sample_x = msaa_x * int32_t(scale_), sample_y = msaa_y * int32_t(scale_);
+  const uint32_t window_offset = regs[kPaScWindowOffset];
+  const int32_t offset_x = int32_t(window_offset << 17) >> 17, offset_y = int32_t(window_offset << 1) >> 17;
+  for (uint32_t i = 0; i < 4; ++i) color_infos[i] = regs[kRbColorInfo[i]];
+  if (target_memo_.valid && std::memcmp(target_memo_.key, target_key, sizeof(target_key)) == 0) {
+    for (uint32_t i = 0; i < 4; ++i) colors[i] = static_cast<Surface*>(target_memo_.colors[i]);
+    depth_surface = static_cast<Surface*>(target_memo_.depth);
+    width = target_memo_.width, height = target_memo_.height, depth_control = target_memo_.depth_control;
+    left = target_memo_.left, top = target_memo_.top, right = target_memo_.right, bottom = target_memo_.bottom;
+    pipeline = target_memo_.pipeline;
+  } else {
   const uint32_t msaa = (surface_info >> 16) & 3;
   if (msaa > 2) {
     Fail("MSAA mode 3");
     return;
   }
-  const int32_t msaa_x = msaa == 2 ? 2 : 1, msaa_y = msaa ? 2 : 1;
   const uint32_t pitch = (surface_info & 0x3FFF) * uint32_t(msaa_x);
-  // Host pixels a guest pixel: its samples, each scale x scale pixels.
-  const int32_t sample_x = msaa_x * int32_t(scale_), sample_y = msaa_y * int32_t(scale_);
-  uint32_t depth_control = regs[kRbDepthControl];
+  depth_control = regs[kRbDepthControl];
   // Depth tested always without writes does nothing (the reference drops it the same way).
   if ((depth_control & 2) && !(depth_control & 4) && ((depth_control >> 4) & 7) == 7) depth_control &= ~2u;
   if (!polygonal) depth_control &= ~(1u << 7);  // back-face stencil only for polygons
-  Surface* colors[4] = {};
-  uint32_t color_infos[4] = {};
-  Surface* depth_surface = nullptr;
-  uint32_t width = UINT32_MAX, height = UINT32_MAX;
   const uint32_t color_mask_register = regs[kRbColorMask];
   for (uint32_t i = 0; i < 4; ++i) {
-    color_infos[i] = regs[kRbColorInfo[i]];
     if (!ps || !ps->shader->writes_color_target(i) || !((color_mask_register >> (4 * i)) & 0xF)) continue;
     colors[i] = GetSurface({color_infos[i] & 0xFFF, pitch, (color_infos[i] >> 16) & 0xF, 0});
     if (!colors[i]) {
@@ -1017,14 +1081,12 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
 
   // The scissor: the window scissor (moved by the window offset unless it says not to) within the screen scissor
   // and the targets.
-  const uint32_t window_offset = regs[kPaScWindowOffset];
-  const int32_t offset_x = int32_t(window_offset << 17) >> 17, offset_y = int32_t(window_offset << 1) >> 17;
   const uint32_t window_tl = regs[kPaScWindowScissorTl], window_br = regs[kPaScWindowScissorBr];
   const bool offset_scissor = !(window_tl >> 31);
-  int32_t left = int32_t(window_tl & 0x3FFF) + (offset_scissor ? offset_x : 0);
-  int32_t top = int32_t((window_tl >> 16) & 0x3FFF) + (offset_scissor ? offset_y : 0);
-  int32_t right = int32_t(window_br & 0x3FFF) + (offset_scissor ? offset_x : 0);
-  int32_t bottom = int32_t((window_br >> 16) & 0x3FFF) + (offset_scissor ? offset_y : 0);
+  left = int32_t(window_tl & 0x3FFF) + (offset_scissor ? offset_x : 0);
+  top = int32_t((window_tl >> 16) & 0x3FFF) + (offset_scissor ? offset_y : 0);
+  right = int32_t(window_br & 0x3FFF) + (offset_scissor ? offset_x : 0);
+  bottom = int32_t((window_br >> 16) & 0x3FFF) + (offset_scissor ? offset_y : 0);
   left = std::max({left, int32_t(regs[kPaScScreenScissorTl] & 0x7FFF), 0}) * sample_x;
   top = std::max({top, int32_t((regs[kPaScScreenScissorTl] >> 16) & 0x7FFF), 0}) * sample_y;
   right = std::min(std::min(right, int32_t(regs[kPaScScreenScissorBr] & 0x7FFF)) * sample_x, int32_t(width));
@@ -1035,7 +1097,6 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
 
   // The pipeline state from the registers.
-  const uint32_t mode_cntl = regs[kPaSuScModeCntl];
   PipelineKey key{};
   key.vs_module = uint64_t(vs_module);
   key.layout = uint64_t(pipeline_layout);
@@ -1061,7 +1122,6 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     key.blend_controls[i] = colors[i] ? (regs[kRbBlendControl[i]] & 0x1FFF1FFF) : kNoBlending;
     if (colors[i]) key.color_masks |= color_mask_register & (0xFu << (4 * i));
   }
-  VkPipeline pipeline;
   bool pending;
   {
     Timer pipeline_timer(stats_.ns_pipelines);
@@ -1071,6 +1131,14 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   if (!pipeline) {
     Fail("pipeline creation");
     return;
+  }
+  std::memcpy(target_memo_.key, target_key, sizeof(target_key));
+  for (uint32_t i = 0; i < 4; ++i) target_memo_.colors[i] = colors[i];
+  target_memo_.depth = depth_surface;
+  target_memo_.width = width, target_memo_.height = height, target_memo_.depth_control = depth_control;
+  target_memo_.left = left, target_memo_.top = top, target_memo_.right = right, target_memo_.bottom = bottom;
+  target_memo_.pipeline = pipeline;
+  target_memo_.valid = true;
   }
 
   // Constants, each at an aligned offset of the batch's ring: system, VS floats, PS floats, bool/loop, fetch. A draw
@@ -1106,7 +1174,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     offsets[index] = at;
     std::memcpy(base + at, data, bytes);
     at = AlignUp(at + bytes, constant_alignment_);
-    last.bytes.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + bytes);
+    if (data == float_scratch_.data() && bytes == float_scratch_.size()) {
+      std::swap(last.bytes, float_scratch_);  // packed for this draw only: kept without a copy
+    } else {
+      last.bytes.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + bytes);
+    }
     last.offset = offsets[index];
     last.valid = true;
   };
@@ -1224,127 +1296,65 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t stencil_front = regs[kRbStencilRefMask];
   const uint32_t stencil_back = (depth_control >> 7) & 1 ? regs[kRbStencilRefMaskBf] : stencil_front;
 
-  // The indices (endian-swapped to host order) into the batch's ring.
-  const auto indices_start = timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-  VkIndexType index_type = VK_INDEX_TYPE_NONE_KHR;
-  VkDeviceSize index_offset = 0;
+  // The indices: room in the batch's ring, reserved here; converted (endian-swapped to host order) where the draw
+  // is recorded.
+  DrawJob job{};
+  job.index_type = VK_INDEX_TYPE_NONE_KHR;
+  job.host_index_count = host_index_count;
+  job.index_buffer = batch().indices.buffer;
+  job.source = draw.source;
+  job.index_32 = draw.index_32;
+  job.endian = draw.index_endian;
+  job.restart = restart;
+  job.reset_index = reset_index;
+  job.primitives = primitives;
   if (rectangle_list || quad_list) {
     if (draw.source == DrawSource::kDma && uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_) {
       Fail("index buffer outside the mirrored memory");
       return;
     }
-    index_type = VK_INDEX_TYPE_UINT32;
-    index_offset = index_head_;
+    job.indices = rectangle_list ? DrawJob::Indices::kRectangles : DrawJob::Indices::kQuads;
+    job.index_type = VK_INDEX_TYPE_UINT32;
+    job.index_offset = index_head_;
     index_head_ = AlignUp(index_head_ + host_index_count * 4, 4);
-    uint32_t* dst = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(batch().indices.mapped) + index_offset);
-    if (rectangle_list) {
-      // Four strip vertices a rectangle, a restart between rectangles.
-      for (uint32_t r = 0; r < primitives; ++r) {
-        if (r) *dst++ = UINT32_MAX;
-        for (uint32_t i = 0; i < 4; ++i) *dst++ = 4 * r + i;
-      }
-    } else {
-      auto guest_index = [&](uint32_t i) -> uint32_t {
-        if (draw.source != DrawSource::kDma) return i;
-        const uint8_t* src = physical_ + draw.index_base;
-        if (draw.index_32) {
-          uint32_t v;
-          std::memcpy(&v, src + 4 * i, 4);
-          return GpuSwap(v, draw.index_endian);
-        }
-        uint16_t v;
-        std::memcpy(&v, src + 2 * i, 2);
-        if (draw.index_endian == Endian::k8in16 || draw.index_endian == Endian::k8in32) v = uint16_t(v << 8 | v >> 8);
-        return v;
-      };
-      for (uint32_t q = 0; q < primitives; ++q) {
-        const uint32_t a = guest_index(4 * q), b = guest_index(4 * q + 1), cc = guest_index(4 * q + 2), d = guest_index(4 * q + 3);
-        const uint32_t six[6] = {a, b, cc, a, cc, d};
-        std::memcpy(dst, six, sizeof(six));
-        dst += 6;
-      }
-    }
   } else if (draw.source == DrawSource::kDma) {
     if (uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_ || draw.index_bytes > batch().indices.size) {
       Fail("index buffer outside the mirrored memory");
       return;
     }
-    index_offset = index_head_;
+    job.indices = DrawJob::Indices::kDma;
+    job.index_type = draw.index_32 ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16;
+    job.index_offset = index_head_;
     index_head_ = AlignUp(index_head_ + draw.index_bytes, 4);
-    const uint8_t* src = physical_ + draw.index_base;
-    uint8_t* dst = static_cast<uint8_t*>(batch().indices.mapped) + index_offset;
-    // With primitive reset, the guest's reset index becomes the host's (all ones). Loops without per-index branches
-    // where they can (they vectorize): a copy, or a byte swap, and the reset test only when reset is on.
-    if (draw.index_32) {
-      index_type = VK_INDEX_TYPE_UINT32;
-      const uint32_t n = draw.index_bytes / 4;
-      if (draw.index_endian == Endian::kNone && !restart) {
-        std::memcpy(dst, src, size_t(n) * 4);
-      } else if (draw.index_endian == Endian::k8in32 && !restart) {
-        for (uint32_t i = 0; i < n; ++i) {
-          uint32_t v;
-          std::memcpy(&v, src + 4 * i, 4);
-          v = std::byteswap(v);
-          std::memcpy(dst + 4 * i, &v, 4);
-        }
-      } else {
-        for (uint32_t i = 0; i < n; ++i) {
-          uint32_t v;
-          std::memcpy(&v, src + 4 * i, 4);
-          v = GpuSwap(v, draw.index_endian);
-          if (restart && v == reset_index) v = UINT32_MAX;
-          std::memcpy(dst + 4 * i, &v, 4);
-        }
-      }
-    } else {
-      index_type = VK_INDEX_TYPE_UINT16;
-      const uint32_t n = draw.index_bytes / 2;
-      const bool swap = draw.index_endian == Endian::k8in16 || draw.index_endian == Endian::k8in32;
-      if (!swap && !restart) {
-        std::memcpy(dst, src, size_t(n) * 2);
-      } else if (!restart) {
-        for (uint32_t i = 0; i < n; ++i) {
-          uint16_t v;
-          std::memcpy(&v, src + 2 * i, 2);
-          v = uint16_t(v << 8 | v >> 8);
-          std::memcpy(dst + 2 * i, &v, 2);
-        }
-      } else {
-        // Converted in ordinary memory (vectorized, one loop per byte order), then copied at once: element stores into
-        // the write-combined buffer stall.
-        index_scratch_.resize(n);
-        uint16_t* out = index_scratch_.data();
-        const uint16_t reset = uint16_t(reset_index);
-        if (swap) {
-          for (uint32_t i = 0; i < n; ++i) {
-            uint16_t v;
-            std::memcpy(&v, src + 2 * i, 2);
-            v = uint16_t(v << 8 | v >> 8);
-            out[i] = v == reset ? uint16_t(UINT16_MAX) : v;
-          }
-        } else {
-          for (uint32_t i = 0; i < n; ++i) {
-            uint16_t v;
-            std::memcpy(&v, src + 2 * i, 2);
-            out[i] = v == reset ? uint16_t(UINT16_MAX) : v;
-          }
-        }
-        std::memcpy(dst, out, size_t(n) * 2);
-      }
-    }
+  } else {
+    job.indices = DrawJob::Indices::kNone;
   }
-
+  job.index_src = physical_ + draw.index_base;
+  job.index_bytes = draw.index_bytes;
+  job.index_dst = static_cast<uint8_t*>(batch().indices.mapped) + job.index_offset;
   if (draw.source == DrawSource::kDma && !rectangle_list && draw.index_endian != Endian::kNone) {
     CountSwapped(g_swapped.indices, draw.index_bytes);
-  }
-  if (timing) {
-    stats_.ns_draw_indices +=
-        uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - indices_start).count());
   }
   mark(stats_.ns_draw_constants);
   // The texture sets of both stages: sampled images, then samplers (empty sets for a stage without textures).
   VkDescriptorSet texture_sets[2] = {empty_set_, empty_set_};
+  // With recording threads, they make the sets (the bindings in the job).
+  bool sets_on_threads = !workers_.empty();
   for (uint32_t stage = 0; stage < 2; ++stage) {
+    sets_on_threads &= stage_textures[stage].views.size() <= DrawJob::kMaxBindings &&
+                       stage_textures[stage].samplers.size() <= DrawJob::kMaxBindings;
+  }
+  for (uint32_t stage = 0; stage < 2 && sets_on_threads; ++stage) {
+    const StageTextures& st = stage_textures[stage];
+    job.texture_layouts[stage] = VK_NULL_HANDLE;
+    if (st.views.empty() && st.samplers.empty()) continue;
+    job.texture_layouts[stage] = TextureSetLayout(stage == 0, uint32_t(st.views.size()), uint32_t(st.samplers.size()));
+    job.view_count[stage] = uint8_t(st.views.size());
+    job.sampler_count[stage] = uint8_t(st.samplers.size());
+    std::copy(st.views.begin(), st.views.end(), job.views[stage]);
+    std::copy(st.samplers.begin(), st.samplers.end(), job.samplers[stage]);
+  }
+  for (uint32_t stage = 0; stage < 2 && !sets_on_threads; ++stage) {
     const StageTextures& st = stage_textures[stage];
     if (st.views.empty() && st.samplers.empty()) continue;
     VkDescriptorSetLayout layout = TextureSetLayout(stage == 0, uint32_t(st.views.size()), uint32_t(st.samplers.size()));
@@ -1381,6 +1391,19 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     batch_sets_.emplace(set_key, texture_sets[stage]);  // a copy: the key's buffer stays for the next draw
   }
 
+  job.pipeline = pipeline;
+  job.layout = pipeline_layout;
+  job.sets[SpirvShaderTranslator::kDescriptorSetSharedMemoryAndEdram] = shared_set_;
+  job.sets[SpirvShaderTranslator::kDescriptorSetConstants] = batch().constants_set;
+  job.sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex] = texture_sets[0];
+  job.sets[SpirvShaderTranslator::kDescriptorSetTexturesPixel] = texture_sets[1];
+  std::memcpy(job.offsets, offsets, sizeof(offsets[0]) * SpirvShaderTranslator::kConstantBufferCount);
+  job.viewport = {0, 0, size[0], size[1], 0, 1};
+  job.scissor = {{left, top}, {uint32_t(right - left), uint32_t(bottom - top)}};
+  job.depth_bias[0] = bias_offset, job.depth_bias[1] = bias_scale;
+  std::memcpy(job.blend, blend_constants, sizeof(job.blend));
+  job.stencil[0] = stencil_front, job.stencil[1] = stencil_back;
+
   {
     Timer submit_timer(stats_.ns_submit);
     const VkCommandBuffer cb = Record();
@@ -1398,6 +1421,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       VkRenderingAttachmentInfo color[4];
       for (uint32_t i = 0; i < 4; ++i) {
         color[i] = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        segment_formats_[i] = colors[i] ? colors[i]->image.format : VK_FORMAT_UNDEFINED;
         if (!colors[i]) continue;  // no view: the location is unused
         Transition(cb, colors[i]->image, colors[i]->layout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
         color[i].imageView = colors[i]->image.view;
@@ -1406,6 +1430,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         color[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
       }
       VkRenderingAttachmentInfo depth{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+      segment_depth_ = depth_surface ? depth_surface->image.format : VK_FORMAT_UNDEFINED;
       if (depth_surface) {
         Transition(cb, depth_surface->image, depth_surface->layout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                    VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
@@ -1415,83 +1440,330 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
       }
       VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
+      // With recording threads, the pass's draws come in secondary command buffers.
+      segment_secondary_ = !workers_.empty();
+      rendering.flags = segment_secondary_ ? VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT : 0;
       rendering.renderArea = {{0, 0}, {width, height}};
       rendering.layerCount = 1;
       rendering.colorAttachmentCount = 4;
       rendering.pColorAttachments = color;
       rendering.pDepthAttachment = depth_surface ? &depth : nullptr;
       rendering.pStencilAttachment = depth_surface ? &depth : nullptr;
-      f.vkCmdBeginRendering(cb, &rendering);
+      if (segment_secondary_) {
+        // Recorded at the flush, around the chunks: this piece ends here, the next serial commands go after the pass.
+        f.vkEndCommandBuffer(cb);
+        piece_open_ = false;
+        if (segment_count_ == segments_.size()) segments_.emplace_back();
+        Segment& s = segments_[segment_count_];
+        std::memcpy(s.color, color, sizeof(color));
+        s.depth = depth;
+        s.has_depth = depth_surface != nullptr;
+        s.area = rendering.renderArea;
+        s.tasks.clear();
+        order_.push_back({VK_NULL_HANDLE, int32_t(segment_count_++)});
+      } else {
+        f.vkCmdBeginRendering(cb, &rendering);
+      }
       rendering_open_ = true;
       rendering_key_ = key;
     }
-    // Only what changed since the last draw of this batch (the state stays across render passes).
-    RecordedState& rs = recorded_;
-    if (!rs.valid || rs.pipeline != pipeline) f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    VkDescriptorSet sets[SpirvShaderTranslator::kDescriptorSetCount];
-    sets[SpirvShaderTranslator::kDescriptorSetSharedMemoryAndEdram] = shared_set_;
-    sets[SpirvShaderTranslator::kDescriptorSetConstants] = batch().constants_set;
-    sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex] = texture_sets[0];
-    sets[SpirvShaderTranslator::kDescriptorSetTexturesPixel] = texture_sets[1];
-    // From the first set that changed (all with another layout); the constants' set when its offsets changed.
-    static_assert(SpirvShaderTranslator::kDescriptorSetConstants == 1 && SpirvShaderTranslator::kDescriptorSetCount == 4);
-    uint32_t first_set = 0;
-    if (rs.valid && rs.layout == pipeline_layout) {
-      first_set = SpirvShaderTranslator::kDescriptorSetCount;
-      for (uint32_t i = 0; i < SpirvShaderTranslator::kDescriptorSetCount; ++i) {
-        if (rs.sets[i] != sets[i]) {
-          first_set = i;
-          break;
+    if (segment_secondary_) {
+      if (!open_task_) {
+        if (!spare_tasks_.empty()) {
+          open_task_ = std::move(spare_tasks_.back());
+          spare_tasks_.pop_back();
+        } else {
+          open_task_ = std::make_unique<RecordTask>();
         }
+        open_task_->jobs.clear();
+        open_task_->batch = current_;
+        open_task_->done = false;
+        std::memcpy(open_task_->formats, segment_formats_, sizeof(segment_formats_));
+        open_task_->depth = segment_depth_;
       }
-      if (first_set > SpirvShaderTranslator::kDescriptorSetConstants &&
-          std::memcmp(rs.offsets, offsets, sizeof(offsets[0]) * SpirvShaderTranslator::kConstantBufferCount)) {
-        first_set = SpirvShaderTranslator::kDescriptorSetConstants;
-      }
-    }
-    if (first_set < SpirvShaderTranslator::kDescriptorSetCount) {
-      const bool with_constants = first_set <= SpirvShaderTranslator::kDescriptorSetConstants;
-      f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, first_set,
-                                SpirvShaderTranslator::kDescriptorSetCount - first_set, sets + first_set,
-                                with_constants ? SpirvShaderTranslator::kConstantBufferCount : 0, with_constants ? offsets : nullptr);
-      rs.layout = pipeline_layout;
-      std::memcpy(rs.sets, sets, sizeof(sets));
-      std::memcpy(rs.offsets, offsets, sizeof(offsets[0]) * SpirvShaderTranslator::kConstantBufferCount);
-    }
-    const VkViewport viewport{0, 0, size[0], size[1], 0, 1};
-    const VkRect2D scissor{{left, top}, {uint32_t(right - left), uint32_t(bottom - top)}};
-    if (!rs.valid || std::memcmp(&rs.viewport, &viewport, sizeof(viewport))) f.vkCmdSetViewport(cb, 0, 1, &viewport);
-    if (!rs.valid || std::memcmp(&rs.scissor, &scissor, sizeof(scissor))) f.vkCmdSetScissor(cb, 0, 1, &scissor);
-    if (!rs.valid || rs.depth_bias[0] != bias_offset || rs.depth_bias[1] != bias_scale) {
-      f.vkCmdSetDepthBias(cb, bias_offset, 0.0f, bias_scale);
-    }
-    if (!rs.valid || std::memcmp(rs.blend, blend_constants, sizeof(rs.blend))) f.vkCmdSetBlendConstants(cb, blend_constants);
-    if (!rs.valid || rs.stencil[0] != stencil_front) {
-      f.vkCmdSetStencilCompareMask(cb, VK_STENCIL_FACE_FRONT_BIT, (stencil_front >> 8) & 0xFF);
-      f.vkCmdSetStencilWriteMask(cb, VK_STENCIL_FACE_FRONT_BIT, (stencil_front >> 16) & 0xFF);
-      f.vkCmdSetStencilReference(cb, VK_STENCIL_FACE_FRONT_BIT, stencil_front & 0xFF);
-    }
-    if (!rs.valid || rs.stencil[1] != stencil_back) {
-      f.vkCmdSetStencilCompareMask(cb, VK_STENCIL_FACE_BACK_BIT, (stencil_back >> 8) & 0xFF);
-      f.vkCmdSetStencilWriteMask(cb, VK_STENCIL_FACE_BACK_BIT, (stencil_back >> 16) & 0xFF);
-      f.vkCmdSetStencilReference(cb, VK_STENCIL_FACE_BACK_BIT, stencil_back & 0xFF);
-    }
-    rs.pipeline = pipeline;
-    rs.viewport = viewport;
-    rs.scissor = scissor;
-    rs.depth_bias[0] = bias_offset, rs.depth_bias[1] = bias_scale;
-    std::memcpy(rs.blend, blend_constants, sizeof(rs.blend));
-    rs.stencil[0] = stencil_front, rs.stencil[1] = stencil_back;
-    rs.valid = true;
-    if (index_type != VK_INDEX_TYPE_NONE_KHR) {
-      f.vkCmdBindIndexBuffer(cb, batch().indices.buffer, index_offset, index_type);
-      f.vkCmdDrawIndexed(cb, host_index_count, 1, 0, 0, 0);
+      open_task_->jobs.push_back(job);
+      if (open_task_->jobs.size() >= kChunkDraws) DispatchChunk();
     } else {
-      f.vkCmdDraw(cb, host_index_count, 1, 0, 0);
+      RecordJob(cb, job, recorded_, index_scratch_);
     }
   }
   mark(stats_.ns_draw_record);
   ++stats_.draws;
+}
+
+void VulkanRenderer::RecordJob(VkCommandBuffer cb, const DrawJob& job, RecordedState& rs, std::vector<uint16_t>& scratch) const {
+  const Functions& f = device_.fn();
+  // The indices, into the room reserved for them.
+  if (job.indices == DrawJob::Indices::kRectangles) {
+    // Four strip vertices a rectangle, a restart between rectangles.
+    uint32_t* dst = reinterpret_cast<uint32_t*>(job.index_dst);
+    for (uint32_t r = 0; r < job.primitives; ++r) {
+      if (r) *dst++ = UINT32_MAX;
+      for (uint32_t i = 0; i < 4; ++i) *dst++ = 4 * r + i;
+    }
+  } else if (job.indices == DrawJob::Indices::kQuads) {
+    uint32_t* dst = reinterpret_cast<uint32_t*>(job.index_dst);
+    auto guest_index = [&](uint32_t i) -> uint32_t {
+      if (job.source != DrawSource::kDma) return i;
+      if (job.index_32) {
+        uint32_t v;
+        std::memcpy(&v, job.index_src + 4 * i, 4);
+        return GpuSwap(v, job.endian);
+      }
+      uint16_t v;
+      std::memcpy(&v, job.index_src + 2 * i, 2);
+      if (job.endian == Endian::k8in16 || job.endian == Endian::k8in32) v = uint16_t(v << 8 | v >> 8);
+      return v;
+    };
+    for (uint32_t q = 0; q < job.primitives; ++q) {
+      const uint32_t a = guest_index(4 * q), b = guest_index(4 * q + 1), cc = guest_index(4 * q + 2), d = guest_index(4 * q + 3);
+      const uint32_t six[6] = {a, b, cc, a, cc, d};
+      std::memcpy(dst, six, sizeof(six));
+      dst += 6;
+    }
+  } else if (job.indices == DrawJob::Indices::kDma) {
+    const uint8_t* src = job.index_src;
+    uint8_t* dst = job.index_dst;
+    const bool restart = job.restart;
+    // With primitive reset, the guest's reset index becomes the host's (all ones). Loops without per-index branches
+    // where they can (they vectorize): a copy, or a byte swap, and the reset test only when reset is on.
+    if (job.index_32) {
+      const uint32_t n = job.index_bytes / 4;
+      if (job.endian == Endian::kNone && !restart) {
+        std::memcpy(dst, src, size_t(n) * 4);
+      } else if (job.endian == Endian::k8in32 && !restart) {
+        for (uint32_t i = 0; i < n; ++i) {
+          uint32_t v;
+          std::memcpy(&v, src + 4 * i, 4);
+          v = std::byteswap(v);
+          std::memcpy(dst + 4 * i, &v, 4);
+        }
+      } else {
+        for (uint32_t i = 0; i < n; ++i) {
+          uint32_t v;
+          std::memcpy(&v, src + 4 * i, 4);
+          v = GpuSwap(v, job.endian);
+          if (restart && v == job.reset_index) v = UINT32_MAX;
+          std::memcpy(dst + 4 * i, &v, 4);
+        }
+      }
+    } else {
+      const uint32_t n = job.index_bytes / 2;
+      const bool swap = job.endian == Endian::k8in16 || job.endian == Endian::k8in32;
+      if (!swap && !restart) {
+        std::memcpy(dst, src, size_t(n) * 2);
+      } else if (!restart) {
+        for (uint32_t i = 0; i < n; ++i) {
+          uint16_t v;
+          std::memcpy(&v, src + 2 * i, 2);
+          v = uint16_t(v << 8 | v >> 8);
+          std::memcpy(dst + 2 * i, &v, 2);
+        }
+      } else {
+        // Converted in ordinary memory (vectorized, one loop per byte order), then copied at once: element stores into
+        // the write-combined buffer stall.
+        scratch.resize(n);
+        uint16_t* out = scratch.data();
+        const uint16_t reset = uint16_t(job.reset_index);
+        if (swap) {
+          for (uint32_t i = 0; i < n; ++i) {
+            uint16_t v;
+            std::memcpy(&v, src + 2 * i, 2);
+            v = uint16_t(v << 8 | v >> 8);
+            out[i] = v == reset ? uint16_t(UINT16_MAX) : v;
+          }
+        } else {
+          for (uint32_t i = 0; i < n; ++i) {
+            uint16_t v;
+            std::memcpy(&v, src + 2 * i, 2);
+            out[i] = v == reset ? uint16_t(UINT16_MAX) : v;
+          }
+        }
+        std::memcpy(dst, out, size_t(n) * 2);
+      }
+    }
+  }
+
+  // Only what changed since the last draw recorded into `cb` (the state stays across render passes).
+  if (!rs.valid || rs.pipeline != job.pipeline) f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, job.pipeline);
+  // From the first set that changed (all with another layout); the constants' set when its offsets changed.
+  static_assert(SpirvShaderTranslator::kDescriptorSetConstants == 1 && SpirvShaderTranslator::kDescriptorSetCount == 4);
+  uint32_t first_set = 0;
+  if (rs.valid && rs.layout == job.layout) {
+    first_set = SpirvShaderTranslator::kDescriptorSetCount;
+    for (uint32_t i = 0; i < SpirvShaderTranslator::kDescriptorSetCount; ++i) {
+      if (rs.sets[i] != job.sets[i]) {
+        first_set = i;
+        break;
+      }
+    }
+    if (first_set > SpirvShaderTranslator::kDescriptorSetConstants &&
+        std::memcmp(rs.offsets, job.offsets, sizeof(job.offsets[0]) * SpirvShaderTranslator::kConstantBufferCount)) {
+      first_set = SpirvShaderTranslator::kDescriptorSetConstants;
+    }
+  }
+  if (first_set < SpirvShaderTranslator::kDescriptorSetCount) {
+    const bool with_constants = first_set <= SpirvShaderTranslator::kDescriptorSetConstants;
+    f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, job.layout, first_set,
+                              SpirvShaderTranslator::kDescriptorSetCount - first_set, job.sets + first_set,
+                              with_constants ? SpirvShaderTranslator::kConstantBufferCount : 0,
+                              with_constants ? job.offsets : nullptr);
+    rs.layout = job.layout;
+    std::memcpy(rs.sets, job.sets, sizeof(job.sets));
+    std::memcpy(rs.offsets, job.offsets, sizeof(job.offsets[0]) * SpirvShaderTranslator::kConstantBufferCount);
+  }
+  if (!rs.valid || std::memcmp(&rs.viewport, &job.viewport, sizeof(job.viewport))) f.vkCmdSetViewport(cb, 0, 1, &job.viewport);
+  if (!rs.valid || std::memcmp(&rs.scissor, &job.scissor, sizeof(job.scissor))) f.vkCmdSetScissor(cb, 0, 1, &job.scissor);
+  if (!rs.valid || rs.depth_bias[0] != job.depth_bias[0] || rs.depth_bias[1] != job.depth_bias[1]) {
+    f.vkCmdSetDepthBias(cb, job.depth_bias[0], 0.0f, job.depth_bias[1]);
+  }
+  if (!rs.valid || std::memcmp(rs.blend, job.blend, sizeof(rs.blend))) f.vkCmdSetBlendConstants(cb, job.blend);
+  if (!rs.valid || rs.stencil[0] != job.stencil[0]) {
+    f.vkCmdSetStencilCompareMask(cb, VK_STENCIL_FACE_FRONT_BIT, (job.stencil[0] >> 8) & 0xFF);
+    f.vkCmdSetStencilWriteMask(cb, VK_STENCIL_FACE_FRONT_BIT, (job.stencil[0] >> 16) & 0xFF);
+    f.vkCmdSetStencilReference(cb, VK_STENCIL_FACE_FRONT_BIT, job.stencil[0] & 0xFF);
+  }
+  if (!rs.valid || rs.stencil[1] != job.stencil[1]) {
+    f.vkCmdSetStencilCompareMask(cb, VK_STENCIL_FACE_BACK_BIT, (job.stencil[1] >> 8) & 0xFF);
+    f.vkCmdSetStencilWriteMask(cb, VK_STENCIL_FACE_BACK_BIT, (job.stencil[1] >> 16) & 0xFF);
+    f.vkCmdSetStencilReference(cb, VK_STENCIL_FACE_BACK_BIT, job.stencil[1] & 0xFF);
+  }
+  rs.pipeline = job.pipeline;
+  rs.viewport = job.viewport;
+  rs.scissor = job.scissor;
+  rs.depth_bias[0] = job.depth_bias[0], rs.depth_bias[1] = job.depth_bias[1];
+  std::memcpy(rs.blend, job.blend, sizeof(rs.blend));
+  rs.stencil[0] = job.stencil[0], rs.stencil[1] = job.stencil[1];
+  rs.valid = true;
+  if (job.index_type != VK_INDEX_TYPE_NONE_KHR) {
+    f.vkCmdBindIndexBuffer(cb, job.index_buffer, job.index_offset, job.index_type);
+    f.vkCmdDrawIndexed(cb, job.host_index_count, 1, 0, 0, 0);
+  } else {
+    f.vkCmdDraw(cb, job.host_index_count, 1, 0, 0);
+  }
+}
+
+void VulkanRenderer::MakeTextureSets(RecordWorker& w, uint32_t batch, DrawJob& job) const {
+  const Functions& f = device_.fn();
+  for (uint32_t stage = 0; stage < 2; ++stage) {
+    const VkDescriptorSetLayout layout = job.texture_layouts[stage];
+    if (!layout) continue;
+    const uint32_t views = job.view_count[stage], samplers = job.sampler_count[stage];
+    std::vector<uint64_t>& key = w.key;
+    key.clear();
+    key.push_back(uint64_t(layout));
+    for (uint32_t i = 0; i < views; ++i) key.push_back(uint64_t(job.views[stage][i]));
+    for (uint32_t i = 0; i < samplers; ++i) key.push_back(uint64_t(job.samplers[stage][i]));
+    if (const auto known = w.sets[batch].find(key); known != w.sets[batch].end()) {
+      job.sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex + stage] = known->second;
+      continue;
+    }
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    for (;;) {
+      if (w.set_pool_used[batch] == w.set_pools[batch].size()) {
+        // Another pool for this batch.
+        VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 8192}, {VK_DESCRIPTOR_TYPE_SAMPLER, 8192}};
+        VkDescriptorPoolCreateInfo info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        info.maxSets = 2048;
+        info.poolSizeCount = 2;
+        info.pPoolSizes = sizes;
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        if (f.vkCreateDescriptorPool(device_.device(), &info, nullptr, &pool) != VK_SUCCESS) return;
+        w.set_pools[batch].push_back(pool);
+      }
+      VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+      alloc.descriptorPool = w.set_pools[batch][w.set_pool_used[batch]];
+      alloc.descriptorSetCount = 1;
+      alloc.pSetLayouts = &layout;
+      if (f.vkAllocateDescriptorSets(device_.device(), &alloc, &set) == VK_SUCCESS) break;
+      ++w.set_pool_used[batch];  // full: the next one
+    }
+    w.infos.resize(views + samplers);
+    w.writes.resize(views + samplers);
+    for (uint32_t i = 0; i < views + samplers; ++i) {
+      const bool is_image = i < views;
+      w.infos[i] = is_image ? VkDescriptorImageInfo{VK_NULL_HANDLE, job.views[stage][i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
+                            : VkDescriptorImageInfo{job.samplers[stage][i - views], VK_NULL_HANDLE, VK_IMAGE_LAYOUT_UNDEFINED};
+      w.writes[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, set, i, 0, 1,
+                     is_image ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLER, &w.infos[i], nullptr, nullptr};
+    }
+    f.vkUpdateDescriptorSets(device_.device(), views + samplers, w.writes.data(), 0, nullptr);
+    w.sets[batch].emplace(key, set);
+    job.sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex + stage] = set;
+  }
+}
+
+void VulkanRenderer::DispatchChunk() {
+  if (!open_task_ || open_task_->jobs.empty()) return;
+  RecordTask* task = open_task_.get();
+  segment_tasks_.push_back(std::move(open_task_));
+  bool idle;
+  {
+    std::lock_guard lock(record_mutex_);
+    record_queue_.push_back(task);
+    idle = record_idle_ > 0;
+  }
+  if (idle) record_cv_.notify_one();  // busy threads take it from the queue when they are done
+}
+
+void VulkanRenderer::RecordLoop(uint32_t index) {
+  RecordWorker& w = *workers_[index];
+  const Functions& f = device_.fn();
+  for (;;) {
+    RecordTask* task;
+    {
+      std::unique_lock lock(record_mutex_);
+      while (!record_stopping_ && record_queue_.empty()) {
+        ++record_idle_;
+        record_cv_.wait(lock);
+        --record_idle_;
+      }
+      if (record_queue_.empty()) return;
+      task = record_queue_.front();
+      record_queue_.pop_front();
+    }
+    // A secondary command buffer of this thread's pool for the task's batch (reused once that batch has run).
+    const uint32_t b = task->batch;
+    if (w.used[b] == w.buffers[b].size()) {
+      VkCommandBufferAllocateInfo alloc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+      alloc.commandPool = w.pools[b];
+      alloc.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+      alloc.commandBufferCount = 1;
+      VkCommandBuffer cb = VK_NULL_HANDLE;
+      f.vkAllocateCommandBuffers(device_.device(), &alloc, &cb);
+      w.buffers[b].push_back(cb);
+    }
+    const VkCommandBuffer cb = w.buffers[b][w.used[b]++];
+    // Inside the render pass the thread that prepares draws began, with its attachments' formats.
+    VkCommandBufferInheritanceRenderingInfo rendering{VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO};
+    rendering.colorAttachmentCount = 4;
+    rendering.pColorAttachmentFormats = task->formats;
+    rendering.depthAttachmentFormat = task->depth;
+    rendering.stencilAttachmentFormat = task->depth;
+    rendering.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkCommandBufferInheritanceInfo inheritance{VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO, &rendering};
+    VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+    begin.pInheritanceInfo = &inheritance;
+    f.vkBeginCommandBuffer(cb, &begin);
+    RecordedState rs;  // a secondary command buffer starts with no state
+    for (const DrawJob& queued : task->jobs) {
+      if (queued.texture_layouts[0] || queued.texture_layouts[1]) {
+        DrawJob job = queued;
+        MakeTextureSets(w, b, job);
+        RecordJob(cb, job, rs, w.scratch);
+      } else {
+        RecordJob(cb, queued, rs, w.scratch);
+      }
+    }
+    f.vkEndCommandBuffer(cb);
+    task->cb = cb;
+    {
+      std::lock_guard lock(record_mutex_);
+      task->done.store(true, std::memory_order_release);
+    }
+    record_done_cv_.notify_all();
+  }
 }
 
 VkCommandBuffer VulkanRenderer::Record() {
@@ -1518,14 +1790,175 @@ VkCommandBuffer VulkanRenderer::Record() {
     }
     recorded_.valid = false;  // a new command buffer has no state
     batch_open_ = true;
+    b.pieces_used = 0;
+    order_.clear();
+    order_.push_back({b.cb, -1});
+    segment_count_ = 0;
+    current_piece_ = b.cb;
+    piece_open_ = true;
+  } else if (!piece_open_) {
+    // After a render pass recorded on the recording threads: a new piece.
+    current_piece_ = NextPiece(b);
+    order_.push_back({current_piece_, -1});
+    piece_open_ = true;
   }
-  return b.cb;
+  return current_piece_;
+}
+
+VkCommandBuffer VulkanRenderer::NextPiece(Batch& b) {
+  const Functions& f = device_.fn();
+  if (b.pieces_used == b.pieces.size()) {
+    VkCommandBufferAllocateInfo alloc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    alloc.commandPool = batch_pool_;
+    alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    alloc.commandBufferCount = 1;
+    VkCommandBuffer cb = VK_NULL_HANDLE;
+    f.vkAllocateCommandBuffers(device_.device(), &alloc, &cb);
+    b.pieces.push_back(cb);
+  }
+  const VkCommandBuffer cb = b.pieces[b.pieces_used++];
+  f.vkResetCommandBuffer(cb, 0);
+  VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+  begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  f.vkBeginCommandBuffer(cb, &begin);
+  return cb;
 }
 
 void VulkanRenderer::EndRendering() {
   if (!rendering_open_) return;
-  device_.fn().vkCmdEndRendering(batch().cb);
   rendering_open_ = false;
+  if (segment_secondary_) {
+    // The pass's chunks: the last dispatched; the pass is recorded around them at the flush (no wait here).
+    DispatchChunk();
+    Segment& s = segments_[segment_count_ - 1];
+    for (auto& task : segment_tasks_) s.tasks.push_back(std::move(task));
+    segment_tasks_.clear();
+    segment_secondary_ = false;
+    return;
+  }
+  device_.fn().vkCmdEndRendering(current_piece_);
+}
+
+uint32_t VulkanRenderer::AutoRecordThreads() {
+  // Measured on the replay bench, two recording threads take most of the gain (the preparation here is then the
+  // limit) and four the rest: two from 6 hardware threads on (8 on a Steam Deck), four from 12; fewer leave the
+  // cores to the title's threads and the command processor's.
+  const uint32_t hardware = std::max(1u, std::thread::hardware_concurrency());
+  return hardware >= 12 ? 4u : hardware >= 6 ? 2u : 0u;
+}
+
+void VulkanRenderer::SetRecordThreads(uint32_t count) {
+  if (!workers_.empty() || !count) return;
+  const Functions& f = device_.fn();
+  for (uint32_t i = 0; i < count; ++i) {
+    auto w = std::make_unique<RecordWorker>();
+    VkCommandPoolCreateInfo info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    info.queueFamilyIndex = device_.queue_family();
+    for (uint32_t b = 0; b < kBatches; ++b) {
+      if (f.vkCreateCommandPool(device_.device(), &info, nullptr, &w->pools[b]) != VK_SUCCESS) return;
+    }
+    workers_.push_back(std::move(w));
+  }
+  record_threads_ = count;
+  for (uint32_t i = 0; i < count; ++i) workers_[i]->thread = std::thread([this, i] { RecordLoop(i); });
+  VkCommandPoolCreateInfo submit_pool{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+  submit_pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+  submit_pool.queueFamilyIndex = device_.queue_family();
+  if (f.vkCreateCommandPool(device_.device(), &submit_pool, nullptr, &submit_pool_) == VK_SUCCESS) {
+    submitter_ = std::thread([this] { SubmitLoop(); });
+  }
+}
+
+void VulkanRenderer::SubmitLoop() {
+  for (;;) {
+    uint32_t index;
+    {
+      std::unique_lock lock(submit_mutex_);
+      submit_cv_.wait(lock, [&] { return submit_stopping_ || !to_submit_.empty(); });
+      if (to_submit_.empty()) return;
+      index = to_submit_.front();
+      to_submit_.pop_front();
+      submitting_ = true;
+    }
+    Submit(index);
+    {
+      std::lock_guard lock(submit_mutex_);
+      submitting_ = false;
+    }
+    submitted_cv_.notify_all();
+  }
+}
+
+void VulkanRenderer::WaitSubmitted() {
+  if (!submitter_.joinable()) return;
+  std::unique_lock lock(submit_mutex_);
+  submitted_cv_.wait(lock, [&] { return to_submit_.empty() && !submitting_; });
+}
+
+void VulkanRenderer::Submit(uint32_t index) {
+  const Functions& f = device_.fn();
+  Batch& b = batches_[index];
+  Submission& s = submissions_[index];
+  if (s.segment_count) {
+    // The render passes the recording threads drew: their chunks recorded, each pass a buffer around them.
+    {
+      std::unique_lock lock(record_mutex_);
+      record_done_cv_.wait(lock, [&] {
+        for (uint32_t i = 0; i < s.segment_count; ++i) {
+          for (const auto& task : s.segments[i].tasks) {
+            if (!task->done.load(std::memory_order_acquire)) return false;
+          }
+        }
+        return true;
+      });
+    }
+    s.pieces_used = 0;
+    for (Entry& entry : s.order) {
+      if (entry.segment < 0) continue;
+      Segment& seg = s.segments[entry.segment];
+      if (s.pieces_used == s.pieces.size()) {
+        VkCommandBufferAllocateInfo alloc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        alloc.commandPool = submit_pool_;
+        alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        alloc.commandBufferCount = 1;
+        VkCommandBuffer cb = VK_NULL_HANDLE;
+        f.vkAllocateCommandBuffers(device_.device(), &alloc, &cb);
+        s.pieces.push_back(cb);
+      }
+      entry.cb = s.pieces[s.pieces_used++];
+      f.vkResetCommandBuffer(entry.cb, 0);
+      VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+      begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+      f.vkBeginCommandBuffer(entry.cb, &begin);
+      VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
+      rendering.flags = VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
+      rendering.renderArea = seg.area;
+      rendering.layerCount = 1;
+      rendering.colorAttachmentCount = 4;
+      rendering.pColorAttachments = seg.color;
+      rendering.pDepthAttachment = seg.has_depth ? &seg.depth : nullptr;
+      rendering.pStencilAttachment = seg.has_depth ? &seg.depth : nullptr;
+      f.vkCmdBeginRendering(entry.cb, &rendering);
+      s.segment_cbs.clear();
+      for (auto& task : seg.tasks) {
+        s.segment_cbs.push_back(task->cb);
+        s.spent.push_back(std::move(task));
+      }
+      seg.tasks.clear();
+      if (!s.segment_cbs.empty()) f.vkCmdExecuteCommands(entry.cb, uint32_t(s.segment_cbs.size()), s.segment_cbs.data());
+      f.vkCmdEndRendering(entry.cb);
+      f.vkEndCommandBuffer(entry.cb);
+    }
+    s.segment_count = 0;
+  }
+  s.cbs.clear();
+  if (s.upload) s.cbs.push_back(b.upload_cb);
+  for (const Entry& entry : s.order) s.cbs.push_back(entry.cb);
+  VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+  submit.commandBufferCount = uint32_t(s.cbs.size());
+  submit.pCommandBuffers = s.cbs.data();
+  if (f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence) != VK_SUCCESS) Fail("batch submission");
 }
 
 void VulkanRenderer::Flush() {
@@ -1535,10 +1968,18 @@ void VulkanRenderer::Flush() {
   const VkDevice d = device_.device();
   Batch& b = batch();
   EndRendering();
+  const VkCommandBuffer last = Record();  // after the last render pass
   if (timestamps_) {
-    f.vkCmdWriteTimestamp2(b.cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, 4 * uint32_t(&b - batches_.data()) + 1);
+    f.vkCmdWriteTimestamp2(last, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, 4 * uint32_t(&b - batches_.data()) + 1);
   }
-  f.vkEndCommandBuffer(b.cb);
+  f.vkEndCommandBuffer(last);
+  piece_open_ = false;
+  const uint32_t submitted = current_;
+  Submission& submission = submissions_[submitted];
+  std::swap(submission.order, order_);
+  std::swap(submission.segments, segments_);
+  submission.segment_count = segment_count_;
+  segment_count_ = 0;
   submitted_at_[uint32_t(&b - batches_.data())] = std::chrono::steady_clock::now();
   // Guest memory the batch's shaders fetch from: read in place, or copied once here (the draws run now, so they
   // see memory as it is now either way).
@@ -1628,14 +2069,19 @@ void VulkanRenderer::Flush() {
     upload = true;
   }
   if (textures_) textures_->TakeStaging(b.staging);  // the batch's uploads read them
-  const VkCommandBuffer cbs[2] = {b.upload_cb, b.cb};
-  VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-  submit.commandBufferCount = upload ? 2 : 1;
-  submit.pCommandBuffers = upload ? cbs : &b.cb;
   b.uploaded = upload;
-  if (f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence) != VK_SUCCESS) Fail("batch submission");
+  submission.upload = upload;
+  if (submitter_.joinable()) {
+    // Submitted by its thread, once its render passes' chunks are recorded: no wait for them here.
+    {
+      std::lock_guard lock(submit_mutex_);
+      to_submit_.push_back(submitted);
+    }
+    submit_cv_.notify_one();
+  } else {
+    Submit(submitted);
+  }
   batch_open_ = false;
-  const uint32_t submitted = current_;
   {
     std::lock_guard lock(done_mutex_);
     b.done = false;
@@ -1649,6 +2095,19 @@ void VulkanRenderer::Flush() {
   WaitBatch(current_);
   Batch& next = batch();
   f.vkResetFences(d, 1, &next.fence);
+  for (auto& task : submissions_[current_].spent) spare_tasks_.push_back(std::move(task));
+  submissions_[current_].spent.clear();
+  // The recording threads' command buffers for this batch are free again (every chunk of it was recorded before its
+  // submission).
+  for (auto& w : workers_) {
+    if (w->used[current_]) f.vkResetCommandPool(d, w->pools[current_], 0);
+    w->used[current_] = 0;
+    for (uint32_t i = 0; i < w->set_pools[current_].size() && i <= w->set_pool_used[current_]; ++i) {
+      f.vkResetDescriptorPool(d, w->set_pools[current_][i], 0);
+    }
+    w->set_pool_used[current_] = 0;
+    w->sets[current_].clear();
+  }
   f.vkResetDescriptorPool(d, next.draw_pool, 0);
   batch_sets_.clear();
   if (next.depth_pool) f.vkResetDescriptorPool(d, next.depth_pool, 0);

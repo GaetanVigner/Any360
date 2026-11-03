@@ -50,6 +50,10 @@ class MemoryManager {
   uint32_t PhysicalAddress(uint32_t address) const;
   uint32_t QueryProtect(uint32_t address) const;
   void SetProtect(uint32_t address, uint32_t size, uint32_t protect);
+  // NtProtectVirtualMemory: in/out base and size (rounded out to whole pages); the old protection of the first page
+  // written. Every page must be committed (STATUS_NOT_COMMITTED); execute rights are not granted to data
+  // (STATUS_INVALID_PAGE_PROTECTION), as the reference does.
+  uint32_t ProtectVirtual(Guest g, uint32_t base_ptr, uint32_t size_ptr, uint32_t protect, uint32_t old_protect_ptr);
   uint32_t QueryAllocationSize(uint32_t address) const;
   uint32_t QueryStatistics(Guest g, uint32_t stats_ptr) const;
   // XamAlloc / XamFree: committed 4 KB pages, zeroed.

@@ -127,6 +127,15 @@ class VulkanRenderer : public gfx::Renderer {
   ~VulkanRenderer() override;
 
   bool Initialize();
+  // Threads that record draws (into secondary command buffers, a chunk of a render pass's draws each) while this
+  // thread prepares the next ones; 0 records them here. Set before the first draw.
+  void SetRecordThreads(uint32_t count);
+  // A count for this machine: what its cores leave after the title's threads and the command processor's.
+  static uint32_t AutoRecordThreads();
+  uint32_t record_threads() const { return record_threads_; }
+  // With recording threads, a thread of its own submits the batches (it waits for their chunks, records their render
+  // passes around them): wait until everything flushed is on the queue, before using the queue otherwise (presenting).
+  void WaitSubmitted();
 
   // The host image of a surface, created on first use (width = pitch, height = the EDRAM rows the surface spans).
   struct Surface {
@@ -320,6 +329,10 @@ class VulkanRenderer : public gfx::Renderer {
   struct Batch {
     VkCommandBuffer cb = VK_NULL_HANDLE;
     VkCommandBuffer upload_cb = VK_NULL_HANDLE;  // guest memory the batch's shaders read, copied into video memory first
+    // With recording threads, the batch is several primary command buffers run in order: pieces this thread records
+    // (cb the first), and a render pass's buffer each, recorded at the flush around its chunks.
+    std::vector<VkCommandBuffer> pieces;
+    uint32_t pieces_used = 0;
     VkFence fence = VK_NULL_HANDLE;
     Buffer constants, indices;
     VkDescriptorSet constants_set = VK_NULL_HANDLE;
@@ -380,7 +393,7 @@ class VulkanRenderer : public gfx::Renderer {
                     uint32_t sample_y, uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian, VkFormat format);
   std::set<uint32_t> front_buffers_;  // bases swapped as front buffers: resolves there are always read back
   void ReadsGuestMemory(uint32_t address, uint32_t bytes);
-  VkQueryPool timestamps_ = VK_NULL_HANDLE;  // two a batch: start, end
+  VkQueryPool timestamps_ = VK_NULL_HANDLE;  // four a batch: start, end, its upload's start, end
   std::array<std::chrono::steady_clock::time_point, 8> submitted_at_{};
   uint32_t constant_head_ = 0, index_head_ = 0;  // ring allocation of the batch's constants and indices
   // The last block of each constant buffer written in the open batch: a draw whose block is the same reuses it
@@ -429,8 +442,142 @@ class VulkanRenderer : public gfx::Renderer {
   // The last shader and pipeline looked up (consecutive draws mostly use the same: no map search then).
   const void* last_shader_source_[2] = {};
   uint64_t last_shader_hash_[2] = {};
+  // Most draws keep the previous draw's shaders, targets and pipeline state (only constants and fetch constants
+  // change): what those registers gave last, reused while they hold the same values.
+  struct ShaderMemo {
+    uint64_t key[4] = {};  // vertex and pixel shader hashes, SQ_PROGRAM_CNTL << 32 | SQ_CONTEXT_MISC, flags
+    bool valid = false;
+    TranslatedShader *vs = nullptr, *ps = nullptr;
+    VkShaderModule vs_module = VK_NULL_HANDLE, ps_module = VK_NULL_HANDLE;
+  } shader_memo_;
+  struct LayoutMemo {
+    uint32_t counts[4] = {};
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+  } layout_memo_;
+  struct TargetMemo {
+    static constexpr uint32_t kWords = 30;
+    uint32_t key[kWords] = {};
+    bool valid = false;
+    void* colors[4] = {};
+    void* depth = nullptr;
+    uint32_t width = 0, height = 0, depth_control = 0;
+    int32_t left = 0, top = 0, right = 0, bottom = 0;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+  } target_memo_;
   struct TranslatedShader* last_shader_[2] = {};
   std::vector<uint16_t> index_scratch_;
+  // A draw as prepared here, recorded by RecordJob: what it binds, its dynamic state, its indices (converted into the
+  // batch's ring at `index_dst`, reserved here).
+  struct DrawJob {
+    VkPipeline pipeline;
+    VkPipelineLayout layout;
+    VkDescriptorSet sets[4];
+    uint32_t offsets[8];
+    VkViewport viewport;
+    VkRect2D scissor;
+    float depth_bias[2];
+    float blend[4];
+    uint32_t stencil[2];
+    enum class Indices : uint8_t { kNone, kRectangles, kQuads, kDma } indices;
+    bool index_32, restart;
+    Endian endian;
+    DrawSource source;
+    VkIndexType index_type;
+    VkBuffer index_buffer;
+    VkDeviceSize index_offset;
+    uint8_t* index_dst;
+    const uint8_t* index_src;
+    uint32_t index_bytes, primitives, reset_index, host_index_count;
+    // The texture sets a recording thread makes (sets[2 + stage] then), by layout: images, then samplers.
+    static constexpr uint32_t kMaxBindings = 16;
+    VkDescriptorSetLayout texture_layouts[2];
+    uint8_t view_count[2], sampler_count[2];
+    VkImageView views[2][kMaxBindings];
+    VkSampler samplers[2][kMaxBindings];
+  };
+  void RecordJob(VkCommandBuffer cb, const DrawJob& job, RecordedState& rs, std::vector<uint16_t>& scratch) const;
+  // Recording threads: chunks of the open render pass's draws, each into a secondary command buffer; the pass's
+  // chunks run in order when it ends (EndRendering waits for them).
+  struct RecordTask {
+    std::vector<DrawJob> jobs;
+    uint32_t batch = 0;
+    VkFormat formats[4] = {};  // the render pass's attachments
+    VkFormat depth = VK_FORMAT_UNDEFINED;
+    VkCommandBuffer cb = VK_NULL_HANDLE;
+    std::atomic<bool> done{false};
+  };
+  struct RecordWorker {
+    std::thread thread;
+    VkCommandPool pools[8] = {};              // by batch
+    std::vector<VkCommandBuffer> buffers[8];  // allocated from each pool
+    uint32_t used[8] = {};                    // of them, in use since the pool's reset
+    std::vector<uint16_t> scratch;
+    // Texture sets: pools by batch (another when one is full), the sets made in the batch by their contents.
+    std::vector<VkDescriptorPool> set_pools[8];
+    uint32_t set_pool_used[8] = {};
+    std::unordered_map<std::vector<uint64_t>, VkDescriptorSet, SetKeyHash> sets[8];
+    std::vector<uint64_t> key;
+    std::vector<VkDescriptorImageInfo> infos;
+    std::vector<VkWriteDescriptorSet> writes;
+  };
+  void MakeTextureSets(RecordWorker& w, uint32_t batch, DrawJob& job) const;
+  void RecordLoop(uint32_t worker);
+  void DispatchChunk();
+  uint32_t record_threads_ = 0;
+  std::vector<std::unique_ptr<RecordWorker>> workers_;
+  std::mutex record_mutex_;
+  std::condition_variable record_cv_, record_done_cv_;
+  std::deque<RecordTask*> record_queue_;
+  bool record_stopping_ = false;
+  uint32_t record_idle_ = 0;  // recording threads waiting for a chunk (guarded by record_mutex_)
+  std::vector<std::unique_ptr<RecordTask>> segment_tasks_;  // the open render pass's chunks, in order
+  std::vector<std::unique_ptr<RecordTask>> spare_tasks_;    // reused
+  std::unique_ptr<RecordTask> open_task_;                   // the chunk being filled
+  std::vector<VkCommandBuffer> segment_cbs_;
+  std::vector<VkCommandBuffer> submit_cbs_;
+  // The open batch in order: pieces (cb) and render passes (segment, an index into segments_).
+  struct Segment {
+    VkRenderingAttachmentInfo color[4];
+    VkRenderingAttachmentInfo depth;
+    bool has_depth = false;
+    VkRect2D area;
+    std::vector<std::unique_ptr<RecordTask>> tasks;
+  };
+  struct Entry {
+    VkCommandBuffer cb;
+    int32_t segment;  // -1: a piece
+  };
+  std::vector<Segment> segments_;
+  uint32_t segment_count_ = 0;
+  std::vector<Entry> order_;
+  VkCommandBuffer current_piece_ = VK_NULL_HANDLE;
+  bool piece_open_ = false;
+  VkCommandBuffer NextPiece(Batch& b);
+  // A flushed batch as the submission thread takes it: its order and render passes, the render passes' buffers (from
+  // submit_pool_, that thread's), the chunks it has recorded (back to spare_tasks_ when the batch is reused).
+  struct Submission {
+    std::vector<Entry> order;
+    std::vector<Segment> segments;
+    uint32_t segment_count = 0;
+    bool upload = false;
+    std::vector<VkCommandBuffer> pieces;
+    uint32_t pieces_used = 0;
+    std::vector<VkCommandBuffer> cbs, segment_cbs;
+    std::vector<std::unique_ptr<RecordTask>> spent;
+  };
+  std::array<Submission, 8> submissions_;  // by batch
+  void Submit(uint32_t index);             // on the submission thread, or here without one
+  void SubmitLoop();
+  std::thread submitter_;
+  VkCommandPool submit_pool_ = VK_NULL_HANDLE;
+  std::mutex submit_mutex_;
+  std::condition_variable submit_cv_, submitted_cv_;
+  std::deque<uint32_t> to_submit_;
+  bool submitting_ = false, submit_stopping_ = false;
+  bool segment_secondary_ = false;  // the open pass takes secondary command buffers
+  VkFormat segment_formats_[4] = {};
+  VkFormat segment_depth_ = VK_FORMAT_UNDEFINED;
+  static constexpr uint32_t kChunkDraws = 32;
   // By texture fetch constant (32), view type (3) and signedness: the last view and swizzled signs for its six words,
   // reused while the texture cache says views stay valid (no search by the fetch constant's words then).
   struct TextureMemo {

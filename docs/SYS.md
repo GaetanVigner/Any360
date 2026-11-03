@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (255 system calls)
+## What is verified (390 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -105,6 +105,61 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `ObReferenceObject`, the STFS device calls, and the console-key operations answered as a machine without its keys
   (`XeCryptBnQwBeSigVerify` accepts, `XeKeysGetKey` refuses, `XeCryptRotSumSha` zeroes its digest: no known title
   depends on that value, and Sonic '06's own port runs with it stubbed).
+- **The rest of Crackdown** (MVP reached: all 248 of its system calls; scenario tests), answered as a retail
+  console with one local profile and no Xbox Live:
+  - the offline network: Winsock events (`NetDll_WSACreateEvent`, `WSACloseEvent`, `WSAWaitForMultipleEvents` with
+    NT wait semantics: millisecond timeouts, the index of the event taken, `WSA_WAIT_TIMEOUT`; the reference returns 0
+    whatever happened and reads the timeout in 100 ns units, so it is not the oracle there), the socket calls
+    failing like the others (`getsockname`, `getpeername`, `WSAEventSelect`), XNet random bytes and system link keys
+    (local: they work), key registration, and connections, server lookups and QoS failing with `WSAENETDOWN`, a lost
+    connection status, `XNetQosListen`'s `ERROR_FUNCTION_FAILED` as the reference; `XNetLogonGetTitleID` from the
+    XEX execution info;
+  - XAM: tasks on a new guest thread (`XamTaskSchedule`), no voice device, no Live friends, an empty achievement
+    enumerator, a failed stats enumerator (leaderboards are Live's), the gamer picture as placeholder ids and a plain
+    image, the Live guide screens opening and closing at once, the online country from the console settings;
+  - the kernel: `XexLoadImage` / `XexUnloadImage` for the title's module and the system modules (by name, a path's
+    directories ignored; `XexGetModuleHandle` now answers the system modules too, as a console and the reference do),
+    no other image; `NtDeviceIoControlFile` answering the cache partition's disk queries as the reference;
+    `IoDismountVolumeByFileHandle`; the console-key signature calls passing as the reference; the floating-point
+    state save and restore (the thread's own state, nothing to do); `XamContentLaunchImage` finding no image.
+- **The rest of Test Drive Unlimited** (MVP reached: all 278 of its system calls; scenario tests):
+  - the network: `XNetCleanup`, title server addresses not resolved (`WSAENETDOWN`), nothing to unregister
+    (`WSAEINVAL`);
+  - XAM: `XMsgCompleteIORequest` (result, extended error and length, the event set) and `XamGetOverlappedResult`
+    (`ERROR_IO_INCOMPLETE` for a pending request unless asked to wait on its event), the virtual keyboard accepted at
+    once with its default text (the reference's headless answer), a package's thumbnail kept next to its folder, the
+    license mask (0, as the reference), the gamer tile write accepted, the notification position and delay, the DVD
+    tray closed with the disc;
+  - the kernel: DPCs (`KeInitializeDpc` lays the KDPC out, `KeInsertQueueDpc` / `KeRemoveQueueDpc` queue it once; a
+    queued DPC does not run yet, as in the reference), `ObOpenObjectByName` / `ObReferenceObjectByName` on named
+    objects (the name an `ANSI_STRING`, which the reference reads as a C string), `NtWriteFileGather` (pages listed
+    one pointer each, as `NtReadFileScatter`), `IoSynchronousDeviceIoControlRequest` (the cache partition's disk
+    queries; the reference accepts any code and writes nothing), `IoDismountVolume` / `ByName`, `MmMapIoSpace`
+    (device registers are plain memory), `XexLoadImageHeaders` (the XEX2 headers of an image on a mounted device; the
+    reference does not implement it), `VdSetDisplayModeOverride` and `XAudioGetSpeakerConfig` as the reference.
+- **The rest of The Simpsons Game outside graphics and audio** (MVP reached: all 300 of those; scenario tests):
+  - the network: the overlapped Winsock calls (`WSARecv`, `WSARecvFrom`, `WSASend`, `WSASendTo`,
+    `WSAGetOverlappedResult`, `WSACancelOverlappedIO`) failing on sockets that never exist (`WSAENOTSOCK`), as the
+    other socket calls; `WSASetLastError`, `WSASetEvent` / `WSAResetEvent` on the Winsock events; DNS and QoS service
+    lookups completing at once with no answer (records from the kernel pool, their event set); `XNetGetOpt` giving
+    back the startup parameters `XNetStartup` was given; no link, no debug address, no server or peer known, no
+    newer title version; `XNetLogonGetMachineID` a fixed console id (`TitleSettings::machine_id`);
+  - XAM: `XMsgSystemProcessCall` as the in-process form; the content device enumerator (the hard drive) and device
+    names; a package's thumbnail read back; `XamContentResolve` giving a device path mounted on the package folder
+    (`\Device\Content\<type>\<file name>`; the reference answers not found); `XamContentFlush`; no package to
+    install; the Live guide screens (messages, players, achievements, invites...) opening and closing at once;
+  - the kernel: `NtProtectVirtualMemory` (whole committed pages, never execute rights, as the reference),
+    `NtSignalAndWaitForSingleObjectEx` (an event set, a semaphore or mutant released, then the wait),
+    `ObOpenObjectByPointer`, `ObLookupThreadByThreadId` (the scheduler's threads), `NtQueueApcThread` (the APC queued
+    on its thread; delivery needs alertable waits, which come later), `XexUnloadImageAndExitThread`.
+- **The kernel side of The Simpsons Game's audio and video** (all 317 of its system calls native; scenario tests):
+  the XMA context calls reading and writing the fields of the 64-byte context as the hardware packs them (big-endian
+  words, bitfields from the low bit): `XMAInitializeContext` from its 56-byte init block, the input and output buffers
+  as physical addresses (`0x80000000` for a buffer outside physical memory, as the reference), buffer validity, read
+  and write offsets, loop data, packet metadata; `XMAEnableContext` / `XMADisableContext` handed to the `XmaBackend`
+  (new optional `ContextEnabled` / `ContextDisabled`); `XMABlockWhileInUse`. `XMASetLoopData` reads an
+  `XMA_LOOP_DATA` (the reference reads it as a whole context). `VdQuerySystemCommandBuffer`,
+  `VdSetSystemCommandBuffer` and `XAudioQueryDriverPerformance` answer success and write nothing, as the reference.
 - **Graphics and audio, the kernel side** (`graphics.h`, `audio.h`; scenario tests with a fake GPU, sink and XMA
   decoder): `VdInitializeEngines`, `VdInitializeRingBuffer` and `VdEnableRingBufferRPtrWriteBack` (handed to a
   `GpuBackend`, the command processor), `VdSwap` (the front buffer's fetch constant, made physical, and `XE_SWAP` written into the ring as the reference does), `VdSetGraphicsInterruptCallback` (the title's handler runs on a guest context
@@ -149,6 +204,16 @@ so their import tables are not available without the game.
 **MVP reached for Sonic the Hedgehog (2006)**: all 178 of its system calls outside graphics and audio are native (2026-11-01),
 and with the kernel side of graphics and audio, all 200 of its system calls (2026-11-01). What it still needs from
 outside the layer is the backends: the GPU command processor and renderer, the audio output and XMA decoding.
+
+**MVP reached for Crackdown**: all 248 of its system calls are native (2026-11-03), graphics and audio included on
+the kernel side; its graphics already run through any360::gfx (`layer/host/rexglue`).
+
+**MVP reached for Test Drive Unlimited**: all 278 of its system calls are native (2026-11-03), graphics and audio
+included on the kernel side.
+
+**MVP reached for The Simpsons Game**: all 317 of its system calls are native (2026-11-03), graphics and audio
+included on the kernel side. Every known title has now reached the MVP, and every system call the four titles
+import (374) is native.
 
 **MVP**: one title with every system call except the graphics and audio ones native, so it can run on `any360::sys`
 with only those left to the reference. The progress page shows the MVP per title; the closest title is the target, and

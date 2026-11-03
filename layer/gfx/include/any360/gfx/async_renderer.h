@@ -27,6 +27,7 @@ class AsyncRenderer : public Renderer {
   void Drain();
   // Time the worker spent running calls (nanoseconds, summed): the renderer's thread's load.
   uint64_t busy_ns() const { return busy_ns_.load(std::memory_order_relaxed); }
+  std::thread::native_handle_type worker_handle() { return worker_.native_handle(); }
   uint64_t queued_bytes() const { return published_.load(std::memory_order_relaxed); }  // all calls so far
 
   void ShaderLoaded(const Shader& shader) override;
@@ -57,10 +58,13 @@ class AsyncRenderer : public Renderer {
   Renderer& target_;
   std::vector<uint8_t> queue_;
   size_t write_ = 0;                  // producer position (bytes)
-  std::atomic<size_t> published_{0};  // bytes published (monotonic)
-  std::atomic<size_t> consumed_{0};   // bytes the worker is done with (monotonic)
-  size_t produced_ = 0;               // published_, the producer's copy
-  std::atomic<bool> stopping_{false}, worker_waiting_{false};
+  // A cache line each for what one thread writes and the other reads.
+  alignas(64) std::atomic<size_t> published_{0};  // bytes published (monotonic)
+  alignas(64) std::atomic<size_t> consumed_{0};   // bytes the worker is done with (monotonic)
+  alignas(64) std::atomic<bool> worker_waiting_{false};
+  alignas(64) size_t produced_ = 0;  // published_, the producer's copy
+  size_t consumed_seen_ = 0;         // consumed_ as the producer last read it (room is checked against it first)
+  std::atomic<bool> stopping_{false};
   std::atomic<uint64_t> busy_ns_{0};
   std::mutex mutex_;
   std::condition_variable work_, room_;

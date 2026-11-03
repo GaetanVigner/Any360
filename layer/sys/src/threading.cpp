@@ -1,7 +1,10 @@
 #include "any360/sys/threading.h"
 
+#include <algorithm>
 #include <atomic>
+#include <mutex>
 #include <thread>
+#include <vector>
 
 namespace any360::sys {
 
@@ -193,6 +196,46 @@ uint32_t KeTlsSetValue(Guest g, uint32_t pcr, uint32_t slot, uint32_t value) {
   if (slot * 4 >= kTlsSlots * 4) return 0;
   g.Store32(g.Load32(CurrentThread(g, pcr) + kThreadTls) + slot * 4, value);
   return 1;
+}
+
+namespace {
+constexpr uint32_t kDpcListEntry = 4, kDpcRoutine = 0xC, kDpcContext = 0x10, kDpcArg1 = 0x14, kDpcArg2 = 0x18;
+std::mutex dpc_mutex;
+std::vector<uint32_t> dpc_queue;
+}  // namespace
+
+void KeInitializeDpc(Guest g, uint32_t dpc, uint32_t routine, uint32_t context) {
+  g.Store16(dpc, 19);
+  g.Store8(dpc + 2, 0);
+  g.Store8(dpc + 3, 0);
+  g.Store32(dpc + kDpcListEntry, 0);
+  g.Store32(dpc + kDpcListEntry + 4, 0);
+  g.Store32(dpc + kDpcRoutine, routine);
+  g.Store32(dpc + kDpcContext, context);
+  g.Store32(dpc + kDpcArg1, 0);
+  g.Store32(dpc + kDpcArg2, 0);
+}
+
+uint32_t KeInsertQueueDpc(Guest g, uint32_t dpc, uint32_t arg1, uint32_t arg2) {
+  std::lock_guard lock(dpc_mutex);
+  if (std::find(dpc_queue.begin(), dpc_queue.end(), dpc) != dpc_queue.end()) return 0;
+  g.Store32(dpc + kDpcArg1, arg1);
+  g.Store32(dpc + kDpcArg2, arg2);
+  dpc_queue.push_back(dpc);
+  return 1;
+}
+
+uint32_t KeRemoveQueueDpc(Guest, uint32_t dpc) {
+  std::lock_guard lock(dpc_mutex);
+  const auto it = std::find(dpc_queue.begin(), dpc_queue.end(), dpc);
+  if (it == dpc_queue.end()) return 0;
+  dpc_queue.erase(it);
+  return 1;
+}
+
+void ResetDpcs() {
+  std::lock_guard lock(dpc_mutex);
+  dpc_queue.clear();
 }
 
 uint32_t KeQueryPerformanceFrequency() { return 50'000'000; }

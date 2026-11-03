@@ -57,7 +57,15 @@ class FileSystem {
   uint32_t ReadFileScatter(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t segments, uint32_t length,
                            uint32_t offset_ptr);
   uint32_t WriteFile(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length, uint32_t offset_ptr);
+  // NtWriteFileGather: `length` bytes from the 4 KB pages listed (one 32-bit pointer each) at `segments`.
+  uint32_t WriteFileGather(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t segments, uint32_t length,
+                           uint32_t offset_ptr);
   uint32_t QueryInformation(Guest g, uint32_t handle, uint32_t io_status, uint32_t info, uint32_t length, uint32_t info_class);
+  // NtDeviceIoControlFile: the disk queries the cache (utility) partition's mount makes, answered for a 1 MB
+  // partition of 512-byte sectors as the reference does (drive geometry, partition info); others are invalid.
+  uint32_t DeviceIoControl(Guest g, uint32_t io_status, uint32_t code, uint32_t output, uint32_t output_length);
+  // IoSynchronousDeviceIoControlRequest: the same queries, the bytes written stored at `returned` when given.
+  uint32_t SynchronousDeviceIoControl(Guest g, uint32_t code, uint32_t output, uint32_t output_length, uint32_t returned);
   uint32_t SetInformation(Guest g, uint32_t handle, uint32_t io_status, uint32_t info, uint32_t length, uint32_t info_class);
   uint32_t QueryFullAttributes(Guest g, uint32_t attributes, uint32_t info);
   uint32_t QueryDirectory(Guest g, uint32_t handle, uint32_t io_status, uint32_t info, uint32_t length, uint32_t pattern, uint32_t restart);
@@ -89,6 +97,7 @@ class FileSystem {
   const Mounted* MountOf(const std::string& device_path, std::string& rest) const;
   std::string Canonical(const std::string& guest_path) const;
   std::string PathOf(Guest g, uint32_t attributes) const;
+  uint32_t DeviceControl(Guest g, uint32_t code, uint32_t output, uint32_t output_length, uint32_t& written);
   uint32_t Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length, uint32_t offset_ptr,
                     bool write);
 

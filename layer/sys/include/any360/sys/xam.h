@@ -17,7 +17,8 @@ namespace any360::sys {
 // Win32 / XAM result codes.
 constexpr uint32_t kErrorSuccess = 0, kErrorNoMoreFiles = 0x12, kErrorInvalidParameter = 0x57, kErrorInsufficientBuffer = 0x7A,
                    kErrorBadArguments = 0xA0, kErrorIoPending = 0x3E5, kErrorDeviceNotConnected = 0x48F, kErrorNotFound = 0x490,
-                   kErrorNoSuchUser = 0x525, kErrorEmpty = 0x10D2, kErrorAlreadyExists = 0xB7, kErrorFileNotFound = 0x2;
+                   kErrorNoSuchUser = 0x525, kErrorEmpty = 0x10D2, kErrorAlreadyExists = 0xB7, kErrorFileNotFound = 0x2,
+                   kErrorAccessDenied = 0x5, kErrorFunctionFailed = 0x65B;
 // Notification ids.
 constexpr uint32_t kNotifySigninChanged = 0x0000000A, kNotifySystemUi = 0x00000009;
 
@@ -45,6 +46,8 @@ struct TitleSettings {
   std::filesystem::path content_root;  // where content packages (saves, DLC) live on the host
   uint64_t xuid = 0xE000000000000001ull;  // the local profile (an offline XUID)
   std::string gamertag = "Player";
+  uint32_t license_mask = 0;
+  uint64_t machine_id = 0xFA00000000000001ull;  // XNetLogonGetMachineID: the console's id  // XContentGetLicenseMask: no content license granted, as the reference answers
 };
 
 class Xam {
@@ -64,6 +67,13 @@ class Xam {
   uint32_t MsgStartIORequest(Guest g, uint32_t app, uint32_t message, uint32_t overlapped, uint32_t buffer, uint32_t length);
   uint32_t MsgInProcessCall(uint32_t app, uint32_t message, uint32_t arg1, uint32_t arg2);
   uint32_t MsgCancelIORequest(Guest g, uint32_t overlapped, uint32_t wait);
+  // XMsgSystemProcessCall: a message to a system application, answered at once as the in-process form.
+  uint32_t MsgSystemProcessCall(uint32_t app, uint32_t message, uint32_t buffer, uint32_t length);
+  // XMsgCompleteIORequest: a request completed by the title itself (result, extended error and length).
+  uint32_t MsgCompleteIORequest(Guest g, uint32_t overlapped, uint32_t result, uint32_t extended_error, uint32_t length);
+  // XGetOverlappedResult: the result of a completed request (its length stored); a pending one is ERROR_IO_INCOMPLETE
+  // unless `wait` asks to wait for its event.
+  uint32_t GetOverlappedResult(Guest g, uint32_t overlapped, uint32_t length_ptr, uint32_t wait, uint32_t thread);
   uint32_t NotifyCreateListener(Guest g, uint64_t mask, uint32_t max_version);
   uint32_t NotifyGetNext(Guest g, uint32_t handle, uint32_t match_id, uint32_t id_ptr, uint32_t param_ptr);
 
@@ -82,6 +92,26 @@ class Xam {
   uint32_t ShowSigninUI(uint32_t users, uint32_t flags);
   uint32_t ShowMessageBoxUI(Guest g, uint32_t result_ptr, uint32_t overlapped);
   uint32_t ShowDeviceSelectorUI(Guest g, uint32_t device_id_ptr, uint32_t overlapped);
+  // The virtual keyboard, accepted at once with its default text (the buffer emptied without one), truncated to the
+  // buffer's `length` characters, terminator included.
+  uint32_t ShowKeyboardUI(Guest g, uint32_t default_text, uint32_t buffer, uint32_t length, uint32_t overlapped);
+  // Guide screens that need Xbox Live (friends, gamer cards, marketplace): the guide opens and closes at once.
+  uint32_t ShowLiveUI();
+  // The local profile has no Live friends; other users are not signed in.
+  uint32_t UserAreUsersFriends(Guest g, uint32_t user, uint32_t out, uint32_t overlapped);
+  // An enumerator of the title's achievements as the local profile holds them: none known (the enumeration ends at
+  // once). The buffer size per call is written as the reference does.
+  uint32_t UserCreateAchievementEnumerator(Guest g, uint32_t user, uint32_t flags, uint32_t count, uint32_t size_ptr,
+                                           uint32_t handle_ptr);
+  // Gamer pictures: the local profile's tile key parses to placeholder ids; a tile reads as a plain image.
+  uint32_t ParseGamerTileKey(Guest g, uint32_t key, uint32_t out1, uint32_t out2, uint32_t out3);
+  uint32_t ReadTileToTexture(Guest g, uint64_t tile_id, uint32_t buffer, uint32_t stride, uint32_t height, uint32_t overlapped);
+  // The title id of the XEX header's execution info (0 without a header).
+  uint32_t TitleId(Guest g) const;
+  // Tasks: the callback runs on a new thread with the message as its context.
+  uint32_t TaskSchedule(Guest g, uint32_t callback, uint32_t message, uint32_t handle_ptr);
+  // Voice: no headset or voice device.
+  uint32_t VoiceCreate(Guest g, uint32_t voice_ptr);
 
   // Enumerators: a handle on items of `item_size` bytes, handed out `per_call` at a time.
   uint32_t CreateEnumerator(Guest g, uint32_t item_size, uint32_t per_call, std::vector<std::vector<uint8_t>> items);
@@ -96,6 +126,18 @@ class Xam {
   uint32_t ContentCreateEnumerator(Guest g, uint32_t user, uint32_t device_id, uint32_t content_type, uint32_t flags, uint32_t per_call,
                                    uint32_t size_ptr, uint32_t handle_out);
   uint32_t ContentGetDeviceState(Guest g, uint32_t device_id, uint32_t overlapped);
+  // The package's thumbnail (PNG bytes), kept next to its folder as "<file name>.png"; ERROR_FILE_NOT_FOUND when the
+  // package does not exist.
+  uint32_t ContentSetThumbnail(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size, uint32_t overlapped);
+  uint32_t ContentGetLicenseMask(Guest g, uint32_t mask_ptr, uint32_t overlapped);
+  // The thumbnail ContentSetThumbnail kept: its size written, the bytes copied when a buffer is given (and big enough).
+  uint32_t ContentGetThumbnail(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size_ptr, uint32_t overlapped);
+  // XamContentResolve: the device path a package's files are reached by ("\Device\Content\<type>\<file name>",
+  // mounted on its folder), for RtlInitAnsiString.
+  uint32_t ContentResolve(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size);
+  // The devices content can be stored on (the hard drive only) as an enumerator of XDEVICE_DATA, and a device's name.
+  uint32_t ContentCreateDeviceEnumerator(Guest g, uint32_t per_call, uint32_t size_ptr, uint32_t handle_out);
+  uint32_t ContentGetDeviceName(Guest g, uint32_t device_id, uint32_t buffer, uint32_t capacity);
 
   // Controllers.
   uint32_t InputGetCapabilities(Guest g, uint32_t user, uint32_t flags, uint32_t caps);
@@ -106,6 +148,13 @@ class Xam {
   // The title module.
   uint32_t ImageXexHeaderField(Guest g, uint32_t header, uint32_t key) const;
   uint32_t GetModuleHandle(Guest g, uint32_t name, uint32_t handle_ptr);
+  // XexLoadImage / XexUnloadImage: the title's own module and the system ones ("xam.xex", "xboxkrnl.exe", already
+  // loaded) by name, a path's directories ignored; no other image is loaded (STATUS_NO_SUCH_FILE).
+  uint32_t LoadImage(Guest g, uint32_t name, uint32_t handle_ptr);
+  uint32_t UnloadImage(uint32_t handle);
+  // XexLoadImageHeaders: the XEX2 headers of the image an ANSI_STRING path names, copied to `buffer` (its first
+  // header-size bytes); STATUS_NO_SUCH_FILE, STATUS_INVALID_IMAGE_FORMAT, STATUS_BUFFER_TOO_SMALL otherwise.
+  uint32_t LoadImageHeaders(Guest g, uint32_t path, uint32_t buffer, uint32_t size);
   uint32_t GetProcedureAddress(Guest g, uint32_t module, uint32_t ordinal, uint32_t out);
   uint32_t CheckExecutablePrivilege(Guest g, uint32_t privilege) const;
   uint32_t GetExecutionId(Guest g, uint32_t info_ptr) const;
@@ -140,6 +189,30 @@ class Xam {
   uint32_t SocketFailure(uint32_t socket);
   uint32_t WsaGetLastError() const;
   uint32_t XNetGetTitleXnAddr(Guest g, uint32_t address);
+  // Winsock events: manual-reset kernel events behind handles. The wait takes milliseconds (0xFFFFFFFF: for ever)
+  // and answers WSA_WAIT_EVENT_0 + index (wait-any), 0 (wait-all), WSA_WAIT_TIMEOUT or WSA_WAIT_FAILED.
+  uint32_t WsaCreateEvent();
+  uint32_t WsaCloseEvent(uint32_t handle);
+  uint32_t WsaWaitForMultipleEvents(Guest g, uint32_t count, uint32_t events, uint32_t wait_all, uint32_t timeout_ms,
+                                    uint32_t thread);
+  // XNet without a network: random bytes and keys work (they are local); connections, server lookups and QoS fail
+  // as on a console that is not connected (WSAENETDOWN, a lost connection).
+  uint32_t XNetRandom(Guest g, uint32_t buffer, uint32_t length);
+  uint32_t XNetCreateKey(Guest g, uint32_t key_id, uint32_t key);
+  uint32_t XNetQosRelease(uint32_t qos);
+  uint32_t WsaSetLastError(uint32_t error);
+  // WSASetEvent / WSAResetEvent: TRUE, or FALSE with the Win32 error of the failure.
+  uint32_t WsaSetEvent(Guest g, uint32_t handle);
+  uint32_t WsaResetEvent(Guest g, uint32_t handle);
+  // Lookups that complete at once with no answer: a DNS record whose status is WSAENETDOWN, a QoS record with no
+  // result (titles read it whatever the result); both from the kernel pool, given back by their release call, the
+  // event set.
+  uint32_t XNetDnsLookup(Guest g, uint32_t event, uint32_t dns_ptr);
+  uint32_t XNetQosServiceLookup(Guest g, uint32_t event, uint32_t qos_ptr);
+  // XNetGetOpt: the startup parameters XNetStartup was given (XNET_OPTID_STARTUP_PARAMS, 1); others WSAEINVAL.
+  uint32_t XNetGetOpt(Guest g, uint32_t option, uint32_t buffer, uint32_t size_ptr);
+  uint32_t XNetStartup(Guest g, uint32_t params);
+  uint32_t LogonGetMachineId(Guest g, uint32_t id_ptr);
 
  private:
   struct Listener {
@@ -164,6 +237,9 @@ class Xam {
   TitleSettings title_;
   std::vector<Listener> listeners_;
   std::vector<Enumerator> enumerators_;
+  // The handle system modules answer by: a zeroed loader entry from the kernel heap, made at first use.
+  uint32_t SystemModule(Guest g);
+  uint32_t system_module_ = 0;
   std::vector<Setting> settings_;
   std::vector<uint32_t> terminate_notifications_;
   std::vector<std::string> open_content_;
@@ -171,6 +247,7 @@ class Xam {
   std::vector<uint8_t> launch_data_;
   bool launch_data_present_ = false;
   uint32_t cache_elements_ = 0;
+  std::vector<uint8_t> startup_params_;
 };
 
 Xam& XamState();
