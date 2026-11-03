@@ -577,9 +577,11 @@ int main(int argc, char** argv) {
                 d.draws ? d.ns_draws / 1e3 / d.draws : 0.0);
   }
   std::printf("gfx_replay: %s: %u draws, %u skipped, %u failed; %u resolves, %u shaders, %u pipelines, %u render targets, "
-              "%u texture uploads; %.1f ms creating pipelines\n",
+              "%u texture uploads; %.1f ms creating pipelines; %u sample resolves (%.1f Mpixels), %u surfaces back to "
+              "one sample\n",
               device.properties().deviceName, r.draws, r.skipped, r.failed, r.resolves, r.translations, r.pipelines,
-              r.render_targets, r.texture_uploads, r.ns_pipelines / 1e6);
+              r.render_targets, r.texture_uploads, r.ns_pipelines / 1e6, r.sample_resolves, r.sample_resolve_pixels / 1e6,
+              r.samples_dropped);
   // Textures over a resolve kept on the GPU that could not copy from it, and why (they read guest memory instead).
   if (renderer.texture_cache()) {
     for (const auto& [why, count] : renderer.texture_cache()->source_misses()) {
