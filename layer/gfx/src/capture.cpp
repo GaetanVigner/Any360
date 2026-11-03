@@ -154,7 +154,8 @@ void Reader::Close() {
 }
 
 bool Replay(const std::string& path, CommandProcessor& cp, uint8_t* physical, uint64_t bytes, const FrameHandler& frame,
-            ReplayStats& stats, std::string& error, const std::function<void()>& before_memory) {
+            ReplayStats& stats, std::string& error, const std::function<void()>& before_memory,
+            const std::function<void(uint32_t begin, uint32_t end)>& memory_written) {
   Reader reader;
   if (!reader.Open(path)) return error = reader.error(), false;
   uint32_t type;
@@ -197,7 +198,11 @@ bool Replay(const std::string& path, CommandProcessor& cp, uint8_t* physical, ui
             ++stats.pages_outside;
             continue;
           }
-          std::memcpy(physical + size_t(page) * kPageBytes, entry + 4, kPageBytes);
+          uint8_t* target = physical + size_t(page) * kPageBytes;
+          if (memory_written && std::memcmp(target, entry + 4, kPageBytes)) {
+            memory_written(uint32_t(page * kPageBytes), uint32_t((page + 1) * kPageBytes));
+          }
+          std::memcpy(target, entry + 4, kPageBytes);
           ++stats.pages;
         }
         break;

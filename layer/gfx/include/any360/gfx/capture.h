@@ -95,9 +95,11 @@ struct ReplayStats {
 // Set while a replay runs a kick (for a profiler to sample only that).
 inline std::atomic<bool> g_replaying_kick{false};
 using FrameHandler = std::function<void(uint32_t width, uint32_t height, const uint32_t* rgba)>;
-// `before_memory`: called before the replay rewrites guest memory (a renderer on another thread finishes first).
+// `before_memory`: called before the replay rewrites guest memory (a renderer on another thread finishes first);
+// `memory_written`: for each page whose content the replay changed (as a title's write watch reports CPU writes).
 bool Replay(const std::string& path, CommandProcessor& cp, uint8_t* physical, uint64_t bytes, const FrameHandler& frame,
-            ReplayStats& stats, std::string& error, const std::function<void()>& before_memory = {});
+            ReplayStats& stats, std::string& error, const std::function<void()>& before_memory = {},
+            const std::function<void(uint32_t begin, uint32_t end)>& memory_written = {});
 
 // A fast 64-bit hash of a page (change detection, not security).
 uint64_t PageHash(const uint8_t* page);

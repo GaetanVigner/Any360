@@ -289,7 +289,7 @@ bool VulkanRenderer::Initialize() {
   if (f.vkCreateCommandPool(d, &batch_pool, nullptr, &batch_pool_) != VK_SUCCESS) return Fail("batch objects");
   VkQueryPoolCreateInfo queries{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
   queries.queryType = VK_QUERY_TYPE_TIMESTAMP;
-  queries.queryCount = 2 * kBatches;
+  queries.queryCount = 4 * kBatches;  // a batch's start and end, its upload's start and end
   if (f.vkCreateQueryPool(d, &queries, nullptr, &timestamps_) != VK_SUCCESS) timestamps_ = VK_NULL_HANDLE;
   for (Batch& b : batches_) {
     if (f.vkCreateFence(d, &fence, nullptr, &b.fence) != VK_SUCCESS) return Fail("batch objects");
@@ -1370,8 +1370,8 @@ VkCommandBuffer VulkanRenderer::Record() {
     f.vkCmdPipelineBarrier2(b.cb, &dependency);
     if (timestamps_) {
       const uint32_t index = uint32_t(&b - batches_.data());
-      f.vkCmdResetQueryPool(b.cb, timestamps_, 2 * index, 2);
-      f.vkCmdWriteTimestamp2(b.cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, 2 * index);
+      f.vkCmdResetQueryPool(b.cb, timestamps_, 4 * index, 2);
+      f.vkCmdWriteTimestamp2(b.cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, 4 * index);
     }
     recorded_.valid = false;  // a new command buffer has no state
     batch_open_ = true;
@@ -1393,7 +1393,7 @@ void VulkanRenderer::Flush() {
   Batch& b = batch();
   EndRendering();
   if (timestamps_) {
-    f.vkCmdWriteTimestamp2(b.cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, 2 * uint32_t(&b - batches_.data()) + 1);
+    f.vkCmdWriteTimestamp2(b.cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, 4 * uint32_t(&b - batches_.data()) + 1);
   }
   f.vkEndCommandBuffer(b.cb);
   submitted_at_[uint32_t(&b - batches_.data())] = std::chrono::steady_clock::now();
@@ -1429,6 +1429,35 @@ void VulkanRenderer::Flush() {
       }
     }
     batch_ranges_.clear();
+    if (vram_valid_) {
+      // Only the pages not already current in video memory: marked current, then watched (a write before the watch
+      // is armed still lands before the copy runs), copied in runs.
+      std::vector<VkBufferCopy>& regions = upload_regions_scratch_;
+      regions.swap(upload_regions_);
+      upload_regions_.clear();
+      for (const VkBufferCopy& region : regions) {
+        const uint32_t first = uint32_t(region.srcOffset) >> kGuestPageShift;
+        const uint32_t last = uint32_t((region.srcOffset + region.size - 1) >> kGuestPageShift);
+        bool any = false;
+        for (uint32_t page = first; page <= last; ++page) {
+          std::atomic<uint64_t>& word = vram_valid_[page / 64];
+          const uint64_t bit = uint64_t(1) << (page % 64);
+          if (word.load(std::memory_order_acquire) & bit) continue;
+          word.fetch_or(bit, std::memory_order_acq_rel);
+          const VkDeviceSize at = VkDeviceSize(page) << kGuestPageShift;
+          const VkDeviceSize size = std::min<VkDeviceSize>(VkDeviceSize(1) << kGuestPageShift, mirror_bytes_ - at);
+          if (!upload_regions_.empty() && upload_regions_.back().srcOffset + upload_regions_.back().size == at) {
+            upload_regions_.back().size += size;
+          } else {
+            upload_regions_.push_back({at, at, size});
+          }
+          any = true;
+        }
+        if (any && guest_watch_) guest_watch_(uint32_t(region.srcOffset), uint32_t(region.srcOffset + region.size));
+      }
+    }
+  }
+  if (vram_guest_on_ && !upload_regions_.empty()) {
     VkCommandBufferBeginInfo begin_info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     f.vkBeginCommandBuffer(b.upload_cb, &begin_info);
@@ -1440,9 +1469,15 @@ void VulkanRenderer::Flush() {
     VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
     dependency.memoryBarrierCount = 1;
     dependency.pMemoryBarriers = &barrier;
+    const uint32_t stamp = 4 * uint32_t(&b - batches_.data()) + 2;
+    if (timestamps_) {
+      f.vkCmdResetQueryPool(b.upload_cb, timestamps_, stamp, 2);
+      f.vkCmdWriteTimestamp2(b.upload_cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, stamp);
+    }
     f.vkCmdPipelineBarrier2(b.upload_cb, &dependency);
     f.vkCmdCopyBuffer(b.upload_cb, shared_memory_.buffer, vram_guest_.buffer, uint32_t(upload_regions_.size()),
                       upload_regions_.data());
+    if (timestamps_) f.vkCmdWriteTimestamp2(b.upload_cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, stamp + 1);
     f.vkEndCommandBuffer(b.upload_cb);
     for (const VkBufferCopy& region : upload_regions_) stats_.guest_upload_bytes += region.size;
     upload = true;
@@ -1452,6 +1487,7 @@ void VulkanRenderer::Flush() {
   VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
   submit.commandBufferCount = upload ? 2 : 1;
   submit.pCommandBuffers = upload ? cbs : &b.cb;
+  b.uploaded = upload;
   if (f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence) != VK_SUCCESS) Fail("batch submission");
   batch_open_ = false;
   const uint32_t submitted = current_;
@@ -1541,10 +1577,15 @@ void VulkanRenderer::FinishBatch(Batch& b) {
   stats_.ns_gpu_latency += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                         std::chrono::steady_clock::now() - submitted_at_[index]).count());
   if (timestamps_) {
-    uint64_t stamps[2] = {};
-    if (device_.fn().vkGetQueryPoolResults(device_.device(), timestamps_, 2 * index, 2, sizeof(stamps), stamps, 8,
+    const double period = device_.properties().limits.timestampPeriod;
+    uint64_t stamps[4] = {};
+    if (device_.fn().vkGetQueryPoolResults(device_.device(), timestamps_, 4 * index, 2, 16, stamps, 8,
                                            VK_QUERY_RESULT_64_BIT) == VK_SUCCESS && stamps[1] > stamps[0]) {
-      stats_.ns_gpu += uint64_t(double(stamps[1] - stamps[0]) * device_.properties().limits.timestampPeriod);
+      stats_.ns_gpu += uint64_t(double(stamps[1] - stamps[0]) * period);
+    }
+    if (b.uploaded && device_.fn().vkGetQueryPoolResults(device_.device(), timestamps_, 4 * index + 2, 2, 16, stamps + 2, 8,
+                                                         VK_QUERY_RESULT_64_BIT) == VK_SUCCESS && stamps[3] > stamps[2]) {
+      stats_.ns_gpu_upload += uint64_t(double(stamps[3] - stamps[2]) * period);
     }
   }
   ++stats_.gpu_batches;
@@ -2054,6 +2095,25 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   if (read_back) ++stats_.resolves_read_back;
 }
 
+void VulkanRenderer::SetMemoryWatch(std::function<void(uint32_t, uint32_t)> watch) {
+  guest_watch_ = std::move(watch);
+  const size_t words = (size_t(mirror_bytes_) >> kGuestPageShift) / 64 + 1;
+  vram_valid_ = std::make_unique<std::atomic<uint64_t>[]>(words);
+  for (size_t i = 0; i < words; ++i) vram_valid_[i] = 0;
+}
+
+void VulkanRenderer::GuestMemoryWritten(uint32_t begin, uint32_t end) {
+  if (!vram_valid_ || begin >= end) return;
+  const uint32_t first = begin >> kGuestPageShift, last = (std::min<uint64_t>(end, mirror_bytes_) - 1) >> kGuestPageShift;
+  for (uint32_t page = first; page <= last;) {
+    // A word's bits at once.
+    const uint32_t word = page / 64, bit = page % 64, bits = std::min<uint32_t>(64 - bit, last - page + 1);
+    const uint64_t mask = (bits == 64 ? ~uint64_t(0) : ((uint64_t(1) << bits) - 1)) << bit;
+    vram_valid_[word].fetch_and(~mask, std::memory_order_acq_rel);
+    page += bits;
+  }
+}
+
 void VulkanRenderer::Invalidate(uint32_t base, uint32_t size) {
   // A coherency request (hundreds a frame): with the CPU's writes watched, the textures already know.
   if (textures_ && !textures_->watching()) textures_->MemoryChanged(base & 0x1FFFFFFF, uint32_t(std::min<uint64_t>(uint64_t(base & 0x1FFFFFFF) + size, mirror_bytes_)));
@@ -2188,6 +2248,7 @@ void VulkanRenderer::FinishWriteBacks(Batch& b) {
     }
     CountSwapped(g_swapped.write_backs, uint64_t(w.width) * w.height * element);
     if (textures_) textures_->QueueMemoryChanged(w.base, w.base + w.pitch * ((w.y + w.height + 31) & ~31u) * element);
+    GuestMemoryWritten(w.base, w.base + w.pitch * ((w.y + w.height + 31) & ~31u) * element);
     w.resolved->pending = false;
     ReleaseReadback(w.buffer);
   }

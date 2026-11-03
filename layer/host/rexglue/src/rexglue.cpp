@@ -541,9 +541,9 @@ Binding* g_binding = nullptr;
 // checked again before their next use. The watch is one-shot; the texture cache arms it again when it reads the
 // memory. Any range may be unwatched.
 std::pair<uint32_t, uint32_t> MemoryWritten(void* context, uint32_t start, uint32_t length, bool) {
-  if (auto* textures = static_cast<gfx::vk::VulkanRenderer*>(context)->texture_cache()) {
-    textures->QueueMemoryChanged(start, start + length);
-  }
+  auto* renderer = static_cast<gfx::vk::VulkanRenderer*>(context);
+  if (auto* textures = renderer->texture_cache()) textures->QueueMemoryChanged(start, start + length);
+  renderer->GuestMemoryWritten(start, start + length);  // the vertices copied into video memory
   return {0, UINT32_MAX};
 }
 
@@ -636,6 +636,9 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   if (gfx::vk::TextureCache* textures = binding->renderer->texture_cache()) {
     memory->RegisterPhysicalMemoryInvalidationCallback(&MemoryWritten, binding->renderer.get());
     textures->SetMemoryWatch([memory](uint32_t begin, uint32_t end) {
+      memory->EnablePhysicalMemoryAccessCallbacks(begin, end - begin, true, false);
+    });
+    binding->renderer->SetMemoryWatch([memory](uint32_t begin, uint32_t end) {
       memory->EnablePhysicalMemoryAccessCallbacks(begin, end - begin, true, false);
     });
   }

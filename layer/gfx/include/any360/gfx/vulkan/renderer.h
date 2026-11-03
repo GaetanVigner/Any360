@@ -73,6 +73,7 @@ struct RendererStats {
   // The GPU's time running the batches (time stamps at each batch's start and end), and from each batch's submission
   // to its completion seen on the CPU.
   uint64_t ns_gpu = 0, ns_gpu_latency = 0, gpu_batches = 0;
+  uint64_t ns_gpu_upload = 0;  // the GPU's time copying guest memory into video memory before batches
   uint64_t guest_upload_bytes = 0;  // guest memory copied into video memory for the shaders
   // Within draws: texture views (upload, untiling, hashing), shader translation, pipeline lookup and creation.
   uint64_t ns_textures = 0, ns_shaders = 0, ns_pipelines = 0;
@@ -170,6 +171,12 @@ class VulkanRenderer : public gfx::Renderer {
   // For diagnostics: the textures uploaded so far by (base, format, width, height), and whether a base is the
   // destination of a resolve (with its destination format, or UINT32_MAX).
   TextureCache* texture_cache() { return textures_.get(); }
+  // A host that watches guest memory for CPU writes (as for textures): guest memory copied into video memory is then
+  // copied again only after a write (GuestMemoryWritten), not at every batch. `watch(begin, end)` arms a one-shot watch.
+  void SetMemoryWatch(std::function<void(uint32_t, uint32_t)> watch);
+  // [begin, end) of guest memory was written (by the CPU, a resolve's write-back, a replay): its copy in video memory
+  // is stale. Any thread.
+  void GuestMemoryWritten(uint32_t begin, uint32_t end);
   uint32_t ResolveFormatAt(uint32_t base) const {
     const auto it = resolve_formats_.find(base);
     return it == resolve_formats_.end() ? UINT32_MAX : it->second;
@@ -237,7 +244,11 @@ class VulkanRenderer : public gfx::Renderer {
   // from the imported guest memory (one transfer over the bus, not a fetch per vertex attribute through it).
   Buffer vram_guest_;
   bool vram_guest_on_ = false;
-  std::vector<VkBufferCopy> upload_regions_;
+  // Pages (4 KB) of guest memory whose copy in video memory is current (with a watch set; else none are kept).
+  static constexpr uint32_t kGuestPageShift = 12;
+  std::unique_ptr<std::atomic<uint64_t>[]> vram_valid_;
+  std::function<void(uint32_t, uint32_t)> guest_watch_;
+  std::vector<VkBufferCopy> upload_regions_, upload_regions_scratch_;
   // Without the import: the guest memory ranges the batch's shaders read (vertex buffers, indices a rectangle list's
   // vertex shader loads), copied into the mirror when the batch is submitted.
   std::vector<std::pair<uint32_t, uint32_t>> batch_ranges_;  // begin, end
@@ -281,6 +292,7 @@ class VulkanRenderer : public gfx::Renderer {
     std::vector<PendingWriteBack> write_backs;
     std::vector<std::function<void()>> actions;
     bool done = true;  // run, and what follows it done (guarded by done_mutex_)
+    bool uploaded = false;  // its upload command buffer ran too (time stamped)
   };
   static constexpr uint32_t kBatches = 8;
   int32_t last_submitted_ = -1;  // the batch submitted last (its actions take what follows it)

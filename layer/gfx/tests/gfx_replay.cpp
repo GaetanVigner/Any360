@@ -443,6 +443,7 @@ int main(int argc, char** argv) {
     g_diagnostics = false;
     // Watched: textures are checked again only when the replay rewrites their memory (as a title's write watch).
     if (renderer.texture_cache()) renderer.texture_cache()->SetMemoryWatch([](uint32_t, uint32_t) {});
+    if (std::getenv("ANY360_NO_TRACK") == nullptr) renderer.SetMemoryWatch([](uint32_t, uint32_t) {});
   }
   for (int pass = 0; pass < repeat && ok; ++pass) {
     if (pass == repeat - 1) {
@@ -454,9 +455,24 @@ int main(int argc, char** argv) {
 #endif
     stats = {};
     drain_ns = 0;
-    ok = capture::Replay(path, cp, physical, kPhysicalBytes, on_frame, stats, error, drain);
+    // With --bench, pages the replay changes are reported as a title's write watch would (textures, vertices).
+    ok = capture::Replay(path, cp, physical, kPhysicalBytes, on_frame, stats, error, drain,
+                         bench ? std::function<void(uint32_t, uint32_t)>([&](uint32_t begin, uint32_t end) {
+                           if (renderer.texture_cache()) renderer.texture_cache()->QueueMemoryChanged(begin, end);
+                           renderer.GuestMemoryWritten(begin, end);
+                         })
+                               : std::function<void(uint32_t, uint32_t)>());
     drain();
     if (bench) {
+      {
+        static uint64_t last_gpu = 0, last_upload = 0, last_bytes = 0;
+        const vk::RendererStats& g = renderer.stats();
+        const double frames = std::max(1u, stats.frames);
+        std::printf("gfx_replay: pass %d: GPU %.3f ms a frame running batches, %.3f copying %.2f MB of guest memory%c", pass,
+                    (g.ns_gpu - last_gpu) / 1e6 / frames, (g.ns_gpu_upload - last_upload) / 1e6 / frames,
+                    (g.guest_upload_bytes - last_bytes) / 1e6 / frames, 10);
+        last_gpu = g.ns_gpu, last_upload = g.ns_gpu_upload, last_bytes = g.guest_upload_bytes;
+      }
       if (async_renderer) {
         static uint64_t last_busy = 0, last_bytes = 0;
         const uint64_t busy = async_renderer->busy_ns(), bytes = async_renderer->queued_bytes();
