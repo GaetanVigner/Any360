@@ -458,6 +458,7 @@ class VulkanRenderer : public gfx::Renderer {
   std::condition_variable record_cv_, record_done_cv_;
   std::deque<RecordTask*> record_queue_;
   bool record_stopping_ = false;
+  uint32_t record_idle_ = 0;  // recording threads waiting for a chunk (guarded by record_mutex_)
   std::vector<std::unique_ptr<RecordTask>> segment_tasks_;  // the open render pass's chunks, in order
   std::vector<std::unique_ptr<RecordTask>> spare_tasks_;    // reused
   std::unique_ptr<RecordTask> open_task_;                   // the chunk being filled

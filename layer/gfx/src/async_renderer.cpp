@@ -7,7 +7,7 @@
 namespace any360::gfx {
 
 namespace {
-constexpr uint32_t kBlockWords = 32;
+constexpr uint32_t kBlockWords = CommandProcessor::kBlockRegisters;
 constexpr uint32_t kBlocks = CommandProcessor::kDirtyWords * 64;
 constexpr uint32_t Align8(uint32_t bytes) { return (bytes + 7) & ~7u; }
 
@@ -50,7 +50,8 @@ void AsyncRenderer::Drain() {
 uint8_t* AsyncRenderer::Reserve(uint32_t bytes) {
   const size_t size = queue_.size();
   auto wait_for_room = [&](size_t need) {
-    for (uint32_t spins = 0; produced_ + need - consumed_.load(std::memory_order_acquire) > size; ++spins) {
+    if (produced_ + need - consumed_seen_ <= size) return;  // room, without reading the worker's line
+    for (uint32_t spins = 0; produced_ + need - (consumed_seen_ = consumed_.load(std::memory_order_acquire)) > size; ++spins) {
       if (spins < 1000) {
         std::this_thread::yield();
       } else {
@@ -74,9 +75,11 @@ void AsyncRenderer::Publish(uint8_t* at, Op op, uint32_t payload_bytes) {
   const uint32_t bytes = Align8(uint32_t(sizeof(Header)) + payload_bytes);
   write_ += bytes;
   produced_ += bytes;
-  published_.store(produced_, std::memory_order_seq_cst);
+  // A plain release store (a full barrier at every call stalls this thread on its pending stores): the worker going
+  // to sleep just then may miss it, and then looks again within a millisecond (the next call wakes it anyway).
+  published_.store(produced_, std::memory_order_release);
   // Wake the worker only when it sleeps (it checks again under the lock before sleeping).
-  if (worker_waiting_.load(std::memory_order_seq_cst)) {
+  if (worker_waiting_.load(std::memory_order_relaxed)) {
     std::lock_guard lock(mutex_);
     work_.notify_one();
   }
@@ -195,7 +198,9 @@ void AsyncRenderer::Run() {
       if (!ready) {
         std::unique_lock lock(mutex_);
         worker_waiting_.store(true, std::memory_order_seq_cst);
-        work_.wait(lock, [&] { return published_.load(std::memory_order_seq_cst) != position || stopping_; });
+        while (!work_.wait_for(lock, std::chrono::milliseconds(1),
+                               [&] { return published_.load(std::memory_order_seq_cst) != position || stopping_; })) {
+        }
         worker_waiting_.store(false, std::memory_order_seq_cst);
       }
       if (published_.load(std::memory_order_acquire) == position) {

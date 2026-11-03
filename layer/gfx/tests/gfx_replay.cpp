@@ -290,6 +290,7 @@ int main(int argc, char** argv) {
   bool async = false;
   uint32_t record_threads = 0;  // --threads N: draws recorded on N threads (secondary command buffers)  // --async: the renderer on a thread of its own (AsyncRenderer), as in a title  // --bench: as in a title (diagnostics off, textures watched instead of hashed), kick time only
   std::string profile;  // --profile FILE: the main thread's instruction pointer sampled during the last pass
+  bool profile_cp = false;  // --profile-cp: with --async, the command processor's thread sampled (else the renderer's)
   vk::DeviceOptions options;
   for (int i = 1; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--gpu") && i + 1 < argc) options.prefer = argv[++i];
@@ -298,6 +299,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--repeat") && i + 1 < argc) repeat = std::max(1, std::atoi(argv[++i]));
     else if (!std::strcmp(argv[i], "--dump-resolves") && i + 1 < argc) dump = argv[++i];
     else if (!std::strcmp(argv[i], "--profile") && i + 1 < argc) profile = argv[++i];
+    else if (!std::strcmp(argv[i], "--profile-cp")) profile_cp = true;
     else if (!std::strcmp(argv[i], "--bench")) bench = true;
     else if (!std::strcmp(argv[i], "--async")) async = true;
     else if (!std::strcmp(argv[i], "--threads") && i + 1 < argc) record_threads = uint32_t(std::atoi(argv[++i]));
@@ -388,7 +390,7 @@ int main(int argc, char** argv) {
   HANDLE main_thread = nullptr;
   DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &main_thread, 0, FALSE, DUPLICATE_SAME_ACCESS);
   // With --async, the renderer's thread is the one sampled.
-  if (async_renderer) {
+  if (async_renderer && !profile_cp) {
     CloseHandle(main_thread);
     DuplicateHandle(GetCurrentProcess(), HANDLE(async_renderer->worker_handle()), GetCurrentProcess(), &main_thread, 0, FALSE,
                     DUPLICATE_SAME_ACCESS);

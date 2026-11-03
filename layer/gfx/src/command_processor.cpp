@@ -100,7 +100,8 @@ void CommandProcessor::EnableReadPointerWriteBack(sys::Guest, uint32_t address, 
 void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
   if (index >= reg::kRegisterCount) return;
   std::atomic_ref<uint32_t>(registers_[index]).store(value, std::memory_order_release);
-  mmio_dirty_[index >> 11].fetch_or(1ull << ((index >> 5) & 63), std::memory_order_acq_rel);
+  mmio_dirty_[index >> 9].fetch_or(1ull << ((index >> 3) & 63), std::memory_order_acq_rel);
+  mmio_any_.store(true, std::memory_order_release);
   if (index >= reg::DC_LUT_RW_INDEX && index <= reg::DC_LUT_30_COLOR) GammaRampWrite(index);
   NotifyProgress();
   if (index == reg::CP_RB_WPTR) {

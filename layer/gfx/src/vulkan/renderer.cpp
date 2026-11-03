@@ -1505,11 +1505,13 @@ void VulkanRenderer::DispatchChunk() {
   if (!open_task_ || open_task_->jobs.empty()) return;
   RecordTask* task = open_task_.get();
   segment_tasks_.push_back(std::move(open_task_));
+  bool idle;
   {
     std::lock_guard lock(record_mutex_);
     record_queue_.push_back(task);
+    idle = record_idle_ > 0;
   }
-  record_cv_.notify_one();
+  if (idle) record_cv_.notify_one();  // busy threads take it from the queue when they are done
 }
 
 void VulkanRenderer::RecordLoop(uint32_t index) {
@@ -1519,7 +1521,11 @@ void VulkanRenderer::RecordLoop(uint32_t index) {
     RecordTask* task;
     {
       std::unique_lock lock(record_mutex_);
-      record_cv_.wait(lock, [&] { return record_stopping_ || !record_queue_.empty(); });
+      while (!record_stopping_ && record_queue_.empty()) {
+        ++record_idle_;
+        record_cv_.wait(lock);
+        --record_idle_;
+      }
       if (record_queue_.empty()) return;
       task = record_queue_.front();
       record_queue_.pop_front();
@@ -1642,10 +1648,11 @@ void VulkanRenderer::EndRendering() {
 }
 
 uint32_t VulkanRenderer::AutoRecordThreads() {
-  // Half the hardware threads for the title (an Xbox 360 title runs up to six) and the command processor's and this
-  // one's; of the rest, up to six record.
+  // Measured on the replay bench, two recording threads take most of the gain (the preparation here is then the
+  // limit) and four the rest: two from 6 hardware threads on (8 on a Steam Deck), four from 12; fewer leave the
+  // cores to the title's threads and the command processor's.
   const uint32_t hardware = std::max(1u, std::thread::hardware_concurrency());
-  return std::min(6u, hardware > 8 ? hardware / 2 - 2 : 0u);
+  return hardware >= 12 ? 4u : hardware >= 6 ? 2u : 0u;
 }
 
 void VulkanRenderer::SetRecordThreads(uint32_t count) {
