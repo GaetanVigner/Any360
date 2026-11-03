@@ -71,6 +71,12 @@ class Scheduler {
   // NtQueueApcThread: a user APC (routine, context, two arguments) queued on a thread by handle (the current-thread
   // pseudo handle is `current`). The thread runs it at its next alertable wait or delay.
   uint32_t QueueApc(Guest g, uint32_t handle, uint32_t current, uint32_t routine, uint32_t context, uint32_t arg1, uint32_t arg2);
+  // The same on a KTHREAD, from the kernel itself (timer expiry, I/O completion).
+  void QueueApcTo(uint32_t kthread, uint32_t routine, uint32_t context, uint32_t arg1, uint32_t arg2);
+  // An I/O call's completion APC: routine(context, I/O status block, 0) queued on the caller when the transfer
+  // succeeded and both routine and context are given, as the reference; the routine's low bit (no completion port)
+  // is dropped.
+  void QueueIoApc(uint32_t kthread, uint32_t routine, uint32_t context, uint32_t io_status, uint32_t status);
   size_t PendingApcs(uint32_t kthread) const;
   // Runs the user APCs queued on the thread of `pcr`, oldest first, as routine(context, arg1, arg2) on that thread,
   // its stack continuing below `stack_pointer` (the caller's r1); returns how many ran.

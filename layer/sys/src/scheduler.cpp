@@ -91,9 +91,17 @@ uint32_t Scheduler::QueueApc(Guest g, uint32_t handle, uint32_t current, uint32_
   if (!kthread) return kStatusInvalidHandle;
   if (g.Load8(kthread) != kThread) return kStatusObjectTypeMismatch;
   if (!routine) return kStatusInvalidParameter;
+  QueueApcTo(kthread, routine, context, arg1, arg2);
+  return kStatusSuccess;
+}
+
+void Scheduler::QueueIoApc(uint32_t kthread, uint32_t routine, uint32_t context, uint32_t io_status, uint32_t status) {
+  if (status == kStatusSuccess && (routine & ~1u) && context) QueueApcTo(kthread, routine & ~1u, context, io_status, 0);
+}
+
+void Scheduler::QueueApcTo(uint32_t kthread, uint32_t routine, uint32_t context, uint32_t arg1, uint32_t arg2) {
   std::lock_guard lock(apc_mutex_);
   apcs_.push_back({kthread, routine, context, arg1, arg2});
-  return kStatusSuccess;
 }
 
 size_t Scheduler::PendingApcs(uint32_t kthread) const {
@@ -272,6 +280,7 @@ uint32_t Scheduler::Delay(Guest g, uint32_t pcr, int64_t interval, bool alertabl
     // Sleeps in slices short enough for a queued APC to end the delay.
     const auto end = std::chrono::steady_clock::now() + duration;
     for (auto now = std::chrono::steady_clock::now(); now < end; now = std::chrono::steady_clock::now()) {
+      Objects().Poll(g);  // a timer expiring may queue an APC on this thread
       if (PendingApcs(kthread)) return kStatusUserApc;
       std::this_thread::sleep_for(std::min<std::chrono::nanoseconds>(end - now, std::chrono::milliseconds(1)));
     }

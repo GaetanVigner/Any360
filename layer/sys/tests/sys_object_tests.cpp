@@ -196,14 +196,14 @@ void Timers() {
   const uint32_t h = g.Load32(out), timer = Objects().Lookup(h);
   CHECK(g.Load8(timer) == kNotificationTimer && g.Load32(timer + 4) == 0);
   g.Store64(out + 8, uint64_t(ten_ms));
-  CHECK(Objects().NtSetTimerEx(g, h, out + 8, 0, out + 16) == 0 && g.Load32(out + 16) == 0 && g.Load8(timer + 3) == 1);
+  CHECK(Objects().NtSetTimerEx(g, h, out + 8, 0, 0, 0, 0, out + 16) == 0 && g.Load32(out + 16) == 0 && g.Load8(timer + 3) == 1);
   CHECK(Objects().WaitForHandle(g, h, kMainThread, &zero) == kStatusTimeout);
   CHECK(Objects().WaitForHandle(g, h, kMainThread, &half_second) == 0);
   CHECK(g.Load32(timer + 4) == 1 && g.Load8(timer + 3) == 0);
   CHECK(Objects().WaitForHandle(g, h, kMainThread, &zero) == 0);
   // Re-arming reports the timer was not armed any more; cancelling an armed one reports it was.
-  CHECK(Objects().NtSetTimerEx(g, h, out + 8, 0, out + 16) == 0 && g.Load32(out + 16) == 0 && g.Load32(timer + 4) == 0);
-  CHECK(Objects().NtSetTimerEx(g, h, out + 8, 0, out + 16) == 0 && g.Load32(out + 16) == 1);
+  CHECK(Objects().NtSetTimerEx(g, h, out + 8, 0, 0, 0, 0, out + 16) == 0 && g.Load32(out + 16) == 0 && g.Load32(timer + 4) == 0);
+  CHECK(Objects().NtSetTimerEx(g, h, out + 8, 0, 0, 0, 0, out + 16) == 0 && g.Load32(out + 16) == 1);
   CHECK(Objects().NtCancelTimer(g, h, out + 20) == 0 && g.Load32(out + 20) == 1 && g.Load8(timer + 3) == 0);
   CHECK(Objects().NtCancelTimer(g, h, out + 20) == 0 && g.Load32(out + 20) == 0);
   CHECK(Objects().WaitForHandle(g, h, kMainThread, &ten_ms) == kStatusTimeout);
@@ -211,7 +211,7 @@ void Timers() {
   CHECK(Objects().CreateTimer(g, out + 24, 0, 1) == 0);
   const uint32_t hs = g.Load32(out + 24), sync = Objects().Lookup(hs);
   CHECK(g.Load8(sync) == kSynchronizationTimer);
-  CHECK(Objects().NtSetTimerEx(g, hs, out + 8, 5, 0) == 0);
+  CHECK(Objects().NtSetTimerEx(g, hs, out + 8, 0, 0, 0, 5, 0) == 0);
   CHECK(Objects().WaitForHandle(g, hs, kMainThread, &half_second) == 0 && g.Load32(sync + 4) == 0 && g.Load8(sync + 3) == 1);
   CHECK(Objects().WaitForHandle(g, hs, kMainThread, &half_second) == 0);
   CHECK(Objects().NtCancelTimer(g, hs, 0) == 0);
@@ -221,8 +221,8 @@ void Timers() {
   CHECK(g.Load8(kt) == kNotificationTimer && g.Load8(kt + 2) == 2 && g.Load64(kt + 16) == 0);
   CHECK(Objects().SetTimer(g, kt, int64_t(SystemTime() - 10), 0) == 0);
   CHECK(Objects().WaitForObject(g, kt, kMainThread, &zero) == 0 && g.Load32(kt + 4) == 1);
-  CHECK(Objects().NtSetTimerEx(g, h, 0, 0, 0) == kStatusInvalidParameter);
-  CHECK(Objects().NtSetTimerEx(g, kHandleBase + 0x800, out + 8, 0, 0) == kStatusInvalidHandle);
+  CHECK(Objects().NtSetTimerEx(g, h, 0, 0, 0, 0, 0, 0) == kStatusInvalidParameter);
+  CHECK(Objects().NtSetTimerEx(g, kHandleBase + 0x800, out + 8, 0, 0, 0, 0, 0) == kStatusInvalidHandle);
   // The clock advances and sits after 2020.
   const uint64_t t0 = SystemTime();
   CHECK(t0 > 132223104000000000ull && SystemTime() >= t0);
@@ -1439,6 +1439,22 @@ void SimpsonsTests() {
   CHECK(Threads().Delay(gm, pcr, second, true) == kStatusUserApc);
   queuer.join();
   CHECK(Threads().DeliverApcs(gm, pcr, 0x7F000) == 1 && delivered.back() == std::vector<uint64_t>({4, 5, 6}));
+  // A timer's APC is queued on the thread that set it when it expires, with the system time; an alertable delay sees it.
+  CHECK(Objects().CreateTimer(gm, out, 0, 0) == 0);
+  const uint32_t timer_handle = gm.Load32(out);
+  gm.Store64(out + 8, uint64_t(int64_t(-100000)));  // 10 ms
+  const uint64_t before = SystemTime();
+  CHECK(Objects().NtSetTimerEx(gm, timer_handle, out + 8, 0x82000000, 9, kthread, 0, 0) == 0);
+  CHECK(Threads().Delay(gm, pcr, second, true) == kStatusUserApc && Threads().DeliverApcs(gm, pcr, 0x7F000) == 1);
+  const uint64_t fired = delivered.back()[1] | delivered.back()[2] << 32;
+  CHECK(delivered.back()[0] == 9 && fired >= before && fired <= SystemTime());
+  // I/O completion APCs: queued for a successful transfer with a routine (low bit dropped) and a context only.
+  Threads().QueueIoApc(kthread, 0x82000001, 0x55, 0x1800, 0);
+  Threads().QueueIoApc(kthread, 0x82000000, 0x55, 0x1800, 0xC0000011);  // end of file
+  Threads().QueueIoApc(kthread, 0x82000000, 0, 0x1800, 0);
+  Threads().QueueIoApc(kthread, 1, 0x55, 0x1800, 0);
+  CHECK(Threads().PendingApcs(kthread) == 1 && Threads().DeliverApcs(gm, pcr, 0x7F000) == 1 &&
+        delivered.back() == std::vector<uint64_t>({0x55, 0x1800, 0}));
   g_code_args.clear();
   CHECK(Threads().LookupThreadById(gm, 0x7777, out) == 0xC0000225u);
   Threads().Shutdown();

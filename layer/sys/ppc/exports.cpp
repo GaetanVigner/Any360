@@ -179,6 +179,11 @@ ANY360_SYS_EXPORT(KeQueryPerformanceFrequency) { ctx.r3.u64 = KeQueryPerformance
 static uint32_t ThreadOf(PPCContext& ctx, uint8_t* base) { return Guest{base}.Load32(ctx.r13.u32 + 0x100); }
 // An alertable wait first runs the user APCs queued on the calling thread and then returns STATUS_USER_APC without
 // waiting; one that an APC ends runs it the same way.
+// The I/O calls' completion APC: routine in r5, context in r6, I/O status block in r7.
+static uint32_t IoApc(PPCContext& ctx, uint8_t* base, uint32_t status) {
+  Threads().QueueIoApc(ThreadOf(ctx, base), ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, status);
+  return status;
+}
 template <typename Wait>
 static uint32_t AlertableWait(PPCContext& ctx, uint8_t* base, uint32_t alertable, Wait wait) {
   if (alertable && Threads().DeliverApcs({base}, ctx.r13.u32, ctx.r1.u32)) return kStatusUserApc;
@@ -240,8 +245,9 @@ ANY360_SYS_EXPORT(KeQuerySystemTime) {
 ANY360_SYS_EXPORT(KeInitializeTimerEx) { Objects().InitializeTimer({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(NtCreateTimer) { ctx.r3.u64 = Objects().CreateTimer({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(NtSetTimerEx) {
-  // (handle, due time, APC routine, 1, APC context, resume, period in ms, previous state out); the timer's APC is not queued yet.
-  ctx.r3.u64 = Objects().NtSetTimerEx({base}, ctx.r3.u32, ctx.r4.u32, ctx.r9.u32, ctx.r10.u32);
+  // (handle, due time, APC routine, 1, APC context, resume, period in ms, previous state out)
+  ctx.r3.u64 = Objects().NtSetTimerEx({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r7.u32, ThreadOf(ctx, base), ctx.r9.u32,
+                                      ctx.r10.u32);
 }
 ANY360_SYS_EXPORT(NtCancelTimer) { ctx.r3.u64 = Objects().NtCancelTimer({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(KeWaitForMultipleObjects) {
@@ -318,11 +324,11 @@ ANY360_SYS_EXPORT(NtOpenFile) {
   ctx.r3.u64 = Files().CreateFile({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, 0, kOpen, ctx.r7.u32);
 }
 ANY360_SYS_EXPORT(NtReadFile) {
-  // (handle, event, APC routine, APC context, I/O status, buffer, length, offset); APCs are not delivered yet.
-  ctx.r3.u64 = Files().ReadFile({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+  // (handle, event, APC routine, APC context, I/O status, buffer, length, offset)
+  ctx.r3.u64 = IoApc(ctx, base, Files().ReadFile({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32));
 }
 ANY360_SYS_EXPORT(NtWriteFile) {
-  ctx.r3.u64 = Files().WriteFile({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+  ctx.r3.u64 = IoApc(ctx, base, Files().WriteFile({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32));
 }
 ANY360_SYS_EXPORT(NtQueryInformationFile) {
   ctx.r3.u64 = Files().QueryInformation({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
@@ -535,7 +541,7 @@ ANY360_SYS_EXPORT(KeInsertQueueDpc) { ctx.r3.u64 = KeInsertQueueDpc({base}, ctx.
 ANY360_SYS_EXPORT(KeRemoveQueueDpc) { ctx.r3.u64 = KeRemoveQueueDpc({base}, ctx.r3.u32); }
 ANY360_SYS_EXPORT(MmMapIoSpace) { ctx.r3.u64 = ctx.r4.u32; }  // device registers (XMA contexts) are plain memory here
 ANY360_SYS_EXPORT(NtWriteFileGather) {
-  ctx.r3.u64 = Files().WriteFileGather({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+  ctx.r3.u64 = IoApc(ctx, base, Files().WriteFileGather({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32));
 }
 ANY360_SYS_EXPORT(ObOpenObjectByName) { ctx.r3.u64 = Objects().OpenObjectByName({base}, ctx.r3.u32, ctx.r6.u32); }
 ANY360_SYS_EXPORT(ObReferenceObjectByName) { ctx.r3.u64 = Objects().ReferenceObjectByName({base}, ctx.r3.u32, ctx.r7.u32); }
@@ -644,7 +650,7 @@ ANY360_SYS_EXPORT(RtlUnicodeStringToAnsiString) { ctx.r3.u64 = RtlUnicodeStringT
 ANY360_SYS_EXPORT(RtlUpcaseUnicodeChar) { ctx.r3.u64 = RtlUpcaseUnicodeChar(ctx.r3.u32); }
 ANY360_SYS_EXPORT(NtReadFileScatter) {
   // (handle, event, APC routine, APC context, I/O status, segments, length, offset)
-  ctx.r3.u64 = Files().ReadFileScatter({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+  ctx.r3.u64 = IoApc(ctx, base, Files().ReadFileScatter({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32));
 }
 ANY360_SYS_EXPORT(XamEnableInactivityProcessing) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(XamResetInactivity) {}

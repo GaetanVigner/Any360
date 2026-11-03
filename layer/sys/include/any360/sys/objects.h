@@ -70,7 +70,10 @@ class ObjectManager {
   uint32_t NtReleaseSemaphore(Guest g, uint32_t handle, uint32_t count, uint32_t previous_out);
   uint32_t NtReleaseMutant(Guest g, uint32_t handle, uint32_t thread);
   uint32_t CreateTimer(Guest g, uint32_t handle_out, uint32_t attributes, uint32_t type);
-  uint32_t NtSetTimerEx(Guest g, uint32_t handle, uint32_t due_time_ptr, uint32_t period_ms, uint32_t previous_out);
+  // With an APC routine, each expiry queues routine(context, system time low, high) on `thread` (the caller), as the
+  // reference.
+  uint32_t NtSetTimerEx(Guest g, uint32_t handle, uint32_t due_time_ptr, uint32_t routine, uint32_t context, uint32_t thread,
+                        uint32_t period_ms, uint32_t previous_out);
   uint32_t NtCancelTimer(Guest g, uint32_t handle, uint32_t current_state_out);
   uint32_t Close(uint32_t handle);
   uint32_t Duplicate(Guest g, uint32_t handle, uint32_t new_handle_out, uint32_t options);
@@ -133,6 +136,10 @@ class ObjectManager {
   std::vector<Entry> entries_;
   std::unordered_map<uint32_t, int> references_;  // object -> Ob references
   std::vector<uint32_t> timers_;  // armed timers (guest addresses)
+  struct TimerApc {
+    uint32_t thread, routine, context;
+  };
+  std::unordered_map<uint32_t, TimerApc> timer_apcs_;  // timer -> the APC its expiries queue
   uint32_t heap_begin_ = 0, heap_end_ = 0, heap_next_ = 0;
   Guest guest_{nullptr};
   void (*close_hook_)(uint32_t) = nullptr;

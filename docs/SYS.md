@@ -47,7 +47,8 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   periods, notification and synchronization types; expiry is noticed when the objects are polled by a wait or
   `Poll`), the guest clock (`KeQuerySystemTime`, FILETIME from the host clock) and the multiple-object waits
   (`KeWaitForMultipleObjects`, `NtWaitForMultipleObjectsEx`: wait-any returns the index taken, wait-all consumes every
-  object together or nothing). Timer APC routines are not delivered yet.
+  object together or nothing). A timer's APC routine is queued on the thread that set it at each expiry (see the DPC
+  and APC delivery below).
 - **The scheduler** (`scheduler.h`, scenario tests): guest threads as host threads, each with its KTHREAD, PCR, TLS
   block and stack in guest memory (the structures the rest of the layer reads through r13), run through the
   `Dispatcher` the title installs (the layer never executes guest code itself). `ExCreateThread` (stack size, thread
@@ -79,7 +80,7 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `NtFlushBuffersFile`. Open files are objects of the object manager: `NtClose` of the last handle frees them (and
   deletes a file marked for deletion). The statuses are the NT ones (`OBJECT_NAME_NOT_FOUND` for a missing name,
   `OBJECT_PATH_NOT_FOUND` for a missing directory or device), which `RtlNtStatusToDosError` maps to the Win32 codes
-  XAPI expects. Completion APCs and asynchronous I/O are not provided yet; reads and writes complete at once.
+  XAPI expects. Reads and writes complete at once (no asynchronous I/O yet); their completion APC is queued as the reference does.
 - **XAM and the process** (`xam.h`, scenario tests): the answers of a retail console with one local profile signed
   in and no Xbox Live. Messages to the system applications (`XMsgStartIORequest(Ex)`, `XMsgInProcessCall`,
   `XMsgCancelIORequest`) complete at once; notifications (`XamNotifyCreateListener`, `XNotifyGetNext`: a new system
@@ -180,8 +181,12 @@ to the reference, or, where the reference is not faithful, when the scenario tes
     context, arg1, arg2), at dispatch level with the PRCB's DPC-active flag set; a DPC leaves the queue before it runs,
     so it may queue itself again. The reference never runs them. On the console a DPC interrupts the processor that
     queued it; here it runs beside that thread.
-  - Not delivered yet: timer APCs (`NtSetTimerEx`), I/O completion APCs, kernel APCs (`KeInitializeApc` /
-    `KeInsertQueueApc`).
+  - Timer APCs (`NtSetTimerEx` with a routine): each expiry queues routine(context, system time low, high) on the
+    thread that set the timer, as the reference; an alertable delay polls the timers, so one can end it.
+  - I/O completion APCs (`NtReadFile`, `NtWriteFile`, `NtReadFileScatter`, `NtWriteFileGather`): routine(context,
+    I/O status block, 0) queued on the caller when the transfer succeeded and both routine and context are given, the
+    routine's low bit dropped, as the reference.
+  - Not delivered yet: kernel APCs (`KeInitializeApc` / `KeInsertQueueApc`).
 - **Offline networking**: `NetDll_inet_addr` (the Winsock parser), `NetDll___WSAFDIsSet`, `NetDll_XNetInAddrToString`,
   the XNet address conversions.
 
@@ -233,7 +238,7 @@ the calls the four titles share come first.
 
 Next for the layer, in this order:
 
-1. **Object manager and scheduler, continued**: absolute wait timeouts, timer and I/O completion APCs,
+1. **Object manager and scheduler, continued**: absolute wait timeouts, kernel APCs,
    pre-emptive suspension, freeing kernel objects, `KeGetCurrentThread`-style queries.
 2. **Memory, continued**: `NtProtectVirtualMemory`, `MEM_RESET`, the executable's image range as a queryable heap,
    `ExAllocatePool*`, `MmCreateKernelStack`, `KeLockL2` / `KeUnlockL2`.

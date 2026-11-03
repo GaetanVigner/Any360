@@ -45,6 +45,7 @@ void ObjectManager::Reset() {
   entries_.clear();
   references_.clear();
   timers_.clear();
+  timer_apcs_.clear();
   heap_next_ = heap_begin_;
 }
 
@@ -179,6 +180,10 @@ void ObjectManager::Poll(Guest g) {
       continue;
     }
     g.Store32(timer + kHeaderSignalState, 1);
+    if (const auto apc = timer_apcs_.find(timer); apc != timer_apcs_.end()) {
+      const TimerApc& a = apc->second;
+      Threads().QueueApcTo(a.thread, a.routine, a.context, uint32_t(now), uint32_t(now >> 32));
+    }
     const uint32_t period = g.Load32(timer + kTimerPeriod);
     if (period) {
       g.Store64(timer + kTimerDueTime, now + uint64_t(period) * 10'000);
@@ -325,10 +330,16 @@ uint32_t ObjectManager::CreateTimer(Guest g, uint32_t handle_out, uint32_t attri
   return kStatusSuccess;
 }
 
-uint32_t ObjectManager::NtSetTimerEx(Guest g, uint32_t handle, uint32_t due_time_ptr, uint32_t period_ms, uint32_t previous_out) {
+uint32_t ObjectManager::NtSetTimerEx(Guest g, uint32_t handle, uint32_t due_time_ptr, uint32_t routine, uint32_t context,
+                                    uint32_t thread, uint32_t period_ms, uint32_t previous_out) {
   const Entry* e = Find(handle);
   if (!e) return kStatusInvalidHandle;
   if (!due_time_ptr) return kStatusInvalidParameter;
+  if (routine) {
+    timer_apcs_[e->object] = {thread, routine, context};
+  } else {
+    timer_apcs_.erase(e->object);
+  }
   const uint32_t previous = SetTimer(g, e->object, int64_t(g.Load64(due_time_ptr)), period_ms);
   if (previous_out) g.Store32(previous_out, previous);
   return kStatusSuccess;
