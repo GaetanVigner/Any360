@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <random>
 
 #include "any360/sys/files.h"
@@ -93,6 +94,28 @@ uint32_t Xam::MsgStartIORequest(Guest g, uint32_t, uint32_t, uint32_t overlapped
 uint32_t Xam::MsgInProcessCall(uint32_t, uint32_t, uint32_t, uint32_t) { return kErrorSuccess; }
 
 uint32_t Xam::MsgCancelIORequest(Guest, uint32_t, uint32_t) { return kErrorSuccess; }
+
+uint32_t Xam::MsgCompleteIORequest(Guest g, uint32_t overlapped, uint32_t result, uint32_t extended_error, uint32_t length) {
+  g.Store32(overlapped + 0x00, result);
+  g.Store32(overlapped + 0x04, length);
+  g.Store32(overlapped + 0x18, extended_error);
+  const uint32_t event = g.Load32(overlapped + 0x0C);
+  if (event) Objects().NtSetEvent(g, event, 0);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::GetOverlappedResult(Guest g, uint32_t overlapped, uint32_t length_ptr, uint32_t wait, uint32_t thread) {
+  constexpr uint32_t kErrorIoIncomplete = 0x3E4;
+  uint32_t result = g.Load32(overlapped);
+  if (result == kErrorIoPending) {
+    const uint32_t event = g.Load32(overlapped + 0x0C);
+    if (!wait || !event) return kErrorIoIncomplete;
+    if (Objects().WaitForHandle(g, event, thread, nullptr) != kStatusSuccess) return kErrorInvalidParameter;
+    result = g.Load32(overlapped);
+  }
+  if (result == kErrorSuccess && length_ptr) g.Store32(length_ptr, g.Load32(overlapped + 0x04));
+  return result;
+}
 
 void Xam::Notify(uint32_t id, uint32_t param) {
   const uint32_t area = (id >> 25) & 0x3F;
@@ -319,6 +342,22 @@ uint32_t Xam::ShowMessageBoxUI(Guest g, uint32_t result_ptr, uint32_t overlapped
   return Finish(g, overlapped, kErrorSuccess);
 }
 
+uint32_t Xam::ShowKeyboardUI(Guest g, uint32_t default_text, uint32_t buffer, uint32_t length, uint32_t overlapped) {
+  if (!buffer || !length) return kErrorInvalidParameter;
+  Notify(kNotifySystemUi, 1);
+  uint32_t i = 0;
+  if (default_text) {
+    for (; i + 1 < length; ++i) {
+      const uint16_t c = g.Load16(default_text + 2 * i);
+      if (!c) break;
+      g.Store16(buffer + 2 * i, c);
+    }
+  }
+  std::memset(g.host(buffer + 2 * i), 0, size_t(length - i) * 2);
+  Notify(kNotifySystemUi, 0);
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
 uint32_t Xam::ShowDeviceSelectorUI(Guest g, uint32_t device_id_ptr, uint32_t overlapped) {
   if (device_id_ptr) g.Store32(device_id_ptr, 1);  // the hard drive
   return Finish(g, overlapped, kErrorSuccess);
@@ -449,6 +488,22 @@ uint32_t Xam::ContentCreateEnumerator(Guest g, uint32_t, uint32_t device_id, uin
   return kErrorSuccess;
 }
 
+uint32_t Xam::ContentSetThumbnail(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size, uint32_t overlapped) {
+  if (!content_data || title_.content_root.empty()) return Finish(g, overlapped, kErrorInvalidParameter);
+  const std::filesystem::path path = ContentPath(g, content_data);
+  std::error_code error;
+  if (!std::filesystem::is_directory(path, error)) return Finish(g, overlapped, kErrorFileNotFound);
+  std::ofstream stream(path.parent_path() / (path.filename().string() + ".png"), std::ios::binary | std::ios::trunc);
+  if (size) stream.write(reinterpret_cast<const char*>(g.host(buffer)), size);
+  return Finish(g, overlapped, stream ? kErrorSuccess : kErrorAccessDenied);
+}
+
+uint32_t Xam::ContentGetLicenseMask(Guest g, uint32_t mask_ptr, uint32_t overlapped) {
+  if (!mask_ptr) return Finish(g, overlapped, kErrorInvalidParameter);
+  g.Store32(mask_ptr, title_.license_mask);
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
 uint32_t Xam::ContentGetDeviceState(Guest g, uint32_t device_id, uint32_t overlapped) {
   return Finish(g, overlapped, device_id <= 1 ? kErrorSuccess : kErrorDeviceNotConnected);
 }
@@ -571,6 +626,26 @@ uint32_t Xam::LoadImage(Guest g, uint32_t name, uint32_t handle_ptr) {
 uint32_t Xam::UnloadImage(uint32_t handle) {
   if (handle && (handle == title_.module_handle || handle == system_module_)) return kStatusSuccess;
   return kStatusInvalidHandle;
+}
+
+uint32_t Xam::LoadImageHeaders(Guest g, uint32_t path, uint32_t buffer, uint32_t size) {
+  constexpr uint32_t kStatusInvalidImageFormat = 0xC000007B, kStatusBufferTooSmall = 0xC0000023, kXex2 = 0x58455832;
+  const uint16_t length = path ? g.Load16(path) : 0;
+  const uint32_t pointer = path ? g.Load32(path + 4) : 0;
+  if (!pointer || !length) return kStatusInvalidParameter;
+  const std::filesystem::path host = Files().Resolve(std::string(reinterpret_cast<const char*>(g.host(pointer)), length));
+  std::ifstream stream(host, std::ios::binary);
+  if (host.empty() || !stream) return kStatusNoSuchFile;
+  uint8_t head[0x18] = {};
+  stream.read(reinterpret_cast<char*>(head), sizeof head);
+  const auto be32 = [&](size_t at) { return uint32_t(head[at]) << 24 | uint32_t(head[at + 1]) << 16 | uint32_t(head[at + 2]) << 8 | head[at + 3]; };
+  if (stream.gcount() != std::streamsize(sizeof head) || be32(0) != kXex2) return kStatusInvalidImageFormat;
+  const uint32_t header_size = be32(8);  // the headers end where the PE image begins
+  if (header_size < sizeof head) return kStatusInvalidImageFormat;
+  if (header_size > size) return kStatusBufferTooSmall;
+  stream.seekg(0);
+  stream.read(reinterpret_cast<char*>(g.host(buffer)), header_size);
+  return stream.gcount() == std::streamsize(header_size) ? kStatusSuccess : kStatusInvalidImageFormat;
 }
 
 uint32_t Xam::GetProcedureAddress(Guest g, uint32_t module, uint32_t ordinal, uint32_t out) {

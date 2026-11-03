@@ -475,6 +475,50 @@ ANY360_SYS_EXPORT(XexUnloadImage) { ctx.r3.u64 = XamState().UnloadImage(ctx.r3.u
 // Another executable from a content package (a demo, an offer): no image is loaded besides the title's.
 ANY360_SYS_EXPORT(XamContentLaunchImage) { ctx.r3.u64 = kErrorFileNotFound; }
 
+// Batch 16: the rest of Test Drive Unlimited's (sys_object_tests).
+ANY360_SYS_EXPORT(NetDll_XNetCleanup) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(NetDll_XNetTsAddrToInAddr) { ctx.r3.u64 = 10050; }    // WSAENETDOWN: no title server
+ANY360_SYS_EXPORT(NetDll_XNetUnregisterInAddr) { ctx.r3.u64 = 10022; }  // WSAEINVAL: nothing is registered offline
+ANY360_SYS_EXPORT(XamLoaderGetDvdTrayState) {
+  if (ctx.r3.u32) Guest{base}.Store32(ctx.r3.u32, 1);  // closed, with the title's disc
+  ctx.r3.u64 = 0;
+}
+ANY360_SYS_EXPORT(XMsgCompleteIORequest) {
+  ctx.r3.u64 = XamState().MsgCompleteIORequest({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+}
+ANY360_SYS_EXPORT(XamGetOverlappedResult) {
+  ctx.r3.u64 = XamState().GetOverlappedResult({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ThreadOf(ctx, base));
+}
+ANY360_SYS_EXPORT(XamContentSetThumbnail) {
+  ctx.r3.u64 = XamState().ContentSetThumbnail({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(XamContentGetLicenseMask) { ctx.r3.u64 = XamState().ContentGetLicenseMask({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XNotifyPositionUI) {}  // where notifications appear: nothing is drawn
+ANY360_SYS_EXPORT(XNotifyDelayUI) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamShowKeyboardUI) {
+  // (user, flags, default text, title, description, buffer, buffer length, overlapped)
+  ctx.r3.u64 = XamState().ShowKeyboardUI({base}, ctx.r5.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+}
+ANY360_SYS_EXPORT(XamWriteGamerTile) { ctx.r3.u64 = XamState().Finish({base}, ctx.r8.u32, kErrorSuccess); }
+ANY360_SYS_EXPORT(IoDismountVolume) { ctx.r3.u64 = 0; }  // nothing is cached per volume
+ANY360_SYS_EXPORT(IoDismountVolumeByName) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(IoSynchronousDeviceIoControlRequest) {
+  // (code, device, input, input length, output, output length, returned length)
+  ctx.r3.u64 = Files().SynchronousDeviceIoControl({base}, ctx.r3.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32);
+}
+ANY360_SYS_EXPORT(KeInitializeDpc) { KeInitializeDpc({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(KeInsertQueueDpc) { ctx.r3.u64 = KeInsertQueueDpc({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(KeRemoveQueueDpc) { ctx.r3.u64 = KeRemoveQueueDpc({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(MmMapIoSpace) { ctx.r3.u64 = ctx.r4.u32; }  // device registers (XMA contexts) are plain memory here
+ANY360_SYS_EXPORT(NtWriteFileGather) {
+  ctx.r3.u64 = Files().WriteFileGather({base}, ctx.r3.u32, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+}
+ANY360_SYS_EXPORT(ObOpenObjectByName) { ctx.r3.u64 = Objects().OpenObjectByName({base}, ctx.r3.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(ObReferenceObjectByName) { ctx.r3.u64 = Objects().ReferenceObjectByName({base}, ctx.r3.u32, ctx.r7.u32); }
+ANY360_SYS_EXPORT(XexLoadImageHeaders) { ctx.r3.u64 = XamState().LoadImageHeaders({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(VdSetDisplayModeOverride) { ctx.r3.u64 = 0; }  // the host picks the output mode
+ANY360_SYS_EXPORT(XAudioGetSpeakerConfig) { ctx.r3.u64 = Audio().GetSpeakerConfig({base}, ctx.r3.u32); }
+
 // Batch 11: what Sonic '06 still needed (sys_io_tests for XeCryptSha, sys_object_tests for the rest).
 ANY360_SYS_EXPORT(XexGetModuleSection) { ctx.r3.u64 = XamState().GetModuleSection({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
 ANY360_SYS_EXPORT(StfsCreateDevice) { ctx.r3.u64 = 0; }
@@ -780,6 +824,31 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XexLoadImage),
     ANY360_SYS_ENTRY(XexUnloadImage),
     ANY360_SYS_ENTRY(XamContentLaunchImage),
+    ANY360_SYS_ENTRY(NetDll_XNetCleanup),
+    ANY360_SYS_ENTRY(NetDll_XNetTsAddrToInAddr),
+    ANY360_SYS_ENTRY(NetDll_XNetUnregisterInAddr),
+    ANY360_SYS_ENTRY(XamLoaderGetDvdTrayState),
+    ANY360_SYS_ENTRY(XMsgCompleteIORequest),
+    ANY360_SYS_ENTRY(XamGetOverlappedResult),
+    ANY360_SYS_ENTRY(XamContentSetThumbnail),
+    ANY360_SYS_ENTRY(XamContentGetLicenseMask),
+    ANY360_SYS_ENTRY(XNotifyPositionUI),
+    ANY360_SYS_ENTRY(XNotifyDelayUI),
+    ANY360_SYS_ENTRY(XamShowKeyboardUI),
+    ANY360_SYS_ENTRY(XamWriteGamerTile),
+    ANY360_SYS_ENTRY(IoDismountVolume),
+    ANY360_SYS_ENTRY(IoDismountVolumeByName),
+    ANY360_SYS_ENTRY(IoSynchronousDeviceIoControlRequest),
+    ANY360_SYS_ENTRY(KeInitializeDpc),
+    ANY360_SYS_ENTRY(KeInsertQueueDpc),
+    ANY360_SYS_ENTRY(KeRemoveQueueDpc),
+    ANY360_SYS_ENTRY(MmMapIoSpace),
+    ANY360_SYS_ENTRY(NtWriteFileGather),
+    ANY360_SYS_ENTRY(ObOpenObjectByName),
+    ANY360_SYS_ENTRY(ObReferenceObjectByName),
+    ANY360_SYS_ENTRY(XexLoadImageHeaders),
+    ANY360_SYS_ENTRY(VdSetDisplayModeOverride),
+    ANY360_SYS_ENTRY(XAudioGetSpeakerConfig),
     ANY360_SYS_ENTRY(NetDll_closesocket),
     ANY360_SYS_ENTRY(NetDll_shutdown),
     ANY360_SYS_ENTRY(NetDll_setsockopt),

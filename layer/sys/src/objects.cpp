@@ -379,6 +379,30 @@ uint32_t ObjectManager::ReferenceObjectByHandle(Guest g, uint32_t handle, uint32
   return kStatusSuccess;
 }
 
+uint32_t ObjectManager::OpenObjectByName(Guest g, uint32_t attributes, uint32_t handle_out) {
+  constexpr uint32_t kStatusObjectNameNotFound = 0xC0000034;
+  if (!attributes) return kStatusInvalidParameter;
+  const Entry* e = FindByName(NameOf(g, attributes));
+  if (!e) return kStatusObjectNameNotFound;
+  const uint32_t object = e->object;
+  const std::string name = e->name;
+  const uint32_t handle = AddHandle(object, name);
+  if (handle_out) g.Store32(handle_out, handle);
+  return kStatusSuccess;
+}
+
+uint32_t ObjectManager::ReferenceObjectByName(Guest g, uint32_t name, uint32_t object_out) {
+  constexpr uint32_t kStatusObjectNameNotFound = 0xC0000034;
+  if (!name) return kStatusInvalidParameter;
+  const uint16_t length = g.Load16(name);
+  const uint32_t pointer = g.Load32(name + 4);
+  const Entry* e = pointer && length ? FindByName(std::string(reinterpret_cast<const char*>(g.host(pointer)), length)) : nullptr;
+  if (!e) return kStatusObjectNameNotFound;
+  ++references_[e->object];
+  if (object_out) g.Store32(object_out, e->object);
+  return kStatusSuccess;
+}
+
 uint32_t ObjectManager::DereferenceObject(Guest, uint32_t object) {
   auto it = references_.find(object);
   if (it != references_.end() && --it->second <= 0) references_.erase(it);

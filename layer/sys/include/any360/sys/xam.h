@@ -46,6 +46,7 @@ struct TitleSettings {
   std::filesystem::path content_root;  // where content packages (saves, DLC) live on the host
   uint64_t xuid = 0xE000000000000001ull;  // the local profile (an offline XUID)
   std::string gamertag = "Player";
+  uint32_t license_mask = 0;  // XContentGetLicenseMask: no content license granted, as the reference answers
 };
 
 class Xam {
@@ -65,6 +66,11 @@ class Xam {
   uint32_t MsgStartIORequest(Guest g, uint32_t app, uint32_t message, uint32_t overlapped, uint32_t buffer, uint32_t length);
   uint32_t MsgInProcessCall(uint32_t app, uint32_t message, uint32_t arg1, uint32_t arg2);
   uint32_t MsgCancelIORequest(Guest g, uint32_t overlapped, uint32_t wait);
+  // XMsgCompleteIORequest: a request completed by the title itself (result, extended error and length).
+  uint32_t MsgCompleteIORequest(Guest g, uint32_t overlapped, uint32_t result, uint32_t extended_error, uint32_t length);
+  // XGetOverlappedResult: the result of a completed request (its length stored); a pending one is ERROR_IO_INCOMPLETE
+  // unless `wait` asks to wait for its event.
+  uint32_t GetOverlappedResult(Guest g, uint32_t overlapped, uint32_t length_ptr, uint32_t wait, uint32_t thread);
   uint32_t NotifyCreateListener(Guest g, uint64_t mask, uint32_t max_version);
   uint32_t NotifyGetNext(Guest g, uint32_t handle, uint32_t match_id, uint32_t id_ptr, uint32_t param_ptr);
 
@@ -83,6 +89,9 @@ class Xam {
   uint32_t ShowSigninUI(uint32_t users, uint32_t flags);
   uint32_t ShowMessageBoxUI(Guest g, uint32_t result_ptr, uint32_t overlapped);
   uint32_t ShowDeviceSelectorUI(Guest g, uint32_t device_id_ptr, uint32_t overlapped);
+  // The virtual keyboard, accepted at once with its default text (the buffer emptied without one), truncated to the
+  // buffer's `length` characters, terminator included.
+  uint32_t ShowKeyboardUI(Guest g, uint32_t default_text, uint32_t buffer, uint32_t length, uint32_t overlapped);
   // Guide screens that need Xbox Live (friends, gamer cards, marketplace): the guide opens and closes at once.
   uint32_t ShowLiveUI();
   // The local profile has no Live friends; other users are not signed in.
@@ -114,6 +123,10 @@ class Xam {
   uint32_t ContentCreateEnumerator(Guest g, uint32_t user, uint32_t device_id, uint32_t content_type, uint32_t flags, uint32_t per_call,
                                    uint32_t size_ptr, uint32_t handle_out);
   uint32_t ContentGetDeviceState(Guest g, uint32_t device_id, uint32_t overlapped);
+  // The package's thumbnail (PNG bytes), kept next to its folder as "<file name>.png"; ERROR_FILE_NOT_FOUND when the
+  // package does not exist.
+  uint32_t ContentSetThumbnail(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size, uint32_t overlapped);
+  uint32_t ContentGetLicenseMask(Guest g, uint32_t mask_ptr, uint32_t overlapped);
 
   // Controllers.
   uint32_t InputGetCapabilities(Guest g, uint32_t user, uint32_t flags, uint32_t caps);
@@ -128,6 +141,9 @@ class Xam {
   // loaded) by name, a path's directories ignored; no other image is loaded (STATUS_NO_SUCH_FILE).
   uint32_t LoadImage(Guest g, uint32_t name, uint32_t handle_ptr);
   uint32_t UnloadImage(uint32_t handle);
+  // XexLoadImageHeaders: the XEX2 headers of the image an ANSI_STRING path names, copied to `buffer` (its first
+  // header-size bytes); STATUS_NO_SUCH_FILE, STATUS_INVALID_IMAGE_FORMAT, STATUS_BUFFER_TOO_SMALL otherwise.
+  uint32_t LoadImageHeaders(Guest g, uint32_t path, uint32_t buffer, uint32_t size);
   uint32_t GetProcedureAddress(Guest g, uint32_t module, uint32_t ordinal, uint32_t out);
   uint32_t CheckExecutablePrivilege(Guest g, uint32_t privilege) const;
   uint32_t GetExecutionId(Guest g, uint32_t info_ptr) const;

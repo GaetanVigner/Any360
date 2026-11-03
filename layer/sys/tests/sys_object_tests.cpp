@@ -15,6 +15,7 @@
 #include <fstream>
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
+#include "any360/sys/threading.h"
 #include "any360/sys/crypt.h"
 #include "any360/sys/rtl.h"
 #include "any360/sys/xam.h"
@@ -1085,6 +1086,7 @@ void GraphicsAudioTests() {
   gm.Store32(out, 0xFFFFFFFF);
   CHECK(Audio().GetVoiceCategoryVolumeChangeMask(gm, 0x41550000, out) == 0 && gm.Load32(out) == 0);
   CHECK(Audio().GetVoiceCategoryVolume(gm, out) == 0 && gm.Load32(out) == 0x3F800000);
+  CHECK(Audio().GetSpeakerConfig(gm, out) == 0 && gm.Load32(out) == 0x00010001);
   // The audio clock calls the client every 5.33 ms.
   const int before = mixes;
   Audio().Start();
@@ -1114,7 +1116,132 @@ void GraphicsAudioTests() {
 
 }  // namespace
 
+// The calls Test Drive Unlimited still needed.
+void TduTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  XamState().Reset();
+  Files().Reset();
+  std::error_code ec;
+  const uint32_t out = kScratch + 0x200, ov = kScratch + 0x300, buf = kScratch + 0x400, str = kScratch + 0x800;
+  // DPCs: initialised as the kernel lays them out, queued once, removed once.
+  const uint32_t dpc = 0x30000;
+  std::memset(g.host(dpc), 0xEE, 0x1C);
+  KeInitializeDpc(g, dpc, 0x82000000, 0x1234);
+  CHECK(g.Load16(dpc) == 19 && g.Load32(dpc + 4) == 0 && g.Load32(dpc + 0xC) == 0x82000000 && g.Load32(dpc + 0x10) == 0x1234);
+  CHECK(KeInsertQueueDpc(g, dpc, 7, 8) == 1 && g.Load32(dpc + 0x14) == 7 && g.Load32(dpc + 0x18) == 8);
+  CHECK(KeInsertQueueDpc(g, dpc, 9, 9) == 0 && g.Load32(dpc + 0x14) == 7);
+  CHECK(KeRemoveQueueDpc(g, dpc) == 1 && KeRemoveQueueDpc(g, dpc) == 0);
+  ResetDpcs();
+  // Named objects: opened (a new handle) and referenced by name.
+  CHECK(Objects().CreateEvent(g, out, Named("\\TduEvent"), 0, 0) == 0);
+  const uint32_t named = g.Load32(out);
+  CHECK(Objects().OpenObjectByName(g, Named("\\TduEvent"), out + 4) == 0);
+  CHECK(g.Load32(out + 4) != named && Objects().Lookup(g.Load32(out + 4)) == Objects().Lookup(named));
+  CHECK(Objects().ReferenceObjectByName(g, kScratch + 0x120, out + 8) == 0 && g.Load32(out + 8) == Objects().Lookup(named));
+  CHECK(Objects().DereferenceObject(g, g.Load32(out + 8)) == 0);
+  CHECK(Objects().OpenObjectByName(g, Named("\\Missing"), out + 4) == 0xC0000034u);
+  CHECK(Objects().ReferenceObjectByName(g, kScratch + 0x120, out + 8) == 0xC0000034u);
+  CHECK(Objects().OpenObjectByName(g, 0, out + 4) == kStatusInvalidParameter);
+  // Completing a request by hand, then reading its result back; a pending one, with and without waiting.
+  CHECK(Objects().CreateEvent(g, out, 0, 0, 0) == 0);
+  const uint32_t event = g.Load32(out);
+  std::memset(g.host(ov), 0, 0x1C);
+  g.Store32(ov + 0x0C, event);
+  CHECK(XamState().MsgCompleteIORequest(g, ov, 0, 0x5, 12) == 0 && g.Load32(ov) == 0 && g.Load32(ov + 4) == 12 && g.Load32(ov + 0x18) == 5);
+  const int64_t zero = 0;
+  CHECK(Objects().WaitForHandle(g, event, kMainThread, &zero) == 0);
+  CHECK(XamState().GetOverlappedResult(g, ov, out + 4, 0, kMainThread) == 0 && g.Load32(out + 4) == 12);
+  CHECK(Objects().NtClearEvent(g, event) == 0);
+  g.Store32(ov, kErrorIoPending);
+  CHECK(XamState().GetOverlappedResult(g, ov, out + 4, 0, kMainThread) == 0x3E4);
+  std::thread completer([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    XamState().MsgCompleteIORequest(g, ov, kErrorNoMoreFiles, 0, 0);
+  });
+  CHECK(XamState().GetOverlappedResult(g, ov, out + 4, 1, kMainThread) == kErrorNoMoreFiles);
+  completer.join();
+  // The virtual keyboard accepts its default text at once, truncated to the buffer.
+  const uint32_t l = XamState().NotifyCreateListener(g, 1, 0);
+  const char16_t hello[] = u"Hello";
+  for (int i = 0; i < 6; ++i) g.Store16(str + 2 * i, uint16_t(hello[i]));
+  std::memset(g.host(buf), 0xEE, 32);
+  CHECK(XamState().ShowKeyboardUI(g, str, buf, 3, 0) == 0 && g.Load16(buf) == 'H' && g.Load16(buf + 2) == 'e' && g.Load16(buf + 4) == 0);
+  CHECK(XamState().ShowKeyboardUI(g, str, buf, 16, 0) == 0 && g.Load16(buf + 8) == 'o' && g.Load16(buf + 10) == 0 && g.Load16(buf + 30) == 0);
+  CHECK(XamState().ShowKeyboardUI(g, 0, buf, 16, 0) == 0 && g.Load16(buf) == 0);
+  CHECK(XamState().ShowKeyboardUI(g, str, 0, 16, 0) == kErrorInvalidParameter);
+  std::memset(g.host(ov), 0xEE, 0x1C);
+  g.Store32(ov + 0x0C, 0);
+  CHECK(XamState().ShowKeyboardUI(g, str, buf, 16, ov) == kErrorIoPending && g.Load32(ov) == 0);
+  CHECK(XamState().NotifyGetNext(g, l, kNotifySystemUi, out + 4, out + 8) == 1 && g.Load32(out + 8) == 1);
+  // Content: the license mask, a package's thumbnail.
+  CHECK(XamState().ContentGetLicenseMask(g, out, 0) == 0 && g.Load32(out) == 0);
+  CHECK(XamState().ContentGetLicenseMask(g, out, ov) == kErrorIoPending && g.Load32(ov) == 0);
+  const fs::path content = fs::temp_directory_path() / "any360-sys-content3";
+  fs::remove_all(content, ec);
+  fs::create_directories(content / "00000001" / "slot1");
+  XamState().title().content_root = content;
+  const uint32_t data = 0x6000;
+  std::memset(g.host(data), 0, 0x134);
+  g.Store32(data + 4, 1);
+  std::memcpy(g.host(data + 0x108), "slot1", 5);
+  std::memcpy(g.host(buf), "\x89PNG", 4);
+  CHECK(XamState().ContentSetThumbnail(g, data, buf, 4, 0) == 0 && fs::file_size(content / "00000001" / "slot1.png", ec) == 4);
+  std::memcpy(g.host(data + 0x108), "slot9", 5);
+  CHECK(XamState().ContentSetThumbnail(g, data, buf, 4, 0) == kErrorFileNotFound);
+  // Gather writes and the image headers of an XEX, on a mounted folder.
+  const fs::path root = fs::temp_directory_path() / "any360-sys-tdu";
+  fs::remove_all(root, ec);
+  fs::create_directories(root);
+  {
+    std::ofstream f(root / "out.bin", std::ios::binary);
+    const uint8_t xex[0x40] = {'X', 'E', 'X', '2', 0, 0, 0, 1, 0, 0, 0, 0x20};
+    std::ofstream x(root / "default.xex", std::ios::binary);
+    x.write(reinterpret_cast<const char*>(xex), sizeof xex);
+    std::ofstream bad(root / "bad.xex", std::ios::binary);
+    bad.write("MZ\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 24);
+  }
+  Files().Mount("\\Device\\Harddisk0\\Partition1", root, false);
+  const uint32_t attrs = 0x6400;
+  const auto path = [&](const char* text) {
+    g.Store32(attrs, 0);
+    g.Store32(attrs + 4, attrs + 0x10);
+    g.Store16(attrs + 0x10, uint16_t(std::strlen(text)));
+    g.Store32(attrs + 0x14, attrs + 0x20);
+    std::memcpy(g.host(attrs + 0x20), text, std::strlen(text));
+    return attrs + 0x10;  // the ANSI_STRING
+  };
+  path("\\Device\\Harddisk0\\Partition1\\out.bin");
+  CHECK(Files().CreateFile(g, out, 0x40000000, attrs, 0, 0, kOpen, 0) == 0);
+  const uint32_t pages = 0x6800, page_a = 0x20000, page_b = 0x21000, iosb = 0x6900;
+  for (uint32_t i = 0; i < 0x1000; ++i) g.Store8(page_a + i, uint8_t(i)), g.Store8(page_b + i, uint8_t(i * 3));
+  g.Store32(pages, page_a);
+  g.Store32(pages + 4, page_b);
+  CHECK(Files().WriteFileGather(g, g.Load32(out), 0, iosb, pages, 0x1800, 0) == 0 && g.Load32(iosb + 4) == 0x1800);
+  CHECK(Objects().Close(g.Load32(out)) == 0);
+  {
+    std::ifstream f(root / "out.bin", std::ios::binary);
+    std::vector<char> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    CHECK(bytes.size() == 0x1800 && uint8_t(bytes[0x10]) == 0x10 && uint8_t(bytes[0x1010]) == uint8_t(0x10 * 3));
+  }
+  CHECK(Files().WriteFileGather(g, 0x1234, 0, iosb, pages, 0x10, 0) == kStatusInvalidHandle);
+  std::memset(g.host(buf), 0, 0x40);
+  CHECK(XamState().LoadImageHeaders(g, path("\\Device\\Harddisk0\\Partition1\\default.xex"), buf, 0x40) == 0 && g.Load32(buf) == 0x58455832 &&
+        g.Load32(buf + 8) == 0x20);
+  CHECK(XamState().LoadImageHeaders(g, path("\\Device\\Harddisk0\\Partition1\\default.xex"), buf, 0x10) == 0xC0000023u);
+  CHECK(XamState().LoadImageHeaders(g, path("\\Device\\Harddisk0\\Partition1\\bad.xex"), buf, 0x40) == 0xC000007Bu);
+  CHECK(XamState().LoadImageHeaders(g, path("\\Device\\Harddisk0\\Partition1\\none.xex"), buf, 0x40) == kStatusNoSuchFile);
+  // The synchronous form of the disk queries.
+  CHECK(Files().SynchronousDeviceIoControl(g, 0x70000, buf, 8, out) == 0 && g.Load32(out) == 8 && g.Load32(buf + 4) == 512);
+  CHECK(Files().SynchronousDeviceIoControl(g, 0x12345, buf, 8, out) == kStatusInvalidParameter);
+  Files().Reset();
+  XamState().Reset();
+  fs::remove_all(root, ec);
+  fs::remove_all(content, ec);
+}
+
 int main() {
+  TduTests();
   GraphicsAudioTests();
   SonicTests();
   XamTests();

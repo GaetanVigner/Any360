@@ -44,6 +44,8 @@ class AudioKernel {
   uint32_t SubmitFrame(Guest g, uint32_t driver, uint32_t samples);
   uint32_t GetVoiceCategoryVolumeChangeMask(Guest g, uint32_t driver, uint32_t out);
   uint32_t GetVoiceCategoryVolume(Guest g, uint32_t out);
+  // XAudioGetSpeakerConfig: the console's audio settings as the reference answers them (0x00010001).
+  uint32_t GetSpeakerConfig(Guest g, uint32_t out);
 
   // Calls every registered client's callback once (the title then submits its next frame).
   void Pump(Guest g);

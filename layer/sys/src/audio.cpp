@@ -70,6 +70,11 @@ uint32_t AudioKernel::GetVoiceCategoryVolumeChangeMask(Guest g, uint32_t, uint32
   return kErrorSuccess;
 }
 
+uint32_t AudioKernel::GetSpeakerConfig(Guest g, uint32_t out) {
+  if (out) g.Store32(out, 0x00010001);
+  return kErrorSuccess;
+}
+
 uint32_t AudioKernel::GetVoiceCategoryVolume(Guest g, uint32_t out) {
   const float one = 1.0f;
   uint32_t bits;

@@ -43,6 +43,15 @@ uint32_t KeTlsFree(Guest g, uint32_t pcr, uint32_t slot);
 uint32_t KeTlsGetValue(Guest g, uint32_t pcr, uint32_t slot);
 uint32_t KeTlsSetValue(Guest g, uint32_t pcr, uint32_t slot, uint32_t value);
 
+// KDPC (0x1C bytes): type 19, selected and desired processor, a list entry, routine, context and two system arguments.
+// Insert records the arguments and queues the DPC once (0 when already queued); Remove takes it off the queue. Queued
+// DPCs do not run yet: their routine takes four arguments and runs with the scheduler (the reference does not run them
+// either).
+void KeInitializeDpc(Guest g, uint32_t dpc, uint32_t routine, uint32_t context);
+uint32_t KeInsertQueueDpc(Guest g, uint32_t dpc, uint32_t arg1, uint32_t arg2);
+uint32_t KeRemoveQueueDpc(Guest g, uint32_t dpc);
+void ResetDpcs();
+
 uint32_t KeQueryPerformanceFrequency();  // 50 MHz, the Xenon time base
 
 }  // namespace any360::sys

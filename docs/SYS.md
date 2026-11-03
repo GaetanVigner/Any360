@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (298 system calls)
+## What is verified (323 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -122,6 +122,21 @@ to the reference, or, where the reference is not faithful, when the scenario tes
     no other image; `NtDeviceIoControlFile` answering the cache partition's disk queries as the reference;
     `IoDismountVolumeByFileHandle`; the console-key signature calls passing as the reference; the floating-point
     state save and restore (the thread's own state, nothing to do); `XamContentLaunchImage` finding no image.
+- **The rest of Test Drive Unlimited** (MVP reached: all 278 of its system calls; scenario tests):
+  - the network: `XNetCleanup`, title server addresses not resolved (`WSAENETDOWN`), nothing to unregister
+    (`WSAEINVAL`);
+  - XAM: `XMsgCompleteIORequest` (result, extended error and length, the event set) and `XamGetOverlappedResult`
+    (`ERROR_IO_INCOMPLETE` for a pending request unless asked to wait on its event), the virtual keyboard accepted at
+    once with its default text (the reference's headless answer), a package's thumbnail kept next to its folder, the
+    license mask (0, as the reference), the gamer tile write accepted, the notification position and delay, the DVD
+    tray closed with the disc;
+  - the kernel: DPCs (`KeInitializeDpc` lays the KDPC out, `KeInsertQueueDpc` / `KeRemoveQueueDpc` queue it once; a
+    queued DPC does not run yet, as in the reference), `ObOpenObjectByName` / `ObReferenceObjectByName` on named
+    objects (the name an `ANSI_STRING`, which the reference reads as a C string), `NtWriteFileGather` (pages listed
+    one pointer each, as `NtReadFileScatter`), `IoSynchronousDeviceIoControlRequest` (the cache partition's disk
+    queries; the reference accepts any code and writes nothing), `IoDismountVolume` / `ByName`, `MmMapIoSpace`
+    (device registers are plain memory), `XexLoadImageHeaders` (the XEX2 headers of an image on a mounted device; the
+    reference does not implement it), `VdSetDisplayModeOverride` and `XAudioGetSpeakerConfig` as the reference.
 - **Graphics and audio, the kernel side** (`graphics.h`, `audio.h`; scenario tests with a fake GPU, sink and XMA
   decoder): `VdInitializeEngines`, `VdInitializeRingBuffer` and `VdEnableRingBufferRPtrWriteBack` (handed to a
   `GpuBackend`, the command processor), `VdSwap` (the front buffer's fetch constant, made physical, and `XE_SWAP` written into the ring as the reference does), `VdSetGraphicsInterruptCallback` (the title's handler runs on a guest context
@@ -169,6 +184,9 @@ outside the layer is the backends: the GPU command processor and renderer, the a
 
 **MVP reached for Crackdown**: all 248 of its system calls are native (2026-11-03), graphics and audio included on
 the kernel side; its graphics already run through any360::gfx (`layer/host/rexglue`).
+
+**MVP reached for Test Drive Unlimited**: all 278 of its system calls are native (2026-11-03), graphics and audio
+included on the kernel side.
 
 **MVP**: one title with every system call except the graphics and audio ones native, so it can run on `any360::sys`
 with only those left to the reference. The progress page shows the MVP per title; the closest title is the target, and

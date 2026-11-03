@@ -23,9 +23,9 @@
   },
   "simpsons": {
    "imports": 317,
-   "imports_native": 246,
+   "imports_native": 255,
    "mvp_total": 277,
-   "mvp_native": 224,
+   "mvp_native": 232,
    "mnemonics": 338,
    "instructions": 2938230,
    "sdk": "0.8.0",
@@ -33,9 +33,9 @@
    "source": "",
    "description": "",
    "sites": 4697,
-   "sites_native": 4600,
+   "sites_native": 4611,
    "mvp_sites": 4635,
-   "mvp_sites_native": 4570
+   "mvp_sites_native": 4580
   },
   "sonic06": {
    "imports": 200,
@@ -51,9 +51,9 @@
   },
   "tdu": {
    "imports": 278,
-   "imports_native": 254,
+   "imports_native": 278,
    "mvp_total": 255,
-   "mvp_native": 232,
+   "mvp_native": 255,
    "mnemonics": 0,
    "instructions": 0,
    "sdk": "",
@@ -66,8 +66,8 @@
   "total": 2914,
   "used": 374,
   "any360": {
-   "todo": 2616,
-   "native": 298
+   "todo": 2591,
+   "native": 323
   },
   "reference": {
    "implemented": 493,
