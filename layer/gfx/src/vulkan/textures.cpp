@@ -437,7 +437,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       changed_taken_.swap(changed_);
       any_changed_.store(false, std::memory_order_relaxed);
     }
-    for (const auto& [begin, end] : changed_taken_) MemoryChanged(begin, end);
+    MemoryChanged(changed_taken_);  // a watched write is reported a page at a time: many ranges
     changed_taken_.clear();
   }
   const std::array<uint32_t, 8> fast_key = {fetch[0], fetch[1], fetch[2], fetch[3], fetch[4], fetch[5], uint32_t(type),
@@ -793,6 +793,29 @@ void TextureCache::MemoryChanged(uint32_t begin, uint32_t end) {
     if (texture && texture->begin < end && begin < texture->end) texture->validated = 0, changed = true;
   }
   if (changed) ++version_;  // the views cached by fetch constant are checked again
+}
+
+void TextureCache::MemoryChanged(std::vector<std::pair<uint32_t, uint32_t>>& ranges) {
+  if (ranges.empty()) return;
+  std::sort(ranges.begin(), ranges.end());
+  size_t merged = 0;
+  for (size_t i = 1; i < ranges.size(); ++i) {
+    if (ranges[i].first <= ranges[merged].second) {
+      ranges[merged].second = std::max(ranges[merged].second, ranges[i].second);
+    } else {
+      ranges[++merged] = ranges[i];
+    }
+  }
+  ranges.resize(merged + 1);
+  bool changed = false;
+  for (auto& [key, texture] : textures_) {
+    if (!texture) continue;
+    // The first range ending after the texture's start (the merged ranges' ends are sorted too).
+    const auto it = std::upper_bound(ranges.begin(), ranges.end(), texture->begin,
+                                     [](uint32_t at, const std::pair<uint32_t, uint32_t>& r) { return at < r.second; });
+    if (it != ranges.end() && it->first < texture->end) texture->validated = 0, changed = true;
+  }
+  if (changed) ++version_;
 }
 
 }  // namespace any360::gfx::vk

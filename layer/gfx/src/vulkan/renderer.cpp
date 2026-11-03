@@ -1438,7 +1438,6 @@ void VulkanRenderer::Flush() {
       for (const VkBufferCopy& region : regions) {
         const uint32_t first = uint32_t(region.srcOffset) >> kGuestPageShift;
         const uint32_t last = uint32_t((region.srcOffset + region.size - 1) >> kGuestPageShift);
-        bool any = false;
         for (uint32_t page = first; page <= last; ++page) {
           std::atomic<uint64_t>& word = vram_valid_[page / 64];
           const uint64_t bit = uint64_t(1) << (page % 64);
@@ -1451,9 +1450,12 @@ void VulkanRenderer::Flush() {
           } else {
             upload_regions_.push_back({at, at, size});
           }
-          any = true;
         }
-        if (any && guest_watch_) guest_watch_(uint32_t(region.srcOffset), uint32_t(region.srcOffset + region.size));
+      }
+      // Only the copied runs are watched: the pages already current still are, and protecting a range is a system
+      // call for each of the runtime's views of physical memory.
+      if (guest_watch_) {
+        for (const VkBufferCopy& run : upload_regions_) guest_watch_(uint32_t(run.srcOffset), uint32_t(run.srcOffset + run.size));
       }
     }
   }

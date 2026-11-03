@@ -102,6 +102,8 @@ class TextureCache {
   void SetMemoryWatch(std::function<void(uint32_t, uint32_t)> watch) { watch_ = std::move(watch); }
   bool watching() const { return bool(watch_); }
   void MemoryChanged(uint32_t begin, uint32_t end);
+  // Several ranges at once (sorted and merged in place): one pass over the textures, however many there are.
+  void MemoryChanged(std::vector<std::pair<uint32_t, uint32_t>>& ranges);
   // Where uploads are recorded: the renderer's open batch (outside rendering), so an upload is one more command in it
   // rather than a submission waited for; draws recorded before it still read the old content, in GPU order. Without
   // one, each upload is submitted and waited for. BatchDone: the batch ran, its staging buffers are free.
