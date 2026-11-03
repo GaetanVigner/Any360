@@ -32,6 +32,7 @@
 // few formats only. Each limit is a later step.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <thread>
 #include <unordered_map>
@@ -121,6 +122,11 @@ class VulkanRenderer : public gfx::Renderer {
   // Pipelines kept in the file at `path` across runs (read by Initialize, written as new ones are made and at the
   // end). Before Initialize; empty: none kept.
   void SetPipelineCache(std::string path) { pipeline_cache_path_ = std::move(path); }
+  // Host MSAA: render targets drawn with this many samples a host pixel (1, 2, 4, 8; the most the device has up to
+  // it), averaged when anything reads them (depth: sample 0). Apart from the resolution scale (supersampling) and
+  // from the title's own MSAA (drawn as pixels). Before Initialize.
+  void SetMsaa(uint32_t samples) { msaa_ = samples; }
+  uint32_t msaa() const { return uint32_t(samples_); }
   // Pipelines compiled on threads of their own: a draw waits a millisecond at most for its pipeline, then is not
   // drawn until it is ready (a frame or so without it rather than a stall of tens of milliseconds). Before Initialize.
   void SetAsyncPipelines(bool on) { async_pipelines_ = on; }
@@ -143,6 +149,13 @@ class VulkanRenderer : public gfx::Renderer {
     Image image;
     VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkImageView depth_view = VK_NULL_HANDLE;  // a depth surface's depth aspect, sampled by depth resolves
+    // With host MSAA (SetMsaa): the multisampled image draws render into, resolved into `image` before anything
+    // reads it; `drawn`: the host pixels drawn since (left, top, right, bottom; empty: nothing to resolve).
+    Image ms;
+    VkImageLayout ms_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    int32_t drawn[4] = {INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN};
+    Image& target() { return ms.image ? ms : image; }  // what draws render into
+    VkImageLayout& target_layout() { return ms.image ? ms_layout : layout; }
   };
   Surface* GetSurface(const SurfaceKey& key);
   bool ClearColor(const SurfaceKey& key, const float rgba[4]);
@@ -252,6 +265,15 @@ class VulkanRenderer : public gfx::Renderer {
   uint8_t* physical_;  // written by resolves
   uint32_t mirror_bytes_;
   uint32_t scale_ = 1;  // resolution scale
+  uint32_t msaa_ = 1;   // host MSAA asked for
+  VkSampleCountFlagBits samples_ = VK_SAMPLE_COUNT_1_BIT;  // host MSAA the device has
+  // The samples drawn into a surface's multisampled image since its last resolve, into its image (outside a pass).
+  void ResolveSamples(VkCommandBuffer cb, Surface& surface);
+  static void GrowDrawn(Surface* surface, int32_t left, int32_t top, int32_t right, int32_t bottom) {
+    if (!surface || !surface->ms.image) return;
+    surface->drawn[0] = std::min(surface->drawn[0], left), surface->drawn[1] = std::min(surface->drawn[1], top);
+    surface->drawn[2] = std::max(surface->drawn[2], right), surface->drawn[3] = std::max(surface->drawn[3], bottom);
+  }
   std::unique_ptr<rex::graphics::SpirvShaderTranslator> translator_;
   struct ShaderKeyHash {
     size_t operator()(const std::pair<uint32_t, uint64_t>& k) const { return size_t(k.second ^ (uint64_t(k.first) << 63)); }

@@ -103,7 +103,7 @@ struct Image {
   uint32_t width = 0, height = 0;
 };
 bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
-                   VkImageAspectFlags aspect, Image& out);
+                   VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT);
 void DestroyImage(const Device& d, Image& i);
 
 }  // namespace any360::gfx::vk
