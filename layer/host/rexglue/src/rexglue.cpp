@@ -539,12 +539,13 @@ Binding* g_binding = nullptr;
 
 // A CPU write to watched guest memory (the runtime's physical memory access callbacks): the textures over it are
 // checked again before their next use. The watch is one-shot; the texture cache arms it again when it reads the
-// memory. Any range may be unwatched.
+// memory. Only the range invalidated here may be unwatched: the runtime would otherwise drop the watch of up to 4 MB
+// around the write without telling us, and what we hold of those pages would go stale.
 std::pair<uint32_t, uint32_t> MemoryWritten(void* context, uint32_t start, uint32_t length, bool) {
   auto* renderer = static_cast<gfx::vk::VulkanRenderer*>(context);
   if (auto* textures = renderer->texture_cache()) textures->QueueMemoryChanged(start, start + length);
   renderer->GuestMemoryWritten(start, start + length);  // the vertices copied into video memory
-  return {0, UINT32_MAX};
+  return {start, length};
 }
 
 uint32_t ReadGpuRegister(void*, void*, uint32_t address) { return sys::Graphics().ReadRegister(sys::GpuRegisterIndex(address)); }
