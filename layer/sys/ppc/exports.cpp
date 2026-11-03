@@ -784,6 +784,17 @@ ANY360_SYS_EXPORT(CompareFileTime) {
   ctx.r3.u64 = a < b ? 0xFFFFFFFF : a > b ? 1 : 0;
 }
 
+// Batch 21: read/write locks and interlocked lists (sys_runtime_tests against the reference, sys_object_tests).
+ANY360_SYS_EXPORT(ExInitializeReadWriteLock) { ExInitializeReadWriteLock({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(ExAcquireReadWriteLockExclusive) { ExAcquireReadWriteLockExclusive({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(ExTryToAcquireReadWriteLockExclusive) { ctx.r3.u64 = ExTryToAcquireReadWriteLockExclusive({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(ExAcquireReadWriteLockShared) { ExAcquireReadWriteLockShared({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(ExTryToAcquireReadWriteLockShared) { ctx.r3.u64 = ExTryToAcquireReadWriteLockShared({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(ExReleaseReadWriteLock) { ExReleaseReadWriteLock({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(InterlockedPushEntrySList) { ctx.r3.u64 = InterlockedPushEntrySList({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(InterlockedPopEntrySList) { ctx.r3.u64 = InterlockedPopEntrySList({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(InterlockedFlushSList) { ctx.r3.u64 = InterlockedFlushSList({base}, ctx.r3.u32); }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1117,6 +1128,15 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ExAllocatePool),
     ANY360_SYS_ENTRY(ExFreePool),
     ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(ExInitializeReadWriteLock),
+    ANY360_SYS_ENTRY(ExAcquireReadWriteLockExclusive),
+    ANY360_SYS_ENTRY(ExTryToAcquireReadWriteLockExclusive),
+    ANY360_SYS_ENTRY(ExAcquireReadWriteLockShared),
+    ANY360_SYS_ENTRY(ExTryToAcquireReadWriteLockShared),
+    ANY360_SYS_ENTRY(ExReleaseReadWriteLock),
+    ANY360_SYS_ENTRY(InterlockedPushEntrySList),
+    ANY360_SYS_ENTRY(InterlockedPopEntrySList),
+    ANY360_SYS_ENTRY(InterlockedFlushSList),
     ANY360_SYS_ENTRY(CreateFileA),
     ANY360_SYS_ENTRY(ReadFile),
     ANY360_SYS_ENTRY(WriteFile),

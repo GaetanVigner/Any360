@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (439 system calls)
+## What is verified (448 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -179,6 +179,13 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XMACreateContext` / `XMAReleaseContext` (64-byte contexts in physical memory, announced to an `XmaBackend`). Guest
   callbacks run through `Scheduler::CreateContext` and `Scheduler::Dispatch`. The renderer, the audio output and the
   XMA decoder are the backends still to write.
+- **Read/write locks and interlocked lists** (`sys_runtime_tests` against the reference where no call waits,
+  `sys_object_tests` across threads): `ExInitializeReadWriteLock`, `ExAcquireReadWriteLockExclusive` /
+  `Shared`, `ExTryToAcquireReadWriteLock*`, `ExReleaseReadWriteLock` (the reference's algorithm on the ERWLOCK's
+  counts under its spin lock; waiters block on its synchronization event or semaphore; a writer leaving lets every
+  waiting reader in); `InterlockedPushEntrySList`, `InterlockedPopEntrySList`, `InterlockedFlushSList` (one 64-bit
+  compare-and-swap on the SLIST_HEADER; Pop keeps the sequence, as the reference). The lock's event and semaphore
+  are laid out as the console's (the reference keeps its host objects in their headers instead).
 - **The Win32 file calls XAM exports** (scenario tests), on the same open files and handles as the Nt* calls:
   `CreateFileA` (the five Win32 dispositions), `ReadFile` / `WriteFile` (at the file position, or at an OVERLAPPED's
   offset completing at once; a read at the end is TRUE with no bytes, as Win32), `SetFilePointer`, `SetFilePointerEx`,

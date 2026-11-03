@@ -56,4 +56,21 @@ void ResetDpcs();
 
 uint32_t KeQueryPerformanceFrequency();  // 50 MHz, the Xenon time base
 
+// ERWLOCK (0x38 bytes): lock count (-1 free), writers waiting, readers waiting, readers in, the writers' synchronization
+// event, the readers' semaphore and a spin lock, worked as the reference does. Acquiring waits on the event or the
+// semaphore when the lock is taken; releasing hands it to the waiting readers first, then to one writer.
+void ExInitializeReadWriteLock(Guest g, uint32_t lock);
+void ExAcquireReadWriteLockExclusive(Guest g, uint32_t pcr, uint32_t lock);
+uint32_t ExTryToAcquireReadWriteLockExclusive(Guest g, uint32_t pcr, uint32_t lock);
+void ExAcquireReadWriteLockShared(Guest g, uint32_t pcr, uint32_t lock);
+uint32_t ExTryToAcquireReadWriteLockShared(Guest g, uint32_t pcr, uint32_t lock);
+void ExReleaseReadWriteLock(Guest g, uint32_t pcr, uint32_t lock);
+
+// SLIST_HEADER (8 bytes: first entry, depth, sequence), changed with one 64-bit compare-and-swap. Push returns the
+// previous first entry, Pop the entry taken (0 when empty), Flush the whole chain. As the reference, Pop leaves the
+// sequence as it is.
+uint32_t InterlockedPushEntrySList(Guest g, uint32_t header, uint32_t entry);
+uint32_t InterlockedPopEntrySList(Guest g, uint32_t header);
+uint32_t InterlockedFlushSList(Guest g, uint32_t header);
+
 }  // namespace any360::sys

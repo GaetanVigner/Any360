@@ -26,6 +26,14 @@
 
 #define REFERENCE(name) extern "C" void __imp__##name(PPCContext& ctx, uint8_t* base);
 REFERENCE(KeGetCurrentProcessType)
+REFERENCE(ExAcquireReadWriteLockExclusive)
+REFERENCE(ExTryToAcquireReadWriteLockExclusive)
+REFERENCE(ExAcquireReadWriteLockShared)
+REFERENCE(ExTryToAcquireReadWriteLockShared)
+REFERENCE(ExReleaseReadWriteLock)
+REFERENCE(InterlockedPushEntrySList)
+REFERENCE(InterlockedPopEntrySList)
+REFERENCE(InterlockedFlushSList)
 REFERENCE(KeSetCurrentProcessType)
 REFERENCE(KeRaiseIrqlToDpcLevel)
 REFERENCE(KfLowerIrql)
@@ -97,6 +105,28 @@ void CriticalSection(Scene& s, std::mt19937& rng, int owner) {
   std::memcpy(s.base + s.a + 0x10, &count, 4);  // host order
   s.Word(s.a + 0x14, recursion);
   s.Word(s.a + 0x18, thread);
+}
+
+// An ERWLOCK at block A with random counts and a free spin lock.
+void RwLock(Scene& s, std::mt19937& rng) {
+  s.Word(s.a, uint32_t(int32_t(rng() % 4) - 1));
+  s.Word(s.a + 4, rng() % 3);
+  s.Word(s.a + 8, rng() % 3);
+  s.Word(s.a + 0xC, rng() % 3);
+  s.Word(s.a + 0x34, 0);
+}
+
+// An SLIST_HEADER at block A heading a chain of entries in block B (or empty).
+void SList(Scene& s, std::mt19937& rng) {
+  const uint32_t n = rng() % 5;
+  uint32_t next = 0;
+  for (uint32_t i = 0; i < n; ++i) {
+    const uint32_t entry = s.b + 0x100 + 8 * i;
+    s.Word(entry, next);
+    next = entry;
+  }
+  s.Word(s.a, next);
+  s.Word(s.a + 4, n << 16 | (rng() & 0xFFFF));
 }
 
 const Case kCases[] = {
@@ -171,6 +201,38 @@ const Case kCases[] = {
       ctx.r4.u64 = uint32_t(rng());
     }),
     CASE(KeQueryPerformanceFrequency, nullptr),
+    // Read/write locks in the states where no call waits: counts at block A, the spin lock free. (Initializing one is
+    // checked in sys_object_tests: the reference keeps its host objects in the event's and semaphore's headers.)
+    CASE(ExTryToAcquireReadWriteLockExclusive, [](Scene& s, PPCContext&, std::mt19937& rng) { RwLock(s, rng); }),
+    CASE(ExTryToAcquireReadWriteLockShared, [](Scene& s, PPCContext&, std::mt19937& rng) { RwLock(s, rng); }),
+    CASE(ExAcquireReadWriteLockExclusive, [](Scene& s, PPCContext&, std::mt19937& rng) {
+      RwLock(s, rng);
+      s.Word(s.a, 0xFFFFFFFF);  // free
+    }),
+    CASE(ExAcquireReadWriteLockShared, [](Scene& s, PPCContext&, std::mt19937& rng) {
+      RwLock(s, rng);
+      if (rng() % 2) {
+        s.Word(s.a, 0xFFFFFFFF);  // free
+      } else {
+        s.Word(s.a + 4, 0);  // readers in, no writer waiting
+        s.Word(s.a + 0xC, 1 + rng() % 3);
+      }
+    }),
+    CASE(ExReleaseReadWriteLock, [](Scene& s, PPCContext&, std::mt19937& rng) {
+      RwLock(s, rng);
+      s.Word(s.a + 8, 0);  // no reader to let in (that releases the semaphore)
+      if (rng() % 2) {
+        s.Word(s.a, 0);  // the last holder
+      } else {
+        s.Word(s.a + 0xC, 2 + rng() % 3);  // one reader of several leaves
+      }
+    }),
+    CASE(InterlockedPushEntrySList, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      SList(s, rng);
+      ctx.r4.u64 = s.b + 0x800 + 8 * (rng() % 16);
+    }),
+    CASE(InterlockedPopEntrySList, [](Scene& s, PPCContext&, std::mt19937& rng) { SList(s, rng); }),
+    CASE(InterlockedFlushSList, [](Scene& s, PPCContext&, std::mt19937& rng) { SList(s, rng); }),
 };
 
 struct Snapshot {

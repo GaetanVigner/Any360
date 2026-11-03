@@ -418,6 +418,58 @@ void SchedulerTests() {
 // view and a 64 KB physical view sharing one physical space.
 // Ended threads go back to the kernel heap with their PCR, TLS block and stack once no handle keeps them; XAM's objects
 // forget their state and are freed with their last handle.
+// Read/write locks across threads: readers wait for a writer and come in together, a writer waits for the readers.
+void RwLockTests() {
+  Fresh();
+  const uint32_t lock = kScratch + 0x800, pcr1 = kScratch + 0x1000, pcr2 = kScratch + 0x1400;
+  g.Store32(pcr1 + 0x100, kMainThread);
+  g.Store32(pcr2 + 0x100, kMainThread + 0x40);
+  std::memset(g.host(lock), 0xEE, 0x38);
+  ExInitializeReadWriteLock(g, lock);
+  CHECK(g.Load32(lock) == 0xFFFFFFFF && g.Load32(lock + 4) == 0 && g.Load32(lock + 8) == 0 && g.Load32(lock + 0xC) == 0);
+  CHECK(g.Load8(lock + 0x10) == kSynchronizationEvent && g.Load32(lock + 0x14) == 0 && g.Load8(lock + 0x20) == kSemaphore &&
+        g.Load32(lock + 0x24) == 0 && g.Load32(lock + 0x30) == 0x7FFFFFFF && g.Load32(lock + 0x34) == 0);
+  auto settle = [] { std::this_thread::sleep_for(std::chrono::milliseconds(20)); };
+  // A writer in; a reader waits until the writer leaves.
+  CHECK(ExTryToAcquireReadWriteLockExclusive(g, pcr1, lock) == 1 && ExTryToAcquireReadWriteLockExclusive(g, pcr1, lock) == 0);
+  CHECK(ExTryToAcquireReadWriteLockShared(g, pcr1, lock) == 0);
+  std::atomic<bool> reader_in{false};
+  std::thread reader([&] {
+    ExAcquireReadWriteLockShared(g, pcr2, lock);
+    reader_in = true;
+  });
+  settle();
+  CHECK(!reader_in && g.Load32(lock + 8) == 1);
+  ExReleaseReadWriteLock(g, pcr1, lock);
+  reader.join();
+  CHECK(reader_in && g.Load32(lock + 8) == 0 && g.Load32(lock + 0xC) == 1 && g.Load32(lock) == 0);
+  // Another reader joins at once; a writer then waits for both to leave.
+  CHECK(ExTryToAcquireReadWriteLockShared(g, pcr1, lock) == 1 && g.Load32(lock + 0xC) == 2);
+  std::atomic<bool> writer_in{false};
+  std::thread writer([&] {
+    ExAcquireReadWriteLockExclusive(g, pcr2, lock);
+    writer_in = true;
+  });
+  settle();
+  CHECK(!writer_in && g.Load32(lock + 4) == 1 && ExTryToAcquireReadWriteLockShared(g, pcr1, lock) == 0);  // a writer waits
+  ExReleaseReadWriteLock(g, pcr1, lock);
+  settle();
+  CHECK(!writer_in);
+  ExReleaseReadWriteLock(g, pcr1, lock);
+  writer.join();
+  CHECK(writer_in && g.Load32(lock + 4) == 0 && g.Load32(lock + 0xC) == 0);
+  ExReleaseReadWriteLock(g, pcr2, lock);
+  CHECK(g.Load32(lock) == 0xFFFFFFFF && g.Load32(lock + 0x34) == 0);
+  // Interlocked lists: pushed and popped in LIFO order, flushed whole.
+  const uint32_t head = kScratch + 0x900, e1 = kScratch + 0x910, e2 = kScratch + 0x920;
+  g.Store64(head, 0);
+  CHECK(InterlockedPushEntrySList(g, head, e1) == 0 && InterlockedPushEntrySList(g, head, e2) == e1);
+  CHECK(g.Load32(head) == e2 && g.Load16(head + 4) == 2 && g.Load16(head + 6) == 2 && g.Load32(e2) == e1);
+  CHECK(InterlockedPopEntrySList(g, head) == e2 && g.Load32(head) == e1 && g.Load16(head + 4) == 1 && g.Load16(head + 6) == 2);
+  CHECK(InterlockedPushEntrySList(g, head, e2) == e1 && InterlockedFlushSList(g, head) == e2 && g.Load64(head) == 0);
+  CHECK(InterlockedPopEntrySList(g, head) == 0);
+}
+
 void ReclaimTests() {
   Fresh();
   Objects().SetKernelHeap(0x10000, 0x70000);
@@ -1692,6 +1744,7 @@ int main() {
   MemoryTests();
   SchedulerTests();
   ReclaimTests();
+  RwLockTests();
   Timers();
   Lifetimes();
   MultipleWaits();
