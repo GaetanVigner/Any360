@@ -72,6 +72,7 @@ void Scheduler::Shutdown() {
   threads_.clear();
   process_ = 0;
   next_thread_id_ = 1;
+  apcs_.clear();
 }
 
 Scheduler::Thread* Scheduler::Find(uint32_t kthread) const {
@@ -79,6 +80,32 @@ Scheduler::Thread* Scheduler::Find(uint32_t kthread) const {
     if (t->kthread == kthread) return t;
   }
   return nullptr;
+}
+
+uint32_t Scheduler::QueueApc(Guest g, uint32_t handle, uint32_t current, uint32_t routine, uint32_t context, uint32_t arg1,
+                             uint32_t arg2) {
+  const uint32_t kthread = handle == kCurrentThreadHandle ? current : Objects().Lookup(handle);
+  if (!kthread) return kStatusInvalidHandle;
+  if (g.Load8(kthread) != kThread) return kStatusObjectTypeMismatch;
+  if (!routine) return kStatusInvalidParameter;
+  apcs_.push_back({kthread, routine, context, arg1, arg2});
+  return kStatusSuccess;
+}
+
+size_t Scheduler::PendingApcs(uint32_t kthread) const {
+  size_t n = 0;
+  for (const Apc& apc : apcs_) n += apc.kthread == kthread;
+  return n;
+}
+
+uint32_t Scheduler::LookupThreadById(Guest g, uint32_t thread_id, uint32_t object_out) const {
+  for (const Thread* t : threads_) {
+    if (g.Load32(t->kthread + kThreadId) != thread_id) continue;
+    Objects().ReferenceObject(t->kthread);
+    if (object_out) g.Store32(object_out, t->kthread);
+    return kStatusSuccess;
+  }
+  return 0xC0000225;  // STATUS_NOT_FOUND
 }
 
 uint32_t Scheduler::ThreadOf(Guest g, uint32_t pcr) const {

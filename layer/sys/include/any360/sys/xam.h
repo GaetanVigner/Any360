@@ -46,7 +46,8 @@ struct TitleSettings {
   std::filesystem::path content_root;  // where content packages (saves, DLC) live on the host
   uint64_t xuid = 0xE000000000000001ull;  // the local profile (an offline XUID)
   std::string gamertag = "Player";
-  uint32_t license_mask = 0;  // XContentGetLicenseMask: no content license granted, as the reference answers
+  uint32_t license_mask = 0;
+  uint64_t machine_id = 0xFA00000000000001ull;  // XNetLogonGetMachineID: the console's id  // XContentGetLicenseMask: no content license granted, as the reference answers
 };
 
 class Xam {
@@ -66,6 +67,8 @@ class Xam {
   uint32_t MsgStartIORequest(Guest g, uint32_t app, uint32_t message, uint32_t overlapped, uint32_t buffer, uint32_t length);
   uint32_t MsgInProcessCall(uint32_t app, uint32_t message, uint32_t arg1, uint32_t arg2);
   uint32_t MsgCancelIORequest(Guest g, uint32_t overlapped, uint32_t wait);
+  // XMsgSystemProcessCall: a message to a system application, answered at once as the in-process form.
+  uint32_t MsgSystemProcessCall(uint32_t app, uint32_t message, uint32_t buffer, uint32_t length);
   // XMsgCompleteIORequest: a request completed by the title itself (result, extended error and length).
   uint32_t MsgCompleteIORequest(Guest g, uint32_t overlapped, uint32_t result, uint32_t extended_error, uint32_t length);
   // XGetOverlappedResult: the result of a completed request (its length stored); a pending one is ERROR_IO_INCOMPLETE
@@ -127,6 +130,14 @@ class Xam {
   // package does not exist.
   uint32_t ContentSetThumbnail(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size, uint32_t overlapped);
   uint32_t ContentGetLicenseMask(Guest g, uint32_t mask_ptr, uint32_t overlapped);
+  // The thumbnail ContentSetThumbnail kept: its size written, the bytes copied when a buffer is given (and big enough).
+  uint32_t ContentGetThumbnail(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size_ptr, uint32_t overlapped);
+  // XamContentResolve: the device path a package's files are reached by ("\Device\Content\<type>\<file name>",
+  // mounted on its folder), for RtlInitAnsiString.
+  uint32_t ContentResolve(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size);
+  // The devices content can be stored on (the hard drive only) as an enumerator of XDEVICE_DATA, and a device's name.
+  uint32_t ContentCreateDeviceEnumerator(Guest g, uint32_t per_call, uint32_t size_ptr, uint32_t handle_out);
+  uint32_t ContentGetDeviceName(Guest g, uint32_t device_id, uint32_t buffer, uint32_t capacity);
 
   // Controllers.
   uint32_t InputGetCapabilities(Guest g, uint32_t user, uint32_t flags, uint32_t caps);
@@ -189,6 +200,19 @@ class Xam {
   uint32_t XNetRandom(Guest g, uint32_t buffer, uint32_t length);
   uint32_t XNetCreateKey(Guest g, uint32_t key_id, uint32_t key);
   uint32_t XNetQosRelease(uint32_t qos);
+  uint32_t WsaSetLastError(uint32_t error);
+  // WSASetEvent / WSAResetEvent: TRUE, or FALSE with the Win32 error of the failure.
+  uint32_t WsaSetEvent(Guest g, uint32_t handle);
+  uint32_t WsaResetEvent(Guest g, uint32_t handle);
+  // Lookups that complete at once with no answer: a DNS record whose status is WSAENETDOWN, a QoS record with no
+  // result (titles read it whatever the result); both from the kernel pool, given back by their release call, the
+  // event set.
+  uint32_t XNetDnsLookup(Guest g, uint32_t event, uint32_t dns_ptr);
+  uint32_t XNetQosServiceLookup(Guest g, uint32_t event, uint32_t qos_ptr);
+  // XNetGetOpt: the startup parameters XNetStartup was given (XNET_OPTID_STARTUP_PARAMS, 1); others WSAEINVAL.
+  uint32_t XNetGetOpt(Guest g, uint32_t option, uint32_t buffer, uint32_t size_ptr);
+  uint32_t XNetStartup(Guest g, uint32_t params);
+  uint32_t LogonGetMachineId(Guest g, uint32_t id_ptr);
 
  private:
   struct Listener {
@@ -223,6 +247,7 @@ class Xam {
   std::vector<uint8_t> launch_data_;
   bool launch_data_present_ = false;
   uint32_t cache_elements_ = 0;
+  std::vector<uint8_t> startup_params_;
 };
 
 Xam& XamState();

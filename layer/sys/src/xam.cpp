@@ -14,6 +14,8 @@
 
 namespace any360::sys {
 
+uint32_t RtlNtStatusToDosError(uint32_t status);  // config.h
+
 namespace {
 
 constexpr uint32_t kStatusSuccess = 0, kStatusNotFound = 0xC0000225, kStatusProcedureNotFound = 0xC000007A;
@@ -65,6 +67,7 @@ void Xam::Reset() {
   launch_data_.clear();
   launch_data_present_ = false;
   cache_elements_ = 0;
+  startup_params_.clear();
 }
 
 // --- overlapped ------------------------------------------------------------------------------------------------
@@ -94,6 +97,10 @@ uint32_t Xam::MsgStartIORequest(Guest g, uint32_t, uint32_t, uint32_t overlapped
 uint32_t Xam::MsgInProcessCall(uint32_t, uint32_t, uint32_t, uint32_t) { return kErrorSuccess; }
 
 uint32_t Xam::MsgCancelIORequest(Guest, uint32_t, uint32_t) { return kErrorSuccess; }
+
+uint32_t Xam::MsgSystemProcessCall(uint32_t app, uint32_t message, uint32_t buffer, uint32_t length) {
+  return MsgInProcessCall(app, message, buffer, length);
+}
 
 uint32_t Xam::MsgCompleteIORequest(Guest g, uint32_t overlapped, uint32_t result, uint32_t extended_error, uint32_t length) {
   g.Store32(overlapped + 0x00, result);
@@ -498,6 +505,56 @@ uint32_t Xam::ContentSetThumbnail(Guest g, uint32_t content_data, uint32_t buffe
   return Finish(g, overlapped, stream ? kErrorSuccess : kErrorAccessDenied);
 }
 
+uint32_t Xam::ContentGetThumbnail(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size_ptr, uint32_t overlapped) {
+  if (!content_data || !size_ptr || title_.content_root.empty()) return Finish(g, overlapped, kErrorInvalidParameter);
+  const std::filesystem::path path = ContentPath(g, content_data);
+  std::error_code error;
+  if (!std::filesystem::is_directory(path, error)) return Finish(g, overlapped, kErrorFileNotFound);
+  std::ifstream stream(path.parent_path() / (path.filename().string() + ".png"), std::ios::binary);
+  if (!stream) return Finish(g, overlapped, kErrorFileNotFound);
+  const std::vector<char> bytes((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+  const uint32_t room = g.Load32(size_ptr);
+  g.Store32(size_ptr, uint32_t(bytes.size()));
+  if (!buffer) return Finish(g, overlapped, kErrorSuccess);
+  if (room < bytes.size()) return Finish(g, overlapped, kErrorInsufficientBuffer);
+  if (!bytes.empty()) std::memcpy(g.host(buffer), bytes.data(), bytes.size());
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::ContentResolve(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size) {
+  if (!content_data || !buffer || title_.content_root.empty()) return kErrorInvalidParameter;
+  const std::filesystem::path path = ContentPath(g, content_data);
+  std::error_code error;
+  if (!std::filesystem::is_directory(path, error)) return kErrorFileNotFound;
+  const std::string device = "\\Device\\Content\\" + path.parent_path().filename().string() + "\\" + path.filename().string();
+  if (size < device.size() + 1) return kErrorInsufficientBuffer;
+  Files().Mount(device, path, false);
+  std::memcpy(g.host(buffer), device.c_str(), device.size() + 1);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ContentCreateDeviceEnumerator(Guest g, uint32_t per_call, uint32_t size_ptr, uint32_t handle_out) {
+  if (!handle_out) return kErrorInvalidParameter;
+  constexpr uint32_t kDeviceData = 80;
+  if (size_ptr) g.Store32(size_ptr, kDeviceData * per_call);
+  // XDEVICE_DATA of the hard drive, written straight into the item (a guest view whose address 0 is its first byte).
+  std::vector<uint8_t> item(kDeviceData);
+  ContentGetDeviceData(Guest{item.data()}, 1, 0);
+  const uint32_t handle = CreateEnumerator(g, kDeviceData, per_call, {std::move(item)});
+  if (!handle) return kErrorFunctionFailed;
+  g.Store32(handle_out, handle);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ContentGetDeviceName(Guest g, uint32_t device_id, uint32_t buffer, uint32_t capacity) {
+  if (device_id != 1 && device_id != 2) return kErrorDeviceNotConnected;
+  const char* label = device_id == 1 ? "Hard Drive" : "Disc";
+  const uint32_t length = uint32_t(std::strlen(label));
+  if (capacity < length + 1) return kErrorInsufficientBuffer;
+  for (uint32_t i = 0; i <= length; ++i) g.Store16(buffer + 2 * i, uint16_t(label[i]));
+  return kErrorSuccess;
+}
+
 uint32_t Xam::ContentGetLicenseMask(Guest g, uint32_t mask_ptr, uint32_t overlapped) {
   if (!mask_ptr) return Finish(g, overlapped, kErrorInvalidParameter);
   g.Store32(mask_ptr, title_.license_mask);
@@ -782,6 +839,77 @@ uint32_t Xam::RaiseException(Guest g, uint32_t record) {
 // --- network ------------------------------------------------------------------------------------------------------
 
 uint32_t Xam::NetStartup() { return 0; }
+
+uint32_t Xam::XNetStartup(Guest g, uint32_t params) {
+  // XNetStartupParams: its own size first (13 bytes in the SDKs the titles use).
+  if (params) {
+    const uint8_t size = std::min<uint8_t>(g.Load8(params), 13);
+    startup_params_.assign(g.host(params), g.host(params) + size);
+  }
+  return 0;
+}
+
+uint32_t Xam::XNetGetOpt(Guest g, uint32_t option, uint32_t buffer, uint32_t size_ptr) {
+  constexpr uint32_t kWsaEInval = 10022, kWsaEMsgSize = 10040, kStartupParams = 1, kParamsSize = 13;
+  if (option != kStartupParams || !size_ptr) return kWsaEInval;
+  if (g.Load32(size_ptr) < kParamsSize) {
+    g.Store32(size_ptr, kParamsSize);
+    return kWsaEMsgSize;
+  }
+  std::memset(g.host(buffer), 0, kParamsSize);
+  if (!startup_params_.empty()) std::memcpy(g.host(buffer), startup_params_.data(), startup_params_.size());
+  g.Store32(size_ptr, kParamsSize);
+  return 0;
+}
+
+uint32_t Xam::LogonGetMachineId(Guest g, uint32_t id_ptr) {
+  if (!id_ptr) return kErrorInvalidParameter;
+  g.Store64(id_ptr, title_.machine_id);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::WsaSetLastError(uint32_t error) {
+  t_wsa_error = error;
+  return 0;
+}
+
+uint32_t Xam::WsaSetEvent(Guest g, uint32_t handle) {
+  const uint32_t status = Objects().NtSetEvent(g, handle, 0);
+  if (status == kStatusSuccess) return 1;
+  t_wsa_error = RtlNtStatusToDosError(status);
+  return 0;
+}
+
+uint32_t Xam::WsaResetEvent(Guest g, uint32_t handle) {
+  const uint32_t status = Objects().NtClearEvent(g, handle);
+  if (status == kStatusSuccess) return 1;
+  t_wsa_error = RtlNtStatusToDosError(status);
+  return 0;
+}
+
+uint32_t Xam::XNetDnsLookup(Guest g, uint32_t event, uint32_t dns_ptr) {
+  if (dns_ptr) {
+    // XNDNS: status, address count, eight addresses.
+    const uint32_t dns = AllocatePool(g, 40);
+    if (dns) {
+      g.Store32(dns, kWsaENetDown);
+      g.Store32(dns + 4, 0);
+    }
+    g.Store32(dns_ptr, dns);
+  }
+  if (event) Objects().NtSetEvent(g, event, 0);
+  return 0;
+}
+
+uint32_t Xam::XNetQosServiceLookup(Guest g, uint32_t event, uint32_t qos_ptr) {
+  if (qos_ptr) {
+    // XNQOS: result count, pending count, then the results (none).
+    const uint32_t qos = AllocatePool(g, 0x40);
+    g.Store32(qos_ptr, qos);
+  }
+  if (event) Objects().NtSetEvent(g, event, 0);
+  return 0;
+}
 
 uint32_t Xam::WsaStartup(Guest g, uint32_t version, uint32_t data) {
   if (data) {

@@ -1240,7 +1240,129 @@ void TduTests() {
   fs::remove_all(content, ec);
 }
 
+// The calls The Simpsons Game still needed outside graphics and audio.
+void SimpsonsTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  XamState().Reset();
+  Files().Reset();
+  std::error_code ec;
+  std::vector<uint8_t> memory(0x200000);
+  const Guest gm{memory.data()};
+  Memory().Reset({{0x00000000, 0x80000, 0x1000, false}, {0x80000, 0x80000, 0x10000, false}});
+  Objects().SetKernelHeap(0x100000, 0x10000);
+  Objects().SetGuest(gm);
+  Objects().Reset();
+  const uint32_t out = 0x1800, ov = 0x1900, buf = 0x2000;
+  // Winsock events set and reset by handle; a bad handle is FALSE and ERROR_INVALID_HANDLE.
+  const uint32_t ev = XamState().WsaCreateEvent();
+  CHECK(XamState().WsaSetEvent(gm, ev) == 1 && gm.Load32(Objects().Lookup(ev) + 4) == 1);
+  CHECK(XamState().WsaResetEvent(gm, ev) == 1 && gm.Load32(Objects().Lookup(ev) + 4) == 0);
+  CHECK(XamState().WsaSetEvent(gm, 0x1234) == 0 && XamState().WsaGetLastError() == 6);
+  XamState().WsaSetLastError(10035);
+  CHECK(XamState().WsaGetLastError() == 10035);
+  // Lookups complete at once with no answer; their records go back to the pool.
+  CHECK(XamState().XNetDnsLookup(gm, ev, out) == 0 && gm.Load32(gm.Load32(out)) == 10050 && gm.Load32(gm.Load32(out) + 4) == 0);
+  CHECK(gm.Load32(Objects().Lookup(ev) + 4) == 1 && XamState().XNetQosRelease(gm.Load32(out)) == 0);
+  CHECK(XamState().WsaResetEvent(gm, ev) == 1);
+  CHECK(XamState().XNetQosServiceLookup(gm, ev, out) == 0 && gm.Load32(out) != 0 && gm.Load32(gm.Load32(out)) == 0);
+  CHECK(gm.Load32(Objects().Lookup(ev) + 4) == 1 && XamState().XNetQosRelease(gm.Load32(out)) == 0);
+  // Startup parameters read back; another option, or a short buffer, refused.
+  gm.Store8(buf, 13);
+  gm.Store8(buf + 1, 0x01);
+  gm.Store8(buf + 2, 7);
+  CHECK(XamState().XNetStartup(gm, buf) == 0);
+  gm.Store32(out, 4);
+  CHECK(XamState().XNetGetOpt(gm, 1, buf + 0x100, out) == 10040 && gm.Load32(out) == 13);
+  CHECK(XamState().XNetGetOpt(gm, 1, buf + 0x100, out) == 0 && gm.Load8(buf + 0x100) == 13 && gm.Load8(buf + 0x102) == 7);
+  CHECK(XamState().XNetGetOpt(gm, 5, buf + 0x100, out) == 10022);
+  CHECK(XamState().LogonGetMachineId(gm, out) == 0 && gm.Load64(out) == XamState().title().machine_id);
+  CHECK(XamState().MsgSystemProcessCall(0xFE, 0x1234, buf, 4) == 0);
+  // Devices content can be stored on: the hard drive, by enumerator and by name.
+  CHECK(XamState().ContentCreateDeviceEnumerator(gm, 4, out, out + 4) == 0 && gm.Load32(out) == 80 * 4);
+  CHECK(XamState().Enumerate(gm, gm.Load32(out + 4), 0, buf, 80 * 4, out + 8, 0) == 0 && gm.Load32(out + 8) == 1 && gm.Load32(buf) == 1 &&
+        gm.Load16(buf + 24) == 'H');
+  CHECK(XamState().ContentGetDeviceName(gm, 1, buf, 32) == 0 && gm.Load16(buf) == 'H' && gm.Load16(buf + 20) == 0);
+  CHECK(XamState().ContentGetDeviceName(gm, 1, buf, 5) == kErrorInsufficientBuffer);
+  CHECK(XamState().ContentGetDeviceName(gm, 7, buf, 32) == kErrorDeviceNotConnected);
+  // A package's thumbnail read back, and its files reached through the path it resolves to.
+  const fs::path content = fs::temp_directory_path() / "any360-sys-content4";
+  fs::remove_all(content, ec);
+  fs::create_directories(content / "00000001" / "slot1");
+  {
+    std::ofstream f(content / "00000001" / "slot1" / "save.dat", std::ios::binary);
+    f << "data";
+  }
+  XamState().title().content_root = content;
+  const uint32_t data = 0x5000;
+  std::memset(gm.host(data), 0, 0x134);
+  gm.Store32(data + 4, 1);
+  std::memcpy(gm.host(data + 0x108), "slot1", 5);
+  gm.Store32(out, 64);
+  CHECK(XamState().ContentGetThumbnail(gm, data, buf, out, 0) == kErrorFileNotFound);
+  std::memcpy(gm.host(buf), "\x89PNG!", 5);
+  CHECK(XamState().ContentSetThumbnail(gm, data, buf, 5, 0) == 0);
+  std::memset(gm.host(buf), 0, 8);
+  gm.Store32(out, 0);
+  CHECK(XamState().ContentGetThumbnail(gm, data, 0, out, 0) == 0 && gm.Load32(out) == 5);
+  gm.Store32(out, 4);
+  CHECK(XamState().ContentGetThumbnail(gm, data, buf, out, 0) == kErrorInsufficientBuffer);
+  gm.Store32(out, 64);
+  gm.Store32(ov + 0x0C, 0);
+  CHECK(XamState().ContentGetThumbnail(gm, data, buf, out, ov) == kErrorIoPending && gm.Load32(ov) == 0 && gm.Load8(buf + 4) == '!');
+  CHECK(XamState().ContentResolve(gm, data, buf, 8) == kErrorInsufficientBuffer);
+  CHECK(XamState().ContentResolve(gm, data, buf, 260) == 0);
+  const std::string resolved(reinterpret_cast<const char*>(gm.host(buf)));
+  CHECK(resolved == "\\Device\\Content\\00000001\\slot1");
+  CHECK(Files().Resolve(resolved + "\\save.dat") == content / "00000001" / "slot1" / "save.dat");
+  std::memcpy(gm.host(data + 0x108), "slot9", 5);
+  CHECK(XamState().ContentResolve(gm, data, buf, 260) == kErrorFileNotFound);
+  // Protection changes on committed pages, rounded out to whole pages; never execute rights, never free pages.
+  gm.Store32(out, 0x10000);
+  gm.Store32(out + 4, 0x3000);
+  CHECK(Memory().AllocateVirtual(gm, out, out + 4, 0x3000, kPageReadWrite, 0) == 0);
+  gm.Store32(out, 0x10800);
+  gm.Store32(out + 4, 0x1000);
+  CHECK(Memory().ProtectVirtual(gm, out, out + 4, kPageReadOnly, out + 8) == 0 && gm.Load32(out + 8) == kPageReadWrite);
+  CHECK(gm.Load32(out) == 0x10000 && gm.Load32(out + 4) == 0x2000 && Memory().QueryProtect(0x11000) == kPageReadOnly &&
+        Memory().QueryProtect(0x12000) == kPageReadWrite);
+  gm.Store32(out, 0x10000);
+  gm.Store32(out + 4, 0x1000);
+  CHECK(Memory().ProtectVirtual(gm, out, out + 4, kPageExecuteRead, 0) == 0xC0000045u);
+  gm.Store32(out + 4, 0x8000);
+  CHECK(Memory().ProtectVirtual(gm, out, out + 4, kPageReadOnly, 0) == 0xC000002Du);
+  gm.Store32(out + 4, 0);
+  CHECK(Memory().ProtectVirtual(gm, out, out + 4, kPageReadOnly, 0) == kStatusInvalidParameter);
+  // Signal one object and wait on another.
+  CHECK(Objects().CreateEvent(gm, out, 0, 1, 0) == 0 && Objects().CreateSemaphore(gm, out + 4, 0, 1, 2) == 0);
+  const uint32_t sync = gm.Load32(out), sem = gm.Load32(out + 4);
+  const int64_t zero = 0;
+  CHECK(Objects().SignalAndWait(gm, sync, sem, kMainThread, &zero) == 0 && gm.Load32(Objects().Lookup(sync) + 4) == 1);
+  CHECK(Objects().SignalAndWait(gm, sem, sync, kMainThread, &zero) == 0 && gm.Load32(Objects().Lookup(sync) + 4) == 0 &&
+        gm.Load32(Objects().Lookup(sem) + 4) == 1);
+  CHECK(Objects().SignalAndWait(gm, sync, 0x1234, kMainThread, &zero) == kStatusInvalidHandle);
+  // Handles on objects by address; an unknown address is refused.
+  CHECK(Objects().OpenObjectByPointer(gm, Objects().Lookup(sync), out + 8) == 0 && gm.Load32(out + 8) != sync &&
+        Objects().Lookup(gm.Load32(out + 8)) == Objects().Lookup(sync));
+  CHECK(Objects().OpenObjectByPointer(gm, 0x7000, out + 8) == 0xC0000001u);
+  // APCs queue on a thread by handle; an event handle is no thread.
+  const uint32_t kthread = Objects().AllocateObject(0x200);
+  gm.Store8(kthread, kThread);
+  const uint32_t thread_handle = Objects().OpenHandle(kthread);
+  CHECK(Threads().QueueApc(gm, thread_handle, 0, 0x82000000, 1, 2, 3) == 0 && Threads().PendingApcs(kthread) == 1);
+  CHECK(Threads().QueueApc(gm, kCurrentThreadHandle, kthread, 0x82000000, 1, 2, 3) == 0 && Threads().PendingApcs(kthread) == 2);
+  CHECK(Threads().QueueApc(gm, sync, 0, 0x82000000, 0, 0, 0) == kStatusObjectTypeMismatch);
+  CHECK(Threads().QueueApc(gm, 0x1234, 0, 0x82000000, 0, 0, 0) == kStatusInvalidHandle);
+  CHECK(Threads().LookupThreadById(gm, 0x7777, out) == 0xC0000225u);
+  Threads().Shutdown();
+  Files().Reset();
+  XamState().Reset();
+  Memory().Reset();
+  fs::remove_all(content, ec);
+}
+
 int main() {
+  SimpsonsTests();
   TduTests();
   GraphicsAudioTests();
   SonicTests();

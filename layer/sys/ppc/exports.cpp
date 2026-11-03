@@ -385,7 +385,7 @@ ANY360_SYS_EXPORT(KeUnlockL2) {}
 ANY360_SYS_EXPORT(KiApcNormalRoutineNop) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(NetDll_WSAStartup) { ctx.r3.u64 = XamState().WsaStartup({base}, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(NetDll_WSACleanup) { ctx.r3.u64 = 0; }
-ANY360_SYS_EXPORT(NetDll_XNetStartup) { ctx.r3.u64 = XamState().NetStartup(); }
+ANY360_SYS_EXPORT(NetDll_XNetStartup) { ctx.r3.u64 = XamState().XNetStartup({base}, ctx.r4.u32); }
 ANY360_SYS_EXPORT(NetDll_XNetGetTitleXnAddr) { ctx.r3.u64 = XamState().XNetGetTitleXnAddr({base}, ctx.r4.u32); }
 ANY360_SYS_EXPORT(NetDll_WSAGetLastError) { ctx.r3.u64 = XamState().WsaGetLastError(); }
 ANY360_SYS_EXPORT(NetDll_socket) { ctx.r3.u64 = XamState().Socket(); }
@@ -518,6 +518,75 @@ ANY360_SYS_EXPORT(ObReferenceObjectByName) { ctx.r3.u64 = Objects().ReferenceObj
 ANY360_SYS_EXPORT(XexLoadImageHeaders) { ctx.r3.u64 = XamState().LoadImageHeaders({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(VdSetDisplayModeOverride) { ctx.r3.u64 = 0; }  // the host picks the output mode
 ANY360_SYS_EXPORT(XAudioGetSpeakerConfig) { ctx.r3.u64 = Audio().GetSpeakerConfig({base}, ctx.r3.u32); }
+
+// Batch 17: the rest of The Simpsons Game's outside graphics and audio (sys_object_tests).
+// Overlapped Winsock on sockets that never exist: SOCKET_ERROR (FALSE for the BOOL ones) and WSAENOTSOCK.
+ANY360_SYS_EXPORT(NetDll_WSARecv) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_WSARecvFrom) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_WSASend) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_WSASendTo) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_WSACancelOverlappedIO) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_WSAGetOverlappedResult) {
+  XamState().SocketFailure(ctx.r4.u32);
+  ctx.r3.u64 = 0;
+}
+ANY360_SYS_EXPORT(NetDll_WSASetLastError) { XamState().WsaSetLastError(ctx.r3.u32); }
+ANY360_SYS_EXPORT(NetDll_WSASetEvent) { ctx.r3.u64 = XamState().WsaSetEvent({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(NetDll_WSAResetEvent) { ctx.r3.u64 = XamState().WsaResetEvent({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(NetDll_XNetInAddrToServer) { ctx.r3.u64 = 10022; }  // WSAEINVAL: no server address is registered
+ANY360_SYS_EXPORT(NetDll_XNetXnAddrToMachineId) {
+  if (ctx.r5.u32) Guest{base}.Store64(ctx.r5.u32, 0);
+  ctx.r3.u64 = 10022;  // no peer is known offline
+}
+ANY360_SYS_EXPORT(NetDll_XNetDnsLookup) { ctx.r3.u64 = XamState().XNetDnsLookup({base}, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(NetDll_XNetDnsRelease) { ctx.r3.u64 = XamState().XNetQosRelease(ctx.r4.u32); }  // the same pool release
+ANY360_SYS_EXPORT(NetDll_XNetQosServiceLookup) { ctx.r3.u64 = XamState().XNetQosServiceLookup({base}, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(NetDll_XNetGetDebugXnAddr) { ctx.r3.u64 = XamState().XNetGetTitleXnAddr({base}, ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_XNetGetEthernetLinkStatus) { ctx.r3.u64 = 0; }      // no cable
+ANY360_SYS_EXPORT(NetDll_XNetGetBroadcastVersionStatus) { ctx.r3.u64 = 0; }  // no newer title version heard
+ANY360_SYS_EXPORT(NetDll_XNetQosGetListenStats) { ctx.r3.u64 = 10022; }      // nothing listens (XNetQosListen fails)
+ANY360_SYS_EXPORT(NetDll_XNetGetOpt) { ctx.r3.u64 = XamState().XNetGetOpt({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(NetDll_XNetSetOpt) { ctx.r3.u64 = 0; }  // accepted, no effect without a network
+ANY360_SYS_EXPORT(XNetLogonGetMachineID) { ctx.r3.u64 = XamState().LogonGetMachineId({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(Refresh) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XMsgSystemProcessCall) { ctx.r3.u64 = XamState().MsgSystemProcessCall(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XamContentCreateDeviceEnumerator) {
+  // (content type, flags, count, buffer size, handle)
+  ctx.r3.u64 = XamState().ContentCreateDeviceEnumerator({base}, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(XamContentGetDeviceName) { ctx.r3.u64 = XamState().ContentGetDeviceName({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamContentGetThumbnail) {
+  ctx.r3.u64 = XamState().ContentGetThumbnail({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(XamContentFlush) { ctx.r3.u64 = XamState().Finish({base}, ctx.r4.u32, kErrorSuccess); }  // written through
+ANY360_SYS_EXPORT(XamContentResolve) { ctx.r3.u64 = XamState().ContentResolve({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XamContentInstall) { ctx.r3.u64 = kErrorFunctionFailed; }  // no package to install offline
+ANY360_SYS_EXPORT(XamShowSigninUIp) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(XamShowMessagesUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(XamShowQuickChatUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(XamShowVoiceMailUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(XamShowAchievementsUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(XamShowPlayerReviewUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(XamShowPlayersUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(XamShowMessageComposeUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(XamShowGameInviteUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(XamShowFriendRequestUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+ANY360_SYS_EXPORT(NtProtectVirtualMemory) {
+  ctx.r3.u64 = Memory().ProtectVirtual({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+}
+ANY360_SYS_EXPORT(NtQueueApcThread) {
+  ctx.r3.u64 = Threads().QueueApc({base}, ctx.r3.u32, ThreadOf(ctx, base), ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(NtSignalAndWaitForSingleObjectEx) {
+  int64_t storage;
+  ctx.r3.u64 = Objects().SignalAndWait({base}, ctx.r3.u32, ctx.r4.u32, ThreadOf(ctx, base), Timeout(base, ctx.r7.u32, storage));
+}
+ANY360_SYS_EXPORT(ObLookupThreadByThreadId) { ctx.r3.u64 = Threads().LookupThreadById({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(ObOpenObjectByPointer) { ctx.r3.u64 = Objects().OpenObjectByPointer({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XexUnloadImageAndExitThread) {
+  XamState().UnloadImage(ctx.r3.u32);
+  ctx.r3.u64 = Threads().TerminateThread({base}, ctx.r13.u32, ctx.r4.u32);
+}
 
 // Batch 11: what Sonic '06 still needed (sys_io_tests for XeCryptSha, sys_object_tests for the rest).
 ANY360_SYS_EXPORT(XexGetModuleSection) { ctx.r3.u64 = XamState().GetModuleSection({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
@@ -849,6 +918,51 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XexLoadImageHeaders),
     ANY360_SYS_ENTRY(VdSetDisplayModeOverride),
     ANY360_SYS_ENTRY(XAudioGetSpeakerConfig),
+    ANY360_SYS_ENTRY(NetDll_WSARecv),
+    ANY360_SYS_ENTRY(NetDll_WSARecvFrom),
+    ANY360_SYS_ENTRY(NetDll_WSASend),
+    ANY360_SYS_ENTRY(NetDll_WSASendTo),
+    ANY360_SYS_ENTRY(NetDll_WSACancelOverlappedIO),
+    ANY360_SYS_ENTRY(NetDll_WSAGetOverlappedResult),
+    ANY360_SYS_ENTRY(NetDll_WSASetLastError),
+    ANY360_SYS_ENTRY(NetDll_WSASetEvent),
+    ANY360_SYS_ENTRY(NetDll_WSAResetEvent),
+    ANY360_SYS_ENTRY(NetDll_XNetInAddrToServer),
+    ANY360_SYS_ENTRY(NetDll_XNetXnAddrToMachineId),
+    ANY360_SYS_ENTRY(NetDll_XNetDnsLookup),
+    ANY360_SYS_ENTRY(NetDll_XNetDnsRelease),
+    ANY360_SYS_ENTRY(NetDll_XNetQosServiceLookup),
+    ANY360_SYS_ENTRY(NetDll_XNetGetDebugXnAddr),
+    ANY360_SYS_ENTRY(NetDll_XNetGetEthernetLinkStatus),
+    ANY360_SYS_ENTRY(NetDll_XNetGetBroadcastVersionStatus),
+    ANY360_SYS_ENTRY(NetDll_XNetQosGetListenStats),
+    ANY360_SYS_ENTRY(NetDll_XNetGetOpt),
+    ANY360_SYS_ENTRY(NetDll_XNetSetOpt),
+    ANY360_SYS_ENTRY(XNetLogonGetMachineID),
+    ANY360_SYS_ENTRY(Refresh),
+    ANY360_SYS_ENTRY(XMsgSystemProcessCall),
+    ANY360_SYS_ENTRY(XamContentCreateDeviceEnumerator),
+    ANY360_SYS_ENTRY(XamContentGetDeviceName),
+    ANY360_SYS_ENTRY(XamContentGetThumbnail),
+    ANY360_SYS_ENTRY(XamContentFlush),
+    ANY360_SYS_ENTRY(XamContentResolve),
+    ANY360_SYS_ENTRY(XamContentInstall),
+    ANY360_SYS_ENTRY(XamShowSigninUIp),
+    ANY360_SYS_ENTRY(XamShowMessagesUI),
+    ANY360_SYS_ENTRY(XamShowQuickChatUI),
+    ANY360_SYS_ENTRY(XamShowVoiceMailUI),
+    ANY360_SYS_ENTRY(XamShowAchievementsUI),
+    ANY360_SYS_ENTRY(XamShowPlayerReviewUI),
+    ANY360_SYS_ENTRY(XamShowPlayersUI),
+    ANY360_SYS_ENTRY(XamShowMessageComposeUI),
+    ANY360_SYS_ENTRY(XamShowGameInviteUI),
+    ANY360_SYS_ENTRY(XamShowFriendRequestUI),
+    ANY360_SYS_ENTRY(NtProtectVirtualMemory),
+    ANY360_SYS_ENTRY(NtQueueApcThread),
+    ANY360_SYS_ENTRY(NtSignalAndWaitForSingleObjectEx),
+    ANY360_SYS_ENTRY(ObLookupThreadByThreadId),
+    ANY360_SYS_ENTRY(ObOpenObjectByPointer),
+    ANY360_SYS_ENTRY(XexUnloadImageAndExitThread),
     ANY360_SYS_ENTRY(NetDll_closesocket),
     ANY360_SYS_ENTRY(NetDll_shutdown),
     ANY360_SYS_ENTRY(NetDll_setsockopt),
