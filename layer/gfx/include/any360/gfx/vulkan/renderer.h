@@ -87,6 +87,19 @@ struct RendererStats {
 struct SurfaceKey {
   uint32_t base = 0, pitch = 0, format = 0, depth = 0;
   bool operator<(const SurfaceKey& o) const { return std::memcmp(this, &o, sizeof(*this)) < 0; }
+  bool operator==(const SurfaceKey& o) const { return std::memcmp(this, &o, sizeof(*this)) == 0; }
+};
+// A hash over a key's bytes (keys without padding, compared with memcmp).
+struct BytesHash {
+  template <typename T>
+  size_t operator()(const T& key) const {
+    static_assert(sizeof(T) % 4 == 0);
+    uint32_t words[sizeof(T) / 4];
+    std::memcpy(words, &key, sizeof(T));
+    uint64_t h = 0xCBF29CE484222325ull;
+    for (uint32_t w : words) h = (h ^ w) * 0x100000001B3ull;
+    return size_t(h ^ (h >> 29));
+  }
 };
 
 // The host format of a Xenos colour render target format, as the reference maps it (VK_FORMAT_UNDEFINED: unknown).
@@ -178,6 +191,7 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t primitive_restart; // strips cut where the index buffer holds the reset index (also keeps the key
                                 // free of implicit padding: it is compared with memcmp)
     bool operator<(const PipelineKey& other) const { return std::memcmp(this, &other, sizeof(*this)) < 0; }
+    bool operator==(const PipelineKey& other) const { return std::memcmp(this, &other, sizeof(*this)) == 0; }
   };
   // The analyzed shader (no translation yet), and its translation for a modification.
   TranslatedShader* GetShader(const gfx::Shader& shader);
@@ -203,9 +217,12 @@ class VulkanRenderer : public gfx::Renderer {
   uint8_t* physical_;  // written by resolves
   uint32_t mirror_bytes_;
   std::unique_ptr<rex::graphics::SpirvShaderTranslator> translator_;
-  std::map<std::pair<uint32_t, uint64_t>, std::unique_ptr<TranslatedShader>> shaders_;  // (type, hash)
-  std::map<PipelineKey, VkPipeline> pipelines_;
-  std::map<SurfaceKey, std::unique_ptr<Surface>> surfaces_;
+  struct ShaderKeyHash {
+    size_t operator()(const std::pair<uint32_t, uint64_t>& k) const { return size_t(k.second ^ (uint64_t(k.first) << 63)); }
+  };
+  std::unordered_map<std::pair<uint32_t, uint64_t>, std::unique_ptr<TranslatedShader>, ShaderKeyHash> shaders_;  // (type, hash)
+  std::unordered_map<PipelineKey, VkPipeline, BytesHash> pipelines_;
+  std::unordered_map<SurfaceKey, std::unique_ptr<Surface>, BytesHash> surfaces_;
   std::unique_ptr<TextureCache> textures_;
   VkFormat depth_format_ = VK_FORMAT_UNDEFINED;
 
@@ -355,8 +372,31 @@ class VulkanRenderer : public gfx::Renderer {
     float depth_bias[2] = {};
     float blend[4] = {};
     uint32_t stencil[2] = {~0u, ~0u};
+    VkPipelineLayout layout = VK_NULL_HANDLE;  // the descriptor sets bound with it, and the constants' offsets
+    VkDescriptorSet sets[4] = {};
+    uint32_t offsets[8] = {};
     bool valid = false;
   } recorded_;
+  // The last shader and pipeline looked up (consecutive draws mostly use the same: no map search then).
+  const void* last_shader_source_[2] = {};
+  uint64_t last_shader_hash_[2] = {};
+  struct TranslatedShader* last_shader_[2] = {};
+  std::vector<uint16_t> index_scratch_;
+  // By texture fetch constant (32), view type (3) and signedness: the last view and swizzled signs for its six words,
+  // reused while the texture cache says views stay valid (no search by the fetch constant's words then).
+  struct TextureMemo {
+    uint32_t fetch[6] = {};
+    uint64_t version = 0, epoch = 0;
+    VkImageView view = VK_NULL_HANDLE;
+    uint32_t signs = 0;
+  };
+  std::array<TextureMemo, 32 * 3 * 2> texture_memo_;
+  // By texture fetch constant: the last sampler for its words and the binding's filters.
+  struct SamplerMemo {
+    uint32_t key[10] = {};
+    VkSampler sampler = VK_NULL_HANDLE;
+  };
+  std::array<SamplerMemo, 32> sampler_memo_;  // indices converted in ordinary memory, then copied at once
   VkCommandPool batch_pool_ = VK_NULL_HANDLE;
   bool batch_open_ = false, rendering_open_ = false;
   std::array<uint64_t, 7> rendering_key_{};  // the open render pass: 4 colour views, depth view, width, height

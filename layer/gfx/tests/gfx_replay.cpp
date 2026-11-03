@@ -285,6 +285,7 @@ int main(int argc, char** argv) {
   int repeat = 1;  // --repeat N: the capture replayed N times, the timings of the last (warm caches, as in a game)
   std::string dump;
   uint32_t watch = 0;
+  bool bench = false;  // --bench: as in a title (diagnostics off, textures watched instead of hashed), kick time only
   std::string profile;  // --profile FILE: the main thread's instruction pointer sampled during the last pass
   vk::DeviceOptions options;
   for (int i = 1; i < argc; ++i) {
@@ -294,6 +295,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--repeat") && i + 1 < argc) repeat = std::max(1, std::atoi(argv[++i]));
     else if (!std::strcmp(argv[i], "--dump-resolves") && i + 1 < argc) dump = argv[++i];
     else if (!std::strcmp(argv[i], "--profile") && i + 1 < argc) profile = argv[++i];
+    else if (!std::strcmp(argv[i], "--bench")) bench = true;
     else if (!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = uint32_t(std::strtoul(argv[++i], nullptr, 16)) & 0x1FFFF000;
     else path = argv[i];
   }
@@ -379,7 +381,7 @@ int main(int argc, char** argv) {
         // About every 100 us (spinning: Sleep would wait a millisecond or more).
         const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(100);
         while (std::chrono::steady_clock::now() < until) YieldProcessor();
-        if (!sampling) continue;
+        if (!sampling || !capture::g_replaying_kick) continue;
         if (SuspendThread(main_thread) == DWORD(-1)) continue;
         CONTEXT context{};
         context.ContextFlags = CONTEXT_FULL;
@@ -423,6 +425,11 @@ int main(int argc, char** argv) {
     });
   }
 #endif
+  if (bench) {
+    g_diagnostics = false;
+    // Watched: textures are checked again only when the replay rewrites their memory (as a title's write watch).
+    if (renderer.texture_cache()) renderer.texture_cache()->SetMemoryWatch([](uint32_t, uint32_t) {});
+  }
   for (int pass = 0; pass < repeat && ok; ++pass) {
     if (pass == repeat - 1) {
       before = renderer.stats();
@@ -433,6 +440,10 @@ int main(int argc, char** argv) {
 #endif
     stats = {};
     ok = capture::Replay(path, cp, physical, kPhysicalBytes, on_frame, stats, error);
+    if (bench) {
+      std::printf("gfx_replay: pass %d: %.2f ms running the kicks (%.3f ms a frame over %u frames)\n", pass, stats.ns_kicks / 1e6,
+                  stats.frames ? stats.ns_kicks / 1e6 / stats.frames : 0.0, stats.frames);
+    }
     renderer.Flush();
     renderer.WaitIdle();
   }

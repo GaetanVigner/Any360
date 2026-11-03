@@ -479,15 +479,18 @@ bool VulkanRenderer::ReadBack(const SurfaceKey& key, uint32_t width, uint32_t he
 }
 
 VulkanRenderer::TranslatedShader* VulkanRenderer::GetShader(const gfx::Shader& source) {
+  const uint32_t stage = source.type & 1;
+  if (last_shader_[stage] && last_shader_hash_[stage] == source.hash) return last_shader_[stage];
   auto& slot = shaders_[{source.type, source.hash}];
-  if (slot) return slot.get();
+  last_shader_hash_[stage] = source.hash;
+  if (slot) return last_shader_[stage] = slot.get();
   slot = std::make_unique<TranslatedShader>();
   const rg::xenos::ShaderType type = source.type ? rg::xenos::ShaderType::kPixel : rg::xenos::ShaderType::kVertex;
   slot->shader = std::make_unique<rg::SpirvShader>(type, source.hash, source.microcode.data(), source.microcode.size(),
                                                    std::endian::native);
   rex::string::StringBuffer disassembly;
   slot->shader->AnalyzeUcode(disassembly);
-  return slot.get();
+  return last_shader_[stage] = slot.get();
 }
 
 VkShaderModule VulkanRenderer::GetModule(TranslatedShader& shader, uint64_t modification) {
@@ -758,28 +761,49 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
           : binding.dimension == rg::xenos::FetchOpDimension::k3DOrStacked ? TextureCache::ViewType::k3D
                                                                            : TextureCache::ViewType::k2DArray;
       VkImageView view;
-      {
-        Timer texture_timer(stats_.ns_textures);
-        view = textures_->View(fetch, view_type, error, signed_view);
-      }
-      if (!view) {
-        Fail("texture " + std::to_string(binding.fetch_constant) + ": " + error);
-        return;
+      uint32_t signs = 0;
+      TextureMemo* memo =
+          binding.fetch_constant < 32 ? &texture_memo_[(binding.fetch_constant * 3 + uint32_t(view_type)) * 2 + signed_view] : nullptr;
+      if (memo && memo->view && !textures_->changes_queued() && memo->version == textures_->version() &&
+          (textures_->watching() || memo->epoch == textures_->epoch()) && std::memcmp(memo->fetch, fetch, sizeof(memo->fetch)) == 0) {
+        view = memo->view;
+        signs = memo->signs;
+      } else {
+        {
+          Timer texture_timer(stats_.ns_textures);
+          view = textures_->View(fetch, view_type, error, signed_view);
+        }
+        if (!view) {
+          Fail("texture " + std::to_string(binding.fetch_constant) + ": " + error);
+          return;
+        }
+        // The signs the shader applies after the swizzle (unsigned is 0), a byte per fetch constant.
+        const TextureFetch t = TextureFetch::Parse(fetch);
+        for (uint32_t i = 0; i < 4; ++i) {
+          const uint32_t component = (t.swizzle >> (3 * i)) & 7;
+          if (component < 4) signs |= ((t.signs >> (2 * component)) & 3) << (2 * i);
+        }
+        if (memo) {
+          std::memcpy(memo->fetch, fetch, sizeof(memo->fetch));
+          memo->version = textures_->version(), memo->epoch = textures_->epoch();
+          memo->view = view, memo->signs = signs;
+        }
       }
       stage_textures[stage].views.push_back(view);
-      // The signs the shader applies after the swizzle (unsigned is 0), a byte per fetch constant.
-      const TextureFetch t = TextureFetch::Parse(fetch);
-      uint32_t signs = 0;
-      for (uint32_t i = 0; i < 4; ++i) {
-        const uint32_t component = (t.swizzle >> (3 * i)) & 7;
-        if (component < 4) signs |= ((t.signs >> (2 * component)) & 3) << (2 * i);
-      }
       swizzled_signs[binding.fetch_constant / 4] |= signs << (8 * (binding.fetch_constant % 4));
     }
     for (const auto& binding : shader->shader->GetSamplerBindingsAfterTranslation()) {
-      const VkSampler sampler = textures_->Sampler(regs + reg::kFetchConstants + 6 * binding.fetch_constant,
-                                                   uint32_t(binding.mag_filter), uint32_t(binding.min_filter),
-                                                   uint32_t(binding.mip_filter), uint32_t(binding.aniso_filter));
+      const uint32_t* fetch = regs + reg::kFetchConstants + 6 * binding.fetch_constant;
+      const uint32_t key[10] = {fetch[0], fetch[1], fetch[2], fetch[3], fetch[4], fetch[5], uint32_t(binding.mag_filter),
+                                uint32_t(binding.min_filter), uint32_t(binding.mip_filter), uint32_t(binding.aniso_filter)};
+      SamplerMemo* memo = binding.fetch_constant < 32 ? &sampler_memo_[binding.fetch_constant] : nullptr;
+      VkSampler sampler;
+      if (memo && memo->sampler && std::memcmp(memo->key, key, sizeof(key)) == 0) {
+        sampler = memo->sampler;
+      } else {
+        sampler = textures_->Sampler(fetch, key[6], key[7], key[8], key[9]);
+        if (memo && sampler) std::memcpy(memo->key, key, sizeof(key)), memo->sampler = sampler;
+      }
       if (!sampler) {
         Fail("sampler");
         return;
@@ -1143,13 +1167,26 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
           std::memcpy(dst + 2 * i, &v, 2);
         }
       } else {
-        for (uint32_t i = 0; i < n; ++i) {
-          uint16_t v;
-          std::memcpy(&v, src + 2 * i, 2);
-          if (swap) v = uint16_t(v << 8 | v >> 8);
-          if (v == reset_index) v = UINT16_MAX;
-          std::memcpy(dst + 2 * i, &v, 2);
+        // Converted in ordinary memory (vectorized, one loop per byte order), then copied at once: element stores into
+        // the write-combined buffer stall.
+        index_scratch_.resize(n);
+        uint16_t* out = index_scratch_.data();
+        const uint16_t reset = uint16_t(reset_index);
+        if (swap) {
+          for (uint32_t i = 0; i < n; ++i) {
+            uint16_t v;
+            std::memcpy(&v, src + 2 * i, 2);
+            v = uint16_t(v << 8 | v >> 8);
+            out[i] = v == reset ? uint16_t(UINT16_MAX) : v;
+          }
+        } else {
+          for (uint32_t i = 0; i < n; ++i) {
+            uint16_t v;
+            std::memcpy(&v, src + 2 * i, 2);
+            out[i] = v == reset ? uint16_t(UINT16_MAX) : v;
+          }
         }
+        std::memcpy(dst, out, size_t(n) * 2);
       }
     }
   }
@@ -1253,8 +1290,31 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     sets[SpirvShaderTranslator::kDescriptorSetConstants] = batch().constants_set;
     sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex] = texture_sets[0];
     sets[SpirvShaderTranslator::kDescriptorSetTexturesPixel] = texture_sets[1];
-    f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, SpirvShaderTranslator::kDescriptorSetCount,
-                              sets, SpirvShaderTranslator::kConstantBufferCount, offsets);
+    // From the first set that changed (all with another layout); the constants' set when its offsets changed.
+    static_assert(SpirvShaderTranslator::kDescriptorSetConstants == 1 && SpirvShaderTranslator::kDescriptorSetCount == 4);
+    uint32_t first_set = 0;
+    if (rs.valid && rs.layout == pipeline_layout) {
+      first_set = SpirvShaderTranslator::kDescriptorSetCount;
+      for (uint32_t i = 0; i < SpirvShaderTranslator::kDescriptorSetCount; ++i) {
+        if (rs.sets[i] != sets[i]) {
+          first_set = i;
+          break;
+        }
+      }
+      if (first_set > SpirvShaderTranslator::kDescriptorSetConstants &&
+          std::memcmp(rs.offsets, offsets, sizeof(offsets[0]) * SpirvShaderTranslator::kConstantBufferCount)) {
+        first_set = SpirvShaderTranslator::kDescriptorSetConstants;
+      }
+    }
+    if (first_set < SpirvShaderTranslator::kDescriptorSetCount) {
+      const bool with_constants = first_set <= SpirvShaderTranslator::kDescriptorSetConstants;
+      f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, first_set,
+                                SpirvShaderTranslator::kDescriptorSetCount - first_set, sets + first_set,
+                                with_constants ? SpirvShaderTranslator::kConstantBufferCount : 0, with_constants ? offsets : nullptr);
+      rs.layout = pipeline_layout;
+      std::memcpy(rs.sets, sets, sizeof(sets));
+      std::memcpy(rs.offsets, offsets, sizeof(offsets[0]) * SpirvShaderTranslator::kConstantBufferCount);
+    }
     const VkViewport viewport{0, 0, size[0], size[1], 0, 1};
     const VkRect2D scissor{{left, top}, {uint32_t(right - left), uint32_t(bottom - top)}};
     if (!rs.valid || std::memcmp(&rs.viewport, &viewport, sizeof(viewport))) f.vkCmdSetViewport(cb, 0, 1, &viewport);

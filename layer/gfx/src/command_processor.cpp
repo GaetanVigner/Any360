@@ -357,7 +357,9 @@ bool CommandProcessor::Wait(uint32_t wait_info, uint32_t poll, uint32_t referenc
 }
 
 uint32_t CommandProcessor::Next(Reader& r) const {
-  const uint32_t value = LoadBig(r.base + 4 * (r.offset % r.capacity));
+  // The offset stays below twice the capacity (a reader starts inside it and reads at most all of it): no division.
+  const uint32_t at = r.offset >= r.capacity ? r.offset - r.capacity : r.offset;
+  const uint32_t value = std::byteswap(*reinterpret_cast<const uint32_t*>(Host(r.base + 4 * at)));
   ++r.offset;
   --r.remaining;
   return value;
@@ -415,7 +417,7 @@ bool CommandProcessor::ExecutePacket(Reader& r, int depth) {
       const bool timing = Diagnosing();
       const uint64_t start = timing ? __rdtsc() : 0;
       // A run of registers none of which the command processor acts on, not wrapping the ring: copied at once.
-      const uint32_t last = first + count, at = r.offset % r.capacity;
+      const uint32_t last = first + count, at = r.offset >= r.capacity ? r.offset - r.capacity : r.offset;
       auto touches = [&](uint32_t lo, uint32_t hi) { return first < hi && lo < last; };
       if (!one_register && last <= reg::kRegisterCount && at + count <= r.capacity &&
           !touches(reg::DC_LUT_RW_INDEX, reg::DC_LUT_30_COLOR + 1) && !touches(reg::SCRATCH_REG0, reg::SCRATCH_REG0 + 8) &&
@@ -472,8 +474,11 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     return true;
   }
   ++opcode_counts_[opcode];
-  recent_[recent_next_++ % recent_.size()] = {opcode, count > 0 && r.remaining > 0 ? LoadBig(r.base + 4 * (r.offset % r.capacity)) : 0,
-                                               count > 1 && r.remaining > 1 ? LoadBig(r.base + 4 * ((r.offset + 1) % r.capacity)) : 0};
+  if (Diagnosing()) {
+    recent_[recent_next_++ % recent_.size()] = {
+        opcode, count > 0 && r.remaining > 0 ? LoadBig(r.base + 4 * (r.offset % r.capacity)) : 0,
+        count > 1 && r.remaining > 1 ? LoadBig(r.base + 4 * ((r.offset + 1) % r.capacity)) : 0};
+  }
   auto has = [&](uint32_t n) { return end - r.offset >= n; };
   auto write_constants = [&](uint32_t type, uint32_t index, uint32_t n, auto value_at) {
     static constexpr uint32_t kBase[] = {reg::kAluConstants, reg::kFetchConstants, reg::kBoolConstants, reg::kLoopConstants,

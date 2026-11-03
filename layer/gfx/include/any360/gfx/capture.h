@@ -22,6 +22,7 @@
 // The pages hold the title's data: captures stay on the machine that made them, never in a repository.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <functional>
@@ -88,8 +89,11 @@ class Reader {
 struct ReplayStats {
   uint32_t kicks = 0, failed_kicks = 0, pages = 0, pages_outside = 0, frames = 0;
   uint64_t physical_bytes = 0;  // the capture's
+  uint64_t ns_kicks = 0;  // spent running the kicks (the command processor and renderer, not reading the capture)
   std::string info;
 };
+// Set while a replay runs a kick (for a profiler to sample only that).
+inline std::atomic<bool> g_replaying_kick{false};
 using FrameHandler = std::function<void(uint32_t width, uint32_t height, const uint32_t* rgba)>;
 bool Replay(const std::string& path, CommandProcessor& cp, uint8_t* physical, uint64_t bytes, const FrameHandler& frame,
             ReplayStats& stats, std::string& error);

@@ -1,6 +1,7 @@
 #include "any360/gfx/capture.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <thread>
 
@@ -208,7 +209,13 @@ bool Replay(const std::string& path, CommandProcessor& cp, uint8_t* physical, ui
       }
       case kKick:
         ++stats.kicks;
-        if (!cp.Replay(u32(0), u32(4), u32(8), u32(12))) ++stats.failed_kicks;
+        {
+          const auto start = std::chrono::steady_clock::now();
+          g_replaying_kick = true;
+          if (!cp.Replay(u32(0), u32(4), u32(8), u32(12))) ++stats.failed_kicks;
+          g_replaying_kick = false;
+          stats.ns_kicks += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+        }
         break;
       case kFrame: {
         const uint32_t width = u32(0), height = u32(4);

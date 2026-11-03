@@ -91,6 +91,11 @@ class TextureCache {
   // between two such events): a new frame (the CPU may have written anywhere), or [begin, end) written by the GPU
   // (a resolve) or reported by the title (coherency).
   void NewFrame() { ++epoch_; }
+  // What a view returned earlier stays valid for (the renderer remembers views by fetch constant): the same epoch
+  // (unless memory is watched), the same version, and no change queued.
+  uint64_t epoch() const { return epoch_; }
+  uint64_t version() const { return version_; }
+  bool changes_queued() const { return any_changed_.load(std::memory_order_acquire); }
   // A host that can watch guest memory for CPU writes (the reference runtime's physical memory access callbacks):
   // `watch(begin, end)` arms a one-shot watch, and the host reports writes with QueueMemoryChanged. Watched textures
   // are hashed again only after such a write, not at every frame.
