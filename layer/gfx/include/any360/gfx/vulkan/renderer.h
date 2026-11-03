@@ -140,6 +140,10 @@ class VulkanRenderer : public gfx::Renderer {
   // Threads that record draws (into secondary command buffers, a chunk of a render pass's draws each) while this
   // thread prepares the next ones; 0 records them here. Set before the first draw.
   void SetRecordThreads(uint32_t count);
+  // What follows a batch (the command processor's fences) once the batch no longer reads guest memory, instead of
+  // once the GPU has run it (as the console's GPU passes a fence once it has fetched what precedes it); resolves read
+  // back into guest memory land when it has run. Off: once it has run.
+  void SetFencesWhenCaptured(bool on) { fences_when_captured_ = on; }
   // A count for this machine: what its cores leave after the title's threads and the command processor's.
   static uint32_t AutoRecordThreads();
   uint32_t record_threads() const { return record_threads_; }
@@ -384,6 +388,11 @@ class VulkanRenderer : public gfx::Renderer {
     std::vector<PendingWriteBack> write_backs;
     std::vector<std::function<void()>> actions;
     bool done = true;  // run, and what follows it done (guarded by done_mutex_)
+    // Its draws read no guest memory once submitted (what they fetch was copied on the CPU at the flush): what follows
+    // it (fences) needs not wait for the GPU to run it (resolves written back land later, as the CPU rarely reads them).
+    bool captured = false;
+    bool submitted = false, released = false;  // on the queue; what follows it done then (guarded by done_mutex_)
+    Buffer guest_staging;  // the guest memory its draws fetch, copied at the flush
     bool uploaded = false;  // its upload command buffer ran too (time stamped)
   };
   static constexpr uint32_t kBatches = 8;
@@ -393,6 +402,12 @@ class VulkanRenderer : public gfx::Renderer {
   Batch& batch() { return batches_[current_]; }
   void FinishBatch(Batch& b);  // on the completion thread
   void FinishWriteBacks(Batch& b);
+  // The batches submitted after every batch before them was done or released, and captured, released: what follows
+  // them is taken into `actions`, in order (under done_mutex_).
+  void TakeReleased(std::vector<std::function<void()>>& actions);
+  bool fences_when_captured_ = true;
+  int32_t submitted_unlisted_ = -1;  // the batch handed to the submission thread before Flush listed it in flight
+  std::vector<std::function<void()>> released_actions_;  // the submission thread's
   void WaitBatch(uint32_t index);
   void Complete();  // the completion thread
   std::mutex done_mutex_;

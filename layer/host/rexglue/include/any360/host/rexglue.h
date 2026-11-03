@@ -62,6 +62,9 @@ struct GraphicsOptions {
   // EVENT_WRITE_SHD fences apart: once the shaders before them are done, as on the console (the title reuses the
   // memory the GPU reads in place after them). False: when the stream reaches them, as the runtime.
   bool fences_after_draws = true;
+  // With fences_after_draws: a fence once the batches before it no longer read guest memory (what they fetch copied
+  // at their submission), unless they write some (resolves): not after the GPU has run them.
+  bool fences_when_captured = true;
   // The renderer on a thread of its own (gfx::AsyncRenderer): the command processor reads the stream meanwhile.
   bool async_renderer = true;
   // Threads recording draws (secondary command buffers): -1 as many as the machine leaves (AutoRecordThreads), 0 none.
@@ -78,6 +81,11 @@ struct GraphicsOptions {
 // Binds the graphics to Any360: makes the window, the Vulkan device and renderer, the command processor; takes over
 // the GPU MMIO range; starts the command processor's thread, the interrupt thread and vertical blanks. False with
 // `error` when something is missing (no Vulkan 1.3 device, no window): nothing is bound then.
+// Samples every thread of the process into `path`, as GraphicsOptions::profile_path does, without the graphics: to
+// profile a title on the runtime's own GPU for comparison.
+#define ANY360_REXGLUE_START_SAMPLING 1
+void StartSampling(const std::string& path);
+
 bool StartGraphics(const GraphicsOptions& options, std::string& error);
 // Stops the threads (call before the runtime goes away).
 void StopGraphics();

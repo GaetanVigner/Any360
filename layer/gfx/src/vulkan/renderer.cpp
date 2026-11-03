@@ -165,6 +165,7 @@ VulkanRenderer::~VulkanRenderer() {
     if (b.depth_pool) f.vkDestroyDescriptorPool(d, b.depth_pool, nullptr);
     DestroyBuffer(device_, b.constants);
     DestroyBuffer(device_, b.indices);
+    DestroyBuffer(device_, b.guest_staging);
   }
   for (Buffer& b : free_readbacks_) DestroyBuffer(device_, b);
   free_readbacks_.clear();
@@ -2115,6 +2116,34 @@ void VulkanRenderer::Submit(uint32_t index) {
   submit.commandBufferCount = uint32_t(s.cbs.size());
   submit.pCommandBuffers = s.cbs.data();
   if (f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence) != VK_SUCCESS) Fail("batch submission");
+  std::vector<std::function<void()>>& released = released_actions_;
+  {
+    std::lock_guard lock(done_mutex_);
+    b.submitted = true;
+    TakeReleased(released);
+  }
+  for (auto& action : released) action();
+  released.clear();
+}
+
+void VulkanRenderer::TakeReleased(std::vector<std::function<void()>>& actions) {
+  if (!fences_when_captured_) return;
+  // In submission order: those in flight, then the one being submitted if Flush has not listed it yet.
+  auto release = [&](uint32_t i) {
+    Batch& b = batches_[i];
+    if (b.done || b.released) return true;
+    // Resolves it reads back into guest memory do not hold it: the title's CPU rarely reads them (the runtime never
+    // writes them back at all), and they land when the batch has run.
+    if (!b.submitted || !b.captured) return false;
+    b.released = true;
+    for (auto& action : b.actions) actions.push_back(std::move(action));
+    b.actions.clear();
+    return true;
+  };
+  for (uint32_t i : in_flight_) {
+    if (!release(i)) return;
+  }
+  if (submitted_unlisted_ >= 0) release(uint32_t(submitted_unlisted_));
 }
 
 void VulkanRenderer::Flush() {
@@ -2199,6 +2228,8 @@ void VulkanRenderer::Flush() {
       }
     }
   }
+  // Draws read video memory only (or nothing new to copy): captured, unless the upload below cannot stage.
+  b.captured = vram_guest_on_;
   if (vram_guest_on_ && !upload_regions_.empty()) {
     VkCommandBufferBeginInfo begin_info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -2217,8 +2248,29 @@ void VulkanRenderer::Flush() {
       f.vkCmdWriteTimestamp2(b.upload_cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, stamp);
     }
     f.vkCmdPipelineBarrier2(b.upload_cb, &dependency);
-    f.vkCmdCopyBuffer(b.upload_cb, shared_memory_.buffer, vram_guest_.buffer, uint32_t(upload_regions_.size()),
-                      upload_regions_.data());
+    // Copied from guest memory now, into the batch's staging buffer (the GPU copies from it): the batch reads no guest
+    // memory once submitted. Too much for the buffer: copied from guest memory when the batch runs.
+    VkDeviceSize total = 0;
+    for (const VkBufferCopy& region : upload_regions_) total += region.size;
+    if (b.guest_staging.size < total) {
+      DestroyBuffer(device_, b.guest_staging);
+      if (!CreateBuffer(device_, std::max<VkDeviceSize>(std::bit_ceil(total), 4u << 20), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                        true, b.guest_staging)) {
+        b.guest_staging = {};
+      }
+    }
+    const bool staged = b.guest_staging.size >= total;
+    if (staged) {
+      VkDeviceSize at = 0;
+      for (VkBufferCopy& region : upload_regions_) {
+        std::memcpy(static_cast<uint8_t*>(b.guest_staging.mapped) + at, physical_ + region.srcOffset, region.size);
+        region.srcOffset = at;
+        at += region.size;
+      }
+    }
+    b.captured = staged;
+    f.vkCmdCopyBuffer(b.upload_cb, staged ? b.guest_staging.buffer : shared_memory_.buffer, vram_guest_.buffer,
+                      uint32_t(upload_regions_.size()), upload_regions_.data());
     if (timestamps_) f.vkCmdWriteTimestamp2(b.upload_cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, stamp + 1);
     f.vkEndCommandBuffer(b.upload_cb);
     for (const VkBufferCopy& region : upload_regions_) stats_.guest_upload_bytes += region.size;
@@ -2227,6 +2279,11 @@ void VulkanRenderer::Flush() {
   if (textures_) textures_->TakeStaging(b.staging);  // the batch's uploads read them
   b.uploaded = upload;
   submission.upload = upload;
+  {
+    std::lock_guard lock(done_mutex_);
+    b.submitted = b.released = false;
+    submitted_unlisted_ = int32_t(submitted);
+  }
   if (submitter_.joinable()) {
     // Submitted by its thread, once its render passes' chunks are recorded: no wait for them here.
     {
@@ -2243,6 +2300,7 @@ void VulkanRenderer::Flush() {
     b.done = false;
     in_flight_.push_back(submitted);
     last_submitted_ = int32_t(submitted);
+    if (submitted_unlisted_ == int32_t(submitted)) submitted_unlisted_ = -1;
   }
   work_cv_.notify_one();
   if (!shared_memory_imported_) WaitBatch(submitted);  // the mirror is rewritten for the next batch
@@ -2284,7 +2342,7 @@ void VulkanRenderer::WhenDone(std::function<void()> action) {
   {
     // Nothing recorded since the last submission: after that one, or now if it has run.
     std::lock_guard lock(done_mutex_);
-    if (last_submitted_ >= 0 && !batches_[last_submitted_].done) {
+    if (last_submitted_ >= 0 && !batches_[last_submitted_].done && !batches_[last_submitted_].released) {
       batches_[last_submitted_].actions.push_back(std::move(action));
       return;
     }
@@ -2321,6 +2379,7 @@ void VulkanRenderer::Complete() {
         if (b.actions.empty()) {
           b.done = true;
           in_flight_.pop_front();
+          TakeReleased(late);  // the captured batches that waited behind this one
           break;
         }
         late.swap(b.actions);
@@ -2328,6 +2387,8 @@ void VulkanRenderer::Complete() {
       for (auto& action : late) action();
       late.clear();
     }
+    for (auto& action : finished_actions_) action();  // the batches released after it
+    finished_actions_.clear();
     done_cv_.notify_all();
   }
 }

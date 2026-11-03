@@ -75,18 +75,28 @@ struct SwapCost {
 // the executable (bit 63 set), with the leaf's module counted apart.
 class Sampler {
  public:
-  explicit Sampler(std::string path) : path_(std::move(path)) { worker_ = std::thread([this] { Run(); }); }
+  // `always`: sampled whether the diagnostics are on or not (no binding alternates them).
+  explicit Sampler(std::string path, bool always = false) : path_(std::move(path)), always_(always) {
+    worker_ = std::thread([this] { Run(); });
+  }
   ~Sampler() {
     done_ = true;
     if (worker_.joinable()) worker_.join();
     Write();
   }
-  // Lines "thread 0xoffset" (0: nowhere in the executable), then "# thread module name count" (the leaf's module
-  // when outside the executable) and "# thread name name".
+  // Lines "thread 0xoffset [0xcaller...]" (0: nowhere in the executable; then up to 3 callers in it, return
+  // addresses minus one), then "# thread module name count" (the leaf's module when outside the executable) and
+  // "# thread name name".
   void Write() {
     std::lock_guard lock(mutex_);
     if (FILE* f = std::fopen(path_.c_str(), "w")) {
-      for (const auto& [tid, s] : samples_) std::fprintf(f, "%lu 0x%llX%c", tid, (unsigned long long)s, 10);
+      for (const auto& [tid, s] : samples_) {
+        std::fprintf(f, "%lu", tid);
+        for (uint64_t frame : s) {
+          if (frame) std::fprintf(f, " 0x%llX", (unsigned long long)frame);
+        }
+        std::fprintf(f, "%c", 10);
+      }
       for (const auto& [key, count] : outside_) {
         std::fprintf(f, "# %lu module %s %llu%c", key.first, key.second.c_str(), (unsigned long long)count, 10);
       }
@@ -133,40 +143,43 @@ class Sampler {
     const uint64_t size = nt->OptionalHeader.SizeOfImage;
     auto inside = [&](uint64_t rip) { return rip >= base && rip < base + size; };
     std::vector<Target> targets;
-    // Per thread: the sample and the leaf's address. Nothing is allocated or locked while a thread is suspended
-    // (it may hold the heap's lock).
-    std::vector<std::pair<uint64_t, uint64_t>> taken;
+    // Per thread: the sample (with callers in the executable) and the leaf's address. Nothing is allocated or locked
+    // while a thread is suspended (it may hold the heap's lock).
+    std::vector<std::pair<Frames, uint64_t>> taken;
     auto refreshed = std::chrono::steady_clock::time_point{};
+    auto written = std::chrono::steady_clock::now();
     while (!done_) {
       std::this_thread::sleep_for(std::chrono::milliseconds(2));
-      if (gfx::Diagnosing()) continue;
+      if (std::chrono::steady_clock::now() - written > std::chrono::seconds(5)) {
+        Write();  // the samples so far: a title may end its process without destructors
+        written = std::chrono::steady_clock::now();
+      }
+      if (!always_ && gfx::Diagnosing()) continue;
       if (std::chrono::steady_clock::now() - refreshed > std::chrono::milliseconds(500)) {
         Refresh(targets);
         refreshed = std::chrono::steady_clock::now();
       }
-      taken.assign(targets.size(), {0, 0});
+      taken.assign(targets.size(), {Frames{}, 0});
       for (size_t i = 0; i < targets.size(); ++i) {
         if (SuspendThread(targets[i].handle) == DWORD(-1)) continue;
         CONTEXT context{};
         context.ContextFlags = CONTEXT_FULL;
         if (GetThreadContext(targets[i].handle, &context)) {
           taken[i].second = context.Rip;
-          if (inside(context.Rip)) {
-            taken[i].first = context.Rip - base;
-          } else {
-            CONTEXT walk = context;
-            for (int depth = 0; depth < 32 && walk.Rip; ++depth) {
-              if (inside(walk.Rip)) {
-                taken[i].first = (walk.Rip - base - 1) | (1ull << 63);
-                break;
-              }
-              DWORD64 image = 0;
-              PRUNTIME_FUNCTION entry = RtlLookupFunctionEntry(walk.Rip, &image, nullptr);
-              if (!entry) break;  // no unwind data: stop rather than guess
-              void* handler_data = nullptr;
-              DWORD64 frame = 0;
-              RtlVirtualUnwind(UNW_FLAG_NHANDLER, image, walk.Rip, entry, &walk, &handler_data, &frame, nullptr);
+          // The leaf (or the first caller in the executable, bit 63), then up to three more callers in it.
+          CONTEXT walk = context;
+          uint32_t found = 0;
+          for (int depth = 0; depth < 48 && walk.Rip && found < kFrames; ++depth) {
+            if (inside(walk.Rip)) {
+              const bool leaf = depth == 0;
+              taken[i].first[found++] = leaf ? walk.Rip - base : (walk.Rip - base - 1) | (found ? 0 : 1ull << 63);
             }
+            DWORD64 image = 0;
+            PRUNTIME_FUNCTION entry = RtlLookupFunctionEntry(walk.Rip, &image, nullptr);
+            if (!entry) break;  // no unwind data: stop rather than guess
+            void* handler_data = nullptr;
+            DWORD64 frame = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, image, walk.Rip, entry, &walk, &handler_data, &frame, nullptr);
           }
         }
         ResumeThread(targets[i].handle);
@@ -189,10 +202,13 @@ class Sampler {
     for (Target& t : targets) CloseHandle(t.handle);
   }
   std::string path_;
+  bool always_ = false;
   std::thread worker_;
   std::atomic<bool> done_{false};
   std::mutex mutex_;
-  std::vector<std::pair<DWORD, uint64_t>> samples_;
+  static constexpr uint32_t kFrames = 4;
+  using Frames = std::array<uint64_t, kFrames>;
+  std::vector<std::pair<DWORD, Frames>> samples_;
   std::map<std::pair<DWORD, std::string>, uint64_t> outside_;
   std::map<DWORD, std::string> names_;
 };
@@ -613,6 +629,11 @@ void WriteGpuRegister(void*, void*, uint32_t address, uint32_t value) {
 
 }  // namespace
 
+void StartSampling(const std::string& path) {
+  static std::unique_ptr<Sampler> sampler;
+  if (!sampler && !path.empty()) sampler = std::make_unique<Sampler>(path, true);
+}
+
 bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   if (g_bound) return true;
   rex::Runtime* runtime = rex::Runtime::instance();
@@ -751,6 +772,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->cp->SetSpinWaits(!vsync);
   binding->cp->SetWritesAfterDraws(options.writes_after_draws);
   binding->cp->SetFencesAfterDraws(options.fences_after_draws);
+  binding->renderer->SetFencesWhenCaptured(options.fences_when_captured);
   sys::Graphics().StartVblank(vblank_hz);
   g_binding = binding.release();
   g_bound = true;
