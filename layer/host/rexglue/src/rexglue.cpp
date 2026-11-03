@@ -173,8 +173,8 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
  public:
   // `parent`: the title's window `window` is a child of, kept covering its client area (null: none).
   PresentingRenderer(gfx::vk::Device& device, uint8_t* physical, Window window, Window parent,
-                     std::function<void(const std::string&)> log, double stats_seconds)
-      : VulkanRenderer(device, physical, kPhysicalBytes), log_(std::move(log)), stats_seconds_(stats_seconds),
+                     std::function<void(const std::string&)> log, double stats_seconds, uint32_t resolution_scale)
+      : VulkanRenderer(device, physical, kPhysicalBytes, resolution_scale), log_(std::move(log)), stats_seconds_(stats_seconds),
         presenter_(device), window_(window), parent_(parent) {}
 
   bool Resize() {
@@ -626,7 +626,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   // The renderer over the guest's physical memory, the command processor in front of it.
   uint8_t* physical = memory->TranslatePhysical<uint8_t*>(0);
   binding->renderer = std::make_unique<PresentingRenderer>(binding->device, physical, binding->window, binding->parent,
-                                                          options.log, options.stats_seconds);
+                                                          options.log, options.stats_seconds, options.resolution_scale);
   if (!binding->renderer->Initialize() || !binding->renderer->Resize()) {
     error = "renderer: " + binding->renderer->last_error();
     binding->renderer.reset();

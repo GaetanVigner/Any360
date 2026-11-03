@@ -101,10 +101,11 @@ struct VulkanRenderer::TranslatedShader {
   std::map<uint64_t, VkShaderModule> modules;  // by modification (VK_NULL_HANDLE: translation failed)
 };
 
-VulkanRenderer::VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirror_bytes)
-    : device_(device), physical_(physical), mirror_bytes_(mirror_bytes) {
+VulkanRenderer::VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirror_bytes, uint32_t resolution_scale)
+    : device_(device), physical_(physical), mirror_bytes_(mirror_bytes), scale_(std::clamp(resolution_scale, 1u, 4u)) {
   // Every translator feature on: what desktop Vulkan 1.3 drivers and RADV offer (to be read from the device).
-  translator_ = std::make_unique<SpirvShaderTranslator>(SpirvShaderTranslator::Features(true), true, true, false);
+  translator_ = std::make_unique<SpirvShaderTranslator>(SpirvShaderTranslator::Features(true), true, true, false, scale_,
+                                                        scale_);
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -161,7 +162,7 @@ VulkanRenderer::~VulkanRenderer() {
     if (surface->depth_view) f.vkDestroyImageView(d, surface->depth_view, nullptr);
     DestroyImage(device_, surface->image);
   }
-  for (auto& [base, r] : resolved_) DestroyImage(device_, r.image);
+  for (auto& [base, r] : resolved_) DestroyImage(device_, r.image), DestroyImage(device_, r.small);
 }
 
 bool VulkanRenderer::Fail(const std::string& why) {
@@ -385,6 +386,7 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& key) {
   const uint32_t tiles_per_row = (key.pitch + 79) / 80 * (!key.depth && Is64bpp(key.format) ? 2 : 1);
   const uint32_t height = std::min<uint32_t>(4096, (2048 - key.base) / tiles_per_row * 16);
   if (!height) return nullptr;
+  // Host pixels: the resolution scale's along each axis (the key stays in guest samples).
   // Colour surfaces are also sampled: the gamma pass reads the presented frame from its surface.
   // Depth surfaces too: depth resolves read them on the GPU.
   const VkImageUsageFlags usage = (key.depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
@@ -392,7 +394,7 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& key) {
                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
   const VkImageAspectFlags aspect =
       key.depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-  if (!CreateImage2D(device_, key.pitch, height, format, usage, aspect, slot->image)) {
+  if (!CreateImage2D(device_, key.pitch * scale_, height * scale_, format, usage, aspect, slot->image)) {
     DestroyImage(device_, slot->image);
     return nullptr;
   }
@@ -745,6 +747,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   StageTextures (&stage_textures)[2] = stage_textures_;
   for (StageTextures& st : stage_textures) st.views.clear(), st.samplers.clear();
   uint32_t swizzled_signs[8] = {};
+  uint32_t textures_scaled = 0;  // fetch constants bound to resolution-scaled textures
   for (uint32_t stage = 0; stage < 2; ++stage) {
     TranslatedShader* shader = stage ? ps : vs;
     if (!shader) continue;
@@ -762,16 +765,19 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
                                                                            : TextureCache::ViewType::k2DArray;
       VkImageView view;
       uint32_t signs = 0;
+      bool scaled = false;
       TextureMemo* memo =
           binding.fetch_constant < 32 ? &texture_memo_[(binding.fetch_constant * 3 + uint32_t(view_type)) * 2 + signed_view] : nullptr;
       if (memo && memo->view && !textures_->changes_queued() && memo->version == textures_->version() &&
           (textures_->watching() || memo->epoch == textures_->epoch()) && std::memcmp(memo->fetch, fetch, sizeof(memo->fetch)) == 0) {
         view = memo->view;
         signs = memo->signs;
+        scaled = memo->scaled;
       } else {
         {
           Timer texture_timer(stats_.ns_textures);
           view = textures_->View(fetch, view_type, error, signed_view);
+          scaled = textures_->last_view_scaled();
         }
         if (!view) {
           Fail("texture " + std::to_string(binding.fetch_constant) + ": " + error);
@@ -786,11 +792,12 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         if (memo) {
           std::memcpy(memo->fetch, fetch, sizeof(memo->fetch));
           memo->version = textures_->version(), memo->epoch = textures_->epoch();
-          memo->view = view, memo->signs = signs;
+          memo->view = view, memo->signs = signs, memo->scaled = scaled;
         }
       }
       stage_textures[stage].views.push_back(view);
       swizzled_signs[binding.fetch_constant / 4] |= signs << (8 * (binding.fetch_constant % 4));
+      if (scaled && binding.fetch_constant < 32) textures_scaled |= 1u << binding.fetch_constant;
     }
     for (const auto& binding : shader->shader->GetSamplerBindingsAfterTranslation()) {
       const uint32_t* fetch = regs + reg::kFetchConstants + 6 * binding.fetch_constant;
@@ -836,8 +843,10 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     Fail("MSAA mode 3");
     return;
   }
-  const int32_t sample_x = msaa == 2 ? 2 : 1, sample_y = msaa ? 2 : 1;
-  const uint32_t pitch = (surface_info & 0x3FFF) * uint32_t(sample_x);
+  const int32_t msaa_x = msaa == 2 ? 2 : 1, msaa_y = msaa ? 2 : 1;
+  const uint32_t pitch = (surface_info & 0x3FFF) * uint32_t(msaa_x);
+  // Host pixels a guest pixel: its samples, each scale x scale pixels.
+  const int32_t sample_x = msaa_x * int32_t(scale_), sample_y = msaa_y * int32_t(scale_);
   uint32_t depth_control = regs[kRbDepthControl];
   // Depth tested always without writes does nothing (the reference drops it the same way).
   if ((depth_control & 2) && !(depth_control & 4) && ((depth_control >> 4) & 7) == 7) depth_control &= ~2u;
@@ -1016,6 +1025,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     system->vertex_index_endian = decltype(system->vertex_index_endian)(uint32_t(endian));
   }
   std::memcpy(system->texture_swizzled_signs, swizzled_signs, sizeof(swizzled_signs));
+  system->textures_resolution_scaled = textures_scaled;
   // Alpha test (RB_COLORCONTROL): the compare function's less / equal / greater bits are the pass flags; a disabled
   // test is "always" (with none of them set, every pixel would be discarded).
   const uint32_t color_control = regs[kRbColorControl];
@@ -1659,7 +1669,8 @@ bool VulkanRenderer::ResolveDepth(Surface& surface, bool float24, int32_t x0, in
   const Functions& f = device_.fn();
   // The samples of the rectangle are read back; the sample's position in its pixel: bit 0 down, bit 1 right.
   const uint32_t samples_wide = width * sample_x, samples_high = height * sample_y;
-  const uint32_t offset_x = sample >> 1, offset_y = sample & 1;
+  // `sample_x` / `sample_y`: host pixels a guest pixel; a sample is scale x scale of them (its top-left one taken).
+  const uint32_t offset_x = (sample_x > scale_ ? sample >> 1 : 0) * scale_, offset_y = (sample_y > scale_ ? sample & 1 : 0) * scale_;
   const VkDeviceSize depth_bytes = VkDeviceSize(samples_wide) * samples_high * 4;
   Buffer readback;
   if (!CreateBuffer(device_, depth_bytes + VkDeviceSize(samples_wide) * samples_high, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -1709,7 +1720,15 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   const Functions& f = device_.fn();
   const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(y0) + height + 31) & ~31u;
   Resolved& r = resolved_[dest_base];
-  if (!EnsureResolveImage(r, format, pitch, rows,
+  // Scaled as the surface is: textures copied from it keep the resolution.
+  const int32_t s = int32_t(scale_);
+  if (r.image.image && r.scale != scale_) {
+    Record();
+    batch().retired.push_back(r.image);  // another scale (a depth resolve there before): nothing of it is kept
+    r.image = Image{};
+    r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  }
+  if (!EnsureResolveImage(r, format, pitch * scale_, rows * scale_,
                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)) {
     resolved_.erase(dest_base);
     return Fail("resolve image");
@@ -1722,19 +1741,20 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   VkImageBlit region{};
   region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-  region.srcOffsets[0] = {x0 * int32_t(sample_x), y0 * int32_t(sample_y), 0};
-  region.srcOffsets[1] = {(x0 + int32_t(width)) * int32_t(sample_x), (y0 + int32_t(height)) * int32_t(sample_y), 1};
-  region.dstOffsets[0] = {x0, y0, 0};
-  region.dstOffsets[1] = {x0 + int32_t(width), y0 + int32_t(height), 1};
+  region.srcOffsets[0] = {x0 * int32_t(sample_x) * s, y0 * int32_t(sample_y) * s, 0};
+  region.srcOffsets[1] = {(x0 + int32_t(width)) * int32_t(sample_x) * s, (y0 + int32_t(height)) * int32_t(sample_y) * s, 1};
+  region.dstOffsets[0] = {x0 * s, y0 * s, 0};
+  region.dstOffsets[1] = {(x0 + int32_t(width)) * s, (y0 + int32_t(height)) * s, 1};
   f.vkCmdBlitImage(cb, surface.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, r.image.image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region,
                    sample_x * sample_y > 1 ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   r.pitch = pitch, r.endian = dest_endian, r.x = uint32_t(x0), r.y = uint32_t(y0), r.width = width, r.height = height;
   r.stale = true;
+  r.scale = scale_;
   if (textures_) {
     textures_->SetGpuSource({r.image.image, r.image.format, dest_base, pitch, dest_endian, r.image.width, r.image.height,
-                             ++resolve_generation_});
+                             ++resolve_generation_, false, scale_});
   }
   return true;
 }
@@ -1812,8 +1832,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     Fail("resolve source surface");
     return;
   }
-  const uint32_t width = uint32_t(std::min<int32_t>(x1, int32_t(surface->image.width / sample_x)) - x0);
-  const uint32_t height = uint32_t(std::min<int32_t>(y1, int32_t(surface->image.height / sample_y)) - y0);
+  // Host pixels a guest pixel (samples, each scale x scale pixels).
+  const uint32_t host_x = sample_x * scale_, host_y = sample_y * scale_;
+  const uint32_t width = uint32_t(std::min<int32_t>(x1, int32_t(surface->image.width / host_x)) - x0);
+  const uint32_t height = uint32_t(std::min<int32_t>(y1, int32_t(surface->image.height / host_y)) - y0);
   // The samples the copy takes of each pixel (RB_COPY_CONTROL copy_sample_select: 0-3 one sample, 4 samples 0 and 1,
   // 5 samples 2 and 3, 6 all four), made valid for the sample count as the reference does: depth is never averaged.
   // Samples are numbered top-left, bottom-left, top-right, bottom-right.
@@ -1865,7 +1887,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
                   !msaa ? "" : sample_count == sample_x * sample_y ? ", samples averaged" : ", one sample", width, height);
     ++resolve_paths_[path];
   }
-  if (depth_on_gpu && !ResolveDepthOnGpu(*surface, x0, y0, width, height, sample_x, sample_y, first_sample, dest_base,
+  if (depth_on_gpu && !ResolveDepthOnGpu(*surface, x0, y0, width, height, host_x, host_y, first_sample, dest_base,
                                          dest_pitch, dest_endian)) {
     return;
   }
@@ -1890,7 +1912,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   if (on_gpu) {
     // On the GPU (and queued for guest memory when read back).
   } else if (is_depth) {
-    if (!ResolveDepth(*surface, source_key.format == 1, x0, y0, width, height, sample_x, sample_y, first_sample, dest_base,
+    if (!ResolveDepth(*surface, source_key.format == 1, x0, y0, width, height, host_x, host_y, first_sample, dest_base,
                       dest_pitch, dest_endian, dest_format)) {
       return;
     }
@@ -1905,7 +1927,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       Fail("resolve from host format " + std::to_string(host) + " to format " + std::to_string(dest_format) + " (not yet)");
       return;
     }
-    const uint32_t samples_wide = width * sample_x, samples_high = height * sample_y;
+    const uint32_t samples_wide = width * host_x, samples_high = height * host_y;
     Buffer readback;
     if (!CreateBuffer(device_, VkDeviceSize(samples_wide) * samples_high * source_bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                       true, readback)) {
@@ -1916,14 +1938,14 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       Transition(cb, surface->image, surface->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
       VkBufferImageCopy region{};
       region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-      region.imageOffset = {x0 * int32_t(sample_x), y0 * int32_t(sample_y), 0};
+      region.imageOffset = {x0 * int32_t(host_x), y0 * int32_t(host_y), 0};
       region.imageExtent = {samples_wide, samples_high, 1};
       f.vkCmdCopyImageToBuffer(cb, surface->image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer, 1, &region);
     });
     std::vector<uint8_t> resolved;
-    if (ok && sample_x * sample_y > 1) {
+    if (ok && host_x * host_y > 1) {
       // One texel a pixel: the selected sample, or the average of the selected samples (8-bit components rounded to
-      // nearest, half floats averaged as floats).
+      // nearest, half floats averaged as floats); of a scaled sample, its top-left host pixel.
       const uint8_t* samples = static_cast<const uint8_t*>(readback.mapped);
       resolved.resize(size_t(width) * height * source_bytes);
       for (uint32_t y = 0; y < height; ++y) {
@@ -1931,8 +1953,8 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
           const uint8_t* taken[4];
           for (uint32_t s = 0; s < sample_count; ++s) {
             const uint32_t sample = first_sample + s;
-            taken[s] = samples +
-                       (size_t(y * sample_y + (sample & 1)) * samples_wide + x * sample_x + (sample >> 1)) * source_bytes;
+            taken[s] = samples + (size_t(y * host_y + (sample & 1) * scale_) * samples_wide + x * host_x +
+                                  (sample >> 1) * scale_) * source_bytes;
           }
           uint8_t* out = resolved.data() + (size_t(y) * width + x) * source_bytes;
           if (source_bytes == 4) {
@@ -2071,7 +2093,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
         depth.clearValue = depth_value;
       }
       VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
-      rendering.renderArea = {{x0 * int32_t(sample_x), y0 * int32_t(sample_y)}, {width * sample_x, height * sample_y}};
+      rendering.renderArea = {{x0 * int32_t(host_x), y0 * int32_t(host_y)}, {width * host_x, height * host_y}};
       rendering.layerCount = 1;
       rendering.colorAttachmentCount = color_target ? 1 : 0;
       rendering.pColorAttachments = color_target ? &color : nullptr;
@@ -2178,11 +2200,42 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
   EndRendering();
   VkCommandBuffer cb = Record();
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+  Image* source = &r.image;
+  if (r.scale > 1) {
+    // A scaled resolve: averaged down to one texel a guest texel (a linear blit by an integer factor; depth: one
+    // texel taken) into a small image of its own, read back from there.
+    const uint32_t small_width = r.image.width / r.scale, small_height = r.image.height / r.scale;
+    if (!r.small.image || r.small.format != r.image.format || r.small.width < small_width || r.small.height < small_height) {
+      if (r.small.image) {
+        batch().retired.push_back(r.small);
+        r.small = Image{};
+      }
+      if (!CreateImage2D(device_, small_width, small_height, r.image.format,
+                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT, r.small)) {
+        DestroyImage(device_, r.small);
+        ReleaseReadback(w.buffer);
+        return Fail("resolve write-back image");
+      }
+      r.small_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    }
+    Transition(cb, r.small, r.small_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    const int32_t s = int32_t(r.scale);
+    VkImageBlit blit{};
+    blit.srcSubresource = blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    blit.srcOffsets[0] = {int32_t(r.x) * s, int32_t(r.y) * s, 0};
+    blit.srcOffsets[1] = {int32_t(r.x + r.width) * s, int32_t(r.y + r.height) * s, 1};
+    blit.dstOffsets[0] = {int32_t(r.x), int32_t(r.y), 0};
+    blit.dstOffsets[1] = {int32_t(r.x + r.width), int32_t(r.y + r.height), 1};
+    device_.fn().vkCmdBlitImage(cb, r.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, r.small.image,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, w.depth ? VK_FILTER_NEAREST : VK_FILTER_LINEAR);
+    Transition(cb, r.small, r.small_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    source = &r.small;
+  }
   VkBufferImageCopy region{};
   region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
   region.imageOffset = {int32_t(r.x), int32_t(r.y), 0};
   region.imageExtent = {r.width, r.height, 1};
-  device_.fn().vkCmdCopyImageToBuffer(cb, r.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, w.buffer.buffer, 1, &region);
+  device_.fn().vkCmdCopyImageToBuffer(cb, source->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, w.buffer.buffer, 1, &region);
   r.pending = true;
   batch().write_backs.push_back(w);
   return true;
@@ -2306,8 +2359,8 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
     const bool as_shown = (r.image.format == VK_FORMAT_R8G8B8A8_UNORM && swizzle == (0 | 1 << 3 | 2 << 6)) ||
                           (r.image.format == VK_FORMAT_B8G8R8A8_UNORM && swizzle == (2 | 1 << 3 | 0 << 6));
     if (as_shown && fetch.endian == r.endian && r.x == 0 && r.y == 0) {
-      next.width = std::min({width ? width : fetch.width, fetch.width, r.width});
-      next.height = std::min({height ? height : fetch.height, fetch.height, r.height});
+      next.width = std::min({width ? width : fetch.width, fetch.width, r.width}) * r.scale;
+      next.height = std::min({height ? height : fetch.height, fetch.height, r.height}) * r.scale;
       next.on_gpu = true;
       next.number = frame_.number + 1;
       frame_ = std::move(next);
@@ -2323,13 +2376,13 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
   const LastResolve& lr = last_resolve_;
   if (lr.surface && lr.plain && fetch.type == 2 && fetch.format == 6 && (fetch.base & 0x1FFFFFFF) == lr.dest_base &&
       fetch.endian == lr.endian && (fetch.swizzle & 0x1FF) == (0 | 1 << 3 | 2 << 6) && lr.x == 0 && lr.y == 0) {
-    next.width = std::min({width ? width : fetch.width, fetch.width, lr.width});
-    next.height = std::min({height ? height : fetch.height, fetch.height, lr.height});
+    next.width = std::min({width ? width : fetch.width, fetch.width, lr.width}) * scale_;
+    next.height = std::min({height ? height : fetch.height, fetch.height, lr.height}) * scale_;
     next.on_gpu = true;
     next.number = frame_.number + 1;
     frame_ = std::move(next);
     frame_surface_ = lr.surface;
-    frame_x_ = lr.x, frame_y_ = lr.y;
+    frame_x_ = lr.x * scale_, frame_y_ = lr.y * scale_;
     return;
   }
   frame_surface_ = nullptr;
@@ -2420,7 +2473,16 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   }
   const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(y0) + height + 31) & ~31u;
   Resolved& r = resolved_[dest_base];
-  if (!EnsureResolveImage(r, VK_FORMAT_R32_SFLOAT, pitch, rows,
+  // Scaled as the surface when each pixel is one sample (a copy of every host pixel); an MSAA surface's sample is
+  // taken at the guest resolution (one host pixel of it).
+  const uint32_t s = scale_ > 1 && sample_x == scale_ && sample_y == scale_ ? scale_ : 1;
+  if (r.image.image && r.scale != s) {
+    Record();
+    batch().retired.push_back(r.image);  // another scale: nothing of it is kept
+    r.image = Image{};
+    r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  }
+  if (!EnsureResolveImage(r, VK_FORMAT_R32_SFLOAT, pitch * s, rows * s,
                           VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                               VK_IMAGE_USAGE_SAMPLED_BIT)) {
     resolved_.erase(dest_base);
@@ -2454,18 +2516,22 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
   f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, depth_pipeline_);
   f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, depth_pipeline_layout_, 0, 1, &set, 0, nullptr);
-  const int32_t region[8] = {x0 * int32_t(sample_x) + int32_t(sample_x > 1 ? sample >> 1 : 0),
-                             y0 * int32_t(sample_y) + int32_t(sample_y > 1 ? sample & 1 : 0),
-                             x0, y0, int32_t(width), int32_t(height), int32_t(sample_x), int32_t(sample_y)};
+  // `sample_x` / `sample_y`: host pixels a guest pixel; a sample is scale x scale of them (its top-left one read).
+  const int32_t sc = int32_t(scale_), rs = int32_t(s);
+  const int32_t region[8] = {x0 * int32_t(sample_x) + (int32_t(sample_x) > sc ? int32_t(sample >> 1) * sc : 0),
+                             y0 * int32_t(sample_y) + (int32_t(sample_y) > sc ? int32_t(sample & 1) * sc : 0),
+                             x0 * rs, y0 * rs, int32_t(width) * rs, int32_t(height) * rs,
+                             rs > 1 ? 1 : int32_t(sample_x), rs > 1 ? 1 : int32_t(sample_y)};
   f.vkCmdPushConstants(cb, depth_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(region), region);
-  f.vkCmdDispatch(cb, (width + 7) / 8, (height + 7) / 8, 1);
+  f.vkCmdDispatch(cb, (width * s + 7) / 8, (height * s + 7) / 8, 1);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   r.pitch = pitch, r.endian = dest_endian, r.x = uint32_t(x0), r.y = uint32_t(y0), r.width = width, r.height = height;
   r.stale = true;
   r.float24 = surface.key.format == 1;
+  r.scale = s;
   if (textures_) {
     textures_->SetGpuSource({r.image.image, VK_FORMAT_R32_SFLOAT, dest_base, pitch, dest_endian, r.image.width,
-                             r.image.height, ++resolve_generation_, true});
+                             r.image.height, ++resolve_generation_, true, s});
   }
   return true;
 }

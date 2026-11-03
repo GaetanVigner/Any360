@@ -430,6 +430,7 @@ VkImageView TextureCache::Empty(ViewType type, std::string& error) {
 }
 
 VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::string& error, bool is_signed) {
+  last_view_scaled_ = false;
   if (any_changed_.load(std::memory_order_acquire)) {
     // Ranges reported from other threads (CPU writes watched, resolves written into guest memory).
     {
@@ -444,6 +445,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
                                             uint32_t(is_signed)};
   if (const auto hit = fast_.find(fast_key);
       hit != fast_.end() && (watch_ || hit->second.epoch == epoch_) && hit->second.version == version_) {
+    last_view_scaled_ = hit->second.scaled;
     return hit->second.view;
   }
   const TextureFetch t = TextureFetch::Parse(fetch);
@@ -478,8 +480,6 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   }
   const uint32_t levels = last_level + 1;
 
-  const std::array<uint32_t, 5> key = {fetch[0] & 0xFFC00003, fetch[1], fetch[2], fetch[5] & 0xFFFFFE00, fetch[4] & 0x3FC};
-  auto& slot = textures_[key];
   // A resolve's destination left on the GPU, read as it is: copied from there (no memory read, no hash).
   // Each slice of a 2D or stacked texture (one level) that a resolve wrote there: all of them, or none.
   std::vector<const GpuSource*> sources;
@@ -496,7 +496,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
           (it->second.format == info->format ||
            (it->second.format == VK_FORMAT_B8G8R8A8_UNORM && info->format == VK_FORMAT_R8G8B8A8_UNORM));
       if (!same_bytes || it->second.depth != depth_texture || it->second.pitch != t.pitch ||
-          it->second.endian != t.endian || t.width > it->second.width || t.height > it->second.height) {
+          it->second.endian != t.endian || (!sources.empty() && it->second.scale != sources[0]->scale) ||
+          t.width * it->second.scale > it->second.width || t.height * it->second.scale > it->second.height) {
         sources.clear();
         break;
       }
@@ -505,6 +506,12 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     }
   }
   const bool source = !sources.empty();
+  // Texels a guest texel along each axis: a scaled source's (its texture is a slot of its own, never one read from
+  // memory at the guest resolution).
+  const uint32_t scale = source ? sources[0]->scale : 1;
+  const std::array<uint32_t, 5> key = {fetch[0] & 0xFFC00003, fetch[1], fetch[2], fetch[5] & 0xFFFFFE00,
+                                       (fetch[4] & 0x3FC) | (scale > 1 ? 1u : 0u)};
+  auto& slot = textures_[key];
   if (!source) {
     // For diagnostics: a GPU source within this texture's memory it could not use, and why.
     const auto near = gpu_sources_.lower_bound(span_begin);
@@ -541,7 +548,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     info_ci.flags = (cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0) | (mutable_format ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0);
     info_ci.imageType = VK_IMAGE_TYPE_2D;
     info_ci.format = info->format;
-    info_ci.extent = {t.width, t.height, 1};
+    info_ci.extent = {t.width * scale, t.height * scale, 1};
     info_ci.mipLevels = levels;
     info_ci.arrayLayers = t.depth;  // stacked textures: one layer a slice; cubes: a face
     info_ci.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -560,8 +567,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     }
     f.vkBindImageMemory(device_.device(), slot->image.image, slot->image.memory, 0);
     slot->image.format = info->format;
-    slot->image.width = t.width;
-    slot->image.height = t.height;
+    slot->image.width = t.width * scale;
+    slot->image.height = t.height * scale;
   }
 
   slot->validated = epoch_;
@@ -589,7 +596,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
           VkImageCopy region{};
           region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
           region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, slice, 1};
-          region.extent = {t.width, t.height, 1};
+          region.extent = {t.width * scale, t.height * scale, 1};
           f.vkCmdCopyImage(cb, sources[slice]->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         }
@@ -696,7 +703,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     }
   }
   if (fast_.size() > 65536) fast_.clear();
-  fast_[fast_key] = {view, epoch_, version_};
+  fast_[fast_key] = {view, epoch_, version_, scale > 1};
+  last_view_scaled_ = scale > 1;
   return view;
 }
 

@@ -11,6 +11,8 @@
 //     --dump-resolves DIR  with --trace, writes each 32-bit resolve's destination as DIR/resolve_N.png (and depth
 //                 resolves' words as DIR/resolve_N.bin)
 //     --watch ADDR    with --trace, prints the texture fetch constants that read the 4 KB page at ADDR (hex)
+//     --scale N   renders at N x N host pixels a guest pixel (resolution scale); frames are averaged down to the
+//                 reference's size to be compared
 #include <algorithm>
 #include <atomic>
 #include <thread>
@@ -289,6 +291,7 @@ int main(int argc, char** argv) {
   bool bench = false;
   bool async = false;  // --async: the renderer on a thread of its own (AsyncRenderer), as in a title  // --bench: as in a title (diagnostics off, textures watched instead of hashed), kick time only
   std::string profile;  // --profile FILE: the main thread's instruction pointer sampled during the last pass
+  uint32_t scale = 1;
   vk::DeviceOptions options;
   for (int i = 1; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--gpu") && i + 1 < argc) options.prefer = argv[++i];
@@ -299,6 +302,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--profile") && i + 1 < argc) profile = argv[++i];
     else if (!std::strcmp(argv[i], "--bench")) bench = true;
     else if (!std::strcmp(argv[i], "--async")) async = true;
+    else if (!std::strcmp(argv[i], "--scale") && i + 1 < argc) scale = uint32_t(std::clamp(std::atoi(argv[++i]), 1, 4));
     else if (!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = uint32_t(std::strtoul(argv[++i], nullptr, 16)) & 0x1FFFF000;
     else path = argv[i];
   }
@@ -316,7 +320,7 @@ int main(int argc, char** argv) {
     std::printf("gfx_replay: cannot reserve %llu MB of guest memory\n", (unsigned long long)(kPhysicalBytes >> 20));
     return 1;
   }
-  vk::VulkanRenderer renderer(device, physical, uint32_t(kPhysicalBytes));
+  vk::VulkanRenderer renderer(device, physical, uint32_t(kPhysicalBytes), scale);
   if (!renderer.Initialize()) {
     std::printf("gfx_replay: renderer: %s\n", renderer.last_error().c_str());
     return 1;
@@ -346,7 +350,27 @@ int main(int argc, char** argv) {
       return;
     }
     const vk::VulkanRenderer::Frame& frame = renderer.frame();
-    if (frame.width != width || frame.height != height) {
+    if (scale > 1 && frame.width == width * scale && frame.height == height * scale) {
+      // A scaled frame: each guest pixel's scale x scale pixels averaged, as the reference's single pixel.
+      std::vector<uint32_t> down(size_t(width) * height);
+      for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+          uint32_t sum[4] = {};
+          for (uint32_t sy = 0; sy < scale; ++sy) {
+            for (uint32_t sx = 0; sx < scale; ++sx) {
+              const uint32_t p = ours[size_t(y * scale + sy) * frame.width + x * scale + sx];
+              for (int c = 0; c < 4; ++c) sum[c] += p >> (8 * c) & 0xFF;
+            }
+          }
+          uint32_t& d = down[size_t(y) * width + x];
+          d = 0;
+          for (int c = 0; c < 4; ++c) d |= (sum[c] + scale * scale / 2) / (scale * scale) << (8 * c);
+        }
+      }
+      if (!out.empty()) WritePng(out + "/frame_" + std::to_string(n) + "_scaled.png", frame.width, frame.height, ours.data());
+      ours.swap(down);
+    }
+    if (ours.size() != size_t(width) * height) {
       std::printf("gfx_replay: frame %u: reference %ux%u, ours %ux%u\n", n, width, height, frame.width, frame.height);
     } else {
       // Pixels off by more than 8 in red, green or blue, and the mean difference per channel (a presented frame has no
@@ -367,7 +391,8 @@ int main(int argc, char** argv) {
     }
     if (!out.empty()) {
       const std::string base = out + "/frame_" + std::to_string(n);
-      WritePng(base + "_ours.png", frame.width, frame.height, ours.data());
+      WritePng(base + "_ours.png", ours.size() == size_t(width) * height ? width : frame.width,
+               ours.size() == size_t(width) * height ? height : frame.height, ours.data());
       WritePng(base + "_reference.png", width, height, reference);
     }
   };

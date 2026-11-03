@@ -23,8 +23,13 @@
 // MSAA surfaces are drawn as their samples (2x: twice the rows; 4x: twice the columns too), and resolves pick or
 // average a pixel's samples as RB_COPY_CONTROL asks.
 //
+// Resolution scale (an integer, both axes): surfaces, colour resolves and the textures copied from them hold scale x
+// scale host texels a guest pixel; the translated shaders take the scale into account (pixel positions, texel sizes
+// of scaled textures). What reaches guest memory (write-backs, CPU resolves) is one texel a guest pixel; depth
+// resolves stay at the guest resolution.
+//
 // Still narrow: surfaces that alias the same EDRAM in another format do not share contents; colour resolves of a
-// few formats only; the viewport without resolution scale. Each limit is a later step.
+// few formats only. Each limit is a later step.
 #pragma once
 
 #include <array>
@@ -108,8 +113,10 @@ VkFormat ColorTargetFormat(uint32_t color_format);
 
 class VulkanRenderer : public gfx::Renderer {
  public:
-  // `physical`: guest physical memory; the first `mirror_bytes` of it are visible to shaders.
-  VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirror_bytes);
+  // `physical`: guest physical memory; the first `mirror_bytes` of it are visible to shaders. `resolution_scale`: host
+  // pixels a guest pixel along each axis (1-4).
+  VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirror_bytes, uint32_t resolution_scale = 1);
+  uint32_t resolution_scale() const { return scale_; }
   ~VulkanRenderer() override;
 
   bool Initialize();
@@ -223,6 +230,7 @@ class VulkanRenderer : public gfx::Renderer {
   Device& device_;
   uint8_t* physical_;  // written by resolves
   uint32_t mirror_bytes_;
+  uint32_t scale_ = 1;  // resolution scale
   std::unique_ptr<rex::graphics::SpirvShaderTranslator> translator_;
   struct ShaderKeyHash {
     size_t operator()(const std::pair<uint32_t, uint64_t>& k) const { return size_t(k.second ^ (uint64_t(k.first) << 63)); }
@@ -262,6 +270,9 @@ class VulkanRenderer : public gfx::Renderer {
     bool stale = false;    // guest memory lacks it (a resolve kept on the GPU only)
     std::atomic<bool> pending{false};  // its write into guest memory is recorded in a batch, done when it has run
     bool float24 = false;  // a depth resolve from a D24FS8 surface (written back as float24 words)
+    uint32_t scale = 1;    // host texels a guest texel along each axis (colour resolves: the resolution scale)
+    Image small;           // a scaled resolve brought to one texel a guest texel for its write-back
+    VkImageLayout small_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   };
   // Writes a resolve kept on the GPU into guest memory: now (WriteBackResolved: the batch runs), or when the batch
   // has run (QueueWriteBack: its copy recorded in the batch; the CPU reads guest memory only after a fence, which runs
@@ -401,6 +412,7 @@ class VulkanRenderer : public gfx::Renderer {
     uint64_t version = 0, epoch = 0;
     VkImageView view = VK_NULL_HANDLE;
     uint32_t signs = 0;
+    bool scaled = false;  // a resolution-scaled texture (copied from a scaled resolve)
   };
   std::array<TextureMemo, 32 * 3 * 2> texture_memo_;
   // By texture fetch constant: the last sampler for its words and the binding's filters.

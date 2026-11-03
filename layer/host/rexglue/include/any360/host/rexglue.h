@@ -36,6 +36,8 @@ struct GraphicsOptions {
   // Vertical blanks a second; 0: as the runtime's own GPU does (60 with its vsync setting on, else 1000: titles pace
   // their presents on vertical blanks, and the runtime runs them uncapped that way).
   double vblank_hz = 0.0;
+  // Host pixels a guest pixel along each axis (1-4): the title draws at its resolution times this.
+  uint32_t resolution_scale = 1;
   // Frames drawn inside the title's own window (the visible top-level window of the thread calling StartGraphics,
   // the runtime's UI thread), as a child covering its client area that leaves input and focus to it: the runtime's
   // input (SDL) only reads controllers while one of its windows has the focus. False: a window of its own.

@@ -125,6 +125,7 @@ class TextureCache {
     uint32_t base = 0, pitch = 0, endian = 0, width = 0, height = 0;
     uint64_t generation = 0;
     bool depth = false;  // a depth resolve (R32F depth values): read by the depth formats (k_24_8, k_24_8_FLOAT)
+    uint32_t scale = 1;  // host texels a guest texel along each axis (a resolution-scaled resolve)
   };
   void SetGpuSource(const GpuSource& source) {
     gpu_sources_[source.base] = source;
@@ -134,6 +135,9 @@ class TextureCache {
   // on the GPU only, when the texture does not read it as it is (another layout, stacked slices...).
   void SetBeforeMemoryRead(std::function<void(uint32_t, uint32_t)> callback) { before_read_ = std::move(callback); }
   void DropGpuSources(uint32_t begin, uint32_t end);
+  // Whether the last view View returned is of a resolution-scaled texture (copied from a scaled GPU source: scale x
+  // scale texels a guest texel), which the shaders sample with the scale taken into account.
+  bool last_view_scaled() const { return last_view_scaled_; }
   uint32_t gpu_copies() const { return gpu_copies_; }
   // For diagnostics: textures over a GPU source that could not use it, by reason.
   std::map<std::string, uint32_t>& source_misses() { return source_misses_; }
@@ -179,7 +183,9 @@ class TextureCache {
   struct FastView {
     VkImageView view;
     uint64_t epoch, version;
+    bool scaled;
   };
+  bool last_view_scaled_ = false;
   std::unordered_map<std::array<uint32_t, 8>, FastView, FastKeyHash> fast_;
   std::function<VkCommandBuffer()> recorder_;
   std::vector<Buffer> pending_staging_;  // staging buffers of uploads recorded in the open batch
