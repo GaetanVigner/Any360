@@ -736,6 +736,61 @@ void LocaleTests() {
   CHECK(XamBuildSystemResourceLocator(g, u"xam", name, buf, 8) == 0 && wide(buf) == "file://");
 }
 
+// I/O completion ports: packets set by hand or by the transfers of an associated file, removed in order.
+void CompletionPortTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  const uint32_t out = kScratch + 0x200, iosb = kScratch + 0x220, info = kScratch + 0x240, buf = kScratch + 0x400,
+                 text = kScratch + 0x100;
+  const int64_t zero = 0;
+  CHECK(Objects().CreateIoCompletion(g, out) == 0);
+  const uint32_t port = g.Load32(out);
+  CHECK(g.Load8(Objects().Lookup(port)) == 4);
+  CHECK(Objects().SetIoCompletion(g, port, 1, 0x100, 0, 10) == 0 && Objects().SetIoCompletion(g, port, 2, 0x200, 0xC0000011, 0) == 0);
+  CHECK(Objects().RemoveIoCompletion(g, port, out, out + 4, iosb, &zero) == 0 && g.Load32(out) == 1 && g.Load32(out + 4) == 0x100 &&
+        g.Load32(iosb) == 0 && g.Load32(iosb + 4) == 10);
+  CHECK(Objects().RemoveIoCompletion(g, port, out, out + 4, iosb, &zero) == 0 && g.Load32(out) == 2 && g.Load32(iosb) == 0xC0000011u);
+  CHECK(Objects().RemoveIoCompletion(g, port, out, out + 4, iosb, &zero) == kStatusTimeout);
+  // A remover waiting for ever gets the packet another thread sets.
+  std::thread setter([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    Objects().SetIoCompletion(g, port, 3, 0x300, 0, 4);
+  });
+  CHECK(Objects().RemoveIoCompletion(g, port, out, 0, 0, nullptr) == 0 && g.Load32(out) == 3);
+  setter.join();
+  // Not a port; not a handle.
+  CHECK(Objects().CreateEvent(g, out + 8, 0, 0, 0) == 0);
+  CHECK(Objects().SetIoCompletion(g, g.Load32(out + 8), 0, 0, 0, 0) == 0xC0000024u);
+  CHECK(Objects().RemoveIoCompletion(g, 0x1234, 0, 0, 0, &zero) == kStatusInvalidHandle);
+  // A file associated with the port: each transfer leaves a packet with the file's key.
+  const fs::path root = fs::temp_directory_path() / "any360-sys-iocp";
+  std::error_code ec;
+  fs::remove_all(root, ec);
+  fs::create_directories(root);
+  Files().Reset();
+  Files().Mount("\\Device\\Harddisk0\\Partition1", root, false);
+  Files().Link("hdd:", "\\Device\\Harddisk0\\Partition1");
+  std::memcpy(g.host(text), "hdd:\\log.bin", 13);
+  const uint32_t file = Files().Win32CreateFile(g, text, 0xC0000000, 2);
+  CHECK(file != 0xFFFFFFFF);
+  g.Store32(info, port);
+  g.Store32(info + 4, 0x77);
+  CHECK(Files().SetInformation(g, file, iosb, info, 8, kFileCompletionInformation) == 0);
+  g.Store32(info, 0x1234);
+  CHECK(Files().SetInformation(g, file, iosb, info, 8, kFileCompletionInformation) == kStatusInvalidHandle);
+  std::memcpy(g.host(buf), "abcdef", 6);
+  const uint32_t status = Files().WriteFile(g, file, 0, iosb, buf, 6, 0);
+  Files().Completed(g, file, 0xABC, status, iosb);
+  CHECK(status == 0 && Objects().RemoveIoCompletion(g, port, out, out + 4, iosb, &zero) == 0 && g.Load32(out) == 0x77 &&
+        g.Load32(out + 4) == 0xABC && g.Load32(iosb + 4) == 6);
+  // The port lives on while the file holds it, after its own handle is closed.
+  CHECK(Objects().Close(port) == 0);
+  Files().Completed(g, file, 0xDEF, 0, 0);
+  CHECK(Objects().Close(file) == 0);
+  Files().Reset();
+  fs::remove_all(root, ec);
+}
+
 void FileTests() {
   Fresh();
   namespace fs = std::filesystem;
@@ -1789,6 +1844,7 @@ int main() {
   SonicTests();
   XamTests();
   FileTests();
+  CompletionPortTests();
   LocaleTests();
   VideoTests();
   Win32FileTests();

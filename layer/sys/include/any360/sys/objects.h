@@ -5,7 +5,9 @@
 // consume a signalled object immediately and otherwise poll (relative timeouts); the scheduler proper comes later.
 #pragma once
 
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <string>
@@ -108,6 +110,16 @@ class ObjectManager {
   uint32_t WaitForHandles(Guest g, uint32_t count, uint32_t handles, uint32_t wait_type, uint32_t thread,
                           const int64_t* timeout, bool alertable = false);
 
+  // I/O completion ports: objects of type 4 (the kernel's queue) holding packets of key, APC context, status and count,
+  // removed oldest first. Remove waits as the waits do (a null timeout for ever, relative or absolute ones); it holds
+  // the port while it waits. A port that is not one is STATUS_OBJECT_TYPE_MISMATCH.
+  uint32_t CreateIoCompletion(Guest g, uint32_t handle_out);
+  uint32_t SetIoCompletion(Guest g, uint32_t handle, uint32_t key, uint32_t apc_context, uint32_t status, uint32_t bytes);
+  uint32_t RemoveIoCompletion(Guest g, uint32_t handle, uint32_t key_out, uint32_t apc_out, uint32_t io_status, const int64_t* timeout);
+  // A packet on a port object (a file associated with it finished a transfer).
+  void QueueCompletion(uint32_t port, uint32_t key, uint32_t apc_context, uint32_t status, uint32_t bytes);
+  bool IsCompletionPort(Guest g, uint32_t object) const;
+
   // The object a handle names (0 when none), for tests and binders.
   uint32_t Lookup(uint32_t handle);
   // For the other managers: a guest region from the kernel heap (0 when exhausted), a handle on an existing object,
@@ -155,6 +167,12 @@ class ObjectManager {
   std::map<uint32_t, uint32_t> free_blocks_;          // address -> size, coalesced
   std::unordered_map<uint32_t, uint32_t> freeable_;  // freed-on-close object -> its size
   std::recursive_mutex lifetime_mutex_;              // allocation, references, release
+  struct Packet {
+    uint32_t key, apc_context, status, bytes;
+  };
+  std::mutex ports_mutex_;
+  std::condition_variable ports_ready_;
+  std::unordered_map<uint32_t, std::deque<Packet>> ports_;  // port object -> its packets
   Guest guest_{nullptr};
   std::vector<void (*)(uint32_t)> close_hooks_, free_hooks_;
   void Closed(uint32_t object);

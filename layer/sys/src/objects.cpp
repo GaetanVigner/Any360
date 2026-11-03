@@ -59,6 +59,10 @@ void ObjectManager::Reset() {
   timer_apcs_.clear();
   free_blocks_.clear();
   freeable_.clear();
+  {
+    std::lock_guard lock(ports_mutex_);
+    ports_.clear();
+  }
   heap_next_ = heap_begin_;
 }
 
@@ -103,6 +107,10 @@ void ObjectManager::Release(uint32_t object) {
   uint32_t at = object, size = owned->second;
   freeable_.erase(owned);
   for (auto hook : free_hooks_) hook(object);
+  {
+    std::lock_guard lock(ports_mutex_);
+    ports_.erase(object);
+  }
   // Merged with the free blocks on either side; one that reaches the untouched rest of the heap joins it.
   if (auto next = free_blocks_.find(at + size); next != free_blocks_.end()) {
     size += next->second;
@@ -642,6 +650,85 @@ uint32_t ObjectManager::WaitForHandle(Guest g, uint32_t handle, uint32_t thread,
   const uint32_t status = WaitForObject(g, object, thread, timeout, alertable);
   DereferenceObject(g, object);
   return status;
+}
+
+// --- I/O completion ports ---
+
+namespace {
+constexpr uint8_t kQueue = 4;
+constexpr uint32_t kQueueSize = 0x28;
+}  // namespace
+
+bool ObjectManager::IsCompletionPort(Guest g, uint32_t object) const { return object && g.Load8(object) == kQueue; }
+
+uint32_t ObjectManager::CreateIoCompletion(Guest g, uint32_t handle_out) {
+  const uint32_t object = Allocate(kQueueSize, true);
+  if (!object) return 0xC0000017;  // STATUS_NO_MEMORY
+  std::memset(g.host(object), 0, kQueueSize);
+  InitializeHeader(g, object, kQueue, 0);
+  {
+    std::lock_guard lock(ports_mutex_);
+    ports_[object].clear();
+  }
+  const uint32_t handle = AddHandle(object, {});
+  if (handle_out) g.Store32(handle_out, handle);
+  return kStatusSuccess;
+}
+
+void ObjectManager::QueueCompletion(uint32_t port, uint32_t key, uint32_t apc_context, uint32_t status, uint32_t bytes) {
+  {
+    std::lock_guard lock(ports_mutex_);
+    const auto it = ports_.find(port);
+    if (it == ports_.end()) return;
+    it->second.push_back({key, apc_context, status, bytes});
+  }
+  ports_ready_.notify_all();
+}
+
+uint32_t ObjectManager::SetIoCompletion(Guest g, uint32_t handle, uint32_t key, uint32_t apc_context, uint32_t status, uint32_t bytes) {
+  const uint32_t port = Lookup(handle);
+  if (!port) return kStatusInvalidHandle;
+  if (!IsCompletionPort(g, port)) return 0xC0000024;  // STATUS_OBJECT_TYPE_MISMATCH
+  QueueCompletion(port, key, apc_context, status, bytes);
+  return kStatusSuccess;
+}
+
+uint32_t ObjectManager::RemoveIoCompletion(Guest g, uint32_t handle, uint32_t key_out, uint32_t apc_out, uint32_t io_status,
+                                           const int64_t* timeout) {
+  const uint32_t port = Lookup(handle);
+  if (!port) return kStatusInvalidHandle;
+  if (!IsCompletionPort(g, port)) return 0xC0000024;
+  ReferenceObject(port);
+  Packet packet{};
+  bool taken = false;
+  {
+    std::unique_lock lock(ports_mutex_);
+    auto ready = [&] {
+      const auto it = ports_.find(port);
+      return it != ports_.end() && !it->second.empty();
+    };
+    const auto limit = WaitLimit(timeout);
+    if (limit == std::chrono::nanoseconds::max()) {
+      ports_ready_.wait(lock, ready);
+      taken = true;
+    } else {
+      taken = ports_ready_.wait_for(lock, limit, ready);
+    }
+    if (taken) {
+      auto& packets = ports_[port];
+      packet = packets.front();
+      packets.pop_front();
+    }
+  }
+  DereferenceObject(g, port);
+  if (!taken) return kStatusTimeout;
+  if (key_out) g.Store32(key_out, packet.key);
+  if (apc_out) g.Store32(apc_out, packet.apc_context);
+  if (io_status) {
+    g.Store32(io_status, packet.status);
+    g.Store32(io_status + 4, packet.bytes);
+  }
+  return kStatusSuccess;
 }
 
 }  // namespace any360::sys

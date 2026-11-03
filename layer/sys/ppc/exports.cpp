@@ -231,8 +231,10 @@ static uint32_t ThreadOf(PPCContext& ctx, uint8_t* base) { return Guest{base}.Lo
 // An alertable wait first runs the user APCs queued on the calling thread and then returns STATUS_USER_APC without
 // waiting; one that an APC ends runs it the same way.
 // The I/O calls' completion APC: routine in r5, context in r6, I/O status block in r7.
+// The file's completion port, if it has one, gets a packet too (file handle in r3).
 static uint32_t IoApc(PPCContext& ctx, uint8_t* base, uint32_t status) {
   Threads().QueueIoApc(ThreadOf(ctx, base), ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, status);
+  Files().Completed({base}, ctx.r3.u32, ctx.r6.u32, status, ctx.r7.u32);
   return status;
 }
 // Kernel-mode APCs run at every wait.
@@ -868,6 +870,17 @@ ANY360_SYS_EXPORT(XamBuildSharedSystemResourceLocator) { ctx.r3.u64 = XamBuildSy
 ANY360_SYS_EXPORT(XamBuildLegacySystemResourceLocator) { ctx.r3.u64 = XamBuildSystemResourceLocator({base}, u"shrdres", ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XamBuildXamResourceLocator) { ctx.r3.u64 = XamBuildSystemResourceLocator({base}, u"xam", ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 
+// Batch 23: I/O completion ports (sys_object_tests).
+ANY360_SYS_EXPORT(NtCreateIoCompletion) { ctx.r3.u64 = Objects().CreateIoCompletion({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(NtSetIoCompletion) {
+  ctx.r3.u64 = Objects().SetIoCompletion({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(NtRemoveIoCompletion) {
+  // (handle, key out, APC context out, I/O status, timeout)
+  int64_t storage;
+  ctx.r3.u64 = Objects().RemoveIoCompletion({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, Timeout(base, ctx.r7.u32, storage));
+}
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1251,6 +1264,9 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ExAllocatePool),
     ANY360_SYS_ENTRY(ExFreePool),
     ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(NtCreateIoCompletion),
+    ANY360_SYS_ENTRY(NtSetIoCompletion),
+    ANY360_SYS_ENTRY(NtRemoveIoCompletion),
     ANY360_SYS_ENTRY(XamGetLocale),
     ANY360_SYS_ENTRY(XamGetLocaleEx),
     ANY360_SYS_ENTRY(XamGetOnlineCountryFromLocale),

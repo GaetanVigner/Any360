@@ -30,7 +30,7 @@ constexpr uint32_t kAttributeReadOnly = 0x1, kAttributeDirectory = 0x10, kAttrib
 enum FileInfo : uint32_t {
   kFileDirectoryInformation = 1, kFileBasicInformation = 4, kFileStandardInformation = 5, kFileInternalInformation = 6,
   kFileRenameInformation = 10, kFileDispositionInformation = 13, kFilePositionInformation = 14, kFileModeInformation = 16,
-  kFileAlignmentInformation = 17, kFileAllocationInformation = 19, kFileEndOfFileInformation = 20,
+  kFileAlignmentInformation = 17, kFileAllocationInformation = 19, kFileEndOfFileInformation = 20, kFileCompletionInformation = 30,
   kFileNetworkOpenInformation = 34
 };
 enum VolumeInfo : uint32_t { kFsVolumeInformation = 1, kFsSizeInformation = 3, kFsDeviceInformation = 4, kFsAttributeInformation = 5 };
@@ -96,6 +96,10 @@ class FileSystem {
   uint32_t Win32FindFirstFile(Guest g, uint32_t name, uint32_t data);
   uint32_t Win32FindNextFile(Guest g, uint32_t handle, uint32_t data);
 
+  // After an Nt* read or write on `handle`: a packet (the file's key, the APC context, the status and the count from the
+  // I/O status block, 0 without one) on the completion port the file is associated with, if any.
+  void Completed(Guest g, uint32_t handle, uint32_t apc_context, uint32_t status, uint32_t io_status);
+
   // The host path a guest path resolves to; empty when the device or a parent directory does not exist.
   std::filesystem::path Resolve(const std::string& guest_path, bool* parent_exists = nullptr) const;
   // Called by the object manager when the last handle of an object closes.
@@ -112,6 +116,7 @@ class FileSystem {
     std::string guest;
     const Mounted* mount = nullptr;
     bool directory = false, delete_on_close = false;
+    uint32_t port = 0, key = 0;  // the completion port (referenced) and the key of its packets
     uint64_t position = 0;
     std::vector<std::string> listing;  // directory entries, sorted, for the current search
     std::string pattern;

@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (468 system calls)
+## What is verified (471 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -188,6 +188,12 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XMACreateContext` / `XMAReleaseContext` (64-byte contexts in physical memory, announced to an `XmaBackend`). Guest
   callbacks run through `Scheduler::CreateContext` and `Scheduler::Dispatch`. The renderer, the audio output and the
   XMA decoder are the backends still to write.
+- **I/O completion ports** (scenario tests): `NtCreateIoCompletion` (an object of type 4, the kernel's queue),
+  `NtSetIoCompletion`, `NtRemoveIoCompletion` (packets of key, APC context, status and count, oldest first; the wait
+  takes no timeout, a relative or an absolute one, and holds the port while it waits), and a file associated with a
+  port through `NtSetInformationFile` (`FileCompletionInformation`): each Nt* read or write on it leaves a packet with
+  the file's key, the APC context and the count from its I/O status block. The reference crashes on an unknown port
+  handle and reads only the low word of the timeout; the layer answers `STATUS_INVALID_HANDLE` and reads all of it.
 - **XAM's locales, dates and resource locators** (`sys_io_tests` against the reference, `sys_object_tests`):
   `XamGetLocale`, `XamGetLocaleEx` (the console's country gives the locale, else the game region), the id
   conversions (`XamGetOnlineCountryFromLocale`, `XamGetLocaleFromOnlineCountry`, `XamGetLanguageFromOnlineLanguage`,
@@ -299,6 +305,6 @@ Next for the layer, in this order:
 1. **Object manager and scheduler, continued**: pre-emptive suspension, `KeGetCurrentThread`-style queries.
 2. **Memory, continued**: `NtProtectVirtualMemory`, `MEM_RESET`, the executable's image range as a queryable heap,
    `ExAllocatePool*`, `MmCreateKernelStack`, `KeLockL2` / `KeUnlockL2`.
-3. **Files, continued**: STFS / XContent packages (saves, DLC), I/O completion ports, APC completion.
+3. **Files, continued**: STFS / XContent packages (saves, DLC), APC completion.
 4. **XAM**: content enumeration and creation over the file system, the user profile and sign-in, input, the UI
    dialogs and the Live-offline answers.

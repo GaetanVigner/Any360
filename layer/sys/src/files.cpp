@@ -485,6 +485,7 @@ uint32_t FileSystem::SetInformation(Guest g, uint32_t handle, uint32_t io_status
     case kFileDispositionInformation: minimum = 1; break;
     case kFilePositionInformation: case kFileAllocationInformation: case kFileEndOfFileInformation: minimum = 8; break;
     case kFileModeInformation: minimum = 4; break;
+    case kFileCompletionInformation: minimum = 8; break;
     default: return kStatusInvalidInfoClass;
   }
   if (length < minimum) return kStatusInfoLengthMismatch;
@@ -529,6 +530,19 @@ uint32_t FileSystem::SetInformation(Guest g, uint32_t handle, uint32_t io_status
           file->host = to;
           file->guest = target;
         }
+      }
+      break;
+    }
+    case kFileCompletionInformation: {
+      // The port's handle and the key of the file's packets.
+      const uint32_t port = Objects().Lookup(g.Load32(info));
+      if (!port || !Objects().IsCompletionPort(g, port)) {
+        status = kStatusInvalidHandle;
+      } else {
+        Objects().ReferenceObject(port);
+        if (file->port) Objects().DereferenceObject(g, file->port);
+        file->port = port;
+        file->key = g.Load32(info + 4);
       }
       break;
     }
@@ -658,7 +672,9 @@ void FileSystem::OnClose(uint32_t object) {
     std::error_code error;
     std::filesystem::remove(it->second.host, error);
   }
+  const uint32_t port = it->second.port;
   open_.erase(it);
+  if (port) Objects().DereferenceObject(Objects().guest(), port);
 }
 
 // --- the Win32 file calls XAM exports, on the same open files ---------------------------------------------------
@@ -898,6 +914,12 @@ uint32_t FileSystem::Win32FindNextFile(Guest g, uint32_t handle, uint32_t data) 
   StoreAttributeData(g, data, StatOf(file->host / entry));
   std::memcpy(g.host(data + 0x2C), entry.data(), std::min<size_t>(entry.size(), 259));
   return 1;
+}
+
+void FileSystem::Completed(Guest g, uint32_t handle, uint32_t apc_context, uint32_t status, uint32_t io_status) {
+  Open* file = Find(handle);
+  if (!file || !file->port) return;
+  Objects().QueueCompletion(file->port, file->key, apc_context, status, io_status ? g.Load32(io_status + 4) : 0);
 }
 
 }  // namespace any360::sys
