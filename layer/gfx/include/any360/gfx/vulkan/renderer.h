@@ -393,6 +393,28 @@ class VulkanRenderer : public gfx::Renderer {
   // The last shader and pipeline looked up (consecutive draws mostly use the same: no map search then).
   const void* last_shader_source_[2] = {};
   uint64_t last_shader_hash_[2] = {};
+  // Most draws keep the previous draw's shaders, targets and pipeline state (only constants and fetch constants
+  // change): what those registers gave last, reused while they hold the same values.
+  struct ShaderMemo {
+    uint64_t key[4] = {};  // vertex and pixel shader hashes, SQ_PROGRAM_CNTL << 32 | SQ_CONTEXT_MISC, flags
+    bool valid = false;
+    TranslatedShader *vs = nullptr, *ps = nullptr;
+    VkShaderModule vs_module = VK_NULL_HANDLE, ps_module = VK_NULL_HANDLE;
+  } shader_memo_;
+  struct LayoutMemo {
+    uint32_t counts[4] = {};
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+  } layout_memo_;
+  struct TargetMemo {
+    static constexpr uint32_t kWords = 30;
+    uint32_t key[kWords] = {};
+    bool valid = false;
+    void* colors[4] = {};
+    void* depth = nullptr;
+    uint32_t width = 0, height = 0, depth_control = 0;
+    int32_t left = 0, top = 0, right = 0, bottom = 0;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+  } target_memo_;
   struct TranslatedShader* last_shader_[2] = {};
   std::vector<uint16_t> index_scratch_;
   // A draw as prepared here, recorded by RecordJob: what it binds, its dynamic state, its indices (converted into the

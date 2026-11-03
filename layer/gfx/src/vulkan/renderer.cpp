@@ -705,9 +705,14 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const bool restart = rectangle_list || (draw.source == DrawSource::kDma && strip && ((regs[kPaSuScModeCntl] >> 21) & 1) &&
                                           (draw.index_32 || reset_index <= UINT16_MAX));
 
-  TranslatedShader* vs = GetShader(*draw.vertex_shader);
   const bool wants_ps = edram_mode == 4 && draw.pixel_shader && !draw.pixel_shader->microcode.empty();
-  TranslatedShader* ps = wants_ps ? GetShader(*draw.pixel_shader) : nullptr;
+  const uint64_t shader_key[4] = {draw.vertex_shader->hash, wants_ps ? draw.pixel_shader->hash : 0,
+                                  uint64_t(regs[kSqProgramCntl]) << 32 | regs[kSqContextMisc],
+                                  uint64_t(wants_ps) | uint64_t(rectangle_list) << 1 |
+                                      uint64_t(topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) << 2};
+  const bool shaders_known = shader_memo_.valid && std::memcmp(shader_memo_.key, shader_key, sizeof(shader_key)) == 0;
+  TranslatedShader* vs = shaders_known ? shader_memo_.vs : GetShader(*draw.vertex_shader);
+  TranslatedShader* ps = shaders_known ? shader_memo_.ps : wants_ps ? GetShader(*draw.pixel_shader) : nullptr;
   if (!vs || (wants_ps && !ps)) {
     Fail("shader analysis");
     return;
@@ -725,6 +730,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
   // The translations for this draw: the interpolators the vertex shader writes and the pixel shader reads
   // (SQ_PROGRAM_CNTL, SQ_CONTEXT_MISC), and the register counts dynamic addressing may reach.
+  VkShaderModule vs_module = shader_memo_.vs_module, ps_module = shader_memo_.ps_module;
+  if (!shaders_known) {
   rg::reg::SQ_PROGRAM_CNTL program_cntl;
   program_cntl.value = regs[kSqProgramCntl];
   rg::reg::SQ_CONTEXT_MISC context_misc;
@@ -746,8 +753,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       vs->shader->GetDynamicAddressableRegisterCount(program_cntl.vs_num_reg),
       rectangle_list ? rg::Shader::HostVertexShaderType::kRectangleListAsTriangleStrip : rg::Shader::HostVertexShaderType::kVertex));
   vs_modification.vertex.interpolator_mask = interpolators;
-  const VkShaderModule vs_module = GetModule(*vs, vs_modification.value);
-  VkShaderModule ps_module = VK_NULL_HANDLE;
+  vs_module = GetModule(*vs, vs_modification.value);
+  ps_module = VK_NULL_HANDLE;
   if (ps) {
     SpirvShaderTranslator::Modification ps_modification(
         translator_->GetDefaultPixelShaderModification(ps->shader->GetDynamicAddressableRegisterCount(program_cntl.ps_num_reg)));
@@ -762,6 +769,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   if (!vs_module || (ps && !ps_module)) {
     Fail("shader translation");
     return;
+  }
+  std::memcpy(shader_memo_.key, shader_key, sizeof(shader_key));
+  shader_memo_.vs = vs, shader_memo_.ps = ps;
+  shader_memo_.vs_module = vs_module, shader_memo_.ps_module = ps_module;
+  shader_memo_.valid = true;
   }
 
   // Textures and samplers of each stage, in the order the translated shader binds them.
@@ -838,9 +850,13 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   stats_.texture_gpu_copies = textures_->gpu_copies();
   stats_.ns_texture_hash = textures_->ns_hash();
   stats_.ns_texture_load = textures_->ns_load();
-  const VkPipelineLayout pipeline_layout =
-      PipelineLayout(uint32_t(stage_textures[0].views.size()), uint32_t(stage_textures[0].samplers.size()),
-                     uint32_t(stage_textures[1].views.size()), uint32_t(stage_textures[1].samplers.size()));
+  const uint32_t layout_counts[4] = {uint32_t(stage_textures[0].views.size()), uint32_t(stage_textures[0].samplers.size()),
+                                     uint32_t(stage_textures[1].views.size()), uint32_t(stage_textures[1].samplers.size())};
+  if (!layout_memo_.layout || std::memcmp(layout_memo_.counts, layout_counts, sizeof(layout_counts))) {
+    layout_memo_.layout = PipelineLayout(layout_counts[0], layout_counts[1], layout_counts[2], layout_counts[3]);
+    std::memcpy(layout_memo_.counts, layout_counts, sizeof(layout_counts));
+  }
+  const VkPipelineLayout pipeline_layout = layout_memo_.layout;
   if (!pipeline_layout) {
     Fail("pipeline layout");
     return;
@@ -854,24 +870,49 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // reach the same host image as its 1x draws to that EDRAM. Coordinates are scaled to samples; resolves pick or
   // average a pixel's samples.
   const uint32_t surface_info = regs[kRbSurfaceInfo];
+  const uint32_t mode_cntl = regs[kPaSuScModeCntl];
+  // Everything the targets, the scissor and the pipeline come from (the surfaces stay while the renderer does).
+  uint32_t target_key[TargetMemo::kWords] = {
+      surface_info, regs[kRbDepthControl], regs[kRbColorMask], regs[kRbColorInfo[0]], regs[kRbColorInfo[1]],
+      regs[kRbColorInfo[2]], regs[kRbColorInfo[3]], regs[kRbDepthInfo], regs[kPaScWindowOffset],
+      regs[kPaScWindowScissorTl], regs[kPaScWindowScissorBr], regs[kPaScScreenScissorTl], regs[kPaScScreenScissorBr],
+      mode_cntl, regs[kRbBlendControl[0]], regs[kRbBlendControl[1]], regs[kRbBlendControl[2]], regs[kRbBlendControl[3]],
+      uint32_t(topology), uint32_t(restart), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  std::memcpy(target_key + 20, &vs_module, 8);
+  std::memcpy(target_key + 22, &ps_module, 8);
+  std::memcpy(target_key + 24, &pipeline_layout, 8);
+  std::memcpy(target_key + 26, &ps, sizeof(ps));
+  static_assert(sizeof(ps) <= 8 && 28 <= TargetMemo::kWords);
+  Surface* colors[4] = {};
+  uint32_t color_infos[4] = {};
+  Surface* depth_surface = nullptr;
+  uint32_t width = UINT32_MAX, height = UINT32_MAX;
+  int32_t left, top, right, bottom;
+  uint32_t depth_control;
+  VkPipeline pipeline;
+  const int32_t sample_x = ((surface_info >> 16) & 3) == 2 ? 2 : 1, sample_y = ((surface_info >> 16) & 3) ? 2 : 1;
+  const uint32_t window_offset = regs[kPaScWindowOffset];
+  const int32_t offset_x = int32_t(window_offset << 17) >> 17, offset_y = int32_t(window_offset << 1) >> 17;
+  for (uint32_t i = 0; i < 4; ++i) color_infos[i] = regs[kRbColorInfo[i]];
+  if (target_memo_.valid && std::memcmp(target_memo_.key, target_key, sizeof(target_key)) == 0) {
+    for (uint32_t i = 0; i < 4; ++i) colors[i] = static_cast<Surface*>(target_memo_.colors[i]);
+    depth_surface = static_cast<Surface*>(target_memo_.depth);
+    width = target_memo_.width, height = target_memo_.height, depth_control = target_memo_.depth_control;
+    left = target_memo_.left, top = target_memo_.top, right = target_memo_.right, bottom = target_memo_.bottom;
+    pipeline = target_memo_.pipeline;
+  } else {
   const uint32_t msaa = (surface_info >> 16) & 3;
   if (msaa > 2) {
     Fail("MSAA mode 3");
     return;
   }
-  const int32_t sample_x = msaa == 2 ? 2 : 1, sample_y = msaa ? 2 : 1;
   const uint32_t pitch = (surface_info & 0x3FFF) * uint32_t(sample_x);
-  uint32_t depth_control = regs[kRbDepthControl];
+  depth_control = regs[kRbDepthControl];
   // Depth tested always without writes does nothing (the reference drops it the same way).
   if ((depth_control & 2) && !(depth_control & 4) && ((depth_control >> 4) & 7) == 7) depth_control &= ~2u;
   if (!polygonal) depth_control &= ~(1u << 7);  // back-face stencil only for polygons
-  Surface* colors[4] = {};
-  uint32_t color_infos[4] = {};
-  Surface* depth_surface = nullptr;
-  uint32_t width = UINT32_MAX, height = UINT32_MAX;
   const uint32_t color_mask_register = regs[kRbColorMask];
   for (uint32_t i = 0; i < 4; ++i) {
-    color_infos[i] = regs[kRbColorInfo[i]];
     if (!ps || !ps->shader->writes_color_target(i) || !((color_mask_register >> (4 * i)) & 0xF)) continue;
     colors[i] = GetSurface({color_infos[i] & 0xFFF, pitch, (color_infos[i] >> 16) & 0xF, 0});
     if (!colors[i]) {
@@ -900,14 +941,12 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
 
   // The scissor: the window scissor (moved by the window offset unless it says not to) within the screen scissor
   // and the targets.
-  const uint32_t window_offset = regs[kPaScWindowOffset];
-  const int32_t offset_x = int32_t(window_offset << 17) >> 17, offset_y = int32_t(window_offset << 1) >> 17;
   const uint32_t window_tl = regs[kPaScWindowScissorTl], window_br = regs[kPaScWindowScissorBr];
   const bool offset_scissor = !(window_tl >> 31);
-  int32_t left = int32_t(window_tl & 0x3FFF) + (offset_scissor ? offset_x : 0);
-  int32_t top = int32_t((window_tl >> 16) & 0x3FFF) + (offset_scissor ? offset_y : 0);
-  int32_t right = int32_t(window_br & 0x3FFF) + (offset_scissor ? offset_x : 0);
-  int32_t bottom = int32_t((window_br >> 16) & 0x3FFF) + (offset_scissor ? offset_y : 0);
+  left = int32_t(window_tl & 0x3FFF) + (offset_scissor ? offset_x : 0);
+  top = int32_t((window_tl >> 16) & 0x3FFF) + (offset_scissor ? offset_y : 0);
+  right = int32_t(window_br & 0x3FFF) + (offset_scissor ? offset_x : 0);
+  bottom = int32_t((window_br >> 16) & 0x3FFF) + (offset_scissor ? offset_y : 0);
   left = std::max({left, int32_t(regs[kPaScScreenScissorTl] & 0x7FFF), 0}) * sample_x;
   top = std::max({top, int32_t((regs[kPaScScreenScissorTl] >> 16) & 0x7FFF), 0}) * sample_y;
   right = std::min(std::min(right, int32_t(regs[kPaScScreenScissorBr] & 0x7FFF)) * sample_x, int32_t(width));
@@ -918,7 +957,6 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
 
   // The pipeline state from the registers.
-  const uint32_t mode_cntl = regs[kPaSuScModeCntl];
   PipelineKey key{};
   key.vs_module = uint64_t(vs_module);
   key.layout = uint64_t(pipeline_layout);
@@ -944,7 +982,6 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     key.blend_controls[i] = colors[i] ? (regs[kRbBlendControl[i]] & 0x1FFF1FFF) : kNoBlending;
     if (colors[i]) key.color_masks |= color_mask_register & (0xFu << (4 * i));
   }
-  VkPipeline pipeline;
   {
     Timer pipeline_timer(stats_.ns_pipelines);
     pipeline = GetPipeline(key);
@@ -952,6 +989,14 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   if (!pipeline) {
     Fail("pipeline creation");
     return;
+  }
+  std::memcpy(target_memo_.key, target_key, sizeof(target_key));
+  for (uint32_t i = 0; i < 4; ++i) target_memo_.colors[i] = colors[i];
+  target_memo_.depth = depth_surface;
+  target_memo_.width = width, target_memo_.height = height, target_memo_.depth_control = depth_control;
+  target_memo_.left = left, target_memo_.top = top, target_memo_.right = right, target_memo_.bottom = bottom;
+  target_memo_.pipeline = pipeline;
+  target_memo_.valid = true;
   }
 
   // Constants, each at an aligned offset of the batch's ring: system, VS floats, PS floats, bool/loop, fetch. A draw
@@ -987,7 +1032,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     offsets[index] = at;
     std::memcpy(base + at, data, bytes);
     at = AlignUp(at + bytes, constant_alignment_);
-    last.bytes.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + bytes);
+    if (data == float_scratch_.data() && bytes == float_scratch_.size()) {
+      std::swap(last.bytes, float_scratch_);  // packed for this draw only: kept without a copy
+    } else {
+      last.bytes.assign(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + bytes);
+    }
     last.offset = offsets[index];
     last.valid = true;
   };
