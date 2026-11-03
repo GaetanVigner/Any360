@@ -94,8 +94,8 @@ class ObjectManager {
                          bool alertable = false);
   void ReferenceObject(uint32_t object) { ++references_[object]; }
 
-  // Waits. A null timeout waits for ever; a relative timeout (negative, 100 ns units) polls that long; zero does not
-  // wait. Returns STATUS_SUCCESS when the object was (or became) signalled and consumed, STATUS_TIMEOUT otherwise. An
+  // Waits. A null timeout waits for ever; a relative timeout (negative, 100 ns units) polls that long, an absolute one
+  // (a system time) until then; zero, or an absolute time already past, does not wait. Returns STATUS_SUCCESS when the object was (or became) signalled and consumed, STATUS_TIMEOUT otherwise. An
   // alertable wait ends with STATUS_USER_APC once a user APC is queued on the thread (the caller delivers it).
   uint32_t WaitForObject(Guest g, uint32_t object, uint32_t thread, const int64_t* timeout, bool alertable = false);
   uint32_t WaitForHandle(Guest g, uint32_t handle, uint32_t thread, const int64_t* timeout, bool alertable = false);

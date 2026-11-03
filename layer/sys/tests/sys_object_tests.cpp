@@ -223,6 +223,25 @@ void Timers() {
   CHECK(Objects().WaitForObject(g, kt, kMainThread, &zero) == 0 && g.Load32(kt + 4) == 1);
   CHECK(Objects().NtSetTimerEx(g, h, 0, 0, 0, 0, 0, 0) == kStatusInvalidParameter);
   CHECK(Objects().NtSetTimerEx(g, kHandleBase + 0x800, out + 8, 0, 0, 0, 0, 0) == kStatusInvalidHandle);
+  // Absolute timeouts: a system time already past does not wait, a later one waits until then.
+  CHECK(Objects().CreateEvent(g, out + 28, 0, 0, 0) == 0);
+  const uint32_t unsignalled = g.Load32(out + 28);
+  const int64_t past = int64_t(SystemTime() - 10);
+  CHECK(Objects().WaitForHandle(g, unsignalled, kMainThread, &past) == kStatusTimeout);
+  const uint32_t several[] = {Objects().Lookup(unsignalled)};
+  CHECK(Objects().WaitForObjects(g, 1, several, kWaitAny, kMainThread, &past) == kStatusTimeout);
+  const auto started = std::chrono::steady_clock::now();
+  const int64_t soon = int64_t(SystemTime() + 200000);  // 20 ms
+  CHECK(Objects().WaitForHandle(g, unsignalled, kMainThread, &soon) == kStatusTimeout);
+  CHECK(std::chrono::steady_clock::now() - started >= std::chrono::milliseconds(15));
+  const int64_t later = int64_t(SystemTime() + 50000000);  // 5 s, ended by the event
+  std::thread setter([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    g.Store32(Objects().Lookup(unsignalled) + 4, 1);
+  });
+  CHECK(Objects().WaitForObjects(g, 1, several, kWaitAny, kMainThread, &later) == 0);
+  setter.join();
+  CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(2));
   // The clock advances and sits after 2020.
   const uint64_t t0 = SystemTime();
   CHECK(t0 > 132223104000000000ull && SystemTime() >= t0);

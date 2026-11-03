@@ -23,6 +23,17 @@ void InitializeHeader(Guest g, uint32_t object, uint8_t type, uint32_t signal_st
   g.Store32(object + kHeaderWaitListBlink, object + kHeaderWaitListFlink);
 }
 
+// How long a wait may last: for ever without a timeout, a relative timeout's length (negative, 100 ns units), or the
+// time left until an absolute one (a system time; zero once it has passed).
+std::chrono::nanoseconds WaitLimit(const int64_t* timeout) {
+  constexpr auto kForever = std::chrono::nanoseconds::max();
+  if (!timeout) return kForever;
+  if (*timeout <= 0) return std::chrono::nanoseconds(-*timeout * 100);
+  const uint64_t now = SystemTime(), due = uint64_t(*timeout);
+  if (due <= now) return std::chrono::nanoseconds(0);
+  return due - now > uint64_t(kForever.count() / 100) ? kForever : std::chrono::nanoseconds((due - now) * 100);
+}
+
 }  // namespace
 
 uint64_t SystemTime() {
@@ -513,9 +524,9 @@ uint32_t ObjectManager::WaitForObjects(Guest g, uint32_t count, const uint32_t* 
   };
   int32_t taken = attempt();
   if (taken >= 0) return uint32_t(taken);
-  if (timeout && *timeout >= 0) return kStatusTimeout;  // zero, or an absolute time (not supported yet)
+  const auto limit = WaitLimit(timeout);
+  if (limit.count() == 0) return kStatusTimeout;
   const auto start = std::chrono::steady_clock::now();
-  const auto limit = timeout ? std::chrono::nanoseconds(-*timeout * 100) : std::chrono::nanoseconds::max();
   for (;;) {
     std::this_thread::yield();
     taken = attempt();
@@ -539,11 +550,9 @@ uint32_t ObjectManager::WaitForHandles(Guest g, uint32_t count, uint32_t handles
 uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread, const int64_t* timeout, bool alertable) {
   Poll(g);
   if (TrySatisfy(g, object, thread)) return kStatusSuccess;
-  if (timeout && *timeout == 0) return kStatusTimeout;
-  // Relative timeouts are negative 100 ns counts; an absolute one is not supported yet and does not wait.
-  if (timeout && *timeout > 0) return kStatusTimeout;
+  const auto limit = WaitLimit(timeout);
+  if (limit.count() == 0) return kStatusTimeout;
   const auto start = std::chrono::steady_clock::now();
-  const auto limit = timeout ? std::chrono::nanoseconds(-*timeout * 100) : std::chrono::nanoseconds::max();
   for (;;) {
     std::this_thread::yield();
     Poll(g);
