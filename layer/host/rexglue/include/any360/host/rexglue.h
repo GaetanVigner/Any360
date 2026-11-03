@@ -28,6 +28,9 @@
 #include <functional>
 #include <string>
 
+// GraphicsOptions has pipeline_cache_path and async_pipelines.
+#define ANY360_REXGLUE_PIPELINE_CACHE 1
+
 namespace any360::host::rexglue {
 
 struct GraphicsOptions {
