@@ -88,6 +88,12 @@ uint32_t VdCallGraphicsNotificationRoutines() { return 0; }
 void VdShutdownEngines() {}
 void VdSetSystemCommandBufferGpuIdentifierAddress() {}
 
+void VdQueryRealVideoMode(Guest g, uint32_t video_mode) { VdQueryVideoMode(g, video_mode); }
+uint32_t XGetVideoFlags() { return VdQueryVideoFlags(); }
+uint32_t XGetVideoStandard() { return 1; }  // NTSC, the standard VdQueryVideoMode reports
+uint32_t XGetVideoCapabilities() { return 0; }
+uint32_t VdDisplayHardwareRequest() { return 0; }
+
 uint32_t VdInitializeScalerCommandBuffer(Guest g, uint32_t destination, uint32_t count) {
   for (uint32_t i = 0; i < count; ++i) g.Store32(destination + 4 * i, 0x80000000);
   return count;

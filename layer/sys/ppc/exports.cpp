@@ -80,6 +80,57 @@ ANY360_SYS_EXPORT(VdCallGraphicsNotificationRoutines) { ctx.r3.u64 = VdCallGraph
 ANY360_SYS_EXPORT(VdInitializeScalerCommandBuffer) {
   ctx.r3.u64 = VdInitializeScalerCommandBuffer({base}, StackArgument(ctx, base, 10), StackArgument(ctx, base, 11));
 }
+ANY360_SYS_EXPORT(VdQueryRealVideoMode) { VdQueryRealVideoMode({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XGetVideoFlags) { ctx.r3.u64 = XGetVideoFlags(); }
+ANY360_SYS_EXPORT(XGetVideoStandard) { ctx.r3.u64 = XGetVideoStandard(); }
+ANY360_SYS_EXPORT(XGetVideoCapabilities) { ctx.r3.u64 = XGetVideoCapabilities(); }
+// The display hardware a host has no counterpart for: accepted, success (see video.h).
+ANY360_SYS_EXPORT(VdBlockUntilGUIIdle) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdDisplayFatalError) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdEnableClosedCaption) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdEnableDisablePowerSavingMode) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdGenerateGPUCSCCoefficients) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdGetClosedCaptionReadyStatus) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdGetDisplayModeOverride) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdInitializeScaler) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdReadDVERegisterUlong) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdReadWriteHSIOCalibrationFlag) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdRegisterGraphicsNotification) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdRegisterXamGraphicsNotification) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSendClosedCaptionData) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetCGMSOption) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetColorProfileAdjustment) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetCscMatricesOverride) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetHDCPOption) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetMacrovisionOption) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetWSSData) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetWSSOption) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdTurnDisplayOff) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdTurnDisplayOn) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdWriteDVERegisterUlong) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdInitializeEDRAM) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdReadEEDIDBlock) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdEnumerateVideoModes) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdEnableHDCP) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdRegisterHDCPNotification) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdGetDisplayDiscoveryData) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdStartDisplayDiscovery) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetHDCPRevocationList) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdEnableWMAProOverHDMI) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetCGMSState) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetSCMSState) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdGetOption) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetOption) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdQueryVideoCapabilities) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdGet3dVideoFormat) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdGetWSS2Data) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSet3dVideoFormat) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetWSS2Data) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(VdSetStudioRGBMode) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(AniBlockOnAnimation) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(AniTerminateAnimation) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(AniSetLogo) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
+ANY360_SYS_EXPORT(AniStartBootAnimation) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
 ANY360_SYS_EXPORT(NetDll_inet_addr) { ctx.r3.u64 = NetDll_inet_addr({base}, ctx.r3.u32); }
 ANY360_SYS_EXPORT(NetDll_XNetInAddrToString) { NetDll_XNetInAddrToString({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
 ANY360_SYS_EXPORT(NetDll_XNetXnAddrToInAddr) { ctx.r3.u64 = NetDll_XNetXnAddrToInAddr(); }
@@ -844,6 +895,56 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(VdGetSystemCommandBuffer),
     ANY360_SYS_ENTRY(VdCallGraphicsNotificationRoutines),
     ANY360_SYS_ENTRY(VdInitializeScalerCommandBuffer),
+    ANY360_SYS_ENTRY(XGetVideoFlags),
+    ANY360_SYS_ENTRY(XGetVideoStandard),
+    ANY360_SYS_ENTRY(XGetVideoCapabilities),
+    ANY360_SYS_ENTRY(VdQueryRealVideoMode),
+    ANY360_SYS_ENTRY(VdBlockUntilGUIIdle),
+    ANY360_SYS_ENTRY(VdDisplayFatalError),
+    ANY360_SYS_ENTRY(VdEnableClosedCaption),
+    ANY360_SYS_ENTRY(VdEnableDisablePowerSavingMode),
+    ANY360_SYS_ENTRY(VdGenerateGPUCSCCoefficients),
+    ANY360_SYS_ENTRY(VdGetClosedCaptionReadyStatus),
+    ANY360_SYS_ENTRY(VdGetDisplayModeOverride),
+    ANY360_SYS_ENTRY(VdInitializeScaler),
+    ANY360_SYS_ENTRY(VdReadDVERegisterUlong),
+    ANY360_SYS_ENTRY(VdReadWriteHSIOCalibrationFlag),
+    ANY360_SYS_ENTRY(VdRegisterGraphicsNotification),
+    ANY360_SYS_ENTRY(VdRegisterXamGraphicsNotification),
+    ANY360_SYS_ENTRY(VdSendClosedCaptionData),
+    ANY360_SYS_ENTRY(VdSetCGMSOption),
+    ANY360_SYS_ENTRY(VdSetColorProfileAdjustment),
+    ANY360_SYS_ENTRY(VdSetCscMatricesOverride),
+    ANY360_SYS_ENTRY(VdSetHDCPOption),
+    ANY360_SYS_ENTRY(VdSetMacrovisionOption),
+    ANY360_SYS_ENTRY(VdSetWSSData),
+    ANY360_SYS_ENTRY(VdSetWSSOption),
+    ANY360_SYS_ENTRY(VdTurnDisplayOff),
+    ANY360_SYS_ENTRY(VdTurnDisplayOn),
+    ANY360_SYS_ENTRY(VdWriteDVERegisterUlong),
+    ANY360_SYS_ENTRY(VdInitializeEDRAM),
+    ANY360_SYS_ENTRY(VdReadEEDIDBlock),
+    ANY360_SYS_ENTRY(VdEnumerateVideoModes),
+    ANY360_SYS_ENTRY(VdEnableHDCP),
+    ANY360_SYS_ENTRY(VdRegisterHDCPNotification),
+    ANY360_SYS_ENTRY(VdGetDisplayDiscoveryData),
+    ANY360_SYS_ENTRY(VdStartDisplayDiscovery),
+    ANY360_SYS_ENTRY(VdSetHDCPRevocationList),
+    ANY360_SYS_ENTRY(VdEnableWMAProOverHDMI),
+    ANY360_SYS_ENTRY(VdSetCGMSState),
+    ANY360_SYS_ENTRY(VdSetSCMSState),
+    ANY360_SYS_ENTRY(VdGetOption),
+    ANY360_SYS_ENTRY(VdSetOption),
+    ANY360_SYS_ENTRY(VdQueryVideoCapabilities),
+    ANY360_SYS_ENTRY(VdGet3dVideoFormat),
+    ANY360_SYS_ENTRY(VdGetWSS2Data),
+    ANY360_SYS_ENTRY(VdSet3dVideoFormat),
+    ANY360_SYS_ENTRY(VdSetWSS2Data),
+    ANY360_SYS_ENTRY(VdSetStudioRGBMode),
+    ANY360_SYS_ENTRY(AniBlockOnAnimation),
+    ANY360_SYS_ENTRY(AniTerminateAnimation),
+    ANY360_SYS_ENTRY(AniSetLogo),
+    ANY360_SYS_ENTRY(AniStartBootAnimation),
     ANY360_SYS_ENTRY(NetDll_inet_addr),
     ANY360_SYS_ENTRY(NetDll_XNetInAddrToString),
     ANY360_SYS_ENTRY(NetDll_XNetXnAddrToInAddr),

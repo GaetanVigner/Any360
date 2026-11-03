@@ -33,5 +33,15 @@ void VdShutdownEngines();
 void VdSetSystemCommandBufferGpuIdentifierAddress();
 // Fills the destination with `count` NOP words; returns the count.
 uint32_t VdInitializeScalerCommandBuffer(Guest g, uint32_t destination, uint32_t count);
+// The mode the display really runs at: the one reported (the host scales the frames, no scaler in between).
+void VdQueryRealVideoMode(Guest g, uint32_t video_mode);
+// xam's forms of the display queries: VdQueryVideoFlags, and the standard VdQueryVideoMode reports (NTSC).
+uint32_t XGetVideoFlags();
+uint32_t XGetVideoStandard();
+uint32_t XGetVideoCapabilities();  // none (0), as the reference
+// The display hardware a host has no counterpart for (the output encoder and its registers, the HDMI link and
+// HDCP, closed captions, WSS / CGMS / Macrovision copy protection, colour profiles, power saving, the boot
+// animation, notification routines): accepted, nothing done, success (0). The reference stubs them.
+uint32_t VdDisplayHardwareRequest();
 
 }  // namespace any360::sys

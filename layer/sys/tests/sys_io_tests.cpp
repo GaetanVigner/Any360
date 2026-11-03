@@ -53,6 +53,7 @@ REFERENCE(VdGetGraphicsAsicID)
 REFERENCE(VdGetSystemCommandBuffer)
 REFERENCE(VdCallGraphicsNotificationRoutines)
 REFERENCE(VdInitializeScalerCommandBuffer)
+REFERENCE(XGetVideoCapabilities)
 REFERENCE(NetDll_inet_addr)
 REFERENCE(NetDll_XNetInAddrToString)
 REFERENCE(NetDll_XNetXnAddrToInAddr)
@@ -379,6 +380,7 @@ const Case kCases[] = {
     CASE(VdRetrainEDRAM, nullptr),
     CASE(VdRetrainEDRAMWorker, nullptr),
     CASE(VdGetGraphicsAsicID, nullptr),
+    CASE(XGetVideoCapabilities, nullptr),
     CASE(VdGetSystemCommandBuffer, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = kOut; ctx.r4.u64 = kOut + 0x100; }),
     CASE(VdCallGraphicsNotificationRoutines, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = 1; ctx.r4.u64 = kStruct; }),
     CASE(VdInitializeScalerCommandBuffer, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {

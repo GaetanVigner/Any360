@@ -35,6 +35,15 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XamGetSystemVersion`, `XGetVideoMode` and the `Vd*` display queries (`VdQueryVideoMode`, `VdQueryVideoFlags`,
   `VdGetCurrentDisplayInformation`, `VdGetCurrentDisplayGamma`, `VdGetSystemCommandBuffer`,
   `VdInitializeScalerCommandBuffer`, the constant-return and no-op ones).
+- **The rest of the display driver** (`video.h`; `XGetVideoCapabilities` against the reference, the rest scenario
+  tests): `VdQueryRealVideoMode` (the reported mode: the host scales frames, no scaler in between), `XGetVideoFlags`
+  and `XGetVideoStandard` (the `Vd*` queries' xam forms), `XGetVideoCapabilities` (none, as the reference); and the
+  display hardware a host has no counterpart for, accepted with success and nothing written (the reference stubs
+  them): the output encoder (DVE registers, CSC coefficients and matrices, colour profile, studio RGB, 3D formats),
+  the HDMI link and HDCP, EDID and display discovery, closed captions, WSS / CGMS / SCMS / Macrovision copy
+  protection, options, power saving, display on and off, the scaler and EDRAM initialisation, graphics and HDCP
+  notification routines, the boot animation (`Ani*`). The video group's six variables (`VdGlobalDevice`,
+  `VdGpuClockInMHz`, `VdHSIOCalibrationLock`...) wait for variable exports.
 - **The object manager** (`objects.h`, scenario tests): the handle table (handles from 0xF8000000 by four, slots
   reused, duplicates, `DUPLICATE_CLOSE_SOURCE`, the current-thread pseudo handle, Ob references apart from handles),
   events (`KeInitializeEvent`, `KeSetEvent`, `KeResetEvent`, `KePulseEvent` returning the previous state, the Nt*
