@@ -118,6 +118,9 @@ class VulkanRenderer : public gfx::Renderer {
   // A count for this machine: what its cores leave after the title's threads and the command processor's.
   static uint32_t AutoRecordThreads();
   uint32_t record_threads() const { return record_threads_; }
+  // With recording threads, a thread of its own submits the batches (it waits for their chunks, records their render
+  // passes around them): wait until everything flushed is on the queue, before using the queue otherwise (presenting).
+  void WaitSubmitted();
 
   // The host image of a surface, created on first use (width = pitch, height = the EDRAM rows the surface spans).
   struct Surface {
@@ -478,6 +481,27 @@ class VulkanRenderer : public gfx::Renderer {
   VkCommandBuffer current_piece_ = VK_NULL_HANDLE;
   bool piece_open_ = false;
   VkCommandBuffer NextPiece(Batch& b);
+  // A flushed batch as the submission thread takes it: its order and render passes, the render passes' buffers (from
+  // submit_pool_, that thread's), the chunks it has recorded (back to spare_tasks_ when the batch is reused).
+  struct Submission {
+    std::vector<Entry> order;
+    std::vector<Segment> segments;
+    uint32_t segment_count = 0;
+    bool upload = false;
+    std::vector<VkCommandBuffer> pieces;
+    uint32_t pieces_used = 0;
+    std::vector<VkCommandBuffer> cbs, segment_cbs;
+    std::vector<std::unique_ptr<RecordTask>> spent;
+  };
+  std::array<Submission, 8> submissions_;  // by batch
+  void Submit(uint32_t index);             // on the submission thread, or here without one
+  void SubmitLoop();
+  std::thread submitter_;
+  VkCommandPool submit_pool_ = VK_NULL_HANDLE;
+  std::mutex submit_mutex_;
+  std::condition_variable submit_cv_, submitted_cv_;
+  std::deque<uint32_t> to_submit_;
+  bool submitting_ = false, submit_stopping_ = false;
   bool segment_secondary_ = false;  // the open pass takes secondary command buffers
   VkFormat segment_formats_[4] = {};
   VkFormat segment_depth_ = VK_FORMAT_UNDEFINED;

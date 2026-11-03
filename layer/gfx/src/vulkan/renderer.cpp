@@ -115,6 +115,14 @@ VulkanRenderer::~VulkanRenderer() {
     Flush();
     WaitIdle();
   }
+  if (submitter_.joinable()) {
+    {
+      std::lock_guard lock(submit_mutex_);
+      submit_stopping_ = true;
+    }
+    submit_cv_.notify_all();
+    submitter_.join();
+  }
   {
     std::lock_guard lock(record_mutex_);
     record_stopping_ = true;
@@ -156,6 +164,7 @@ VulkanRenderer::~VulkanRenderer() {
   DestroyBuffer(device_, gamma_lut_buffer_);
   DestroyImage(device_, gamma_image_);
   if (batch_pool_) f.vkDestroyCommandPool(d, batch_pool_, nullptr);
+  if (submit_pool_) f.vkDestroyCommandPool(d, submit_pool_, nullptr);
   for (auto& [key, pipeline] : pipelines_) f.vkDestroyPipeline(d, pipeline, nullptr);
   for (auto& [key, shader] : shaders_) {
     for (auto& [modification, module] : shader->modules) {
@@ -1654,6 +1663,103 @@ void VulkanRenderer::SetRecordThreads(uint32_t count) {
   }
   record_threads_ = count;
   for (uint32_t i = 0; i < count; ++i) workers_[i]->thread = std::thread([this, i] { RecordLoop(i); });
+  VkCommandPoolCreateInfo submit_pool{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+  submit_pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+  submit_pool.queueFamilyIndex = device_.queue_family();
+  if (f.vkCreateCommandPool(device_.device(), &submit_pool, nullptr, &submit_pool_) == VK_SUCCESS) {
+    submitter_ = std::thread([this] { SubmitLoop(); });
+  }
+}
+
+void VulkanRenderer::SubmitLoop() {
+  for (;;) {
+    uint32_t index;
+    {
+      std::unique_lock lock(submit_mutex_);
+      submit_cv_.wait(lock, [&] { return submit_stopping_ || !to_submit_.empty(); });
+      if (to_submit_.empty()) return;
+      index = to_submit_.front();
+      to_submit_.pop_front();
+      submitting_ = true;
+    }
+    Submit(index);
+    {
+      std::lock_guard lock(submit_mutex_);
+      submitting_ = false;
+    }
+    submitted_cv_.notify_all();
+  }
+}
+
+void VulkanRenderer::WaitSubmitted() {
+  if (!submitter_.joinable()) return;
+  std::unique_lock lock(submit_mutex_);
+  submitted_cv_.wait(lock, [&] { return to_submit_.empty() && !submitting_; });
+}
+
+void VulkanRenderer::Submit(uint32_t index) {
+  const Functions& f = device_.fn();
+  Batch& b = batches_[index];
+  Submission& s = submissions_[index];
+  if (s.segment_count) {
+    // The render passes the recording threads drew: their chunks recorded, each pass a buffer around them.
+    {
+      std::unique_lock lock(record_mutex_);
+      record_done_cv_.wait(lock, [&] {
+        for (uint32_t i = 0; i < s.segment_count; ++i) {
+          for (const auto& task : s.segments[i].tasks) {
+            if (!task->done.load(std::memory_order_acquire)) return false;
+          }
+        }
+        return true;
+      });
+    }
+    s.pieces_used = 0;
+    for (Entry& entry : s.order) {
+      if (entry.segment < 0) continue;
+      Segment& seg = s.segments[entry.segment];
+      if (s.pieces_used == s.pieces.size()) {
+        VkCommandBufferAllocateInfo alloc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        alloc.commandPool = submit_pool_;
+        alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        alloc.commandBufferCount = 1;
+        VkCommandBuffer cb = VK_NULL_HANDLE;
+        f.vkAllocateCommandBuffers(device_.device(), &alloc, &cb);
+        s.pieces.push_back(cb);
+      }
+      entry.cb = s.pieces[s.pieces_used++];
+      f.vkResetCommandBuffer(entry.cb, 0);
+      VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+      begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+      f.vkBeginCommandBuffer(entry.cb, &begin);
+      VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
+      rendering.flags = VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
+      rendering.renderArea = seg.area;
+      rendering.layerCount = 1;
+      rendering.colorAttachmentCount = 4;
+      rendering.pColorAttachments = seg.color;
+      rendering.pDepthAttachment = seg.has_depth ? &seg.depth : nullptr;
+      rendering.pStencilAttachment = seg.has_depth ? &seg.depth : nullptr;
+      f.vkCmdBeginRendering(entry.cb, &rendering);
+      s.segment_cbs.clear();
+      for (auto& task : seg.tasks) {
+        s.segment_cbs.push_back(task->cb);
+        s.spent.push_back(std::move(task));
+      }
+      seg.tasks.clear();
+      if (!s.segment_cbs.empty()) f.vkCmdExecuteCommands(entry.cb, uint32_t(s.segment_cbs.size()), s.segment_cbs.data());
+      f.vkCmdEndRendering(entry.cb);
+      f.vkEndCommandBuffer(entry.cb);
+    }
+    s.segment_count = 0;
+  }
+  s.cbs.clear();
+  if (s.upload) s.cbs.push_back(b.upload_cb);
+  for (const Entry& entry : s.order) s.cbs.push_back(entry.cb);
+  VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+  submit.commandBufferCount = uint32_t(s.cbs.size());
+  submit.pCommandBuffers = s.cbs.data();
+  if (f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence) != VK_SUCCESS) Fail("batch submission");
 }
 
 void VulkanRenderer::Flush() {
@@ -1669,44 +1775,12 @@ void VulkanRenderer::Flush() {
   }
   f.vkEndCommandBuffer(last);
   piece_open_ = false;
-  if (segment_count_) {
-    // The render passes the recording threads drew: their chunks recorded, each pass a buffer around them.
-    {
-      std::unique_lock lock(record_mutex_);
-      record_done_cv_.wait(lock, [&] {
-        for (uint32_t i = 0; i < segment_count_; ++i) {
-          for (const auto& task : segments_[i].tasks) {
-            if (!task->done.load(std::memory_order_acquire)) return false;
-          }
-        }
-        return true;
-      });
-    }
-    for (Entry& entry : order_) {
-      if (entry.segment < 0) continue;
-      Segment& s = segments_[entry.segment];
-      entry.cb = NextPiece(b);
-      VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
-      rendering.flags = VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
-      rendering.renderArea = s.area;
-      rendering.layerCount = 1;
-      rendering.colorAttachmentCount = 4;
-      rendering.pColorAttachments = s.color;
-      rendering.pDepthAttachment = s.has_depth ? &s.depth : nullptr;
-      rendering.pStencilAttachment = s.has_depth ? &s.depth : nullptr;
-      f.vkCmdBeginRendering(entry.cb, &rendering);
-      segment_cbs_.clear();
-      for (auto& task : s.tasks) {
-        segment_cbs_.push_back(task->cb);
-        spare_tasks_.push_back(std::move(task));
-      }
-      s.tasks.clear();
-      if (!segment_cbs_.empty()) f.vkCmdExecuteCommands(entry.cb, uint32_t(segment_cbs_.size()), segment_cbs_.data());
-      f.vkCmdEndRendering(entry.cb);
-      f.vkEndCommandBuffer(entry.cb);
-    }
-    segment_count_ = 0;
-  }
+  const uint32_t submitted = current_;
+  Submission& submission = submissions_[submitted];
+  std::swap(submission.order, order_);
+  std::swap(submission.segments, segments_);
+  submission.segment_count = segment_count_;
+  segment_count_ = 0;
   submitted_at_[uint32_t(&b - batches_.data())] = std::chrono::steady_clock::now();
   // Guest memory the batch's shaders fetch from: read in place, or copied once here (the draws run now, so they
   // see memory as it is now either way).
@@ -1759,16 +1833,18 @@ void VulkanRenderer::Flush() {
     upload = true;
   }
   if (textures_) textures_->TakeStaging(b.staging);  // the batch's uploads read them
-  std::vector<VkCommandBuffer>& cbs = submit_cbs_;
-  cbs.clear();
-  if (upload) cbs.push_back(b.upload_cb);
-  for (const Entry& entry : order_) cbs.push_back(entry.cb);
-  VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-  submit.commandBufferCount = uint32_t(cbs.size());
-  submit.pCommandBuffers = cbs.data();
-  if (f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence) != VK_SUCCESS) Fail("batch submission");
+  submission.upload = upload;
+  if (submitter_.joinable()) {
+    // Submitted by its thread, once its render passes' chunks are recorded: no wait for them here.
+    {
+      std::lock_guard lock(submit_mutex_);
+      to_submit_.push_back(submitted);
+    }
+    submit_cv_.notify_one();
+  } else {
+    Submit(submitted);
+  }
   batch_open_ = false;
-  const uint32_t submitted = current_;
   {
     std::lock_guard lock(done_mutex_);
     b.done = false;
@@ -1782,6 +1858,8 @@ void VulkanRenderer::Flush() {
   WaitBatch(current_);
   Batch& next = batch();
   f.vkResetFences(d, 1, &next.fence);
+  for (auto& task : submissions_[current_].spent) spare_tasks_.push_back(std::move(task));
+  submissions_[current_].spent.clear();
   // The recording threads' command buffers for this batch are free again (every chunk of it was recorded before its
   // submission).
   for (auto& w : workers_) {

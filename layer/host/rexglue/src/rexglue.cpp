@@ -190,6 +190,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     if ((w != width_ || h != height_) && !Resize()) return;
     const Frame& f = frame();
     if (!f.width || !f.height) return;
+    WaitSubmitted();  // the frame's batches on the queue before the present's
     const bool shown = f.on_gpu ? presenter_.Present([this](VkCommandBuffer cb, VkImage target, VkOffset3D a,
                                                             VkOffset3D b) { RecordFrameBlit(cb, target, a, b); },
                                                      f.width, f.height)
