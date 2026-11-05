@@ -642,6 +642,10 @@ void UserProfileTests() {
   CHECK(XamState().UserContentRestrictionCheckAccess(g, out, 0) == 0 && g.Load32(out) == 1);
   CHECK(XamState().UserContentRestrictionCheckAccess(g, out, ov) == kErrorIoPending && g.Load32(ov) == 0);
   CHECK(XamState().UserGetDeviceContext(g, 0x1FF, out) == 0 && XamState().UserGetDeviceContext(g, 2, out) == 0x8007048Fu);
+  // The empty online schema: one pair (pointer, 44 bytes) whatever the number of calls.
+  const uint32_t schema = XamState().GetOnlineSchema(g);
+  CHECK(schema != 0 && XamState().GetOnlineSchema(g) == schema && g.Load32(schema) == schema + 8 && g.Load32(schema + 4) == 44 &&
+        g.Load8(schema + 8 + 15) == 0x2C);
   XamState().Reset();
 }
 

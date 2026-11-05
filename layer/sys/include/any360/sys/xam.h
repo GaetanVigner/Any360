@@ -101,6 +101,9 @@ class Xam {
   // XamUserGetDeviceContext: no device context (0); success for user 0 or "any user" (0xFF in the low byte), else the
   // DEVICE_NOT_CONNECTED HRESULT, as the reference.
   uint32_t UserGetDeviceContext(Guest g, uint32_t user, uint32_t context_out);
+  // XamGetOnlineSchema: the address of a (schema pointer, size) pair describing an empty Live schema (the reference's
+  // 44 bytes), created once in the kernel heap.
+  uint32_t GetOnlineSchema(Guest g);
   uint32_t ShowMessageBoxUI(Guest g, uint32_t result_ptr, uint32_t overlapped);
   uint32_t ShowDeviceSelectorUI(Guest g, uint32_t device_id_ptr, uint32_t overlapped);
   // The virtual keyboard, accepted at once with its default text (the buffer emptied without one), truncated to the
@@ -246,6 +249,7 @@ class Xam {
   Listener* FindListener(uint32_t handle);
   Enumerator* FindEnumerator(uint32_t handle);
   std::filesystem::path ContentPath(Guest g, uint32_t content_data) const;
+  uint32_t online_schema_ = 0;
   // The packages of a type as enumerator items of `item_size` bytes starting with their XCONTENT_DATA, sorted by name.
   std::vector<std::vector<uint8_t>> ContentItems(uint32_t device_id, uint32_t content_type, uint32_t item_size) const;
 

@@ -1003,6 +1003,13 @@ ANY360_SYS_EXPORT(XUsbcamGetState) { ctx.r3.u64 = 0; }
 // Batch 29: RSA's public operation (sys_io_tests against the reference).
 ANY360_SYS_EXPORT(XeCryptBnQwNeRsaPubCrypt) { ctx.r3.u64 = XeCryptBnQwNeRsaPubCrypt({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 
+// Batch 30: the last of XAM's (sys_io_tests against the reference, sys_object_tests).
+ANY360_SYS_EXPORT(XamGetOnlineSchema) { ctx.r3.u64 = XamState().GetOnlineSchema({base}); }
+ANY360_SYS_EXPORT(XamQueryLiveHiveW) { ctx.r3.u64 = 0xC00000EF; }  // STATUS_INVALID_PARAMETER_1: no Live hive offline
+ANY360_SYS_EXPORT(XamSwapDisc) { ctx.r3.u64 = 0; }                 // the one disc stays in, as the reference answers
+ANY360_SYS_EXPORT(XAudioEnableDucker) { ctx.r3.u64 = 0; }          // no voice chat to duck under
+ANY360_SYS_EXPORT(XCustomRegisterDynamicActions) {}               // the guide's custom actions are not shown
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1386,6 +1393,11 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ExAllocatePool),
     ANY360_SYS_ENTRY(ExFreePool),
     ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(XamGetOnlineSchema),
+    ANY360_SYS_ENTRY(XamQueryLiveHiveW),
+    ANY360_SYS_ENTRY(XamSwapDisc),
+    ANY360_SYS_ENTRY(XAudioEnableDucker),
+    ANY360_SYS_ENTRY(XCustomRegisterDynamicActions),
     ANY360_SYS_ENTRY(XeCryptBnQwNeRsaPubCrypt),
     ANY360_SYS_ENTRY(XamInputGetCapabilitiesEx),
     ANY360_SYS_ENTRY(XamInputGetKeystroke),

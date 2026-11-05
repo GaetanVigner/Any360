@@ -59,6 +59,7 @@ void Xam::Reset() {
   title_ = {};
   listeners_.clear();
   enumerators_.clear();
+  online_schema_ = 0;
   Objects().AddCloseHook([](uint32_t object) { XamState().OnClose(object); });
   system_module_ = 0;
   settings_.clear();
@@ -164,6 +165,23 @@ uint32_t Xam::UserContentRestrictionGetRating(Guest g, uint32_t user, uint32_t r
 uint32_t Xam::UserContentRestrictionCheckAccess(Guest g, uint32_t allowed_out, uint32_t overlapped) {
   g.Store32(allowed_out, 1);
   return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::GetOnlineSchema(Guest g) {
+  // An empty schema: counts of zero and section offsets all at its end (0x2C), as the reference has it.
+  static constexpr uint8_t kSchema[] = {
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2C, 0x00, 0x00, 0x00, 0x2C, 0x00, 0x00,
+      0x00, 0x2C, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18,
+  };
+  if (!online_schema_) {
+    const uint32_t at = Objects().AllocateObject(8 + sizeof kSchema);
+    if (!at) return 0;
+    std::memcpy(g.host(at + 8), kSchema, sizeof kSchema);
+    g.Store32(at, at + 8);
+    g.Store32(at + 4, sizeof kSchema);
+    online_schema_ = at;
+  }
+  return online_schema_;
 }
 
 uint32_t Xam::UserGetDeviceContext(Guest g, uint32_t user, uint32_t context_out) {

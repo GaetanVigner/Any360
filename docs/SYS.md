@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (594 system calls)
+## What is verified (599 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -188,6 +188,11 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XMACreateContext` / `XMAReleaseContext` (64-byte contexts in physical memory, announced to an `XmaBackend`). Guest
   callbacks run through `Scheduler::CreateContext` and `Scheduler::Dispatch`. The renderer, the audio output and the
   XMA decoder are the backends still to write.
+- **The last of XAM's** (`sys_io_tests` against the reference, `sys_object_tests`): `XamGetOnlineSchema` (an empty
+  Live schema, created once), `XamQueryLiveHiveW` (STATUS_INVALID_PARAMETER_1: no Live hive offline), `XamSwapDisc`
+  (success, the one disc stays in), `XAudioEnableDucker` (success), `XCustomRegisterDynamicActions` (nothing to show).
+  Every call the reference implements is now native except the video group's four variables (the GPU session's),
+  `KeGetImagePageTableEntry` and the two encrypted memory calls.
 - **Input and absent devices** (`sys_io_tests` against the reference for the devices):
   `XamInputGetCapabilitiesEx` and `XamInputGetKeystroke` on the existing input code (and `XamInputGetKeystrokeEx` now
   writes the keystroke's user back, as the reference); no Kinect (`XamNuiGetDeviceStatus` zeroed), no HID keyboard or

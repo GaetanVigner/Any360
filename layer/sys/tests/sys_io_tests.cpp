@@ -76,6 +76,10 @@ REFERENCE(__C_specific_handler)
 REFERENCE(VdShutdownEngines)
 REFERENCE(VdSetSystemCommandBufferGpuIdentifierAddress)
 REFERENCE(XeCryptSha)
+REFERENCE(XamQueryLiveHiveW)
+REFERENCE(XamSwapDisc)
+REFERENCE(XAudioEnableDucker)
+REFERENCE(XCustomRegisterDynamicActions)
 REFERENCE(XeCryptBnQwNeRsaPubCrypt)
 REFERENCE(XamNuiGetDeviceStatus)
 REFERENCE(HidReadKeys)
@@ -635,6 +639,10 @@ const Case kCases[] = {
       ctx.r5.u64 = rng() % 32;
     }),
     CASE(XeCryptBnDwLePkcs1Verify, nullptr),
+    CASE(XamQueryLiveHiveW, nullptr),
+    CASE(XamSwapDisc, nullptr),
+    CASE(XAudioEnableDucker, nullptr),
+    CASE(XCustomRegisterDynamicActions, nullptr),
     // RSA: an odd modulus of 512 to 2048 bits with its top bit set, an input below it, exponent 3 or 65537.
     CASE(XeCryptBnQwNeRsaPubCrypt, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
       const uint32_t words = 8 + rng() % 25, key = kBlockA + 0x400, in = kBlockB + 0x100, out = kBlockB + 0x800;
