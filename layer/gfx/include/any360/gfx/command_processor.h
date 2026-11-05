@@ -89,6 +89,11 @@ class Renderer {
   virtual void OcclusionQuery(bool /*end*/, uint32_t /*address*/) {}
 };
 
+// A 64-bit key's bits mixed, for hash maps looked up per shader load or draw (std::hash hashes it a byte at a time).
+struct WordHash {
+  size_t operator()(uint64_t v) const { return size_t((v ^ (v >> 29)) * 0xBF58476D1CE4E5B9ull >> 16); }
+};
+
 class CommandProcessor : public sys::GpuBackend {
  public:
   // `physical`: the guest's 512 MB of physical memory; an address is masked with 0x1FFFFFFF.
@@ -291,7 +296,7 @@ class CommandProcessor : public sys::GpuBackend {
     std::vector<uint32_t> microcode;
     uint64_t hash;
   };
-  std::unordered_map<uint64_t, LoadedShader> loaded_shaders_;
+  std::unordered_map<uint64_t, LoadedShader, WordHash> loaded_shaders_;
   bool writes_after_draws_ = true, fences_after_draws_ = true;
   std::thread worker_;
 };

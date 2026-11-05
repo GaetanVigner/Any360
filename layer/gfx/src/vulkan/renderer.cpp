@@ -239,7 +239,7 @@ VulkanRenderer::~VulkanRenderer() {
     DestroyImage(device_, surface->image);
     DestroyImage(device_, surface->ms);
   }
-  for (auto& [base, r] : resolved_) DestroyImage(device_, r.image), DestroyImage(device_, r.small);
+  for (auto& [base, r] : resolved_) DestroyImage(device_, r.image), DestroyImage(device_, r.small), DestroyImage(device_, r.spare);
 }
 
 bool VulkanRenderer::Fail(const std::string& why) {
@@ -3451,6 +3451,21 @@ void VulkanRenderer::Invalidate(uint32_t base, uint32_t size) {
 bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t pitch, uint32_t rows,
                                         VkImageUsageFlags usage) {
   if (r.image.image && r.image.format == format && r.image.width >= pitch && r.image.height >= rows) return true;
+  if (r.image.image && r.image.format != format) {
+    // Another format: the spare if it is this one and large enough, the current one kept as the spare.
+    if (r.spare.image && r.spare.format == format && r.spare_scale == r.scale && r.spare.width >= pitch && r.spare.height >= rows) {
+      std::swap(r.image, r.spare);
+      std::swap(r.layout, r.spare_layout);
+      return true;
+    }
+    if (r.spare.image) {
+      Record();
+      batch().retired.push_back(r.spare);  // batches may still read it: freed after this one has run
+    }
+    r.spare = r.image, r.spare_layout = r.layout, r.spare_scale = r.scale;
+    r.image = Image{};
+    r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  }
   Image grown;
   const bool keep = r.image.image && r.image.format == format;
   if (!CreateImage2D(device_, std::max(pitch, keep ? r.image.width : 0u), std::max({rows, 32u, keep ? r.image.height : 0u}),

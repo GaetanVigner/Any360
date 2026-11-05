@@ -76,7 +76,7 @@ class AsyncRenderer : public Renderer {
   std::condition_variable work_, room_;
   std::thread worker_;
   std::vector<uint32_t> shadow_;  // the worker's register file
-  std::unordered_map<uint64_t, std::unique_ptr<Shader>> shaders_;  // by type and hash (the producer's)
+  std::unordered_map<uint64_t, std::unique_ptr<Shader>, WordHash> shaders_;  // by type and hash (the producer's)
 };
 
 }  // namespace any360::gfx

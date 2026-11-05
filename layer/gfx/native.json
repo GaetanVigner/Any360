@@ -139,6 +139,7 @@
   "shader fetch:kSetTextureGradientsHorz",
   "shader fetch:kSetTextureGradientsVert",
   "shader fetch:kGetTextureWeights",
+  "shader fetch:kGetTextureBorderColorFrac",
   "vertex formats:k_8_8_8_8",
   "vertex formats:k_2_10_10_10",
   "vertex formats:k_10_11_11",

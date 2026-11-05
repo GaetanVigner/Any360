@@ -502,11 +502,13 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
     case ucode::FetchOpcode::kTextureFetch:
       break;
     case ucode::FetchOpcode::kGetTextureBorderColorFrac:
-      // TODO(Triang3l): Bind a black texture with a white border to calculate
-      // the border color fraction (in the X component of the result).
-      assert_always();
-      EmitTranslationError("getBCF is unimplemented", false);
-      used_result_nonzero_components = 0;
+      // any360: the border color fraction (X): the share of the filtered footprint the border texels make, worked
+      // out from the coordinates like getWeights (at the base level, the LOD disregarded), see below. Cube maps
+      // have no border (their faces wrap into each other): 0.
+      used_result_nonzero_components &= 0b0001;
+      if (instr.dimension == xenos::FetchOpDimension::kCube) {
+        used_result_nonzero_components = 0;
+      }
       break;
     case ucode::FetchOpcode::kGetTextureComputedLod:
       break;
@@ -573,7 +575,13 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
           (derivative_component_index & 0b10) ? derivative_function_y : derivative_function_x);
     }
   } else {
-    // kTextureFetch, kGetTextureComputedLod or kGetTextureWeights.
+    // kTextureFetch, kGetTextureComputedLod, kGetTextureWeights or (any360) kGetTextureBorderColorFrac.
+    // any360: getBCF follows getWeights (no texture binding, unnormalized coordinates less half a texel), over all
+    // of the dimension's axes.
+    const bool border_color_frac = instr.opcode == ucode::FetchOpcode::kGetTextureBorderColorFrac;
+    const bool weights_like = instr.opcode == ucode::FetchOpcode::kGetTextureWeights || border_color_frac;
+    const uint32_t border_color_frac_axes =
+        border_color_frac ? (UINT32_C(1) << xenos::GetFetchOpDimensionComponentCount(instr.dimension)) - 1 : 0;
 
     // Whether to use gradients (implicit or explicit) for LOD calculation.
     bool use_computed_lod = instr.attributes.use_computed_lod &&
@@ -597,7 +605,7 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
     spv::Id image_2d_array_or_cube_signed = spv::NoResult;
     spv::Id image_3d_unsigned = spv::NoResult;
     spv::Id image_3d_signed = spv::NoResult;
-    if (instr.opcode != ucode::FetchOpcode::kGetTextureWeights) {
+    if (!weights_like) {
       bool bindings_set_up = true;
       // While GL_ARB_texture_query_lod specifies the value for
       // GL_NEAREST_MIPMAP_NEAREST and GL_LINEAR_MIPMAP_NEAREST minifying
@@ -695,7 +703,7 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
       switch (instr.dimension) {
         case xenos::FetchOpDimension::k1D:
           offset_values[0] = instr.attributes.offset_x + kRoundingOffset;
-          if (instr.opcode == ucode::FetchOpcode::kGetTextureWeights) {
+          if (weights_like) {
             // For coordinate lerp factors. This needs to be done separately for
             // point mag/min filters, but they're currently not handled here
             // anyway.
@@ -705,7 +713,7 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
         case xenos::FetchOpDimension::k2D:
           offset_values[0] = instr.attributes.offset_x + kRoundingOffset;
           offset_values[1] = instr.attributes.offset_y + kRoundingOffset;
-          if (instr.opcode == ucode::FetchOpcode::kGetTextureWeights) {
+          if (weights_like) {
             offset_values[0] -= 0.5f;
             offset_values[1] -= 0.5f;
           }
@@ -714,7 +722,7 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
           offset_values[0] = instr.attributes.offset_x + kRoundingOffset;
           offset_values[1] = instr.attributes.offset_y + kRoundingOffset;
           offset_values[2] = instr.attributes.offset_z + kRoundingOffset;
-          if (instr.opcode == ucode::FetchOpcode::kGetTextureWeights) {
+          if (weights_like) {
             offset_values[0] -= 0.5f;
             offset_values[1] -= 0.5f;
             offset_values[2] -= 0.5f;
@@ -725,7 +733,7 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
           // passes processing cube map faces themselves.
           offset_values[0] = instr.attributes.offset_x + kRoundingOffset;
           offset_values[1] = instr.attributes.offset_y + kRoundingOffset;
-          if (instr.opcode == ucode::FetchOpcode::kGetTextureWeights) {
+          if (weights_like) {
             offset_values[0] -= 0.5f;
             offset_values[1] -= 0.5f;
             // The logic for ST weights is the same for all faces.
@@ -760,7 +768,10 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
     // 3D: X - width, Y - height, Z - depth.
     uint32_t size_needed_components = 0b000;
     bool data_is_3d_needed = false;
-    if (instr.opcode == ucode::FetchOpcode::kGetTextureWeights) {
+    if (border_color_frac) {
+      // any360: the size of every axis, the border being outside it.
+      size_needed_components = border_color_frac_axes;
+    } else if (instr.opcode == ucode::FetchOpcode::kGetTextureWeights) {
       // Size needed for denormalization for coordinate lerp factor.
       // FIXME(Triang3l): Currently disregarding the LOD completely in
       // getWeights. However, if the LOD lerp factor and the LOD where filtering
@@ -952,7 +963,8 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
 
     // Load the needed original values of the coordinates operand.
     uint32_t coordinates_needed_components =
-        instr.opcode == ucode::FetchOpcode::kGetTextureWeights
+        border_color_frac ? border_color_frac_axes
+        : instr.opcode == ucode::FetchOpcode::kGetTextureWeights
             ? used_result_nonzero_components
             : ((UINT32_C(1) << xenos::GetFetchOpDimensionComponentCount(instr.dimension)) - 1);
     assert_not_zero(coordinates_needed_components);
@@ -1004,9 +1016,10 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
       }
     }
 
-    if (instr.opcode == ucode::FetchOpcode::kGetTextureWeights) {
+    if (weights_like) {
       uint32_t resolution_scaled_result_components =
-          used_result_nonzero_components & revert_resolution_scale_axes;
+          (border_color_frac ? border_color_frac_axes : used_result_nonzero_components) &
+          revert_resolution_scale_axes;
       uint32_t resolution_scaled_coord_components =
           instr.attributes.unnormalized_coordinates ? resolution_scaled_result_components : 0b000;
       uint32_t resolution_scaled_size_components =
@@ -1032,10 +1045,98 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
         }
       }
 
+      if (border_color_frac) {
+        // any360: per axis, the taps of the magnification filter (linear: the texels either side of the
+        // coordinate less half a texel, weighted by its fraction; point: the nearer one) and the weight of those
+        // outside the texture where the axis clamps to the border (ClampToBorder, MirrorClampToBorder mirrored
+        // about 0 first); the border fraction is 1 less the product of each axis' share inside. 3D only for Z
+        // (stacked layers are not filtered).
+        auto fetch_word = [&](uint32_t word) {
+          id_vector_temp_.clear();
+          id_vector_temp_.push_back(const_int_0_);
+          id_vector_temp_.push_back(builder_->makeIntConstant(int((fetch_constant_word_0_index + word) >> 2)));
+          id_vector_temp_.push_back(builder_->makeIntConstant(int((fetch_constant_word_0_index + word) & 3)));
+          return builder_->createLoad(
+              builder_->createAccessChain(spv::StorageClassUniform, uniform_fetch_constants_, id_vector_temp_),
+              spv::NoPrecision);
+        };
+        spv::Id word_0 = fetch_word(0);
+        spv::Id mag_filter =
+            instr.attributes.mag_filter == xenos::TextureFilter::kUseFetchConst
+                ? builder_->createTriOp(spv::OpBitFieldUExtract, type_uint_, fetch_word(3),
+                                        builder_->makeUintConstant(19), builder_->makeUintConstant(2))
+                : builder_->makeUintConstant(uint32_t(instr.attributes.mag_filter));
+        spv::Id linear = builder_->createBinOp(spv::OpIEqual, type_bool_, mag_filter,
+                                               builder_->makeUintConstant(uint32_t(xenos::TextureFilter::kLinear)));
+        spv::Id const_int_1 = builder_->makeIntConstant(1);
+        spv::Id inside = const_float_1_;
+        uint32_t axes_remaining = border_color_frac_axes;
+        uint32_t axis;
+        while (rex::bit_scan_forward(axes_remaining, &axis)) {
+          axes_remaining &= ~(UINT32_C(1) << axis);
+          spv::Id t = coordinates[axis];
+          if (!instr.attributes.unnormalized_coordinates) {
+            t = builder_->createNoContractionBinOp(spv::OpFMul, type_float_, t, size[axis]);
+          }
+          if (offset_values[axis]) {
+            t = builder_->createNoContractionBinOp(spv::OpFAdd, type_float_, t,
+                                                   builder_->makeFloatConstant(offset_values[axis]));
+          }
+          spv::Id t_floor = builder_->createUnaryBuiltinCall(type_float_, ext_inst_glsl_std_450_, GLSLstd450Floor, t);
+          spv::Id fraction = builder_->createBinOp(spv::OpFSub, type_float_, t, t_floor);
+          spv::Id tap_0 = builder_->createUnaryOp(spv::OpConvertFToS, type_int_, t_floor);
+          spv::Id tap_1 = builder_->createBinOp(spv::OpIAdd, type_int_, tap_0, const_int_1);
+          spv::Id clamp = builder_->createTriOp(spv::OpBitFieldUExtract, type_uint_, word_0,
+                                                builder_->makeUintConstant(10 + 3 * axis), builder_->makeUintConstant(3));
+          spv::Id mirror = builder_->createBinOp(
+              spv::OpIEqual, type_bool_, clamp,
+              builder_->makeUintConstant(uint32_t(xenos::ClampMode::kMirrorClampToBorder)));
+          spv::Id border = builder_->createBinOp(
+              spv::OpLogicalOr, type_bool_, mirror,
+              builder_->createBinOp(spv::OpIEqual, type_bool_, clamp,
+                                    builder_->makeUintConstant(uint32_t(xenos::ClampMode::kClampToBorder))));
+          spv::Id size_int = builder_->createUnaryOp(spv::OpConvertFToS, type_int_, size[axis]);
+          auto outside = [&](spv::Id tap) {
+            // Mirrored about 0: texel -1 - i is texel i.
+            spv::Id mirrored = builder_->createTriOp(
+                spv::OpSelect, type_int_,
+                builder_->createBinOp(spv::OpLogicalAnd, type_bool_, mirror,
+                                      builder_->createBinOp(spv::OpSLessThan, type_bool_, tap, const_int_0_)),
+                builder_->createBinOp(spv::OpISub, type_int_, builder_->makeIntConstant(-1), tap), tap);
+            spv::Id out = builder_->createBinOp(
+                spv::OpLogicalOr, type_bool_,
+                builder_->createBinOp(spv::OpSLessThan, type_bool_, mirrored, const_int_0_),
+                builder_->createBinOp(spv::OpSGreaterThanEqual, type_bool_, mirrored, size_int));
+            return builder_->createTriOp(spv::OpSelect, type_float_, out, const_float_1_, const_float_0_);
+          };
+          spv::Id out_0 = outside(tap_0), out_1 = outside(tap_1);
+          spv::Id linear_weight = builder_->createBinOp(
+              spv::OpFAdd, type_float_,
+              builder_->createBinOp(spv::OpFMul, type_float_, out_0,
+                                    builder_->createBinOp(spv::OpFSub, type_float_, const_float_1_, fraction)),
+              builder_->createBinOp(spv::OpFMul, type_float_, out_1, fraction));
+          spv::Id point_weight = builder_->createTriOp(
+              spv::OpSelect, type_float_,
+              builder_->createBinOp(spv::OpFOrdGreaterThanEqual, type_bool_,
+                                    fraction, builder_->makeFloatConstant(0.5f)),
+              out_1, out_0);
+          spv::Id weight = builder_->createTriOp(spv::OpSelect, type_float_, linear, linear_weight, point_weight);
+          spv::Id applies = border;
+          if (axis == 2) {
+            assert_true(data_is_3d != spv::NoResult);
+            applies = builder_->createBinOp(spv::OpLogicalAnd, type_bool_, applies, data_is_3d);
+          }
+          weight = builder_->createTriOp(spv::OpSelect, type_float_, applies, weight, const_float_0_);
+          inside = builder_->createBinOp(spv::OpFMul, type_float_, inside,
+                                         builder_->createBinOp(spv::OpFSub, type_float_, const_float_1_, weight));
+        }
+        result[0] = builder_->createBinOp(spv::OpFSub, type_float_, const_float_1_, inside);
+      }
       // FIXME(Triang3l): Filtering modes should possibly be taken into account,
       // but for simplicity, not doing that - from a high level point of view,
       // would be useless to get weights that will always be zero.
-      uint32_t coordinates_remaining_components = coordinates_needed_components;
+      uint32_t coordinates_remaining_components =
+          border_color_frac ? 0 : coordinates_needed_components;
       uint32_t coordinate_component_index;
       while (rex::bit_scan_forward(coordinates_remaining_components, &coordinate_component_index)) {
         coordinates_remaining_components &= ~(UINT32_C(1) << coordinate_component_index);

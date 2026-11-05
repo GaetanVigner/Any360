@@ -124,7 +124,8 @@ runtime thread) and a completion port the runtime made; Crackdown uses neither.
 
 ## Step 3: done (the objects in Crackdown)
 
-With `stateless,files,objects` Crackdown loads and plays (2026-11-05, 143-157 FPS in play, no hang in four minutes);
+With `stateless,files,objects` Crackdown loads and plays (2026-11-05, no hang in four minutes, the same frame rate as
+with the files alone);
 its object calls are the events (`Nt*Event`, `Ke*Event`), semaphores, mutants, `NtDuplicateObject`, `NtClose`,
 `ObDereferenceObject` and the single and multiple waits.
 
@@ -138,6 +139,10 @@ What the game found that the tests could not:
   The waits sleep on a condition the routines signal instead of spinning, and look again every millisecond for states
   written elsewhere (the title's inline `stw 0,4(r3)` resets, the other kernel). `sys_object_tests` has a
   four-producer, four-consumer test.
+- Waking every wait on each signal (one condition for all) cost 17-22% of the frame rate: a dozen of the title's
+  threads woke and queued on the lock for each event. A wait now sleeps on its thread's own condition, listed under
+  the objects it waits on, and a signal wakes only those. Same city route, files only against files and objects:
+  262 and 270 FPS (2026-11-05).
 - The object type variables (`ExEventObjectType`...) stay the runtime's: a title only hands them back to
   `ObReferenceObjectByHandle` and its kin, which any360::sys ignores and the runtime checks for the handles it keeps.
 - A redirection the title sets up on the runtime's VFS (Crackdown's HD button glyphs over `game:\Local\<language>`)

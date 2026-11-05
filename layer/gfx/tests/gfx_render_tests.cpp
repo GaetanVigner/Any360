@@ -1803,7 +1803,31 @@ int main(int argc, char** argv) {
       weights.opcode = F::kGetTextureWeights, weights.mag = weights.min = 1, weights.mip = 0;
       weights.dest_swizzle = 0 | 1 << 3 | kXYKeep;
       fetch_case("kGetTextureWeights", false, {tex(weights)}, 0b1, {}, {}, 0.5f, 0.5f, 1.0f / 256);
-      // kGetTextureBorderColorFrac: not tested, the translator does not implement it (a translation error).
+      // Border colour fraction, at coordinates c0.xy (in r2) on the 32x32 texture with X clamped to the border and Y
+      // mirror-clamped to it: the share of the footprint outside the texture. Linear (texel coordinate u * 32 - 0.5):
+      // inside 0; u = 0, half the left texel pair outside 0.5; v = 1, half the bottom pair 0.5; both 1 - 0.5 * 0.5;
+      // v = 0 mirrors texel -1 onto texel 0, inside: 0. Point, u = -1/32: the one texel outside, 1. Both in x and y.
+      t::Tex border;
+      border.opcode = F::kGetTextureBorderColorFrac, border.src = 2, border.mag = border.min = 1, border.mip = 0;
+      border.dest_swizzle = 0 | 0 << 3 | kXYKeep;
+      auto border_bind = [&s, quad, small] {
+        s.Shader(0, t::BuildTexturedVertexShader());
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+        s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 6u << 10 | 7u << 13 | 1u << 22, 6u | 2u << 6 | small,
+               31u | 31u << 13, 0x688u << 1, 0, 1u << 9});
+      };
+      struct Border {
+        float u, v, fraction;
+        bool point;
+      };
+      for (const Border& b : {Border{0.5f, 0.5f, 0, false}, Border{0, 0.5f, 0.5f, false}, Border{0.5f, 1, 0.5f, false},
+                              Border{0, 1, 0.75f, false}, Border{0.5f, 0, 0, false}, Border{-1.0f / 32, 0.5f, 1, true}}) {
+        t::Tex at = border;
+        if (b.point) at.mag = at.min = 0;
+        fetch_case("kGetTextureBorderColorFrac", false, {alu(load_r2), tex(at)}, 0b10, {b.u, b.v}, {}, b.fraction,
+                   b.fraction, 1.0f / 256);
+        cases.back().setup = border_bind;
+      }
     }
 
     // Vertex formats: a full-target quad whose vertices carry, after their float4 position, four dwords of an

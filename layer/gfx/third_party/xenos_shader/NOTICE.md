@@ -46,6 +46,9 @@ Each vendored file also keeps its original header.
 - `spirv_translator.cpp` `StoreResult`: a position export in the memexport compute translation
   (`HostVertexShaderType::kMemExportCompute`, which has no gl_PerVertex output) is dropped instead of crashing the
   translation; the reference's Vulkan backend never used that translation.
+- `spirv_translator_fetch.cpp`: `getBCF` (kGetTextureBorderColorFrac), unimplemented in the reference (a
+  translation error), is worked out from the coordinates along getWeights' path: the magnification filter's taps
+  outside the texture on axes clamped to the border, at the base level.
 
 ## Ours: `shim/include/rex/...`
 

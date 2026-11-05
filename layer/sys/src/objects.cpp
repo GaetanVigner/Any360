@@ -191,7 +191,7 @@ uint32_t ObjectManager::SetEvent(Guest g, uint32_t event) {
   std::lock_guard lock(dispatcher_mutex_);
   const uint32_t previous = g.Load32(event + kHeaderSignalState);
   g.Store32(event + kHeaderSignalState, 1);  // a waiter consumes a synchronization event
-  dispatcher_changed_.notify_all();
+  Wake(event);
   return previous;
 }
 
@@ -223,7 +223,7 @@ uint32_t ObjectManager::ReleaseSemaphore(Guest g, uint32_t semaphore, uint32_t a
     return previous;
   }
   g.Store32(semaphore + kHeaderSignalState, previous + adjustment);
-  dispatcher_changed_.notify_all();
+  Wake(semaphore);
   status = kStatusSuccess;
   return previous;
 }
@@ -271,6 +271,7 @@ void ObjectManager::Poll(Guest g) {
       continue;
     }
     g.Store32(timer + kHeaderSignalState, 1);
+    Wake(timer);
     if (const auto apc = timer_apcs_.find(timer); apc != timer_apcs_.end()) {
       const TimerApc& a = apc->second;
       Threads().QueueApcTo(a.thread, a.routine, a.context, uint32_t(now), uint32_t(now >> 32));
@@ -305,7 +306,7 @@ uint32_t ObjectManager::ReleaseMutant(Guest g, uint32_t mutant, uint32_t current
   const uint32_t state = previous + 1;
   g.Store32(mutant + kHeaderSignalState, state);
   if (state == 1) g.Store32(mutant + kMutantOwner, 0);
-  dispatcher_changed_.notify_all();
+  Wake(mutant);
   status = kStatusSuccess;
   return previous;
 }
@@ -621,6 +622,45 @@ bool ObjectManager::IsSatisfiable(Guest g, uint32_t object, uint32_t thread) con
   return state != 0;
 }
 
+// A wait's place on its objects' lists while it sleeps (under dispatcher_mutex_): the thread's own condition.
+class ObjectManager::WaitRegistration {
+ public:
+  WaitRegistration(ObjectManager& manager, const uint32_t* objects, uint32_t count)
+      : manager_(manager), objects_(objects), count_(count) {
+    for (uint32_t i = 0; i < count; ++i) manager.waiters_.emplace(objects[i], &waiter_);
+  }
+  ~WaitRegistration() {
+    for (uint32_t i = 0; i < count_; ++i) {
+      auto [first, last] = manager_.waiters_.equal_range(objects_[i]);
+      for (auto it = first; it != last; ++it) {
+        if (it->second == &waiter_) {
+          manager_.waiters_.erase(it);
+          break;
+        }
+      }
+    }
+  }
+  void Sleep(std::unique_lock<std::recursive_mutex>& lock) const { waiter_.ready.wait_for(lock, std::chrono::milliseconds(1)); }
+
+ private:
+  ObjectManager& manager_;
+  const uint32_t* objects_;
+  uint32_t count_;
+  static thread_local Waiter waiter_;
+};
+
+thread_local ObjectManager::Waiter ObjectManager::WaitRegistration::waiter_;
+
+void ObjectManager::Wake(uint32_t object) {
+  auto [first, last] = waiters_.equal_range(object);
+  for (auto it = first; it != last; ++it) it->second->ready.notify_one();
+}
+
+void ObjectManager::SignalChanged(uint32_t object) {
+  std::lock_guard lock(dispatcher_mutex_);
+  Wake(object);
+}
+
 uint32_t ObjectManager::WaitForObjects(Guest g, uint32_t count, const uint32_t* objects, uint32_t wait_type, uint32_t thread,
                                        const int64_t* timeout, bool alertable) {
   auto attempt = [&]() -> int32_t {
@@ -643,8 +683,9 @@ uint32_t ObjectManager::WaitForObjects(Guest g, uint32_t count, const uint32_t* 
   const auto limit = WaitLimit(timeout);
   if (limit.count() == 0) return kStatusTimeout;
   const auto start = std::chrono::steady_clock::now();
+  const WaitRegistration registration(*this, objects, count);
   for (;;) {
-    dispatcher_changed_.wait_for(lock, std::chrono::milliseconds(1));
+    registration.Sleep(lock);
     taken = attempt();
     if (taken >= 0) return uint32_t(taken);
     if (alertable && Threads().PendingApcs(thread)) return kStatusUserApc;
@@ -673,8 +714,9 @@ uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread,
   const auto limit = WaitLimit(timeout);
   if (limit.count() == 0) return kStatusTimeout;
   const auto start = std::chrono::steady_clock::now();
+  const WaitRegistration registration(*this, &object, 1);
   for (;;) {
-    dispatcher_changed_.wait_for(lock, std::chrono::milliseconds(1));
+    registration.Sleep(lock);
     Poll(g);
     if (TrySatisfy(g, object, thread)) return kStatusSuccess;
     if (alertable && Threads().PendingApcs(thread)) return kStatusUserApc;
