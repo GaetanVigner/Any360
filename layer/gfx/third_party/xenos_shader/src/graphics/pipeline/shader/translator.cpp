@@ -72,6 +72,12 @@ void Shader::AnalyzeUcode(string::StringBuffer& ucode_disasm_buffer) {
       switch (cf.opcode()) {
         case ControlFlowOpcode::kCondCall:
           label_addresses_.insert(cf.cond_call.address());
+          // any360: the instruction after a call is where its return goes back to.
+          label_addresses_.insert(i * 2 + j + 1);
+          break;
+        case ControlFlowOpcode::kReturn:
+          // any360: outside a function, a return goes on with the next instruction.
+          label_addresses_.insert(i * 2 + j + 1);
           break;
         case ControlFlowOpcode::kCondJmp:
           label_addresses_.insert(cf.cond_jmp.address());

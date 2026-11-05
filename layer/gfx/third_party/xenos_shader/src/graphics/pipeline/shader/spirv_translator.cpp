@@ -495,6 +495,13 @@ void SpirvShaderTranslator::StartTranslation() {
     var_main_loop_address_ =
         builder_->createVariable(spv::NoPrecision, spv::StorageClassFunction, type_int4_,
                                  "xe_var_loop_address", const_int4_0_);
+    // any360: the call stack.
+    var_main_call_return_ =
+        builder_->createVariable(spv::NoPrecision, spv::StorageClassFunction, type_int4_,
+                                 "xe_var_call_return", const_int4_0_);
+    var_main_call_depth_ =
+        builder_->createVariable(spv::NoPrecision, spv::StorageClassFunction, type_int_,
+                                 "xe_var_call_depth", const_int_0_);
     var_main_previous_scalar_ =
         builder_->createVariable(spv::NoPrecision, spv::StorageClassFunction, type_float_,
                                  "xe_var_previous_scalar", const_float_0_);
@@ -789,6 +796,8 @@ std::vector<uint8_t> SpirvShaderTranslator::CompleteTranslation() {
         builder_->createStore(const_uint4_0_, var_main_loop_count_);
         builder_->createStore(const_int_0_, var_main_address_register_);
         builder_->createStore(const_int4_0_, var_main_loop_address_);
+        builder_->createStore(const_int4_0_, var_main_call_return_);  // any360
+        builder_->createStore(const_int_0_, var_main_call_depth_);    // any360
         builder_->createStore(const_float_0_, var_main_previous_scalar_);
         builder_->createStore(const_int_0_, var_main_vfetch_address_);
         builder_->createStore(const_float_0_, var_main_tfetch_lod_);
@@ -1565,6 +1574,62 @@ void SpirvShaderTranslator::ProcessJumpInstruction(const ParsedJumpInstruction& 
     return;
   }
   main_switch_next_pc_phi_operands_.push_back(builder_->makeIntConstant(int(instr.target_address)));
+  main_switch_next_pc_phi_operands_.push_back(builder_->getBuildPoint()->getId());
+  builder_->createBranch(main_loop_continue_);
+}
+
+// any360: a call pushes the address of the instruction after it (a label) and jumps like a jump does; beyond four
+// nested calls (the hardware's depth) the deepest return address is overwritten.
+void SpirvShaderTranslator::ProcessCallInstruction(const ParsedCallInstruction& instr) {
+  ParsedExecInstruction::Type type;
+  if (instr.type == ParsedCallInstruction::Type::kConditional) {
+    type = ParsedExecInstruction::Type::kConditional;
+  } else if (instr.type == ParsedCallInstruction::Type::kPredicated) {
+    type = ParsedExecInstruction::Type::kPredicated;
+  } else {
+    type = ParsedExecInstruction::Type::kUnconditional;
+  }
+  UpdateExecConditionals(type, instr.bool_constant_index, instr.condition);
+  CloseInstructionPredication();
+  if (builder_->getBuildPoint()->isTerminated()) {
+    return;
+  }
+  spv::Id depth = builder_->createLoad(var_main_call_depth_, spv::NoPrecision);
+  spv::Id slot = builder_->createBinOp(spv::OpBitwiseAnd, type_int_, depth, builder_->makeIntConstant(3));
+  id_vector_temp_.clear();
+  id_vector_temp_.push_back(builder_->createLoad(var_main_call_return_, spv::NoPrecision));
+  id_vector_temp_.push_back(builder_->makeIntConstant(int(instr.dword_index + 1)));
+  id_vector_temp_.push_back(slot);
+  builder_->createStore(builder_->createOp(spv::OpVectorInsertDynamic, type_int4_, id_vector_temp_),
+                        var_main_call_return_);
+  id_vector_temp_.clear();
+  id_vector_temp_.push_back(builder_->createBinOp(spv::OpIAdd, type_int_, depth, builder_->makeIntConstant(1)));
+  id_vector_temp_.push_back(builder_->makeIntConstant(4));
+  builder_->createStore(builder_->createBuiltinCall(type_int_, ext_inst_glsl_std_450_, GLSLstd450SMin, id_vector_temp_),
+                        var_main_call_depth_);
+  main_switch_next_pc_phi_operands_.push_back(builder_->makeIntConstant(int(instr.target_address)));
+  main_switch_next_pc_phi_operands_.push_back(builder_->getBuildPoint()->getId());
+  builder_->createBranch(main_loop_continue_);
+}
+
+// any360: a return pops the last return address and goes there; outside a function it goes on with the next
+// instruction.
+void SpirvShaderTranslator::ProcessReturnInstruction(const ParsedReturnInstruction& instr) {
+  CloseExecConditionals();
+  if (builder_->getBuildPoint()->isTerminated()) {
+    return;
+  }
+  spv::Id depth = builder_->createLoad(var_main_call_depth_, spv::NoPrecision);
+  spv::Id in_function = builder_->createBinOp(spv::OpSGreaterThan, type_bool_, depth, const_int_0_);
+  spv::Id popped = builder_->createBinOp(spv::OpISub, type_int_, depth, builder_->makeIntConstant(1));
+  spv::Id new_depth = builder_->createTriOp(spv::OpSelect, type_int_, in_function, popped, const_int_0_);
+  builder_->createStore(new_depth, var_main_call_depth_);
+  spv::Id slot = builder_->createBinOp(spv::OpBitwiseAnd, type_int_, popped, builder_->makeIntConstant(3));
+  spv::Id address = builder_->createBinOp(spv::OpVectorExtractDynamic, type_int_,
+                                          builder_->createLoad(var_main_call_return_, spv::NoPrecision), slot);
+  spv::Id next_pc = builder_->createTriOp(spv::OpSelect, type_int_, in_function, address,
+                                          builder_->makeIntConstant(int(instr.dword_index + 1)));
+  main_switch_next_pc_phi_operands_.push_back(next_pc);
   main_switch_next_pc_phi_operands_.push_back(builder_->getBuildPoint()->getId());
   builder_->createBranch(main_loop_continue_);
 }

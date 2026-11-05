@@ -31,7 +31,13 @@ Each vendored file also keeps its original header.
   `Features(const ui::vulkan::VulkanDevice*)` constructor declaration are removed. Any360 has no ReXGlue
   Vulkan device; the host builds `Features(bool all)` and sets the fields from its own device queries.
 - `src/graphics/pipeline/shader/spirv_translator.cpp`: the definition of that constructor is disabled with
-  `#if 0 // any360:` ... `#endif // any360`.
+  `#if 0 // any360:` ... `#endif // any360`. Calls and returns are implemented (the reference left them
+  unimplemented: a called function never ran): a stack of up to four return addresses, a call jumps like a jump
+  after pushing the address of the instruction after it, a return pops it (outside a function it goes on).
+- `src/graphics/pipeline/shader/translator.cpp`: the instruction after a call or a return is a label (where the
+  return goes back to).
+- `include/rex/graphics/pipeline/shader/spirv_translator.h`: the call and return overrides and the call stack
+  variables.
 
 ## Ours: `shim/include/rex/...`
 

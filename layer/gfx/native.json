@@ -118,6 +118,19 @@
   "shader ALU scalar:kSubsc0",
   "shader ALU scalar:kSubsc1",
   "shader ALU scalar:kSin",
-  "shader ALU scalar:kCos"
+  "shader ALU scalar:kCos",
+  "shader control flow:kNop",
+  "shader control flow:kCondExec",
+  "shader control flow:kCondExecEnd",
+  "shader control flow:kCondExecPred",
+  "shader control flow:kCondExecPredEnd",
+  "shader control flow:kLoopStart",
+  "shader control flow:kLoopEnd",
+  "shader control flow:kCondCall",
+  "shader control flow:kReturn",
+  "shader control flow:kCondJmp",
+  "shader control flow:kCondExecPredClean",
+  "shader control flow:kCondExecPredCleanEnd",
+  "shader control flow:kMarkVsFetchDone"
  ]
 }

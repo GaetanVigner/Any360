@@ -354,7 +354,7 @@
 "name":"kNop",
 "family":"shader control flow",
 "value":0,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kExec",
@@ -375,63 +375,63 @@
 "name":"kCondExec",
 "family":"shader control flow",
 "value":3,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kCondExecEnd",
 "name":"kCondExecEnd",
 "family":"shader control flow",
 "value":4,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kCondExecPred",
 "name":"kCondExecPred",
 "family":"shader control flow",
 "value":5,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kCondExecPredEnd",
 "name":"kCondExecPredEnd",
 "family":"shader control flow",
 "value":6,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kLoopStart",
 "name":"kLoopStart",
 "family":"shader control flow",
 "value":7,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kLoopEnd",
 "name":"kLoopEnd",
 "family":"shader control flow",
 "value":8,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kCondCall",
 "name":"kCondCall",
 "family":"shader control flow",
 "value":9,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kReturn",
 "name":"kReturn",
 "family":"shader control flow",
 "value":10,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kCondJmp",
 "name":"kCondJmp",
 "family":"shader control flow",
 "value":11,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kAlloc",
@@ -445,21 +445,21 @@
 "name":"kCondExecPredClean",
 "family":"shader control flow",
 "value":13,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kCondExecPredCleanEnd",
 "name":"kCondExecPredCleanEnd",
 "family":"shader control flow",
 "value":14,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader control flow:kMarkVsFetchDone",
 "name":"kMarkVsFetchDone",
 "family":"shader control flow",
 "value":15,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kAdd",
