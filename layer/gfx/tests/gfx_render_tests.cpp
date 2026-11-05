@@ -1481,7 +1481,8 @@ int main(int argc, char** argv) {
       names[46] = "k_16_INTERLACED", names[47] = "k_16_MPEG_INTERLACED", names[48] = "k_16_16_MPEG_INTERLACED",
       names[49] = "k_DXN", names[50] = "k_8_8_8_8_AS_16_16_16_16", names[51] = "k_DXT1_AS_16_16_16_16",
       names[52] = "k_DXT2_3_AS_16_16_16_16", names[53] = "k_DXT4_5_AS_16_16_16_16", names[54] = "k_2_10_10_10_AS_16_16_16_16",
-      names[59] = "k_DXT5A";
+      names[59] = "k_DXT5A", names[16] = "k_10_11_11", names[17] = "k_11_11_10", names[55] = "k_10_11_11_AS_16_16_16_16",
+      names[56] = "k_11_11_10_AS_16_16_16_16";
       t::Tex fetch;
       fetch.mag = fetch.min = 0, fetch.mip = 0;
       t::Alu out_xy, out_zw;
@@ -1584,6 +1585,14 @@ int main(int argc, char** argv) {
       texture_case(49, {0x80, 0x80, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0, 0, 0, 0, 0, 0}, 4, 2, rg01, 0, {128 * u8, 64 * u8, 0, 1},
                    kUnorm8);
       texture_case(59, {0xC0, 0xC0, 0, 0, 0, 0, 0, 0}, 4, 2, r001, 0, {192 * u8, 0, 0, 1}, kUnorm8);
+      for (uint32_t format : {16u, 55u}) {
+        texture_case(format, le32({1000u | 2000u << 11 | 500u << 22}), 1, 4, rgb1, 0, {1000.0f / 2047, 2000.0f / 2047, 500.0f / 1023, 1},
+                     kUnorm16);
+      }
+      for (uint32_t format : {17u, 56u}) {
+        texture_case(format, le32({500u | 1000u << 10 | 2000u << 21}), 1, 4, rgb1, 0, {500.0f / 1023, 1000.0f / 2047, 2000.0f / 2047, 1},
+                     kUnorm16);
+      }
     }
 
     const float clear[4] = {kKilled, kKilled, 0, 0};

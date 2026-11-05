@@ -1446,14 +1446,14 @@
 "name":"k_10_11_11",
 "family":"texture formats",
 "value":16,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_11_11_10",
 "name":"k_11_11_10",
 "family":"texture formats",
 "value":17,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_DXT1",
@@ -1719,14 +1719,14 @@
 "name":"k_10_11_11_AS_16_16_16_16",
 "family":"texture formats",
 "value":55,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_11_11_10_AS_16_16_16_16",
 "name":"k_11_11_10_AS_16_16_16_16",
 "family":"texture formats",
 "value":56,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_32_32_32_FLOAT",

@@ -30,8 +30,10 @@ struct TextureFormatInfo {
   uint32_t swizzle;      // the format's own component swizzle (Xenos 3-bit codes: 0-3 RGBA, 4 zero, 5 one)
   // How each texel is converted for the host format (kNone: copied as it is): 32-bit depth words to float, or
   // 16-bit 5:6:5 and 1:5:5:5 with red and blue exchanged (the guest's red is in the low bits, the host's in the
-  // high bits).
-  enum Convert : uint32_t { kNone, kDepthUnorm24, kDepthFloat24, kSwapRedBlue565, kSwapRedBlue1555 } convert = kNone;
+  // high bits); 32-bit 10:11:11 or 11:11:10 (red in the low bits) unpacked to 16-bit normalized RGBA (8 bytes).
+  enum Convert : uint32_t {
+    kNone, kDepthUnorm24, kDepthFloat24, kSwapRedBlue565, kSwapRedBlue1555, kUnpack10_11_11, kUnpack11_11_10
+  } convert = kNone;
   // The format a view reads signed components with (the same bits as signed normalized; float formats are signed
   // already), VK_FORMAT_UNDEFINED when there is none yet.
   VkFormat signed_format = VK_FORMAT_UNDEFINED;};

@@ -77,6 +77,10 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
   // low nibble) as A4B4G4R4, the same bits.
   static const TextureFormatInfo k1_5_5_5 = {VK_FORMAT_A1R5G5B5_UNORM_PACK16, 2, 1, kRGBA, TextureFormatInfo::kSwapRedBlue1555};
   static const TextureFormatInfo k4_4_4_4 = {VK_FORMAT_A4B4G4R4_UNORM_PACK16, 2, 1, kRGBA};
+  // 10:11:11 (red 11 bits, green 11, blue 10, from the low bits) and 11:11:10 (10, 11, 11) as 16-bit normalized
+  // RGBA, as the reference converts them.
+  static const TextureFormatInfo k10_11_11 = {VK_FORMAT_R16G16B16A16_UNORM, 4, 1, kRGBA, TextureFormatInfo::kUnpack10_11_11};
+  static const TextureFormatInfo k11_11_10 = {VK_FORMAT_R16G16B16A16_UNORM, 4, 1, kRGBA, TextureFormatInfo::kUnpack11_11_10};
   // 16-bit normalized components (textures read them as 0...1 or -1...1, unlike render targets' -32...32).
   static const TextureFormatInfo k16 = {VK_FORMAT_R16_UNORM, 2, 1, kRRRR, TextureFormatInfo::kNone, VK_FORMAT_R16_SNORM};
   static const TextureFormatInfo k16_16 = {VK_FORMAT_R16G16_UNORM, 4, 1, kRGGG, TextureFormatInfo::kNone,
@@ -114,6 +118,8 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
     case 6: case 14: case 50: return &k8_8_8_8;  // k_8_8_8_8, _A, _AS_16_16_16_16
     case 7: case 54: return &k2_10_10_10;
     case 15: return &k4_4_4_4;
+    case 16: case 55: return &k10_11_11;  // and _AS_16_16_16_16
+    case 17: case 56: return &k11_11_10;
     case 18: case 51: return &kDxt1;
     case 19: case 52: return &kDxt3;
     case 20: case 53: return &kDxt5;
@@ -325,6 +331,23 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
       v = uint16_t((v & 0x07E0) | (v & 0x1F) << 11 | v >> 11);
       std::memcpy(&blocks[i], &v, 2);
     }
+  } else if (info->convert == TextureFormatInfo::kUnpack10_11_11 || info->convert == TextureFormatInfo::kUnpack11_11_10) {
+    // Each component scaled to 16 bits, alpha one; the texels grow from 4 bytes to 8.
+    const bool red11 = info->convert == TextureFormatInfo::kUnpack10_11_11;
+    const uint32_t widths[3] = {red11 ? 11u : 10u, 11, red11 ? 10u : 11u};
+    std::vector<uint8_t> packed;
+    packed.swap(blocks);
+    blocks.resize(packed.size() * 2);
+    for (size_t i = 0; i + 4 <= packed.size(); i += 4) {
+      uint32_t v;
+      std::memcpy(&v, &packed[i], 4);
+      uint16_t out[4] = {0, 0, 0, 0xFFFF};
+      for (uint32_t c = 0, shift = 0; c < 3; shift += widths[c++]) {
+        const uint32_t max = (1u << widths[c]) - 1;
+        out[c] = uint16_t((((v >> shift) & max) * 65535u + max / 2) / max);
+      }
+      std::memcpy(&blocks[2 * i], out, 8);
+    }
   } else if (info->convert == TextureFormatInfo::kSwapRedBlue1555) {
     for (size_t i = 0; i + 2 <= blocks.size(); i += 2) {
       uint16_t v;
@@ -516,7 +539,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   std::vector<const GpuSource*> sources;
   uint64_t source_generation = 0;
   if (t.tiled && t.dimension == 1 && first_level == 0 && last_level == 0 &&
-      info->convert != TextureFormatInfo::kSwapRedBlue565 && info->convert != TextureFormatInfo::kSwapRedBlue1555) {
+      (info->convert == TextureFormatInfo::kNone || info->convert == TextureFormatInfo::kDepthUnorm24 ||
+       info->convert == TextureFormatInfo::kDepthFloat24)) {
     const bool depth_texture = info->convert == TextureFormatInfo::kDepthUnorm24 ||
                                info->convert == TextureFormatInfo::kDepthFloat24;
     const uint32_t slice_stride = Place(t, *info, 0).slice_stride;

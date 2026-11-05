@@ -212,6 +212,10 @@
   "texture formats:k_DXT2_3_AS_16_16_16_16",
   "texture formats:k_DXT4_5",
   "texture formats:k_DXT4_5_AS_16_16_16_16",
-  "texture formats:k_DXT5A"
+  "texture formats:k_DXT5A",
+  "texture formats:k_10_11_11",
+  "texture formats:k_11_11_10",
+  "texture formats:k_10_11_11_AS_16_16_16_16",
+  "texture formats:k_11_11_10_AS_16_16_16_16"
  ]
 }
