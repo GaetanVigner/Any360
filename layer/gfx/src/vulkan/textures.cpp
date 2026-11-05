@@ -707,7 +707,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   const std::array<uint32_t, 5> key = {fetch[0] & 0xFFC00003, fetch[1], fetch[2], fetch[5] & 0xFFFFFE00,
                                        (fetch[4] & 0x3FC) | (scale > 1 ? 1u : 0u)};
   auto& slot = textures_[key];
-  if (!source) {
+  if (!source && Diagnosing()) {
     // For diagnostics: a GPU source within this texture's memory it could not use, and why.
     const auto near = gpu_sources_.lower_bound(span_begin);
     if (near != gpu_sources_.end() && near->first < span_end) {
@@ -939,8 +939,24 @@ VkSampler TextureCache::Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t 
   return sampler;
 }
 
+// Whether a cached texture spans guest memory in [begin, end): only then may views cached by fetch constant be stale
+// (a resolve every few draws otherwise sent every texture of the frame through the slow path again).
+bool TextureCache::CachedOver(uint64_t begin, uint64_t end) const {
+  for (const auto& [key, t] : textures_) {
+    if (t->begin < end && begin < t->end) return true;
+  }
+  return false;
+}
+
+void TextureCache::SetGpuSource(const GpuSource& source) {
+  gpu_sources_[source.base] = source;
+  // The rows it covers, at most 8 bytes a texel (the format is the texture's to say).
+  const uint64_t end = uint64_t(source.base) + uint64_t(source.pitch) * ((source.height + 31) & ~31u) * 8;
+  if (CachedOver(source.base, end)) ++version_;
+}
+
 void TextureCache::DropGpuSources(uint32_t begin, uint32_t end) {
-  ++version_;
+  if (CachedOver(begin, end)) ++version_;
   for (auto it = gpu_sources_.begin(); it != gpu_sources_.end();) {
     it = it->first >= begin && it->first < end ? gpu_sources_.erase(it) : std::next(it);
   }

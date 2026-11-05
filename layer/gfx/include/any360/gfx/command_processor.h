@@ -100,6 +100,10 @@ class CommandProcessor : public sys::GpuBackend {
   // CPU 2). The default runs the title's callback through sys::Graphics().
   using InterruptHandler = std::function<void(uint32_t source, uint32_t cpu)>;
   void SetInterruptHandler(InterruptHandler handler) { interrupt_ = std::move(handler); }
+  // Told of the guest memory [begin, end) the command processor writes itself (fences, MEM_WRITE, query counts, the
+  // read pointer): what a renderer keeps of that memory (textures, vertices in video memory) is stale then, and a
+  // title's write watch does not see these writes. Any thread (fences land from the renderer's).
+  void SetMemoryWrittenHook(std::function<void(uint32_t, uint32_t)> hook) { memory_written_ = std::move(hook); }
   void SetDisplaySize(uint32_t width, uint32_t height) { display_ = width << 16 | height; }
 
   // GpuBackend.
@@ -247,6 +251,7 @@ class CommandProcessor : public sys::GpuBackend {
 
   uint8_t* physical_;
   Renderer* renderer_ = nullptr;
+  std::function<void(uint32_t, uint32_t)> memory_written_;
   InterruptHandler interrupt_;
   std::vector<uint32_t> registers_;
   uint32_t display_ = 1280u << 16 | 720u;

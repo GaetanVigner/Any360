@@ -85,7 +85,7 @@ class Sampler {
     if (worker_.joinable()) worker_.join();
     Write();
   }
-  // Lines "thread 0xoffset [0xcaller...]" (0: nowhere in the executable; then up to 3 callers in it, return
+  // Lines "thread 0xoffset [0xcaller...]" (0: nowhere in the executable; then up to 15 callers in it, return
   // addresses minus one), then "# thread module name count" (the leaf's module when outside the executable) and
   // "# thread name name".
   void Write() {
@@ -111,8 +111,20 @@ class Sampler {
     DWORD tid;
     HANDLE handle;
   };
-  // Every thread of the process but this one (threads come and go: refreshed now and then).
+  // Every thread of the process but this one (threads come and go: refreshed now and then), and the loaded modules.
   void Refresh(std::vector<Target>& targets) {
+    images_.clear();
+    HMODULE modules[1024];
+    DWORD needed = 0;
+    if (K32EnumProcessModules(GetCurrentProcess(), modules, sizeof(modules), &needed)) {
+      for (DWORD i = 0; i < std::min<DWORD>(needed / sizeof(HMODULE), 1024); ++i) {
+        MODULEINFO info{};
+        if (K32GetModuleInformation(GetCurrentProcess(), modules[i], &info, sizeof(info))) {
+          images_.push_back({uint64_t(info.lpBaseOfDll), uint64_t(info.lpBaseOfDll) + info.SizeOfImage});
+        }
+      }
+      std::sort(images_.begin(), images_.end());
+    }
     for (Target& t : targets) CloseHandle(t.handle);
     targets.clear();
     const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -167,14 +179,17 @@ class Sampler {
         context.ContextFlags = CONTEXT_FULL;
         if (GetThreadContext(targets[i].handle, &context)) {
           taken[i].second = context.Rip;
-          // The leaf (or the first caller in the executable, bit 63), then up to three more callers in it.
+          // The leaf (or the first caller in the executable, bit 63), then up to fifteen more callers in it.
           CONTEXT walk = context;
           uint32_t found = 0;
-          for (int depth = 0; depth < 48 && walk.Rip && found < kFrames; ++depth) {
+          for (int depth = 0; depth < 64 && walk.Rip && found < kFrames; ++depth) {
             if (inside(walk.Rip)) {
               const bool leaf = depth == 0;
               taken[i].first[found++] = leaf ? walk.Rip - base : (walk.Rip - base - 1) | (found ? 0 : 1ull << 63);
             }
+            // Only through loaded images: looking up code generated at run time (a driver's) takes the dynamic
+            // function tables' lock, which the suspended thread may hold.
+            if (!InImage(walk.Rip)) break;
             DWORD64 image = 0;
             PRUNTIME_FUNCTION entry = RtlLookupFunctionEntry(walk.Rip, &image, nullptr);
             if (!entry) break;  // no unwind data: stop rather than guess
@@ -202,12 +217,17 @@ class Sampler {
     }
     for (Target& t : targets) CloseHandle(t.handle);
   }
+  bool InImage(uint64_t rip) const {
+    auto it = std::upper_bound(images_.begin(), images_.end(), std::pair<uint64_t, uint64_t>{rip, UINT64_MAX});
+    return it != images_.begin() && rip < std::prev(it)->second;
+  }
+  std::vector<std::pair<uint64_t, uint64_t>> images_;  // loaded modules [begin, end), sorted
   std::string path_;
   bool always_ = false;
   std::thread worker_;
   std::atomic<bool> done_{false};
   std::mutex mutex_;
-  static constexpr uint32_t kFrames = 4;
+  static constexpr uint32_t kFrames = 16;
   using Frames = std::array<uint64_t, kFrames>;
   std::vector<std::pair<DWORD, Frames>> samples_;
   std::map<std::pair<DWORD, std::string>, uint64_t> outside_;
@@ -810,6 +830,11 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->cp->SetWritesAfterDraws(options.writes_after_draws);
   binding->cp->SetFencesAfterDraws(options.fences_after_draws);
   binding->renderer->SetFencesWhenCaptured(options.fences_when_captured);
+  // What the command processor writes into guest memory itself (fences, query counts), the page watch does not see:
+  // the vertices copied into video memory over it are stale (textures are not kept over such words).
+  binding->cp->SetMemoryWrittenHook([renderer = binding->renderer.get()](uint32_t begin, uint32_t end) {
+    renderer->GuestMemoryWritten(begin, end);
+  });
   sys::Graphics().StartVblank(vblank_hz);
   g_binding = binding.release();
   g_bound = true;
