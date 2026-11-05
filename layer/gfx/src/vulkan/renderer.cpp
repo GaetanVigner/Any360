@@ -2419,7 +2419,17 @@ void VulkanRenderer::Submit(uint32_t index) {
   VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
   submit.commandBufferCount = uint32_t(s.cbs.size());
   submit.pCommandBuffers = s.cbs.data();
-  if (f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence) != VK_SUCCESS) Fail("batch submission");
+  if (const VkResult result = f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence); result != VK_SUCCESS) {
+    // The first failure with its result (and the driver's fault description when the device is lost).
+    static bool told = false;
+    if (!told) {
+      told = true;
+      Fail("batch submission failed first with VkResult " + std::to_string(int(result)) +
+           (result == VK_ERROR_DEVICE_LOST ? " (device lost; " + device_.DescribeFault() + ")" : std::string()));
+    } else {
+      Fail("batch submission");
+    }
+  }
   std::vector<std::function<void()>>& released = released_actions_;
   {
     std::lock_guard lock(done_mutex_);
@@ -3023,12 +3033,20 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     const int32_t ox = int32_t(window_offset << 17) >> 17, oy = int32_t(window_offset << 1) >> 17;
     x0 += ox, x1 += ox, y0 += oy, y1 += oy;
   }
-  // The scissor without the window offset applied to it (as the reference reads it for resolves).
+  // The scissor with the window offset applied to it unless window_offset_disable (as the reference does): a screen
+  // resolved in bands (Test Drive Unlimited's second band, drawn with a window offset of -360 rows) otherwise keeps
+  // only the rows where the unmoved scissor and the moved rectangle overlap.
   const uint32_t window_tl = regs[kPaScWindowScissorTl], window_br = regs[kPaScWindowScissorBr];
-  const int32_t sl = std::max(int32_t(window_tl & 0x3FFF), int32_t(regs[kPaScScreenScissorTl] & 0x7FFF));
-  const int32_t st = std::max(int32_t((window_tl >> 16) & 0x3FFF), int32_t((regs[kPaScScreenScissorTl] >> 16) & 0x7FFF));
-  const int32_t sr = std::min(int32_t(window_br & 0x3FFF), int32_t(regs[kPaScScreenScissorBr] & 0x7FFF));
-  const int32_t sb = std::min(int32_t((window_br >> 16) & 0x3FFF), int32_t((regs[kPaScScreenScissorBr] >> 16) & 0x7FFF));
+  int32_t wl = int32_t(window_tl & 0x3FFF), wt = int32_t((window_tl >> 16) & 0x3FFF);
+  int32_t wr = int32_t(window_br & 0x3FFF), wb = int32_t((window_br >> 16) & 0x3FFF);
+  if (!(window_tl >> 31)) {
+    const int32_t ox = int32_t(window_offset << 17) >> 17, oy = int32_t(window_offset << 1) >> 17;
+    wl += ox, wr += ox, wt += oy, wb += oy;
+  }
+  const int32_t sl = std::max({wl, int32_t(regs[kPaScScreenScissorTl] & 0x7FFF), 0});
+  const int32_t st = std::max({wt, int32_t((regs[kPaScScreenScissorTl] >> 16) & 0x7FFF), 0});
+  const int32_t sr = std::min(wr, int32_t(regs[kPaScScreenScissorBr] & 0x7FFF));
+  const int32_t sb = std::min(wb, int32_t((regs[kPaScScreenScissorBr] >> 16) & 0x7FFF));
   x0 = std::clamp(x0, sl, std::max(sl, sr)), x1 = std::clamp(x1, sl, std::max(sl, sr));
   y0 = std::clamp(y0, st, std::max(st, sb)), y1 = std::clamp(y1, st, std::max(st, sb));
   x0 &= ~7, y0 &= ~7, x1 = (x1 + 7) & ~7, y1 = (y1 + 7) & ~7;
@@ -3051,6 +3069,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   }
   // Host pixels a guest pixel (samples, each scale x scale pixels).
   const uint32_t host_x = sample_x * scale_, host_y = sample_y * scale_;
+  if (x0 >= int32_t(surface->image.width / host_x) || y0 >= int32_t(surface->image.height / host_y)) {
+    Fail("resolve region outside the source surface");
+    return;
+  }
   const uint32_t width = uint32_t(std::min<int32_t>(x1, int32_t(surface->image.width / host_x)) - x0);
   const uint32_t height = uint32_t(std::min<int32_t>(y1, int32_t(surface->image.height / host_y)) - y0);
   // The samples the copy takes of each pixel (RB_COPY_CONTROL copy_sample_select: 0-3 one sample, 4 samples 0 and 1,
@@ -3092,6 +3114,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       gpu_format = host_format;
     } else if (!dest_swap && dest_format == 31 && host_format == VK_FORMAT_R16G16_SFLOAT) {
       gpu_format = host_format;  // k_16_16_FLOAT
+    } else if (!dest_swap && dest_format == 36 && host_format == VK_FORMAT_R32_SFLOAT) {
+      gpu_format = host_format;  // k_32_FLOAT from a k_32_FLOAT target (Test Drive Unlimited)
+    } else if (!dest_swap && dest_format == 25 && host_format == VK_FORMAT_R16G16_SNORM) {
+      gpu_format = host_format;  // k_16_16 from a k_16_16 target, the same 16-bit words (Test Drive Unlimited)
     } else if (dest_format == 7 &&
                (host_format == VK_FORMAT_A8B8G8R8_UNORM_PACK32 || host_format == VK_FORMAT_A2B10G10R10_UNORM_PACK32)) {
       // k_2_10_10_10 (a 10-bit front buffer: The Simpsons Game) from a k_2_10_10_10 target, its red/blue swap kept
@@ -3120,6 +3146,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     // screen's base, the second half's at the base plus x 640's tiled offset; apart, a texture of the whole screen
     // would read the first half only.
     const uint32_t aligned_pitch = (dest_pitch + 31) & ~31u;
+    const uint32_t texel_log2 = gpu_format == VK_FORMAT_R16G16B16A16_SFLOAT ? 3 : 2;
     int32_t dest_dx = 0, dest_dy = 0;
     for (auto it = resolved_.lower_bound(dest_base); it != resolved_.begin();) {
       --it;
@@ -3128,12 +3155,13 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
           c.endian != dest_endian) {
         continue;
       }
+      const uint32_t held_rows = c.image.height / c.scale;
       const uint32_t delta = dest_base - it->first;
-      if (uint64_t(delta) >= uint64_t(aligned_pitch) * (c.image.height / c.scale) * 4) continue;
+      if (uint64_t(delta) >= (uint64_t(aligned_pitch) * held_rows << texel_log2)) continue;
       int32_t dx = -1, dy = -1;
-      for (uint32_t ty = 0; ty < c.image.height / c.scale && dx < 0; ty += 32) {
+      for (uint32_t ty = 0; ty < held_rows && dx < 0; ty += 32) {
         for (uint32_t tx = 0; tx < aligned_pitch; tx += 32) {
-          if (uint32_t(TiledOffset2D(int32_t(tx), int32_t(ty), dest_pitch, 2)) == delta) {
+          if (uint32_t(TiledOffset2D(int32_t(tx), int32_t(ty), dest_pitch, texel_log2)) == delta) {
             dx = int32_t(tx), dy = int32_t(ty);
             break;
           }
