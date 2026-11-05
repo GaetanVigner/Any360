@@ -173,7 +173,9 @@ std::string FileSystem::Canonical(const std::string& guest_path) const {
   if (colon != std::string::npos && (slash == std::string::npos || colon < slash)) {
     const auto it = links_.find(Lower(path.substr(0, colon + 1)));
     if (it == links_.end()) return {};
-    path = it->second + "\\" + path.substr(colon + 1);
+    std::string rest = path.substr(colon + 1);
+    while (!rest.empty() && (rest[0] == '\\' || rest[0] == '/')) rest.erase(0, 1);  // "game:\x": one separator
+    path = it->second + "\\" + rest;
   }
   return path;
 }

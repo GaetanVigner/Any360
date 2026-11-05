@@ -82,7 +82,32 @@ void RunAny360(SysGroup group, const char* name, GuestFunction any360, PPCContex
   const int n = std::snprintf(line, sizeof(line), "%s(%08X %08X %08X %08X %08X %08X %08X %08X) lr %08X", name, ctx.r3.u32,
                               ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32,
                               uint32_t(ctx.lr));
+  if (g_log && std::strstr(name, "Wait")) g_log(std::string("waiting: ") + line);  // a wait that never returns shows
   any360(ctx, base);
+  std::snprintf(line + n, sizeof(line) - n, " = %08X", ctx.r3.u32);
+  if (g_log) g_log(line);
+}
+
+// The runtime's export, reported like RunAny360's calls (marked "runtime") with every-call tracing when an argument is
+// one of any360::sys's handles: the runtime cannot use those.
+void RunReference(const char* name, GuestFunction reference, PPCContext& ctx, uint8_t* base) {
+  if (!g_trace_every.load(std::memory_order_relaxed)) {
+    reference(ctx, base);
+    return;
+  }
+  // Only the calls handed one of any360::sys's handles (the runtime knows nothing of them).
+  const uint32_t registers[] = {ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32};
+  bool ours = false;
+  for (uint32_t value : registers) ours = ours || any360::sys::Objects().OwnsHandle(value);
+  if (!ours) {
+    reference(ctx, base);
+    return;
+  }
+  char line[200];
+  const int n = std::snprintf(line, sizeof(line), "runtime %s(%08X %08X %08X %08X %08X %08X %08X %08X) lr %08X", name,
+                              ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32,
+                              ctx.r10.u32, uint32_t(ctx.lr));
+  reference(ctx, base);
   std::snprintf(line + n, sizeof(line) - n, " = %08X", ctx.r3.u32);
   if (g_log) g_log(line);
 }
@@ -92,7 +117,7 @@ void CallSystemExport(SysGroup group, const char* name, GuestFunction any360, Gu
   if (!reference || (g_started.load(std::memory_order_relaxed) && g_enabled[size_t(group)].load(std::memory_order_relaxed))) {
     RunAny360(group, name, any360, ctx, base);
   } else {
-    reference(ctx, base);
+    RunReference(name, reference, ctx, base);
   }
 }
 
@@ -104,7 +129,7 @@ void CallHandleExport(SysGroup group, const char* name, GuestFunction any360, Gu
   else if (handle >= 0xFFFFFFF0) ours = Enabled(group);  // the current thread or process
   else ours = any360::sys::Objects().OwnsHandle(handle);
   if (ours) RunAny360(group, name, any360, ctx, base);
-  else reference(ctx, base);
+  else RunReference(name, reference, ctx, base);
 }
 
 void CallPathExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, PathKind kind,
@@ -128,18 +153,18 @@ void CallPathExport(SysGroup group, const char* name, GuestFunction any360, Gues
     g_log(std::string(name) + " path " + text);
   }
   if (ours) RunAny360(group, name, any360, ctx, base);
-  else reference(ctx, base);
+  else RunReference(name, reference, ctx, base);
 }
 
 void CallBothExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, PPCContext& ctx,
                     uint8_t* base) {
   if (reference && !(g_started.load(std::memory_order_relaxed) && Enabled(group))) {
-    reference(ctx, base);
+    RunReference(name, reference, ctx, base);
     return;
   }
   PPCContext copy = ctx;
   RunAny360(group, name, any360, ctx, base);
-  if (reference) reference(copy, base);
+  if (reference) RunReference(name, reference, copy, base);
 }
 
 uint64_t DispatchGuest(uint32_t address, uint32_t stack_top, uint32_t pcr, const uint64_t* args, uint32_t count, void*) {
@@ -167,11 +192,8 @@ bool VariableGroup(const char* name, SysGroup& group) {
       {"XboxHardwareInfo", SysGroup::kStateless},       {"XboxKrnlVersion", SysGroup::kStateless},
       {"ExConsoleGameRegion", SysGroup::kStateless},    {"KeDebugMonitorData", SysGroup::kStateless},
       {"KeCertMonitorData", SysGroup::kStateless},      {"KeTimeStampBundle", SysGroup::kThreads},
-      {"ExThreadObjectType", SysGroup::kObjects},       {"ExEventObjectType", SysGroup::kObjects},
-      {"ExMutantObjectType", SysGroup::kObjects},       {"ExSemaphoreObjectType", SysGroup::kObjects},
-      {"ExTimerObjectType", SysGroup::kObjects},        {"IoCompletionObjectType", SysGroup::kObjects},
-      {"IoDeviceObjectType", SysGroup::kObjects},       {"IoFileObjectType", SysGroup::kObjects},
-      {"ObDirectoryObjectType", SysGroup::kObjects},    {"ObSymbolicLinkObjectType", SysGroup::kObjects},
+      // Not the object types (ExEventObjectType...): a title only hands them back to ObReferenceObjectByHandle and
+      // its kin, which any360::sys does not check and the runtime does against its own, for the handles it keeps.
       {"XexExecutableModuleHandle", SysGroup::kXam},    {"ExLoadedImageName", SysGroup::kXam},
       {"ExLoadedCommandLine", SysGroup::kXam},
   };

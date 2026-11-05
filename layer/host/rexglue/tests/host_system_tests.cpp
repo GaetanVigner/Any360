@@ -79,7 +79,7 @@ void Entry(PPCContext& ctx, uint8_t* base) {
   CHECK(StartSystem(options, error));
   SysGroup group;
   CHECK(ParseSysGroup("threads", group) && group == SysGroup::kThreads && !ParseSysGroup("gpu", group));
-  CHECK(VariableGroup("ExEventObjectType", group) && group == SysGroup::kObjects && !VariableGroup("NoSuchVariable", group));
+  CHECK(VariableGroup("KeTimeStampBundle", group) && group == SysGroup::kThreads && !VariableGroup("ExEventObjectType", group));
   CHECK(BindVariables() == 0);  // no executable module in this runtime
   const uint32_t buffer = g_runtime->memory()->SystemHeapAlloc(64);
   PPCContext call = ctx;
