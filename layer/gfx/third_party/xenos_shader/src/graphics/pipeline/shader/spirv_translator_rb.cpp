@@ -588,7 +588,12 @@ void SpirvShaderTranslator::CompleteFragmentShaderInMain() {
     if_alpha_test_function_is_non_always.makeEndIf();
 
     // Alpha to coverage.
-    if (edram_fragment_shader_interlock_ || output_fragment_sample_mask_ != spv::NoResult) {
+    const bool alpha_to_coverage_as_pixels =
+        samples_as_pixels_ && !edram_fragment_shader_interlock_ && !is_depth_only_fragment_shader_ &&
+        current_shader().writes_color_target(0) && !IsExecutionModeEarlyFragmentTests() &&
+        input_fragment_coordinates_ != spv::NoResult;
+    if (edram_fragment_shader_interlock_ || output_fragment_sample_mask_ != spv::NoResult ||
+        alpha_to_coverage_as_pixels) {
       id_vector_temp_.clear();
       id_vector_temp_.push_back(builder_->makeIntConstant(kSystemConstantAlphaToMask));
       spv::Id alpha_to_mask = builder_->createLoad(
@@ -598,7 +603,86 @@ void SpirvShaderTranslator::CompleteFragmentShaderInMain() {
       SpirvBuilder::IfBuilder if_alpha_to_coverage_enabled(
           builder_->createBinOp(spv::OpINotEqual, type_bool_, alpha_to_mask, const_uint_0_),
           spv::SelectionControlDontFlattenMask, *builder_);
-      {
+      if (alpha_to_coverage_as_pixels) {
+        // any360: the fragment is one guest sample. Its guest pixel and sample from the host position (2x MSAA rows
+        // of top and bottom samples, 4x columns too: guest samples TL, BL, TR, BR as the reference maps them); covered
+        // when alpha reaches the sample's threshold minus the guest pixel's dither offset (RB_COLORCONTROL's 2-bit
+        // alpha_to_mask_offset by pixel x and y parity) scaled as the reference does: 1x 1 - offset / 4; 2x top 0.5,
+        // bottom 1, less offset / 8; 4x TL 0.75, BL 0.25, TR 0.5, BR 1, less offset / 16. Uncovered: discarded.
+        id_vector_temp_.clear();
+        id_vector_temp_.push_back(builder_->makeIntConstant(3));
+        spv::Id alpha = builder_->createLoad(
+            builder_->createAccessChain(spv::StorageClassOutput, output_or_var_fragment_data_[0],
+                                        id_vector_temp_),
+            spv::NoPrecision);
+        spv::Id const_uint_1 = builder_->makeUintConstant(1);
+        auto position = [&](int component, uint32_t scale) {
+          id_vector_temp_.clear();
+          id_vector_temp_.push_back(builder_->makeIntConstant(component));
+          spv::Id host = builder_->createUnaryOp(
+              spv::OpConvertFToU, type_uint_,
+              builder_->createLoad(builder_->createAccessChain(spv::StorageClassInput,
+                                                               input_fragment_coordinates_, id_vector_temp_),
+                                   spv::NoPrecision));
+          return scale > 1 ? builder_->createBinOp(spv::OpUDiv, type_uint_, host,
+                                                   builder_->makeUintConstant(scale))
+                           : host;
+        };
+        spv::Id x = position(0, draw_resolution_scale_x_), y = position(1, draw_resolution_scale_y_);
+        spv::Id msaa = LoadMsaaSamplesFromFlags();
+        spv::Id multi = builder_->createBinOp(spv::OpINotEqual, type_bool_, msaa, const_uint_0_);
+        spv::Id four = builder_->createBinOp(spv::OpIEqual, type_bool_, msaa,
+                                             builder_->makeUintConstant(uint32_t(xenos::MsaaSamples::k4X)));
+        auto select_uint = [&](spv::Id condition, spv::Id a, spv::Id b) {
+          return builder_->createTriOp(spv::OpSelect, type_uint_, condition, a, b);
+        };
+        auto select_float = [&](spv::Id condition, float a, float b) {
+          return builder_->createTriOp(spv::OpSelect, type_float_, condition, builder_->makeFloatConstant(a),
+                                       builder_->makeFloatConstant(b));
+        };
+        spv::Id row = builder_->createBinOp(spv::OpINotEqual, type_bool_,
+                                            select_uint(multi, builder_->createBinOp(spv::OpBitwiseAnd, type_uint_,
+                                                                                     y, const_uint_1),
+                                                        const_uint_0_),
+                                            const_uint_0_);
+        spv::Id column = builder_->createBinOp(spv::OpINotEqual, type_bool_,
+                                               select_uint(four, builder_->createBinOp(spv::OpBitwiseAnd,
+                                                                                       type_uint_, x, const_uint_1),
+                                                           const_uint_0_),
+                                               const_uint_0_);
+        spv::Id pixel_x = select_uint(four, builder_->createBinOp(spv::OpShiftRightLogical, type_uint_, x, const_uint_1), x);
+        spv::Id pixel_y = select_uint(multi, builder_->createBinOp(spv::OpShiftRightLogical, type_uint_, y, const_uint_1), y);
+        spv::Id offset = builder_->createTriOp(
+            spv::OpBitFieldUExtract, type_uint_, alpha_to_mask,
+            builder_->createBinOp(
+                spv::OpShiftLeftLogical, type_uint_,
+                builder_->createBinOp(
+                    spv::OpBitwiseOr, type_uint_,
+                    builder_->createBinOp(spv::OpBitwiseAnd, type_uint_, pixel_x, const_uint_1),
+                    builder_->createBinOp(spv::OpShiftLeftLogical, type_uint_,
+                                          builder_->createBinOp(spv::OpBitwiseAnd, type_uint_, pixel_y, const_uint_1),
+                                          const_uint_1)),
+                const_uint_1),
+            builder_->makeUintConstant(2));
+        spv::Id base_4x = builder_->createTriOp(spv::OpSelect, type_float_, column, select_float(row, 1.0f, 0.5f),
+                                                select_float(row, 0.25f, 0.75f));
+        spv::Id base = builder_->createTriOp(spv::OpSelect, type_float_, four, base_4x,
+                                             builder_->createTriOp(spv::OpSelect, type_float_, multi,
+                                                                   select_float(row, 1.0f, 0.5f),
+                                                                   builder_->makeFloatConstant(1.0f)));
+        spv::Id offset_scale = builder_->createTriOp(spv::OpSelect, type_float_, four,
+                                                     builder_->makeFloatConstant(1.0f / 16.0f),
+                                                     select_float(multi, 1.0f / 8.0f, 1.0f / 4.0f));
+        spv::Id threshold = builder_->createBinOp(
+            spv::OpFSub, type_float_, base,
+            builder_->createBinOp(spv::OpFMul, type_float_,
+                                  builder_->createUnaryOp(spv::OpConvertUToF, type_float_, offset), offset_scale));
+        SpirvBuilder::IfBuilder alpha_to_coverage_kill_if(
+            builder_->createBinOp(spv::OpFOrdLessThan, type_bool_, alpha, threshold),
+            spv::SelectionControlDontFlattenMask, *builder_);
+        builder_->createNoResultOp(spv::OpKill);
+        alpha_to_coverage_kill_if.makeEndIf(false);
+      } else {
         if (edram_fragment_shader_interlock_) {
           fsi_pixel_potentially_killed = true;
         }

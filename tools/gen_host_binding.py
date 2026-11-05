@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Generates layer/host/rexglue/include/any360/host/system_exports.inc: one override per system call any360::sys
+provides (ANY360_SYS_EXPORT in layer/sys/ppc/exports.cpp), each in the group a title switches to Any360 at once
+(docs/SYS_BINDING.md). The groups come from db/system_calls.json's reference groups, with the calls that share state
+with another subsystem moved to it. The video group is left out: the graphics binding (ANY360_REXGLUE_GRAPHICS_EXPORTS)
+covers what is bound of it. Each override can be left out by defining ANY360_REXGLUE_SKIP_<name> before the include
+(a call the title hooks itself). Standard library only.
+
+Usage: python tools/gen_host_binding.py   (rerun when exports change; build_db.py first for new calls' groups)
+"""
+import json
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+EXPORTS = ROOT / 'layer' / 'sys' / 'ppc' / 'exports.cpp'
+DB = ROOT / 'db' / 'system_calls.json'
+OUT = ROOT / 'layer' / 'host' / 'rexglue' / 'include' / 'any360' / 'host' / 'system_exports.inc'
+
+# Reference group -> binder group.
+GROUPS = {
+    'rtl': 'kStateless', 'error': 'kStateless', 'strings': 'kStateless', 'crypt': 'kStateless', 'locale': 'kStateless',
+    'info': 'kStateless', 'debug': 'kStateless', 'xconfig': 'kStateless', 'hid': 'kStateless', 'usbcam': 'kStateless',
+    'nui': 'kStateless', 'avatar': 'kStateless', 'party': 'kStateless', 'voice': 'kStateless', 'misc': 'kStateless',
+    'file': 'kFiles', 'io': 'kFiles', 'io info': 'kFiles',
+    'ob': 'kObjects',
+    'threading': 'kThreads', 'module': 'kThreads', 'hal': 'kThreads',
+    'memory': 'kMemory',
+    'user': 'kXam', 'content': 'kXam', 'content device': 'kXam', 'content aggregate': 'kXam', 'notify': 'kXam',
+    'ui': 'kXam', 'enum': 'kXam', 'msg': 'kXam', 'modules': 'kXam', 'net': 'kXam', 'task': 'kXam', 'other': 'kXam',
+    'input': 'kInput',
+    'audio': 'kAudio', 'audio xma': 'kAudio',
+    'video': None,
+}
+
+# Calls whose state belongs to another subsystem than their reference group says.
+OVERRIDES = {
+    'RtlEnterCriticalSection': 'kThreads', 'RtlLeaveCriticalSection': 'kThreads', 'RtlTryEnterCriticalSection': 'kThreads',
+    'RtlInitializeCriticalSection': 'kThreads', 'RtlInitializeCriticalSectionAndSpinCount': 'kThreads',
+    'RtlFreeAnsiString': 'kMemory', 'RtlFreeUnicodeString': 'kMemory', 'RtlUnicodeStringToAnsiString': 'kMemory',
+    'RtlAnsiStringToUnicodeString': 'kMemory', 'XamAlloc': 'kMemory', 'XamFree': 'kMemory',
+    'ObCreateSymbolicLink': 'kFiles', 'ObDeleteSymbolicLink': 'kFiles',
+    'XamLoaderSetLaunchData': 'kXam', 'XamLoaderGetLaunchData': 'kXam', 'XamLoaderGetLaunchDataSize': 'kXam',
+    'XamLoaderLaunchTitle': 'kXam', 'XamLoaderTerminateTitle': 'kXam',
+}
+# Calls taking a handle go to the side that made it, whatever their group (the register holding it). While the two
+# kernels share a title, either may have made a given handle.
+HANDLE_ROUTES = {name: 'r3' for name in (
+    'NtClose', 'NtDuplicateObject', 'ObReferenceObjectByHandle', 'NtReadFile', 'NtWriteFile', 'NtReadFileScatter',
+    'NtWriteFileGather', 'NtQueryInformationFile', 'NtSetInformationFile', 'NtQueryVolumeInformationFile',
+    'NtQueryDirectoryFile', 'NtFlushBuffersFile', 'NtDeviceIoControlFile', 'NtWaitForSingleObjectEx', 'NtSetEvent',
+    'NtClearEvent', 'NtPulseEvent', 'NtQueryEvent', 'NtReleaseSemaphore', 'NtReleaseMutant', 'NtSetTimerEx',
+    'NtCancelTimer', 'NtSuspendThread', 'NtResumeThread', 'NtQueueApcThread', 'NtSetIoCompletion',
+    'NtRemoveIoCompletion', 'NtSignalAndWaitForSingleObjectEx', 'NtQuerySymbolicLinkObject', 'ReadFile', 'WriteFile',
+    'CloseHandle', 'SetFilePointer', 'SetFilePointerEx', 'GetFileSize', 'GetFileSizeEx', 'SetEndOfFile',
+    'FlushFileBuffers', 'FindNextFileA', 'SetFileTime')}
+# The same with the handle in memory: the first of an array.
+HANDLE_AT_ROUTES = {'NtWaitForMultipleObjectsEx': 'r4'}
+# Calls naming a path go to Any360 only when its file system knows the device (the others: content packages the
+# runtime's XAM mounted, raw partitions): the register and whether it holds OBJECT_ATTRIBUTES or a C string.
+PATH_ROUTES = {
+    'NtCreateFile': ('r5', 'kAttributes'), 'NtOpenFile': ('r5', 'kAttributes'),
+    'NtQueryFullAttributesFile': ('r3', 'kAttributes'), 'NtOpenSymbolicLinkObject': ('r4', 'kAttributes'),
+    'CreateFileA': ('r3', 'kString'), 'DeleteFileA': ('r3', 'kString'), 'CreateDirectoryA': ('r3', 'kString'),
+    'GetFileAttributesA': ('r3', 'kString'), 'GetFileAttributesExA': ('r4', 'kString'),
+    'FindFirstFileA': ('r3', 'kString'), 'MoveFileA': ('r3', 'kString'), 'CopyFileA': ('r3', 'kString'),
+    'GetDiskFreeSpaceExA': ('r3', 'kString'),
+}
+# Calls both sides must see (the symbolic links: either side may open a path through them).
+BOTH_ROUTES = {'ObCreateSymbolicLink', 'ObDeleteSymbolicLink'}
+# Dispatcher objects and their waits live in the object manager, whatever file the reference keeps them in.
+OBJECT_NAMES = re.compile(r'Event|Semaphore|Mutant|Timer|WaitFor|SignalAndWait|IoCompletion')
+
+
+def main():
+    # Every definition (not the macro's own parameter).
+    names = [n for n in re.findall(r'ANY360_SYS_EXPORT\((\w+)\)', EXPORTS.read_text(encoding='utf-8')) if n != 'name']
+    db = json.loads(DB.read_text(encoding='utf-8'))
+    items = db if isinstance(db, list) else db.get('calls', db)
+    if isinstance(items, dict):
+        items = [dict(name=k, **v) for k, v in items.items()]
+    reference_group = {c['name']: c.get('group') for c in items}
+    lines = ['// Generated by tools/gen_host_binding.py from layer/sys/ppc/exports.cpp and db/system_calls.json: do not edit.',
+             '// Included once by a title, at namespace scope, after any360/host/system.h (see there).']
+    counts, unknown = {}, []
+    for name in names:
+        group = OVERRIDES.get(name)
+        if not group:
+            reference = reference_group.get(name)
+            if reference not in GROUPS:
+                unknown.append(name)
+                continue
+            group = GROUPS[reference]
+            if group is None:
+                continue
+            if group == 'kThreads' and OBJECT_NAMES.search(name):
+                group = 'kObjects'
+        counts[group] = counts.get(group, 0) + 1
+        if name in HANDLE_ROUTES:
+            bind = f'ANY360_REXGLUE_BIND_HANDLE({name}, {group}, {HANDLE_ROUTES[name]})'
+        elif name in HANDLE_AT_ROUTES:
+            bind = f'ANY360_REXGLUE_BIND_HANDLE_AT({name}, {group}, {HANDLE_AT_ROUTES[name]})'
+        elif name in PATH_ROUTES:
+            reg, kind = PATH_ROUTES[name]
+            bind = f'ANY360_REXGLUE_BIND_PATH({name}, {group}, {reg}, {kind})'
+        elif name in BOTH_ROUTES:
+            bind = f'ANY360_REXGLUE_BIND_BOTH({name}, {group})'
+        else:
+            bind = f'ANY360_REXGLUE_BIND_SYSTEM({name}, {group})'
+        lines += [f'#ifndef ANY360_REXGLUE_SKIP_{name}', bind, '#endif']
+    OUT.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    print(f'{OUT.relative_to(ROOT)}: {sum(counts.values())} overrides ' +
+          ', '.join(f'{k[1:].lower()} {v}' for k, v in sorted(counts.items())))
+    if unknown:
+        sys.exit(f'no group for: {" ".join(unknown)} (run tools/build_db.py, or add them to OVERRIDES)')
+
+
+if __name__ == '__main__':
+    main()

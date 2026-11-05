@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (599 system calls)
+## What is verified (602 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -188,11 +188,15 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XMACreateContext` / `XMAReleaseContext` (64-byte contexts in physical memory, announced to an `XmaBackend`). Guest
   callbacks run through `Scheduler::CreateContext` and `Scheduler::Dispatch`. The renderer, the audio output and the
   XMA decoder are the backends still to write.
+- **The executable's range** (`sys_runtime_tests` against the reference, `sys_object_tests`):
+  `KeGetImagePageTableEntry` (an address's page number in the image: 64 KB pages from 0x80000000, 4 KB pages from
+  0x90000000 flagged 0x40000000), `NtAllocateEncryptedMemory` / `NtFreeEncryptedMemory` (a heap of 64 KB pages at
+  0x8C000000 no other allocation uses; 16 MB at most per call). Free takes a pointer to the address Allocate wrote,
+  where the reference reads a page index from it.
 - **The last of XAM's** (`sys_io_tests` against the reference, `sys_object_tests`): `XamGetOnlineSchema` (an empty
   Live schema, created once), `XamQueryLiveHiveW` (STATUS_INVALID_PARAMETER_1: no Live hive offline), `XamSwapDisc`
   (success, the one disc stays in), `XAudioEnableDucker` (success), `XCustomRegisterDynamicActions` (nothing to show).
-  Every call the reference implements is now native except the video group's four variables (the GPU session's),
-  `KeGetImagePageTableEntry` and the two encrypted memory calls.
+  Every call the reference implements is now native except the video group's four variables (the GPU session's).
 - **Input and absent devices** (`sys_io_tests` against the reference for the devices):
   `XamInputGetCapabilitiesEx` and `XamInputGetKeystroke` on the existing input code (and `XamInputGetKeystrokeEx` now
   writes the keystroke's user back, as the reference); no Kinect (`XamNuiGetDeviceStatus` zeroed), no HID keyboard or
@@ -347,7 +351,7 @@ the calls the four titles share come first.
 Next for the layer, in this order:
 
 1. **Object manager and scheduler, continued**: pre-emptive suspension, `KeGetCurrentThread`-style queries.
-2. **Memory, continued**: `NtProtectVirtualMemory`, `MEM_RESET`, the executable's image range as a queryable heap,
+2. **Memory, continued**: `MEM_RESET`, the executable's image range as a queryable heap,
    `ExAllocatePool*`, `MmCreateKernelStack`, `KeLockL2` / `KeUnlockL2`.
 3. **Files, continued**: STFS / XContent packages (saves, DLC), APC completion.
 4. **XAM**: content enumeration and creation over the file system, the user profile and sign-in, input, the UI

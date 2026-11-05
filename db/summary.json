@@ -66,8 +66,8 @@
   "total": 2914,
   "used": 374,
   "any360": {
-   "native": 599,
-   "todo": 2315
+   "native": 602,
+   "todo": 2312
   },
   "reference": {
    "implemented": 493,
@@ -115,9 +115,9 @@
  "gpu": {
   "total": 323,
   "state": {
-   "native": 214,
-   "missing": 14,
-   "reference": 95
+   "native": 282,
+   "missing": 7,
+   "reference": 34
   }
  }
 }

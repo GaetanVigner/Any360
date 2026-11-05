@@ -36,7 +36,8 @@ void MemoryManager::Reset() {
          {0x40000000, 0x3F000000, 0x10000, false},
          {0xA0000000, 0x20000000, 0x10000, true},
          {0xC0000000, 0x20000000, 0x1000000, true},
-         {0xE0000000, 0x1FD00000, 0x1000, true}});
+         {0xE0000000, 0x1FD00000, 0x1000, true},
+         {0x8C000000, 0x04000000, 0x10000, false, true}});
 }
 
 void MemoryManager::Reset(const std::vector<HeapSpec>& specs) {
@@ -62,7 +63,7 @@ const MemoryManager::Heap* MemoryManager::Find(uint32_t address) const {
 
 MemoryManager::Heap* MemoryManager::ByPageSize(bool physical, uint32_t page_size) {
   for (Heap& heap : heaps_) {
-    if (heap.spec.physical == physical && heap.spec.page_size == page_size) return &heap;
+    if (heap.spec.physical == physical && !heap.spec.encrypted && heap.spec.page_size == page_size) return &heap;
   }
   return nullptr;
 }
@@ -202,7 +203,7 @@ uint32_t MemoryManager::AllocateVirtual(Guest g, uint32_t base_ptr, uint32_t siz
   Heap* heap = nullptr;
   if (base) {
     heap = Find(base);
-    if (!heap || heap->spec.physical) return kStatusInvalidParameter;
+    if (!heap || heap->spec.physical || heap->spec.encrypted) return kStatusInvalidParameter;
     page_size = heap->spec.page_size;
   } else {
     page_size = (allocation_type & kMemLargePages) ? 0x10000 : 0x1000;
@@ -403,6 +404,39 @@ uint32_t MemoryManager::CreateKernelStack(Guest g, uint32_t size) {
 uint32_t MemoryManager::DeleteKernelStack(uint32_t stack_end) {
   if (!QueryAllocationSize(stack_end)) return 0xC0000001;
   FreePages(stack_end);
+  return 0;
+}
+
+uint32_t MemoryManager::AllocateEncrypted(Guest g, uint32_t size, uint32_t base_out) {
+  if (!size) return kStatusInvalidParameter;
+  const uint32_t bytes = RoundUp(size, 0x10000);
+  if (bytes > 0x1000000) return kStatusInvalidParameter;
+  for (Heap& heap : heaps_) {
+    if (!heap.spec.encrypted) continue;
+    uint32_t address = 0;
+    if (!AllocRange(heap, heap.spec.base, heap.spec.base + heap.spec.size - 1, bytes, 0x10000, kCommitted, kPageReadWrite, false,
+                    address)) {
+      return kStatusNoMemory;
+    }
+    std::memset(g.host(address), 0, bytes);
+    if (base_out) g.Store32(base_out, address);
+    return 0;
+  }
+  return kStatusUnsuccessful;
+}
+
+uint32_t MemoryManager::FreeEncrypted(Guest g, uint32_t base_ptr) {
+  if (!base_ptr) return kStatusInvalidParameter;
+  const uint32_t address = g.Load32(base_ptr);
+  const Heap* heap = Find(address);
+  if (!heap || !heap->spec.encrypted || !QueryAllocationSize(address)) return kStatusInvalidParameter;
+  FreePages(address);
+  return 0;
+}
+
+uint32_t MemoryManager::ImagePageTableEntry(uint32_t address) {
+  if (address >= 0x80000000 && address < 0x90000000) return ((address - 0x80000000) >> 16) & 0x400FFFFF;
+  if (address >= 0x90000000 && address < 0xA0000000) return (((address - 0x90000000) >> 12) | 0x40000000) & 0x400FFFFF;
   return 0;
 }
 

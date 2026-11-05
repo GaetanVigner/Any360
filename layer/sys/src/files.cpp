@@ -173,7 +173,9 @@ std::string FileSystem::Canonical(const std::string& guest_path) const {
   if (colon != std::string::npos && (slash == std::string::npos || colon < slash)) {
     const auto it = links_.find(Lower(path.substr(0, colon + 1)));
     if (it == links_.end()) return {};
-    path = it->second + "\\" + path.substr(colon + 1);
+    std::string rest = path.substr(colon + 1);
+    while (!rest.empty() && (rest[0] == '\\' || rest[0] == '/')) rest.erase(0, 1);  // "game:\x": one separator
+    path = it->second + "\\" + rest;
   }
   return path;
 }
@@ -230,6 +232,19 @@ std::string FileSystem::PathOf(Guest g, uint32_t attributes) const {
     path = it->second.guest + "\\" + path;
   }
   return path;
+}
+
+bool FileSystem::Knows(const std::string& guest_path) const {
+  std::string rest;
+  const std::string canonical = Canonical(guest_path);
+  return !canonical.empty() && MountOf(canonical, rest) != nullptr;
+}
+
+bool FileSystem::KnowsAttributes(Guest g, uint32_t attributes) const {
+  if (!attributes) return false;
+  const uint32_t root = g.Load32(attributes);
+  if (root && root != kRootDosDevices) return open_.count(Objects().Lookup(root)) != 0;
+  return Knows(AnsiString(g, g.Load32(attributes + 4)));
 }
 
 FileSystem::Open* FileSystem::Find(uint32_t handle) {
@@ -303,7 +318,7 @@ uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access
 
 uint32_t FileSystem::Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length,
                               uint32_t offset_ptr, bool write, const uint64_t* at) {
-  if (event && !Objects().Lookup(event)) return kStatusInvalidHandle;
+  if (event && !Objects().EventHandleValid(event)) return kStatusInvalidHandle;
   Open* file = Find(handle);
   if (!file) return kStatusInvalidHandle;
   if (file->directory) return kStatusInvalidParameter;
@@ -343,7 +358,7 @@ uint32_t FileSystem::ReadFile(Guest g, uint32_t handle, uint32_t event, uint32_t
 
 uint32_t FileSystem::ReadFileScatter(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t segments, uint32_t length,
                                      uint32_t offset_ptr) {
-  if (event && !Objects().Lookup(event)) return kStatusInvalidHandle;
+  if (event && !Objects().EventHandleValid(event)) return kStatusInvalidHandle;
   Open* file = Find(handle);
   if (!file) return kStatusInvalidHandle;
   uint64_t offset = offset_ptr ? g.Load64(offset_ptr) : ~0ull;
@@ -371,7 +386,7 @@ uint32_t FileSystem::ReadFileScatter(Guest g, uint32_t handle, uint32_t event, u
 
 uint32_t FileSystem::WriteFileGather(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t segments, uint32_t length,
                                      uint32_t offset_ptr) {
-  if (event && !Objects().Lookup(event)) return kStatusInvalidHandle;
+  if (event && !Objects().EventHandleValid(event)) return kStatusInvalidHandle;
   Open* file = Find(handle);
   if (!file) return kStatusInvalidHandle;
   if (file->directory) return kStatusInvalidParameter;

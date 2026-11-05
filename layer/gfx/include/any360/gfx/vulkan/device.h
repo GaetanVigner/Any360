@@ -52,6 +52,7 @@ class Device {
   VkDeviceSize host_pointer_alignment() const { return host_pointer_alignment_; }
   uint32_t queue_family() const { return queue_family_; }
   const VkPhysicalDeviceProperties& properties() const { return properties_; }
+  bool occlusion_query_precise() const { return occlusion_query_precise_; }  // exact sample counts
   const std::string& error() const { return error_; }
 
   // A memory type with the bits of `type_bits` and all of `flags`, or UINT32_MAX.
@@ -79,6 +80,7 @@ class Device {
   VkSurfaceKHR surface_ = VK_NULL_HANDLE;
   VkDeviceSize host_pointer_alignment_ = 0;
   uint32_t queue_family_ = 0;
+  bool occlusion_query_precise_ = false;
   VkCommandPool pool_ = VK_NULL_HANDLE;
   VkPhysicalDeviceProperties properties_{};
   VkPhysicalDeviceMemoryProperties memory_{};

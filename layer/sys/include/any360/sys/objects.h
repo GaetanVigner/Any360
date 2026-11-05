@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <string>
@@ -122,6 +123,24 @@ class ObjectManager {
 
   // The object a handle names (0 when none), for tests and binders.
   uint32_t Lookup(uint32_t handle);
+  // Where this manager's handles start (kHandleBase by default): another range when it shares a title with another
+  // kernel (the reference runtime's handles start at kHandleBase), so a handle names its owner. Before any handle.
+  void SetHandleBase(uint32_t base) { handle_base_ = base; }
+  uint32_t handle_base() const { return handle_base_; }
+  // Whether a handle is in this manager's range (made here, open or not).
+  bool OwnsHandle(uint32_t handle) const { return handle >= handle_base_ && handle - handle_base_ < kHandleRange; }
+  // The other kernel's handles, for the calls that take an object made there (a file read's event while the files are
+  // here and the objects there): whether one names an event, and setting it (an NTSTATUS). Unset, a handle outside this
+  // range names nothing here.
+  struct ForeignHandles {
+    std::function<bool(uint32_t handle)> is_event;
+    std::function<uint32_t(uint32_t handle)> set_event;
+  };
+  void SetForeignHandles(ForeignHandles foreign) { foreign_ = std::move(foreign); }
+  // A signal state changed outside these routines (a thread ended): the waits look again.
+  void SignalChanged() { dispatcher_changed_.notify_all(); }
+  // Whether a handle given as an event names an object here, or (outside this range) an event in the other kernel.
+  bool EventHandleValid(uint32_t handle);
   // For the other managers: a guest region from the kernel heap (0 when exhausted), a handle on an existing object,
   // the guest memory the heap lives in. With `freed_on_close` the region goes back to the heap once its last handle is
   // closed and its last Ob reference dropped (after the close hook), as the Nt-created objects do.
@@ -156,7 +175,7 @@ class ObjectManager {
   bool TrySatisfy(Guest g, uint32_t object, uint32_t thread);
   bool IsSatisfiable(Guest g, uint32_t object, uint32_t thread) const;
 
-  std::vector<Entry> entries_;
+  std::deque<Entry> entries_;  // a deque: an Entry* stays valid while others are added (under lifetime_mutex_)
   std::unordered_map<uint32_t, int> references_;  // object -> Ob references
   std::vector<uint32_t> timers_;  // armed timers (guest addresses)
   struct TimerApc {
@@ -164,9 +183,18 @@ class ObjectManager {
   };
   std::unordered_map<uint32_t, TimerApc> timer_apcs_;  // timer -> the APC its expiries queue
   uint32_t heap_begin_ = 0, heap_end_ = 0, heap_next_ = 0;
+  static constexpr uint32_t kHandleRange = 0x100000;  // 256K handles
+  uint32_t handle_base_ = kHandleBase;
+  ForeignHandles foreign_;
   std::map<uint32_t, uint32_t> free_blocks_;          // address -> size, coalesced
   std::unordered_map<uint32_t, uint32_t> freeable_;  // freed-on-close object -> its size
-  std::recursive_mutex lifetime_mutex_;              // allocation, references, release
+  std::recursive_mutex lifetime_mutex_;              // allocation, references, release, the handle table
+  // The dispatcher's lock, as the kernel's: signal states, timers and their APCs change under it, and a wait takes or
+  // tests its objects under it, so a release and a wait on two threads never lose a count. Waits sleep on
+  // `dispatcher_changed_`; the routines here wake them, and they look again every millisecond for states written
+  // elsewhere (the title's inline code, the other kernel). Taken after lifetime_mutex_, never before.
+  std::recursive_mutex dispatcher_mutex_;
+  std::condition_variable_any dispatcher_changed_;
   struct Packet {
     uint32_t key, apc_context, status, bytes;
   };

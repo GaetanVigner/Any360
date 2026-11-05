@@ -176,6 +176,14 @@ void AsyncRenderer::Invalidate(uint32_t base, uint32_t size) {
   Publish(at, Op::kInvalidate, sizeof(p));
 }
 
+void AsyncRenderer::OcclusionQuery(bool end, uint32_t address) {
+  SendRegisters();
+  const uint32_t p[2] = {uint32_t(end), address};
+  uint8_t* at = Reserve(Align8(sizeof(Header) + sizeof(p)));
+  std::memcpy(at + sizeof(Header), p, sizeof(p));
+  Publish(at, Op::kQuery, sizeof(p));
+}
+
 void AsyncRenderer::GammaRamp(const uint32_t* table, const uint32_t* pwl) {
   const uint32_t payload = (256 + 128 * 3) * 4;
   uint8_t* at = Reserve(Align8(sizeof(Header) + payload));
@@ -295,6 +303,12 @@ void AsyncRenderer::Execute(Op op, const uint8_t* payload, uint32_t bytes) {
     case Op::kGammaRamp: {
       const uint32_t* words = reinterpret_cast<const uint32_t*>(payload);
       target_.GammaRamp(words, words + 256);
+      break;
+    }
+    case Op::kQuery: {
+      uint32_t p[2];
+      std::memcpy(p, payload, sizeof(p));
+      target_.OcclusionQuery(p[0] != 0, p[1]);
       break;
     }
   }

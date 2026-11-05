@@ -50,6 +50,7 @@
 #endif
 #include <windows.h>
 #include <tlhelp32.h>
+#include <psapi.h>
 #include <vulkan/vulkan_win32.h>
 #else
 #include <dlfcn.h>
@@ -242,6 +243,9 @@ SwapCost MeasureSwapCost() {
   return {std::max(0.0, vectorized - copy) / bytes, std::max(0.0, scalar - copy) / bytes};
 }
 
+// CPU writes that hit a memory watch (a fault each), counted by MemoryWritten.
+std::atomic<uint64_t> g_watch_writes{0}, g_watch_bytes{0};
+
 // The renderer that presents each frame it swaps, on the command processor's thread (the thread that renders).
 class PresentingRenderer : public gfx::vk::VulkanRenderer {
  public:
@@ -335,14 +339,20 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     for (int i = 0; i < 5; ++i) last_swapped_[i] = swapped[i];
     if (!gfx::Diagnosing()) {
       const double fps = n / seconds, frame_ms = 1e3 / fps;
-      char off[512];
+      const uint64_t watch_writes = g_watch_writes.load(), watch_bytes = g_watch_bytes.load();
+      char off[768];
       std::snprintf(off, sizeof(off),
                     "Any360: %.1f FPS with the diagnostics off (%.1f with them, the period before: %+.0f%%); byte swapping "
                     "%.2f MB a frame, ~%.2f ms over plain copies: without it ~%.0f FPS (the command processor's thread bound); "
-                    "slowest frame %.1f ms, %u over 16.7 ms, %u over 50 ms",
+                    "slowest frame %.1f ms, %u over 16.7 ms, %u over 50 ms; %.1f watched writes a frame (%.2f MB "
+                    "invalidated); %.0f MB private, %zu textures, %zu targets, %zu resolves kept, %zu pipelines",
                     fps, last_on_fps_, last_on_fps_ > 0 ? 100.0 * (fps / last_on_fps_ - 1.0) : 0.0, swap_bytes / 1e6, swap_ms,
-                    1e3 / std::max(0.1, frame_ms - swap_ms), worst_ms_, slow_frames_, very_slow_frames_);
+                    1e3 / std::max(0.1, frame_ms - swap_ms), worst_ms_, slow_frames_, very_slow_frames_,
+                    double(watch_writes - last_watch_writes_) / n, double(watch_bytes - last_watch_bytes_) / n / 1e6,
+                    double(PrivateBytes()) / 1e6, texture_cache() ? texture_cache()->texture_count() : size_t(0),
+                    surface_count(), resolved_count(), pipeline_count());
       log_(off);
+      last_watch_writes_ = watch_writes, last_watch_bytes_ = watch_bytes;
       // What accumulated meanwhile is not reported: the next period starts clean.
       if (cp_) {
         last_busy_ = cp_->ns_busy(), last_waiting_ = cp_->ns_waiting(), last_kicks_ = cp_->kicks();
@@ -515,6 +525,16 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   uint64_t frames_ = 0;
   std::chrono::steady_clock::time_point since_;
   std::chrono::steady_clock::time_point last_frame_;
+  uint64_t last_watch_writes_ = 0, last_watch_bytes_ = 0;
+  static uint64_t PrivateBytes() {
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS_EX counters{};
+    if (K32GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters), sizeof(counters))) {
+      return counters.PrivateUsage;
+    }
+#endif
+    return 0;
+  }
   double worst_ms_ = 0;
   uint32_t slow_frames_ = 0, very_slow_frames_ = 0;
   gfx::vk::RendererStats last_;
@@ -640,6 +660,8 @@ Binding* g_binding = nullptr;
 // memory. Only the range invalidated here may be unwatched: the runtime would otherwise drop the watch of up to 4 MB
 // around the write without telling us, and what we hold of those pages would go stale.
 std::pair<uint32_t, uint32_t> MemoryWritten(void* context, uint32_t start, uint32_t length, bool) {
+  g_watch_writes.fetch_add(1, std::memory_order_relaxed);
+  g_watch_bytes.fetch_add(length, std::memory_order_relaxed);
   auto* renderer = static_cast<gfx::vk::VulkanRenderer*>(context);
   if (auto* textures = renderer->texture_cache()) textures->QueueMemoryChanged(start, start + length);
   renderer->GuestMemoryWritten(start, start + length);  // the vertices copied into video memory

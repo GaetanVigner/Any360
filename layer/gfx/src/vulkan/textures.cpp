@@ -73,6 +73,38 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
                                              VK_FORMAT_R8G8B8A8_SNORM};
   static const TextureFormatInfo k5_6_5 = {VK_FORMAT_R5G6B5_UNORM_PACK16, 2, 1, kRGBB, TextureFormatInfo::kSwapRedBlue565};
   static const TextureFormatInfo k2_10_10_10 = {VK_FORMAT_A2B10G10R10_UNORM_PACK32, 4, 1, kRGBA};
+  // 1:5:5:5 (red in the low bits, alpha the top bit) as A1R5G5B5 with red and blue exchanged; 4:4:4:4 (red in the
+  // low nibble) as A4B4G4R4, the same bits.
+  static const TextureFormatInfo k1_5_5_5 = {VK_FORMAT_A1R5G5B5_UNORM_PACK16, 2, 1, kRGBA, TextureFormatInfo::kSwapRedBlue1555};
+  static const TextureFormatInfo k4_4_4_4 = {VK_FORMAT_A4B4G4R4_UNORM_PACK16, 2, 1, kRGBA};
+  // 10:11:11 (red 11 bits, green 11, blue 10, from the low bits) and 11:11:10 (10, 11, 11) as 16-bit normalized
+  // RGBA, as the reference converts them.
+  // As the reference converts them: 6:5:5 (x 5 bits, y 5, z 6 from the low bits) into 5:6:5 with a red, blue,
+  // green swizzle; DXT3A (a DXT3 alpha block) to 8-bit texels; CTX1 (two 8:8 end points and 2-bit indices) to 8:8
+  // texels; the EXPAND formats' bits as half floats.
+  static const TextureFormatInfo k6_5_5 = {VK_FORMAT_R5G6B5_UNORM_PACK16, 2, 1, Swizzle(0, 2, 1, 1), TextureFormatInfo::kRotate655};
+  static const TextureFormatInfo kDxt3a = {VK_FORMAT_R8_UNORM, 8, 4, kRRRR, TextureFormatInfo::kDecodeDxt3a};
+  static const TextureFormatInfo kCtx1 = {VK_FORMAT_R8G8_UNORM, 8, 4, kRGGG, TextureFormatInfo::kDecodeCtx1};
+  // 4:2:2 YUV, two texels a 32-bit block sharing their chroma: Cr_Y1_Cb_Y0 (bytes Y0, Cb, Y1, Cr, as Vulkan's
+  // G8B8G8R8_422) and Y1_Cr_Y0_Cb (Cb, Y0, Cr, Y1, as B8G8R8G8_422), decoded to RGBA8 texels (Cr, Y, Cb, 1), as the
+  // reference does where the 4:2:2 formats cannot be sampled.
+  static const TextureFormatInfo kGbgr = {VK_FORMAT_R8G8B8A8_UNORM, 4, 2, kRGBB, TextureFormatInfo::kDecodeGbgr,
+                                          VK_FORMAT_UNDEFINED, 1};
+  static const TextureFormatInfo kBgrg = {VK_FORMAT_R8G8B8A8_UNORM, 4, 2, kRGBB, TextureFormatInfo::kDecodeBgrg,
+                                          VK_FORMAT_UNDEFINED, 1};
+  static const TextureFormatInfo k10_11_11 = {VK_FORMAT_R16G16B16A16_UNORM, 4, 1, kRGBA, TextureFormatInfo::kUnpack10_11_11};
+  static const TextureFormatInfo k11_11_10 = {VK_FORMAT_R16G16B16A16_UNORM, 4, 1, kRGBA, TextureFormatInfo::kUnpack11_11_10};
+  // 16-bit normalized components (textures read them as 0...1 or -1...1, unlike render targets' -32...32).
+  static const TextureFormatInfo k16 = {VK_FORMAT_R16_UNORM, 2, 1, kRRRR, TextureFormatInfo::kNone, VK_FORMAT_R16_SNORM};
+  static const TextureFormatInfo k16_16 = {VK_FORMAT_R16G16_UNORM, 4, 1, kRGGG, TextureFormatInfo::kNone,
+                                           VK_FORMAT_R16G16_SNORM};
+  static const TextureFormatInfo k16_16_16_16 = {VK_FORMAT_R16G16B16A16_UNORM, 8, 1, kRGBA, TextureFormatInfo::kNone,
+                                                 VK_FORMAT_R16G16B16A16_SNORM};
+  // DXN: two DXT5 alpha blocks (red, green), as BC5; DXT5A: one, as BC4.
+  static const TextureFormatInfo kDxn = {VK_FORMAT_BC5_UNORM_BLOCK, 16, 4, kRGGG, TextureFormatInfo::kNone,
+                                         VK_FORMAT_BC5_SNORM_BLOCK};
+  static const TextureFormatInfo kDxt5a = {VK_FORMAT_BC4_UNORM_BLOCK, 8, 4, kRRRR, TextureFormatInfo::kNone,
+                                           VK_FORMAT_BC4_SNORM_BLOCK};
   static const TextureFormatInfo kDxt1 = {VK_FORMAT_BC1_RGBA_UNORM_BLOCK, 8, 4, kRGBA};
   static const TextureFormatInfo kDxt3 = {VK_FORMAT_BC2_UNORM_BLOCK, 16, 4, kRGBA};
   static const TextureFormatInfo kDxt5 = {VK_FORMAT_BC3_UNORM_BLOCK, 16, 4, kRGBA};
@@ -90,14 +122,33 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
   static const TextureFormatInfo k24_8 = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kDepthUnorm24};
   static const TextureFormatInfo k24_8Float = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kDepthFloat24};
   switch (xenos_format) {
+    // The _A and _AS_16_16_16_16 forms read the same bits (the latter only ask for more filtering precision), as
+    // the reference maps them.
     case 2: case 8: return &k8;  // k_8, k_8_A
+    case 3: return &k1_5_5_5;
+    case 5: return &k6_5_5;
     case 10: return &k8_8;
     case 4: return &k5_6_5;
-    case 6: return &k8_8_8_8;
+    case 6: case 50: return &k8_8_8_8;  // k_8_8_8_8, _AS_16_16_16_16
     case 7: case 54: return &k2_10_10_10;  // and k_2_10_10_10_AS_16_16_16_16 (only its filtering differs)
-    case 18: return &kDxt1;
-    case 19: return &kDxt3;
-    case 20: return &kDxt5;
+    case 15: return &k4_4_4_4;
+    case 16: case 55: return &k10_11_11;  // and _AS_16_16_16_16
+    case 17: case 56: return &k11_11_10;
+    case 18: case 51: return &kDxt1;
+    case 19: case 52: return &kDxt3;
+    case 20: case 53: return &kDxt5;
+    case 24: return &k16;
+    case 25: return &k16_16;
+    case 26: return &k16_16_16_16;
+    case 27: return &k16Float;            // k_16_EXPAND
+    case 28: return &k16_16Float;         // k_16_16_EXPAND
+    case 29: return &k16_16_16_16Float;   // k_16_16_16_16_EXPAND
+    case 58: return &kDxt3a;
+    case 11: return &kGbgr;  // k_Cr_Y1_Cb_Y0_REP
+    case 12: return &kBgrg;  // k_Y1_Cr_Y0_Cb_REP
+    case 60: return &kCtx1;
+    case 49: return &kDxn;
+    case 59: return &kDxt5a;
     case 22: return &k24_8;
     case 23: return &k24_8Float;
     case 30: return &k16Float;
@@ -139,6 +190,27 @@ int32_t TiledOffset2D(int32_t x, int32_t y, uint32_t pitch, uint32_t bytes_per_b
   const int32_t offset = macro + ((micro & ~0xF) << 1) + (micro & 0xF) + ((y & 1) << 4);
   return ((offset & ~0x1FF) << 3) + ((y & 16) << 7) + ((offset & 0x1C0) << 2) + (((((y & 8) >> 2) + (x >> 3)) & 3) << 6) +
          (offset & 0x3F);
+}
+
+int32_t TiledOffset3D(int32_t x, int32_t y, int32_t z, uint32_t pitch, uint32_t height, uint32_t bytes_per_block_log2) {
+  // As the reference computes it (texture_util::GetTiledOffset3D, from XGRAPHICS::TileVolume).
+  pitch = (pitch + 31) & ~31u;
+  height = (height + 31) & ~31u;
+  const int32_t macro_outer = ((y >> 4) + (z >> 2) * int32_t(height >> 4)) * int32_t(pitch >> 5);
+  const int32_t macro = ((((x >> 5) + macro_outer) << (bytes_per_block_log2 + 6)) & 0xFFFFFFF) << 1;
+  const int32_t micro = (((x & 7) + ((y & 6) << 2)) << (bytes_per_block_log2 + 6)) >> 6;
+  const int32_t offset_outer = ((y >> 3) + (z >> 2)) & 1;
+  const int32_t offset1 = offset_outer + ((((x >> 3) + (offset_outer << 1)) & 3) << 1);
+  const int32_t offset2 = ((macro + (micro & ~15)) << 1) + (micro & 15) + ((z & 3) << (bytes_per_block_log2 + 6)) + ((y & 1) << 4);
+  int32_t address = (offset1 & 1) << 3;
+  address += (offset2 >> 6) & 7;
+  address <<= 3;
+  address += offset1 & ~1;
+  address <<= 2;
+  address += offset2 & ~511;
+  address <<= 3;
+  address += offset2 & 63;
+  return address;
 }
 
 TextureFetch TextureFetch::Parse(const uint32_t d[6]) {
@@ -187,7 +259,8 @@ uint32_t PackedMipLevel(uint32_t width, uint32_t height) {
 }
 
 // Where a packed level lies in the mip tail's 32x32 tile, in blocks (texture_util::GetPackedMipOffset for 2D).
-void PackedMipOffset(uint32_t width, uint32_t height, uint32_t block_size, uint32_t level, uint32_t& x, uint32_t& y) {
+void PackedMipOffset(uint32_t width, uint32_t height, uint32_t block_size, uint32_t block_rows, uint32_t level, uint32_t& x,
+                     uint32_t& y) {
   const uint32_t log2_width = Log2Ceil(width), log2_height = Log2Ceil(height);
   const uint32_t log2_size = std::min(log2_width, log2_height);
   const uint32_t tail_base = log2_size > 4 ? log2_size - 4 : 0, packed = level - tail_base;
@@ -199,7 +272,7 @@ void PackedMipOffset(uint32_t width, uint32_t height, uint32_t block_size, uint3
   } else {
     x = 0, y = (1u << (log2_height - tail_base)) >> (packed - 2);
   }
-  x /= block_size, y /= block_size;
+  x /= block_size, y /= block_rows;
 }
 
 // Where a level's texels are in guest memory (texture_util::GetGuestTextureLayout): the base level at the base
@@ -211,22 +284,25 @@ struct Placement {
 };
 
 Placement Place(const TextureFetch& t, const TextureFormatInfo& info, uint32_t level) {
-  const uint32_t bs = info.block_size, bpb = info.block_bytes;
+  const uint32_t bs = info.block_size, bsh = info.block_rows(), bpb = info.block_bytes;
   const uint32_t packed_level = t.packed_mips ? PackedMipLevel(t.width, t.height) : UINT32_MAX;
   auto layout = [&](Placement& p, uint32_t stored, bool base) {
     const uint32_t row_texels = base ? std::max(t.pitch, t.width) : std::max((1u << Log2Ceil(t.width)) >> stored, 1u);
     const uint32_t rows = base ? t.height : std::max((1u << Log2Ceil(t.height)) >> stored, 1u);
     p.pitch_blocks = (row_texels + bs - 1) / bs;
     p.row_pitch = t.tiled ? ((p.pitch_blocks + 31) & ~31u) * bpb : (p.pitch_blocks * bpb + 255) & ~255u;
-    const uint32_t stride_rows = ((rows + bs - 1) / bs + 31) & ~31u;
+    const uint32_t stride_rows = ((rows + bsh - 1) / bsh + 31) & ~31u;
     p.slice_stride = (((p.pitch_blocks + 31) & ~31u) * bpb * stride_rows + 4095) & ~4095u;
     if (!t.tiled) p.slice_stride = std::max(p.slice_stride, (p.row_pitch * stride_rows + 4095) & ~4095u);
+    // A 3D texture's z slices are packed at the row pitch times the tile-aligned rows (the whole volume, its depth
+    // aligned to 4, is what aligns to 4 KB); stacked layers and cube faces each align.
+    if (t.dimension == 2) p.slice_stride = (t.tiled ? ((p.pitch_blocks + 31) & ~31u) * bpb : p.row_pitch) * stride_rows;
   };
   Placement p;
   if (level == 0) {
     p.address = t.base;
     layout(p, 0, true);
-    if (packed_level == 0) PackedMipOffset(t.width, t.height, bs, 0, p.x, p.y);
+    if (packed_level == 0) PackedMipOffset(t.width, t.height, bs, bsh, 0, p.x, p.y);
     return p;
   }
   p.address = t.mip_address;
@@ -239,7 +315,7 @@ Placement Place(const TextureFetch& t, const TextureFormatInfo& info, uint32_t l
     }
   }
   layout(p, stored, false);
-  if (level >= packed_level) PackedMipOffset(t.width, t.height, bs, level, p.x, p.y);
+  if (level >= packed_level) PackedMipOffset(t.width, t.height, bs, bsh, level, p.x, p.y);
   return p;
 }
 
@@ -259,8 +335,9 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
                              std::vector<uint8_t>& blocks, std::string& error) const {
   const TextureFormatInfo* info = &info_ref;
   const Placement p = Place(t, *info, level);
-  const uint32_t bs = info->block_size, bpb = info->block_bytes, bpb_log2 = uint32_t(std::countr_zero(bpb));
-  const uint32_t bw = (std::max(t.width >> level, 1u) + bs - 1) / bs, bh = (std::max(t.height >> level, 1u) + bs - 1) / bs;
+  const uint32_t bs = info->block_size, bsh = info->block_rows(), bpb = info->block_bytes;
+  const uint32_t bpb_log2 = uint32_t(std::countr_zero(bpb));
+  const uint32_t bw = (std::max(t.width >> level, 1u) + bs - 1) / bs, bh = (std::max(t.height >> level, 1u) + bsh - 1) / bsh;
   const uint32_t slices = t.slices();
   const size_t slice_bytes = size_t(bw) * bh * bpb;
   blocks.assign(slice_bytes * slices, 0);
@@ -288,9 +365,15 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
   for (uint32_t s = 0; s < slices; ++s) {
     for (uint32_t y = 0; y < bh; ++y) {
       for (uint32_t x = 0; x < bw; ++x) {
-        const uint32_t offset = t.tiled ? uint32_t(TiledOffset2D(int32_t(x + p.x), int32_t(y + p.y), p.pitch_blocks, bpb_log2))
-                                        : (y + p.y) * p.row_pitch + (x + p.x) * bpb;
-        read(p.address + s * p.slice_stride + offset, &blocks[s * slice_bytes + (size_t(y) * bw + x) * bpb]);
+        uint32_t offset;
+        if (t.dimension == 2 && t.tiled) {
+          offset = uint32_t(TiledOffset3D(int32_t(x + p.x), int32_t(y + p.y), int32_t(s), p.pitch_blocks,
+                                          (t.height + bsh - 1) / bsh, bpb_log2));
+        } else {
+          offset = s * p.slice_stride + (t.tiled ? uint32_t(TiledOffset2D(int32_t(x + p.x), int32_t(y + p.y), p.pitch_blocks, bpb_log2))
+                                                 : (y + p.y) * p.row_pitch + (x + p.x) * bpb);
+        }
+        read(p.address + offset, &blocks[s * slice_bytes + (size_t(y) * bw + x) * bpb]);
       }
     }
   }
@@ -299,6 +382,93 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
       uint16_t v;
       std::memcpy(&v, &blocks[i], 2);
       v = uint16_t((v & 0x07E0) | (v & 0x1F) << 11 | v >> 11);
+      std::memcpy(&blocks[i], &v, 2);
+    }
+  } else if (info->convert == TextureFormatInfo::kUnpack10_11_11 || info->convert == TextureFormatInfo::kUnpack11_11_10) {
+    // Each component scaled to 16 bits, alpha one; the texels grow from 4 bytes to 8.
+    const bool red11 = info->convert == TextureFormatInfo::kUnpack10_11_11;
+    const uint32_t widths[3] = {red11 ? 11u : 10u, 11, red11 ? 10u : 11u};
+    std::vector<uint8_t> packed;
+    packed.swap(blocks);
+    blocks.resize(packed.size() * 2);
+    for (size_t i = 0; i + 4 <= packed.size(); i += 4) {
+      uint32_t v;
+      std::memcpy(&v, &packed[i], 4);
+      uint16_t out[4] = {0, 0, 0, 0xFFFF};
+      for (uint32_t c = 0, shift = 0; c < 3; shift += widths[c++]) {
+        const uint32_t max = (1u << widths[c]) - 1;
+        out[c] = uint16_t((((v >> shift) & max) * 65535u + max / 2) / max);
+      }
+      std::memcpy(&blocks[2 * i], out, 8);
+    }
+  } else if (info->convert == TextureFormatInfo::kRotate655) {
+    for (size_t i = 0; i + 2 <= blocks.size(); i += 2) {
+      uint16_t v;
+      std::memcpy(&v, &blocks[i], 2);
+      v = uint16_t((v << 11 & 0xF800) | (v >> 5 & 0x07FF));
+      std::memcpy(&blocks[i], &v, 2);
+    }
+  } else if (info->convert == TextureFormatInfo::kDecodeDxt3a || info->convert == TextureFormatInfo::kDecodeCtx1) {
+    // Blocks to texels, rows of the level's width, as the reference decodes them.
+    const bool ctx1 = info->convert == TextureFormatInfo::kDecodeCtx1;
+    const uint32_t texel_bytes = ctx1 ? 2 : 1;
+    const uint32_t w = std::max(t.width >> level, 1u), h = std::max(t.height >> level, 1u);
+    std::vector<uint8_t> packed;
+    packed.swap(blocks);
+    blocks.assign(size_t(w) * h * texel_bytes * slices, 0);
+    for (uint32_t s = 0; s < slices; ++s) {
+      for (uint32_t by = 0; by < bh; ++by) {
+        for (uint32_t bx = 0; bx < bw; ++bx) {
+          const uint8_t* block = &packed[s * slice_bytes + (size_t(by) * bw + bx) * 8];
+          uint8_t* out = &blocks[size_t(s) * w * h * texel_bytes];
+          if (ctx1) {
+            // g0, r0, g1, r1, then 2 bits a texel; the middle colours a third and two thirds of the way.
+            const uint8_t g0 = block[0], r0 = block[1], g1 = block[2], r1 = block[3];
+            uint32_t indices;
+            std::memcpy(&indices, block + 4, 4);
+            const uint8_t cr[4] = {r0, r1, uint8_t(2.f / 3.f * r0 + 1.f / 3.f * r1), uint8_t(1.f / 3.f * r0 + 2.f / 3.f * r1)};
+            const uint8_t cg[4] = {g0, g1, uint8_t(2.f / 3.f * g0 + 1.f / 3.f * g1), uint8_t(1.f / 3.f * g0 + 2.f / 3.f * g1)};
+            for (uint32_t oy = 0; oy < 4 && by * 4 + oy < h; ++oy) {
+              for (uint32_t ox = 0; ox < 4 && bx * 4 + ox < w; ++ox) {
+                const uint32_t index = (indices >> (2 * (ox + 4 * oy))) & 3;
+                uint8_t* texel = out + (size_t(by * 4 + oy) * w + bx * 4 + ox) * 2;
+                texel[0] = cr[index], texel[1] = cg[index];
+              }
+            }
+          } else {
+            uint64_t alpha;
+            std::memcpy(&alpha, block, 8);
+            for (uint32_t oy = 0; oy < 4 && by * 4 + oy < h; ++oy) {
+              for (uint32_t ox = 0; ox < 4 && bx * 4 + ox < w; ++ox) {
+                out[size_t(by * 4 + oy) * w + bx * 4 + ox] = uint8_t(((alpha >> (4 * (ox + 4 * oy))) & 0xF) * 17);
+              }
+            }
+          }
+        }
+      }
+    }
+  } else if (info->convert == TextureFormatInfo::kDecodeGbgr || info->convert == TextureFormatInfo::kDecodeBgrg) {
+    // Each block's two texels: the luma of its own, the block's chroma.
+    const bool gbgr = info->convert == TextureFormatInfo::kDecodeGbgr;
+    const uint32_t w = std::max(t.width >> level, 1u), h = std::max(t.height >> level, 1u);
+    std::vector<uint8_t> packed;
+    packed.swap(blocks);
+    blocks.assign(size_t(w) * h * 4 * slices, 0);
+    for (uint32_t s = 0; s < slices; ++s) {
+      for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = 0; x < w; ++x) {
+          const uint8_t* b = &packed[s * slice_bytes + (size_t(y) * bw + x / 2) * 4];
+          const uint8_t luma = gbgr ? b[(x & 1) * 2] : b[1 + (x & 1) * 2];
+          uint8_t* out = &blocks[((size_t(s) * h + y) * w + x) * 4];
+          out[0] = gbgr ? b[3] : b[2], out[1] = luma, out[2] = gbgr ? b[1] : b[0], out[3] = 0xFF;
+        }
+      }
+    }
+  } else if (info->convert == TextureFormatInfo::kSwapRedBlue1555) {
+    for (size_t i = 0; i + 2 <= blocks.size(); i += 2) {
+      uint16_t v;
+      std::memcpy(&v, &blocks[i], 2);
+      v = uint16_t((v & 0x83E0) | (v & 0x1F) << 10 | (v >> 10 & 0x1F));
       std::memcpy(&blocks[i], &v, 2);
     }
   } else if (info->convert != TextureFormatInfo::kNone) {
@@ -429,8 +599,29 @@ VkImageView TextureCache::Empty(ViewType type, std::string& error) {
   return image.view;
 }
 
+void TextureCache::Evict(uint64_t frames, std::vector<Image>& images, std::vector<VkImageView>& views) {
+  bool any = false;
+  for (auto it = textures_.begin(); it != textures_.end();) {
+    Texture& t = *it->second;
+    if (epoch_ - t.used <= frames) {
+      ++it;
+      continue;
+    }
+    for (auto& [swizzle, view] : t.views) views.push_back(view);
+    images.push_back(t.image);
+    it = textures_.erase(it);
+    any = true;
+  }
+  if (any) {
+    fast_.clear();
+    last_used_ = nullptr;
+    ++version_;
+  }
+}
+
 VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::string& error, bool is_signed) {
   last_view_scaled_ = false;
+  last_used_ = nullptr;
   if (any_changed_.load(std::memory_order_acquire)) {
     // Ranges reported from other threads (CPU writes watched, resolves written into guest memory).
     {
@@ -446,6 +637,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   if (const auto hit = fast_.find(fast_key);
       hit != fast_.end() && (watch_ || hit->second.epoch == epoch_) && hit->second.version == version_) {
     last_view_scaled_ = hit->second.scaled;
+    last_used_ = hit->second.used;
+    *last_used_ = epoch_;
     return hit->second.view;
   }
   const TextureFetch t = TextureFetch::Parse(fetch);
@@ -455,10 +648,10 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   // The data dimension (fetch constant word 5): 0 1D, 1 2D or stacked, 2 3D, 3 cube.
   const ViewType matching = t.dimension == 3 ? ViewType::kCube : t.dimension == 2 ? ViewType::k3D : ViewType::k2DArray;
   if (type != matching) return Empty(type, error);
-  if (t.dimension == 0 || t.dimension == 2) {
-    return error = std::string(t.dimension ? "3D" : "1D") + " textures (not yet)", VK_NULL_HANDLE;
-  }
-  const bool cube = t.dimension == 3;
+  if (t.dimension == 0) return error = "1D textures (not yet)", VK_NULL_HANDLE;
+  const bool cube = t.dimension == 3, volume = t.dimension == 2;
+  // The layers of the host image (stacked slices, cube faces) and its depth (a 3D texture's z slices).
+  const uint32_t layers = volume ? 1 : t.depth, image_depth = volume ? t.depth : 1;
   const TextureFormatInfo* info = GuestTextureFormat(t.format);
   if (!info) return error = "texture format " + std::to_string(t.format) + " not handled yet", VK_NULL_HANDLE;
   if (is_signed && info->signed_format == VK_FORMAT_UNDEFINED) {
@@ -470,6 +663,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   // The levels, and a hash of the guest memory each spans (a level's slices at its stride, the packed tail's tile).
   uint32_t first_level, last_level;
   t.Levels(first_level, last_level);
+  if (volume && last_level) return error = "3D texture mip levels (not yet)", VK_NULL_HANDLE;
   uint32_t span_begin = UINT32_MAX, span_end = 0;
   for (uint32_t level = first_level; level <= last_level; ++level) {
     const Placement p = Place(t, *info, level);
@@ -485,7 +679,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   std::vector<const GpuSource*> sources;
   uint64_t source_generation = 0;
   if (t.tiled && t.dimension == 1 && first_level == 0 && last_level == 0 &&
-      info->convert != TextureFormatInfo::kSwapRedBlue565) {
+      (info->convert == TextureFormatInfo::kNone || info->convert == TextureFormatInfo::kDepthUnorm24 ||
+       info->convert == TextureFormatInfo::kDepthFloat24)) {
     const bool depth_texture = info->convert == TextureFormatInfo::kDepthUnorm24 ||
                                info->convert == TextureFormatInfo::kDepthFloat24;
     const uint32_t slice_stride = Place(t, *info, 0).slice_stride;
@@ -548,11 +743,11 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     slot = std::make_unique<Texture>();
     VkImageCreateInfo info_ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     info_ci.flags = (cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0) | (mutable_format ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0);
-    info_ci.imageType = VK_IMAGE_TYPE_2D;
+    info_ci.imageType = volume ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
     info_ci.format = info->format;
-    info_ci.extent = {t.width * scale, t.height * scale, 1};
+    info_ci.extent = {t.width * scale, t.height * scale, image_depth};
     info_ci.mipLevels = levels;
-    info_ci.arrayLayers = t.depth;  // stacked textures: one layer a slice; cubes: a face
+    info_ci.arrayLayers = layers;  // stacked textures: one layer a slice; cubes: a face
     info_ci.samples = VK_SAMPLE_COUNT_1_BIT;
     info_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
     info_ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -578,7 +773,6 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   if (source) {
     if (slot->gpu_generation != source_generation) {
       Image& image = slot->image;
-      const uint32_t layers = t.depth;
       auto copy = [&](VkCommandBuffer cb) {
         VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
@@ -633,8 +827,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       if (!LoadLevel(t, *info, level, level_blocks, error)) return VK_NULL_HANDLE;
       VkBufferImageCopy region{};
       region.bufferOffset = blocks.size();
-      region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, t.depth};
-      region.imageExtent = {std::max(t.width >> level, 1u), std::max(t.height >> level, 1u), 1};
+      region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, layers};
+      region.imageExtent = {std::max(t.width >> level, 1u), std::max(t.height >> level, 1u), image_depth};
       regions.push_back(region);
       blocks.insert(blocks.end(), level_blocks.begin(), level_blocks.end());
       blocks.resize((blocks.size() + 15) & ~size_t(15));  // offsets aligned for any texel size
@@ -656,7 +850,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
       barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
       barrier.image = image.image;
-      barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, t.depth};
+      barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, layers};
       VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
       dependency.imageMemoryBarrierCount = 1;
       dependency.pImageMemoryBarriers = &barrier;
@@ -694,19 +888,23 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   if (!view) {
     VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     vi.image = slot->image.image;
-    vi.viewType = cube ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D_ARRAY;  // 2D textures are declared arrayed
+    vi.viewType = cube     ? VK_IMAGE_VIEW_TYPE_CUBE
+                  : volume ? VK_IMAGE_VIEW_TYPE_3D
+                           : VK_IMAGE_VIEW_TYPE_2D_ARRAY;  // 2D textures are declared arrayed
     vi.format = is_signed ? info->signed_format : info->format;
     vi.components = {Component(host_swizzle & 7), Component((host_swizzle >> 3) & 7), Component((host_swizzle >> 6) & 7),
                      Component((host_swizzle >> 9) & 7)};
-    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, t.depth};
+    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, layers};
     if (f.vkCreateImageView(device_.device(), &vi, nullptr, &view) != VK_SUCCESS) {
       view = VK_NULL_HANDLE;
       return error = "texture view", VK_NULL_HANDLE;
     }
   }
   if (fast_.size() > 65536) fast_.clear();
-  fast_[fast_key] = {view, epoch_, version_, scale > 1};
+  fast_[fast_key] = {view, epoch_, version_, scale > 1, &slot->used};
   last_view_scaled_ = scale > 1;
+  slot->used = epoch_;
+  last_used_ = &slot->used;
   return view;
 }
 

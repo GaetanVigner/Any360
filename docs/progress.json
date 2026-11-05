@@ -7,14 +7,14 @@
  "system_calls": {
   "total": 2914,
   "used_by_titles": 374,
-  "native": 599,
+  "native": 602,
   "ported": 0,
   "runnable": 606,
   "by_state": {
-   "native": 599,
+   "native": 602,
    "stub": 2294,
    "missing": 14,
-   "reference": 7
+   "reference": 4
   },
   "by_library": {
    "crt": 2,
@@ -80,20 +80,20 @@
  },
  "gpu": {
   "total": 323,
-  "native": 214,
-  "reference": 95,
+  "native": 282,
+  "reference": 34,
   "by_family": {
    "command processor": {
-    "native": 36,
-    "missing": 14
+    "native": 43,
+    "missing": 7
    },
    "primitive types": {
-    "reference": 9,
-    "native": 10
+    "native": 11,
+    "reference": 8
    },
    "render features": {
-    "native": 32,
-    "reference": 23
+    "native": 54,
+    "reference": 1
    },
    "render target formats": {
     "native": 14
@@ -112,8 +112,8 @@
     "reference": 1
    },
    "texture formats": {
-    "reference": 61,
-    "native": 3
+    "reference": 23,
+    "native": 41
    },
    "vertex formats": {
     "reference": 1,

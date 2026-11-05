@@ -81,6 +81,12 @@ class Renderer {
   // The display gamma ramp at a swap, before Swap: the 256-entry table (DC_LUT_30_COLOR values: 10-bit blue, green,
   // red from bit 0) and the piecewise linear one (128 entries of red, green, blue DC_LUT_PWL_DATA values).
   virtual void GammaRamp(const uint32_t* /*table*/, const uint32_t* /*pwl*/) {}
+  // Occlusion queries (EVENT_WRITE_ZPD). A renderer that counts samples itself is told where a query begins and where
+  // it ends, with the guest address of its counts (RB_SAMPLE_COUNT_ADDR, D3D's end block): it writes the counts there
+  // once the draws in between have run (until then D3D's markers there say the query is not done). Otherwise the
+  // command processor reports a fixed count at once.
+  virtual bool CountsSamples() const { return false; }
+  virtual void OcclusionQuery(bool /*end*/, uint32_t /*address*/) {}
 };
 
 class CommandProcessor : public sys::GpuBackend {

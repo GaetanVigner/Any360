@@ -23,6 +23,7 @@
 #include "any360/sys/variables.h"
 #include "any360/sys/xam.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -699,8 +700,19 @@ void Win32FileTests() {
     return at;
   };
   const uint32_t kRead = 0x80000000, kWrite = 0x40000000, kOpenExisting = 3, kCreateAlways = 2, kCreateNew = 1;
+  // A folder mounted over a folder of a mounted device wins through a link ("game:\Media" is "\Device\Cdrom0\Media",
+  // one separator, not two), as a title's redirection of one folder needs.
+  fs::create_directories(root / "over");
+  { std::ofstream(root / "over" / "data.bin", std::ios::binary) << "OVERLAY"; }
+  Files().Mount("\\Device\\Cdrom0\\Media", root / "over", true);
+  {
+    const uint32_t h = Files().Win32CreateFile(g, str(text, "game:\\Media\\DATA.bin"), 0x80000000, 3);
+    CHECK(h != 0xFFFFFFFF && Files().Win32Transfer(g, h, buf, 7, out, 0, false) == 1 && std::memcmp(g.host(buf), "OVERLAY", 7) == 0);
+    Objects().Close(h);
+  }
+  Files().Unmount("\\Device\\Cdrom0\\Media");
   // Open, read in two steps, seek, read at an OVERLAPPED's offset, read past the end (TRUE, no bytes).
-  const uint32_t f = Files().Win32CreateFile(g, str(text, "game:\\MEDIA\\data.bin"), kRead, kOpenExisting);
+  const uint32_t f =Files().Win32CreateFile(g, str(text, "game:\\MEDIA\\data.bin"), kRead, kOpenExisting);
   CHECK(f != 0xFFFFFFFF && Files().Win32GetFileSize(g, f, out) == 16 && g.Load32(out) == 0);
   CHECK(Files().Win32Transfer(g, f, buf, 4, out, 0, false) == 1 && g.Load32(out) == 4 && std::memcmp(g.host(buf), "0123", 4) == 0);
   CHECK(Files().Win32Transfer(g, f, buf, 2, out, 0, false) == 1 && std::memcmp(g.host(buf), "45", 2) == 0);
@@ -882,6 +894,17 @@ void KernelOddsTests() {
   CHECK(top != 0 && Memory().IsAddressValid(top - 4) == 1 && Memory().IsAddressValid(top - 0x3000) == 1);
   CHECK(Memory().DeleteKernelStack(top - 0x3000) == 0 && Memory().IsAddressValid(top - 4) == 0);
   CHECK(Memory().DeleteKernelStack(top - 0x3000) == 0xC0000001u && Memory().IsAddressValid(0x1000) == 0);
+  // Encrypted memory: its own heap of 64 KB pages, 16 MB at most, never handed out otherwise.
+  Memory().Reset({{0x40000, 0x10000, 0x1000, false}, {0x50000, 0x30000, 0x10000, false, true}});  // the test's guest memory
+  CHECK(Memory().AllocateEncrypted(g, 0x8000, out) == 0 && g.Load32(out) >= 0x50000 && g.Load32(out) % 0x10000 == 0 &&
+        Memory().IsAddressValid(g.Load32(out) + 0xFFFC) == 1);
+  CHECK(Memory().AllocateEncrypted(g, 0, out + 4) == 0xC000000Du && Memory().AllocateEncrypted(g, 0x1000001, out + 4) == 0xC000000Du);
+  CHECK(Memory().AllocateEncrypted(g, 0x10000, out + 4) == 0 && g.Load32(out + 4) == g.Load32(out) + 0x10000);
+  const uint32_t first = g.Load32(out);
+  CHECK(Memory().FreeEncrypted(g, out) == 0 && Memory().IsAddressValid(first) == 0 && Memory().FreeEncrypted(g, out) == 0xC000000Du);
+  CHECK(MemoryManager::ImagePageTableEntry(0x82010000) == 0x201 && MemoryManager::ImagePageTableEntry(0x90003000) == 0x40000003 &&
+        MemoryManager::ImagePageTableEntry(0x70000000) == 0);
+  Memory().Reset({{0x40000, 0x40000, 0x1000, false}});
   // A string whose buffer the kernel allocated, freed and emptied.
   const uint32_t unicode = kScratch + 0x410, buffer = Memory().AllocatePages(g, 0x100);
   g.Store16(unicode, 6);
@@ -1970,7 +1993,68 @@ void SimpsonsTests() {
   fs::remove_all(content, ec);
 }
 
+// Many threads releasing and taking one semaphore and one synchronization event at once: every release is taken once,
+// none lost (the dispatcher's lock), and the handle table hands out distinct handles to threads creating events.
+void ConcurrentDispatcher() {
+  Objects().Reset();
+  Objects().SetKernelHeap(0x10000, 0x70000);
+  constexpr uint32_t kSem = 0x2000, kEvent = 0x2040, kThreads = 4, kRounds = 20000;
+  Objects().InitializeSemaphore(g, kSem, 0, 0x7FFFFFFF);
+  std::atomic<uint32_t> taken{0}, timeouts{0};
+  std::vector<std::thread> threads;
+  const int64_t two_seconds = -20'000'000;
+  for (uint32_t t = 0; t < kThreads; ++t) {
+    threads.emplace_back([] {
+      for (uint32_t i = 0; i < kRounds; ++i) {
+        uint32_t status;
+        Objects().ReleaseSemaphore(g, kSem, 1, status);
+      }
+    });
+    threads.emplace_back([&, t] {
+      for (uint32_t i = 0; i < kRounds; ++i) {
+        if (Objects().WaitForObject(g, kSem, kMainThread + 0x10 * t, &two_seconds) == 0) ++taken;
+        else ++timeouts;
+      }
+    });
+  }
+  for (auto& thread : threads) thread.join();
+  CHECK(taken == kThreads * kRounds && timeouts == 0 && g.Load32(kSem + 4) == 0);
+  // A synchronization event set by one thread and taken by another, round after round.
+  Objects().InitializeEvent(g, kEvent, 1, 0);
+  std::atomic<uint32_t> woken{0};
+  std::thread waiter([&] {
+    for (uint32_t i = 0; i < 2000; ++i) {
+      if (Objects().WaitForObject(g, kEvent, kOtherThread, &two_seconds) == 0) ++woken;
+      Objects().SetEvent(g, kEvent + 0x20);  // hand back: an event of its own
+    }
+  });
+  Objects().InitializeEvent(g, kEvent + 0x20, 1, 0);
+  for (uint32_t i = 0; i < 2000; ++i) {
+    Objects().SetEvent(g, kEvent);
+    Objects().WaitForObject(g, kEvent + 0x20, kMainThread, &two_seconds);
+  }
+  waiter.join();
+  CHECK(woken == 2000);
+  // Handles from four threads at once: all distinct.
+  std::vector<std::vector<uint32_t>> made(kThreads);
+  threads.clear();
+  for (uint32_t t = 0; t < kThreads; ++t) {
+    threads.emplace_back([&, t] {
+      for (uint32_t i = 0; i < 500; ++i) {
+        const uint32_t out = kScratch + 0x100 * t;
+        if (Objects().CreateEvent(g, out, 0, 0, 0) == 0) made[t].push_back(g.Load32(out));
+      }
+    });
+  }
+  for (auto& thread : threads) thread.join();
+  std::vector<uint32_t> all;
+  for (const auto& m : made) all.insert(all.end(), m.begin(), m.end());
+  std::sort(all.begin(), all.end());
+  CHECK(all.size() == kThreads * 500 && std::adjacent_find(all.begin(), all.end()) == all.end());
+}
+
 int main() {
+  ConcurrentDispatcher();
   SimpsonsTests();
   ContentAggregateTests();
   TduTests();

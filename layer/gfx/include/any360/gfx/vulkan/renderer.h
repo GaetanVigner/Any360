@@ -64,6 +64,7 @@ struct RendererStats {
   uint32_t draws = 0;
   uint32_t skipped = 0;     // draws with nothing to draw (EDRAM mode ignore, empty scissor, no target)
   uint32_t failed = 0;      // draws not drawn (see last_error)
+  uint32_t memexports = 0;  // draws whose shaders export to memory
   uint32_t translations = 0;
   uint32_t pipelines = 0;
   uint32_t sample_resolves = 0;        // host MSAA: surfaces' samples resolved for a read
@@ -116,6 +117,10 @@ struct BytesHash {
 
 // The host format of a Xenos colour render target format, as the reference maps it (VK_FORMAT_UNDEFINED: unknown).
 VkFormat ColorTargetFormat(uint32_t color_format);
+// The interpolators (of `interpolators`) a pixel shader samples at their centroid: RB_SURFACE_INFO's MSAA mode,
+// SQ_CONTEXT_MISC sc_sample_cntl and SQ_INTERPOLATOR_CNTL's sampling pattern, as the reference picks them.
+uint32_t CentroidInterpolators(uint32_t interpolators, uint32_t surface_info, uint32_t context_misc,
+                               uint32_t interpolator_cntl);
 
 class VulkanRenderer : public gfx::Renderer {
  public:
@@ -189,6 +194,8 @@ class VulkanRenderer : public gfx::Renderer {
   void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* registers) override;
   void Invalidate(uint32_t base, uint32_t size) override;
   void GammaRamp(const uint32_t* table, const uint32_t* pwl) override;
+  bool CountsSamples() const override { return query_pool_ != VK_NULL_HANDLE; }
+  void OcclusionQuery(bool end, uint32_t address) override;
 
   // The last presented frame: RGBA8 pixels (R in the low byte), row after row; `number` counts swaps.
   // A frame is either still on the GPU (the surface the front buffer was resolved from, when guest memory holds
@@ -218,6 +225,10 @@ class VulkanRenderer : public gfx::Renderer {
   // For diagnostics: the textures uploaded so far by (base, format, width, height), and whether a base is the
   // destination of a resolve (with its destination format, or UINT32_MAX).
   TextureCache* texture_cache() { return textures_.get(); }
+  // What the renderer holds, to see it does not grow without bound: render targets, resolves kept, pipelines.
+  size_t surface_count() const { return surfaces_.size(); }
+  size_t resolved_count() const { return resolved_.size(); }
+  size_t pipeline_count() const { return pipelines_.size(); }
   // A host that watches guest memory for CPU writes (as for textures): guest memory copied into video memory is then
   // copied again only after a write (GuestMemoryWritten), not at every batch. `watch(begin, end)` arms a one-shot watch.
   void SetMemoryWatch(std::function<void(uint32_t, uint32_t)> watch);
@@ -332,10 +343,35 @@ class VulkanRenderer : public gfx::Renderer {
   // Guest memory the shaders read (vertices) from video memory: each batch first copies the ranges its draws fetch
   // from the imported guest memory (one transfer over the bus, not a fetch per vertex attribute through it).
   Buffer vram_guest_;
+  // Memory exports (memexport): the guest ranges a draw's shaders wrote, each at an offset of the readback buffer
+  // (guest memory in video memory: copied there at the flush, then into guest memory once the batch is done).
+  struct MemExport {
+    uint32_t base, bytes, readback;
+  };
+  std::vector<MemExport> memexports_;
+  Buffer memexport_readback_;
+  void MemExported(std::vector<MemExport> exports);
+  std::vector<MemExport> MemExportRanges(const uint32_t* regs, const TranslatedShader* vs, const TranslatedShader* ps) const;
+  // A draw nothing of which reaches a target (EDRAM mode other than 4 or 5, no target, an empty scissor): a vertex
+  // shader exporting to memory still runs, as a compute dispatch of its translation for memexport (one invocation a
+  // guest vertex). False when the vertex shader exports nothing.
+  bool MemExportWithoutRasterization(const DrawCall& draw);
+  std::map<VkShaderModule, VkPipeline> memexport_pipelines_;
+  uint32_t memexport_dispatches_ = 0;
+ public:
+  uint32_t memexport_dispatches() const { return memexport_dispatches_; }
+ private:
   bool vram_guest_on_ = false;
   // Pages (4 KB) of guest memory whose copy in video memory is current (with a watch set; else none are kept).
   static constexpr uint32_t kGuestPageShift = 12;
   std::unique_ptr<std::atomic<uint64_t>[]> vram_valid_;
+  // By page: how often the CPU wrote it after it was copied (each a fault on the watch), halved every few hundred
+  // frames. A page written that often (a vertex buffer the title fills every frame) is copied again by every batch
+  // that reads it instead, never watched: a copy of 4 KB costs far less than the fault.
+  std::unique_ptr<std::atomic<uint8_t>[]> vram_writes_;
+  static constexpr uint8_t kHotPageWrites = 3;
+  uint32_t hot_decay_frames_ = 0;
+  std::vector<VkBufferCopy> watch_runs_;
   std::function<void(uint32_t, uint32_t)> guest_watch_;
   std::vector<VkBufferCopy> upload_regions_, upload_regions_scratch_;
   // Without the import: the guest memory ranges the batch's shaders read (vertex buffers, indices a rectangle list's
@@ -385,6 +421,13 @@ class VulkanRenderer : public gfx::Renderer {
     VkDescriptorPool draw_pool = VK_NULL_HANDLE, depth_pool = VK_NULL_HANDLE;
     std::vector<Buffer> staging;
     std::vector<Image> retired;
+    std::vector<VkImageView> retired_views;  // of textures dropped from the cache
+    // Occlusion queries ended in it: their counts written into guest memory once it has run.
+    struct Query {
+      uint32_t address;
+      std::vector<uint32_t> parts;  // host queries (a draw each), maybe of earlier batches
+    };
+    std::vector<Query> queries;
     std::vector<PendingWriteBack> write_backs;
     std::vector<std::function<void()>> actions;
     bool done = true;  // run, and what follows it done (guarded by done_mutex_)
@@ -396,6 +439,14 @@ class VulkanRenderer : public gfx::Renderer {
     bool uploaded = false;  // its upload command buffer ran too (time stamped)
   };
   static constexpr uint32_t kBatches = 8;
+  // Occlusion queries: a host query around each draw of an open guest query (so none spans command buffers or render
+  // passes), a range of the pool by batch, reset when the batch begins; the guest query's count is their sum.
+  static constexpr uint32_t kQueriesPerBatch = 1024;
+  VkQueryPool query_pool_ = VK_NULL_HANDLE;
+  uint32_t queries_used_ = 0;  // of the open batch's range
+  bool query_open_ = false;
+  std::vector<uint32_t> query_parts_;
+  void WriteQuery(const Batch::Query& query);
   int32_t last_submitted_ = -1;  // the batch submitted last (its actions take what follows it)
   std::array<Batch, kBatches> batches_;
   uint32_t current_ = 0;  // the batch being recorded (not in flight)
@@ -546,6 +597,7 @@ class VulkanRenderer : public gfx::Renderer {
     uint8_t* index_dst;
     const uint8_t* index_src;
     uint32_t index_bytes, primitives, reset_index, host_index_count;
+    uint32_t query;  // the host occlusion query around the draw (UINT32_MAX: none)
     // The texture sets a recording thread makes (sets[2 + stage] then), by layout: images, then samplers.
     static constexpr uint32_t kMaxBindings = 16;
     VkDescriptorSetLayout texture_layouts[2];
@@ -644,10 +696,12 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t fetch[6] = {};
     uint64_t version = 0, epoch = 0;
     VkImageView view = VK_NULL_HANDLE;
+    uint64_t* used = nullptr;  // the texture's last-use frame, marked at each reuse (TextureCache::last_used)
     uint32_t signs = 0;
     bool scaled = false;  // a resolution-scaled texture (copied from a scaled resolve)
   };
   std::array<TextureMemo, 32 * 3 * 2> texture_memo_;
+  uint32_t evict_frames_ = 0;  // frames since textures were last evicted
   // By texture fetch constant: the last sampler for its words and the binding's filters.
   struct SamplerMemo {
     uint32_t key[10] = {};

@@ -184,6 +184,79 @@ From the Crackdown runs (each one cost a debugging session there):
    strips and loops (a strip back to the first vertex, expanded like quad lists). The command processor now
    gathers an immediate shader load that wraps around the ring's end (it assumed it never would; the bench's
    ring did).
+   Texture formats (2026-11-05): every format the reference's Vulkan texture cache loads, each sampled from
+   a 4x4 texture of one value as a title stores it (linear rows 256-byte aligned, big-endian units the fetch
+   constant's endian mode undoes): the 8-bit, 5:6:5, 6:5:5, 1:5:5:5, 4:4:4:4, 8:8:8:8, 2:10:10:10, 10:11:11,
+   11:11:10, normalized 16-bit (signed too), half and 32-bit float, EXPAND, float24 depth, DXT1-5, DXN, DXT5A,
+   DXT3A, CTX1 and 4:2:2 YUV ones, with the _A and _AS_16_16_16_16 forms. The texture cache gained, converting as the
+   reference does: 1:5:5:5 (A1R5G5B5, red and blue exchanged), 4:4:4:4, 6:5:5 (rotated into 5:6:5, read back with a
+   red-blue-green swizzle), the 16-bit normalized and EXPAND formats, DXN (BC5), DXT5A (BC4), 10:11:11 and
+   11:11:10 (unpacked to 16-bit normalized RGBA), DXT3A (4-bit alpha to 8-bit texels), CTX1 (decoded to 8:8
+   texels) and the 4:2:2 YUV formats Cr_Y1_Cb_Y0 and Y1_Cr_Y0_Cb (2x1 blocks, the loader's first blocks taller or
+   shorter than wide, decoded to RGBA8 texels of Cr, Y, Cb, as the reference's fallback does). 5-bit components reach the sampler through 8 bits (bit replication). Not handled, as by the reference:
+   the 1-bit, _B, 32-bit integer, _AS_8, MPEG, interlaced, 32_32_32_FLOAT and EDRAM formats.
+   Render features (2026-11-05): back-face stencil, blend constants, the alpha test, wireframe fill, polygon offset,
+   the window offset, MSAA 2x as samples, user clip planes, linear texture filtering, vertex shader textures and
+   constants addressed by a0, each a scenario. Two were wrong: the alpha test compared with 0 (RB_ALPHA_REF never
+   reached the shader), and user clip planes were ignored (PA_CL_CLIP_CNTL and PA_CL_UCP_n now set the vertex
+   shader's clip or cull distances, as the reference translates them).
+   Texture dimensions (2026-11-05): stacked 2D layers (tfetch3D at normalized w, slices 4 KB-aligned), cube faces
+   (tfetchCube at face coordinates) and now 3D textures: a 3D host image whose z slices the cache loads at the row
+   pitch times 32 rows (the volume, depth aligned to 4, is what aligns to 4 KB) or, tiled, through the 3D tiling
+   (XGRAPHICS::TileVolume, as the reference computes it); the base level only for now.
+   Points (2026-11-05): point lists drawn as two-triangle strips, each the square of PA_SU_POINT_SIZE (or of the size
+   the vertex shader writes, clamped by PA_SU_POINT_MINMAX), the vertex shader expanding them as the reference does
+   without geometry shaders (the renderer drew sizeless host points). Point sprite coordinates (pixel parameter
+   generation on points, which the renderer refused) now come from that expansion: S and T 0 to 1 across the
+   square, rightwards and downwards, as the reference passes them. Anisotropic filtering (a 4:1 fetch constant keeps the finer level of a
+   texture read obliquely) and bin predication (gfx_cp_tests) are tested too.
+   Alpha to coverage and occlusion queries (2026-11-05): RB_COLORCONTROL's alpha_to_mask_enable and dither offsets
+   never reached the shader. Guest samples are host pixels here, so the translator (an any360 mode, as the reference
+   does it per host sample) finds a fragment's guest pixel and sample from its position and discards it when alpha
+   is below the sample's threshold (1x 1, 2x top 0.5 / bottom 1, 4x TL 0.75 / BL 0.25 / TR 0.5 / BR 1) less the
+   pixel's offset; gl_SampleMask is no longer declared, so the host's own MSAA keeps every sample of a kept fragment.
+   Scenarios at 1x, 2x and 4x. Occlusion queries, already counted by host queries, got their scenario: a full quad
+   reports every sample and one the alpha test discards none.
+   Centroid interpolation (2026-11-05): the pixel shader's interpolators are decorated Centroid as the reference
+   picks them (guest MSAA, SQ_CONTEXT_MISC sc_sample_cntl, SQ_INTERPOLATOR_CNTL's pattern), part of the shader key.
+   Guest samples being host pixels, it matters to the host's own MSAA (no extrapolation at partly covered edges);
+   tested for the choice and for a 2x draw through it, not for the host MSAA image itself.
+   Immediate indices (2026-11-05): the indices a DRAW_INDX or DRAW_INDX_2 packet carries itself (source select 1),
+   which the renderer refused and the reference does not draw, are staged in the batch's index buffer and drawn as
+   DMA indices of host order: two 16-bit indices a dword, the first in the low half, as an R6xx-family VGT takes
+   them (Mesa's r600 driver copies little-endian user indices into its immediate draw packets); no Xenos source
+   confirms it, and no known title emits them. Rectangle and point lists (their vertex shader loads guest indices
+   from memory) still refuse them. Scenarios: a 16-bit triangle (its half order checked), a 32-bit quad list and a
+   strip with primitive reset.
+   2D primitives (0x10-0x16: copy rect lists V0-V3, fill rect list, 2D line and triangle strips) stay refused, for
+   want of a source: the reference refuses them, Mesa's AMD and Adreno register files and RADV only name them, and
+   AMD's R6xx/R7xx 3D Register Reference (2009) lists them by name only (its VGT_GROUP_PRIM_TYPE grouper types
+   VGT_GRP_2D_COPY_RECT_V0-V3 / FILL_RECT / LINE / TRI likewise; PA_SC_LINE_CNTL's Bresenham control is "set for 2D
+   lines"). Their vertex counts, what V0-V3 differ in and whether they bypass clipping and the viewport transform
+   are not documented there; no known title draws them.
+   Memory export (2026-11-05): the translator already wrote memexport streams into the guest memory buffer, but
+   nothing brought them back. The renderer now gathers each draw's streams as the reference does (the stream
+   constants the shaders' `mad eA` read, checked by their marks; a range of count x element size each), submits the
+   batch with them and waits: guest memory in video memory (the default) copies the ranges into a readback buffer
+   and then into guest memory, a mirror copies them back, imported memory has them in place; the texture cache
+   forgets those ranges. Rare and synchronous by design (later draws and the title's code may read the results).
+   The ranges are uploaded to the GPU's copy first: they come back whole, and elements the shaders did not write
+   would otherwise undo what the title wrote there since (a scenario caught it).
+   Without rasterization (EDRAM mode other than 4 or 5, no target bound, an empty scissor: the "compute shaders"
+   titles make of point draws covering nothing, which the renderer skipped), a memory-exporting vertex shader runs
+   as a compute dispatch of the translator's memexport translation (kMemExportCompute, one invocation a guest
+   vertex, auto or DMA indices), outside the render passes; the reference's Vulkan backend draws it with
+   rasterizer discard instead and never used that translation, whose position export crashed the translator
+   (fixed, see the translator's NOTICE.md). Not yet: immediate indices, vertex shader textures there. Scenarios: a
+   vertex shader writing a 32_32_32_32_FLOAT element per point, drawn, without rasterization, and from DMA indices
+   {2, 3} (elements 0 and 1 untouched); the video memory path (mirror and imported paths untested).
+   PM4 packets left (COND_EXEC, MEM_WRITE_CNTR, EVENT_WRITE_CFL, DRAW_INDX_2_BIN, SET_STATE, SET_BIN_BASE_OFFSET,
+   IM_STORE): no layout to implement them from. The reference names them only (xenos.h, one-line purposes);
+   Mesa's adreno_pm4.xml gives the same one-liners, and its CP_COND_EXEC layout (64-bit addresses: bool, timestamp,
+   active timestamp, dword count) is the later Adreno one; no a2xx or Xenos code emits or parses any of them. None
+   is in the Crackdown capture (its packets: SET_BIN_MASK/SELECT, DRAW_INDX, DRAW_INDX_2, SET_CONSTANT,
+   LOAD_ALU_CONSTANT, IM_LOAD, IM_LOAD_IMMEDIATE, EVENT_WRITE, _EXT, _ZPD, _SHD, WAIT_REG_MEM, INDIRECT_BUFFER,
+   INVALIDATE_STATE, INTERRUPT, XE_SWAP, REG_RMW). The command processor skips them by their length, as before.
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured

@@ -36,11 +36,12 @@ struct Timer {
 // Register file indices the renderer reads.
 constexpr uint32_t kRbDepthInfo = 0x2002, kPaScScreenScissorTl = 0x200E, kPaScScreenScissorBr = 0x200F,
                    kPaScWindowOffset = 0x2080, kPaScWindowScissorTl = 0x2081, kPaScWindowScissorBr = 0x2082,
-                   kRbColorMask = 0x2104, kRbBlendRed = 0x2105, kRbStencilRefMaskBf = 0x210C,
+                   kRbColorMask = 0x2104, kRbBlendRed = 0x2105, kRbStencilRefMaskBf = 0x210C, kRbAlphaRef = 0x210E,
+                   kPaClClipCntl = 0x2204, kPaClUcp0X = 0x2388, kPaSuPointSize = 0x2280, kPaSuPointMinmax = 0x2281,
                    kRbStencilRefMask = 0x210D, kPaClVportXScale = 0x210F, kRbDepthControl = 0x2200,
                    kRbColorControl = 0x2202, kPaSuScModeCntl = 0x2205, kPaClVteCntl = 0x2206, kPaSuVtxCntl = 0x2302,
                    kRbModeControl = 0x2208, kPaSuPolyOffsetFrontScale = 0x2380, kRbSurfaceInfo = 0x2000,
-                   kSqProgramCntl = 0x2180, kSqContextMisc = 0x2181, kVgtMaxVtxIndx = 0x2100, kVgtMinVtxIndx = 0x2101,
+                   kSqProgramCntl = 0x2180, kSqContextMisc = 0x2181, kSqInterpolatorCntl = 0x2182, kVgtMaxVtxIndx = 0x2100, kVgtMinVtxIndx = 0x2101,
                    kVgtIndxOffset = 0x2102, kVgtMultiPrimIbResetIndx = 0x2103;
 constexpr uint32_t kRbColorInfo[4] = {0x2001, 0x2003, 0x2004, 0x2005};
 constexpr uint32_t kRbBlendControl[4] = {0x2201, 0x2209, 0x220A, 0x220B};
@@ -67,6 +68,22 @@ VkPrimitiveTopology Topology(uint32_t primitive_type) {
     case 0x0E: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;  // a quad strip: its quads are the strip's triangle pairs
     case 0x0F: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;    // a polygon (convex): a fan from its first vertex
     default: return VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+  }
+}
+
+// The bytes of a memory export element of a ColorFormat, as the translator packs them (0: one it does not write).
+uint32_t MemExportElementBytes(uint32_t format) {
+  using F = rg::xenos::ColorFormat;
+  switch (F(format)) {
+    case F::k_8: case F::k_8_A: case F::k_8_B: return 1;
+    case F::k_1_5_5_5: case F::k_5_6_5: case F::k_6_5_5: case F::k_8_8: case F::k_4_4_4_4: case F::k_16:
+    case F::k_16_FLOAT: return 2;
+    case F::k_8_8_8_8: case F::k_8_8_8_8_A: case F::k_8_8_8_8_AS_16_16_16_16: case F::k_2_10_10_10:
+    case F::k_2_10_10_10_AS_16_16_16_16: case F::k_10_11_11: case F::k_10_11_11_AS_16_16_16_16: case F::k_11_11_10:
+    case F::k_11_11_10_AS_16_16_16_16: case F::k_16_16: case F::k_16_16_FLOAT: case F::k_32_FLOAT: return 4;
+    case F::k_16_16_16_16: case F::k_16_16_16_16_FLOAT: case F::k_32_32_FLOAT: return 8;
+    case F::k_32_32_32_32_FLOAT: return 16;
+    default: return 0;
   }
 }
 
@@ -112,6 +129,18 @@ VulkanRenderer::VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirro
   // Every translator feature on: what desktop Vulkan 1.3 drivers and RADV offer (to be read from the device).
   translator_ = std::make_unique<SpirvShaderTranslator>(SpirvShaderTranslator::Features(true), true, true, false, scale_,
                                                         scale_);
+  translator_->SetSamplesAsPixels(true);  // guest samples are pixels of the host targets
+}
+
+uint32_t CentroidInterpolators(uint32_t interpolators, uint32_t surface_info, uint32_t context_misc,
+                               uint32_t interpolator_cntl) {
+  // The interpolators sampled at their centroid, as the reference picks them: with guest MSAA, SQ_CONTEXT_MISC
+  // sc_sample_cntl centroids only, or centroids and centres by SQ_INTERPOLATOR_CNTL's per-interpolator pattern (a set
+  // bit a centre). Guest samples being host pixels, the decoration matters to the host's own MSAA.
+  rg::reg::SQ_CONTEXT_MISC misc;
+  misc.value = context_misc;
+  return interpolators & ~rg::xenos::GetInterpolatorSamplingPattern(rg::xenos::MsaaSamples((surface_info >> 16) & 3),
+                                                                    misc.sc_sample_cntl, interpolator_cntl >> 16);
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -163,6 +192,7 @@ VulkanRenderer::~VulkanRenderer() {
   for (Batch& b : batches_) {
     if (b.fence) f.vkDestroyFence(d, b.fence, nullptr);
     if (timestamps_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, timestamps_, nullptr);
+    if (query_pool_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, query_pool_, nullptr);
     if (b.draw_pool) f.vkDestroyDescriptorPool(d, b.draw_pool, nullptr);
     if (b.depth_pool) f.vkDestroyDescriptorPool(d, b.depth_pool, nullptr);
     DestroyBuffer(device_, b.constants);
@@ -182,6 +212,9 @@ VulkanRenderer::~VulkanRenderer() {
   DestroyImage(device_, gamma_image_);
   if (batch_pool_) f.vkDestroyCommandPool(d, batch_pool_, nullptr);
   if (submit_pool_) f.vkDestroyCommandPool(d, submit_pool_, nullptr);
+  for (auto& [module, pipeline] : memexport_pipelines_) {
+    if (pipeline) f.vkDestroyPipeline(d, pipeline, nullptr);
+  }
   for (auto& [key, pipeline] : pipelines_) {
     if (pipeline) f.vkDestroyPipeline(d, pipeline, nullptr);
   }
@@ -200,6 +233,7 @@ VulkanRenderer::~VulkanRenderer() {
   textures_.reset();
   DestroyBuffer(device_, shared_memory_);
   DestroyBuffer(device_, vram_guest_);
+  DestroyBuffer(device_, memexport_readback_);
   for (auto& [key, surface] : surfaces_) {
     if (surface->depth_view) f.vkDestroyImageView(d, surface->depth_view, nullptr);
     DestroyImage(device_, surface->image);
@@ -218,7 +252,8 @@ bool VulkanRenderer::Fail(const std::string& why) {
 bool VulkanRenderer::Initialize() {
   const Functions& f = device_.fn();
   VkDevice d = device_.device();
-  const VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  // Compute too: a memory-exporting vertex shader without rasterization runs as a compute dispatch.
+  const VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
   constant_alignment_ = std::max<uint32_t>(16, uint32_t(device_.properties().limits.minUniformBufferOffsetAlignment));
 
   // The translated shaders' layout (as the reference Vulkan backend builds it): shared memory, the five constant
@@ -229,7 +264,8 @@ bool VulkanRenderer::Initialize() {
   for (uint32_t i = 0; i < SpirvShaderTranslator::kConstantBufferCount; ++i) {
     constant_bindings[i] = {i, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, stages, nullptr};
   }
-  constant_bindings[SpirvShaderTranslator::kConstantBufferFloatVertex].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+  constant_bindings[SpirvShaderTranslator::kConstantBufferFloatVertex].stageFlags =
+      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
   constant_bindings[SpirvShaderTranslator::kConstantBufferFloatPixel].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
   info.bindingCount = SpirvShaderTranslator::kConstantBufferCount;
   info.pBindings = constant_bindings;
@@ -276,8 +312,8 @@ bool VulkanRenderer::Initialize() {
   // on the CPU at the flush) as draws fetch them. Not imported into the device (VK_EXT_external_memory_host): the
   // title's own code ran ~1.4x slower on imported memory (measured in game on the same route). Without video memory
   // for it: imported in place, or else a mirror copied before each draw.
-  vram_guest_on_ = CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                false, vram_guest_);
+  vram_guest_on_ = CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false, vram_guest_);
   shared_memory_imported_ = !vram_guest_on_ && ImportGuestMemory();
   if (!shared_memory_imported_ && !vram_guest_on_ && !CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, shared_memory_)) {
     return Fail("guest memory buffer");
@@ -336,6 +372,10 @@ bool VulkanRenderer::Initialize() {
   queries.queryType = VK_QUERY_TYPE_TIMESTAMP;
   queries.queryCount = 4 * kBatches;  // a batch's start and end, its upload's start and end
   if (f.vkCreateQueryPool(d, &queries, nullptr, &timestamps_) != VK_SUCCESS) timestamps_ = VK_NULL_HANDLE;
+  VkQueryPoolCreateInfo occlusion{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+  occlusion.queryType = VK_QUERY_TYPE_OCCLUSION;
+  occlusion.queryCount = kQueriesPerBatch * kBatches;
+  if (f.vkCreateQueryPool(d, &occlusion, nullptr, &query_pool_) != VK_SUCCESS) query_pool_ = VK_NULL_HANDLE;
   for (Batch& b : batches_) {
     if (f.vkCreateFence(d, &fence, nullptr, &b.fence) != VK_SUCCESS) return Fail("batch objects");
     VkCommandBufferAllocateInfo batch_alloc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
@@ -937,6 +977,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // EDRAM mode: 4 colour and depth, 5 depth only; anything else leaves the targets alone.
   const uint32_t edram_mode = regs[kRbModeControl] & 7;
   if (edram_mode != 4 && edram_mode != 5) {
+    if (MemExportWithoutRasterization(draw)) return;  // a vertex shader exporting to memory runs anyway
     ++stats_.skipped;
     return;
   }
@@ -946,18 +987,19 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
   // Rectangle lists are drawn as two-triangle strips whose fourth corner the vertex shader makes, quad lists as
   // triangle lists (a, b, c, a, c, d), as the reference does without geometry shaders; line loops as line strips
-  // back to their first vertex.
+  // back to their first vertex; point lists as two-triangle strips too, each the point's square of
+  // PA_SU_POINT_SIZE (or the size the vertex shader writes), as the reference does without geometry shaders.
   const bool rectangle_list = draw.primitive_type == 0x08, quad_list = draw.primitive_type == 0x0D,
-             line_loop = draw.primitive_type == 0x0C;
-  const VkPrimitiveTopology topology = rectangle_list ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
+             line_loop = draw.primitive_type == 0x0C, point_list = draw.primitive_type == 0x01;
+  const VkPrimitiveTopology topology = rectangle_list || point_list ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
                                        : quad_list    ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
                                        : line_loop    ? VK_PRIMITIVE_TOPOLOGY_LINE_STRIP
                                                       : Topology(draw.primitive_type);
   const uint32_t primitives = rectangle_list ? draw.index_count / 3
                               : quad_list    ? draw.index_count / 4
-                              : line_loop    ? draw.index_count
-                                             : 0;
-  const uint32_t host_index_count = rectangle_list ? (primitives ? 5 * primitives - 1 : 0)
+                              : line_loop || point_list ? draw.index_count
+                                                        : 0;
+  const uint32_t host_index_count = rectangle_list || point_list ? (primitives ? 5 * primitives - 1 : 0)
                                     : quad_list    ? 6 * primitives
                                     : line_loop    ? (primitives ? primitives + 1 : 0)
                                                    : draw.index_count;
@@ -965,24 +1007,43 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     Fail("primitive type " + std::to_string(draw.primitive_type) + " needs expansion (not yet)");
     return;
   }
-  if (draw.source == DrawSource::kImmediate) {
-    Fail("immediate indices");
+  // Immediate indices (source 1: the packet's own dwords after the initiator) are drawn as DMA indices staged in the
+  // batch's index buffer: two 16-bit indices a dword, the first in its low half, as an R6xx-family VGT takes them
+  // (Mesa's r600 driver copies little-endian user indices straight into its DRAW_INDEX_IMMD packets). The reference
+  // does not draw them. Rectangle and point lists, whose vertex shader loads the guest indices from memory, refuse
+  // them.
+  const bool immediate = draw.source == DrawSource::kImmediate, indexed = immediate || draw.source == DrawSource::kDma;
+  const uint32_t index_bytes = immediate ? draw.index_count * (draw.index_32 ? 4 : 2) : draw.index_bytes;
+  if (immediate && (rectangle_list || point_list)) {
+    Fail("immediate indices for a rectangle or point list");
     return;
   }
-  const bool polygonal = IsPolygonal(topology);
+  if (immediate && size_t(index_bytes) > draw.immediate.size() * 4) {
+    Fail("immediate indices past the packet");
+    return;
+  }
+  const bool polygonal = IsPolygonal(topology) && !point_list;
   // Primitive reset (PA_SU_SC_MODE_CNTL multi_prim_ib_ena, VGT_MULTI_PRIM_IB_RESET_INDX): strips of DMA indices are
   // cut at the reset index, as the reference does (16-bit indices only when the reset index fits in 16 bits).
   const uint32_t reset_index = regs[kVgtMultiPrimIbResetIndx];
   const bool strip = topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP || topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP ||
                      topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
-  const bool restart = rectangle_list || (draw.source == DrawSource::kDma && strip && ((regs[kPaSuScModeCntl] >> 21) & 1) &&
+  const bool restart = rectangle_list || point_list || (indexed && strip && ((regs[kPaSuScModeCntl] >> 21) & 1) &&
                                           (draw.index_32 || reset_index <= UINT16_MAX));
 
   const bool wants_ps = edram_mode == 4 && draw.pixel_shader && !draw.pixel_shader->microcode.empty();
+  // User clip planes (PA_CL_CLIP_CNTL ucp_ena_0-5, unless clip_disable): the vertex shader writes a clip (or, with
+  // ucp_cull_only_ena, cull) distance for each enabled one, as the reference translates them.
+  const uint32_t clip_cntl = regs[kPaClClipCntl];
+  const uint32_t clip_planes = (clip_cntl >> 16) & 1 ? 0 : clip_cntl & 0x3F, clip_cull = (clip_cntl >> 17) & 1;
+  // The guest MSAA mode and SQ_INTERPOLATOR_CNTL's sampling pattern choose the centroid interpolators.
+  const uint32_t guest_msaa = (regs[kRbSurfaceInfo] >> 16) & 3;
   const uint64_t shader_key[4] = {draw.vertex_shader->hash, wants_ps ? draw.pixel_shader->hash : 0,
                                   uint64_t(regs[kSqProgramCntl]) << 32 | regs[kSqContextMisc],
                                   uint64_t(wants_ps) | uint64_t(rectangle_list) << 1 |
-                                      uint64_t(topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) << 2};
+                                      uint64_t(point_list) << 2 |
+                                      uint64_t(clip_planes) << 3 | uint64_t(clip_cull) << 9 |
+                                      uint64_t(guest_msaa) << 10 | uint64_t(regs[kSqInterpolatorCntl] >> 16) << 12};
   const bool shaders_known = shader_memo_.valid && std::memcmp(shader_memo_.key, shader_key, sizeof(shader_key)) == 0;
   TranslatedShader* vs = shaders_known ? shader_memo_.vs : GetShader(*draw.vertex_shader);
   TranslatedShader* ps = shaders_known ? shader_memo_.ps : wants_ps ? GetShader(*draw.pixel_shader) : nullptr;
@@ -990,6 +1051,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     Fail("shader analysis");
     return;
   }
+  std::vector<MemExport> exports = MemExportRanges(regs, vs, ps);
   // The vertex buffers the vertex shader fetches from (vertex fetch constants: address in dword 0, size in words in
   // dword 1, and as far again as VGT_INDX_OFFSET moves the indices), for the copy into the mirror when guest memory
   // is not read in place.
@@ -1012,30 +1074,34 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   uint32_t interpolators = 0;
   // Pixel parameter generation (SQ_PROGRAM_CNTL gen_index_pix): the pixel shader reads, in one of its interpolators,
   // the pixel position, whether the primitive is back-facing, a line or a point, and the point coordinates. The
-  // translator makes it from the fragment coordinates and the primitive flags of the system constants; points would
-  // need their coordinates from a point sprite expansion.
+  // translator makes it from the fragment coordinates and the primitive flags of the system constants; on points, the
+  // point sprite coordinates come from the vertex shader's point expansion (0 to 1 across the square), as the
+  // reference passes them.
   uint32_t param_gen = UINT32_MAX;
   if (ps) {
     interpolators = vs->shader->writes_interpolators() & ps->shader->GetInterpolatorInputMask(program_cntl, context_misc, param_gen);
-    if (param_gen != UINT32_MAX && topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) {
-      Fail("point sprites with pixel parameter generation (not yet)");
-      return;
-    }
   }
   SpirvShaderTranslator::Modification vs_modification(translator_->GetDefaultVertexShaderModification(
       vs->shader->GetDynamicAddressableRegisterCount(program_cntl.vs_num_reg),
-      rectangle_list ? rg::Shader::HostVertexShaderType::kRectangleListAsTriangleStrip : rg::Shader::HostVertexShaderType::kVertex));
+      rectangle_list ? rg::Shader::HostVertexShaderType::kRectangleListAsTriangleStrip
+      : point_list   ? rg::Shader::HostVertexShaderType::kPointListAsTriangleStrip
+                     : rg::Shader::HostVertexShaderType::kVertex));
   vs_modification.vertex.interpolator_mask = interpolators;
+  vs_modification.vertex.user_clip_plane_count = uint32_t(std::popcount(clip_planes));
+  vs_modification.vertex.user_clip_plane_cull = clip_planes ? clip_cull : 0;
+  vs_modification.vertex.output_point_parameters = uint32_t(point_list && param_gen < 16);
   vs_module = GetModule(*vs, vs_modification.value);
   ps_module = VK_NULL_HANDLE;
   if (ps) {
     SpirvShaderTranslator::Modification ps_modification(
         translator_->GetDefaultPixelShaderModification(ps->shader->GetDynamicAddressableRegisterCount(program_cntl.ps_num_reg)));
     ps_modification.pixel.interpolator_mask = interpolators;
+    ps_modification.pixel.interpolators_centroid =
+        CentroidInterpolators(interpolators, regs[kRbSurfaceInfo], regs[kSqContextMisc], regs[kSqInterpolatorCntl]);
     if (param_gen < 16) {
       ps_modification.pixel.param_gen_enable = 1;
       ps_modification.pixel.param_gen_interpolator = param_gen;
-      ps_modification.pixel.param_gen_point = 0;
+      ps_modification.pixel.param_gen_point = uint32_t(point_list);
     }
     ps_module = GetModule(*ps, ps_modification.value);
   }
@@ -1078,6 +1144,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
           (textures_->watching() || memo->epoch == textures_->epoch()) && std::memcmp(memo->fetch, fetch, sizeof(memo->fetch)) == 0) {
         view = memo->view;
         signs = memo->signs;
+        if (memo->used) *memo->used = textures_->epoch();
         scaled = memo->scaled;
       } else {
         {
@@ -1099,6 +1166,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
           std::memcpy(memo->fetch, fetch, sizeof(memo->fetch));
           memo->version = textures_->version(), memo->epoch = textures_->epoch();
           memo->view = view, memo->signs = signs, memo->scaled = scaled;
+          memo->used = textures_->last_used();
         }
       }
       stage_textures[stage].views.push_back(view);
@@ -1215,6 +1283,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     depth_control = 0;
   }
   if (width == UINT32_MAX) {
+    if (MemExportWithoutRasterization(draw)) return;
     ++stats_.skipped;  // nothing bound: no target this draw could change
     return;
   }
@@ -1257,6 +1326,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   right = std::min(std::min(right, int32_t(regs[kPaScScreenScissorBr] & 0x7FFF)) * sample_x, int32_t(width));
   bottom = std::min(std::min(bottom, int32_t((regs[kPaScScreenScissorBr] >> 16) & 0x7FFF)) * sample_y, int32_t(height));
   if (right <= left || bottom <= top) {
+    if (MemExportWithoutRasterization(draw)) return;
     ++stats_.skipped;
     return;
   }
@@ -1313,12 +1383,14 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
                         kFetchBytes + 5 * constant_alignment_ + kFloatBufferBytes;
   // Everything this draw takes from the batch, checked up front: a flush once its constants are written would let
   // later draws overwrite them.
-  const uint32_t index_need = rectangle_list || quad_list || line_loop ? host_index_count * 4 + 4
-                              : draw.source == DrawSource::kDma ? draw.index_bytes + 4
-                                                                : 0;
+  const uint32_t index_need = rectangle_list || quad_list || line_loop || point_list ? host_index_count * 4 + 4
+                              : indexed ? index_bytes + 4
+                                        : 0;
+  const uint32_t immediate_need = immediate ? index_bytes + 4 : 0;  // the packet's indices staged too
   const uint32_t images_need = uint32_t(stage_textures[0].views.size() + stage_textures[1].views.size());
   const uint32_t samplers_need = uint32_t(stage_textures[0].samplers.size() + stage_textures[1].samplers.size());
-  if (constant_head_ + most > batch().constants.size || index_head_ + index_need > batch().indices.size || draw_sets_ + 2 > kDrawSets ||
+  if (constant_head_ + most > batch().constants.size || index_head_ + index_need + immediate_need > batch().indices.size || draw_sets_ + 2 > kDrawSets ||
+      (query_open_ && queries_used_ >= kQueriesPerBatch) ||
       draw_images_ + images_need > kDrawDescriptors || draw_samplers_ + samplers_need > kDrawDescriptors) {
     Flush();
   }
@@ -1362,6 +1434,18 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     system->flags |= SpirvShaderTranslator::kSysFlag_PrimitiveLine;
   }
   const float size[2] = {float(width), float(height)};
+  // Points: PA_SU_POINT_SIZE (half width and height) and PA_SU_POINT_MINMAX (the radius a vertex shader's size is
+  // clamped to), both 12.4 fixed point, as diameters in guest pixels; and how a guest pixel diameter becomes a
+  // radius in host normalized device coordinates (a guest pixel is `sample` host pixels).
+  if (point_list) {
+    const uint32_t point_size = regs[kPaSuPointSize], point_minmax = regs[kPaSuPointMinmax];
+    system->point_constant_diameter[0] = float(point_size >> 16) * 0.125f;
+    system->point_constant_diameter[1] = float(point_size & 0xFFFF) * 0.125f;
+    system->point_vertex_diameter_min = float(point_minmax & 0xFFFF) * 0.125f;
+    system->point_vertex_diameter_max = float(point_minmax >> 16) * 0.125f;
+    system->point_screen_diameter_to_ndc_radius[0] = float(sample_x) / size[0];
+    system->point_screen_diameter_to_ndc_radius[1] = float(sample_y) / size[1];
+  }
   // The window offset moves vertices too when PA_SU_SC_MODE_CNTL asks for it.
   // D3D's pixel centres (PA_SU_VTX_CNTL pix_center 0) are at integer window coordinates, the host's at .5: the
   // reference moves the window coordinates by half a pixel then.
@@ -1384,8 +1468,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   system->vertex_base_index = int32_t(regs[kVgtIndxOffset]);
   system->vertex_index_min = regs[kVgtMinVtxIndx];
   system->vertex_index_max = regs[kVgtMaxVtxIndx];
-  // A rectangle list's vertex shader loads its guest indices itself (from the strip vertex it runs for).
-  if (rectangle_list && draw.source == DrawSource::kDma) {
+  // A rectangle or point list's vertex shader loads its guest indices itself (from the strip vertex it runs for).
+  if ((rectangle_list || point_list) && draw.source == DrawSource::kDma) {
     system->flags |= SpirvShaderTranslator::kSysFlag_ComputeOrPrimitiveVertexIndexLoad;
     if (draw.index_32) system->flags |= SpirvShaderTranslator::kSysFlag_ComputeOrPrimitiveVertexIndexLoad32Bit;
     system->vertex_index_load_address = draw.index_base;
@@ -1402,6 +1486,15 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t color_control = regs[kRbColorControl];
   const uint32_t alpha_func = (color_control & (1u << 3)) ? (color_control & 7) : 7;
   system->flags |= alpha_func << SpirvShaderTranslator::kSysFlag_AlphaPassIfLess_Shift;
+  system->alpha_test_reference = AsFloat(regs[kRbAlphaRef]);
+  // Alpha to coverage (RB_COLORCONTROL alpha_to_mask_enable, the dither offsets in bits 24-31) as the reference
+  // passes it, with the guest MSAA mode that places each fragment's guest sample.
+  system->alpha_to_mask = (color_control & (1u << 4)) ? (color_control >> 24) | (1u << 8) : 0;
+  system->flags |= ((regs[kRbSurfaceInfo] >> 16) & 3) << SpirvShaderTranslator::kSysFlag_MsaaSamples_Shift;
+  // The enabled user clip planes (PA_CL_UCP_n), packed in order.
+  for (uint32_t bits = clip_planes, n = 0; bits; bits &= bits - 1, ++n) {
+    std::memcpy(system->user_clip_planes[n], regs + kPaClUcp0X + 4 * std::countr_zero(bits), 16);
+  }
   // Per colour target: the exponent bias of RB_COLOR_INFO as a 2^bias multiplier (the fixed-point 16-bit formats'
   // -32...32 range scaled into the host's -1...1 by 2^-5 more, as the reference does), and the gamma conversion
   // of k_8_8_8_8_GAMMA targets.
@@ -1465,42 +1558,51 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // The indices: room in the batch's ring, reserved here; converted (endian-swapped to host order) where the draw
   // is recorded.
   DrawJob job{};
+  job.query = UINT32_MAX;
   job.index_type = VK_INDEX_TYPE_NONE_KHR;
   job.host_index_count = host_index_count;
   job.index_buffer = batch().indices.buffer;
-  job.source = draw.source;
+  job.source = indexed ? DrawSource::kDma : draw.source;
   job.index_32 = draw.index_32;
-  job.endian = draw.index_endian;
+  job.endian = immediate ? Endian::kNone : draw.index_endian;
+  // The immediate indices staged where the batch keeps them until it completes (jobs may be recorded later).
+  const uint8_t* index_src = physical_ + draw.index_base;
+  if (immediate) {
+    uint8_t* staged = static_cast<uint8_t*>(batch().indices.mapped) + index_head_;
+    std::memcpy(staged, draw.immediate.data(), index_bytes);
+    index_src = staged;
+    index_head_ = AlignUp(index_head_ + index_bytes, 4);
+  }
   job.restart = restart;
   job.reset_index = reset_index;
   job.primitives = primitives;
-  if (rectangle_list || quad_list || line_loop) {
+  if (rectangle_list || quad_list || line_loop || point_list) {
     if (draw.source == DrawSource::kDma && uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_) {
       Fail("index buffer outside the mirrored memory");
       return;
     }
-    job.indices = rectangle_list ? DrawJob::Indices::kRectangles
+    job.indices = rectangle_list || point_list ? DrawJob::Indices::kRectangles
                   : quad_list    ? DrawJob::Indices::kQuads
                                  : DrawJob::Indices::kLineLoop;
     job.index_type = VK_INDEX_TYPE_UINT32;
     job.index_offset = index_head_;
     index_head_ = AlignUp(index_head_ + host_index_count * 4, 4);
-  } else if (draw.source == DrawSource::kDma) {
-    if (uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_ || draw.index_bytes > batch().indices.size) {
+  } else if (indexed) {
+    if ((!immediate && uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_) || index_bytes > batch().indices.size) {
       Fail("index buffer outside the mirrored memory");
       return;
     }
     job.indices = DrawJob::Indices::kDma;
     job.index_type = draw.index_32 ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16;
     job.index_offset = index_head_;
-    index_head_ = AlignUp(index_head_ + draw.index_bytes, 4);
+    index_head_ = AlignUp(index_head_ + index_bytes, 4);
   } else {
     job.indices = DrawJob::Indices::kNone;
   }
-  job.index_src = physical_ + draw.index_base;
-  job.index_bytes = draw.index_bytes;
+  job.index_src = index_src;
+  job.index_bytes = index_bytes;
   job.index_dst = static_cast<uint8_t*>(batch().indices.mapped) + job.index_offset;
-  if (draw.source == DrawSource::kDma && !rectangle_list && draw.index_endian != Endian::kNone) {
+  if (draw.source == DrawSource::kDma && !rectangle_list && !point_list && draw.index_endian != Endian::kNone) {
     CountSwapped(g_swapped.indices, draw.index_bytes);
   }
   mark(stats_.ns_draw_constants);
@@ -1559,6 +1661,10 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     batch_sets_.emplace(set_key, texture_sets[stage]);  // a copy: the key's buffer stays for the next draw
   }
 
+  if (query_open_) {
+    job.query = kQueriesPerBatch * current_ + queries_used_++;
+    query_parts_.push_back(job.query);
+  }
   job.pipeline = pipeline;
   job.layout = pipeline_layout;
   job.sets[SpirvShaderTranslator::kDescriptorSetSharedMemoryAndEdram] = shared_set_;
@@ -1664,6 +1770,178 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
   mark(stats_.ns_draw_record);
   ++stats_.draws;
+  if (!exports.empty()) MemExported(std::move(exports));
+}
+
+std::vector<VulkanRenderer::MemExport> VulkanRenderer::MemExportRanges(const uint32_t* regs, const TranslatedShader* vs,
+                                                                       const TranslatedShader* ps) const {
+  // Memory exports (memexport): the streams the shaders' eA writes name (`mad eA, r#, const0100, c#`: the stream
+  // constant c# of the stage's float constants), as the reference gathers them, a range each (several exports to one
+  // base address: the largest), checked as the hardware checks eA (the 0b01, 0x4B0 and 0x96 marks, a count).
+  std::vector<MemExport> exports;
+  for (const TranslatedShader* t : {vs, ps}) {
+
+    if (!t || !t->shader->memexport_eM_written()) continue;
+    const uint32_t* floats = regs + 0x4000 + (t == ps ? 256 * 4 : 0);
+    for (uint32_t c : t->shader->memexport_stream_constants()) {
+      if (c >= 256) continue;
+      const uint32_t* stream = floats + 4 * c;
+      const uint32_t count = stream[3] & 0x7FFFFF, bytes = MemExportElementBytes((stream[2] >> 8) & 0x3F);
+      if ((stream[0] >> 30) != 1 || (stream[2] >> 20) != 0x4B0 || (stream[3] >> 23) != 0x96 || !count || !bytes) continue;
+      const uint32_t base = (stream[0] & 0x3FFFFFFF) << 2;
+      if (base >= mirror_bytes_) continue;
+      const uint32_t size = uint32_t(std::min<uint64_t>(uint64_t(count) * bytes, mirror_bytes_ - base));
+      bool merged = false;
+      for (MemExport& e : exports) {
+        if (e.base == base) e.bytes = std::max(e.bytes, size), merged = true;
+      }
+      if (!merged) exports.push_back({base, size, 0});
+    }
+  }
+  return exports;
+}
+
+bool VulkanRenderer::MemExportWithoutRasterization(const DrawCall& draw) {
+  if (!draw.vertex_shader || draw.vertex_shader->microcode.empty()) return false;
+  TranslatedShader* vs = GetShader(*draw.vertex_shader);
+  if (!vs || !vs->shader->memexport_eM_written()) return false;
+  const uint32_t* regs = draw.registers;
+  std::vector<MemExport> exports = MemExportRanges(regs, vs, nullptr);
+  if (exports.empty() || !draw.index_count) return true;  // nothing it could write: as skipped
+  if (draw.source == DrawSource::kImmediate) {
+    Fail("memexport without rasterization from immediate indices (not yet)");
+    return true;
+  }
+  if (!vs->shader->texture_bindings().empty()) {
+    Fail("memexport without rasterization from a vertex shader with textures (not yet)");
+    return true;
+  }
+  const Functions& f = device_.fn();
+  rg::reg::SQ_PROGRAM_CNTL program_cntl;
+  program_cntl.value = regs[kSqProgramCntl];
+  SpirvShaderTranslator::Modification modification(translator_->GetDefaultVertexShaderModification(
+      vs->shader->GetDynamicAddressableRegisterCount(program_cntl.vs_num_reg),
+      rg::Shader::HostVertexShaderType::kMemExportCompute));
+  const VkShaderModule module = GetModule(*vs, modification.value);
+  const VkPipelineLayout layout = PipelineLayout(0, 0, 0, 0);
+  VkPipeline& pipeline = memexport_pipelines_[module];
+  if (module && layout && !pipeline) {
+    VkComputePipelineCreateInfo info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    info.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, module, "main"};
+    info.layout = layout;
+    if (f.vkCreateComputePipelines(device_.device(), pipeline_cache_, 1, &info, nullptr, &pipeline) != VK_SUCCESS) {
+      pipeline = VK_NULL_HANDLE;
+    }
+  }
+  if (!pipeline) {
+    Fail("memexport compute pipeline");
+    return true;
+  }
+  // The guest memory it reads: its vertex buffers and DMA indices.
+  const uint64_t index_offset = regs[kVgtIndxOffset] & 0xFFFFFF;
+  for (const auto& binding : vs->shader->vertex_bindings()) {
+    const uint32_t* fetch = regs + reg::kFetchConstants + 2 * binding.fetch_constant;
+    const uint64_t bytes = uint64_t((fetch[1] >> 2) & 0xFFFFFF) * 4 + index_offset * binding.stride_words * 4;
+    ReadsGuestMemory(fetch[0] & 0x1FFFFFFC, uint32_t(std::min<uint64_t>(bytes, mirror_bytes_)));
+  }
+  // Constants, as a draw's: the system ones (the vertex index source, the vertex count), the vertex shader's floats
+  // packed as it uses them, a pixel float block, bool/loop and fetch constants.
+  const auto& map = vs->shader->constant_register_map();
+  const uint32_t float_bytes = map.float_dynamic_addressing ? 256 * 16 : 16 * std::max(1u, map.float_count);
+  const uint32_t need = uint32_t(sizeof(SpirvShaderTranslator::SystemConstants)) + float_bytes + 16 + kBoolLoopBytes +
+                        kFetchBytes + 6 * constant_alignment_ + kFloatBufferBytes;
+  if (constant_head_ + need > batch().constants.size) Flush();
+  uint8_t* base = static_cast<uint8_t*>(batch().constants.mapped);
+  uint32_t offsets[SpirvShaderTranslator::kConstantBufferCount] = {};
+  auto put = [&](uint32_t index, const void* data, uint32_t bytes) {
+    offsets[index] = constant_head_;
+    std::memcpy(base + constant_head_, data, bytes);
+    constant_head_ = AlignUp(constant_head_ + bytes, constant_alignment_);
+    last_constants_[index].valid = false;
+  };
+  SpirvShaderTranslator::SystemConstants system{};
+  if (draw.source == DrawSource::kDma) {
+    system.flags |= SpirvShaderTranslator::kSysFlag_ComputeOrPrimitiveVertexIndexLoad;
+    if (draw.index_32) system.flags |= SpirvShaderTranslator::kSysFlag_ComputeOrPrimitiveVertexIndexLoad32Bit;
+    system.vertex_index_load_address = draw.index_base;
+    ReadsGuestMemory(draw.index_base, draw.index_count * (draw.index_32 ? 4 : 2));
+    Endian endian = draw.index_endian;
+    if (!draw.index_32) endian = endian == Endian::k8in32 ? Endian::k8in16 : endian == Endian::k16in32 ? Endian::kNone : endian;
+    system.vertex_index_endian = decltype(system.vertex_index_endian)(uint32_t(endian));
+  }
+  system.vertex_base_index = int32_t(regs[kVgtIndxOffset]);
+  system.vertex_index_min = regs[kVgtMinVtxIndx];
+  system.vertex_index_max = regs[kVgtMaxVtxIndx];
+  system.compute_memexport_vertex_count = draw.index_count;
+  put(SpirvShaderTranslator::kConstantBufferSystem, &system, sizeof(system));
+  if (map.float_dynamic_addressing) {
+    put(SpirvShaderTranslator::kConstantBufferFloatVertex, regs + 0x4000, 256 * 16);
+  } else {
+    std::vector<uint8_t> floats(float_bytes, 0);
+    uint32_t packed = 0;
+    for (uint32_t word = 0; word < 4; ++word) {
+      for (uint64_t bits = map.float_bitmap[word]; bits; bits &= bits - 1) {
+        const uint32_t c = 64 * word + uint32_t(std::countr_zero(bits));
+        std::memcpy(floats.data() + 16 * packed++, regs + 0x4000 + 4 * c, 16);
+      }
+    }
+    put(SpirvShaderTranslator::kConstantBufferFloatVertex, floats.data(), float_bytes);
+  }
+  static constexpr uint8_t kZero[16] = {};
+  put(SpirvShaderTranslator::kConstantBufferFloatPixel, kZero, 16);
+  put(SpirvShaderTranslator::kConstantBufferBoolLoop, regs + 0x4900, kBoolLoopBytes);
+  put(SpirvShaderTranslator::kConstantBufferFetch, regs + 0x4800, kFetchBytes);
+  // Outside any render pass, after the batch's draws so far; one invocation a guest vertex, in rows of the
+  // translation's dispatch width.
+  EndRendering();
+  const VkCommandBuffer cb = Record();
+  VkDescriptorSet sets[SpirvShaderTranslator::kDescriptorSetCount];
+  sets[SpirvShaderTranslator::kDescriptorSetSharedMemoryAndEdram] = shared_set_;
+  sets[SpirvShaderTranslator::kDescriptorSetConstants] = batch().constants_set;
+  sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex] = empty_set_;
+  sets[SpirvShaderTranslator::kDescriptorSetTexturesPixel] = empty_set_;
+  f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+  f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, SpirvShaderTranslator::kDescriptorSetCount, sets,
+                            SpirvShaderTranslator::kConstantBufferCount, offsets);
+  const uint32_t width = SpirvShaderTranslator::kMemExportComputeDispatchX;
+  f.vkCmdDispatch(cb, std::min(draw.index_count, width), (draw.index_count + width - 1) / width, 1);
+  ++memexport_dispatches_;
+  MemExported(std::move(exports));
+  return true;
+}
+
+void VulkanRenderer::MemExported(std::vector<MemExport> exports) {
+  // The draw's writes reach guest memory before anything else runs: the batch is submitted with them and awaited
+  // (memexport is rare; later draws and the title's code may read what it wrote). Guest memory in video memory: the
+  // ranges copied into the readback buffer at the flush, then into guest memory; a mirror: copied back from it;
+  // imported: written in place. The texture cache forgets what it held there.
+  ++stats_.memexports;
+  // The ranges come back whole, elements the shaders did not write included: the GPU's copy of them is made current
+  // first (uploaded with the batch), or what the title wrote there since would be undone.
+  for (const MemExport& e : exports) ReadsGuestMemory(e.base, e.bytes);
+  uint32_t readback_bytes = 0;
+  for (MemExport& e : exports) e.readback = readback_bytes, readback_bytes += (e.bytes + 15) & ~15u;
+  if (vram_guest_on_ && memexport_readback_.size < readback_bytes) {
+    WaitIdle();  // the buffer may still be read by an earlier batch's completion
+    DestroyBuffer(device_, memexport_readback_);
+    if (!CreateBuffer(device_, std::max<VkDeviceSize>(readback_bytes, 1u << 20), VK_BUFFER_USAGE_TRANSFER_DST_BIT, true,
+                      memexport_readback_)) {
+      Fail("memexport readback buffer");
+      return;
+    }
+  }
+  memexports_ = exports;
+  WhenDone([this, exports = std::move(exports)] {
+    for (const MemExport& e : exports) {
+      if (vram_guest_on_) {
+        std::memcpy(physical_ + e.base, static_cast<const uint8_t*>(memexport_readback_.mapped) + e.readback, e.bytes);
+      } else if (!shared_memory_imported_) {
+        std::memcpy(physical_ + e.base, static_cast<const uint8_t*>(shared_memory_.mapped) + e.base, e.bytes);
+      }
+      if (textures_) textures_->MemoryChanged(e.base, e.base + e.bytes);
+    }
+  });
+  WaitIdle();
 }
 
 void VulkanRenderer::RecordJob(VkCommandBuffer cb, const DrawJob& job, RecordedState& rs, std::vector<uint16_t>& scratch) const {
@@ -1813,12 +2091,16 @@ void VulkanRenderer::RecordJob(VkCommandBuffer cb, const DrawJob& job, RecordedS
   std::memcpy(rs.blend, job.blend, sizeof(rs.blend));
   rs.stencil[0] = job.stencil[0], rs.stencil[1] = job.stencil[1];
   rs.valid = true;
+  if (job.query != UINT32_MAX) {
+    f.vkCmdBeginQuery(cb, query_pool_, job.query, device_.occlusion_query_precise() ? VK_QUERY_CONTROL_PRECISE_BIT : 0);
+  }
   if (job.index_type != VK_INDEX_TYPE_NONE_KHR) {
     f.vkCmdBindIndexBuffer(cb, job.index_buffer, job.index_offset, job.index_type);
     f.vkCmdDrawIndexed(cb, job.host_index_count, 1, 0, 0, 0);
   } else {
     f.vkCmdDraw(cb, job.host_index_count, 1, 0, 0);
   }
+  if (job.query != UINT32_MAX) f.vkCmdEndQuery(cb, query_pool_, job.query);
 }
 
 void VulkanRenderer::MakeTextureSets(RecordWorker& w, uint32_t batch, DrawJob& job) const {
@@ -1961,6 +2243,7 @@ VkCommandBuffer VulkanRenderer::Record() {
     dependency.memoryBarrierCount = 1;
     dependency.pMemoryBarriers = &barrier;
     f.vkCmdPipelineBarrier2(b.cb, &dependency);
+    if (query_pool_) f.vkCmdResetQueryPool(b.cb, query_pool_, kQueriesPerBatch * uint32_t(&b - batches_.data()), kQueriesPerBatch);
     if (timestamps_) {
       const uint32_t index = uint32_t(&b - batches_.data());
       f.vkCmdResetQueryPool(b.cb, timestamps_, 4 * index, 2);
@@ -2153,9 +2436,12 @@ void VulkanRenderer::TakeReleased(std::vector<std::function<void()>>& actions) {
   auto release = [&](uint32_t i) {
     Batch& b = batches_[i];
     if (b.done || b.released) return true;
-    // Resolves it reads back into guest memory do not hold it: the title's CPU rarely reads them (the runtime never
-    // writes them back at all), and they land when the batch has run.
+    // Colour resolves it reads back into guest memory do not hold it (they land when the batch has run; the runtime
+    // never writes them back at all). Depth resolves do: a title reading depth on the CPU must see this frame's.
     if (!b.submitted || !b.captured) return false;
+    for (const PendingWriteBack& w : b.write_backs) {
+      if (w.depth) return false;
+    }
     b.released = true;
     for (auto& action : b.actions) actions.push_back(std::move(action));
     b.actions.clear();
@@ -2175,6 +2461,30 @@ void VulkanRenderer::Flush() {
   Batch& b = batch();
   EndRendering();
   const VkCommandBuffer last = Record();  // after the last render pass
+  if (!memexports_.empty()) {
+    // A draw's memory exports: its shader writes visible to the copy into the readback buffer (guest memory in
+    // video memory) and to the host.
+    VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+    barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_HOST_READ_BIT;
+    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependency.memoryBarrierCount = 1;
+    dependency.pMemoryBarriers = &barrier;
+    f.vkCmdPipelineBarrier2(last, &dependency);
+    if (vram_guest_on_) {
+      std::vector<VkBufferCopy> regions;
+      for (const MemExport& e : memexports_) regions.push_back({e.base, e.readback, e.bytes});
+      f.vkCmdCopyBuffer(last, vram_guest_.buffer, memexport_readback_.buffer, uint32_t(regions.size()), regions.data());
+      barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+      barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+      barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+      barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+      f.vkCmdPipelineBarrier2(last, &dependency);
+    }
+    memexports_.clear();
+  }
   if (timestamps_) {
     f.vkCmdWriteTimestamp2(last, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, 4 * uint32_t(&b - batches_.data()) + 1);
   }
@@ -2182,6 +2492,7 @@ void VulkanRenderer::Flush() {
   piece_open_ = false;
   const uint32_t submitted = current_;
   Submission& submission = submissions_[submitted];
+  queries_used_ = 0;
   std::swap(submission.order, order_);
   std::swap(submission.segments, segments_);
   submission.segment_count = segment_count_;
@@ -2232,7 +2543,6 @@ void VulkanRenderer::Flush() {
           std::atomic<uint64_t>& word = vram_valid_[page / 64];
           const uint64_t bit = uint64_t(1) << (page % 64);
           if (word.load(std::memory_order_acquire) & bit) continue;
-          word.fetch_or(bit, std::memory_order_acq_rel);
           const VkDeviceSize at = VkDeviceSize(page) << kGuestPageShift;
           const VkDeviceSize size = std::min<VkDeviceSize>(VkDeviceSize(1) << kGuestPageShift, mirror_bytes_ - at);
           if (!upload_regions_.empty() && upload_regions_.back().srcOffset + upload_regions_.back().size == at) {
@@ -2240,13 +2550,22 @@ void VulkanRenderer::Flush() {
           } else {
             upload_regions_.push_back({at, at, size});
           }
+          // A page the CPU keeps writing stays stale (copied again by the next batch that reads it), unwatched.
+          if (vram_writes_[page].load(std::memory_order_relaxed) >= kHotPageWrites) continue;
+          word.fetch_or(bit, std::memory_order_acq_rel);
+          if (!watch_runs_.empty() && watch_runs_.back().srcOffset + watch_runs_.back().size == at) {
+            watch_runs_.back().size += size;
+          } else {
+            watch_runs_.push_back({at, at, size});
+          }
         }
       }
       // Only the copied runs are watched: the pages already current still are, and protecting a range is a system
       // call for each of the runtime's views of physical memory.
       if (guest_watch_) {
-        for (const VkBufferCopy& run : upload_regions_) guest_watch_(uint32_t(run.srcOffset), uint32_t(run.srcOffset + run.size));
+        for (const VkBufferCopy& run : watch_runs_) guest_watch_(uint32_t(run.srcOffset), uint32_t(run.srcOffset + run.size));
       }
+      watch_runs_.clear();
     }
   }
   // Draws read video memory only (or nothing new to copy): captured, unless the upload below cannot stage.
@@ -2420,7 +2739,44 @@ void VulkanRenderer::Complete() {
   }
 }
 
+void VulkanRenderer::OcclusionQuery(bool end, uint32_t address) {
+  if (!end) {
+    query_open_ = true;  // a begin without an end replaces the open query
+    query_parts_.clear();
+    return;
+  }
+  Batch::Query query{address, {}};
+  if (query_open_) query.parts.swap(query_parts_);
+  query_open_ = false;
+  if (batch_open_) {
+    batch().queries.push_back(std::move(query));  // with the batch that holds its last draws
+  } else {
+    // Its draws, if any, are in batches submitted already: after the last of them.
+    WhenDone([this, query = std::move(query)] { WriteQuery(query); });
+  }
+}
+
+void VulkanRenderer::WriteQuery(const Batch::Query& query) {
+  uint64_t samples = 0;
+  for (uint32_t part : query.parts) {
+    uint64_t count = 0;
+    if (device_.fn().vkGetQueryPoolResults(device_.device(), query_pool_, part, 1, sizeof(count), &count, sizeof(count),
+                                           VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
+      samples += count;
+    }
+  }
+  // Guest samples: the host draws scale x scale pixels a guest pixel, and its MSAA counts each sample.
+  samples /= uint64_t(scale_) * scale_ * std::max(1u, msaa_);
+  // The counts as D3D lays them out (Total, ZFail, ZPass, StencilFail; A and B each), in host order as the
+  // reference writes them; ZFail and the rest zero.
+  uint32_t counts[8] = {};
+  counts[0] = counts[4] = uint32_t(std::min<uint64_t>(samples, UINT32_MAX));
+  if (uint64_t(query.address) + sizeof(counts) <= mirror_bytes_) std::memcpy(physical_ + query.address, counts, sizeof(counts));
+}
+
 void VulkanRenderer::FinishBatch(Batch& b) {
+  for (const Batch::Query& query : b.queries) WriteQuery(query);
+  b.queries.clear();
   const uint32_t index = uint32_t(&b - batches_.data());
   stats_.ns_gpu_latency += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                         std::chrono::steady_clock::now() - submitted_at_[index]).count());
@@ -2446,6 +2802,8 @@ void VulkanRenderer::FinishBatch(Batch& b) {
   }
   for (Image& image : b.retired) DestroyImage(device_, image);
   b.retired.clear();
+  for (VkImageView view : b.retired_views) device_.fn().vkDestroyImageView(device_.device(), view, nullptr);
+  b.retired_views.clear();
   std::vector<std::function<void()>>& actions = finished_actions_;  // reused: no allocation per batch
   {
     std::lock_guard lock(done_mutex_);
@@ -3059,6 +3417,8 @@ void VulkanRenderer::SetMemoryWatch(std::function<void(uint32_t, uint32_t)> watc
   const size_t words = (size_t(mirror_bytes_) >> kGuestPageShift) / 64 + 1;
   vram_valid_ = std::make_unique<std::atomic<uint64_t>[]>(words);
   for (size_t i = 0; i < words; ++i) vram_valid_[i] = 0;
+  vram_writes_ = std::make_unique<std::atomic<uint8_t>[]>(words * 64);
+  for (size_t i = 0; i < words * 64; ++i) vram_writes_[i] = 0;
 }
 
 void VulkanRenderer::GuestMemoryWritten(uint32_t begin, uint32_t end) {
@@ -3068,7 +3428,13 @@ void VulkanRenderer::GuestMemoryWritten(uint32_t begin, uint32_t end) {
     // A word's bits at once.
     const uint32_t word = page / 64, bit = page % 64, bits = std::min<uint32_t>(64 - bit, last - page + 1);
     const uint64_t mask = (bits == 64 ? ~uint64_t(0) : ((uint64_t(1) << bits) - 1)) << bit;
-    vram_valid_[word].fetch_and(~mask, std::memory_order_acq_rel);
+    const uint64_t was = vram_valid_[word].fetch_and(~mask, std::memory_order_acq_rel) & mask;
+    // A write to a page we copied: counted (the watch is one-shot, so a write between copies counts once).
+    for (uint64_t hit = was; hit; hit &= hit - 1) {
+      std::atomic<uint8_t>& writes = vram_writes_[size_t(word) * 64 + std::countr_zero(hit)];
+      const uint8_t n = writes.load(std::memory_order_relaxed);
+      if (n < 255) writes.store(uint8_t(n + 1), std::memory_order_relaxed);
+    }
     page += bits;
   }
 }
@@ -3303,6 +3669,15 @@ bool VulkanRenderer::ReadImageRGBA8(Image& image, VkImageLayout& layout, uint32_
 
 void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint32_t* regs) {
   Flush();  // a frame boundary: nothing stays pending across it
+  // Pages written often are forgotten slowly: one the title stops writing is watched again after a while.
+  if (vram_writes_ && ++hot_decay_frames_ >= 600) {
+    hot_decay_frames_ = 0;
+    const size_t pages = ((size_t(mirror_bytes_) >> kGuestPageShift) / 64 + 1) * 64;
+    for (size_t i = 0; i < pages; ++i) {
+      const uint8_t n = vram_writes_[i].load(std::memory_order_relaxed);
+      if (n) vram_writes_[i].store(uint8_t(n / 2), std::memory_order_relaxed);
+    }
+  }
   pipeline_waits_this_frame_ = 0;
   if (samples_ > VK_SAMPLE_COUNT_1_BIT) {
     for (auto& [key, s] : surfaces_) {
@@ -3311,6 +3686,16 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
     }
   }
   if (textures_) textures_->NewFrame();  // the CPU may have written any texture since
+  // Textures not used for a while (the title moved on) are dropped, now and then, once there are many: the cache
+  // otherwise grows for as long as the title runs. Freed after the open batch has run (batches before may read them).
+  if (textures_ && ++evict_frames_ >= 300) {
+    evict_frames_ = 0;
+    if (textures_->texture_count() > 1024) {
+      Batch& b = batch();
+      textures_->Evict(1200, b.retired, b.retired_views);
+      for (TextureMemo& memo : texture_memo_) memo.view = VK_NULL_HANDLE;
+    }
+  }
   Timer swap_timer(stats_.ns_swaps);
   // The front buffer is a texture in guest memory, usually the last resolve's destination. When it is exactly that
   // (same address, k_8_8_8_8 read with the endianness it was written with, the colour components unswizzled), the

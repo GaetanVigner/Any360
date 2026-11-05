@@ -3045,7 +3045,8 @@ void SpirvShaderTranslator::StartFragmentShaderBeforeMain() {
                               spv::BuiltInFragDepth);
       main_interface_.push_back(output_fragment_depth_);
     }
-    if (alpha_to_coverage_possible && features_.sample_rate_shading) {
+    // any360: no sample mask output when guest samples are pixels (alpha to coverage discards instead).
+    if (alpha_to_coverage_possible && features_.sample_rate_shading && !samples_as_pixels_) {
       output_fragment_sample_mask_ = builder_->createVariable(
           spv::NoPrecision, spv::StorageClassOutput,
           builder_->makeArrayType(type_int_, builder_->makeUintConstant(1), 0), "gl_SampleMask");
@@ -3708,6 +3709,11 @@ void SpirvShaderTranslator::StoreResult(const InstructionResult& result, spv::Id
     } break;
     case InstructionStorageTarget::kPosition: {
       assert_true(is_vertex_shader());
+      // any360: the memexport compute translation has no gl_PerVertex output: its position is dropped (the
+      // reference's Vulkan backend never used that translation).
+      if (output_per_vertex_ == spv::NoResult) {
+        break;
+      }
       id_vector_temp_util_.clear();
       id_vector_temp_util_.push_back(builder_->makeIntConstant(kOutputPerVertexMemberPosition));
       target_pointer = builder_->createAccessChain(spv::StorageClassOutput, output_per_vertex_,

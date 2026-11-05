@@ -415,6 +415,11 @@ class SpirvShaderTranslator : public ShaderTranslator {
         host_scale_quarters_x_(draw_resolution_scale_x_ << 2),
         host_scale_quarters_y_(draw_resolution_scale_y_ << 2) {}
 
+  // any360: guest MSAA kept as pixels (each guest sample its own scale x scale host pixels, a host target of one
+  // sample or of the host's own MSAA): alpha to coverage then decides a whole fragment from the guest sample its
+  // position is, and gl_SampleMask is not written.
+  void SetSamplesAsPixels(bool samples_as_pixels) { samples_as_pixels_ = samples_as_pixels; }
+
   // Size of the host render targets in quarters of a guest pixel, if smaller than the draw
   // resolution scale.
   void SetHostScaleQuarters(uint32_t x, uint32_t y) {
@@ -770,6 +775,7 @@ class SpirvShaderTranslator : public ShaderTranslator {
   // flow of the main function, and that there are no returns before either
   // (there's a single return from the shader).
   bool edram_fragment_shader_interlock_;
+  bool samples_as_pixels_ = false;
   uint32_t draw_resolution_scale_x_;
   uint32_t draw_resolution_scale_y_;
   uint32_t host_scale_quarters_x_;
