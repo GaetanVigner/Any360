@@ -218,6 +218,10 @@ class VulkanRenderer : public gfx::Renderer {
   // For diagnostics: the textures uploaded so far by (base, format, width, height), and whether a base is the
   // destination of a resolve (with its destination format, or UINT32_MAX).
   TextureCache* texture_cache() { return textures_.get(); }
+  // What the renderer holds, to see it does not grow without bound: render targets, resolves kept, pipelines.
+  size_t surface_count() const { return surfaces_.size(); }
+  size_t resolved_count() const { return resolved_.size(); }
+  size_t pipeline_count() const { return pipelines_.size(); }
   // A host that watches guest memory for CPU writes (as for textures): guest memory copied into video memory is then
   // copied again only after a write (GuestMemoryWritten), not at every batch. `watch(begin, end)` arms a one-shot watch.
   void SetMemoryWatch(std::function<void(uint32_t, uint32_t)> watch);
@@ -336,6 +340,13 @@ class VulkanRenderer : public gfx::Renderer {
   // Pages (4 KB) of guest memory whose copy in video memory is current (with a watch set; else none are kept).
   static constexpr uint32_t kGuestPageShift = 12;
   std::unique_ptr<std::atomic<uint64_t>[]> vram_valid_;
+  // By page: how often the CPU wrote it after it was copied (each a fault on the watch), halved every few hundred
+  // frames. A page written that often (a vertex buffer the title fills every frame) is copied again by every batch
+  // that reads it instead, never watched: a copy of 4 KB costs far less than the fault.
+  std::unique_ptr<std::atomic<uint8_t>[]> vram_writes_;
+  static constexpr uint8_t kHotPageWrites = 3;
+  uint32_t hot_decay_frames_ = 0;
+  std::vector<VkBufferCopy> watch_runs_;
   std::function<void(uint32_t, uint32_t)> guest_watch_;
   std::vector<VkBufferCopy> upload_regions_, upload_regions_scratch_;
   // Without the import: the guest memory ranges the batch's shaders read (vertex buffers, indices a rectangle list's
@@ -385,6 +396,7 @@ class VulkanRenderer : public gfx::Renderer {
     VkDescriptorPool draw_pool = VK_NULL_HANDLE, depth_pool = VK_NULL_HANDLE;
     std::vector<Buffer> staging;
     std::vector<Image> retired;
+    std::vector<VkImageView> retired_views;  // of textures dropped from the cache
     std::vector<PendingWriteBack> write_backs;
     std::vector<std::function<void()>> actions;
     bool done = true;  // run, and what follows it done (guarded by done_mutex_)
@@ -643,10 +655,12 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t fetch[6] = {};
     uint64_t version = 0, epoch = 0;
     VkImageView view = VK_NULL_HANDLE;
+    uint64_t* used = nullptr;  // the texture's last-use frame, marked at each reuse (TextureCache::last_used)
     uint32_t signs = 0;
     bool scaled = false;  // a resolution-scaled texture (copied from a scaled resolve)
   };
   std::array<TextureMemo, 32 * 3 * 2> texture_memo_;
+  uint32_t evict_frames_ = 0;  // frames since textures were last evicted
   // By texture fetch constant: the last sampler for its words and the binding's filters.
   struct SamplerMemo {
     uint32_t key[10] = {};

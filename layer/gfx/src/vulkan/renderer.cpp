@@ -1072,6 +1072,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
           (textures_->watching() || memo->epoch == textures_->epoch()) && std::memcmp(memo->fetch, fetch, sizeof(memo->fetch)) == 0) {
         view = memo->view;
         signs = memo->signs;
+        if (memo->used) *memo->used = textures_->epoch();
         scaled = memo->scaled;
       } else {
         {
@@ -1093,6 +1094,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
           std::memcpy(memo->fetch, fetch, sizeof(memo->fetch));
           memo->version = textures_->version(), memo->epoch = textures_->epoch();
           memo->view = view, memo->signs = signs, memo->scaled = scaled;
+          memo->used = textures_->last_used();
         }
       }
       stage_textures[stage].views.push_back(view);
@@ -2147,9 +2149,13 @@ void VulkanRenderer::TakeReleased(std::vector<std::function<void()>>& actions) {
   auto release = [&](uint32_t i) {
     Batch& b = batches_[i];
     if (b.done || b.released) return true;
-    // Resolves it reads back into guest memory do not hold it: the title's CPU rarely reads them (the runtime never
-    // writes them back at all), and they land when the batch has run.
+    // Colour resolves it reads back into guest memory do not hold it (they land when the batch has run; the runtime
+    // never writes them back at all). Depth resolves do: titles read them on the CPU (Crackdown tests its light flares
+    // against the depth it resolved), and a stale depth showed the flares through walls.
     if (!b.submitted || !b.captured) return false;
+    for (const PendingWriteBack& w : b.write_backs) {
+      if (w.depth) return false;
+    }
     b.released = true;
     for (auto& action : b.actions) actions.push_back(std::move(action));
     b.actions.clear();
@@ -2226,7 +2232,6 @@ void VulkanRenderer::Flush() {
           std::atomic<uint64_t>& word = vram_valid_[page / 64];
           const uint64_t bit = uint64_t(1) << (page % 64);
           if (word.load(std::memory_order_acquire) & bit) continue;
-          word.fetch_or(bit, std::memory_order_acq_rel);
           const VkDeviceSize at = VkDeviceSize(page) << kGuestPageShift;
           const VkDeviceSize size = std::min<VkDeviceSize>(VkDeviceSize(1) << kGuestPageShift, mirror_bytes_ - at);
           if (!upload_regions_.empty() && upload_regions_.back().srcOffset + upload_regions_.back().size == at) {
@@ -2234,13 +2239,22 @@ void VulkanRenderer::Flush() {
           } else {
             upload_regions_.push_back({at, at, size});
           }
+          // A page the CPU keeps writing stays stale (copied again by the next batch that reads it), unwatched.
+          if (vram_writes_[page].load(std::memory_order_relaxed) >= kHotPageWrites) continue;
+          word.fetch_or(bit, std::memory_order_acq_rel);
+          if (!watch_runs_.empty() && watch_runs_.back().srcOffset + watch_runs_.back().size == at) {
+            watch_runs_.back().size += size;
+          } else {
+            watch_runs_.push_back({at, at, size});
+          }
         }
       }
       // Only the copied runs are watched: the pages already current still are, and protecting a range is a system
       // call for each of the runtime's views of physical memory.
       if (guest_watch_) {
-        for (const VkBufferCopy& run : upload_regions_) guest_watch_(uint32_t(run.srcOffset), uint32_t(run.srcOffset + run.size));
+        for (const VkBufferCopy& run : watch_runs_) guest_watch_(uint32_t(run.srcOffset), uint32_t(run.srcOffset + run.size));
       }
+      watch_runs_.clear();
     }
   }
   // Draws read video memory only (or nothing new to copy): captured, unless the upload below cannot stage.
@@ -2440,6 +2454,8 @@ void VulkanRenderer::FinishBatch(Batch& b) {
   }
   for (Image& image : b.retired) DestroyImage(device_, image);
   b.retired.clear();
+  for (VkImageView view : b.retired_views) device_.fn().vkDestroyImageView(device_.device(), view, nullptr);
+  b.retired_views.clear();
   std::vector<std::function<void()>>& actions = finished_actions_;  // reused: no allocation per batch
   {
     std::lock_guard lock(done_mutex_);
@@ -2991,6 +3007,8 @@ void VulkanRenderer::SetMemoryWatch(std::function<void(uint32_t, uint32_t)> watc
   const size_t words = (size_t(mirror_bytes_) >> kGuestPageShift) / 64 + 1;
   vram_valid_ = std::make_unique<std::atomic<uint64_t>[]>(words);
   for (size_t i = 0; i < words; ++i) vram_valid_[i] = 0;
+  vram_writes_ = std::make_unique<std::atomic<uint8_t>[]>(words * 64);
+  for (size_t i = 0; i < words * 64; ++i) vram_writes_[i] = 0;
 }
 
 void VulkanRenderer::GuestMemoryWritten(uint32_t begin, uint32_t end) {
@@ -3000,7 +3018,13 @@ void VulkanRenderer::GuestMemoryWritten(uint32_t begin, uint32_t end) {
     // A word's bits at once.
     const uint32_t word = page / 64, bit = page % 64, bits = std::min<uint32_t>(64 - bit, last - page + 1);
     const uint64_t mask = (bits == 64 ? ~uint64_t(0) : ((uint64_t(1) << bits) - 1)) << bit;
-    vram_valid_[word].fetch_and(~mask, std::memory_order_acq_rel);
+    const uint64_t was = vram_valid_[word].fetch_and(~mask, std::memory_order_acq_rel) & mask;
+    // A write to a page we copied: counted (the watch is one-shot, so a write between copies counts once).
+    for (uint64_t hit = was; hit; hit &= hit - 1) {
+      std::atomic<uint8_t>& writes = vram_writes_[size_t(word) * 64 + std::countr_zero(hit)];
+      const uint8_t n = writes.load(std::memory_order_relaxed);
+      if (n < 255) writes.store(uint8_t(n + 1), std::memory_order_relaxed);
+    }
     page += bits;
   }
 }
@@ -3235,6 +3259,15 @@ bool VulkanRenderer::ReadImageRGBA8(Image& image, VkImageLayout& layout, uint32_
 
 void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint32_t* regs) {
   Flush();  // a frame boundary: nothing stays pending across it
+  // Pages written often are forgotten slowly: one the title stops writing is watched again after a while.
+  if (vram_writes_ && ++hot_decay_frames_ >= 600) {
+    hot_decay_frames_ = 0;
+    const size_t pages = ((size_t(mirror_bytes_) >> kGuestPageShift) / 64 + 1) * 64;
+    for (size_t i = 0; i < pages; ++i) {
+      const uint8_t n = vram_writes_[i].load(std::memory_order_relaxed);
+      if (n) vram_writes_[i].store(uint8_t(n / 2), std::memory_order_relaxed);
+    }
+  }
   pipeline_waits_this_frame_ = 0;
   if (samples_ > VK_SAMPLE_COUNT_1_BIT) {
     for (auto& [key, s] : surfaces_) {
@@ -3243,6 +3276,16 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
     }
   }
   if (textures_) textures_->NewFrame();  // the CPU may have written any texture since
+  // Textures not used for a while (the title moved on) are dropped, now and then, once there are many: the cache
+  // otherwise grows for as long as the title runs. Freed after the open batch has run (batches before may read them).
+  if (textures_ && ++evict_frames_ >= 300) {
+    evict_frames_ = 0;
+    if (textures_->texture_count() > 1024) {
+      Batch& b = batch();
+      textures_->Evict(1200, b.retired, b.retired_views);
+      for (TextureMemo& memo : texture_memo_) memo.view = VK_NULL_HANDLE;
+    }
+  }
   Timer swap_timer(stats_.ns_swaps);
   // The front buffer is a texture in guest memory, usually the last resolve's destination. When it is exactly that
   // (same address, k_8_8_8_8 read with the endianness it was written with, the colour components unswizzled), the

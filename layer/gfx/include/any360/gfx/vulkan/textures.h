@@ -101,6 +101,13 @@ class TextureCache {
   // are hashed again only after such a write, not at every frame.
   void SetMemoryWatch(std::function<void(uint32_t, uint32_t)> watch) { watch_ = std::move(watch); }
   bool watching() const { return bool(watch_); }
+  size_t texture_count() const { return textures_.size(); }
+  // The frame the texture of the last view View returned was last used in, for a caller that reuses the view without
+  // asking again to keep it marked (valid while version() is unchanged); null for an empty texture.
+  uint64_t* last_used() const { return last_used_; }
+  // The textures unused for more than `frames` frames, dropped: their images and views go to the caller, to destroy
+  // once no batch reads them. Views returned before are invalid then (version() changes).
+  void Evict(uint64_t frames, std::vector<Image>& images, std::vector<VkImageView>& views);
   void MemoryChanged(uint32_t begin, uint32_t end);
   // Several ranges at once (sorted and merged in place): one pass over the textures, however many there are.
   void MemoryChanged(std::vector<std::pair<uint32_t, uint32_t>>& ranges);
@@ -154,6 +161,7 @@ class TextureCache {
     uint64_t validated = 0;       // the epoch its content was last hashed in
     uint32_t begin = 0, end = 0;  // the guest memory its levels span
     uint64_t gpu_generation = 0;  // the GPU source generation it was copied from (0: from memory)
+    uint64_t used = 0;            // the epoch (frame) it was last used in
     std::map<uint32_t, VkImageView> views;  // by host swizzle, bit 16: signed
   };
 
@@ -184,8 +192,10 @@ class TextureCache {
     VkImageView view;
     uint64_t epoch, version;
     bool scaled;
+    uint64_t* used;
   };
   bool last_view_scaled_ = false;
+  uint64_t* last_used_ = nullptr;
   std::unordered_map<std::array<uint32_t, 8>, FastView, FastKeyHash> fast_;
   std::function<VkCommandBuffer()> recorder_;
   std::vector<Buffer> pending_staging_;  // staging buffers of uploads recorded in the open batch

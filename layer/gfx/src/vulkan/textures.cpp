@@ -429,8 +429,29 @@ VkImageView TextureCache::Empty(ViewType type, std::string& error) {
   return image.view;
 }
 
+void TextureCache::Evict(uint64_t frames, std::vector<Image>& images, std::vector<VkImageView>& views) {
+  bool any = false;
+  for (auto it = textures_.begin(); it != textures_.end();) {
+    Texture& t = *it->second;
+    if (epoch_ - t.used <= frames) {
+      ++it;
+      continue;
+    }
+    for (auto& [swizzle, view] : t.views) views.push_back(view);
+    images.push_back(t.image);
+    it = textures_.erase(it);
+    any = true;
+  }
+  if (any) {
+    fast_.clear();
+    last_used_ = nullptr;
+    ++version_;
+  }
+}
+
 VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::string& error, bool is_signed) {
   last_view_scaled_ = false;
+  last_used_ = nullptr;
   if (any_changed_.load(std::memory_order_acquire)) {
     // Ranges reported from other threads (CPU writes watched, resolves written into guest memory).
     {
@@ -446,6 +467,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   if (const auto hit = fast_.find(fast_key);
       hit != fast_.end() && (watch_ || hit->second.epoch == epoch_) && hit->second.version == version_) {
     last_view_scaled_ = hit->second.scaled;
+    last_used_ = hit->second.used;
+    *last_used_ = epoch_;
     return hit->second.view;
   }
   const TextureFetch t = TextureFetch::Parse(fetch);
@@ -703,8 +726,10 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     }
   }
   if (fast_.size() > 65536) fast_.clear();
-  fast_[fast_key] = {view, epoch_, version_, scale > 1};
+  fast_[fast_key] = {view, epoch_, version_, scale > 1, &slot->used};
   last_view_scaled_ = scale > 1;
+  slot->used = epoch_;
+  last_used_ = &slot->used;
   return view;
 }
 
