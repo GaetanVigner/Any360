@@ -1800,6 +1800,62 @@ int main(int argc, char** argv) {
       };
       cases.push_back(k);
     }
+    // Texture dimensions: k_32_32_FLOAT textures, linear, 4x4 a slice, each slice's texels (10 s + 1, 10 s + 2):
+    // stacked layers (2D, depth 3; slices 4 KB-aligned) read with tfetch3D at normalized w; a 3D texture (depth 4;
+    // z slices at the row pitch times 32 rows) likewise; a cube's six faces with tfetchCube at (1.5, 1.5, face).
+    {
+      using D = rex::graphics::xenos::FetchOpDimension;
+      const uint32_t quad = kVertices + 0x400;
+      auto fill = [](uint32_t base, uint32_t slices, uint32_t stride) {
+        for (uint32_t z = 0; z < slices; ++z) {
+          for (uint32_t i = 0; i < 16; ++i) {
+            SetBig(base + z * stride + (i / 4) * 256 + (i % 4) * 8, Bits(10.0f * z + 1));
+            SetBig(base + z * stride + (i / 4) * 256 + (i % 4) * 8 + 4, Bits(10.0f * z + 2));
+          }
+        }
+      };
+      // dimension_field: fetch constant word 5's (1 2D, 2 3D, 3 cube); size: word 2.
+      auto dimension_case = [&](const char* unit, uint32_t base, uint32_t dimension_field, uint32_t size, D dimension,
+                                std::array<float, 3> coords, float x, float y) {
+        t::Alu load;
+        load.vector_mask = 0b1111, load.dest = 2, load.src1 = load.src2 = c0;
+        t::Tex fetch;
+        fetch.src = 2, fetch.dimension = dimension, fetch.mag = fetch.min = 0, fetch.mip = 0;
+        fetch.computed_lod = false;
+        t::Alu out;
+        out.vector_mask = 0b0011, out.dest = kColor0, out.is_export = true, out.src1 = out.src2 = {1, true};
+        std::vector<uint32_t> words;
+        t::PushAlu(words, load);
+        t::PushTex(words, fetch);
+        t::PushAlu(words, out);
+        Case k{std::string("render features:") + unit, {}, {}, x, y, 0.0f};
+        k.ps = t::BuildCfShader({t::CfAlloc(uc::AllocType::kPsColors, 0), t::CfExec(uc::ControlFlowOpcode::kExecEnd, 1, 3, 0b0100)},
+                                words);
+        k.c[0][0] = coords[0], k.c[0][1] = coords[1], k.c[0][2] = coords[2];
+        k.setup = [&s, quad, base, dimension_field, size] {
+          s.Shader(0, t::BuildTexturedVertexShader());
+          s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+          s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 2u << 16 | 1u << 22,
+                 37u | 2u << 6 | base, size, (0u | 1u << 3 | 4u << 6 | 5u << 9) << 1, 0, dimension_field << 9});
+        };
+        cases.push_back(k);
+      };
+      fill(0x180000, 3, 8192);
+      for (uint32_t layer : {2u, 0u}) {
+        dimension_case("texture arrays", 0x180000, 1, 3u | 3u << 13 | 2u << 26, D::k3DOrStacked, {0.5f, 0.5f, (layer + 0.5f) / 3},
+                       10.0f * layer + 1, 10.0f * layer + 2);
+      }
+      fill(0x190000, 4, 8192);
+      for (uint32_t slice : {2u, 3u}) {
+        dimension_case("textures (3D)", 0x190000, 2, 3u | 3u << 11 | 3u << 22, D::k3DOrStacked, {0.5f, 0.5f, (slice + 0.5f) / 4},
+                       10.0f * slice + 1, 10.0f * slice + 2);
+      }
+      fill(0x1A0000, 6, 8192);
+      for (uint32_t face : {4u, 1u}) {
+        dimension_case("cube textures", 0x1A0000, 3, 3u | 3u << 13, D::kCube, {1.5f, 1.5f, float(face)}, 10.0f * face + 1,
+                       10.0f * face + 2);
+      }
+    }
     // Dynamic constant addressing: maxas sets a0 = 2 from c3.w, then the export reads c[a0 + 0] = c2.
     {
       t::Alu set_a0, read;

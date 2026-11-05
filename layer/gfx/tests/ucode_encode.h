@@ -125,14 +125,14 @@ struct Tex {
   uint32_t src_swizzle = 0 | 1 << 2 | 2 << 4, dest_swizzle = 0 | 1 << 3 | 2 << 6 | 3 << 9;
   uint32_t mag = 3, min = 3, mip = 3;
   bool computed_lod = true, register_lod = false, register_gradients = false;
+  rex::graphics::xenos::FetchOpDimension dimension = rex::graphics::xenos::FetchOpDimension::k2D;
 };
 inline void PushTex(std::vector<uint32_t>& words, const Tex& t) {
   words.push_back(uint32_t(t.opcode) | (t.src & 0x3F) << 5 | (t.dest & 0x3F) << 12 | (t.fetch_constant & 0x1F) << 20 |
                   (t.src_swizzle & 0x3F) << 26);
   words.push_back((t.dest_swizzle & 0xFFF) | (t.mag & 3) << 12 | (t.min & 3) << 14 | (t.mip & 3) << 16 | 7u << 18 |
                   3u << 24 | 3u << 26 | (t.computed_lod ? 1u : 0u) << 28 | (t.register_lod ? 1u : 0u) << 29);
-  words.push_back((t.register_gradients ? 1u : 0u) | 1u << 1 |
-                  uint32_t(rex::graphics::xenos::FetchOpDimension::k2D) << 14);
+  words.push_back((t.register_gradients ? 1u : 0u) | 1u << 1 | uint32_t(t.dimension) << 14);
 }
 
 // A shader of control flow `cf` (padded with a nop to pairs) then the instruction words, from slot cf pairs on.

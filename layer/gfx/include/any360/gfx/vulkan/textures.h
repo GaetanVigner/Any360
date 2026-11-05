@@ -47,6 +47,9 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format);
 
 // The byte offset of block (x, y) in a tiled 2D surface `pitch` blocks wide (Xenos 32x32-block tiling).
 int32_t TiledOffset2D(int32_t x, int32_t y, uint32_t pitch, uint32_t bytes_per_block_log2);
+// The byte offset of block (x, y, z) in a tiled 3D texture `pitch` blocks wide and `height` blocks high (32x32x4
+// tiles, as XGRAPHICS::TileVolume lays them).
+int32_t TiledOffset3D(int32_t x, int32_t y, int32_t z, uint32_t pitch, uint32_t height, uint32_t bytes_per_block_log2);
 
 // A texture fetch constant's fields this module uses.
 struct TextureFetch {
@@ -61,7 +64,7 @@ struct TextureFetch {
   // the base address, levels 1 and up from the mip address.
   void Levels(uint32_t& first, uint32_t& last) const;
   // Slices of a 2D array or cube (1 for others).
-  uint32_t slices() const { return dimension == 1 || dimension == 3 ? depth : 1; }
+  uint32_t slices() const { return dimension != 0 ? depth : 1; }  // stacked layers, cube faces or 3D z slices
 };
 
 class TextureCache {

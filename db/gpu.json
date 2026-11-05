@@ -2076,21 +2076,21 @@
 "name":"textures (3D)",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:cube textures",
 "name":"cube textures",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:texture arrays",
 "name":"texture arrays",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:texture filtering",
