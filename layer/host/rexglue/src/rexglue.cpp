@@ -6,6 +6,8 @@
 #include "any360/host/rexglue.h"
 
 #include "any360/gfx/async_renderer.h"
+#include "any360/gfx/capture.h"
+#include "any360/gfx/registers.h"
 
 #include <rex/cvar.h>
 #include <rex/runtime.h>
@@ -620,6 +622,14 @@ struct Binding {
   std::unique_ptr<gfx::AsyncRenderer> async;
   InterruptThread interrupts;
   std::unique_ptr<Sampler> sampler;
+  // A frame capture: requested by a trigger file, opened and closed on the title's thread at a kick while the
+  // command processor is idle (it records each kick from its own thread), so the writer never changes under it.
+  uint8_t* physical = nullptr;
+  std::string capture_path;
+  uint32_t capture_kicks = 0, kicks_left = 0;
+  std::unique_ptr<gfx::capture::Writer> writer;
+  std::chrono::steady_clock::time_point next_trigger_check{};
+  std::function<void(const std::string&)> log;
 };
 
 std::atomic<bool> g_bound{false};
@@ -637,8 +647,49 @@ std::pair<uint32_t, uint32_t> MemoryWritten(void* context, uint32_t start, uint3
 }
 
 uint32_t ReadGpuRegister(void*, void*, uint32_t address) { return sys::Graphics().ReadRegister(sys::GpuRegisterIndex(address)); }
+
+// At a kick (the title's write of CP_RB_WPTR, before the command processor sees it): starts a requested capture, or
+// ends one whose kicks are done, while the command processor is idle.
+void CaptureAtKick(Binding& b) {
+  if (b.capture_path.empty()) return;
+  if (b.writer) {
+    if (b.kicks_left > 0) --b.kicks_left;
+    if (b.kicks_left == 0 && b.cp->Idle()) {
+      b.cp->SetCapture(nullptr);
+      const uint64_t bytes = b.writer->bytes_written();
+      b.writer.reset();
+      if (b.log) b.log("Any360: capture written to " + b.capture_path + " (" + std::to_string(bytes >> 20) + " MB)");
+    }
+    return;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  if (now < b.next_trigger_check) return;
+  b.next_trigger_check = now + std::chrono::milliseconds(500);
+  const std::string trigger = b.capture_path + ".go";
+  if (std::FILE* f = std::fopen(trigger.c_str(), "rb")) {
+    std::fclose(f);
+  } else {
+    return;
+  }
+  if (!b.cp->Idle()) return;  // at a later kick
+  std::remove(trigger.c_str());
+  auto writer = std::make_unique<gfx::capture::Writer>();
+  if (!writer->Open(b.capture_path, b.physical, kPhysicalBytes, b.cp->registers(), gfx::reg::kRegisterCount,
+                    "any360::host::rexglue binding")) {
+    if (b.log) b.log("Any360: cannot open the capture " + b.capture_path);
+    return;
+  }
+  writer->Shaders(b.cp->shader(0).microcode, b.cp->shader(1).microcode);
+  b.kicks_left = b.capture_kicks;
+  b.writer = std::move(writer);
+  b.cp->SetCapture(b.writer.get());
+  if (b.log) b.log("Any360: capturing " + std::to_string(b.capture_kicks) + " kicks into " + b.capture_path);
+}
+
 void WriteGpuRegister(void*, void*, uint32_t address, uint32_t value) {
-  sys::Graphics().WriteRegister(sys::GpuRegisterIndex(address), value);
+  const uint32_t index = sys::GpuRegisterIndex(address);
+  if (index == gfx::reg::CP_RB_WPTR && g_binding) CaptureAtKick(*g_binding);
+  sys::Graphics().WriteRegister(index, value);
 }
 
 }  // namespace
@@ -718,6 +769,10 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
 
   // The renderer over the guest's physical memory, the command processor in front of it.
   uint8_t* physical = memory->TranslatePhysical<uint8_t*>(0);
+  binding->physical = physical;
+  binding->capture_path = options.capture_path;
+  binding->capture_kicks = std::max(1u, options.capture_kicks);
+  binding->log = options.log;
   binding->renderer = std::make_unique<PresentingRenderer>(binding->device, physical, binding->window, binding->parent,
                                                           options.log, options.stats_seconds, options.resolution_scale);
   binding->renderer->SetPipelineCache(options.pipeline_cache_path);
@@ -800,6 +855,10 @@ void StopGraphics() {
   g_binding->interrupts.Stop();
   g_binding->sampler.reset();  // its samples written
   g_binding->cp->Stop();
+  if (g_binding->writer) {  // a capture still running: what it has is kept
+    g_binding->cp->SetCapture(nullptr);
+    g_binding->writer.reset();
+  }
   if (g_binding->async) g_binding->async->Drain();
   // The window, device and renderer stay until the process ends: the runtime may still be tearing down around them.
 }

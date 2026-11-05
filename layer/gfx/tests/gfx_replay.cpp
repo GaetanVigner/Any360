@@ -15,6 +15,8 @@
 //                 reference's size to be compared
 //     --msaa N    draws with N samples a host pixel (host MSAA: 2, 4, 8)
 //     --pipeline-cache FILE  keeps the pipelines in FILE across runs (the time spent creating them is printed)
+//     --pick X,Y  with --trace, prints each draw that changes colour target 0's pixel at (X, Y) in the capture's
+//                 first frames: its number, the new value, its shaders and vertex fetch constant 0 (slow)
 #include <algorithm>
 #include <atomic>
 #include <thread>
@@ -25,6 +27,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -162,8 +165,9 @@ bool WritePng(const std::string& path, uint32_t width, uint32_t height, const ui
 // --trace: forwards to the renderer and prints the order of things, draws grouped in runs of the same targets.
 class TracingRenderer : public Renderer {
  public:
-  TracingRenderer(vk::VulkanRenderer& renderer, const uint8_t* physical, std::string dump, uint32_t watch)
-      : r_(renderer), physical_(physical), dump_(std::move(dump)), watch_(watch) {}
+  TracingRenderer(vk::VulkanRenderer& renderer, const uint8_t* physical, std::string dump, uint32_t watch,
+                  int32_t pick_x = -1, int32_t pick_y = -1)
+      : r_(renderer), physical_(physical), dump_(std::move(dump)), watch_(watch), pick_x_(pick_x), pick_y_(pick_y) {}
   ~TracingRenderer() override { EndRun(); }
   void ShaderLoaded(const Shader& shader) override { r_.ShaderLoaded(shader); }
   void Invalidate(uint32_t base, uint32_t size) override { r_.Invalidate(base, size); }
@@ -190,6 +194,29 @@ class TracingRenderer : public Renderer {
     }
     const vk::RendererStats before = r_.stats();
     r_.Draw(draw);
+    ++draws_;
+    if (pick_x_ >= 0 && draws_ <= 2000 && (regs[0x2208] & 7) == 4 && (regs[0x2104] & 0xF)) {
+      const uint32_t pitch = regs[0x2000] & 0x3FFF;
+      const vk::SurfaceKey key{regs[0x2001] & 0xFFF, pitch, (regs[0x2001] >> 16) & 0xF, 0};
+      std::vector<uint8_t> bytes;
+      if (pitch > uint32_t(pick_x_) && r_.ReadBack(key, uint32_t(pick_x_) + 1, uint32_t(pick_y_) + 1, bytes) &&
+          bytes.size() >= size_t(pick_x_ + 1) * (pick_y_ + 1) * 4) {
+        uint32_t value;
+        std::memcpy(&value, bytes.data() + (size_t(pick_y_) * (pick_x_ + 1) + pick_x_) * 4, 4);
+        const uint64_t key64 = uint64_t(key.base) << 32 | key.format;
+        if (picked_[key64] != value || !picked_seen_.count(key64)) {
+          picked_seen_.insert(key64);
+          const uint32_t* vf = regs + 0x4800;  // vertex fetch constant 0 (fetch slot 0, its first two dwords)
+          std::printf("    pick draw %u: target %03X format %u pixel %08X -> %08X; vs %016llX ps %016llX, prim %u, %u indices, "
+                      "vfetch0 %08X %08X, blend %08X, depth %08X\n",
+                      draws_, key.base, key.format, picked_[key64], value,
+                      draw.vertex_shader ? (unsigned long long)draw.vertex_shader->hash : 0ull,
+                      draw.pixel_shader ? (unsigned long long)draw.pixel_shader->hash : 0ull, draw.primitive_type,
+                      draw.index_count, vf[0], vf[1], regs[0x2201], regs[0x2200]);
+          picked_[key64] = value;
+        }
+      }
+    }
     const vk::RendererStats& after = r_.stats();
     if (after.failed != before.failed) {
       ++failed_;
@@ -240,6 +267,28 @@ class TracingRenderer : public Renderer {
       ++resolves_;
       WritePng(name, width, height, pixels.data());
       std::printf("    written to %s\n", name.c_str());
+    } else if (!dump_.empty() && (regs[0x2318] & 7) == 0 && width && height) {
+      // A colour 0 resolve in another format (k_2_10_10_10: The Simpsons Game) is often left on the GPU: its source
+      // surface read back instead, as the host keeps it (8-bit components for k_2_10_10_10 targets).
+      const uint32_t color_info = regs[0x2001];
+      const vk::SurfaceKey key{color_info & 0xFFF, regs[0x2000] & 0x3FFF, (color_info >> 16) & 0xF, 0};
+      std::vector<uint8_t> bytes;
+      const VkFormat host = vk::ColorTargetFormat(key.format);
+      if ((host == VK_FORMAT_A8B8G8R8_UNORM_PACK32 || host == VK_FORMAT_A2B10G10R10_UNORM_PACK32) &&
+          r_.ReadBack(key, width, height, bytes)) {
+        std::vector<uint32_t> pixels(size_t(width) * height);
+        for (size_t i = 0; i < pixels.size(); ++i) {
+          uint32_t v;
+          std::memcpy(&v, bytes.data() + 4 * i, 4);
+          if (host == VK_FORMAT_A2B10G10R10_UNORM_PACK32) {  // 10-bit components shown at 8 bits
+            v = ((v >> 2) & 0xFF) | ((v >> 12) & 0xFF) << 8 | ((v >> 22) & 0xFF) << 16;
+          }
+          pixels[i] = v | 0xFF000000u;
+        }
+        const std::string name = dump_ + "/resolve_" + std::to_string(resolves_++) + "_surface.png";
+        WritePng(name, width, height, pixels.data());
+        std::printf("    source surface written to %s\n", name.c_str());
+      }
     }
   }
   void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* regs) override {
@@ -265,6 +314,10 @@ class TracingRenderer : public Renderer {
   std::string dump_;
   uint32_t resolves_ = 0;
   uint32_t watch_ = 0;
+  int32_t pick_x_ = -1, pick_y_ = -1;
+  uint32_t draws_ = 0;
+  std::map<uint64_t, uint32_t> picked_;
+  std::set<uint64_t> picked_seen_;
   bool run_ = false;
   std::array<uint32_t, 8> key_{};
   uint32_t drawn_ = 0, skipped_ = 0, failed_ = 0;
@@ -290,6 +343,7 @@ int main(int argc, char** argv) {
   int repeat = 1;  // --repeat N: the capture replayed N times, the timings of the last (warm caches, as in a game)
   std::string dump;
   uint32_t watch = 0;
+  int32_t pick_x = -1, pick_y = -1;
   bool bench = false;
   bool async = false;
   uint32_t record_threads = 0;  // --threads N: draws recorded on N threads (secondary command buffers)  // --async: the renderer on a thread of its own (AsyncRenderer), as in a title  // --bench: as in a title (diagnostics off, textures watched instead of hashed), kick time only
@@ -314,6 +368,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--scale") && i + 1 < argc) scale = uint32_t(std::clamp(std::atoi(argv[++i]), 1, 4));
     else if (!std::strcmp(argv[i], "--threads") && i + 1 < argc) record_threads = uint32_t(std::atoi(argv[++i]));
     else if (!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = uint32_t(std::strtoul(argv[++i], nullptr, 16)) & 0x1FFFF000;
+    else if (!std::strcmp(argv[i], "--pick") && i + 1 < argc) std::sscanf(argv[++i], "%d,%d", &pick_x, &pick_y);
     else path = argv[i];
   }
   if (path.empty()) {
@@ -339,7 +394,7 @@ int main(int argc, char** argv) {
   }
   renderer.SetRecordThreads(record_threads);
   CommandProcessor cp(physical);
-  TracingRenderer tracing(renderer, physical, dump, watch);
+  TracingRenderer tracing(renderer, physical, dump, watch, pick_x, pick_y);
   Renderer* target = trace ? static_cast<Renderer*>(&tracing) : &renderer;
   std::unique_ptr<AsyncRenderer> async_renderer;
   if (async) async_renderer = std::make_unique<AsyncRenderer>(cp, *target);
