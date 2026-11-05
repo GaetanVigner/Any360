@@ -41,7 +41,7 @@ constexpr uint32_t kRbDepthInfo = 0x2002, kPaScScreenScissorTl = 0x200E, kPaScSc
                    kRbStencilRefMask = 0x210D, kPaClVportXScale = 0x210F, kRbDepthControl = 0x2200,
                    kRbColorControl = 0x2202, kPaSuScModeCntl = 0x2205, kPaClVteCntl = 0x2206, kPaSuVtxCntl = 0x2302,
                    kRbModeControl = 0x2208, kPaSuPolyOffsetFrontScale = 0x2380, kRbSurfaceInfo = 0x2000,
-                   kSqProgramCntl = 0x2180, kSqContextMisc = 0x2181, kVgtMaxVtxIndx = 0x2100, kVgtMinVtxIndx = 0x2101,
+                   kSqProgramCntl = 0x2180, kSqContextMisc = 0x2181, kSqInterpolatorCntl = 0x2182, kVgtMaxVtxIndx = 0x2100, kVgtMinVtxIndx = 0x2101,
                    kVgtIndxOffset = 0x2102, kVgtMultiPrimIbResetIndx = 0x2103;
 constexpr uint32_t kRbColorInfo[4] = {0x2001, 0x2003, 0x2004, 0x2005};
 constexpr uint32_t kRbBlendControl[4] = {0x2201, 0x2209, 0x220A, 0x220B};
@@ -114,6 +114,17 @@ VulkanRenderer::VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirro
   translator_ = std::make_unique<SpirvShaderTranslator>(SpirvShaderTranslator::Features(true), true, true, false, scale_,
                                                         scale_);
   translator_->SetSamplesAsPixels(true);  // guest samples are pixels of the host targets
+}
+
+uint32_t CentroidInterpolators(uint32_t interpolators, uint32_t surface_info, uint32_t context_misc,
+                               uint32_t interpolator_cntl) {
+  // The interpolators sampled at their centroid, as the reference picks them: with guest MSAA, SQ_CONTEXT_MISC
+  // sc_sample_cntl centroids only, or centroids and centres by SQ_INTERPOLATOR_CNTL's per-interpolator pattern (a set
+  // bit a centre). Guest samples being host pixels, the decoration matters to the host's own MSAA.
+  rg::reg::SQ_CONTEXT_MISC misc;
+  misc.value = context_misc;
+  return interpolators & ~rg::xenos::GetInterpolatorSamplingPattern(rg::xenos::MsaaSamples((surface_info >> 16) & 3),
+                                                                    misc.sc_sample_cntl, interpolator_cntl >> 16);
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -985,11 +996,14 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // ucp_cull_only_ena, cull) distance for each enabled one, as the reference translates them.
   const uint32_t clip_cntl = regs[kPaClClipCntl];
   const uint32_t clip_planes = (clip_cntl >> 16) & 1 ? 0 : clip_cntl & 0x3F, clip_cull = (clip_cntl >> 17) & 1;
+  // The guest MSAA mode and SQ_INTERPOLATOR_CNTL's sampling pattern choose the centroid interpolators.
+  const uint32_t guest_msaa = (regs[kRbSurfaceInfo] >> 16) & 3;
   const uint64_t shader_key[4] = {draw.vertex_shader->hash, wants_ps ? draw.pixel_shader->hash : 0,
                                   uint64_t(regs[kSqProgramCntl]) << 32 | regs[kSqContextMisc],
                                   uint64_t(wants_ps) | uint64_t(rectangle_list) << 1 |
                                       uint64_t(point_list) << 2 |
-                                      uint64_t(clip_planes) << 3 | uint64_t(clip_cull) << 9};
+                                      uint64_t(clip_planes) << 3 | uint64_t(clip_cull) << 9 |
+                                      uint64_t(guest_msaa) << 10 | uint64_t(regs[kSqInterpolatorCntl] >> 16) << 12};
   const bool shaders_known = shader_memo_.valid && std::memcmp(shader_memo_.key, shader_key, sizeof(shader_key)) == 0;
   TranslatedShader* vs = shaders_known ? shader_memo_.vs : GetShader(*draw.vertex_shader);
   TranslatedShader* ps = shaders_known ? shader_memo_.ps : wants_ps ? GetShader(*draw.pixel_shader) : nullptr;
@@ -1019,15 +1033,12 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   uint32_t interpolators = 0;
   // Pixel parameter generation (SQ_PROGRAM_CNTL gen_index_pix): the pixel shader reads, in one of its interpolators,
   // the pixel position, whether the primitive is back-facing, a line or a point, and the point coordinates. The
-  // translator makes it from the fragment coordinates and the primitive flags of the system constants; points would
-  // need their coordinates from a point sprite expansion.
+  // translator makes it from the fragment coordinates and the primitive flags of the system constants; on points, the
+  // point sprite coordinates come from the vertex shader's point expansion (0 to 1 across the square), as the
+  // reference passes them.
   uint32_t param_gen = UINT32_MAX;
   if (ps) {
     interpolators = vs->shader->writes_interpolators() & ps->shader->GetInterpolatorInputMask(program_cntl, context_misc, param_gen);
-    if (param_gen != UINT32_MAX && point_list) {
-      Fail("point sprites with pixel parameter generation (not yet)");
-      return;
-    }
   }
   SpirvShaderTranslator::Modification vs_modification(translator_->GetDefaultVertexShaderModification(
       vs->shader->GetDynamicAddressableRegisterCount(program_cntl.vs_num_reg),
@@ -1037,16 +1048,19 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   vs_modification.vertex.interpolator_mask = interpolators;
   vs_modification.vertex.user_clip_plane_count = uint32_t(std::popcount(clip_planes));
   vs_modification.vertex.user_clip_plane_cull = clip_planes ? clip_cull : 0;
+  vs_modification.vertex.output_point_parameters = uint32_t(point_list && param_gen < 16);
   vs_module = GetModule(*vs, vs_modification.value);
   ps_module = VK_NULL_HANDLE;
   if (ps) {
     SpirvShaderTranslator::Modification ps_modification(
         translator_->GetDefaultPixelShaderModification(ps->shader->GetDynamicAddressableRegisterCount(program_cntl.ps_num_reg)));
     ps_modification.pixel.interpolator_mask = interpolators;
+    ps_modification.pixel.interpolators_centroid =
+        CentroidInterpolators(interpolators, regs[kRbSurfaceInfo], regs[kSqContextMisc], regs[kSqInterpolatorCntl]);
     if (param_gen < 16) {
       ps_modification.pixel.param_gen_enable = 1;
       ps_modification.pixel.param_gen_interpolator = param_gen;
-      ps_modification.pixel.param_gen_point = 0;
+      ps_modification.pixel.param_gen_point = uint32_t(point_list);
     }
     ps_module = GetModule(*ps, ps_modification.value);
   }

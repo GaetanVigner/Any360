@@ -351,6 +351,83 @@ int main(int argc, char** argv) {
     });
     std::printf("gfx_render_tests: points: %u pixels\n", p.Count(color));
     CHECK(p.Count(color) == 4 * 64 && p.At(54, 9) == color && p.At(9, 54) == color && p.At(32, 32) == kBlack);
+    // Point sprite coordinates: pixel parameter generation (SQ_PROGRAM_CNTL param_gen, SQ_CONTEXT_MISC param_gen_pos
+    // 0) into r0, which the pixel shader exports: z and w (blue, alpha) are the point coordinates S and T, 0 to 1
+    // across each 8x8 square, S rightwards and T downwards as D3D's point sprites: a square's corner pixels 7/8 apart
+    // (223 of 255), the first near 1/16 (the square sits a tenth of a pixel off the pixel grid).
+    s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, true}));
+    p = scenario("point sprites", nullptr, [&] {
+      s.Reg(0x2280, 64u << 16 | 64u);
+      s.Reg(0x2180, 1u << 18);
+      s.Reg(0x2181, 0);
+      s.Vertices(9);
+      s.DrawAuto(1, 4);
+      s.Reg(0x2180, 0);
+    });
+    s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+    // The square of the upper-left point: its first lit pixel, then its corners' S and T.
+    uint32_t x0 = kSize, y0 = kSize;
+    for (uint32_t y = 0; y < kSize / 2 && x0 == kSize; ++y) {
+      for (uint32_t x = 0; x < kSize / 2; ++x) {
+        if (p.At(x, y) != kBlack) {
+          x0 = x, y0 = y;
+          break;
+        }
+      }
+    }
+    auto st = [&](uint32_t x, uint32_t y) { return std::pair<int, int>(p.At(x, y) >> 16 & 0xFF, p.At(x, y) >> 24); };
+    const auto tl = st(x0, y0), tr = st(x0 + 7, y0), bl = st(x0, y0 + 7), br = st(x0 + 7, y0 + 7);
+    std::printf("gfx_render_tests: point sprites: square at (%u, %u), S,T corners %d,%d %d,%d %d,%d %d,%d\n", x0, y0,
+                tl.first, tl.second, tr.first, tr.second, bl.first, bl.second, br.first, br.second);
+    auto near = [](int v, int expect) { return std::abs(v - expect) <= 2; };
+    CHECK(x0 < kSize && tl.first >= 8 && tl.first <= 24 && near(tl.second, tl.first) && near(tr.first - tl.first, 223) &&
+          near(tr.second, tl.second) && near(bl.first, tl.first) && near(bl.second - tl.second, 223) &&
+          near(br.first, tr.first) && near(br.second, bl.second));
+  }
+  // Centroid interpolation: which interpolators the pixel shader samples at their centroid (none at 1x or with
+  // centres only; all with centroids only; by SQ_INTERPOLATOR_CNTL's pattern, a set bit a centre, otherwise), and a
+  // draw at 2x MSAA, centroids only, whose pixel shader exports interpolator 0 (the vertex position).
+  {
+    using vk::CentroidInterpolators;
+    const uint32_t msaa2 = 1u << 16, msaa4 = 2u << 16;
+    CHECK(CentroidInterpolators(0xF, 0, 0, 0) == 0);                       // 1x
+    CHECK(CentroidInterpolators(0xF, msaa2, 1u << 2, 0) == 0);             // centres only (sc_sample_cntl, bit 2)
+    CHECK(CentroidInterpolators(0xF, msaa2, 0, 0) == 0xF);                 // centroids only
+    CHECK(CentroidInterpolators(0xF, msaa4, 2u << 2, 0x5u << 16) == 0xA);  // the pattern: 0 and 2 at centres
+    std::vector<uint32_t> words;
+    t::VertexFetch position;
+    t::PushVertexFetch(words, position);
+    t::Alu out_position, out_value;
+    out_position.vector_mask = out_value.vector_mask = 0b1111, out_position.is_export = out_value.is_export = true;
+    out_position.dest = uint32_t(uc::ExportRegister::kVSPosition), out_position.src1 = out_position.src2 = {1, true};
+    out_value.dest = uint32_t(uc::ExportRegister::kVSInterpolator0), out_value.src1 = out_value.src2 = {1, true};
+    t::PushAlu(words, out_position);
+    t::PushAlu(words, out_value);
+    s.Shader(0, t::BuildCfShader({t::CfAlloc(uc::AllocType::kVsPosition, 0),
+                                  t::CfExec(uc::ControlFlowOpcode::kExec, 2, 2, 0b0001),
+                                  t::CfAlloc(uc::AllocType::kVsInterpolators, 0),
+                                  t::CfExec(uc::ControlFlowOpcode::kExecEnd, 4, 1, 0)},
+                                 words));
+    s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, true}));
+    Pixels p = scenario("centroid", nullptr, [&] {
+      s.Reg(0x2000, 64u | 1u << 16);
+      s.Reg(0x2302, 1);
+      s.Put({Type0(0x210F, 6), Bits(32), Bits(32), Bits(-16), Bits(16), Bits(1), Bits(0)});
+      s.Put({Type0(0x200E, 2), 0, 32u << 16 | 64u});
+      s.Put({Type0(0x2080, 3), 0, 0, 32u << 16 | 64u});
+      s.Reg(0x2181, 0);  // sc_sample_cntl: centroids only
+      s.Vertices(0);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2302, 0);
+    });
+    s.Shader(0, t::BuildFetchPositionShader());
+    s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+    // Interpolator 0 is the quad's position: x from -1 to 1 (red 0 at the left edge, 251 at the right pixel's centre,
+    // 0.98), z 0.5 (blue), w 1 (alpha).
+    const uint32_t left = p.At(0, 32), right = p.At(63, 32), middle = p.At(48, 20);
+    std::printf("gfx_render_tests: centroid: %08X %08X %08X\n", left, right, middle);
+    CHECK((left & 0xFF) == 0 && (right & 0xFF) >= 0xF8 && std::abs(int(middle >> 16 & 0xFF) - 128) <= 1 &&
+          middle >> 24 == 0xFF && (middle & 0xFF) > 0x80);
   }
   // Render target formats: c0 written over the whole target of each format, read back as the host stores it.
   {

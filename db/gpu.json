@@ -2013,7 +2013,7 @@
 "name":"point sprites",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:primitive restart",
@@ -2188,7 +2188,7 @@
 "name":"centroid interpolation",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:swap / present",

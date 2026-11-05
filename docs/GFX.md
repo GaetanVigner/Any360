@@ -207,7 +207,8 @@ From the Crackdown runs (each one cost a debugging session there):
    Points (2026-11-05): point lists drawn as two-triangle strips, each the square of PA_SU_POINT_SIZE (or of the size
    the vertex shader writes, clamped by PA_SU_POINT_MINMAX), the vertex shader expanding them as the reference does
    without geometry shaders (the renderer drew sizeless host points). Point sprite coordinates (pixel parameter
-   generation on points) stay to do. Anisotropic filtering (a 4:1 fetch constant keeps the finer level of a
+   generation on points, which the renderer refused) now come from that expansion: S and T 0 to 1 across the
+   square, rightwards and downwards, as the reference passes them. Anisotropic filtering (a 4:1 fetch constant keeps the finer level of a
    texture read obliquely) and bin predication (gfx_cp_tests) are tested too.
    Alpha to coverage and occlusion queries (2026-11-05): RB_COLORCONTROL's alpha_to_mask_enable and dither offsets
    never reached the shader. Guest samples are host pixels here, so the translator (an any360 mode, as the reference
@@ -216,6 +217,10 @@ From the Crackdown runs (each one cost a debugging session there):
    pixel's offset; gl_SampleMask is no longer declared, so the host's own MSAA keeps every sample of a kept fragment.
    Scenarios at 1x, 2x and 4x. Occlusion queries, already counted by host queries, got their scenario: a full quad
    reports every sample and one the alpha test discards none.
+   Centroid interpolation (2026-11-05): the pixel shader's interpolators are decorated Centroid as the reference
+   picks them (guest MSAA, SQ_CONTEXT_MISC sc_sample_cntl, SQ_INTERPOLATOR_CNTL's pattern), part of the shader key.
+   Guest samples being host pixels, it matters to the host's own MSAA (no extrapolation at partly covered edges);
+   tested for the choice and for a 2x draw through it, not for the host MSAA image itself.
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured

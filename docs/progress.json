@@ -80,8 +80,8 @@
  },
  "gpu": {
   "total": 323,
-  "native": 278,
-  "reference": 38,
+  "native": 280,
+  "reference": 36,
   "by_family": {
    "command processor": {
     "native": 43,
@@ -92,8 +92,8 @@
     "reference": 8
    },
    "render features": {
-    "native": 50,
-    "reference": 5
+    "native": 52,
+    "reference": 3
    },
    "render target formats": {
     "native": 14

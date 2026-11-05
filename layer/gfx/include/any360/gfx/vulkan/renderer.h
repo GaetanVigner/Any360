@@ -116,6 +116,10 @@ struct BytesHash {
 
 // The host format of a Xenos colour render target format, as the reference maps it (VK_FORMAT_UNDEFINED: unknown).
 VkFormat ColorTargetFormat(uint32_t color_format);
+// The interpolators (of `interpolators`) a pixel shader samples at their centroid: RB_SURFACE_INFO's MSAA mode,
+// SQ_CONTEXT_MISC sc_sample_cntl and SQ_INTERPOLATOR_CNTL's sampling pattern, as the reference picks them.
+uint32_t CentroidInterpolators(uint32_t interpolators, uint32_t surface_info, uint32_t context_misc,
+                               uint32_t interpolator_cntl);
 
 class VulkanRenderer : public gfx::Renderer {
  public:
