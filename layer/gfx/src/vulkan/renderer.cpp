@@ -36,7 +36,8 @@ struct Timer {
 // Register file indices the renderer reads.
 constexpr uint32_t kRbDepthInfo = 0x2002, kPaScScreenScissorTl = 0x200E, kPaScScreenScissorBr = 0x200F,
                    kPaScWindowOffset = 0x2080, kPaScWindowScissorTl = 0x2081, kPaScWindowScissorBr = 0x2082,
-                   kRbColorMask = 0x2104, kRbBlendRed = 0x2105, kRbStencilRefMaskBf = 0x210C,
+                   kRbColorMask = 0x2104, kRbBlendRed = 0x2105, kRbStencilRefMaskBf = 0x210C, kRbAlphaRef = 0x210E,
+                   kPaClClipCntl = 0x2204, kPaClUcp0X = 0x2388,
                    kRbStencilRefMask = 0x210D, kPaClVportXScale = 0x210F, kRbDepthControl = 0x2200,
                    kRbColorControl = 0x2202, kPaSuScModeCntl = 0x2205, kPaClVteCntl = 0x2206, kPaSuVtxCntl = 0x2302,
                    kRbModeControl = 0x2208, kPaSuPolyOffsetFrontScale = 0x2380, kRbSurfaceInfo = 0x2000,
@@ -973,10 +974,15 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
                                           (draw.index_32 || reset_index <= UINT16_MAX));
 
   const bool wants_ps = edram_mode == 4 && draw.pixel_shader && !draw.pixel_shader->microcode.empty();
+  // User clip planes (PA_CL_CLIP_CNTL ucp_ena_0-5, unless clip_disable): the vertex shader writes a clip (or, with
+  // ucp_cull_only_ena, cull) distance for each enabled one, as the reference translates them.
+  const uint32_t clip_cntl = regs[kPaClClipCntl];
+  const uint32_t clip_planes = (clip_cntl >> 16) & 1 ? 0 : clip_cntl & 0x3F, clip_cull = (clip_cntl >> 17) & 1;
   const uint64_t shader_key[4] = {draw.vertex_shader->hash, wants_ps ? draw.pixel_shader->hash : 0,
                                   uint64_t(regs[kSqProgramCntl]) << 32 | regs[kSqContextMisc],
                                   uint64_t(wants_ps) | uint64_t(rectangle_list) << 1 |
-                                      uint64_t(topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) << 2};
+                                      uint64_t(topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) << 2 |
+                                      uint64_t(clip_planes) << 3 | uint64_t(clip_cull) << 9};
   const bool shaders_known = shader_memo_.valid && std::memcmp(shader_memo_.key, shader_key, sizeof(shader_key)) == 0;
   TranslatedShader* vs = shaders_known ? shader_memo_.vs : GetShader(*draw.vertex_shader);
   TranslatedShader* ps = shaders_known ? shader_memo_.ps : wants_ps ? GetShader(*draw.pixel_shader) : nullptr;
@@ -1020,6 +1026,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       vs->shader->GetDynamicAddressableRegisterCount(program_cntl.vs_num_reg),
       rectangle_list ? rg::Shader::HostVertexShaderType::kRectangleListAsTriangleStrip : rg::Shader::HostVertexShaderType::kVertex));
   vs_modification.vertex.interpolator_mask = interpolators;
+  vs_modification.vertex.user_clip_plane_count = uint32_t(std::popcount(clip_planes));
+  vs_modification.vertex.user_clip_plane_cull = clip_planes ? clip_cull : 0;
   vs_module = GetModule(*vs, vs_modification.value);
   ps_module = VK_NULL_HANDLE;
   if (ps) {
@@ -1398,6 +1406,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t color_control = regs[kRbColorControl];
   const uint32_t alpha_func = (color_control & (1u << 3)) ? (color_control & 7) : 7;
   system->flags |= alpha_func << SpirvShaderTranslator::kSysFlag_AlphaPassIfLess_Shift;
+  system->alpha_test_reference = AsFloat(regs[kRbAlphaRef]);
+  // The enabled user clip planes (PA_CL_UCP_n), packed in order.
+  for (uint32_t bits = clip_planes, n = 0; bits; bits &= bits - 1, ++n) {
+    std::memcpy(system->user_clip_planes[n], regs + kPaClUcp0X + 4 * std::countr_zero(bits), 16);
+  }
   // Per colour target: the exponent bias of RB_COLOR_INFO as a 2^bias multiplier (the fixed-point 16-bit formats'
   // -32...32 range scaled into the host's -1...1 by 2^-5 more, as the reference does), and the gamma conversion
   // of k_8_8_8_8_GAMMA targets.

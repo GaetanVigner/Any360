@@ -1348,21 +1348,21 @@
 "name":"k_8",
 "family":"texture formats",
 "value":2,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_1_5_5_5",
 "name":"k_1_5_5_5",
 "family":"texture formats",
 "value":3,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_5_6_5",
 "name":"k_5_6_5",
 "family":"texture formats",
 "value":4,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_6_5_5",
@@ -1383,28 +1383,28 @@
 "name":"k_2_10_10_10",
 "family":"texture formats",
 "value":7,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_8_A",
 "name":"k_8_A",
 "family":"texture formats",
 "value":8,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_8_B",
 "name":"k_8_B",
 "family":"texture formats",
 "value":9,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_8_8",
 "name":"k_8_8",
 "family":"texture formats",
 "value":10,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_Cr_Y1_Cb_Y0_REP",
@@ -1432,28 +1432,28 @@
 "name":"k_8_8_8_8_A",
 "family":"texture formats",
 "value":14,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_4_4_4_4",
 "name":"k_4_4_4_4",
 "family":"texture formats",
 "value":15,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_10_11_11",
 "name":"k_10_11_11",
 "family":"texture formats",
 "value":16,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_11_11_10",
 "name":"k_11_11_10",
 "family":"texture formats",
 "value":17,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_DXT1",
@@ -1467,14 +1467,14 @@
 "name":"k_DXT2_3",
 "family":"texture formats",
 "value":19,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_DXT4_5",
 "name":"k_DXT4_5",
 "family":"texture formats",
 "value":20,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16_16_16_EDRAM",
@@ -1495,28 +1495,28 @@
 "name":"k_24_8_FLOAT",
 "family":"texture formats",
 "value":23,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16",
 "name":"k_16",
 "family":"texture formats",
 "value":24,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16",
 "name":"k_16_16",
 "family":"texture formats",
 "value":25,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16_16_16",
 "name":"k_16_16_16_16",
 "family":"texture formats",
 "value":26,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_EXPAND",
@@ -1544,21 +1544,21 @@
 "name":"k_16_FLOAT",
 "family":"texture formats",
 "value":30,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16_FLOAT",
 "name":"k_16_16_FLOAT",
 "family":"texture formats",
 "value":31,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16_16_16_FLOAT",
 "name":"k_16_16_16_16_FLOAT",
 "family":"texture formats",
 "value":32,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_32",
@@ -1586,21 +1586,21 @@
 "name":"k_32_FLOAT",
 "family":"texture formats",
 "value":36,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_32_32_FLOAT",
 "name":"k_32_32_FLOAT",
 "family":"texture formats",
 "value":37,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_32_32_32_32_FLOAT",
 "name":"k_32_32_32_32_FLOAT",
 "family":"texture formats",
 "value":38,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_32_AS_8",
@@ -1621,21 +1621,21 @@
 "name":"k_16_MPEG",
 "family":"texture formats",
 "value":41,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16_MPEG",
 "name":"k_16_16_MPEG",
 "family":"texture formats",
 "value":42,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_8_INTERLACED",
 "name":"k_8_INTERLACED",
 "family":"texture formats",
 "value":43,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_32_AS_8_INTERLACED",
@@ -1656,77 +1656,77 @@
 "name":"k_16_INTERLACED",
 "family":"texture formats",
 "value":46,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_MPEG_INTERLACED",
 "name":"k_16_MPEG_INTERLACED",
 "family":"texture formats",
 "value":47,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16_MPEG_INTERLACED",
 "name":"k_16_16_MPEG_INTERLACED",
 "family":"texture formats",
 "value":48,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_DXN",
 "name":"k_DXN",
 "family":"texture formats",
 "value":49,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_8_8_8_8_AS_16_16_16_16",
 "name":"k_8_8_8_8_AS_16_16_16_16",
 "family":"texture formats",
 "value":50,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_DXT1_AS_16_16_16_16",
 "name":"k_DXT1_AS_16_16_16_16",
 "family":"texture formats",
 "value":51,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_DXT2_3_AS_16_16_16_16",
 "name":"k_DXT2_3_AS_16_16_16_16",
 "family":"texture formats",
 "value":52,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_DXT4_5_AS_16_16_16_16",
 "name":"k_DXT4_5_AS_16_16_16_16",
 "family":"texture formats",
 "value":53,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_2_10_10_10_AS_16_16_16_16",
 "name":"k_2_10_10_10_AS_16_16_16_16",
 "family":"texture formats",
 "value":54,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_10_11_11_AS_16_16_16_16",
 "name":"k_10_11_11_AS_16_16_16_16",
 "family":"texture formats",
 "value":55,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_11_11_10_AS_16_16_16_16",
 "name":"k_11_11_10_AS_16_16_16_16",
 "family":"texture formats",
 "value":56,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_32_32_32_FLOAT",
@@ -1747,7 +1747,7 @@
 "name":"k_DXT5A",
 "family":"texture formats",
 "value":59,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_CTX1",
@@ -1887,7 +1887,7 @@
 "name":"window offset",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:window scissor",
@@ -1929,7 +1929,7 @@
 "name":"stencil back",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:blending",
@@ -1943,7 +1943,7 @@
 "name":"blend constants",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:colour write mask",
@@ -1957,7 +1957,7 @@
 "name":"alpha test",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:alpha to coverage",
@@ -1992,21 +1992,21 @@
 "name":"wireframe fill",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:polygon offset",
 "name":"polygon offset",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:user clip planes",
 "name":"user clip planes",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:point sprites",
@@ -2034,7 +2034,7 @@
 "name":"MSAA 2x",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:MSAA 4x",
@@ -2097,7 +2097,7 @@
 "name":"texture filtering",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:anisotropic filtering",
@@ -2125,7 +2125,7 @@
 "name":"vertex textures",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:resolve colour",
@@ -2251,7 +2251,7 @@
 "name":"dynamic constant addressing",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:predication (bins)",

@@ -479,6 +479,146 @@ int main(int argc, char** argv) {
     CHECK(p.At(4, 59) == yellow && p.At(59, 4) == kBlack && wrong == 0);
   }
 
+  // Back-face stencil: the lower-left triangle, a back face with clockwise front faces, writes 1 through the back
+  // stencil state (RB_DEPTHCONTROL backface_enable, RB_STENCILREFMASK_BF) while the front state keeps; then the
+  // quad draws where stencil EQUALS 1.
+  {
+    const uint32_t yellow = Rgba(255, 255, 0, 255);
+    Pixels p = scenario("stencil back", nullptr, [&] {
+      s.Reg(kRbColorMask, 0);
+      s.Reg(kPaSuScModeCntl, 1u << 2);
+      s.Reg(kRbStencilRefMask, 0xFFu << 16 | 0xFFu << 8 | 1);
+      s.Reg(0x210C, 0xFFu << 16 | 0xFFu << 8 | 1);  // RB_STENCILREFMASK_BF
+      s.Reg(kRbDepthControl, 1u | 1u << 7 | 7u << 8 | 7u << 20 | 2u << 26);  // front ALWAYS keep, back ALWAYS REPLACE
+      s.Vertices(0);
+      s.DrawAuto(kTriangleList, 3);
+      s.Reg(kRbColorMask, 0xF);
+      s.Reg(kPaSuScModeCntl, 0);
+      s.Reg(kRbDepthControl, 1u | 2u << 8);
+      s.Color(255, 255, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    uint32_t wrong = 0;
+    for (uint32_t y = 0; y < kSize; ++y) {
+      for (uint32_t x = 0; x < kSize; ++x) {
+        if (!OnDiagonal(x, y)) wrong += (p.At(x, y) == yellow) != LowerLeft(x, y);
+      }
+    }
+    std::printf("gfx_render_tests: back-face stencil %u pixels, %u off the triangle\n", p.Count(yellow), wrong);
+    CHECK(p.At(4, 59) == yellow && p.At(59, 4) == kBlack && wrong == 0);
+  }
+  // Blend constants: source factor CONSTANT_COLOR (RB_BLEND_RED-ALPHA 0.5, 0.25, 1, 1), destination ZERO.
+  {
+    Pixels p = scenario("blend constants", nullptr, [&] {
+      s.Put({Type0(0x2105, 4), Bits(0.5f), Bits(0.25f), Bits(1), Bits(1)});
+      s.Reg(kRbBlendControl0, 12u | 1u << 16);  // colour CONSTANT_COLOR * src + 0, alpha ONE * src + 0
+      s.Vertices(0);
+      s.Color(200, 200, 200, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    const uint32_t px = p.At(32, 32);
+    std::printf("gfx_render_tests: blend constants: %08X\n", px);
+    CHECK(std::abs(int(px & 0xFF) - 100) <= 1 && std::abs(int(px >> 8 & 0xFF) - 50) <= 1 && (px >> 16 & 0xFF) == 200);
+  }
+  // Alpha test (RB_COLORCONTROL, RB_ALPHA_REF 0.5) on alpha 0.25: GREATER passes nothing, LESS everything.
+  {
+    const uint32_t color = Rgba(90, 40, 200, 64);
+    uint32_t passed[2] = {};
+    for (uint32_t i = 0; i < 2; ++i) {
+      Pixels p = scenario("alpha test", nullptr, [&] {
+        s.Reg(0x210E, Bits(0.5f));
+        s.Reg(0x2202, (i ? 1u : 4u) | 1u << 3);
+        s.Vertices(0);
+        s.Color(90, 40, 200, 64);
+        s.DrawAuto(kTriangleStrip, 4);
+        s.Reg(0x2202, 0);
+      });
+      passed[i] = p.Count(color);
+    }
+    std::printf("gfx_render_tests: alpha test: GREATER %u, LESS %u pixels\n", passed[0], passed[1]);
+    CHECK(passed[0] == 0 && passed[1] == kSize * kSize);
+  }
+  // Wireframe fill (PA_SU_SC_MODE_CNTL poly_mode dual, both faces as lines): the quad's two triangles as their
+  // edges only.
+  {
+    const uint32_t color = Rgba(250, 250, 250, 255);
+    Pixels p = scenario("wireframe", nullptr, [&] {
+      s.Reg(kPaSuScModeCntl, 1u << 3 | 1u << 5 | 1u << 8);
+      s.Vertices(0);
+      s.Color(250, 250, 250, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    std::printf("gfx_render_tests: wireframe: %u pixels\n", p.Count(color));
+    CHECK(p.Count(color) > 60 && p.Count(color) < 400 && p.At(20, 30) == kBlack);
+  }
+  // Polygon offset: a second quad at the same depth passes LESS only moved towards the viewer by
+  // PA_SU_POLY_OFFSET_FRONT_OFFSET (poly_offset_front_enable), in the depth format's units.
+  {
+    const uint32_t green = Rgba(0, 255, 0, 255), red = Rgba(255, 0, 0, 255);
+    uint32_t reds[2] = {};
+    for (uint32_t offset = 0; offset < 2; ++offset) {
+      Pixels p = scenario("polygon offset", nullptr, [&] {
+        s.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 1u << 4);
+        s.Vertices(0);
+        s.Color(0, 255, 0, 255);
+        s.DrawAuto(kTriangleStrip, 4);
+        s.Put({Type0(0x2380, 2), Bits(0), Bits(offset ? -0.001f : 0.0f)});
+        s.Reg(kPaSuScModeCntl, 1u << 11);
+        s.Color(255, 0, 0, 255);
+        s.DrawAuto(kTriangleStrip, 4);
+        s.Put({Type0(0x2380, 2), 0, 0});
+      });
+      reds[offset] = p.Count(red);
+      if (!offset) CHECK(p.Count(green) == kSize * kSize);
+    }
+    std::printf("gfx_render_tests: polygon offset: %u red pixels without, %u with\n", reds[0], reds[1]);
+    CHECK(reds[0] == 0 && reds[1] == kSize * kSize);
+  }
+  // Window offset (PA_SC_WINDOW_OFFSET x 16, vtx_window_offset_enable): the quad and the window scissor move right.
+  {
+    const uint32_t color = Rgba(20, 220, 220, 255);
+    Pixels p = scenario("window offset", nullptr, [&] {
+      s.Reg(0x2080, 16);
+      s.Reg(kPaSuScModeCntl, 1u << 16);
+      s.Vertices(0);
+      s.Color(20, 220, 220, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    std::printf("gfx_render_tests: window offset: %u pixels, first column %u\n", p.Count(color), p.At(15, 30) == color ? 15 : 16);
+    CHECK(p.Count(color) == 48 * kSize && p.At(15, 30) == kBlack && p.At(16, 30) == color);
+  }
+  // MSAA 2x as samples: RB_SURFACE_INFO msaa 1 at pitch 64 (a 64x32 viewport and scissor) covers the 64x64 samples.
+  {
+    const uint32_t color = Rgba(200, 60, 120, 255);
+    Pixels p = scenario("MSAA 2x as samples", nullptr, [&] {
+      s.Reg(0x2000, 64u | 1u << 16);
+      s.Reg(0x2302, 1);
+      s.Put({Type0(0x210F, 6), Bits(32), Bits(32), Bits(-16), Bits(16), Bits(1), Bits(0)});
+      s.Put({Type0(0x200E, 2), 0, 32u << 16 | 64u});
+      s.Put({Type0(0x2080, 3), 0, 0, 32u << 16 | 64u});
+      s.Vertices(0);
+      s.Color(200, 60, 120, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2302, 0);
+    });
+    std::printf("gfx_render_tests: MSAA 2x as samples: %u of %u samples\n", p.Count(color), kSize * kSize);
+    CHECK(p.Count(color) == kSize * kSize);
+  }
+  // User clip plane 0 (PA_CL_CLIP_CNTL ucp_ena_0, PA_CL_UCP_0 = x >= 0 in clip space): the right half is kept.
+  {
+    const uint32_t color = Rgba(240, 120, 0, 255);
+    Pixels p = scenario("user clip plane", nullptr, [&] {
+      s.Put({Type0(0x2388, 4), Bits(1), Bits(0), Bits(0), Bits(0)});
+      s.Reg(0x2204, 1);
+      s.Vertices(0);
+      s.Color(240, 120, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2204, 0);
+    });
+    std::printf("gfx_render_tests: user clip plane: %u pixels\n", p.Count(color));
+    CHECK(p.Count(color) == kSize * kSize / 2 && p.At(31, 30) == kBlack && p.At(32, 30) == color);
+  }
+
   // Several targets and formats: a pixel shader writing oC0 = c0 and oC1 = c1; colour 1 a k_16_16_16_16_FLOAT
   // surface at EDRAM tile 512 (its own host image, apart from colour 0's).
 
@@ -1459,6 +1599,217 @@ int main(int argc, char** argv) {
       vertex_case(VF::k_32_32_FLOAT, false, false, 0, {Bits(2.5f), Bits(-3)}, {2.5f, -3, 0, 0}, 0.0f);
       vertex_case(VF::k_32_32_32_FLOAT, false, false, 0, {Bits(1.5f), Bits(2.5f), Bits(3.5f)}, {1.5f, 2.5f, 3.5f, 0}, 0.0f);
       vertex_case(VF::k_32_32_32_32_FLOAT, false, false, 0, {Bits(1), Bits(-2), Bits(3), Bits(-4)}, {1, -2, 3, -4}, 0.0f);
+    }
+
+    // Texture formats: a 4x4 texture of one texel (or one block) value in the format under test, linear, at its own
+    // address, its texels stored as the title does (big-endian units of `swap` bytes, undone by the fetch constant's
+    // endian mode); sampled with point filtering by the textured quad, x and y then z and w of the fetch exported.
+    // The fetch constant's swizzle (3 bits a component: 0-3, 4 zero, 5 one) fills what the format lacks.
+    {
+      const uint32_t quad = kVertices + 0x400;
+      const float v[4][6] = {{-1, -1, 0, 1, 0, 1}, {1, -1, 0, 1, 1, 1}, {-1, 1, 0, 1, 0, 0}, {1, 1, 0, 1, 1, 0}};
+      for (uint32_t i = 0; i < 4; ++i) {
+        for (uint32_t c = 0; c < 6; ++c) SetBig(quad + 24 * i + 4 * c, Bits(v[i][c]));
+      }
+      const char* names[64] = {};
+      names[2] = "k_8", names[3] = "k_1_5_5_5", names[4] = "k_5_6_5", names[6] = "k_8_8_8_8", names[7] = "k_2_10_10_10",
+      names[8] = "k_8_A", names[9] = "k_8_B", names[10] = "k_8_8", names[14] = "k_8_8_8_8_A", names[15] = "k_4_4_4_4",
+      names[18] = "k_DXT1", names[19] = "k_DXT2_3", names[20] = "k_DXT4_5", names[23] = "k_24_8_FLOAT", names[24] = "k_16",
+      names[25] = "k_16_16", names[26] = "k_16_16_16_16", names[30] = "k_16_FLOAT", names[31] = "k_16_16_FLOAT",
+      names[32] = "k_16_16_16_16_FLOAT", names[36] = "k_32_FLOAT", names[37] = "k_32_32_FLOAT",
+      names[38] = "k_32_32_32_32_FLOAT", names[41] = "k_16_MPEG", names[42] = "k_16_16_MPEG", names[43] = "k_8_INTERLACED",
+      names[46] = "k_16_INTERLACED", names[47] = "k_16_MPEG_INTERLACED", names[48] = "k_16_16_MPEG_INTERLACED",
+      names[49] = "k_DXN", names[50] = "k_8_8_8_8_AS_16_16_16_16", names[51] = "k_DXT1_AS_16_16_16_16",
+      names[52] = "k_DXT2_3_AS_16_16_16_16", names[53] = "k_DXT4_5_AS_16_16_16_16", names[54] = "k_2_10_10_10_AS_16_16_16_16",
+      names[59] = "k_DXT5A", names[16] = "k_10_11_11", names[17] = "k_11_11_10", names[55] = "k_10_11_11_AS_16_16_16_16",
+      names[56] = "k_11_11_10_AS_16_16_16_16";
+      t::Tex fetch;
+      fetch.mag = fetch.min = 0, fetch.mip = 0;
+      t::Alu out_xy, out_zw;
+      out_xy.vector_mask = out_zw.vector_mask = 0b0011, out_xy.dest = out_zw.dest = kColor0;
+      out_xy.is_export = out_zw.is_export = true;
+      out_xy.src1 = out_xy.src2 = out_zw.src1 = out_zw.src2 = {1, true};
+      out_zw.src1_swizzle = out_zw.src2_swizzle = 2 | 2 << 2;  // x <- z, y <- w
+      uint32_t address = 0x100000;
+      // `unit`: the host bytes of one texel or block; `block`: 1 or 4 texels; `swap`: 2 (8-in-16) or 4 (8-in-32).
+      auto texture_case = [&](uint32_t format, std::vector<uint8_t> unit, uint32_t block, uint32_t swap, uint32_t swizzle,
+                              uint32_t signs, std::array<float, 4> expected, float tolerance) {
+        const uint32_t base = address;
+        address += 0x1000;
+        // Rows of 32 texels (the pitch's unit): units of `unit` bytes, 32 / block of them a row, rows 256-byte aligned
+        // (linear textures' pitch alignment).
+        const uint32_t row_units = 32 / block, rows = 4 / block, unit_bytes = uint32_t(unit.size());
+        const uint32_t row_bytes = (row_units * unit_bytes + 255) & ~255u;
+        for (uint32_t r = 0; r < rows; ++r) {
+          for (uint32_t u = 0; u < row_units; ++u) {
+            const uint32_t at = base + r * row_bytes + u * unit_bytes;
+            for (uint32_t b = 0; b < unit_bytes; ++b) g_memory[at + (b ^ (swap - 1))] = unit[b];
+          }
+        }
+        const uint32_t endian = swap == 2 ? 1 : 2;
+        for (bool zw : {false, true}) {
+          std::vector<uint32_t> words;
+          t::PushTex(words, fetch);
+          t::PushAlu(words, zw ? out_zw : out_xy);
+          Case k{std::string("texture formats:") + names[format], {}, {}, expected[zw ? 2 : 0], expected[zw ? 3 : 1],
+                 tolerance};
+          k.ps = t::BuildCfShader({t::CfAlloc(uc::AllocType::kPsColors, 0),
+                                   t::CfExec(uc::ControlFlowOpcode::kExecEnd, 1, 2, 0b01)},
+                                  words);
+          k.setup = [&s, quad, base, format, endian, swizzle, signs] {
+            s.Shader(0, t::BuildTexturedVertexShader());
+            s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+            s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | signs << 2 | 2u << 10 | 2u << 13 | 1u << 22,
+                   format | endian << 6 | base, 3u | 3u << 13, swizzle << 1, 0, 1u << 9});
+          };
+          cases.push_back(k);
+        }
+      };
+      auto sw = [](uint32_t x, uint32_t y, uint32_t z, uint32_t w) { return x | y << 3 | z << 6 | w << 9; };
+      const uint32_t rgba = sw(0, 1, 2, 3), r001 = sw(0, 4, 4, 5), rg01 = sw(0, 1, 4, 5), rgb1 = sw(0, 1, 2, 5);
+      auto le16 = [](std::initializer_list<uint16_t> values) {
+        std::vector<uint8_t> out;
+        for (uint16_t v : values) out.push_back(uint8_t(v)), out.push_back(uint8_t(v >> 8));
+        return out;
+      };
+      auto le32 = [](std::initializer_list<uint32_t> values) {
+        std::vector<uint8_t> out;
+        for (uint32_t v : values) {
+          for (uint32_t b = 0; b < 4; ++b) out.push_back(uint8_t(v >> (8 * b)));
+        }
+        return out;
+      };
+      // 5-bit components reach the sampler through 8 bits (bit replication: 16/31 reads 132/255).
+      const float u8 = 1.0f / 255, u16 = 1.0f / 65535, kUnorm8 = 1.0f / 1024, kUnorm5 = 1.0f / 256, kUnorm16 = 1e-4f;
+      for (uint32_t format : {2u, 8u, 9u, 43u}) {
+        texture_case(format, {0x80, 0x80, 0x80, 0x80}, 1, 4, r001, 0, {128 * u8, 0, 0, 1}, kUnorm8);
+      }
+      texture_case(10, {0x40, 0xC0}, 1, 2, rg01, 0, {64 * u8, 192 * u8, 0, 1}, kUnorm8);
+      texture_case(4, le16({uint16_t(31 | 0 << 5 | 16 << 11)}), 1, 2, rgb1, 0, {1, 0, 16.0f / 31, 1}, kUnorm5);
+      texture_case(3, le16({uint16_t(31 | 16 << 5 | 0 << 10 | 1 << 15)}), 1, 2, rgba, 0, {1, 16.0f / 31, 0, 1}, kUnorm5);
+      texture_case(15, le16({uint16_t(0xF | 0x8 << 4 | 0x4 << 8)}), 1, 2, rgba, 0, {1, 8.0f / 15, 4.0f / 15, 0}, kUnorm8);
+      for (uint32_t format : {6u, 14u, 50u}) {
+        texture_case(format, {0x40, 0x80, 0xC0, 0xFF}, 1, 4, rgba, 0, {64 * u8, 128 * u8, 192 * u8, 1}, kUnorm8);
+      }
+      for (uint32_t format : {7u, 54u}) {
+        texture_case(format, le32({100u | 1000u << 10 | 512u << 20 | 3u << 30}), 1, 4, rgba, 0,
+                     {100.0f / 1023, 1000.0f / 1023, 512.0f / 1023, 1}, kUnorm8);
+      }
+      for (uint32_t format : {24u, 41u, 46u, 47u}) {
+        texture_case(format, le16({0x4000}), 1, 2, r001, 0, {16384 * u16, 0, 0, 1}, kUnorm16);
+      }
+      for (uint32_t format : {25u, 42u, 48u}) {
+        texture_case(format, le16({0x4000, 0xC000}), 1, 2, rg01, 0, {16384 * u16, 49152 * u16, 0, 1}, kUnorm16);
+      }
+      // Signed x and y (fetch constant sign 1 each): the same bits as -1...1.
+      texture_case(25, le16({0x4000, 0xC000}), 1, 2, rg01, 1 | 1 << 2, {16384.0f / 32767, -16384.0f / 32767, 0, 1}, kUnorm16);
+      texture_case(26, le16({0x4000, 0xC000, 0xFFFF, 0}), 1, 2, rgba, 0, {16384 * u16, 49152 * u16, 1, 0}, kUnorm16);
+      texture_case(30, le16({0x3800}), 1, 2, r001, 0, {0.5f, 0, 0, 1}, 0.0f);
+      texture_case(31, le16({0x3800, 0xC000}), 1, 2, rg01, 0, {0.5f, -2, 0, 1}, 0.0f);
+      texture_case(32, le16({0x3800, 0xC000, 0x6400, 0x3000}), 1, 2, rgba, 0, {0.5f, -2, 1024, 0.125f}, 0.0f);
+      texture_case(36, le32({Bits(2.5f)}), 1, 4, r001, 0, {2.5f, 0, 0, 1}, 0.0f);
+      texture_case(37, le32({Bits(2.5f), Bits(-3)}), 1, 4, rg01, 0, {2.5f, -3, 0, 1}, 0.0f);
+      texture_case(38, le32({Bits(1), Bits(-2), Bits(3), Bits(-4)}), 1, 4, rgba, 0, {1, -2, 3, -4}, 0.0f);
+      texture_case(23, le32({vk::FloatTo20e4(0.5f) << 8}), 1, 4, r001, 0, {0.5f, 0, 0, 1}, 1e-6f);
+      // Blocks of 4x4 texels, both end points the same colour: red (DXT1), green (DXT2/3, alpha 15 of 15), blue
+      // (DXT4/5, alpha end points 255); DXN 128 and 64 in red and green, DXT5A 192.
+      const std::vector<uint8_t> red = le16({0xF800, 0xF800, 0, 0}), green = le16({0x07E0, 0x07E0, 0, 0}),
+                                 blue = le16({0x001F, 0x001F, 0, 0});
+      for (uint32_t format : {18u, 51u}) texture_case(format, red, 4, 2, rgba, 0, {1, 0, 0, 1}, kUnorm8);
+      std::vector<uint8_t> dxt3(8, 0xFF);
+      dxt3.insert(dxt3.end(), green.begin(), green.end());
+      for (uint32_t format : {19u, 52u}) texture_case(format, dxt3, 4, 2, rgba, 0, {0, 1, 0, 1}, kUnorm8);
+      std::vector<uint8_t> dxt5 = {0xFF, 0xFF, 0, 0, 0, 0, 0, 0};
+      dxt5.insert(dxt5.end(), blue.begin(), blue.end());
+      for (uint32_t format : {20u, 53u}) texture_case(format, dxt5, 4, 2, rgba, 0, {0, 0, 1, 1}, kUnorm8);
+      texture_case(49, {0x80, 0x80, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0, 0, 0, 0, 0, 0}, 4, 2, rg01, 0, {128 * u8, 64 * u8, 0, 1},
+                   kUnorm8);
+      texture_case(59, {0xC0, 0xC0, 0, 0, 0, 0, 0, 0}, 4, 2, r001, 0, {192 * u8, 0, 0, 1}, kUnorm8);
+      for (uint32_t format : {16u, 55u}) {
+        texture_case(format, le32({1000u | 2000u << 11 | 500u << 22}), 1, 4, rgb1, 0, {1000.0f / 2047, 2000.0f / 2047, 500.0f / 1023, 1},
+                     kUnorm16);
+      }
+      for (uint32_t format : {17u, 56u}) {
+        texture_case(format, le32({500u | 1000u << 10 | 2000u << 21}), 1, 4, rgb1, 0, {500.0f / 1023, 1000.0f / 2047, 2000.0f / 2047, 1},
+                     kUnorm16);
+      }
+    }
+
+    // Vertex textures: the vertex shader fetches tf1 (a 4x4 texture of one 32-bit float pair) at c0.xy into
+    // interpolator 0, which the pixel shader exports.
+    {
+      const uint32_t base = 0x1F0000;
+      for (uint32_t i = 0; i < 16; ++i) {
+        SetBig(base + (i / 4) * 256 + (i % 4) * 8, Bits(0.75f));
+        SetBig(base + (i / 4) * 256 + (i % 4) * 8 + 4, Bits(-6));
+      }
+      std::vector<uint32_t> words;
+      t::VertexFetch position;
+      t::PushVertexFetch(words, position);
+      t::Alu coords, out_position, out_value;
+      coords.vector_mask = 0b1111, coords.dest = 3, coords.src1 = coords.src2 = c0;
+      out_position.vector_mask = out_value.vector_mask = 0b1111, out_position.is_export = out_value.is_export = true;
+      out_position.dest = uint32_t(uc::ExportRegister::kVSPosition), out_position.src1 = out_position.src2 = {1, true};
+      out_value.dest = uint32_t(uc::ExportRegister::kVSInterpolator0), out_value.src1 = out_value.src2 = {2, true};
+      t::PushAlu(words, coords);
+      t::Tex vertex_fetch;
+      vertex_fetch.dest = 2, vertex_fetch.src = 3, vertex_fetch.mag = vertex_fetch.min = 0, vertex_fetch.mip = 0;
+      vertex_fetch.computed_lod = false;
+      t::PushTex(words, vertex_fetch);
+      t::PushAlu(words, out_position);
+      t::PushAlu(words, out_value);
+      t::Alu export_r0;
+      export_r0.vector_mask = 0b0011, export_r0.dest = kColor0, export_r0.is_export = true;
+      export_r0.src1 = export_r0.src2 = {0, true};
+      Case k{"render features:vertex textures", {export_r0}, {}, 0.75f, -6, 0.0f};
+      k.vs = t::BuildCfShader({t::CfAlloc(uc::AllocType::kVsPosition, 0),
+                               t::CfExec(uc::ControlFlowOpcode::kExec, 2, 4, 0b00010001),
+                               t::CfAlloc(uc::AllocType::kVsInterpolators, 0),
+                               t::CfExec(uc::ControlFlowOpcode::kExecEnd, 6, 1, 0)},
+                              words);
+      k.c[0][0] = 0.5f, k.c[0][1] = 0.5f;  // vertex shader c0 (float constant 0) set below, pixel c0 unused
+      k.setup = [&s, base] {
+        s.Put({Type3(pm4::SET_CONSTANT, 5), 0u << 16 | 0, Bits(0.5f), Bits(0.5f), 0, 0});
+        s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 1u << 22, 37u | 2u << 6 | base,
+               3u | 3u << 13, (0u | 1u << 3 | 4u << 6 | 5u << 9) << 1, 0, 1u << 9});
+      };
+      cases.push_back(k);
+    }
+    // Texture filtering: a 32x32 k_8_8_8_8 texture, its left half black and right half white, magnified twice with
+    // linear filtering: pixel 32 reads texel coordinate 15.5 (D3D pixel centres), half of each half (point: one).
+    for (uint32_t linear : {1u, 0u}) {
+      const uint32_t base = 0x1E0000, quad = kVertices + 0x400;
+      for (uint32_t y = 0; y < 32; ++y) {
+        for (uint32_t x = 0; x < 32; ++x) SetBig(base + y * 256 + x * 4, x < 16 ? Rgba(0, 0, 0, 255) : Rgba(255, 255, 255, 255));
+      }
+      t::Tex filtered;
+      filtered.mag = filtered.min = linear, filtered.mip = 0;
+      t::Alu out;
+      out.vector_mask = 0b0011, out.dest = kColor0, out.is_export = true, out.src1 = out.src2 = {1, true};
+      std::vector<uint32_t> words;
+      t::PushTex(words, filtered);
+      t::PushAlu(words, out);
+      Case k{"render features:texture filtering", {}, {}, linear ? 0.5f : 1.0f, linear ? 0.5f : 1.0f, 1.0f / 256};
+      k.ps = t::BuildCfShader({t::CfAlloc(uc::AllocType::kPsColors, 0), t::CfExec(uc::ControlFlowOpcode::kExecEnd, 1, 2, 0b01)},
+                              words);
+      k.setup = [&s, base, quad] {
+        s.Shader(0, t::BuildTexturedVertexShader());
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+        s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 1u << 22, 6u | 2u << 6 | base,
+               31u | 31u << 13, 0x688u << 1, 0, 1u << 9});
+      };
+      cases.push_back(k);
+    }
+    // Dynamic constant addressing: maxas sets a0 = 2 from c3.w, then the export reads c[a0 + 0] = c2.
+    {
+      t::Alu set_a0, read;
+      set_a0.scalar = S::kMaxAs, set_a0.src3 = c3, set_a0.dest = 2, set_a0.scalar_dest = 2;
+      read.vector_mask = 0b0011, read.dest = kColor0, read.is_export = true, read.src1 = read.src2 = c0;
+      read.src1_constant_by_a0 = true;
+      Case k{"render features:dynamic constant addressing", {set_a0, read}, {}, 5, 6, 0.0f};
+      k.c[2][0] = 5, k.c[2][1] = 6, k.c[3][3] = 2, k.c[3][0] = 2;
+      k.c[0][0] = -100, k.c[0][1] = -100;  // c0 itself: below anything c2 holds (max(c[a0], c0) = c2)
+      cases.push_back(k);
     }
 
     const float clear[4] = {kKilled, kKilled, 0, 0};

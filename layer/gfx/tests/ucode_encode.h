@@ -73,11 +73,14 @@ struct Alu {
   uint32_t src3_swizzle = 0;  // raw (constant-scalar operations keep a temp register's bits there)
   // src1 and src2 swizzles, component-relative: 2 bits a component, (source component - component) & 3.
   uint32_t src1_swizzle = 0, src2_swizzle = 0;
+  // Relative constant addressing: src1's constant indexed by a0 (const_0_rel_abs, address register relative).
+  bool src1_constant_by_a0 = false;
 };
 inline void PushAlu(std::vector<uint32_t>& words, const Alu& a) {
   words.push_back((a.dest & 0x3F) | (a.scalar_dest & 0x3F) << 8 | (a.is_export ? 1u : 0u) << 15 |
                   (a.vector_mask & 0xF) << 16 | (a.scalar_mask & 0xF) << 20 | (uint32_t(a.scalar) & 0x3F) << 26);
-  words.push_back((a.src3_swizzle & 0xFF) | (a.src2_swizzle & 0xFF) << 8 | (a.src1_swizzle & 0xFF) << 16);
+  words.push_back((a.src3_swizzle & 0xFF) | (a.src2_swizzle & 0xFF) << 8 | (a.src1_swizzle & 0xFF) << 16 |
+                  (a.src1_constant_by_a0 ? 1u << 29 | 1u << 31 : 0u));
   words.push_back((a.src3.reg & 0xFF) | (a.src2.reg & 0xFF) << 8 | (a.src1.reg & 0xFF) << 16 |
                   (uint32_t(a.vector) & 0x1F) << 24 | (a.src3.is_temp ? 1u : 0u) << 29 |
                   (a.src2.is_temp ? 1u : 0u) << 30 | (a.src1.is_temp ? 1u : 0u) << 31);
