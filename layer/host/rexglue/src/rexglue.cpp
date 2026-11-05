@@ -6,6 +6,8 @@
 #include "any360/host/rexglue.h"
 
 #include "any360/gfx/async_renderer.h"
+#include "any360/gfx/capture.h"
+#include "any360/gfx/registers.h"
 
 #include <rex/cvar.h>
 #include <rex/runtime.h>
@@ -85,7 +87,7 @@ class Sampler {
     if (worker_.joinable()) worker_.join();
     Write();
   }
-  // Lines "thread 0xoffset [0xcaller...]" (0: nowhere in the executable; then up to 3 callers in it, return
+  // Lines "thread 0xoffset [0xcaller...]" (0: nowhere in the executable; then up to 15 callers in it, return
   // addresses minus one), then "# thread module name count" (the leaf's module when outside the executable) and
   // "# thread name name".
   void Write() {
@@ -111,8 +113,20 @@ class Sampler {
     DWORD tid;
     HANDLE handle;
   };
-  // Every thread of the process but this one (threads come and go: refreshed now and then).
+  // Every thread of the process but this one (threads come and go: refreshed now and then), and the loaded modules.
   void Refresh(std::vector<Target>& targets) {
+    images_.clear();
+    HMODULE modules[1024];
+    DWORD needed = 0;
+    if (K32EnumProcessModules(GetCurrentProcess(), modules, sizeof(modules), &needed)) {
+      for (DWORD i = 0; i < std::min<DWORD>(needed / sizeof(HMODULE), 1024); ++i) {
+        MODULEINFO info{};
+        if (K32GetModuleInformation(GetCurrentProcess(), modules[i], &info, sizeof(info))) {
+          images_.push_back({uint64_t(info.lpBaseOfDll), uint64_t(info.lpBaseOfDll) + info.SizeOfImage});
+        }
+      }
+      std::sort(images_.begin(), images_.end());
+    }
     for (Target& t : targets) CloseHandle(t.handle);
     targets.clear();
     const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -167,14 +181,17 @@ class Sampler {
         context.ContextFlags = CONTEXT_FULL;
         if (GetThreadContext(targets[i].handle, &context)) {
           taken[i].second = context.Rip;
-          // The leaf (or the first caller in the executable, bit 63), then up to three more callers in it.
+          // The leaf (or the first caller in the executable, bit 63), then up to fifteen more callers in it.
           CONTEXT walk = context;
           uint32_t found = 0;
-          for (int depth = 0; depth < 48 && walk.Rip && found < kFrames; ++depth) {
+          for (int depth = 0; depth < 64 && walk.Rip && found < kFrames; ++depth) {
             if (inside(walk.Rip)) {
               const bool leaf = depth == 0;
               taken[i].first[found++] = leaf ? walk.Rip - base : (walk.Rip - base - 1) | (found ? 0 : 1ull << 63);
             }
+            // Only through loaded images: looking up code generated at run time (a driver's) takes the dynamic
+            // function tables' lock, which the suspended thread may hold.
+            if (!InImage(walk.Rip)) break;
             DWORD64 image = 0;
             PRUNTIME_FUNCTION entry = RtlLookupFunctionEntry(walk.Rip, &image, nullptr);
             if (!entry) break;  // no unwind data: stop rather than guess
@@ -202,12 +219,17 @@ class Sampler {
     }
     for (Target& t : targets) CloseHandle(t.handle);
   }
+  bool InImage(uint64_t rip) const {
+    auto it = std::upper_bound(images_.begin(), images_.end(), std::pair<uint64_t, uint64_t>{rip, UINT64_MAX});
+    return it != images_.begin() && rip < std::prev(it)->second;
+  }
+  std::vector<std::pair<uint64_t, uint64_t>> images_;  // loaded modules [begin, end), sorted
   std::string path_;
   bool always_ = false;
   std::thread worker_;
   std::atomic<bool> done_{false};
   std::mutex mutex_;
-  static constexpr uint32_t kFrames = 4;
+  static constexpr uint32_t kFrames = 16;
   using Frames = std::array<uint64_t, kFrames>;
   std::vector<std::pair<DWORD, Frames>> samples_;
   std::map<std::pair<DWORD, std::string>, uint64_t> outside_;
@@ -640,6 +662,14 @@ struct Binding {
   std::unique_ptr<gfx::AsyncRenderer> async;
   InterruptThread interrupts;
   std::unique_ptr<Sampler> sampler;
+  // A frame capture: requested by a trigger file, opened and closed on the title's thread at a kick while the
+  // command processor is idle (it records each kick from its own thread), so the writer never changes under it.
+  uint8_t* physical = nullptr;
+  std::string capture_path;
+  uint32_t capture_kicks = 0, kicks_left = 0;
+  std::unique_ptr<gfx::capture::Writer> writer;
+  std::chrono::steady_clock::time_point next_trigger_check{};
+  std::function<void(const std::string&)> log;
 };
 
 std::atomic<bool> g_bound{false};
@@ -659,8 +689,49 @@ std::pair<uint32_t, uint32_t> MemoryWritten(void* context, uint32_t start, uint3
 }
 
 uint32_t ReadGpuRegister(void*, void*, uint32_t address) { return sys::Graphics().ReadRegister(sys::GpuRegisterIndex(address)); }
+
+// At a kick (the title's write of CP_RB_WPTR, before the command processor sees it): starts a requested capture, or
+// ends one whose kicks are done, while the command processor is idle.
+void CaptureAtKick(Binding& b) {
+  if (b.capture_path.empty()) return;
+  if (b.writer) {
+    if (b.kicks_left > 0) --b.kicks_left;
+    if (b.kicks_left == 0 && b.cp->Idle()) {
+      b.cp->SetCapture(nullptr);
+      const uint64_t bytes = b.writer->bytes_written();
+      b.writer.reset();
+      if (b.log) b.log("Any360: capture written to " + b.capture_path + " (" + std::to_string(bytes >> 20) + " MB)");
+    }
+    return;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  if (now < b.next_trigger_check) return;
+  b.next_trigger_check = now + std::chrono::milliseconds(500);
+  const std::string trigger = b.capture_path + ".go";
+  if (std::FILE* f = std::fopen(trigger.c_str(), "rb")) {
+    std::fclose(f);
+  } else {
+    return;
+  }
+  if (!b.cp->Idle()) return;  // at a later kick
+  std::remove(trigger.c_str());
+  auto writer = std::make_unique<gfx::capture::Writer>();
+  if (!writer->Open(b.capture_path, b.physical, kPhysicalBytes, b.cp->registers(), gfx::reg::kRegisterCount,
+                    "any360::host::rexglue binding")) {
+    if (b.log) b.log("Any360: cannot open the capture " + b.capture_path);
+    return;
+  }
+  writer->Shaders(b.cp->shader(0).microcode, b.cp->shader(1).microcode);
+  b.kicks_left = b.capture_kicks;
+  b.writer = std::move(writer);
+  b.cp->SetCapture(b.writer.get());
+  if (b.log) b.log("Any360: capturing " + std::to_string(b.capture_kicks) + " kicks into " + b.capture_path);
+}
+
 void WriteGpuRegister(void*, void*, uint32_t address, uint32_t value) {
-  sys::Graphics().WriteRegister(sys::GpuRegisterIndex(address), value);
+  const uint32_t index = sys::GpuRegisterIndex(address);
+  if (index == gfx::reg::CP_RB_WPTR && g_binding) CaptureAtKick(*g_binding);
+  sys::Graphics().WriteRegister(index, value);
 }
 
 }  // namespace
@@ -740,6 +811,10 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
 
   // The renderer over the guest's physical memory, the command processor in front of it.
   uint8_t* physical = memory->TranslatePhysical<uint8_t*>(0);
+  binding->physical = physical;
+  binding->capture_path = options.capture_path;
+  binding->capture_kicks = std::max(1u, options.capture_kicks);
+  binding->log = options.log;
   binding->renderer = std::make_unique<PresentingRenderer>(binding->device, physical, binding->window, binding->parent,
                                                           options.log, options.stats_seconds, options.resolution_scale);
   binding->renderer->SetPipelineCache(options.pipeline_cache_path);
@@ -810,6 +885,11 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->cp->SetWritesAfterDraws(options.writes_after_draws);
   binding->cp->SetFencesAfterDraws(options.fences_after_draws);
   binding->renderer->SetFencesWhenCaptured(options.fences_when_captured);
+  // What the command processor writes into guest memory itself (fences, query counts), the page watch does not see:
+  // the vertices copied into video memory over it are stale (textures are not kept over such words).
+  binding->cp->SetMemoryWrittenHook([renderer = binding->renderer.get()](uint32_t begin, uint32_t end) {
+    renderer->GuestMemoryWritten(begin, end);
+  });
   sys::Graphics().StartVblank(vblank_hz);
   g_binding = binding.release();
   g_bound = true;
@@ -822,6 +902,10 @@ void StopGraphics() {
   g_binding->interrupts.Stop();
   g_binding->sampler.reset();  // its samples written
   g_binding->cp->Stop();
+  if (g_binding->writer) {  // a capture still running: what it has is kept
+    g_binding->cp->SetCapture(nullptr);
+    g_binding->writer.reset();
+  }
   if (g_binding->async) g_binding->async->Drain();
   // The window, device and renderer stay until the process ends: the runtime may still be tearing down around them.
 }

@@ -79,7 +79,14 @@ struct GraphicsOptions {
   // draws it could not draw by reason. None: nothing reported.
   std::function<void(const std::string&)> log;
   double stats_seconds = 5.0;
+  // Frame captures (any360/gfx/capture.h, for gfx_replay): when a file named `capture_path` + ".go" appears, the
+  // next `capture_kicks` kicks of the ring are recorded into `capture_path` (the trigger file is removed). Captures
+  // hold the title's data: they stay on the machine. Empty: none.
+  std::string capture_path;
+  uint32_t capture_kicks = 60;
 };
+// GraphicsOptions has capture_path and capture_kicks.
+#define ANY360_REXGLUE_CAPTURE 1
 
 // Binds the graphics to Any360: makes the window, the Vulkan device and renderer, the command processor; takes over
 // the GPU MMIO range; starts the command processor's thread, the interrupt thread and vertical blanks. False with

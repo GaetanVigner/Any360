@@ -89,6 +89,11 @@ class Renderer {
   virtual void OcclusionQuery(bool /*end*/, uint32_t /*address*/) {}
 };
 
+// A 64-bit key's bits mixed, for hash maps looked up per shader load or draw (std::hash hashes it a byte at a time).
+struct WordHash {
+  size_t operator()(uint64_t v) const { return size_t((v ^ (v >> 29)) * 0xBF58476D1CE4E5B9ull >> 16); }
+};
+
 class CommandProcessor : public sys::GpuBackend {
  public:
   // `physical`: the guest's 512 MB of physical memory; an address is masked with 0x1FFFFFFF.
@@ -100,6 +105,10 @@ class CommandProcessor : public sys::GpuBackend {
   // CPU 2). The default runs the title's callback through sys::Graphics().
   using InterruptHandler = std::function<void(uint32_t source, uint32_t cpu)>;
   void SetInterruptHandler(InterruptHandler handler) { interrupt_ = std::move(handler); }
+  // Told of the guest memory [begin, end) the command processor writes itself (fences, MEM_WRITE, query counts, the
+  // read pointer): what a renderer keeps of that memory (textures, vertices in video memory) is stale then, and a
+  // title's write watch does not see these writes. Any thread (fences land from the renderer's).
+  void SetMemoryWrittenHook(std::function<void(uint32_t, uint32_t)> hook) { memory_written_ = std::move(hook); }
   void SetDisplaySize(uint32_t width, uint32_t height) { display_ = width << 16 | height; }
 
   // GpuBackend.
@@ -247,6 +256,7 @@ class CommandProcessor : public sys::GpuBackend {
 
   uint8_t* physical_;
   Renderer* renderer_ = nullptr;
+  std::function<void(uint32_t, uint32_t)> memory_written_;
   InterruptHandler interrupt_;
   std::vector<uint32_t> registers_;
   uint32_t display_ = 1280u << 16 | 720u;
@@ -286,7 +296,7 @@ class CommandProcessor : public sys::GpuBackend {
     std::vector<uint32_t> microcode;
     uint64_t hash;
   };
-  std::unordered_map<uint64_t, LoadedShader> loaded_shaders_;
+  std::unordered_map<uint64_t, LoadedShader, WordHash> loaded_shaders_;
   bool writes_after_draws_ = true, fences_after_draws_ = true;
   std::thread worker_;
 };

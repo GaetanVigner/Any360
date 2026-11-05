@@ -351,6 +351,16 @@ class VulkanRenderer : public gfx::Renderer {
   std::vector<MemExport> memexports_;
   Buffer memexport_readback_;
   void MemExported(std::vector<MemExport> exports);
+  std::vector<MemExport> MemExportRanges(const uint32_t* regs, const TranslatedShader* vs, const TranslatedShader* ps) const;
+  // A draw nothing of which reaches a target (EDRAM mode other than 4 or 5, no target, an empty scissor): a vertex
+  // shader exporting to memory still runs, as a compute dispatch of its translation for memexport (one invocation a
+  // guest vertex). False when the vertex shader exports nothing.
+  bool MemExportWithoutRasterization(const DrawCall& draw);
+  std::map<VkShaderModule, VkPipeline> memexport_pipelines_;
+  uint32_t memexport_dispatches_ = 0;
+ public:
+  uint32_t memexport_dispatches() const { return memexport_dispatches_; }
+ private:
   bool vram_guest_on_ = false;
   // Pages (4 KB) of guest memory whose copy in video memory is current (with a watch set; else none are kept).
   static constexpr uint32_t kGuestPageShift = 12;
@@ -380,6 +390,11 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t scale = 1;    // host texels a guest texel along each axis (colour resolves: the resolution scale)
     Image small;           // a scaled resolve brought to one texel a guest texel for its write-back
     VkImageLayout small_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    // The image of the other format last resolved here (titles alternate colour and depth resolves to one
+    // destination): swapped back in instead of an image made and freed at each resolve.
+    Image spare;
+    VkImageLayout spare_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    uint32_t spare_scale = 1;
   };
   // Writes a resolve kept on the GPU into guest memory: now (WriteBackResolved: the batch runs), or when the batch
   // has run (QueueWriteBack: its copy recorded in the batch; the CPU reads guest memory only after a fence, which runs
@@ -488,7 +503,8 @@ class VulkanRenderer : public gfx::Renderer {
   // `format`: the resolve image's format, the destination's bytes as a texture reads them (B8G8R8A8 for an 8-bit
   // resolve with the red/blue swap: the blit places each component, the texture copies the bytes as they are).
   bool ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint32_t width, uint32_t height, uint32_t sample_x,
-                    uint32_t sample_y, uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian, VkFormat format);
+                    uint32_t sample_y, uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian, VkFormat format,
+                    int32_t dest_dx = 0, int32_t dest_dy = 0);
   std::set<uint32_t> front_buffers_;  // bases swapped as front buffers: resolves there are always read back
   void ReadsGuestMemory(uint32_t address, uint32_t bytes);
   VkQueryPool timestamps_ = VK_NULL_HANDLE;  // four a batch: start, end, its upload's start, end

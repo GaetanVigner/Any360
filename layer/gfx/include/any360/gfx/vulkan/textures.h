@@ -146,14 +146,12 @@ class TextureCache {
     bool depth = false;  // a depth resolve (R32F depth values): read by the depth formats (k_24_8, k_24_8_FLOAT)
     uint32_t scale = 1;  // host texels a guest texel along each axis (a resolution-scaled resolve)
   };
-  void SetGpuSource(const GpuSource& source) {
-    gpu_sources_[source.base] = source;
-    ++version_;
-  }
+  void SetGpuSource(const GpuSource& source);
   // Called before a texture's memory [begin, end) is read on the CPU: the renderer writes there what a resolve left
   // on the GPU only, when the texture does not read it as it is (another layout, stacked slices...).
   void SetBeforeMemoryRead(std::function<void(uint32_t, uint32_t)> callback) { before_read_ = std::move(callback); }
   void DropGpuSources(uint32_t begin, uint32_t end);
+  bool CachedOver(uint64_t begin, uint64_t end) const;
   // Whether the last view View returned is of a resolution-scaled texture (copied from a scaled GPU source: scale x
   // scale texels a guest texel), which the shaders sample with the scale taken into account.
   bool last_view_scaled() const { return last_view_scaled_; }

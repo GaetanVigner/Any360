@@ -6,6 +6,8 @@
 #include <bit>
 #include <cstring>
 
+#include <immintrin.h>
+
 namespace any360::gfx::vk {
 
 namespace {
@@ -13,6 +15,18 @@ namespace {
 constexpr uint32_t Swizzle(uint32_t x, uint32_t y, uint32_t z, uint32_t w) { return x | y << 3 | z << 6 | w << 9; }
 constexpr uint32_t kRGBA = Swizzle(0, 1, 2, 3), kRRRR = Swizzle(0, 0, 0, 0), kRGGG = Swizzle(0, 1, 1, 1),
                    kRGBB = Swizzle(0, 1, 2, 2);
+
+// Byte orders as 16-byte shuffles (each 32-bit word): none, 8 in 16, 8 in 32, 16 in 32.
+alignas(16) constexpr uint8_t kWordShuffles[4][16] = {
+    {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, {1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14},
+    {3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12}, {2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13}};
+// SSSE3's byte shuffle (every x86-64 CPU this runs on has it; the build targets the baseline).
+#if defined(__clang__) || defined(__GNUC__)
+__attribute__((target("ssse3")))
+#endif
+__m128i ShuffleBytes(__m128i v, __m128i mask) {
+  return _mm_shuffle_epi8(v, mask);
+}
 
 uint32_t Swap(uint32_t v, uint32_t endian) {
   switch (endian) {
@@ -130,7 +144,7 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
     case 10: return &k8_8;
     case 4: return &k5_6_5;
     case 6: case 50: return &k8_8_8_8;  // k_8_8_8_8, _AS_16_16_16_16
-    case 7: case 54: return &k2_10_10_10;
+    case 7: case 54: return &k2_10_10_10;  // and k_2_10_10_10_AS_16_16_16_16 (only its filtering differs)
     case 15: return &k4_4_4_4;
     case 16: case 55: return &k10_11_11;  // and _AS_16_16_16_16
     case 17: case 56: return &k11_11_10;
@@ -362,7 +376,31 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
       std::memcpy(out, reinterpret_cast<const uint8_t*>(&v) + (address & 3), bpb);
     }
   };
-  for (uint32_t s = 0; s < slices; ++s) {
+  if (t.dimension != 2 && t.tiled && bpb >= 4 && t.endian <= 3) {
+    // Tiled 2D levels of 4, 8 or 16-byte blocks: 16 bytes of a tiled row are contiguous from a block x aligned to their
+    // count (as for resolves written back): one tiled offset and one byte shuffle for them.
+    const uint32_t group = 16 / bpb;
+    const __m128i mask = _mm_load_si128(reinterpret_cast<const __m128i*>(kWordShuffles[t.endian]));
+    for (uint32_t s = 0; s < slices; ++s) {
+      for (uint32_t y = 0; y < bh; ++y) {
+        uint8_t* row = &blocks[s * slice_bytes + size_t(y) * bw * bpb];
+        for (uint32_t x = 0; x < bw;) {
+          const uint32_t tx = x + p.x;
+          const uint32_t address = p.address + s * p.slice_stride +
+                                   uint32_t(TiledOffset2D(int32_t(tx), int32_t(y + p.y), p.pitch_blocks, bpb_log2));
+          if (tx % group == 0 && x + group <= bw && uint64_t(address) + 16 <= mirror_bytes_) {
+            const __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(physical_ + address));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(row + size_t(x) * bpb), ShuffleBytes(v, mask));
+            x += group;
+            continue;
+          }
+          read(address, row + size_t(x) * bpb);
+          ++x;
+        }
+      }
+    }
+  }
+  for (uint32_t s = 0; s < slices && !(t.dimension != 2 && t.tiled && bpb >= 4 && t.endian <= 3); ++s) {
     for (uint32_t y = 0; y < bh; ++y) {
       for (uint32_t x = 0; x < bw; ++x) {
         uint32_t offset;
@@ -689,7 +727,9 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       const bool same_bytes =
           it != gpu_sources_.end() &&
           (it->second.format == info->format ||
-           (it->second.format == VK_FORMAT_B8G8R8A8_UNORM && info->format == VK_FORMAT_R8G8B8A8_UNORM));
+           (it->second.format == VK_FORMAT_B8G8R8A8_UNORM && info->format == VK_FORMAT_R8G8B8A8_UNORM) ||
+           (it->second.format == VK_FORMAT_A2R10G10B10_UNORM_PACK32 &&
+            info->format == VK_FORMAT_A2B10G10R10_UNORM_PACK32));
       if (!same_bytes || it->second.depth != depth_texture || it->second.pitch != t.pitch ||
           it->second.endian != t.endian || (!sources.empty() && it->second.scale != sources[0]->scale) ||
           t.width * it->second.scale > it->second.width || t.height * it->second.scale > it->second.height) {
@@ -707,7 +747,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   const std::array<uint32_t, 5> key = {fetch[0] & 0xFFC00003, fetch[1], fetch[2], fetch[5] & 0xFFFFFE00,
                                        (fetch[4] & 0x3FC) | (scale > 1 ? 1u : 0u)};
   auto& slot = textures_[key];
-  if (!source) {
+  if (!source && Diagnosing()) {
     // For diagnostics: a GPU source within this texture's memory it could not use, and why.
     const auto near = gpu_sources_.lower_bound(span_begin);
     if (near != gpu_sources_.end() && near->first < span_end) {
@@ -785,7 +825,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
         dependency.imageMemoryBarrierCount = 1;
         dependency.pImageMemoryBarriers = &barrier;
         f.vkCmdPipelineBarrier2(cb, &dependency);
-        // The destination's bytes as they are (a B8G8R8A8 source is an 8-bit resolve with the red/blue swap).
+        // The destination's bytes as they are (a B8G8R8A8 or A2R10G10B10 source is a resolve with the red/blue swap).
         for (uint32_t slice = 0; slice < uint32_t(sources.size()); ++slice) {
           VkImageCopy region{};
           region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -939,8 +979,24 @@ VkSampler TextureCache::Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t 
   return sampler;
 }
 
+// Whether a cached texture spans guest memory in [begin, end): only then may views cached by fetch constant be stale
+// (a resolve every few draws otherwise sent every texture of the frame through the slow path again).
+bool TextureCache::CachedOver(uint64_t begin, uint64_t end) const {
+  for (const auto& [key, t] : textures_) {
+    if (t->begin < end && begin < t->end) return true;
+  }
+  return false;
+}
+
+void TextureCache::SetGpuSource(const GpuSource& source) {
+  gpu_sources_[source.base] = source;
+  // The rows it covers, at most 8 bytes a texel (the format is the texture's to say).
+  const uint64_t end = uint64_t(source.base) + uint64_t(source.pitch) * ((source.height + 31) & ~31u) * 8;
+  if (CachedOver(source.base, end)) ++version_;
+}
+
 void TextureCache::DropGpuSources(uint32_t begin, uint32_t end) {
-  ++version_;
+  if (CachedOver(begin, end)) ++version_;
   for (auto it = gpu_sources_.begin(); it != gpu_sources_.end();) {
     it = it->first >= begin && it->first < end ? gpu_sources_.erase(it) : std::next(it);
   }

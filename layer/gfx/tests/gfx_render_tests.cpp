@@ -139,6 +139,7 @@ bool OnDiagonal(uint32_t x, uint32_t y) { return x + (kSize - 1 - y) == kSize - 
 }  // namespace
 
 int main(int argc, char** argv) {
+  std::setvbuf(stdout, nullptr, _IONBF, 0);  // the lines so far survive a crash
   vk::Device device;
   vk::DeviceOptions options;
   for (int i = 1; i < argc; ++i) {
@@ -449,7 +450,7 @@ int main(int argc, char** argv) {
                                   t::CfExec(uc::ControlFlowOpcode::kExecEnd, 4, 2, 0)},
                                  words));
     const uint32_t memexports_before = renderer.stats().memexports;
-    scenario("memexport", nullptr, [&] {
+    auto stream_constants = [&] {
       s.Put({Type3(pm4::SET_CONSTANT, 21), 0u << 16 | 0,
              Bits(0), Bits(1), Bits(0), Bits(0),
              1u << 30 | dest >> 2, 0x4B000000u, 0x4B0u << 20 | 7u << 16 | 38u << 8, 0x96u << 23 | 4u,
@@ -458,18 +459,50 @@ int main(int argc, char** argv) {
              Bits(0), Bits(10), Bits(20), Bits(30)});
       s.Reg(0x2280, 0);
       s.Vertices(9);
+    };
+    // Which of the four elements hold (i, 10, 20, 30); the rest still the fill.
+    auto written = [&] {
+      uint32_t mask = 0;
+      for (uint32_t i = 0; i < 4; ++i) {
+        float e[4];
+        std::memcpy(e, g_memory + dest + 16 * i, 16);
+        if (e[0] == float(i) && e[1] == 10 && e[2] == 20 && e[3] == 30) mask |= 1u << i;
+        else if (g_memory[dest + 16 * i] != 0xCD) mask |= 0x10;  // neither written nor untouched
+      }
+      return mask;
+    };
+    scenario("memexport", nullptr, [&] {
+      stream_constants();
       s.DrawAuto(1, 4);
     });
+    const uint32_t drawn = written();
+    const bool counted = renderer.stats().memexports == memexports_before + 1;
+    // Without rasterization (EDRAM mode 0: nothing reaches a target), as a compute dispatch: auto indices, then 16-bit
+    // DMA indices {2, 3} (swapped 8-in-16) that write elements 2 and 3 only.
+    const uint32_t dispatches_before = renderer.memexport_dispatches();
+    std::memset(g_memory + dest, 0xCD, 128);
+    scenario("memexport without rasterization", nullptr, [&] {
+      s.Reg(0x2208, 0);
+      stream_constants();
+      s.DrawAuto(1, 4);
+      s.Reg(0x2208, 4);
+    });
+    const uint32_t computed = written();
+    std::memset(g_memory + dest, 0xCD, 128);
+    const uint32_t indices = kIndices + 0x300;
+    SetBig(indices, 2u << 16 | 3u);  // big-endian halves: 2 then 3
+    scenario("memexport without rasterization, DMA indices", nullptr, [&] {
+      s.Reg(0x2208, 0);
+      stream_constants();
+      s.Put({Type3(pm4::DRAW_INDX, 4), 0, 2u << 16 | 0u << 6 | 1u, indices, 1u << 30 | 2u});
+      s.Reg(0x2208, 4);
+    });
+    const uint32_t indexed = written();
     s.Shader(0, t::BuildFetchPositionShader());
-    float elements[4][4];
-    std::memcpy(elements, g_memory + dest, sizeof(elements));
-    bool right = renderer.stats().memexports == memexports_before + 1;
-    for (uint32_t i = 0; i < 4; ++i) {
-      right = right && elements[i][0] == float(i) && elements[i][1] == 10 && elements[i][2] == 20 && elements[i][3] == 30;
-    }
-    std::printf("gfx_render_tests: memexport: %s (element 3: %g %g %g %g)\n", right ? "4 elements written" : "wrong",
-                elements[3][0], elements[3][1], elements[3][2], elements[3][3]);
-    CHECK(right && g_memory[dest + 64] == 0xCD);
+    const uint32_t dispatches = renderer.memexport_dispatches() - dispatches_before;
+    std::printf("gfx_render_tests: memexport: drawn %X, without rasterization %X, from DMA indices %X (elements written), "
+                "%u dispatches\n", drawn, computed, indexed, dispatches);
+    CHECK(counted && drawn == 0xF && computed == 0xF && indexed == 0xC && dispatches == 2 && g_memory[dest + 64] == 0xCD);
   }
   // Centroid interpolation: which interpolators the pixel shader samples at their centroid (none at 1x or with
   // centres only; all with centroids only; by SQ_INTERPOLATOR_CNTL's pattern, a set bit a centre, otherwise), and a
@@ -527,8 +560,9 @@ int main(int argc, char** argv) {
     };
     const Target targets[] = {
         {"k_8_8_8_8_GAMMA", 1, {1, 0, 1, 0}, 4, {255, 0, 255, 0}},
-        {"k_2_10_10_10", 2, {0.2f, 0.6f, 1, 0.4f}, 4, {51, 153, 255, 102}},
-        {"k_2_10_10_10_AS_10_10_10_10", 10, {0.2f, 0.6f, 1, 0.4f}, 4, {51, 153, 255, 102}},
+        // 10-bit components and a 2-bit alpha, kept at that precision (titles pack data into them).
+        {"k_2_10_10_10", 2, {0.2f, 0.6f, 1, 0.4f}, 4, {205, 614, 1023, 1}},
+        {"k_2_10_10_10_AS_10_10_10_10", 10, {0.2f, 0.6f, 1, 0.4f}, 4, {205, 614, 1023, 1}},
         {"k_2_10_10_10_FLOAT", 3, {0.5f, -2, 1024, 0.125f}, 8, {0x3800, 0xC000, 0x6400, 0x3000}},
         {"k_2_10_10_10_FLOAT_AS_16_16_16_16", 12, {0.5f, -2, 1024, 0.125f}, 8, {0x3800, 0xC000, 0x6400, 0x3000}},
         // The 16-bit fixed-point formats hold -32...32: the shader's 8 is a quarter of full scale.
@@ -553,11 +587,15 @@ int main(int argc, char** argv) {
       int64_t got[4] = {};
       if (bytes.size() == size_t(kSize) * kSize * target.bytes) {
         const uint8_t* texel = bytes.data() + (32 * kSize + 32) * target.bytes;
-        const bool unorm8 = target.format == 1 || target.format == 2 || target.format == 10;
+        const bool unorm8 = target.format == 1, unorm10 = target.format == 2 || target.format == 10;
         const bool snorm = target.format == 4 || target.format == 5;
-        const uint32_t count = target.format == 14 ? 1 : target.bytes == 8 || unorm8 ? 4 : 2;
+        const uint32_t count = target.format == 14 ? 1 : target.bytes == 8 || unorm8 || unorm10 ? 4 : 2;
         for (uint32_t i = 0; i < count; ++i) {
-          if (unorm8) {
+          if (unorm10) {
+            uint32_t v;
+            std::memcpy(&v, texel, 4);
+            got[i] = i < 3 ? (v >> (10 * i)) & 0x3FF : v >> 30;
+          } else if (unorm8) {
             got[i] = texel[i];
           } else if (target.format == 14) {
             uint32_t v;
@@ -1240,8 +1278,8 @@ int main(int argc, char** argv) {
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
   // Render targets: colour 0, depth, colour 1, the 16_16_16_16_FLOAT target, the float24 depth surface and the nine
-  // render target formats.
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 14 && stats.texture_uploads == 6 && stats.resolves == 1);
+  // render target formats, of which the two AS_ ones share their base format's surface (12, not 14).
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 12 && stats.texture_uploads == 6 && stats.resolves == 1);
   // (The resolved texture is copied from the resolve on the GPU, not uploaded: 6 uploads, not 7.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.
@@ -1765,7 +1803,31 @@ int main(int argc, char** argv) {
       weights.opcode = F::kGetTextureWeights, weights.mag = weights.min = 1, weights.mip = 0;
       weights.dest_swizzle = 0 | 1 << 3 | kXYKeep;
       fetch_case("kGetTextureWeights", false, {tex(weights)}, 0b1, {}, {}, 0.5f, 0.5f, 1.0f / 256);
-      // kGetTextureBorderColorFrac: not tested, the translator does not implement it (a translation error).
+      // Border colour fraction, at coordinates c0.xy (in r2) on the 32x32 texture with X clamped to the border and Y
+      // mirror-clamped to it: the share of the footprint outside the texture. Linear (texel coordinate u * 32 - 0.5):
+      // inside 0; u = 0, half the left texel pair outside 0.5; v = 1, half the bottom pair 0.5; both 1 - 0.5 * 0.5;
+      // v = 0 mirrors texel -1 onto texel 0, inside: 0. Point, u = -1/32: the one texel outside, 1. Both in x and y.
+      t::Tex border;
+      border.opcode = F::kGetTextureBorderColorFrac, border.src = 2, border.mag = border.min = 1, border.mip = 0;
+      border.dest_swizzle = 0 | 0 << 3 | kXYKeep;
+      auto border_bind = [&s, quad, small] {
+        s.Shader(0, t::BuildTexturedVertexShader());
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+        s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 6u << 10 | 7u << 13 | 1u << 22, 6u | 2u << 6 | small,
+               31u | 31u << 13, 0x688u << 1, 0, 1u << 9});
+      };
+      struct Border {
+        float u, v, fraction;
+        bool point;
+      };
+      for (const Border& b : {Border{0.5f, 0.5f, 0, false}, Border{0, 0.5f, 0.5f, false}, Border{0.5f, 1, 0.5f, false},
+                              Border{0, 1, 0.75f, false}, Border{0.5f, 0, 0, false}, Border{-1.0f / 32, 0.5f, 1, true}}) {
+        t::Tex at = border;
+        if (b.point) at.mag = at.min = 0;
+        fetch_case("kGetTextureBorderColorFrac", false, {alu(load_r2), tex(at)}, 0b10, {b.u, b.v}, {}, b.fraction,
+                   b.fraction, 1.0f / 256);
+        cases.back().setup = border_bind;
+      }
     }
 
     // Vertex formats: a full-target quad whose vertices carry, after their float4 position, four dwords of an

@@ -212,6 +212,9 @@ VulkanRenderer::~VulkanRenderer() {
   DestroyImage(device_, gamma_image_);
   if (batch_pool_) f.vkDestroyCommandPool(d, batch_pool_, nullptr);
   if (submit_pool_) f.vkDestroyCommandPool(d, submit_pool_, nullptr);
+  for (auto& [module, pipeline] : memexport_pipelines_) {
+    if (pipeline) f.vkDestroyPipeline(d, pipeline, nullptr);
+  }
   for (auto& [key, pipeline] : pipelines_) {
     if (pipeline) f.vkDestroyPipeline(d, pipeline, nullptr);
   }
@@ -236,7 +239,7 @@ VulkanRenderer::~VulkanRenderer() {
     DestroyImage(device_, surface->image);
     DestroyImage(device_, surface->ms);
   }
-  for (auto& [base, r] : resolved_) DestroyImage(device_, r.image), DestroyImage(device_, r.small);
+  for (auto& [base, r] : resolved_) DestroyImage(device_, r.image), DestroyImage(device_, r.small), DestroyImage(device_, r.spare);
 }
 
 bool VulkanRenderer::Fail(const std::string& why) {
@@ -249,7 +252,8 @@ bool VulkanRenderer::Fail(const std::string& why) {
 bool VulkanRenderer::Initialize() {
   const Functions& f = device_.fn();
   VkDevice d = device_.device();
-  const VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  // Compute too: a memory-exporting vertex shader without rasterization runs as a compute dispatch.
+  const VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
   constant_alignment_ = std::max<uint32_t>(16, uint32_t(device_.properties().limits.minUniformBufferOffsetAlignment));
 
   // The translated shaders' layout (as the reference Vulkan backend builds it): shared memory, the five constant
@@ -260,7 +264,8 @@ bool VulkanRenderer::Initialize() {
   for (uint32_t i = 0; i < SpirvShaderTranslator::kConstantBufferCount; ++i) {
     constant_bindings[i] = {i, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1, stages, nullptr};
   }
-  constant_bindings[SpirvShaderTranslator::kConstantBufferFloatVertex].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+  constant_bindings[SpirvShaderTranslator::kConstantBufferFloatVertex].stageFlags =
+      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
   constant_bindings[SpirvShaderTranslator::kConstantBufferFloatPixel].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
   info.bindingCount = SpirvShaderTranslator::kConstantBufferCount;
   info.pBindings = constant_bindings;
@@ -484,7 +489,7 @@ VkFormat ColorTargetFormat(uint32_t color_format) {
   switch (color_format) {
     case 0: return VK_FORMAT_R8G8B8A8_UNORM;            // k_8_8_8_8
     case 1: return VK_FORMAT_R8G8B8A8_UNORM;            // k_8_8_8_8_GAMMA (gamma applied in the shader)
-    case 2: case 10: return VK_FORMAT_A8B8G8R8_UNORM_PACK32;  // k_2_10_10_10 (and AS_10_10_10_10), as the reference
+    case 2: case 10: return VK_FORMAT_A2B10G10R10_UNORM_PACK32;  // k_2_10_10_10 (and AS_10_10_10_10)
     case 3: case 12: return VK_FORMAT_R16G16B16A16_SFLOAT;   // k_2_10_10_10_FLOAT (and AS_16_16_16_16)
     case 4: return VK_FORMAT_R16G16_SNORM;              // k_16_16: -32...32 scaled to -1...1 by the exponent bias
     case 5: return VK_FORMAT_R16G16B16A16_SNORM;        // k_16_16_16_16: likewise
@@ -500,7 +505,13 @@ namespace {
 bool Is64bpp(uint32_t color_format) { return color_format == 5 || color_format == 7 || color_format == 15; }
 }  // namespace
 
-VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& key) {
+VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& requested) {
+  // The AS_ formats are the same EDRAM data as their base format (the reference's GetBaseColorFormat):
+  // k_2_10_10_10_AS_10_10_10_10 is k_2_10_10_10, k_2_10_10_10_FLOAT_AS_16_16_16_16 is k_2_10_10_10_FLOAT. One
+  // surface for both, or what a title draws as one is not there when it resolves or draws as the other.
+  SurfaceKey key = requested;
+  if (!key.depth && key.format == 10) key.format = 2;
+  if (!key.depth && key.format == 12) key.format = 3;
   auto& slot = surfaces_[key];
   if (slot) return slot->image.image ? slot.get() : nullptr;
   slot = std::make_unique<Surface>();
@@ -966,15 +977,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // EDRAM mode: 4 colour and depth, 5 depth only; anything else leaves the targets alone.
   const uint32_t edram_mode = regs[kRbModeControl] & 7;
   if (edram_mode != 4 && edram_mode != 5) {
-    // A vertex shader exporting to memory runs without rasterization too (the reference draws it with rasterizer
-    // discard): not done here yet, and better reported than dropped.
-    if (draw.vertex_shader && !draw.vertex_shader->microcode.empty()) {
-      const TranslatedShader* exporting = GetShader(*draw.vertex_shader);
-      if (exporting && exporting->shader->memexport_eM_written()) {
-        Fail("memexport without rasterization (EDRAM mode " + std::to_string(edram_mode) + ", not yet)");
-        return;
-      }
-    }
+    if (MemExportWithoutRasterization(draw)) return;  // a vertex shader exporting to memory runs anyway
     ++stats_.skipped;
     return;
   }
@@ -1048,28 +1051,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     Fail("shader analysis");
     return;
   }
-  // Memory exports (memexport): the streams the shaders' eA writes name (`mad eA, r#, const0100, c#`: the stream
-  // constant c# of the stage's float constants), as the reference gathers them, a range each (several exports to one
-  // base address: the largest), checked as the hardware checks eA (the 0b01, 0x4B0 and 0x96 marks, a count).
-  std::vector<MemExport> exports;
-  for (const TranslatedShader* t : {vs, ps}) {
-    if (!t || !t->shader->memexport_eM_written()) continue;
-    const uint32_t* floats = regs + 0x4000 + (t == ps ? 256 * 4 : 0);
-    for (uint32_t c : t->shader->memexport_stream_constants()) {
-      if (c >= 256) continue;
-      const uint32_t* stream = floats + 4 * c;
-      const uint32_t count = stream[3] & 0x7FFFFF, bytes = MemExportElementBytes((stream[2] >> 8) & 0x3F);
-      if ((stream[0] >> 30) != 1 || (stream[2] >> 20) != 0x4B0 || (stream[3] >> 23) != 0x96 || !count || !bytes) continue;
-      const uint32_t base = (stream[0] & 0x3FFFFFFF) << 2;
-      if (base >= mirror_bytes_) continue;
-      const uint32_t size = uint32_t(std::min<uint64_t>(uint64_t(count) * bytes, mirror_bytes_ - base));
-      bool merged = false;
-      for (MemExport& e : exports) {
-        if (e.base == base) e.bytes = std::max(e.bytes, size), merged = true;
-      }
-      if (!merged) exports.push_back({base, size, 0});
-    }
-  }
+  std::vector<MemExport> exports = MemExportRanges(regs, vs, ps);
   // The vertex buffers the vertex shader fetches from (vertex fetch constants: address in dword 0, size in words in
   // dword 1, and as far again as VGT_INDX_OFFSET moves the indices), for the copy into the mirror when guest memory
   // is not read in place.
@@ -1301,6 +1283,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     depth_control = 0;
   }
   if (width == UINT32_MAX) {
+    if (MemExportWithoutRasterization(draw)) return;
     ++stats_.skipped;  // nothing bound: no target this draw could change
     return;
   }
@@ -1343,6 +1326,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   right = std::min(std::min(right, int32_t(regs[kPaScScreenScissorBr] & 0x7FFF)) * sample_x, int32_t(width));
   bottom = std::min(std::min(bottom, int32_t((regs[kPaScScreenScissorBr] >> 16) & 0x7FFF)) * sample_y, int32_t(height));
   if (right <= left || bottom <= top) {
+    if (MemExportWithoutRasterization(draw)) return;
     ++stats_.skipped;
     return;
   }
@@ -1789,12 +1773,152 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   if (!exports.empty()) MemExported(std::move(exports));
 }
 
+std::vector<VulkanRenderer::MemExport> VulkanRenderer::MemExportRanges(const uint32_t* regs, const TranslatedShader* vs,
+                                                                       const TranslatedShader* ps) const {
+  // Memory exports (memexport): the streams the shaders' eA writes name (`mad eA, r#, const0100, c#`: the stream
+  // constant c# of the stage's float constants), as the reference gathers them, a range each (several exports to one
+  // base address: the largest), checked as the hardware checks eA (the 0b01, 0x4B0 and 0x96 marks, a count).
+  std::vector<MemExport> exports;
+  for (const TranslatedShader* t : {vs, ps}) {
+
+    if (!t || !t->shader->memexport_eM_written()) continue;
+    const uint32_t* floats = regs + 0x4000 + (t == ps ? 256 * 4 : 0);
+    for (uint32_t c : t->shader->memexport_stream_constants()) {
+      if (c >= 256) continue;
+      const uint32_t* stream = floats + 4 * c;
+      const uint32_t count = stream[3] & 0x7FFFFF, bytes = MemExportElementBytes((stream[2] >> 8) & 0x3F);
+      if ((stream[0] >> 30) != 1 || (stream[2] >> 20) != 0x4B0 || (stream[3] >> 23) != 0x96 || !count || !bytes) continue;
+      const uint32_t base = (stream[0] & 0x3FFFFFFF) << 2;
+      if (base >= mirror_bytes_) continue;
+      const uint32_t size = uint32_t(std::min<uint64_t>(uint64_t(count) * bytes, mirror_bytes_ - base));
+      bool merged = false;
+      for (MemExport& e : exports) {
+        if (e.base == base) e.bytes = std::max(e.bytes, size), merged = true;
+      }
+      if (!merged) exports.push_back({base, size, 0});
+    }
+  }
+  return exports;
+}
+
+bool VulkanRenderer::MemExportWithoutRasterization(const DrawCall& draw) {
+  if (!draw.vertex_shader || draw.vertex_shader->microcode.empty()) return false;
+  TranslatedShader* vs = GetShader(*draw.vertex_shader);
+  if (!vs || !vs->shader->memexport_eM_written()) return false;
+  const uint32_t* regs = draw.registers;
+  std::vector<MemExport> exports = MemExportRanges(regs, vs, nullptr);
+  if (exports.empty() || !draw.index_count) return true;  // nothing it could write: as skipped
+  if (draw.source == DrawSource::kImmediate) {
+    Fail("memexport without rasterization from immediate indices (not yet)");
+    return true;
+  }
+  if (!vs->shader->texture_bindings().empty()) {
+    Fail("memexport without rasterization from a vertex shader with textures (not yet)");
+    return true;
+  }
+  const Functions& f = device_.fn();
+  rg::reg::SQ_PROGRAM_CNTL program_cntl;
+  program_cntl.value = regs[kSqProgramCntl];
+  SpirvShaderTranslator::Modification modification(translator_->GetDefaultVertexShaderModification(
+      vs->shader->GetDynamicAddressableRegisterCount(program_cntl.vs_num_reg),
+      rg::Shader::HostVertexShaderType::kMemExportCompute));
+  const VkShaderModule module = GetModule(*vs, modification.value);
+  const VkPipelineLayout layout = PipelineLayout(0, 0, 0, 0);
+  VkPipeline& pipeline = memexport_pipelines_[module];
+  if (module && layout && !pipeline) {
+    VkComputePipelineCreateInfo info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    info.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, module, "main"};
+    info.layout = layout;
+    if (f.vkCreateComputePipelines(device_.device(), pipeline_cache_, 1, &info, nullptr, &pipeline) != VK_SUCCESS) {
+      pipeline = VK_NULL_HANDLE;
+    }
+  }
+  if (!pipeline) {
+    Fail("memexport compute pipeline");
+    return true;
+  }
+  // The guest memory it reads: its vertex buffers and DMA indices.
+  const uint64_t index_offset = regs[kVgtIndxOffset] & 0xFFFFFF;
+  for (const auto& binding : vs->shader->vertex_bindings()) {
+    const uint32_t* fetch = regs + reg::kFetchConstants + 2 * binding.fetch_constant;
+    const uint64_t bytes = uint64_t((fetch[1] >> 2) & 0xFFFFFF) * 4 + index_offset * binding.stride_words * 4;
+    ReadsGuestMemory(fetch[0] & 0x1FFFFFFC, uint32_t(std::min<uint64_t>(bytes, mirror_bytes_)));
+  }
+  // Constants, as a draw's: the system ones (the vertex index source, the vertex count), the vertex shader's floats
+  // packed as it uses them, a pixel float block, bool/loop and fetch constants.
+  const auto& map = vs->shader->constant_register_map();
+  const uint32_t float_bytes = map.float_dynamic_addressing ? 256 * 16 : 16 * std::max(1u, map.float_count);
+  const uint32_t need = uint32_t(sizeof(SpirvShaderTranslator::SystemConstants)) + float_bytes + 16 + kBoolLoopBytes +
+                        kFetchBytes + 6 * constant_alignment_ + kFloatBufferBytes;
+  if (constant_head_ + need > batch().constants.size) Flush();
+  uint8_t* base = static_cast<uint8_t*>(batch().constants.mapped);
+  uint32_t offsets[SpirvShaderTranslator::kConstantBufferCount] = {};
+  auto put = [&](uint32_t index, const void* data, uint32_t bytes) {
+    offsets[index] = constant_head_;
+    std::memcpy(base + constant_head_, data, bytes);
+    constant_head_ = AlignUp(constant_head_ + bytes, constant_alignment_);
+    last_constants_[index].valid = false;
+  };
+  SpirvShaderTranslator::SystemConstants system{};
+  if (draw.source == DrawSource::kDma) {
+    system.flags |= SpirvShaderTranslator::kSysFlag_ComputeOrPrimitiveVertexIndexLoad;
+    if (draw.index_32) system.flags |= SpirvShaderTranslator::kSysFlag_ComputeOrPrimitiveVertexIndexLoad32Bit;
+    system.vertex_index_load_address = draw.index_base;
+    ReadsGuestMemory(draw.index_base, draw.index_count * (draw.index_32 ? 4 : 2));
+    Endian endian = draw.index_endian;
+    if (!draw.index_32) endian = endian == Endian::k8in32 ? Endian::k8in16 : endian == Endian::k16in32 ? Endian::kNone : endian;
+    system.vertex_index_endian = decltype(system.vertex_index_endian)(uint32_t(endian));
+  }
+  system.vertex_base_index = int32_t(regs[kVgtIndxOffset]);
+  system.vertex_index_min = regs[kVgtMinVtxIndx];
+  system.vertex_index_max = regs[kVgtMaxVtxIndx];
+  system.compute_memexport_vertex_count = draw.index_count;
+  put(SpirvShaderTranslator::kConstantBufferSystem, &system, sizeof(system));
+  if (map.float_dynamic_addressing) {
+    put(SpirvShaderTranslator::kConstantBufferFloatVertex, regs + 0x4000, 256 * 16);
+  } else {
+    std::vector<uint8_t> floats(float_bytes, 0);
+    uint32_t packed = 0;
+    for (uint32_t word = 0; word < 4; ++word) {
+      for (uint64_t bits = map.float_bitmap[word]; bits; bits &= bits - 1) {
+        const uint32_t c = 64 * word + uint32_t(std::countr_zero(bits));
+        std::memcpy(floats.data() + 16 * packed++, regs + 0x4000 + 4 * c, 16);
+      }
+    }
+    put(SpirvShaderTranslator::kConstantBufferFloatVertex, floats.data(), float_bytes);
+  }
+  static constexpr uint8_t kZero[16] = {};
+  put(SpirvShaderTranslator::kConstantBufferFloatPixel, kZero, 16);
+  put(SpirvShaderTranslator::kConstantBufferBoolLoop, regs + 0x4900, kBoolLoopBytes);
+  put(SpirvShaderTranslator::kConstantBufferFetch, regs + 0x4800, kFetchBytes);
+  // Outside any render pass, after the batch's draws so far; one invocation a guest vertex, in rows of the
+  // translation's dispatch width.
+  EndRendering();
+  const VkCommandBuffer cb = Record();
+  VkDescriptorSet sets[SpirvShaderTranslator::kDescriptorSetCount];
+  sets[SpirvShaderTranslator::kDescriptorSetSharedMemoryAndEdram] = shared_set_;
+  sets[SpirvShaderTranslator::kDescriptorSetConstants] = batch().constants_set;
+  sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex] = empty_set_;
+  sets[SpirvShaderTranslator::kDescriptorSetTexturesPixel] = empty_set_;
+  f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+  f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, SpirvShaderTranslator::kDescriptorSetCount, sets,
+                            SpirvShaderTranslator::kConstantBufferCount, offsets);
+  const uint32_t width = SpirvShaderTranslator::kMemExportComputeDispatchX;
+  f.vkCmdDispatch(cb, std::min(draw.index_count, width), (draw.index_count + width - 1) / width, 1);
+  ++memexport_dispatches_;
+  MemExported(std::move(exports));
+  return true;
+}
+
 void VulkanRenderer::MemExported(std::vector<MemExport> exports) {
   // The draw's writes reach guest memory before anything else runs: the batch is submitted with them and awaited
   // (memexport is rare; later draws and the title's code may read what it wrote). Guest memory in video memory: the
   // ranges copied into the readback buffer at the flush, then into guest memory; a mirror: copied back from it;
   // imported: written in place. The texture cache forgets what it held there.
   ++stats_.memexports;
+  // The ranges come back whole, elements the shaders did not write included: the GPU's copy of them is made current
+  // first (uploaded with the batch), or what the title wrote there since would be undone.
+  for (const MemExport& e : exports) ReadsGuestMemory(e.base, e.bytes);
   uint32_t readback_bytes = 0;
   for (MemExport& e : exports) e.readback = readback_bytes, readback_bytes += (e.bytes + 15) & ~15u;
   if (vram_guest_on_ && memexport_readback_.size < readback_bytes) {
@@ -2647,7 +2771,10 @@ void VulkanRenderer::WriteQuery(const Batch::Query& query) {
   // reference writes them; ZFail and the rest zero.
   uint32_t counts[8] = {};
   counts[0] = counts[4] = uint32_t(std::min<uint64_t>(samples, UINT32_MAX));
-  if (uint64_t(query.address) + sizeof(counts) <= mirror_bytes_) std::memcpy(physical_ + query.address, counts, sizeof(counts));
+  if (uint64_t(query.address) + sizeof(counts) <= mirror_bytes_) {
+    std::memcpy(physical_ + query.address, counts, sizeof(counts));
+    GuestMemoryWritten(query.address, query.address + uint32_t(sizeof(counts)));
+  }
 }
 
 void VulkanRenderer::FinishBatch(Batch& b) {
@@ -2796,9 +2923,11 @@ bool VulkanRenderer::ResolveDepth(Surface& surface, bool float24, int32_t x0, in
 
 bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint32_t width, uint32_t height,
                                   uint32_t sample_x, uint32_t sample_y, uint32_t dest_base, uint32_t dest_pitch,
-                                  uint32_t dest_endian, VkFormat format) {
+                                  uint32_t dest_endian, VkFormat format, int32_t dest_dx, int32_t dest_dy) {
   const Functions& f = device_.fn();
-  const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(y0) + height + 31) & ~31u;
+  // The destination's texels: the source's coordinates, moved by dest_dx/dest_dy within a containing resolve.
+  const int32_t dx0 = x0 + dest_dx, dy0 = y0 + dest_dy;
+  const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(dy0) + height + 31) & ~31u;
   Resolved& r = resolved_[dest_base];
   // Scaled as the surface is: textures copied from it keep the resolution.
   const int32_t s = int32_t(scale_);
@@ -2825,13 +2954,19 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
   region.srcOffsets[0] = {x0 * int32_t(sample_x) * s, y0 * int32_t(sample_y) * s, 0};
   region.srcOffsets[1] = {(x0 + int32_t(width)) * int32_t(sample_x) * s, (y0 + int32_t(height)) * int32_t(sample_y) * s, 1};
-  region.dstOffsets[0] = {x0 * s, y0 * s, 0};
-  region.dstOffsets[1] = {(x0 + int32_t(width)) * s, (y0 + int32_t(height)) * s, 1};
+  region.dstOffsets[0] = {dx0 * s, dy0 * s, 0};
+  region.dstOffsets[1] = {(dx0 + int32_t(width)) * s, (dy0 + int32_t(height)) * s, 1};
   f.vkCmdBlitImage(cb, surface.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, r.image.image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region,
                    sample_x * sample_y > 1 ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
-  r.pitch = pitch, r.endian = dest_endian, r.x = uint32_t(x0), r.y = uint32_t(y0), r.width = width, r.height = height;
+  // The rectangle to write back: this one, with what earlier ones left unwritten (another player's half).
+  uint32_t rx0 = uint32_t(dx0), ry0 = uint32_t(dy0), rx1 = rx0 + width, ry1 = ry0 + height;
+  if (r.stale && r.width && r.height) {
+    rx0 = std::min(rx0, r.x), ry0 = std::min(ry0, r.y);
+    rx1 = std::max(rx1, r.x + r.width), ry1 = std::max(ry1, r.y + r.height);
+  }
+  r.pitch = pitch, r.endian = dest_endian, r.x = rx0, r.y = ry0, r.width = rx1 - rx0, r.height = ry1 - ry0;
   r.stale = true;
   r.scale = scale_;
   if (textures_) {
@@ -2939,7 +3074,8 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   const uint32_t dest_info = regs[kRbCopyDestInfo];
   const uint32_t dest_endian = dest_info & 7, dest_format = (dest_info >> 7) & 0x3F, dest_swap = (dest_info >> 24) & 1;
   const int32_t dest_bias = int32_t(dest_info << 10) >> 26;  // bits 16-21, signed
-  const uint32_t dest_base = regs[kRbCopyDestBase] & 0x1FFFFFFF, dest_pitch = regs[kRbCopyDestPitch] & 0x3FFF;
+  uint32_t dest_base = regs[kRbCopyDestBase] & 0x1FFFFFFF;
+  const uint32_t dest_pitch = regs[kRbCopyDestPitch] & 0x3FFF;
   if ((dest_info >> 3) & 1) {
     Fail("resolve to a 3D / array destination (not yet)");
     return;
@@ -2956,6 +3092,11 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       gpu_format = host_format;
     } else if (!dest_swap && dest_format == 31 && host_format == VK_FORMAT_R16G16_SFLOAT) {
       gpu_format = host_format;  // k_16_16_FLOAT
+    } else if (dest_format == 7 &&
+               (host_format == VK_FORMAT_A8B8G8R8_UNORM_PACK32 || host_format == VK_FORMAT_A2B10G10R10_UNORM_PACK32)) {
+      // k_2_10_10_10 (a 10-bit front buffer: The Simpsons Game) from a k_2_10_10_10 target, its red/blue swap kept
+      // in the image's component order as the 8-bit path does.
+      gpu_format = dest_swap ? VK_FORMAT_A2R10G10B10_UNORM_PACK32 : VK_FORMAT_A2B10G10R10_UNORM_PACK32;
     }
   }
   // A depth resolve: one sample a pixel, the depth value for the depth texture formats, on the GPU too.
@@ -2973,14 +3114,58 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
                                          dest_pitch, dest_endian)) {
     return;
   }
-  if (gpu_format != VK_FORMAT_UNDEFINED &&
-      !ResolveOnGpu(*surface, x0, y0, width, height, sample_x, sample_y, dest_base, dest_pitch, dest_endian, gpu_format)) {
-    return;
+  if (gpu_format != VK_FORMAT_UNDEFINED) {
+    // A destination within one an earlier resolve kept on the GPU (same pitch and format), at a whole tile of it:
+    // that image at the tile's place. The Simpsons Game's split screen resolves each player's half to the full
+    // screen's base, the second half's at the base plus x 640's tiled offset; apart, a texture of the whole screen
+    // would read the first half only.
+    const uint32_t aligned_pitch = (dest_pitch + 31) & ~31u;
+    int32_t dest_dx = 0, dest_dy = 0;
+    for (auto it = resolved_.lower_bound(dest_base); it != resolved_.begin();) {
+      --it;
+      const Resolved& c = it->second;
+      if (!c.image.image || c.image.format != gpu_format || c.pitch != aligned_pitch || c.scale != scale_ ||
+          c.endian != dest_endian) {
+        continue;
+      }
+      const uint32_t delta = dest_base - it->first;
+      if (uint64_t(delta) >= uint64_t(aligned_pitch) * (c.image.height / c.scale) * 4) continue;
+      int32_t dx = -1, dy = -1;
+      for (uint32_t ty = 0; ty < c.image.height / c.scale && dx < 0; ty += 32) {
+        for (uint32_t tx = 0; tx < aligned_pitch; tx += 32) {
+          if (uint32_t(TiledOffset2D(int32_t(tx), int32_t(ty), dest_pitch, 2)) == delta) {
+            dx = int32_t(tx), dy = int32_t(ty);
+            break;
+          }
+        }
+      }
+      if (dx < 0) continue;
+      const auto own = resolved_.find(dest_base);
+      if (own != resolved_.end()) {
+        // An image of its own from before: superseded (its texels now live in the containing one).
+        if (own->second.stale) WriteBackResolved(own->first, own->second);
+        Record();
+        batch().retired.push_back(own->second.image);
+        if (own->second.small.image) batch().retired.push_back(own->second.small);
+        resolved_.erase(own);
+        if (textures_) textures_->DropGpuSources(dest_base, dest_base + 1);
+      }
+      dest_base = it->first;
+      dest_dx = dx, dest_dy = dy;
+      break;
+    }
+    if (!ResolveOnGpu(*surface, x0, y0, width, height, sample_x, sample_y, dest_base, dest_pitch, dest_endian,
+                      gpu_format, dest_dx, dest_dy)) {
+      return;
+    }
   }
   // Read back as well: what the CPU may read (small resolves) and front buffers (presented from guest memory), when
   // the CPU path has the format.
+  // A 10-bit resolve kept on the GPU is written back from its image's bytes too (a texture taller than the resolve,
+  // its other rows written by the CPU, reads guest memory: The Simpsons Game's 64x8 palette rows in a 64x64 texture).
   const bool cpu_has_format = is_depth || (dest_format == 6 && host_format == VK_FORMAT_R8G8B8A8_UNORM) ||
-                              (dest_format == 32 && host_format == VK_FORMAT_R16G16B16A16_SFLOAT);
+                              (dest_format == 32 && host_format == VK_FORMAT_R16G16B16A16_SFLOAT) ||
+                              (dest_format == 7 && gpu_format != VK_FORMAT_UNDEFINED);
   const bool read_back =
       !on_gpu || (cpu_has_format && (uint64_t(width) * height * (dest_format == 32 ? 8 : 4) <= kReadBackMaxBytes ||
                                      (front_buffers_.count(dest_base) && !front_on_gpu_.count(dest_base))));
@@ -3135,6 +3320,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
         case 0: case 1:  // 8_8_8_8 (gamma alike)
           for (uint32_t j = 0; j < 4; ++j) color_value.color.float32[j] = float((clear >> (8 * j)) & 0xFF) / 255.0f;
           break;
+        case 2: case 10:  // 2_10_10_10 (and AS_10_10_10_10): three 10-bit components and a 2-bit alpha
+          for (uint32_t j = 0; j < 3; ++j) color_value.color.float32[j] = float((clear >> (10 * j)) & 0x3FF) / 1023.0f;
+          color_value.color.float32[3] = float((clear >> 30) & 3) / 3.0f;
+          break;
         case 6: case 7:  // 16-bit float
           for (uint32_t j = 0; j < 4; ++j) color_value.color.float32[j] = HalfToFloat(uint16_t(clear >> (16 * j)));
           break;
@@ -3214,8 +3403,9 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   if (textures_) {
     const uint32_t element = is_depth ? 4 : (dest_format == 32 ? 8 : 4);
     const uint64_t rows = (uint64_t(y0) + height + 31) & ~uint64_t(31);
-    textures_->MemoryChanged(dest_base, uint32_t(std::min<uint64_t>(dest_base + rows * ((dest_pitch + 31) & ~31u) * element,
-                                                                    mirror_bytes_)));
+    const uint32_t end = uint32_t(std::min<uint64_t>(dest_base + rows * ((dest_pitch + 31) & ~31u) * element, mirror_bytes_));
+    textures_->MemoryChanged(dest_base, end);
+    GuestMemoryWritten(dest_base, end);  // the pages copied into video memory too (vertices a title resolved)
   }
   last_resolve_ = {surface, dest_base, dest_endian, uint32_t(x0), uint32_t(y0), width, height,
                    !is_depth && !msaa && dest_format == 6 && !dest_bias && !dest_swap};
@@ -3261,6 +3451,21 @@ void VulkanRenderer::Invalidate(uint32_t base, uint32_t size) {
 bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t pitch, uint32_t rows,
                                         VkImageUsageFlags usage) {
   if (r.image.image && r.image.format == format && r.image.width >= pitch && r.image.height >= rows) return true;
+  if (r.image.image && r.image.format != format) {
+    // Another format: the spare if it is this one and large enough, the current one kept as the spare.
+    if (r.spare.image && r.spare.format == format && r.spare_scale == r.scale && r.spare.width >= pitch && r.spare.height >= rows) {
+      std::swap(r.image, r.spare);
+      std::swap(r.layout, r.spare_layout);
+      return true;
+    }
+    if (r.spare.image) {
+      Record();
+      batch().retired.push_back(r.spare);  // batches may still read it: freed after this one has run
+    }
+    r.spare = r.image, r.spare_layout = r.layout, r.spare_scale = r.scale;
+    r.image = Image{};
+    r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  }
   Image grown;
   const bool keep = r.image.image && r.image.format == format;
   if (!CreateImage2D(device_, std::max(pitch, keep ? r.image.width : 0u), std::max({rows, 32u, keep ? r.image.height : 0u}),
@@ -3525,11 +3730,14 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
   // red/blue swap undone by the fetch swizzle or absent): presented from that image.
   const uint32_t front = fetch.base & 0x1FFFFFFF;
   const auto front_resolve = resolved_.find(front);
-  if (front_resolve != resolved_.end() && fetch.type == 2 && fetch.format == 6) {
+  // The same for a 10-bit front buffer (k_2_10_10_10, or its AS_16_16_16_16 form) resolved into a 10-bit image.
+  const bool eight_bit = fetch.format == 6, ten_bit = fetch.format == 7 || fetch.format == 54;
+  if (front_resolve != resolved_.end() && fetch.type == 2 && (eight_bit || ten_bit)) {
     Resolved& r = front_resolve->second;
-    const uint32_t swizzle = fetch.swizzle & 0x1FF;
-    const bool as_shown = (r.image.format == VK_FORMAT_R8G8B8A8_UNORM && swizzle == (0 | 1 << 3 | 2 << 6)) ||
-                          (r.image.format == VK_FORMAT_B8G8R8A8_UNORM && swizzle == (2 | 1 << 3 | 0 << 6));
+    const uint32_t swizzle = fetch.swizzle & 0x1FF, rgb = 0 | 1 << 3 | 2 << 6, bgr = 2 | 1 << 3 | 0 << 6;
+    const VkFormat in_order = eight_bit ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+    const VkFormat swapped = eight_bit ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_A2R10G10B10_UNORM_PACK32;
+    const bool as_shown = (r.image.format == in_order && swizzle == rgb) || (r.image.format == swapped && swizzle == bgr);
     if (as_shown && fetch.endian == r.endian && r.x == 0 && r.y == 0) {
       next.width = std::min({width ? width : fetch.width, fetch.width, r.width}) * r.scale;
       next.height = std::min({height ? height : fetch.height, fetch.height, r.height}) * r.scale;
