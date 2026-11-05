@@ -179,7 +179,18 @@ bool Device::Create(const DeviceOptions& options) {
   // What the translated shaders use where the device has it (every desktop driver and RADV do).
   VkPhysicalDeviceFeatures2 supported{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
   fn_.vkGetPhysicalDeviceFeatures2(physical_, &supported);
-  VkPhysicalDeviceFeatures2 enabled{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &v13};
+  // Uniform blocks laid out as the translated shaders declare them (std430-like offsets), where the device has it.
+  VkPhysicalDeviceVulkan13Features v13_supported{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+  VkPhysicalDeviceVulkan12Features v12_supported{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &v13_supported};
+  {
+    VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &v12_supported};
+    fn_.vkGetPhysicalDeviceFeatures2(physical_, &query);
+  }
+  VkPhysicalDeviceVulkan12Features v12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &v13};
+  v12.uniformBufferStandardLayout = v12_supported.uniformBufferStandardLayout;
+  v12.scalarBlockLayout = v12_supported.scalarBlockLayout;  // the system constants' vec3 + float members
+  v13.shaderDemoteToHelperInvocation = v13_supported.shaderDemoteToHelperInvocation;
+  VkPhysicalDeviceFeatures2 enabled{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &v12};
   enabled.features.shaderClipDistance = supported.features.shaderClipDistance;
   enabled.features.shaderCullDistance = supported.features.shaderCullDistance;
   enabled.features.fragmentStoresAndAtomics = supported.features.fragmentStoresAndAtomics;
@@ -192,6 +203,7 @@ bool Device::Create(const DeviceOptions& options) {
   enabled.features.depthClamp = supported.features.depthClamp;
   enabled.features.imageCubeArray = supported.features.imageCubeArray;
   enabled.features.shaderStorageImageWriteWithoutFormat = supported.features.shaderStorageImageWriteWithoutFormat;
+  enabled.features.sampleRateShading = supported.features.sampleRateShading;
   // A lost device's fault (address, vendor data) when the driver reports it (VK_EXT_device_fault).
   VkPhysicalDeviceFaultFeaturesEXT fault{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT};
   VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, &enabled};
@@ -397,6 +409,11 @@ bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat fo
   alloc.memoryTypeIndex = d.MemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   if (alloc.memoryTypeIndex == UINT32_MAX || f.vkAllocateMemory(d.device(), &alloc, nullptr, &out.memory) != VK_SUCCESS) return false;
   f.vkBindImageMemory(d.device(), out.image, out.memory, 0);
+  // A view only for an image that can have one (a transfer-only image, a resolve's staging, has none).
+  constexpr VkImageUsageFlags kViewUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                           VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                                           VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+  if (!(usage & kViewUsage)) return true;
   VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
   view.image = out.image;
   view.viewType = VK_IMAGE_VIEW_TYPE_2D;

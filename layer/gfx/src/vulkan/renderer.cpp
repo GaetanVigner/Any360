@@ -126,9 +126,18 @@ struct VulkanRenderer::TranslatedShader {
 
 VulkanRenderer::VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirror_bytes, uint32_t resolution_scale)
     : device_(device), physical_(physical), mirror_bytes_(mirror_bytes), scale_(std::clamp(resolution_scale, 1u, 4u)) {
-  // Every translator feature on: what desktop Vulkan 1.3 drivers and RADV offer (to be read from the device).
-  translator_ = std::make_unique<SpirvShaderTranslator>(SpirvShaderTranslator::Features(true), true, true, false, scale_,
-                                                        scale_);
+  // Every translator feature on (what desktop Vulkan 1.3 drivers and RADV offer), but the float controls, as the
+  // device reports them: a shader declaring a mode the device lacks is invalid (NVIDIA has no 32-bit denormal flush).
+  SpirvShaderTranslator::Features features(true);
+  if (device_.fn().vkGetPhysicalDeviceProperties2) {
+    VkPhysicalDeviceVulkan12Properties v12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES};
+    VkPhysicalDeviceProperties2 props{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &v12};
+    device_.fn().vkGetPhysicalDeviceProperties2(device_.physical(), &props);
+    features.denorm_flush_to_zero_float32 = v12.shaderDenormFlushToZeroFloat32;
+    features.signed_zero_inf_nan_preserve_float32 = v12.shaderSignedZeroInfNanPreserveFloat32;
+    features.rounding_mode_rte_float32 = v12.shaderRoundingModeRTEFloat32;
+  }
+  translator_ = std::make_unique<SpirvShaderTranslator>(features, true, true, false, scale_, scale_);
   translator_->SetSamplesAsPixels(true);  // guest samples are pixels of the host targets
 }
 
@@ -208,8 +217,10 @@ VulkanRenderer::~VulkanRenderer() {
   if (depth_pipeline_layout_) f.vkDestroyPipelineLayout(d, depth_pipeline_layout_, nullptr);
   if (depth_layout_) f.vkDestroyDescriptorSetLayout(d, depth_layout_, nullptr);
   if (gamma_layout_) f.vkDestroyDescriptorSetLayout(d, gamma_layout_, nullptr);
-  DestroyBuffer(device_, gamma_lut_buffer_);
-  DestroyImage(device_, gamma_image_);
+  for (GammaFrame& g : gamma_frames_) {
+    DestroyBuffer(device_, g.lut);
+    DestroyImage(device_, g.image);
+  }
   if (batch_pool_) f.vkDestroyCommandPool(d, batch_pool_, nullptr);
   if (submit_pool_) f.vkDestroyCommandPool(d, submit_pool_, nullptr);
   for (auto& [module, pipeline] : memexport_pipelines_) {
@@ -239,7 +250,8 @@ VulkanRenderer::~VulkanRenderer() {
     DestroyImage(device_, surface->image);
     DestroyImage(device_, surface->ms);
   }
-  for (auto& [base, r] : resolved_) DestroyImage(device_, r.image), DestroyImage(device_, r.small), DestroyImage(device_, r.spare);
+  for (auto& [base, r] : resolved_) DestroyImage(device_, r.image), DestroyImage(device_, r.small), DestroyImage(device_, r.spare),
+                                        DestroyImage(device_, r.spare_small);
 }
 
 bool VulkanRenderer::Fail(const std::string& why) {
@@ -2341,6 +2353,7 @@ void VulkanRenderer::SubmitLoop() {
       index = to_submit_.front();
       to_submit_.pop_front();
       submitting_ = true;
+      submitting_index_ = index;
     }
     Submit(index);
     {
@@ -2725,6 +2738,14 @@ void VulkanRenderer::Complete() {
       index = in_flight_.front();
     }
     Batch& b = batches_[index];
+    // Not before the submitter thread has submitted it: a fence must not be waited on while vkQueueSubmit uses it.
+    if (submitter_.joinable()) {
+      std::unique_lock lock(submit_mutex_);
+      submitted_cv_.wait(lock, [&] {
+        return !(submitting_ && submitting_index_ == index) &&
+               std::find(to_submit_.begin(), to_submit_.end(), index) == to_submit_.end();
+      });
+    }
     device_.fn().vkWaitForFences(device_.device(), 1, &b.fence, VK_TRUE, UINT64_MAX);
     FinishBatch(b);
     // Actions WhenDone attached while these ran, until none is left: then the batch is done.
@@ -2936,8 +2957,18 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
                                   uint32_t dest_endian, VkFormat format, int32_t dest_dx, int32_t dest_dy) {
   const Functions& f = device_.fn();
   // The destination's texels: the source's coordinates, moved by dest_dx/dest_dy within a containing resolve.
+  // Within the source surface (its pixels: samples x scale a guest pixel).
+  const int32_t surface_w = int32_t(surface.image.width / (sample_x * scale_));
+  const int32_t surface_h = int32_t(surface.image.height / (sample_y * scale_));
+  if (x0 < 0 || y0 < 0 || x0 >= surface_w || y0 >= surface_h) return Fail("resolve outside its surface");
+  width = std::min<uint32_t>(width, uint32_t(surface_w - x0));
+  height = std::min<uint32_t>(height, uint32_t(surface_h - y0));
   const int32_t dx0 = x0 + dest_dx, dy0 = y0 + dest_dy;
-  const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(dy0) + height + 31) & ~31u;
+  const uint32_t pitch = (dest_pitch + 31) & ~31u;
+  // Within the destination's pitch (the image is that wide).
+  if (dx0 < 0 || dy0 < 0 || uint32_t(dx0) >= pitch) return Fail("resolve outside its destination");
+  width = std::min<uint32_t>(width, pitch - uint32_t(dx0));
+  const uint32_t rows = (uint32_t(dy0) + height + 31) & ~31u;
   Resolved& r = resolved_[dest_base];
   // Scaled as the surface is: textures copied from it keep the resolution.
   const int32_t s = int32_t(scale_);
@@ -3167,7 +3198,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
           }
         }
       }
-      if (dx < 0) continue;
+      // Only where its width fits (a match of the tiled offset elsewhere would write past the image's side); it may
+      // reach below the image, which grows to hold it (Test Drive Unlimited's second screen band starts at row 352
+      // of the first band's 384-row image).
+      if (dx < 0 || uint32_t(dx) + width > c.image.width / c.scale) continue;
       const auto own = resolved_.find(dest_base);
       if (own != resolved_.end()) {
         // An image of its own from before: superseded (its texels now live in the containing one).
@@ -3175,6 +3209,8 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
         Record();
         batch().retired.push_back(own->second.image);
         if (own->second.small.image) batch().retired.push_back(own->second.small);
+        if (own->second.spare.image) batch().retired.push_back(own->second.spare);
+        if (own->second.spare_small.image) batch().retired.push_back(own->second.spare_small);
         resolved_.erase(own);
         if (textures_) textures_->DropGpuSources(dest_base, dest_base + 1);
       }
@@ -3484,15 +3520,24 @@ bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t p
     if (r.spare.image && r.spare.format == format && r.spare_scale == r.scale && r.spare.width >= pitch && r.spare.height >= rows) {
       std::swap(r.image, r.spare);
       std::swap(r.layout, r.spare_layout);
+      std::swap(r.small, r.spare_small);
+      std::swap(r.small_layout, r.spare_small_layout);
       return true;
     }
     if (r.spare.image) {
       Record();
       batch().retired.push_back(r.spare);  // batches may still read it: freed after this one has run
     }
+    if (r.spare_small.image) {
+      Record();
+      batch().retired.push_back(r.spare_small);
+    }
     r.spare = r.image, r.spare_layout = r.layout, r.spare_scale = r.scale;
+    r.spare_small = r.small, r.spare_small_layout = r.small_layout;
     r.image = Image{};
     r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    r.small = Image{};
+    r.small_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   }
   Image grown;
   const bool keep = r.image.image && r.image.format == format;
@@ -3985,50 +4030,57 @@ bool VulkanRenderer::GammaPass() {
   const VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
                                          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}};
   VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-  pool_info.maxSets = 1;
+  pool_info.maxSets = kGammaFrames;
   pool_info.poolSizeCount = 3;
   pool_info.pPoolSizes = sizes;
   if (f.vkCreateDescriptorPool(d, &pool_info, nullptr, &gamma_pool_) != VK_SUCCESS) return Fail("gamma pool");
-  VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-  alloc.descriptorPool = gamma_pool_;
-  alloc.descriptorSetCount = 1;
-  alloc.pSetLayouts = &gamma_layout_;
-  if (f.vkAllocateDescriptorSets(d, &alloc, &gamma_set_) != VK_SUCCESS) return Fail("gamma set");
-  if (!CreateBuffer(device_, 3 * 256 * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, gamma_lut_buffer_)) return Fail("gamma LUT");
+  for (GammaFrame& g : gamma_frames_) {
+    VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    alloc.descriptorPool = gamma_pool_;
+    alloc.descriptorSetCount = 1;
+    alloc.pSetLayouts = &gamma_layout_;
+    if (f.vkAllocateDescriptorSets(d, &alloc, &g.set) != VK_SUCCESS) return Fail("gamma set");
+    if (!CreateBuffer(device_, 3 * 256 * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, g.lut)) return Fail("gamma LUT");
+  }
   return true;
 }
 
 void VulkanRenderer::RecordFrameBlit(VkCommandBuffer cb, VkImage target, VkOffset3D dst0, VkOffset3D dst1) {
   if (!frame_.on_gpu || (!frame_surface_ && !frame_resolved_) || !GammaPass()) return;
-  if (frame_surface_) ResolveSamples(cb, *frame_surface_, int32_t(frame_x_), int32_t(frame_y_),
-                                     int32_t(frame_x_ + frame_.width), int32_t(frame_y_ + frame_.height));
   Image& frame_image = frame_surface_ ? frame_surface_->image : frame_resolved_->image;
   VkImageLayout& frame_layout = frame_surface_ ? frame_surface_->layout : frame_resolved_->layout;
+  // The layout the batches recorded so far leave the frame in: this present's command buffer, submitted apart from
+  // them, puts it back, so that a batch recorded before it and submitted after finds what it expects.
+  const VkImageLayout batches_layout = frame_layout;
+  if (frame_surface_) ResolveSamples(cb, *frame_surface_, int32_t(frame_x_), int32_t(frame_y_),
+                                     int32_t(frame_x_ + frame_.width), int32_t(frame_y_ + frame_.height));
   const Functions& f = device_.fn();
+  GammaFrame& g = gamma_frames_[gamma_next_];
+  gamma_next_ = (gamma_next_ + 1) % kGammaFrames;
   // The output image, as large as the frame.
-  if (gamma_image_.width < frame_.width || gamma_image_.height < frame_.height) {
+  if (g.image.width < frame_.width || g.image.height < frame_.height) {
     f.vkDeviceWaitIdle(device_.device());
-    DestroyImage(device_, gamma_image_);
-    gamma_image_layout_ = VK_IMAGE_LAYOUT_UNDEFINED;
+    DestroyImage(device_, g.image);
+    g.layout = VK_IMAGE_LAYOUT_UNDEFINED;
     if (!CreateImage2D(device_, frame_.width, frame_.height, VK_FORMAT_R8G8B8A8_UNORM,
-                       VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT, gamma_image_)) {
+                       VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT, g.image)) {
       Fail("gamma image");
       return;
     }
   }
   // The ramp as 8-bit outputs (the shader's LUT), and the set (the frame's surface may change from frame to frame).
-  uint32_t* lut = static_cast<uint32_t*>(gamma_lut_buffer_.mapped);
+  uint32_t* lut = static_cast<uint32_t*>(g.lut.mapped);
   for (uint32_t ch = 0; ch < 3; ++ch) {
     for (uint32_t i = 0; i < 256; ++i) lut[ch * 256 + i] = gamma_lut_[ch][i];
   }
   const VkDescriptorImageInfo source{VK_NULL_HANDLE, frame_image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-  const VkDescriptorImageInfo dest{VK_NULL_HANDLE, gamma_image_.view, VK_IMAGE_LAYOUT_GENERAL};
-  const VkDescriptorBufferInfo lut_info{gamma_lut_buffer_.buffer, 0, VK_WHOLE_SIZE};
+  const VkDescriptorImageInfo dest{VK_NULL_HANDLE, g.image.view, VK_IMAGE_LAYOUT_GENERAL};
+  const VkDescriptorBufferInfo lut_info{g.lut.buffer, 0, VK_WHOLE_SIZE};
   VkWriteDescriptorSet writes[3] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET},
                                     {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
   const VkDescriptorType types[3] = {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER};
   for (uint32_t i = 0; i < 3; ++i) {
-    writes[i].dstSet = gamma_set_;
+    writes[i].dstSet = g.set;
     writes[i].dstBinding = i;
     writes[i].descriptorCount = 1;
     writes[i].descriptorType = types[i];
@@ -4039,20 +4091,23 @@ void VulkanRenderer::RecordFrameBlit(VkCommandBuffer cb, VkImage target, VkOffse
   f.vkUpdateDescriptorSets(device_.device(), 3, writes, 0, nullptr);
 
   Transition(cb, frame_image, frame_layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
-  Transition(cb, gamma_image_, gamma_image_layout_, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
+  Transition(cb, g.image, g.layout, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
   f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, gamma_pipeline_);
-  f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, gamma_pipeline_layout_, 0, 1, &gamma_set_, 0, nullptr);
+  f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, gamma_pipeline_layout_, 0, 1, &g.set, 0, nullptr);
   const int32_t region[4] = {int32_t(frame_x_), int32_t(frame_y_), int32_t(frame_.width), int32_t(frame_.height)};
   f.vkCmdPushConstants(cb, gamma_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(region), region);
   f.vkCmdDispatch(cb, (frame_.width + 7) / 8, (frame_.height + 7) / 8, 1);
-  Transition(cb, gamma_image_, gamma_image_layout_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+  if (batches_layout != VK_IMAGE_LAYOUT_UNDEFINED) {
+    Transition(cb, frame_image, frame_layout, batches_layout, VK_IMAGE_ASPECT_COLOR_BIT);
+  }
+  Transition(cb, g.image, g.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   VkImageBlit blit{};
   blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
   blit.srcOffsets[1] = {int32_t(frame_.width), int32_t(frame_.height), 1};
   blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
   blit.dstOffsets[0] = dst0;
   blit.dstOffsets[1] = dst1;
-  f.vkCmdBlitImage(cb, gamma_image_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+  f.vkCmdBlitImage(cb, g.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                    &blit, VK_FILTER_LINEAR);
 }
 
