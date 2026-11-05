@@ -2562,9 +2562,11 @@ bool VulkanRenderer::ResolveDepth(Surface& surface, bool float24, int32_t x0, in
 
 bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint32_t width, uint32_t height,
                                   uint32_t sample_x, uint32_t sample_y, uint32_t dest_base, uint32_t dest_pitch,
-                                  uint32_t dest_endian, VkFormat format) {
+                                  uint32_t dest_endian, VkFormat format, int32_t dest_dx, int32_t dest_dy) {
   const Functions& f = device_.fn();
-  const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(y0) + height + 31) & ~31u;
+  // The destination's texels: the source's coordinates, moved by dest_dx/dest_dy within a containing resolve.
+  const int32_t dx0 = x0 + dest_dx, dy0 = y0 + dest_dy;
+  const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(dy0) + height + 31) & ~31u;
   Resolved& r = resolved_[dest_base];
   // Scaled as the surface is: textures copied from it keep the resolution.
   const int32_t s = int32_t(scale_);
@@ -2591,13 +2593,19 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
   region.srcOffsets[0] = {x0 * int32_t(sample_x) * s, y0 * int32_t(sample_y) * s, 0};
   region.srcOffsets[1] = {(x0 + int32_t(width)) * int32_t(sample_x) * s, (y0 + int32_t(height)) * int32_t(sample_y) * s, 1};
-  region.dstOffsets[0] = {x0 * s, y0 * s, 0};
-  region.dstOffsets[1] = {(x0 + int32_t(width)) * s, (y0 + int32_t(height)) * s, 1};
+  region.dstOffsets[0] = {dx0 * s, dy0 * s, 0};
+  region.dstOffsets[1] = {(dx0 + int32_t(width)) * s, (dy0 + int32_t(height)) * s, 1};
   f.vkCmdBlitImage(cb, surface.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, r.image.image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region,
                    sample_x * sample_y > 1 ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
-  r.pitch = pitch, r.endian = dest_endian, r.x = uint32_t(x0), r.y = uint32_t(y0), r.width = width, r.height = height;
+  // The rectangle to write back: this one, with what earlier ones left unwritten (another player's half).
+  uint32_t rx0 = uint32_t(dx0), ry0 = uint32_t(dy0), rx1 = rx0 + width, ry1 = ry0 + height;
+  if (r.stale && r.width && r.height) {
+    rx0 = std::min(rx0, r.x), ry0 = std::min(ry0, r.y);
+    rx1 = std::max(rx1, r.x + r.width), ry1 = std::max(ry1, r.y + r.height);
+  }
+  r.pitch = pitch, r.endian = dest_endian, r.x = rx0, r.y = ry0, r.width = rx1 - rx0, r.height = ry1 - ry0;
   r.stale = true;
   r.scale = scale_;
   if (textures_) {
@@ -2705,7 +2713,8 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   const uint32_t dest_info = regs[kRbCopyDestInfo];
   const uint32_t dest_endian = dest_info & 7, dest_format = (dest_info >> 7) & 0x3F, dest_swap = (dest_info >> 24) & 1;
   const int32_t dest_bias = int32_t(dest_info << 10) >> 26;  // bits 16-21, signed
-  const uint32_t dest_base = regs[kRbCopyDestBase] & 0x1FFFFFFF, dest_pitch = regs[kRbCopyDestPitch] & 0x3FFF;
+  uint32_t dest_base = regs[kRbCopyDestBase] & 0x1FFFFFFF;
+  const uint32_t dest_pitch = regs[kRbCopyDestPitch] & 0x3FFF;
   if ((dest_info >> 3) & 1) {
     Fail("resolve to a 3D / array destination (not yet)");
     return;
@@ -2744,9 +2753,50 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
                                          dest_pitch, dest_endian)) {
     return;
   }
-  if (gpu_format != VK_FORMAT_UNDEFINED &&
-      !ResolveOnGpu(*surface, x0, y0, width, height, sample_x, sample_y, dest_base, dest_pitch, dest_endian, gpu_format)) {
-    return;
+  if (gpu_format != VK_FORMAT_UNDEFINED) {
+    // A destination within one an earlier resolve kept on the GPU (same pitch and format), at a whole tile of it:
+    // that image at the tile's place. The Simpsons Game's split screen resolves each player's half to the full
+    // screen's base, the second half's at the base plus x 640's tiled offset; apart, a texture of the whole screen
+    // would read the first half only.
+    const uint32_t aligned_pitch = (dest_pitch + 31) & ~31u;
+    int32_t dest_dx = 0, dest_dy = 0;
+    for (auto it = resolved_.lower_bound(dest_base); it != resolved_.begin();) {
+      --it;
+      const Resolved& c = it->second;
+      if (!c.image.image || c.image.format != gpu_format || c.pitch != aligned_pitch || c.scale != scale_ ||
+          c.endian != dest_endian) {
+        continue;
+      }
+      const uint32_t delta = dest_base - it->first;
+      if (uint64_t(delta) >= uint64_t(aligned_pitch) * (c.image.height / c.scale) * 4) continue;
+      int32_t dx = -1, dy = -1;
+      for (uint32_t ty = 0; ty < c.image.height / c.scale && dx < 0; ty += 32) {
+        for (uint32_t tx = 0; tx < aligned_pitch; tx += 32) {
+          if (uint32_t(TiledOffset2D(int32_t(tx), int32_t(ty), dest_pitch, 2)) == delta) {
+            dx = int32_t(tx), dy = int32_t(ty);
+            break;
+          }
+        }
+      }
+      if (dx < 0) continue;
+      const auto own = resolved_.find(dest_base);
+      if (own != resolved_.end()) {
+        // An image of its own from before: superseded (its texels now live in the containing one).
+        if (own->second.stale) WriteBackResolved(own->first, own->second);
+        Record();
+        batch().retired.push_back(own->second.image);
+        if (own->second.small.image) batch().retired.push_back(own->second.small);
+        resolved_.erase(own);
+        if (textures_) textures_->DropGpuSources(dest_base, dest_base + 1);
+      }
+      dest_base = it->first;
+      dest_dx = dx, dest_dy = dy;
+      break;
+    }
+    if (!ResolveOnGpu(*surface, x0, y0, width, height, sample_x, sample_y, dest_base, dest_pitch, dest_endian,
+                      gpu_format, dest_dx, dest_dy)) {
+      return;
+    }
   }
   // Read back as well: what the CPU may read (small resolves) and front buffers (presented from guest memory), when
   // the CPU path has the format.
