@@ -228,6 +228,12 @@ From the Crackdown runs (each one cost a debugging session there):
    confirms it, and no known title emits them. Rectangle and point lists (their vertex shader loads guest indices
    from memory) still refuse them. Scenarios: a 16-bit triangle (its half order checked), a 32-bit quad list and a
    strip with primitive reset.
+   2D primitives (0x10-0x16: copy rect lists V0-V3, fill rect list, 2D line and triangle strips) stay refused, for
+   want of a source: the reference refuses them, Mesa's AMD and Adreno register files and RADV only name them, and
+   AMD's R6xx/R7xx 3D Register Reference (2009) lists them by name only (its VGT_GROUP_PRIM_TYPE grouper types
+   VGT_GRP_2D_COPY_RECT_V0-V3 / FILL_RECT / LINE / TRI likewise; PA_SC_LINE_CNTL's Bresenham control is "set for 2D
+   lines"). Their vertex counts, what V0-V3 differ in and whether they bypass clipping and the viewport transform
+   are not documented there; no known title draws them.
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured
