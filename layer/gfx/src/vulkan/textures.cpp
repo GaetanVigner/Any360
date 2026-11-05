@@ -94,7 +94,7 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
     case 10: return &k8_8;
     case 4: return &k5_6_5;
     case 6: return &k8_8_8_8;
-    case 7: return &k2_10_10_10;
+    case 7: case 54: return &k2_10_10_10;  // and k_2_10_10_10_AS_16_16_16_16 (only its filtering differs)
     case 18: return &kDxt1;
     case 19: return &kDxt3;
     case 20: return &kDxt5;
@@ -494,7 +494,9 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       const bool same_bytes =
           it != gpu_sources_.end() &&
           (it->second.format == info->format ||
-           (it->second.format == VK_FORMAT_B8G8R8A8_UNORM && info->format == VK_FORMAT_R8G8B8A8_UNORM));
+           (it->second.format == VK_FORMAT_B8G8R8A8_UNORM && info->format == VK_FORMAT_R8G8B8A8_UNORM) ||
+           (it->second.format == VK_FORMAT_A2R10G10B10_UNORM_PACK32 &&
+            info->format == VK_FORMAT_A2B10G10R10_UNORM_PACK32));
       if (!same_bytes || it->second.depth != depth_texture || it->second.pitch != t.pitch ||
           it->second.endian != t.endian || (!sources.empty() && it->second.scale != sources[0]->scale) ||
           t.width * it->second.scale > it->second.width || t.height * it->second.scale > it->second.height) {
@@ -591,7 +593,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
         dependency.imageMemoryBarrierCount = 1;
         dependency.pImageMemoryBarriers = &barrier;
         f.vkCmdPipelineBarrier2(cb, &dependency);
-        // The destination's bytes as they are (a B8G8R8A8 source is an 8-bit resolve with the red/blue swap).
+        // The destination's bytes as they are (a B8G8R8A8 or A2R10G10B10 source is a resolve with the red/blue swap).
         for (uint32_t slice = 0; slice < uint32_t(sources.size()); ++slice) {
           VkImageCopy region{};
           region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};

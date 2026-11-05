@@ -465,7 +465,13 @@ namespace {
 bool Is64bpp(uint32_t color_format) { return color_format == 5 || color_format == 7 || color_format == 15; }
 }  // namespace
 
-VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& key) {
+VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& requested) {
+  // The AS_ formats are the same EDRAM data as their base format (the reference's GetBaseColorFormat):
+  // k_2_10_10_10_AS_10_10_10_10 is k_2_10_10_10, k_2_10_10_10_FLOAT_AS_16_16_16_16 is k_2_10_10_10_FLOAT. One
+  // surface for both, or what a title draws as one is not there when it resolves or draws as the other.
+  SurfaceKey key = requested;
+  if (!key.depth && key.format == 10) key.format = 2;
+  if (!key.depth && key.format == 12) key.format = 3;
   auto& slot = surfaces_[key];
   if (slot) return slot->image.image ? slot.get() : nullptr;
   slot = std::make_unique<Surface>();
@@ -2716,6 +2722,11 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       gpu_format = host_format;
     } else if (!dest_swap && dest_format == 31 && host_format == VK_FORMAT_R16G16_SFLOAT) {
       gpu_format = host_format;  // k_16_16_FLOAT
+    } else if (dest_format == 7 &&
+               (host_format == VK_FORMAT_A8B8G8R8_UNORM_PACK32 || host_format == VK_FORMAT_A2B10G10R10_UNORM_PACK32)) {
+      // k_2_10_10_10 (a 10-bit front buffer: The Simpsons Game) from a k_2_10_10_10 target, its red/blue swap kept
+      // in the image's component order as the 8-bit path does.
+      gpu_format = dest_swap ? VK_FORMAT_A2R10G10B10_UNORM_PACK32 : VK_FORMAT_A2B10G10R10_UNORM_PACK32;
     }
   }
   // A depth resolve: one sample a pixel, the depth value for the depth texture formats, on the GPU too.
@@ -2894,6 +2905,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       switch (source_key.format) {
         case 0: case 1:  // 8_8_8_8 (gamma alike)
           for (uint32_t j = 0; j < 4; ++j) color_value.color.float32[j] = float((clear >> (8 * j)) & 0xFF) / 255.0f;
+          break;
+        case 2: case 10:  // 2_10_10_10 (and AS_10_10_10_10): three 10-bit components and a 2-bit alpha
+          for (uint32_t j = 0; j < 3; ++j) color_value.color.float32[j] = float((clear >> (10 * j)) & 0x3FF) / 1023.0f;
+          color_value.color.float32[3] = float((clear >> 30) & 3) / 3.0f;
           break;
         case 6: case 7:  // 16-bit float
           for (uint32_t j = 0; j < 4; ++j) color_value.color.float32[j] = HalfToFloat(uint16_t(clear >> (16 * j)));
@@ -3258,11 +3273,14 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
   // red/blue swap undone by the fetch swizzle or absent): presented from that image.
   const uint32_t front = fetch.base & 0x1FFFFFFF;
   const auto front_resolve = resolved_.find(front);
-  if (front_resolve != resolved_.end() && fetch.type == 2 && fetch.format == 6) {
+  // The same for a 10-bit front buffer (k_2_10_10_10, or its AS_16_16_16_16 form) resolved into a 10-bit image.
+  const bool eight_bit = fetch.format == 6, ten_bit = fetch.format == 7 || fetch.format == 54;
+  if (front_resolve != resolved_.end() && fetch.type == 2 && (eight_bit || ten_bit)) {
     Resolved& r = front_resolve->second;
-    const uint32_t swizzle = fetch.swizzle & 0x1FF;
-    const bool as_shown = (r.image.format == VK_FORMAT_R8G8B8A8_UNORM && swizzle == (0 | 1 << 3 | 2 << 6)) ||
-                          (r.image.format == VK_FORMAT_B8G8R8A8_UNORM && swizzle == (2 | 1 << 3 | 0 << 6));
+    const uint32_t swizzle = fetch.swizzle & 0x1FF, rgb = 0 | 1 << 3 | 2 << 6, bgr = 2 | 1 << 3 | 0 << 6;
+    const VkFormat in_order = eight_bit ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+    const VkFormat swapped = eight_bit ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_A2R10G10B10_UNORM_PACK32;
+    const bool as_shown = (r.image.format == in_order && swizzle == rgb) || (r.image.format == swapped && swizzle == bgr);
     if (as_shown && fetch.endian == r.endian && r.x == 0 && r.y == 0) {
       next.width = std::min({width ? width : fetch.width, fetch.width, r.width}) * r.scale;
       next.height = std::min({height ? height : fetch.height, fetch.height, r.height}) * r.scale;
