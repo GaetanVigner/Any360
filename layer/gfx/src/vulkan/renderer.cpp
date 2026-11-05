@@ -270,13 +270,14 @@ bool VulkanRenderer::Initialize() {
     if (f.vkCreateDescriptorPool(d, &draw_pool_info, nullptr, &b.draw_pool) != VK_SUCCESS) return Fail("texture descriptor pool");
   }
 
-  // Guest memory for the shaders: imported in place when the device can (VK_EXT_external_memory_host, an aligned
-  // allocation), so nothing is copied; otherwise a mirror copied before each draw.
-  shared_memory_imported_ = ImportGuestMemory();
-  vram_guest_on_ = shared_memory_imported_ &&
-                   CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+  // Guest memory for the shaders: a copy in video memory, its pages filled from each batch's staging buffer (copied
+  // on the CPU at the flush) as draws fetch them. Not imported into the device (VK_EXT_external_memory_host): the
+  // title's own code ran ~1.4x slower on imported memory (measured in game on the same route). Without video memory
+  // for it: imported in place, or else a mirror copied before each draw.
+  vram_guest_on_ = CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                 false, vram_guest_);
-  if (!shared_memory_imported_ && !CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, shared_memory_)) {
+  shared_memory_imported_ = !vram_guest_on_ && ImportGuestMemory();
+  if (!shared_memory_imported_ && !vram_guest_on_ && !CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, shared_memory_)) {
     return Fail("guest memory buffer");
   }
   // Each batch's rings: constants and indices of every draw until the next flush.
@@ -2168,7 +2169,7 @@ void VulkanRenderer::Flush() {
   submitted_at_[uint32_t(&b - batches_.data())] = std::chrono::steady_clock::now();
   // Guest memory the batch's shaders fetch from: read in place, or copied once here (the draws run now, so they
   // see memory as it is now either way).
-  if (!shared_memory_imported_) {
+  if (!shared_memory_imported_ && !vram_guest_on_) {
     // Only what the batch reads: copying all of guest memory at every submission (several a frame: each resolve
     // submits) costs far more than the draws.
     Timer memory_timer(stats_.ns_memory);
@@ -2260,6 +2261,10 @@ void VulkanRenderer::Flush() {
       }
     }
     const bool staged = b.guest_staging.size >= total;
+    if (!staged && !shared_memory_imported_) {
+      Fail("guest memory staging buffer");  // nothing else to copy from: these pages stay as they were
+      upload_regions_.clear();
+    }
     if (staged) {
       VkDeviceSize at = 0;
       for (VkBufferCopy& region : upload_regions_) {
@@ -2269,8 +2274,10 @@ void VulkanRenderer::Flush() {
       }
     }
     b.captured = staged;
-    f.vkCmdCopyBuffer(b.upload_cb, staged ? b.guest_staging.buffer : shared_memory_.buffer, vram_guest_.buffer,
-                      uint32_t(upload_regions_.size()), upload_regions_.data());
+    if (!upload_regions_.empty()) {
+      f.vkCmdCopyBuffer(b.upload_cb, staged ? b.guest_staging.buffer : shared_memory_.buffer, vram_guest_.buffer,
+                        uint32_t(upload_regions_.size()), upload_regions_.data());
+    }
     if (timestamps_) f.vkCmdWriteTimestamp2(b.upload_cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, stamp + 1);
     f.vkEndCommandBuffer(b.upload_cb);
     for (const VkBufferCopy& region : upload_regions_) stats_.guest_upload_bytes += region.size;
@@ -2303,7 +2310,7 @@ void VulkanRenderer::Flush() {
     if (submitted_unlisted_ == int32_t(submitted)) submitted_unlisted_ = -1;
   }
   work_cv_.notify_one();
-  if (!shared_memory_imported_) WaitBatch(submitted);  // the mirror is rewritten for the next batch
+  if (!shared_memory_imported_ && !vram_guest_on_) WaitBatch(submitted);  // the mirror is rewritten for the next batch
   // The next batch: the oldest of the ring, once the GPU has run it; what it used is free again.
   current_ = (current_ + 1) % kBatches;
   WaitBatch(current_);
