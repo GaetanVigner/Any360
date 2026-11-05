@@ -2750,8 +2750,11 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   }
   // Read back as well: what the CPU may read (small resolves) and front buffers (presented from guest memory), when
   // the CPU path has the format.
+  // A 10-bit resolve kept on the GPU is written back from its image's bytes too (a texture taller than the resolve,
+  // its other rows written by the CPU, reads guest memory: The Simpsons Game's 64x8 palette rows in a 64x64 texture).
   const bool cpu_has_format = is_depth || (dest_format == 6 && host_format == VK_FORMAT_R8G8B8A8_UNORM) ||
-                              (dest_format == 32 && host_format == VK_FORMAT_R16G16B16A16_SFLOAT);
+                              (dest_format == 32 && host_format == VK_FORMAT_R16G16B16A16_SFLOAT) ||
+                              (dest_format == 7 && gpu_format != VK_FORMAT_UNDEFINED);
   const bool read_back =
       !on_gpu || (cpu_has_format && (uint64_t(width) * height * (dest_format == 32 ? 8 : 4) <= kReadBackMaxBytes ||
                                      (front_buffers_.count(dest_base) && !front_on_gpu_.count(dest_base))));
