@@ -952,6 +952,12 @@ void StopGraphics() {
 
 bool GraphicsBound() { return g_bound; }
 
+uint64_t GpuProgress() { return g_binding ? g_binding->cp->Progress() : 0; }
+
+void WaitGpuProgress(uint64_t seen, uint32_t timeout_us) {
+  if (g_binding) g_binding->cp->WaitProgress(seen, std::chrono::microseconds(timeout_us));
+}
+
 GuestFunction ReferenceExport(const char* symbol) {
 #ifdef _WIN32
   for (const char* module : {"rexruntime.dll", "rexruntimerd.dll", "rexruntimed.dll"}) {

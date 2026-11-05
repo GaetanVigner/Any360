@@ -111,6 +111,12 @@ void ReportRuntimeFrames(std::function<void(const std::string&)> log, double sec
 void StopGraphics();
 // Whether the Vd* overrides go to Any360 (fixed by the first StartGraphics, before the title's first Vd* call).
 bool GraphicsBound();
+// The GPU's progress as the guest sees it, for a title's own wait loops (its runtime's ring-progress wait has
+// nothing to wait for once the graphics are bound): a count that moves with it, and a wait for the count to move
+// (at most `timeout_us`). 0 and an immediate return while not bound.
+#define ANY360_REXGLUE_GPU_PROGRESS 1
+uint64_t GpuProgress();
+void WaitGpuProgress(uint64_t seen, uint32_t timeout_us);
 
 using GuestFunction = void (*)(PPCContext&, uint8_t*);
 // The runtime's own implementation of an export (`__imp__VdSwap`), looked up in its library by name; null when absent.

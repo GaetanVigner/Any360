@@ -206,6 +206,11 @@ std::vector<CommandProcessor::WaitSite> CommandProcessor::TakeWaitSites() {
   return sites;
 }
 
+void CommandProcessor::WaitProgress(uint64_t seen, std::chrono::microseconds timeout) {
+  std::unique_lock<std::mutex> lock(progress_mutex_);
+  progress_cv_.wait_for(lock, timeout, [&] { return progress_ != seen || stopping_; });
+}
+
 void CommandProcessor::NotifyProgress() {
   {
     std::lock_guard<std::mutex> lock(progress_mutex_);
@@ -425,6 +430,7 @@ bool CommandProcessor::Execute() {
     SetRegister(reg::CP_RB_RPTR, write);
     // The commands it passed were read (constants, indices and microcode copied as they were): no draw to wait for.
     if (write_back_) StoreBig(write_back_, write);
+    NotifyProgress();  // the CPU may be waiting for ring space
     if (renderer_) renderer_->Flush();  // what this kick recorded starts on the GPU
   }
   busy_ = false;
