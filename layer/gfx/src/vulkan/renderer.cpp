@@ -609,7 +609,9 @@ void VulkanRenderer::ResolveSamples(VkCommandBuffer cb, Surface& s, int32_t x0, 
   a.resolveImageView = s.image.view;
   a.resolveImageLayout = attachment;
   a.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-  a.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  // The samples are read, never written: not stored back (STORE would write the whole area again, as much traffic
+  // as the load). The resolve attachment is written whatever the store op.
+  a.storeOp = VK_ATTACHMENT_STORE_OP_NONE;
   VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
   rendering.renderArea = {{left, top}, {uint32_t(right - left), uint32_t(bottom - top)}};
   rendering.layerCount = 1;
