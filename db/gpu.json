@@ -1964,7 +1964,7 @@
 "name":"alpha to coverage",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:colour exponent bias",
@@ -2160,7 +2160,7 @@
 "name":"occlusion queries",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:memexport",

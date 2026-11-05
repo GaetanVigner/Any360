@@ -209,6 +209,13 @@ From the Crackdown runs (each one cost a debugging session there):
    without geometry shaders (the renderer drew sizeless host points). Point sprite coordinates (pixel parameter
    generation on points) stay to do. Anisotropic filtering (a 4:1 fetch constant keeps the finer level of a
    texture read obliquely) and bin predication (gfx_cp_tests) are tested too.
+   Alpha to coverage and occlusion queries (2026-11-05): RB_COLORCONTROL's alpha_to_mask_enable and dither offsets
+   never reached the shader. Guest samples are host pixels here, so the translator (an any360 mode, as the reference
+   does it per host sample) finds a fragment's guest pixel and sample from its position and discards it when alpha
+   is below the sample's threshold (1x 1, 2x top 0.5 / bottom 1, 4x TL 0.75 / BL 0.25 / TR 0.5 / BR 1) less the
+   pixel's offset; gl_SampleMask is no longer declared, so the host's own MSAA keeps every sample of a kept fragment.
+   Scenarios at 1x, 2x and 4x. Occlusion queries, already counted by host queries, got their scenario: a full quad
+   reports every sample and one the alpha test discards none.
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured

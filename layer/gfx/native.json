@@ -226,6 +226,8 @@
   "primitive types:kPointList",
   "render features:anisotropic filtering",
   "render features:predication (bins)",
+  "render features:alpha to coverage",
+  "render features:occlusion queries",
   "texture formats:k_6_5_5",
   "texture formats:k_16_EXPAND",
   "texture formats:k_16_16_EXPAND",

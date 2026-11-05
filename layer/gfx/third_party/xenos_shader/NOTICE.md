@@ -38,6 +38,11 @@ Each vendored file also keeps its original header.
   return goes back to).
 - `include/rex/graphics/pipeline/shader/spirv_translator.h`: the call and return overrides and the call stack
   variables.
+- Alpha to coverage with guest samples as pixels (`SetSamplesAsPixels`, in `spirv_translator.h`,
+  `spirv_translator.cpp` and `spirv_translator_rb.cpp`): the reference sets one bit a host sample in gl_SampleMask;
+  Any360 keeps each guest sample in its own host pixels, so the fragment's guest pixel and sample come from its
+  position and an uncovered fragment is discarded, with the reference's thresholds and dither offsets; no sample
+  mask output is declared then.
 
 ## Ours: `shim/include/rex/...`
 

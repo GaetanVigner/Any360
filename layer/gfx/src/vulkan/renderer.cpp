@@ -113,6 +113,7 @@ VulkanRenderer::VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirro
   // Every translator feature on: what desktop Vulkan 1.3 drivers and RADV offer (to be read from the device).
   translator_ = std::make_unique<SpirvShaderTranslator>(SpirvShaderTranslator::Features(true), true, true, false, scale_,
                                                         scale_);
+  translator_->SetSamplesAsPixels(true);  // guest samples are pixels of the host targets
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -1428,6 +1429,10 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t alpha_func = (color_control & (1u << 3)) ? (color_control & 7) : 7;
   system->flags |= alpha_func << SpirvShaderTranslator::kSysFlag_AlphaPassIfLess_Shift;
   system->alpha_test_reference = AsFloat(regs[kRbAlphaRef]);
+  // Alpha to coverage (RB_COLORCONTROL alpha_to_mask_enable, the dither offsets in bits 24-31) as the reference
+  // passes it, with the guest MSAA mode that places each fragment's guest sample.
+  system->alpha_to_mask = (color_control & (1u << 4)) ? (color_control >> 24) | (1u << 8) : 0;
+  system->flags |= ((regs[kRbSurfaceInfo] >> 16) & 3) << SpirvShaderTranslator::kSysFlag_MsaaSamples_Shift;
   // The enabled user clip planes (PA_CL_UCP_n), packed in order.
   for (uint32_t bits = clip_planes, n = 0; bits; bits &= bits - 1, ++n) {
     std::memcpy(system->user_clip_planes[n], regs + kPaClUcp0X + 4 * std::countr_zero(bits), 16);

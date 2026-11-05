@@ -614,6 +614,81 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: MSAA 2x as samples: %u of %u samples\n", p.Count(color), kSize * kSize);
     CHECK(p.Count(color) == kSize * kSize);
   }
+  // Alpha to coverage (RB_COLORCONTROL alpha_to_mask_enable): a sample is kept when alpha reaches its threshold less
+  // the pixel's dither offset. 1x, alpha 0.5: offsets 3 at even x and y only (threshold 1 - 3/4) keep a quarter; 2x,
+  // alpha 0.6: the top samples (0.5) and not the bottom ones (1); 4x, alpha 0.6: BL (0.25) and TR (0.5), not TL
+  // (0.75) or BR (1).
+  {
+    const uint32_t half = Rgba(30, 160, 90, 128), more = Rgba(30, 160, 90, 153);
+    Pixels p = scenario("alpha to coverage 1x", nullptr, [&] {
+      s.Reg(0x2202, 1u << 4 | 3u << 24);
+      s.Vertices(0);
+      s.Color(30, 160, 90, 128);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2202, 0);
+    });
+    const uint32_t kept_1x = p.Count(half);
+    CHECK(kept_1x == kSize * kSize / 4 && p.At(0, 0) == half && p.At(1, 0) == kBlack && p.At(0, 1) == kBlack);
+    p = scenario("alpha to coverage 2x", nullptr, [&] {
+      s.Reg(0x2000, 64u | 1u << 16);
+      s.Reg(0x2302, 1);
+      s.Put({Type0(0x210F, 6), Bits(32), Bits(32), Bits(-16), Bits(16), Bits(1), Bits(0)});
+      s.Put({Type0(0x200E, 2), 0, 32u << 16 | 64u});
+      s.Put({Type0(0x2080, 3), 0, 0, 32u << 16 | 64u});
+      s.Reg(0x2202, 1u << 4);
+      s.Vertices(0);
+      s.Color(30, 160, 90, 153);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2202, 0);
+      s.Reg(0x2302, 0);
+    });
+    const uint32_t kept_2x = p.Count(more);
+    CHECK(kept_2x == kSize * kSize / 2 && p.At(5, 0) == more && p.At(5, 1) == kBlack);
+    p = scenario("alpha to coverage 4x", nullptr, [&] {
+      s.Reg(0x2000, 32u | 2u << 16);
+      s.Reg(0x2302, 1);
+      s.Put({Type0(0x210F, 6), Bits(16), Bits(16), Bits(-16), Bits(16), Bits(1), Bits(0)});
+      s.Put({Type0(0x200E, 2), 0, 32u << 16 | 32u});
+      s.Put({Type0(0x2080, 3), 0, 0, 32u << 16 | 32u});
+      s.Reg(0x2202, 1u << 4);
+      s.Vertices(0);
+      s.Color(30, 160, 90, 153);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2202, 0);
+      s.Reg(0x2302, 0);
+    });
+    const uint32_t kept_4x = p.Count(more);
+    std::printf("gfx_render_tests: alpha to coverage: 1x %u, 2x %u, 4x %u of %u samples\n", kept_1x, kept_2x, kept_4x,
+                kSize * kSize);
+    CHECK(kept_4x == kSize * kSize / 2 && p.At(0, 1) == more && p.At(1, 0) == more && p.At(0, 0) == kBlack &&
+          p.At(1, 1) == kBlack);
+  }
+  // Occlusion queries (EVENT_WRITE_ZPD): a begin block (no end markers), the draws, an end block (D3D's markers in
+  // its ZPass words): the renderer's count lands in the end block once the draws ran. A full-target quad passes every
+  // sample; one the alpha test (GREATER 0.5 on alpha 0.25) discards passes none.
+  if (renderer.CountsSamples()) {
+    const uint32_t begin = 0x1F0000, end = 0x1F0040;
+    uint32_t counts[2] = {};
+    for (uint32_t i = 0; i < 2; ++i) {
+      std::memset(g_memory + begin, 0, 0x80);
+      for (uint32_t word = 8; word < 24; word += 4) SetBig(end + word, 0xFFFFFEED);
+      scenario("occlusion query", nullptr, [&] {
+        s.Reg(0x2325, begin);
+        s.Put({Type3(pm4::EVENT_WRITE_ZPD, 1), 0x15});
+        if (i) s.Reg(0x210E, Bits(0.5f)), s.Reg(0x2202, 4u | 1u << 3);
+        s.Vertices(0);
+        s.Color(90, 40, 200, i ? 64 : 255);
+        s.DrawAuto(kTriangleStrip, 4);
+        s.Reg(0x2202, 0);
+        s.Reg(0x2325, end);
+        s.Put({Type3(pm4::EVENT_WRITE_ZPD, 1), 0x15});
+      });
+      renderer.WaitIdle();
+      std::memcpy(&counts[i], g_memory + end + 16, 4);  // ZPass_A, host order
+    }
+    std::printf("gfx_render_tests: occlusion queries: %u and %u samples passed\n", counts[0], counts[1]);
+    CHECK(counts[0] == kSize * kSize && counts[1] == 0);
+  }
   // User clip plane 0 (PA_CL_CLIP_CNTL ucp_ena_0, PA_CL_UCP_0 = x >= 0 in clip space): the right half is kept.
   {
     const uint32_t color = Rgba(240, 120, 0, 255);
