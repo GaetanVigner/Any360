@@ -31,9 +31,16 @@ struct GuestContext {
   uint32_t kthread = 0, pcr = 0, stack_top = 0;
 };
 
+// Runs body(arg) as a guest thread of the title's host must be, returning when it does: a binder whose other kernel
+// answers calls only on its own threads runs it inside one of those. Unset, body runs on the calling host thread.
+using ThreadRunner = void (*)(void (*body)(void*), void* arg, void* user);
+
 class Scheduler {
  public:
   void SetDispatcher(Dispatcher dispatcher, void* user);
+  // How the host threads that run guest code (the threads, the DPC worker) run it.
+  void SetThreadRunner(ThreadRunner runner, void* user);
+  void RunAsGuestThread(void (*body)(void*), void* arg) const;
   // The KPROCESS new threads belong to (its type and TLS bitmap); allocated in the kernel heap when none is set.
   void SetProcess(uint32_t kprocess);
   uint32_t process() const { return process_; }
@@ -118,6 +125,8 @@ class Scheduler {
   void PauseWhileSuspended(Guest g, Thread* thread);
 
   Dispatcher dispatcher_ = nullptr;
+  ThreadRunner runner_ = nullptr;
+  void* runner_user_ = nullptr;
   void* dispatcher_user_ = nullptr;
   uint32_t process_ = 0;
   uint32_t default_stack_size_ = 0x10000;

@@ -68,6 +68,19 @@ void Scheduler::SetDispatcher(Dispatcher dispatcher, void* user) {
   dispatcher_user_ = user;
 }
 
+void Scheduler::SetThreadRunner(ThreadRunner runner, void* user) {
+  runner_ = runner;
+  runner_user_ = user;
+}
+
+void Scheduler::RunAsGuestThread(void (*body)(void*), void* arg) const {
+  if (runner_) {
+    runner_(body, arg, runner_user_);
+  } else {
+    body(arg);
+  }
+}
+
 void Scheduler::SetProcess(uint32_t kprocess) { process_ = kprocess; }
 
 void Scheduler::Shutdown() {
@@ -319,7 +332,7 @@ uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_si
   {
     // Run starts by taking this lock, so a thread that ends at once cannot free `t` before it holds its host thread.
     std::lock_guard lock(t->mutex);
-    t->host = std::thread([this, t] { Run(t); });
+    t->host = std::thread([this, t] { RunAsGuestThread([](void* thread) { Threads().Run(static_cast<Thread*>(thread)); }, t); });
   }
   return kStatusSuccess;
 }

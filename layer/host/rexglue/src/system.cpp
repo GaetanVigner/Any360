@@ -9,6 +9,7 @@
 #include <rex/system/xevent.h>
 #include <rex/system/xex_module.h>
 #include <rex/system/xmemory.h>
+#include <rex/system/xthread.h>
 
 #include <array>
 #include <atomic>
@@ -167,6 +168,19 @@ void CallBothExport(SysGroup group, const char* name, GuestFunction any360, Gues
   if (reference) RunReference(name, reference, copy, base);
 }
 
+static void RunInRuntimeThread(void (*body)(void*), void* arg, void*) {
+  auto* kernel = REX_KERNEL_STATE();
+  auto thread = rex::system::make_object<rex::system::XHostThread>(kernel, 16 * 1024, 0, [body, arg] {
+    body(arg);
+    return 0;
+  });
+  if (!kernel || thread->Create() != 0) {
+    body(arg);  // no runtime thread to be: run as before
+    return;
+  }
+  thread->Wait(0, 0, 0, nullptr);
+}
+
 uint64_t DispatchGuest(uint32_t address, uint32_t stack_top, uint32_t pcr, const uint64_t* args, uint32_t count, void*) {
   auto* kernel = REX_KERNEL_STATE();
   if (!kernel || !kernel->emulator()) return 0;
@@ -274,6 +288,9 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
     for (const std::string& link : mount.links) any360::sys::Files().Link(link, mount.device);
   }
   any360::sys::Threads().SetDispatcher(&DispatchGuest, nullptr);
+  // The runtime answers calls (its XAM, audio, input, memory while they are its) only on its own threads: any360::sys's
+  // threads run inside one each (an XHostThread, whose KTHREAD and PCR the guest code never sees).
+  any360::sys::Threads().SetThreadRunner(&RunInRuntimeThread, nullptr);
   // The title as the runtime loaded it: XamGetCurrentTitleId, RtlImageXexHeaderField's callers and the variables
   // (XexExecutableModuleHandle, ExLoadedImageName...) answer from these.
   g_started = true;
