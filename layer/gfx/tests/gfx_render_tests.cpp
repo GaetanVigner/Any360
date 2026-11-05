@@ -560,8 +560,9 @@ int main(int argc, char** argv) {
     };
     const Target targets[] = {
         {"k_8_8_8_8_GAMMA", 1, {1, 0, 1, 0}, 4, {255, 0, 255, 0}},
-        {"k_2_10_10_10", 2, {0.2f, 0.6f, 1, 0.4f}, 4, {51, 153, 255, 102}},
-        {"k_2_10_10_10_AS_10_10_10_10", 10, {0.2f, 0.6f, 1, 0.4f}, 4, {51, 153, 255, 102}},
+        // 10-bit components and a 2-bit alpha, kept at that precision (titles pack data into them).
+        {"k_2_10_10_10", 2, {0.2f, 0.6f, 1, 0.4f}, 4, {205, 614, 1023, 1}},
+        {"k_2_10_10_10_AS_10_10_10_10", 10, {0.2f, 0.6f, 1, 0.4f}, 4, {205, 614, 1023, 1}},
         {"k_2_10_10_10_FLOAT", 3, {0.5f, -2, 1024, 0.125f}, 8, {0x3800, 0xC000, 0x6400, 0x3000}},
         {"k_2_10_10_10_FLOAT_AS_16_16_16_16", 12, {0.5f, -2, 1024, 0.125f}, 8, {0x3800, 0xC000, 0x6400, 0x3000}},
         // The 16-bit fixed-point formats hold -32...32: the shader's 8 is a quarter of full scale.
@@ -586,11 +587,15 @@ int main(int argc, char** argv) {
       int64_t got[4] = {};
       if (bytes.size() == size_t(kSize) * kSize * target.bytes) {
         const uint8_t* texel = bytes.data() + (32 * kSize + 32) * target.bytes;
-        const bool unorm8 = target.format == 1 || target.format == 2 || target.format == 10;
+        const bool unorm8 = target.format == 1, unorm10 = target.format == 2 || target.format == 10;
         const bool snorm = target.format == 4 || target.format == 5;
-        const uint32_t count = target.format == 14 ? 1 : target.bytes == 8 || unorm8 ? 4 : 2;
+        const uint32_t count = target.format == 14 ? 1 : target.bytes == 8 || unorm8 || unorm10 ? 4 : 2;
         for (uint32_t i = 0; i < count; ++i) {
-          if (unorm8) {
+          if (unorm10) {
+            uint32_t v;
+            std::memcpy(&v, texel, 4);
+            got[i] = i < 3 ? (v >> (10 * i)) & 0x3FF : v >> 30;
+          } else if (unorm8) {
             got[i] = texel[i];
           } else if (target.format == 14) {
             uint32_t v;
@@ -1273,8 +1278,8 @@ int main(int argc, char** argv) {
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
   // Render targets: colour 0, depth, colour 1, the 16_16_16_16_FLOAT target, the float24 depth surface and the nine
-  // render target formats.
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 14 && stats.texture_uploads == 6 && stats.resolves == 1);
+  // render target formats, of which the two AS_ ones share their base format's surface (12, not 14).
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 12 && stats.texture_uploads == 6 && stats.resolves == 1);
   // (The resolved texture is copied from the resolve on the GPU, not uploaded: 6 uploads, not 7.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.
@@ -1798,7 +1803,31 @@ int main(int argc, char** argv) {
       weights.opcode = F::kGetTextureWeights, weights.mag = weights.min = 1, weights.mip = 0;
       weights.dest_swizzle = 0 | 1 << 3 | kXYKeep;
       fetch_case("kGetTextureWeights", false, {tex(weights)}, 0b1, {}, {}, 0.5f, 0.5f, 1.0f / 256);
-      // kGetTextureBorderColorFrac: not tested, the translator does not implement it (a translation error).
+      // Border colour fraction, at coordinates c0.xy (in r2) on the 32x32 texture with X clamped to the border and Y
+      // mirror-clamped to it: the share of the footprint outside the texture. Linear (texel coordinate u * 32 - 0.5):
+      // inside 0; u = 0, half the left texel pair outside 0.5; v = 1, half the bottom pair 0.5; both 1 - 0.5 * 0.5;
+      // v = 0 mirrors texel -1 onto texel 0, inside: 0. Point, u = -1/32: the one texel outside, 1. Both in x and y.
+      t::Tex border;
+      border.opcode = F::kGetTextureBorderColorFrac, border.src = 2, border.mag = border.min = 1, border.mip = 0;
+      border.dest_swizzle = 0 | 0 << 3 | kXYKeep;
+      auto border_bind = [&s, quad, small] {
+        s.Shader(0, t::BuildTexturedVertexShader());
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+        s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 6u << 10 | 7u << 13 | 1u << 22, 6u | 2u << 6 | small,
+               31u | 31u << 13, 0x688u << 1, 0, 1u << 9});
+      };
+      struct Border {
+        float u, v, fraction;
+        bool point;
+      };
+      for (const Border& b : {Border{0.5f, 0.5f, 0, false}, Border{0, 0.5f, 0.5f, false}, Border{0.5f, 1, 0.5f, false},
+                              Border{0, 1, 0.75f, false}, Border{0.5f, 0, 0, false}, Border{-1.0f / 32, 0.5f, 1, true}}) {
+        t::Tex at = border;
+        if (b.point) at.mag = at.min = 0;
+        fetch_case("kGetTextureBorderColorFrac", false, {alu(load_r2), tex(at)}, 0b10, {b.u, b.v}, {}, b.fraction,
+                   b.fraction, 1.0f / 256);
+        cases.back().setup = border_bind;
+      }
     }
 
     // Vertex formats: a full-target quad whose vertices carry, after their float4 position, four dwords of an

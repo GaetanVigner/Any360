@@ -1040,7 +1040,7 @@
 "name":"kGetTextureBorderColorFrac",
 "family":"shader fetch",
 "value":16,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader fetch:kGetTextureComputedLod",

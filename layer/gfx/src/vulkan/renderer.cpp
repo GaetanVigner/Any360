@@ -489,7 +489,7 @@ VkFormat ColorTargetFormat(uint32_t color_format) {
   switch (color_format) {
     case 0: return VK_FORMAT_R8G8B8A8_UNORM;            // k_8_8_8_8
     case 1: return VK_FORMAT_R8G8B8A8_UNORM;            // k_8_8_8_8_GAMMA (gamma applied in the shader)
-    case 2: case 10: return VK_FORMAT_A8B8G8R8_UNORM_PACK32;  // k_2_10_10_10 (and AS_10_10_10_10), as the reference
+    case 2: case 10: return VK_FORMAT_A2B10G10R10_UNORM_PACK32;  // k_2_10_10_10 (and AS_10_10_10_10)
     case 3: case 12: return VK_FORMAT_R16G16B16A16_SFLOAT;   // k_2_10_10_10_FLOAT (and AS_16_16_16_16)
     case 4: return VK_FORMAT_R16G16_SNORM;              // k_16_16: -32...32 scaled to -1...1 by the exponent bias
     case 5: return VK_FORMAT_R16G16B16A16_SNORM;        // k_16_16_16_16: likewise
@@ -505,7 +505,13 @@ namespace {
 bool Is64bpp(uint32_t color_format) { return color_format == 5 || color_format == 7 || color_format == 15; }
 }  // namespace
 
-VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& key) {
+VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& requested) {
+  // The AS_ formats are the same EDRAM data as their base format (the reference's GetBaseColorFormat):
+  // k_2_10_10_10_AS_10_10_10_10 is k_2_10_10_10, k_2_10_10_10_FLOAT_AS_16_16_16_16 is k_2_10_10_10_FLOAT. One
+  // surface for both, or what a title draws as one is not there when it resolves or draws as the other.
+  SurfaceKey key = requested;
+  if (!key.depth && key.format == 10) key.format = 2;
+  if (!key.depth && key.format == 12) key.format = 3;
   auto& slot = surfaces_[key];
   if (slot) return slot->image.image ? slot.get() : nullptr;
   slot = std::make_unique<Surface>();
@@ -2917,9 +2923,11 @@ bool VulkanRenderer::ResolveDepth(Surface& surface, bool float24, int32_t x0, in
 
 bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint32_t width, uint32_t height,
                                   uint32_t sample_x, uint32_t sample_y, uint32_t dest_base, uint32_t dest_pitch,
-                                  uint32_t dest_endian, VkFormat format) {
+                                  uint32_t dest_endian, VkFormat format, int32_t dest_dx, int32_t dest_dy) {
   const Functions& f = device_.fn();
-  const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(y0) + height + 31) & ~31u;
+  // The destination's texels: the source's coordinates, moved by dest_dx/dest_dy within a containing resolve.
+  const int32_t dx0 = x0 + dest_dx, dy0 = y0 + dest_dy;
+  const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(dy0) + height + 31) & ~31u;
   Resolved& r = resolved_[dest_base];
   // Scaled as the surface is: textures copied from it keep the resolution.
   const int32_t s = int32_t(scale_);
@@ -2946,13 +2954,19 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   region.srcSubresource = region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
   region.srcOffsets[0] = {x0 * int32_t(sample_x) * s, y0 * int32_t(sample_y) * s, 0};
   region.srcOffsets[1] = {(x0 + int32_t(width)) * int32_t(sample_x) * s, (y0 + int32_t(height)) * int32_t(sample_y) * s, 1};
-  region.dstOffsets[0] = {x0 * s, y0 * s, 0};
-  region.dstOffsets[1] = {(x0 + int32_t(width)) * s, (y0 + int32_t(height)) * s, 1};
+  region.dstOffsets[0] = {dx0 * s, dy0 * s, 0};
+  region.dstOffsets[1] = {(dx0 + int32_t(width)) * s, (dy0 + int32_t(height)) * s, 1};
   f.vkCmdBlitImage(cb, surface.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, r.image.image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region,
                    sample_x * sample_y > 1 ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
-  r.pitch = pitch, r.endian = dest_endian, r.x = uint32_t(x0), r.y = uint32_t(y0), r.width = width, r.height = height;
+  // The rectangle to write back: this one, with what earlier ones left unwritten (another player's half).
+  uint32_t rx0 = uint32_t(dx0), ry0 = uint32_t(dy0), rx1 = rx0 + width, ry1 = ry0 + height;
+  if (r.stale && r.width && r.height) {
+    rx0 = std::min(rx0, r.x), ry0 = std::min(ry0, r.y);
+    rx1 = std::max(rx1, r.x + r.width), ry1 = std::max(ry1, r.y + r.height);
+  }
+  r.pitch = pitch, r.endian = dest_endian, r.x = rx0, r.y = ry0, r.width = rx1 - rx0, r.height = ry1 - ry0;
   r.stale = true;
   r.scale = scale_;
   if (textures_) {
@@ -3060,7 +3074,8 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   const uint32_t dest_info = regs[kRbCopyDestInfo];
   const uint32_t dest_endian = dest_info & 7, dest_format = (dest_info >> 7) & 0x3F, dest_swap = (dest_info >> 24) & 1;
   const int32_t dest_bias = int32_t(dest_info << 10) >> 26;  // bits 16-21, signed
-  const uint32_t dest_base = regs[kRbCopyDestBase] & 0x1FFFFFFF, dest_pitch = regs[kRbCopyDestPitch] & 0x3FFF;
+  uint32_t dest_base = regs[kRbCopyDestBase] & 0x1FFFFFFF;
+  const uint32_t dest_pitch = regs[kRbCopyDestPitch] & 0x3FFF;
   if ((dest_info >> 3) & 1) {
     Fail("resolve to a 3D / array destination (not yet)");
     return;
@@ -3077,6 +3092,11 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       gpu_format = host_format;
     } else if (!dest_swap && dest_format == 31 && host_format == VK_FORMAT_R16G16_SFLOAT) {
       gpu_format = host_format;  // k_16_16_FLOAT
+    } else if (dest_format == 7 &&
+               (host_format == VK_FORMAT_A8B8G8R8_UNORM_PACK32 || host_format == VK_FORMAT_A2B10G10R10_UNORM_PACK32)) {
+      // k_2_10_10_10 (a 10-bit front buffer: The Simpsons Game) from a k_2_10_10_10 target, its red/blue swap kept
+      // in the image's component order as the 8-bit path does.
+      gpu_format = dest_swap ? VK_FORMAT_A2R10G10B10_UNORM_PACK32 : VK_FORMAT_A2B10G10R10_UNORM_PACK32;
     }
   }
   // A depth resolve: one sample a pixel, the depth value for the depth texture formats, on the GPU too.
@@ -3094,14 +3114,58 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
                                          dest_pitch, dest_endian)) {
     return;
   }
-  if (gpu_format != VK_FORMAT_UNDEFINED &&
-      !ResolveOnGpu(*surface, x0, y0, width, height, sample_x, sample_y, dest_base, dest_pitch, dest_endian, gpu_format)) {
-    return;
+  if (gpu_format != VK_FORMAT_UNDEFINED) {
+    // A destination within one an earlier resolve kept on the GPU (same pitch and format), at a whole tile of it:
+    // that image at the tile's place. The Simpsons Game's split screen resolves each player's half to the full
+    // screen's base, the second half's at the base plus x 640's tiled offset; apart, a texture of the whole screen
+    // would read the first half only.
+    const uint32_t aligned_pitch = (dest_pitch + 31) & ~31u;
+    int32_t dest_dx = 0, dest_dy = 0;
+    for (auto it = resolved_.lower_bound(dest_base); it != resolved_.begin();) {
+      --it;
+      const Resolved& c = it->second;
+      if (!c.image.image || c.image.format != gpu_format || c.pitch != aligned_pitch || c.scale != scale_ ||
+          c.endian != dest_endian) {
+        continue;
+      }
+      const uint32_t delta = dest_base - it->first;
+      if (uint64_t(delta) >= uint64_t(aligned_pitch) * (c.image.height / c.scale) * 4) continue;
+      int32_t dx = -1, dy = -1;
+      for (uint32_t ty = 0; ty < c.image.height / c.scale && dx < 0; ty += 32) {
+        for (uint32_t tx = 0; tx < aligned_pitch; tx += 32) {
+          if (uint32_t(TiledOffset2D(int32_t(tx), int32_t(ty), dest_pitch, 2)) == delta) {
+            dx = int32_t(tx), dy = int32_t(ty);
+            break;
+          }
+        }
+      }
+      if (dx < 0) continue;
+      const auto own = resolved_.find(dest_base);
+      if (own != resolved_.end()) {
+        // An image of its own from before: superseded (its texels now live in the containing one).
+        if (own->second.stale) WriteBackResolved(own->first, own->second);
+        Record();
+        batch().retired.push_back(own->second.image);
+        if (own->second.small.image) batch().retired.push_back(own->second.small);
+        resolved_.erase(own);
+        if (textures_) textures_->DropGpuSources(dest_base, dest_base + 1);
+      }
+      dest_base = it->first;
+      dest_dx = dx, dest_dy = dy;
+      break;
+    }
+    if (!ResolveOnGpu(*surface, x0, y0, width, height, sample_x, sample_y, dest_base, dest_pitch, dest_endian,
+                      gpu_format, dest_dx, dest_dy)) {
+      return;
+    }
   }
   // Read back as well: what the CPU may read (small resolves) and front buffers (presented from guest memory), when
   // the CPU path has the format.
+  // A 10-bit resolve kept on the GPU is written back from its image's bytes too (a texture taller than the resolve,
+  // its other rows written by the CPU, reads guest memory: The Simpsons Game's 64x8 palette rows in a 64x64 texture).
   const bool cpu_has_format = is_depth || (dest_format == 6 && host_format == VK_FORMAT_R8G8B8A8_UNORM) ||
-                              (dest_format == 32 && host_format == VK_FORMAT_R16G16B16A16_SFLOAT);
+                              (dest_format == 32 && host_format == VK_FORMAT_R16G16B16A16_SFLOAT) ||
+                              (dest_format == 7 && gpu_format != VK_FORMAT_UNDEFINED);
   const bool read_back =
       !on_gpu || (cpu_has_format && (uint64_t(width) * height * (dest_format == 32 ? 8 : 4) <= kReadBackMaxBytes ||
                                      (front_buffers_.count(dest_base) && !front_on_gpu_.count(dest_base))));
@@ -3255,6 +3319,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       switch (source_key.format) {
         case 0: case 1:  // 8_8_8_8 (gamma alike)
           for (uint32_t j = 0; j < 4; ++j) color_value.color.float32[j] = float((clear >> (8 * j)) & 0xFF) / 255.0f;
+          break;
+        case 2: case 10:  // 2_10_10_10 (and AS_10_10_10_10): three 10-bit components and a 2-bit alpha
+          for (uint32_t j = 0; j < 3; ++j) color_value.color.float32[j] = float((clear >> (10 * j)) & 0x3FF) / 1023.0f;
+          color_value.color.float32[3] = float((clear >> 30) & 3) / 3.0f;
           break;
         case 6: case 7:  // 16-bit float
           for (uint32_t j = 0; j < 4; ++j) color_value.color.float32[j] = HalfToFloat(uint16_t(clear >> (16 * j)));
@@ -3662,11 +3730,14 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
   // red/blue swap undone by the fetch swizzle or absent): presented from that image.
   const uint32_t front = fetch.base & 0x1FFFFFFF;
   const auto front_resolve = resolved_.find(front);
-  if (front_resolve != resolved_.end() && fetch.type == 2 && fetch.format == 6) {
+  // The same for a 10-bit front buffer (k_2_10_10_10, or its AS_16_16_16_16 form) resolved into a 10-bit image.
+  const bool eight_bit = fetch.format == 6, ten_bit = fetch.format == 7 || fetch.format == 54;
+  if (front_resolve != resolved_.end() && fetch.type == 2 && (eight_bit || ten_bit)) {
     Resolved& r = front_resolve->second;
-    const uint32_t swizzle = fetch.swizzle & 0x1FF;
-    const bool as_shown = (r.image.format == VK_FORMAT_R8G8B8A8_UNORM && swizzle == (0 | 1 << 3 | 2 << 6)) ||
-                          (r.image.format == VK_FORMAT_B8G8R8A8_UNORM && swizzle == (2 | 1 << 3 | 0 << 6));
+    const uint32_t swizzle = fetch.swizzle & 0x1FF, rgb = 0 | 1 << 3 | 2 << 6, bgr = 2 | 1 << 3 | 0 << 6;
+    const VkFormat in_order = eight_bit ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+    const VkFormat swapped = eight_bit ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_A2R10G10B10_UNORM_PACK32;
+    const bool as_shown = (r.image.format == in_order && swizzle == rgb) || (r.image.format == swapped && swizzle == bgr);
     if (as_shown && fetch.endian == r.endian && r.x == 0 && r.y == 0) {
       next.width = std::min({width ? width : fetch.width, fetch.width, r.width}) * r.scale;
       next.height = std::min({height ? height : fetch.height, fetch.height, r.height}) * r.scale;
