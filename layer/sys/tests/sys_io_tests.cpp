@@ -76,6 +76,7 @@ REFERENCE(__C_specific_handler)
 REFERENCE(VdShutdownEngines)
 REFERENCE(VdSetSystemCommandBufferGpuIdentifierAddress)
 REFERENCE(XeCryptSha)
+REFERENCE(XeCryptBnQwNeRsaPubCrypt)
 REFERENCE(XamNuiGetDeviceStatus)
 REFERENCE(HidReadKeys)
 REFERENCE(HidGetCapabilities)
@@ -634,6 +635,25 @@ const Case kCases[] = {
       ctx.r5.u64 = rng() % 32;
     }),
     CASE(XeCryptBnDwLePkcs1Verify, nullptr),
+    // RSA: an odd modulus of 512 to 2048 bits with its top bit set, an input below it, exponent 3 or 65537.
+    CASE(XeCryptBnQwNeRsaPubCrypt, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      const uint32_t words = 8 + rng() % 25, key = kBlockA + 0x400, in = kBlockB + 0x100, out = kBlockB + 0x800;
+      s.Word(key, words);
+      s.Word(key + 4, rng() % 2 ? 3 : 65537);
+      for (uint32_t i = 0; i < words; ++i) {
+        uint64_t m = uint64_t(rng()) << 32 | rng(), a = uint64_t(rng()) << 32 | rng();
+        if (i == 0) m |= 1;
+        if (i == words - 1) {
+          m |= 0x8000000000000000ull;
+          a &= 0x7FFFFFFFFFFFFFFFull;
+        }
+        s.Quad(key + 16 + 8 * i, m);
+        s.Quad(in + 8 * i, a);
+      }
+      ctx.r3.u64 = in;
+      ctx.r4.u64 = out;
+      ctx.r5.u64 = key;
+    }),
     // Devices the console does not have: Kinect, HID keyboard and mouse (the reference library lacks the USB camera's).
     CASE(XamNuiGetDeviceStatus, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = kBlockB + 0x100; }),
     CASE(HidReadKeys, nullptr),

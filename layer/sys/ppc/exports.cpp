@@ -1000,6 +1000,9 @@ ANY360_SYS_EXPORT(HidGetLastInputTime) {
 ANY360_SYS_EXPORT(XUsbcamCreate) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(XUsbcamGetState) { ctx.r3.u64 = 0; }
 
+// Batch 29: RSA's public operation (sys_io_tests against the reference).
+ANY360_SYS_EXPORT(XeCryptBnQwNeRsaPubCrypt) { ctx.r3.u64 = XeCryptBnQwNeRsaPubCrypt({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1383,6 +1386,7 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ExAllocatePool),
     ANY360_SYS_ENTRY(ExFreePool),
     ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(XeCryptBnQwNeRsaPubCrypt),
     ANY360_SYS_ENTRY(XamInputGetCapabilitiesEx),
     ANY360_SYS_ENTRY(XamInputGetKeystroke),
     ANY360_SYS_ENTRY(XamNuiGetDeviceStatus),

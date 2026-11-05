@@ -30197,7 +30197,7 @@
 "kind":"function",
 "group":"crypt",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false

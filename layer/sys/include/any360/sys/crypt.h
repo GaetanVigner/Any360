@@ -81,6 +81,11 @@ uint32_t XeKeysHmacShaUsingKey(Guest g, uint32_t obscured_key, uint32_t in1, uin
 void XeCryptRotSumSha(Guest g, uint32_t digest, uint32_t digest_size);
 // Signatures made with the console's keys: accepted (1), as there is no key to check them against.
 uint32_t XeCryptBnQwBeSigVerify();
+// XeCryptBnQwNeRsaPubCrypt: out = in ^ e mod n with the public key at `key` (XECRYPT_RSA: the size in 64-bit words,
+// the exponent, 8 bytes of padding, then the modulus). Numbers are arrays of big-endian 64-bit words, least significant
+// word first. Returns 1, or 0 for a key of no size or an input not below the modulus (which the reference's
+// BCrypt refuses).
+uint32_t XeCryptBnQwNeRsaPubCrypt(Guest g, uint32_t in, uint32_t out, uint32_t key);
 // The same for a PKCS #1 signature (1, as the reference).
 uint32_t XeCryptBnDwLePkcs1Verify();
 // The console's keys are not available: STATUS_UNSUCCESSFUL, the buffer zeroed.

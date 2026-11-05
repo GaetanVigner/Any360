@@ -5,6 +5,7 @@
 #include <cstring>
 #include <mutex>
 #include <random>
+#include <vector>
 
 namespace any360::sys {
 
@@ -676,5 +677,82 @@ uint32_t XeKeysHmacShaUsingKey(Guest g, uint32_t obscured_key, uint32_t in1, uin
 }
 
 uint32_t XeCryptBnDwLePkcs1Verify() { return 1; }
+
+// --- RSA's public operation ---
+
+namespace {
+
+// Unsigned numbers as 32-bit limbs, least significant first.
+using Limbs = std::vector<uint32_t>;
+
+int Compare(const Limbs& a, const Limbs& b) {
+  for (size_t i = std::max(a.size(), b.size()); i-- > 0;) {
+    const uint32_t x = i < a.size() ? a[i] : 0, y = i < b.size() ? b[i] : 0;
+    if (x != y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
+void SubtractInPlace(Limbs& a, const Limbs& b) {
+  int64_t borrow = 0;
+  for (size_t i = 0; i < a.size(); ++i) {
+    const int64_t d = int64_t(a[i]) - (i < b.size() ? b[i] : 0) - borrow;
+    a[i] = uint32_t(d);
+    borrow = d < 0;
+  }
+}
+
+// a * b mod n, the remainder taken bit by bit (shift in, subtract when not below n).
+Limbs MulMod(const Limbs& a, const Limbs& b, const Limbs& n) {
+  Limbs product(a.size() + b.size(), 0);
+  for (size_t i = 0; i < a.size(); ++i) {
+    uint64_t carry = 0;
+    for (size_t j = 0; j < b.size(); ++j) {
+      const uint64_t t = uint64_t(a[i]) * b[j] + product[i + j] + carry;
+      product[i + j] = uint32_t(t);
+      carry = t >> 32;
+    }
+    product[i + b.size()] += uint32_t(carry);
+  }
+  Limbs r(n.size() + 1, 0);
+  for (size_t bit = product.size() * 32; bit-- > 0;) {
+    uint32_t in = (product[bit / 32] >> (bit % 32)) & 1;
+    for (uint32_t& limb : r) {
+      const uint32_t out = limb >> 31;
+      limb = limb << 1 | in;
+      in = out;
+    }
+    if (Compare(r, n) >= 0) SubtractInPlace(r, n);
+  }
+  r.resize(n.size());
+  return r;
+}
+
+Limbs LoadNumber(Guest g, uint32_t at, uint32_t words) {
+  Limbs v(size_t(words) * 2);
+  for (uint32_t i = 0; i < words; ++i) {
+    const uint64_t w = g.Load64(at + 8 * i);
+    v[2 * i] = uint32_t(w);
+    v[2 * i + 1] = uint32_t(w >> 32);
+  }
+  return v;
+}
+
+}  // namespace
+
+uint32_t XeCryptBnQwNeRsaPubCrypt(Guest g, uint32_t in, uint32_t out, uint32_t key) {
+  const uint32_t words = g.Load32(key), exponent = g.Load32(key + 4);
+  if (!words) return 0;
+  const Limbs n = LoadNumber(g, key + 16, words), base = LoadNumber(g, in, words);
+  if (Compare(base, n) >= 0) return 0;
+  Limbs result(n.size(), 0);
+  result[0] = 1;
+  for (int bit = 31; bit >= 0; --bit) {
+    result = MulMod(result, result, n);
+    if ((exponent >> bit) & 1) result = MulMod(result, base, n);
+  }
+  for (uint32_t i = 0; i < words; ++i) g.Store64(out + 8 * i, uint64_t(result[2 * i + 1]) << 32 | result[2 * i]);
+  return 1;
+}
 
 }  // namespace any360::sys
