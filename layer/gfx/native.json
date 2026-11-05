@@ -230,6 +230,9 @@
   "render features:dynamic constant addressing",
   "render features:textures (3D)",
   "render features:cube textures",
-  "render features:texture arrays"
+  "render features:texture arrays",
+  "primitive types:kPointList",
+  "render features:anisotropic filtering",
+  "render features:predication (bins)"
  ]
 }

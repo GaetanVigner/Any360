@@ -341,6 +341,16 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: line list %u, strip %u, loop %u pixels\n", lit[0], lit[1], lit[2]);
     CHECK(lit[0] >= 80 && lit[0] <= 100 && lit[1] >= lit[0] + 40 && lit[1] <= lit[0] + 50 && lit[2] >= lit[1] + 40 &&
           lit[2] <= lit[1] + 50);
+    // A point list over the same four corners with PA_SU_POINT_SIZE 4 pixels each way (12.4 fixed point, half the
+    // size): four 8x8 squares.
+    Pixels p = scenario("points", nullptr, [&] {
+      s.Reg(0x2280, 64u << 16 | 64u);
+      s.Vertices(9);
+      s.Color(30, 160, 90, 255);
+      s.DrawAuto(1, 4);
+    });
+    std::printf("gfx_render_tests: points: %u pixels\n", p.Count(color));
+    CHECK(p.Count(color) == 4 * 64 && p.At(54, 9) == color && p.At(9, 54) == color && p.At(32, 32) == kBlack);
   }
   // Render target formats: c0 written over the whole target of each format, read back as the host stores it.
   {
@@ -1855,6 +1865,32 @@ int main(int argc, char** argv) {
         dimension_case("cube textures", 0x1A0000, 3, 3u | 3u << 13, D::kCube, {1.5f, 1.5f, float(face)}, 10.0f * face + 1,
                        10.0f * face + 2);
       }
+    }
+    // Anisotropic filtering: a 128x32 linear k_8_8_8_8 texture with three levels (red, green, blue) over the 64x64
+    // target: two texels a pixel across, half a texel down. Isotropically level 1 (green); with 4:1 anisotropy
+    // (the fetch constant's aniso_filter 3) the longer axis is sampled four times and the level is 0 (red).
+    for (uint32_t aniso : {0u, 3u}) {
+      const uint32_t base = 0x1C0000, mips = 0x1D0000, quad = kVertices + 0x400;
+      for (uint32_t i = 0; i < 32 * 128; ++i) SetBig(base + i * 4, Rgba(255, 0, 0, 255));
+      for (uint32_t i = 0; i < 8192 / 4; ++i) SetBig(mips + i * 4, Rgba(0, 255, 0, 255));
+      for (uint32_t i = 0; i < 8192 / 4; ++i) SetBig(mips + 8192 + i * 4, Rgba(0, 0, 255, 255));
+      t::Tex fetch;
+      fetch.mag = fetch.min = 1, fetch.mip = 0;
+      t::Alu out;
+      out.vector_mask = 0b0011, out.dest = kColor0, out.is_export = true, out.src1 = out.src2 = {1, true};
+      std::vector<uint32_t> words;
+      t::PushTex(words, fetch);
+      t::PushAlu(words, out);
+      Case k{"render features:anisotropic filtering", {}, {}, aniso ? 1.0f : 0.0f, aniso ? 0.0f : 1.0f, 1.0f / 256};
+      k.ps = t::BuildCfShader({t::CfAlloc(uc::AllocType::kPsColors, 0), t::CfExec(uc::ControlFlowOpcode::kExecEnd, 1, 2, 0b01)},
+                              words);
+      k.setup = [&s, base, mips, quad, aniso] {
+        s.Shader(0, t::BuildTexturedVertexShader());
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+        s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 4u << 22, 6u | 2u << 6 | base,
+               127u | 31u << 13, 0x688u << 1 | aniso << 25, 2u << 6, 1u << 9 | mips});
+      };
+      cases.push_back(k);
     }
     // Dynamic constant addressing: maxas sets a0 = 2 from c3.w, then the export reads c[a0 + 0] = c2.
     {

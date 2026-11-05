@@ -1089,7 +1089,7 @@
 "name":"kPointList",
 "family":"primitive types",
 "value":1,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"primitive types:kLineList",
@@ -2104,7 +2104,7 @@
 "name":"anisotropic filtering",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:texture tiling (untile)",
@@ -2258,6 +2258,6 @@
 "name":"predication (bins)",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 }
 ]
