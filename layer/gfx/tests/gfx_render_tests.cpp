@@ -1623,13 +1623,13 @@ int main(int argc, char** argv) {
       }
       const char* names[64] = {};
       names[2] = "k_8", names[3] = "k_1_5_5_5", names[4] = "k_5_6_5", names[6] = "k_8_8_8_8", names[7] = "k_2_10_10_10",
-      names[8] = "k_8_A", names[9] = "k_8_B", names[10] = "k_8_8", names[14] = "k_8_8_8_8_A", names[15] = "k_4_4_4_4",
+      names[8] = "k_8_A", names[10] = "k_8_8", names[15] = "k_4_4_4_4", names[5] = "k_6_5_5", names[27] = "k_16_EXPAND",
+      names[28] = "k_16_16_EXPAND", names[29] = "k_16_16_16_16_EXPAND", names[58] = "k_DXT3A", names[60] = "k_CTX1",
+      names[11] = "k_Cr_Y1_Cb_Y0_REP", names[12] = "k_Y1_Cr_Y0_Cb_REP",
       names[18] = "k_DXT1", names[19] = "k_DXT2_3", names[20] = "k_DXT4_5", names[23] = "k_24_8_FLOAT", names[24] = "k_16",
       names[25] = "k_16_16", names[26] = "k_16_16_16_16", names[30] = "k_16_FLOAT", names[31] = "k_16_16_FLOAT",
       names[32] = "k_16_16_16_16_FLOAT", names[36] = "k_32_FLOAT", names[37] = "k_32_32_FLOAT",
-      names[38] = "k_32_32_32_32_FLOAT", names[41] = "k_16_MPEG", names[42] = "k_16_16_MPEG", names[43] = "k_8_INTERLACED",
-      names[46] = "k_16_INTERLACED", names[47] = "k_16_MPEG_INTERLACED", names[48] = "k_16_16_MPEG_INTERLACED",
-      names[49] = "k_DXN", names[50] = "k_8_8_8_8_AS_16_16_16_16", names[51] = "k_DXT1_AS_16_16_16_16",
+      names[38] = "k_32_32_32_32_FLOAT", names[49] = "k_DXN", names[50] = "k_8_8_8_8_AS_16_16_16_16", names[51] = "k_DXT1_AS_16_16_16_16",
       names[52] = "k_DXT2_3_AS_16_16_16_16", names[53] = "k_DXT4_5_AS_16_16_16_16", names[54] = "k_2_10_10_10_AS_16_16_16_16",
       names[59] = "k_DXT5A", names[16] = "k_10_11_11", names[17] = "k_11_11_10", names[55] = "k_10_11_11_AS_16_16_16_16",
       names[56] = "k_11_11_10_AS_16_16_16_16";
@@ -1691,24 +1691,24 @@ int main(int argc, char** argv) {
       };
       // 5-bit components reach the sampler through 8 bits (bit replication: 16/31 reads 132/255).
       const float u8 = 1.0f / 255, u16 = 1.0f / 65535, kUnorm8 = 1.0f / 1024, kUnorm5 = 1.0f / 256, kUnorm16 = 1e-4f;
-      for (uint32_t format : {2u, 8u, 9u, 43u}) {
+      for (uint32_t format : {2u, 8u}) {
         texture_case(format, {0x80, 0x80, 0x80, 0x80}, 1, 4, r001, 0, {128 * u8, 0, 0, 1}, kUnorm8);
       }
       texture_case(10, {0x40, 0xC0}, 1, 2, rg01, 0, {64 * u8, 192 * u8, 0, 1}, kUnorm8);
       texture_case(4, le16({uint16_t(31 | 0 << 5 | 16 << 11)}), 1, 2, rgb1, 0, {1, 0, 16.0f / 31, 1}, kUnorm5);
       texture_case(3, le16({uint16_t(31 | 16 << 5 | 0 << 10 | 1 << 15)}), 1, 2, rgba, 0, {1, 16.0f / 31, 0, 1}, kUnorm5);
       texture_case(15, le16({uint16_t(0xF | 0x8 << 4 | 0x4 << 8)}), 1, 2, rgba, 0, {1, 8.0f / 15, 4.0f / 15, 0}, kUnorm8);
-      for (uint32_t format : {6u, 14u, 50u}) {
+      for (uint32_t format : {6u, 50u}) {
         texture_case(format, {0x40, 0x80, 0xC0, 0xFF}, 1, 4, rgba, 0, {64 * u8, 128 * u8, 192 * u8, 1}, kUnorm8);
       }
       for (uint32_t format : {7u, 54u}) {
         texture_case(format, le32({100u | 1000u << 10 | 512u << 20 | 3u << 30}), 1, 4, rgba, 0,
                      {100.0f / 1023, 1000.0f / 1023, 512.0f / 1023, 1}, kUnorm8);
       }
-      for (uint32_t format : {24u, 41u, 46u, 47u}) {
+      for (uint32_t format : {24u}) {
         texture_case(format, le16({0x4000}), 1, 2, r001, 0, {16384 * u16, 0, 0, 1}, kUnorm16);
       }
-      for (uint32_t format : {25u, 42u, 48u}) {
+      for (uint32_t format : {25u}) {
         texture_case(format, le16({0x4000, 0xC000}), 1, 2, rg01, 0, {16384 * u16, 49152 * u16, 0, 1}, kUnorm16);
       }
       // Signed x and y (fetch constant sign 1 each): the same bits as -1...1.
@@ -1735,6 +1735,18 @@ int main(int argc, char** argv) {
       texture_case(49, {0x80, 0x80, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0, 0, 0, 0, 0, 0}, 4, 2, rg01, 0, {128 * u8, 64 * u8, 0, 1},
                    kUnorm8);
       texture_case(59, {0xC0, 0xC0, 0, 0, 0, 0, 0, 0}, 4, 2, r001, 0, {192 * u8, 0, 0, 1}, kUnorm8);
+      // 6:5:5: x 5 bits, y 5, z 6 (16/31 and 32/63 through 8 bits); DXT3A: every 4-bit alpha 8 (136/255); CTX1: both
+      // end points (red 0x80, green 0x40); the EXPAND formats' bits as half floats.
+      texture_case(5, le16({uint16_t(31 | 16 << 5 | 32 << 10)}), 1, 2, rgb1, 0, {1, 16.0f / 31, 32.0f / 63, 1}, kUnorm5);
+      texture_case(58, std::vector<uint8_t>(8, 0x88), 4, 2, r001, 0, {136 * u8, 0, 0, 1}, kUnorm8);
+      texture_case(60, {0x40, 0x80, 0x40, 0x80, 0, 0, 0, 0}, 4, 2, rg01, 0, {128 * u8, 64 * u8, 0, 1}, kUnorm8);
+      texture_case(27, le16({0x3800}), 1, 2, r001, 0, {0.5f, 0, 0, 1}, 0.0f);
+      // 4:2:2 YUV (two texels a 32-bit block): Y0 0x40, Y1 0xC0, Cb 0x80, Cr 0x20 in each format's byte order; pixel
+      // 32 reads texel 2, a block's first: (Cr, Y0, Cb).
+      texture_case(11, {0x40, 0x80, 0xC0, 0x20}, 1, 4, rgb1, 0, {0x20 * u8, 0x40 * u8, 0x80 * u8, 1}, kUnorm8);
+      texture_case(12, {0x80, 0x40, 0x20, 0xC0}, 1, 4, rgb1, 0, {0x20 * u8, 0x40 * u8, 0x80 * u8, 1}, kUnorm8);
+      texture_case(28, le16({0x3800, 0xC000}), 1, 2, rg01, 0, {0.5f, -2, 0, 1}, 0.0f);
+      texture_case(29, le16({0x3800, 0xC000, 0x6400, 0x3000}), 1, 2, rgba, 0, {0.5f, -2, 1024, 0.125f}, 0.0f);
       for (uint32_t format : {16u, 55u}) {
         texture_case(format, le32({1000u | 2000u << 11 | 500u << 22}), 1, 4, rgb1, 0, {1000.0f / 2047, 2000.0f / 2047, 500.0f / 1023, 1},
                      kUnorm16);

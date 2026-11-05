@@ -31,12 +31,18 @@ struct TextureFormatInfo {
   // How each texel is converted for the host format (kNone: copied as it is): 32-bit depth words to float, or
   // 16-bit 5:6:5 and 1:5:5:5 with red and blue exchanged (the guest's red is in the low bits, the host's in the
   // high bits); 32-bit 10:11:11 or 11:11:10 (red in the low bits) unpacked to 16-bit normalized RGBA (8 bytes).
+  // 6:5:5 rotated to 5:6:5 (red stays, the 6-bit blue in the host's green, read back by the swizzle); DXT3A blocks
+  // (4-bit alpha) and CTX1 blocks (two-channel) decoded to texels.
   enum Convert : uint32_t {
-    kNone, kDepthUnorm24, kDepthFloat24, kSwapRedBlue565, kSwapRedBlue1555, kUnpack10_11_11, kUnpack11_11_10
+    kNone, kDepthUnorm24, kDepthFloat24, kSwapRedBlue565, kSwapRedBlue1555, kUnpack10_11_11, kUnpack11_11_10,
+    kRotate655, kDecodeDxt3a, kDecodeCtx1, kDecodeGbgr, kDecodeBgrg
   } convert = kNone;
   // The format a view reads signed components with (the same bits as signed normalized; float formats are signed
   // already), VK_FORMAT_UNDEFINED when there is none yet.
-  VkFormat signed_format = VK_FORMAT_UNDEFINED;};
+  VkFormat signed_format = VK_FORMAT_UNDEFINED;
+  uint32_t block_height = 0;  // texels a block spans in y when not `block_size` (the 4:2:2 formats' 2x1 blocks)
+  uint32_t block_rows() const { return block_height ? block_height : block_size; }
+};
 
 // Xenos float24 depth (20e4: 4 exponent bits, bias 15, 20 mantissa bits, no sign) to and from float, as the
 // reference converts it (round to nearest even; negative and NaN give 0, too large the largest value).

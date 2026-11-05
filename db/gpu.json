@@ -67,14 +67,14 @@
 "name":"WAIT_REG_EQ",
 "family":"command processor",
 "value":82,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:WAIT_REG_GTE",
 "name":"WAIT_REG_GTE",
 "family":"command processor",
 "value":83,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:WAIT_UNTIL_READ",
@@ -186,7 +186,7 @@
 "name":"DRAW_INDX_BIN",
 "family":"command processor",
 "value":52,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:DRAW_INDX_2_BIN",
@@ -256,7 +256,7 @@
 "name":"LOAD_CONSTANT_CONTEXT",
 "family":"command processor",
 "value":46,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:INVALIDATE_STATE",
@@ -270,7 +270,7 @@
 "name":"SET_SHADER_BASES",
 "family":"command processor",
 "value":74,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:SET_BIN_BASE_OFFSET",
@@ -1369,7 +1369,7 @@
 "name":"k_6_5_5",
 "family":"texture formats",
 "value":5,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_8_8_8_8",
@@ -1397,7 +1397,7 @@
 "name":"k_8_B",
 "family":"texture formats",
 "value":9,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_8_8",
@@ -1411,14 +1411,14 @@
 "name":"k_Cr_Y1_Cb_Y0_REP",
 "family":"texture formats",
 "value":11,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_Y1_Cr_Y0_Cb_REP",
 "name":"k_Y1_Cr_Y0_Cb_REP",
 "family":"texture formats",
 "value":12,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16_EDRAM",
@@ -1432,7 +1432,7 @@
 "name":"k_8_8_8_8_A",
 "family":"texture formats",
 "value":14,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_4_4_4_4",
@@ -1523,21 +1523,21 @@
 "name":"k_16_EXPAND",
 "family":"texture formats",
 "value":27,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16_EXPAND",
 "name":"k_16_16_EXPAND",
 "family":"texture formats",
 "value":28,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16_16_16_EXPAND",
 "name":"k_16_16_16_16_EXPAND",
 "family":"texture formats",
 "value":29,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_FLOAT",
@@ -1621,21 +1621,21 @@
 "name":"k_16_MPEG",
 "family":"texture formats",
 "value":41,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_16_16_MPEG",
 "name":"k_16_16_MPEG",
 "family":"texture formats",
 "value":42,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_8_INTERLACED",
 "name":"k_8_INTERLACED",
 "family":"texture formats",
 "value":43,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_32_AS_8_INTERLACED",
@@ -1656,21 +1656,21 @@
 "name":"k_16_INTERLACED",
 "family":"texture formats",
 "value":46,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_16_MPEG_INTERLACED",
 "name":"k_16_MPEG_INTERLACED",
 "family":"texture formats",
 "value":47,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_16_16_MPEG_INTERLACED",
 "name":"k_16_16_MPEG_INTERLACED",
 "family":"texture formats",
 "value":48,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_DXN",
@@ -1740,7 +1740,7 @@
 "name":"k_DXT3A",
 "family":"texture formats",
 "value":58,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_DXT5A",
@@ -1754,7 +1754,7 @@
 "name":"k_CTX1",
 "family":"texture formats",
 "value":60,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_DXT3A_AS_1_1_1_1",

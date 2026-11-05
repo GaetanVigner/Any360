@@ -79,6 +79,19 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
   static const TextureFormatInfo k4_4_4_4 = {VK_FORMAT_A4B4G4R4_UNORM_PACK16, 2, 1, kRGBA};
   // 10:11:11 (red 11 bits, green 11, blue 10, from the low bits) and 11:11:10 (10, 11, 11) as 16-bit normalized
   // RGBA, as the reference converts them.
+  // As the reference converts them: 6:5:5 (x 5 bits, y 5, z 6 from the low bits) into 5:6:5 with a red, blue,
+  // green swizzle; DXT3A (a DXT3 alpha block) to 8-bit texels; CTX1 (two 8:8 end points and 2-bit indices) to 8:8
+  // texels; the EXPAND formats' bits as half floats.
+  static const TextureFormatInfo k6_5_5 = {VK_FORMAT_R5G6B5_UNORM_PACK16, 2, 1, Swizzle(0, 2, 1, 1), TextureFormatInfo::kRotate655};
+  static const TextureFormatInfo kDxt3a = {VK_FORMAT_R8_UNORM, 8, 4, kRRRR, TextureFormatInfo::kDecodeDxt3a};
+  static const TextureFormatInfo kCtx1 = {VK_FORMAT_R8G8_UNORM, 8, 4, kRGGG, TextureFormatInfo::kDecodeCtx1};
+  // 4:2:2 YUV, two texels a 32-bit block sharing their chroma: Cr_Y1_Cb_Y0 (bytes Y0, Cb, Y1, Cr, as Vulkan's
+  // G8B8G8R8_422) and Y1_Cr_Y0_Cb (Cb, Y0, Cr, Y1, as B8G8R8G8_422), decoded to RGBA8 texels (Cr, Y, Cb, 1), as the
+  // reference does where the 4:2:2 formats cannot be sampled.
+  static const TextureFormatInfo kGbgr = {VK_FORMAT_R8G8B8A8_UNORM, 4, 2, kRGBB, TextureFormatInfo::kDecodeGbgr,
+                                          VK_FORMAT_UNDEFINED, 1};
+  static const TextureFormatInfo kBgrg = {VK_FORMAT_R8G8B8A8_UNORM, 4, 2, kRGBB, TextureFormatInfo::kDecodeBgrg,
+                                          VK_FORMAT_UNDEFINED, 1};
   static const TextureFormatInfo k10_11_11 = {VK_FORMAT_R16G16B16A16_UNORM, 4, 1, kRGBA, TextureFormatInfo::kUnpack10_11_11};
   static const TextureFormatInfo k11_11_10 = {VK_FORMAT_R16G16B16A16_UNORM, 4, 1, kRGBA, TextureFormatInfo::kUnpack11_11_10};
   // 16-bit normalized components (textures read them as 0...1 or -1...1, unlike render targets' -32...32).
@@ -109,13 +122,14 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
   static const TextureFormatInfo k24_8 = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kDepthUnorm24};
   static const TextureFormatInfo k24_8Float = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kDepthFloat24};
   switch (xenos_format) {
-    // The interlaced and MPEG forms and the _A / _B / _AS_16_16_16_16 ones read the same bits (the latter only ask
-    // for more filtering precision), as the reference maps them.
-    case 2: case 8: case 9: case 43: return &k8;  // k_8, k_8_A, k_8_B, k_8_INTERLACED
+    // The _A and _AS_16_16_16_16 forms read the same bits (the latter only ask for more filtering precision), as
+    // the reference maps them.
+    case 2: case 8: return &k8;  // k_8, k_8_A
     case 3: return &k1_5_5_5;
+    case 5: return &k6_5_5;
     case 10: return &k8_8;
     case 4: return &k5_6_5;
-    case 6: case 14: case 50: return &k8_8_8_8;  // k_8_8_8_8, _A, _AS_16_16_16_16
+    case 6: case 50: return &k8_8_8_8;  // k_8_8_8_8, _AS_16_16_16_16
     case 7: case 54: return &k2_10_10_10;
     case 15: return &k4_4_4_4;
     case 16: case 55: return &k10_11_11;  // and _AS_16_16_16_16
@@ -123,9 +137,16 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
     case 18: case 51: return &kDxt1;
     case 19: case 52: return &kDxt3;
     case 20: case 53: return &kDxt5;
-    case 24: case 41: case 46: case 47: return &k16;  // k_16, _MPEG, _INTERLACED, _MPEG_INTERLACED
-    case 25: case 42: case 48: return &k16_16;        // k_16_16, _MPEG, _MPEG_INTERLACED
+    case 24: return &k16;
+    case 25: return &k16_16;
     case 26: return &k16_16_16_16;
+    case 27: return &k16Float;            // k_16_EXPAND
+    case 28: return &k16_16Float;         // k_16_16_EXPAND
+    case 29: return &k16_16_16_16Float;   // k_16_16_16_16_EXPAND
+    case 58: return &kDxt3a;
+    case 11: return &kGbgr;  // k_Cr_Y1_Cb_Y0_REP
+    case 12: return &kBgrg;  // k_Y1_Cr_Y0_Cb_REP
+    case 60: return &kCtx1;
     case 49: return &kDxn;
     case 59: return &kDxt5a;
     case 22: return &k24_8;
@@ -238,7 +259,8 @@ uint32_t PackedMipLevel(uint32_t width, uint32_t height) {
 }
 
 // Where a packed level lies in the mip tail's 32x32 tile, in blocks (texture_util::GetPackedMipOffset for 2D).
-void PackedMipOffset(uint32_t width, uint32_t height, uint32_t block_size, uint32_t level, uint32_t& x, uint32_t& y) {
+void PackedMipOffset(uint32_t width, uint32_t height, uint32_t block_size, uint32_t block_rows, uint32_t level, uint32_t& x,
+                     uint32_t& y) {
   const uint32_t log2_width = Log2Ceil(width), log2_height = Log2Ceil(height);
   const uint32_t log2_size = std::min(log2_width, log2_height);
   const uint32_t tail_base = log2_size > 4 ? log2_size - 4 : 0, packed = level - tail_base;
@@ -250,7 +272,7 @@ void PackedMipOffset(uint32_t width, uint32_t height, uint32_t block_size, uint3
   } else {
     x = 0, y = (1u << (log2_height - tail_base)) >> (packed - 2);
   }
-  x /= block_size, y /= block_size;
+  x /= block_size, y /= block_rows;
 }
 
 // Where a level's texels are in guest memory (texture_util::GetGuestTextureLayout): the base level at the base
@@ -262,14 +284,14 @@ struct Placement {
 };
 
 Placement Place(const TextureFetch& t, const TextureFormatInfo& info, uint32_t level) {
-  const uint32_t bs = info.block_size, bpb = info.block_bytes;
+  const uint32_t bs = info.block_size, bsh = info.block_rows(), bpb = info.block_bytes;
   const uint32_t packed_level = t.packed_mips ? PackedMipLevel(t.width, t.height) : UINT32_MAX;
   auto layout = [&](Placement& p, uint32_t stored, bool base) {
     const uint32_t row_texels = base ? std::max(t.pitch, t.width) : std::max((1u << Log2Ceil(t.width)) >> stored, 1u);
     const uint32_t rows = base ? t.height : std::max((1u << Log2Ceil(t.height)) >> stored, 1u);
     p.pitch_blocks = (row_texels + bs - 1) / bs;
     p.row_pitch = t.tiled ? ((p.pitch_blocks + 31) & ~31u) * bpb : (p.pitch_blocks * bpb + 255) & ~255u;
-    const uint32_t stride_rows = ((rows + bs - 1) / bs + 31) & ~31u;
+    const uint32_t stride_rows = ((rows + bsh - 1) / bsh + 31) & ~31u;
     p.slice_stride = (((p.pitch_blocks + 31) & ~31u) * bpb * stride_rows + 4095) & ~4095u;
     if (!t.tiled) p.slice_stride = std::max(p.slice_stride, (p.row_pitch * stride_rows + 4095) & ~4095u);
     // A 3D texture's z slices are packed at the row pitch times the tile-aligned rows (the whole volume, its depth
@@ -280,7 +302,7 @@ Placement Place(const TextureFetch& t, const TextureFormatInfo& info, uint32_t l
   if (level == 0) {
     p.address = t.base;
     layout(p, 0, true);
-    if (packed_level == 0) PackedMipOffset(t.width, t.height, bs, 0, p.x, p.y);
+    if (packed_level == 0) PackedMipOffset(t.width, t.height, bs, bsh, 0, p.x, p.y);
     return p;
   }
   p.address = t.mip_address;
@@ -293,7 +315,7 @@ Placement Place(const TextureFetch& t, const TextureFormatInfo& info, uint32_t l
     }
   }
   layout(p, stored, false);
-  if (level >= packed_level) PackedMipOffset(t.width, t.height, bs, level, p.x, p.y);
+  if (level >= packed_level) PackedMipOffset(t.width, t.height, bs, bsh, level, p.x, p.y);
   return p;
 }
 
@@ -313,8 +335,9 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
                              std::vector<uint8_t>& blocks, std::string& error) const {
   const TextureFormatInfo* info = &info_ref;
   const Placement p = Place(t, *info, level);
-  const uint32_t bs = info->block_size, bpb = info->block_bytes, bpb_log2 = uint32_t(std::countr_zero(bpb));
-  const uint32_t bw = (std::max(t.width >> level, 1u) + bs - 1) / bs, bh = (std::max(t.height >> level, 1u) + bs - 1) / bs;
+  const uint32_t bs = info->block_size, bsh = info->block_rows(), bpb = info->block_bytes;
+  const uint32_t bpb_log2 = uint32_t(std::countr_zero(bpb));
+  const uint32_t bw = (std::max(t.width >> level, 1u) + bs - 1) / bs, bh = (std::max(t.height >> level, 1u) + bsh - 1) / bsh;
   const uint32_t slices = t.slices();
   const size_t slice_bytes = size_t(bw) * bh * bpb;
   blocks.assign(slice_bytes * slices, 0);
@@ -345,7 +368,7 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
         uint32_t offset;
         if (t.dimension == 2 && t.tiled) {
           offset = uint32_t(TiledOffset3D(int32_t(x + p.x), int32_t(y + p.y), int32_t(s), p.pitch_blocks,
-                                          (t.height + bs - 1) / bs, bpb_log2));
+                                          (t.height + bsh - 1) / bsh, bpb_log2));
         } else {
           offset = s * p.slice_stride + (t.tiled ? uint32_t(TiledOffset2D(int32_t(x + p.x), int32_t(y + p.y), p.pitch_blocks, bpb_log2))
                                                  : (y + p.y) * p.row_pitch + (x + p.x) * bpb);
@@ -377,6 +400,69 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
         out[c] = uint16_t((((v >> shift) & max) * 65535u + max / 2) / max);
       }
       std::memcpy(&blocks[2 * i], out, 8);
+    }
+  } else if (info->convert == TextureFormatInfo::kRotate655) {
+    for (size_t i = 0; i + 2 <= blocks.size(); i += 2) {
+      uint16_t v;
+      std::memcpy(&v, &blocks[i], 2);
+      v = uint16_t((v << 11 & 0xF800) | (v >> 5 & 0x07FF));
+      std::memcpy(&blocks[i], &v, 2);
+    }
+  } else if (info->convert == TextureFormatInfo::kDecodeDxt3a || info->convert == TextureFormatInfo::kDecodeCtx1) {
+    // Blocks to texels, rows of the level's width, as the reference decodes them.
+    const bool ctx1 = info->convert == TextureFormatInfo::kDecodeCtx1;
+    const uint32_t texel_bytes = ctx1 ? 2 : 1;
+    const uint32_t w = std::max(t.width >> level, 1u), h = std::max(t.height >> level, 1u);
+    std::vector<uint8_t> packed;
+    packed.swap(blocks);
+    blocks.assign(size_t(w) * h * texel_bytes * slices, 0);
+    for (uint32_t s = 0; s < slices; ++s) {
+      for (uint32_t by = 0; by < bh; ++by) {
+        for (uint32_t bx = 0; bx < bw; ++bx) {
+          const uint8_t* block = &packed[s * slice_bytes + (size_t(by) * bw + bx) * 8];
+          uint8_t* out = &blocks[size_t(s) * w * h * texel_bytes];
+          if (ctx1) {
+            // g0, r0, g1, r1, then 2 bits a texel; the middle colours a third and two thirds of the way.
+            const uint8_t g0 = block[0], r0 = block[1], g1 = block[2], r1 = block[3];
+            uint32_t indices;
+            std::memcpy(&indices, block + 4, 4);
+            const uint8_t cr[4] = {r0, r1, uint8_t(2.f / 3.f * r0 + 1.f / 3.f * r1), uint8_t(1.f / 3.f * r0 + 2.f / 3.f * r1)};
+            const uint8_t cg[4] = {g0, g1, uint8_t(2.f / 3.f * g0 + 1.f / 3.f * g1), uint8_t(1.f / 3.f * g0 + 2.f / 3.f * g1)};
+            for (uint32_t oy = 0; oy < 4 && by * 4 + oy < h; ++oy) {
+              for (uint32_t ox = 0; ox < 4 && bx * 4 + ox < w; ++ox) {
+                const uint32_t index = (indices >> (2 * (ox + 4 * oy))) & 3;
+                uint8_t* texel = out + (size_t(by * 4 + oy) * w + bx * 4 + ox) * 2;
+                texel[0] = cr[index], texel[1] = cg[index];
+              }
+            }
+          } else {
+            uint64_t alpha;
+            std::memcpy(&alpha, block, 8);
+            for (uint32_t oy = 0; oy < 4 && by * 4 + oy < h; ++oy) {
+              for (uint32_t ox = 0; ox < 4 && bx * 4 + ox < w; ++ox) {
+                out[size_t(by * 4 + oy) * w + bx * 4 + ox] = uint8_t(((alpha >> (4 * (ox + 4 * oy))) & 0xF) * 17);
+              }
+            }
+          }
+        }
+      }
+    }
+  } else if (info->convert == TextureFormatInfo::kDecodeGbgr || info->convert == TextureFormatInfo::kDecodeBgrg) {
+    // Each block's two texels: the luma of its own, the block's chroma.
+    const bool gbgr = info->convert == TextureFormatInfo::kDecodeGbgr;
+    const uint32_t w = std::max(t.width >> level, 1u), h = std::max(t.height >> level, 1u);
+    std::vector<uint8_t> packed;
+    packed.swap(blocks);
+    blocks.assign(size_t(w) * h * 4 * slices, 0);
+    for (uint32_t s = 0; s < slices; ++s) {
+      for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = 0; x < w; ++x) {
+          const uint8_t* b = &packed[s * slice_bytes + (size_t(y) * bw + x / 2) * 4];
+          const uint8_t luma = gbgr ? b[(x & 1) * 2] : b[1 + (x & 1) * 2];
+          uint8_t* out = &blocks[((size_t(s) * h + y) * w + x) * 4];
+          out[0] = gbgr ? b[3] : b[2], out[1] = luma, out[2] = gbgr ? b[1] : b[0], out[3] = 0xFF;
+        }
+      }
     }
   } else if (info->convert == TextureFormatInfo::kSwapRedBlue1555) {
     for (size_t i = 0; i + 2 <= blocks.size(); i += 2) {

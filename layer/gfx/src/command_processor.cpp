@@ -571,6 +571,19 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
         if (!Wait(wait_info, poll, reference, mask, interval)) return false;
       }
       break;
+    // WAIT_REG_EQ / WAIT_REG_GTE: register, reference, mask, interval (as Mesa's a2xx driver emits them: RBBM_STATUS,
+    // 0, the busy bits, 1): WAIT_REG_MEM on a register with the equal or greater-or-equal function.
+    case pm4::WAIT_REG_EQ:
+    case pm4::WAIT_REG_GTE:
+      if (has(4)) {
+        const uint32_t poll = Next(r), reference = Next(r), mask = Next(r), interval = Next(r);
+        if (!Wait(opcode == pm4::WAIT_REG_EQ ? 3 : 5, poll, reference, mask, interval)) return false;
+      }
+      break;
+    // A new partition of the sequencer's instruction memory between vertex and pixel shaders: shaders are kept apart
+    // here (each load its own microcode), so nothing changes.
+    case pm4::SET_SHADER_BASES:
+      break;
     case pm4::REG_RMW:
       if (has(3)) {
         const uint32_t info = Next(r), and_mask = Next(r), or_mask = Next(r);
@@ -653,6 +666,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
       break;
     case pm4::DRAW_INDX:
     case pm4::DRAW_INDX_2:
+    case pm4::DRAW_INDX_BIN:
       Draw(r, opcode, end);
       break;
     case pm4::SET_CONSTANT:
@@ -673,6 +687,16 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
         const uint32_t address = Next(r) & 0x3FFFFFFF, offset_type = Next(r), dwords = Next(r) & 0xFFF;
         write_constants((offset_type >> 16) & 0xFF, offset_type & 0x7FF, dwords,
                         [&](uint32_t i) { return LoadBig(address + 4 * i); });
+      }
+      break;
+    // As LOAD_ALU_CONSTANT, the memory a context image: the values at the address plus the offset (Mesa's a2xx driver
+    // reads PA_SC_SCREEN_SCISSOR_BR, offset 15, from byte 60 of its buffer).
+    case pm4::LOAD_CONSTANT_CONTEXT:
+      if (has(3)) {
+        const uint32_t address = Next(r) & 0x3FFFFFFF, offset_type = Next(r), dwords = Next(r) & 0xFFF;
+        const uint32_t offset = offset_type & 0x7FF;
+        write_constants((offset_type >> 16) & 0xFF, offset, dwords,
+                        [&](uint32_t i) { return LoadBig(address + 4 * (offset + i)); });
       }
       break;
     case pm4::IM_LOAD:
@@ -737,12 +761,18 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
 
 void CommandProcessor::Draw(Reader& r, uint32_t opcode, uint32_t end) {
   auto has = [&](uint32_t n) { return end - r.offset >= n; };
-  if (opcode == pm4::DRAW_INDX) {
+  if (opcode == pm4::DRAW_INDX || opcode == pm4::DRAW_INDX_BIN) {
     if (!has(1)) return;
     Next(r);  // the visibility query
   }
   if (!has(1)) return;
   const uint32_t initiator = Next(r);
+  // DRAW_INDX_BIN: two dwords of binning data after the initiator (Mesa's a2xx driver turns it into a DRAW_INDX by
+  // dropping them); every bin is drawn here.
+  if (opcode == pm4::DRAW_INDX_BIN) {
+    if (!has(2)) return;
+    Next(r), Next(r);
+  }
   SetRegister(reg::VGT_DRAW_INITIATOR, initiator);
   DrawCall draw;
   draw.primitive_type = initiator & 0x3F;
