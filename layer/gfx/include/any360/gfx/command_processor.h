@@ -11,6 +11,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
@@ -131,6 +132,11 @@ class CommandProcessor : public sys::GpuBackend {
   // constant memory after such a fence; the GPU reads that memory in place, so the fence must wait for the draws.
   void SetFencesAfterDraws(bool after) { fences_after_draws_ = after; }
   void NotifyProgress();
+  // For the CPU side: a count that moves whenever the GPU's progress may have changed what the guest reads (the
+  // read pointer written back, a fence or memory write, an interrupt), and a wait for it to move, at most `timeout`.
+  // A title's own wait loops (polling the read pointer for ring space) sleep on it instead of spinning.
+  uint64_t Progress() const { return progress_.load(std::memory_order_acquire); }
+  void WaitProgress(uint64_t seen, std::chrono::microseconds timeout);
 
   // Executes the ring from the read pointer to the write pointer; false when stopped in a wait.
   bool Execute();
