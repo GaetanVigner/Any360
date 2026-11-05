@@ -28,6 +28,9 @@ class AsyncRenderer : public Renderer {
   // Time the worker spent running calls (nanoseconds, summed): the renderer's thread's load.
   uint64_t busy_ns() const { return busy_ns_.load(std::memory_order_relaxed); }
   std::thread::native_handle_type worker_handle() { return worker_.native_handle(); }
+  // Whether the worker spins a moment before sleeping when nothing is queued (on: the next call usually follows soon;
+  // off: the core is left to other threads at once).
+  void SetSpin(bool on) { spin_.store(on, std::memory_order_relaxed); }
   uint64_t queued_bytes() const { return published_.load(std::memory_order_relaxed); }  // all calls so far
 
   void ShaderLoaded(const Shader& shader) override;
@@ -65,6 +68,7 @@ class AsyncRenderer : public Renderer {
   alignas(64) size_t produced_ = 0;  // published_, the producer's copy
   size_t consumed_seen_ = 0;         // consumed_ as the producer last read it (room is checked against it first)
   std::atomic<bool> stopping_{false};
+  std::atomic<bool> spin_{true};
   std::atomic<uint64_t> busy_ns_{0};
   std::mutex mutex_;
   std::condition_variable work_, room_;

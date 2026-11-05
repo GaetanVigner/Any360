@@ -69,6 +69,9 @@ struct GraphicsOptions {
   bool async_renderer = true;
   // Threads recording draws (secondary command buffers): -1 as many as the machine leaves (AutoRecordThreads), 0 none.
   int record_threads = -1;
+  // Threads that wait spinning a moment (the command processor's WAIT_REG_MEM without vsync, the renderer's thread
+  // between calls): -1 as they do by default, 0 none (they sleep at once, leaving the cores to the title's threads).
+  int spin = -1;
   // A file to write samples of every thread to (the title's included: by thread, module offsets of the executable,
   // while the diagnostics are off: what it costs without them), for llvm-symbolizer. Empty: no sampling.
   std::string profile_path;

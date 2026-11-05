@@ -304,6 +304,14 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   void Report() {
     ++frames_;
     const auto now = std::chrono::steady_clock::now();
+    // The period's slowest frames (the averages hide drops).
+    if (frames_ > 1) {
+      const double interval = std::chrono::duration<double, std::milli>(now - last_frame_).count();
+      worst_ms_ = std::max(worst_ms_, interval);
+      slow_frames_ += interval > 1000.0 / 60.0;
+      very_slow_frames_ += interval > 1000.0 / 20.0;
+    }
+    last_frame_ = now;
     if (!log_) return;
     if (frames_ == 1) {
       since_ = now;
@@ -328,9 +336,10 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       char off[512];
       std::snprintf(off, sizeof(off),
                     "Any360: %.1f FPS with the diagnostics off (%.1f with them, the period before: %+.0f%%); byte swapping "
-                    "%.2f MB a frame, ~%.2f ms over plain copies: without it ~%.0f FPS (the command processor's thread bound)",
+                    "%.2f MB a frame, ~%.2f ms over plain copies: without it ~%.0f FPS (the command processor's thread bound); "
+                    "slowest frame %.1f ms, %u over 16.7 ms, %u over 50 ms",
                     fps, last_on_fps_, last_on_fps_ > 0 ? 100.0 * (fps / last_on_fps_ - 1.0) : 0.0, swap_bytes / 1e6, swap_ms,
-                    1e3 / std::max(0.1, frame_ms - swap_ms));
+                    1e3 / std::max(0.1, frame_ms - swap_ms), worst_ms_, slow_frames_, very_slow_frames_);
       log_(off);
       // What accumulated meanwhile is not reported: the next period starts clean.
       if (cp_) {
@@ -348,6 +357,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       frames_ = 1;
       since_ = now;
       last_ = s;
+      worst_ms_ = 0, slow_frames_ = very_slow_frames_ = 0;
       if (sampler_) sampler_->Write();  // the samples so far (the title may end without StopGraphics)
       gfx::g_diagnostics = true;
       return;
@@ -483,6 +493,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     frames_ = 1;
     since_ = now;
     last_ = s;
+    worst_ms_ = 0, slow_frames_ = very_slow_frames_ = 0;
   }
 
   std::function<void(const std::string&)> log_;
@@ -501,6 +512,9 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   std::array<uint64_t, 129> last_opcode_ticks_{};
   uint64_t frames_ = 0;
   std::chrono::steady_clock::time_point since_;
+  std::chrono::steady_clock::time_point last_frame_;
+  double worst_ms_ = 0;
+  uint32_t slow_frames_ = 0, very_slow_frames_ = 0;
   gfx::vk::RendererStats last_;
 
   gfx::vk::Presenter presenter_;
@@ -769,7 +783,8 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   const bool vsync = rex::cvar::GetFlagByName("vsync") == "true";
   if (vblank_hz <= 0.0) vblank_hz = vsync ? 60.0 : 1000.0;
   // As the runtime's own command processor: without vsync, waits spin.
-  binding->cp->SetSpinWaits(!vsync);
+  binding->cp->SetSpinWaits(!vsync && options.spin != 0);
+  if (binding->async) binding->async->SetSpin(options.spin != 0);
   binding->cp->SetWritesAfterDraws(options.writes_after_draws);
   binding->cp->SetFencesAfterDraws(options.fences_after_draws);
   binding->renderer->SetFencesWhenCaptured(options.fences_when_captured);

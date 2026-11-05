@@ -191,7 +191,8 @@ void AsyncRenderer::Run() {
     if (published_.load(std::memory_order_acquire) == position) {
       // Nothing queued: a short spin (the next call usually follows soon), then sleep until published.
       bool ready = false;
-      for (uint32_t spins = 0; spins < 2000 && !ready; ++spins) {
+      const uint32_t spin_limit = spin_.load(std::memory_order_relaxed) ? 2000 : 0;
+      for (uint32_t spins = 0; spins < spin_limit && !ready; ++spins) {
         ready = published_.load(std::memory_order_acquire) != position;
         if (!ready) std::this_thread::yield();
       }
