@@ -60,6 +60,12 @@ class SpirvShader;
 
 namespace any360::gfx::vk {
 
+// Kinds of GPU work, timed apart (RendererStats::ns_gpu_kind).
+enum GpuKind : uint8_t {
+  kGpuOther, kGpuDraws, kGpuResolves, kGpuSampleResolves, kGpuDepthResolves, kGpuTextureCopies, kGpuWriteBacks,
+  kGpuKinds
+};
+
 struct RendererStats {
   uint32_t draws = 0;
   uint32_t skipped = 0;     // draws with nothing to draw (EDRAM mode ignore, empty scissor, no target)
@@ -86,6 +92,8 @@ struct RendererStats {
   // to its completion seen on the CPU.
   uint64_t ns_gpu = 0, ns_gpu_latency = 0, gpu_batches = 0;
   uint64_t ns_gpu_upload = 0;  // the GPU's time copying guest memory into video memory before batches
+  // The GPU's time by kind of work (GpuKind), from time stamps at each piece of work's start.
+  uint64_t ns_gpu_kind[8] = {};
   uint64_t guest_upload_bytes = 0;  // guest memory copied into video memory for the shaders
   // Within draws: texture views (upload, untiling, hashing), shader translation, pipeline lookup and creation.
   uint64_t ns_textures = 0, ns_shaders = 0, ns_pipelines = 0;
@@ -420,8 +428,11 @@ class VulkanRenderer : public gfx::Renderer {
   // Batches in flight: each submission keeps what its commands use until the GPU has run it. A completion thread
   // waits for them in order, then does what was to follow each (guest memory writes of resolves, the command
   // processor's fences and interrupts) and frees what it used (staging buffers, retired images).
+  static constexpr uint32_t kGpuMarks = 1024;  // time stamps a batch
   struct Batch {
     VkCommandBuffer cb = VK_NULL_HANDLE;
+    std::atomic<uint32_t> marks{0};          // GpuMark time stamps written (recording and submitting threads)
+    std::array<uint8_t, kGpuMarks> mark_kinds{};
     VkCommandBuffer upload_cb = VK_NULL_HANDLE;  // guest memory the batch's shaders read, copied into video memory first
     // With recording threads, the batch is several primary command buffers run in order: pieces this thread records
     // (cb the first), and a render pass's buffer each, recorded at the flush around its chunks.
@@ -450,6 +461,8 @@ class VulkanRenderer : public gfx::Renderer {
     Buffer guest_staging;  // the guest memory its draws fetch, copied at the flush
     bool uploaded = false;  // its upload command buffer ran too (time stamped)
   };
+  // A time stamp in `cb` (a batch's, run in submission order) where work of `kind` starts.
+  void GpuMark(Batch& b, VkCommandBuffer cb, GpuKind kind);
   static constexpr uint32_t kBatches = 8;
   // Occlusion queries: a host query around each draw of an open guest query (so none spans command buffers or render
   // passes), a range of the pool by batch, reset when the batch begins; the guest query's count is their sum.
@@ -516,6 +529,7 @@ class VulkanRenderer : public gfx::Renderer {
   std::set<uint32_t> front_buffers_;  // bases swapped as front buffers: resolves there are always read back
   void ReadsGuestMemory(uint32_t address, uint32_t bytes);
   VkQueryPool timestamps_ = VK_NULL_HANDLE;  // four a batch: start, end, its upload's start, end
+  VkQueryPool gpu_marks_ = VK_NULL_HANDLE;   // kGpuMarks a batch (GpuMark)
   std::array<std::chrono::steady_clock::time_point, 8> submitted_at_{};
   uint32_t constant_head_ = 0, index_head_ = 0;  // ring allocation of the batch's constants and indices
   // The last block of each constant buffer written in the open batch: a draw whose block is the same reuses it

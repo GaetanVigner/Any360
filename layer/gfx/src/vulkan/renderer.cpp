@@ -202,6 +202,7 @@ VulkanRenderer::~VulkanRenderer() {
     if (b.fence) f.vkDestroyFence(d, b.fence, nullptr);
     if (timestamps_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, timestamps_, nullptr);
     if (query_pool_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, query_pool_, nullptr);
+    if (gpu_marks_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, gpu_marks_, nullptr);
     if (b.draw_pool) f.vkDestroyDescriptorPool(d, b.draw_pool, nullptr);
     if (b.depth_pool) f.vkDestroyDescriptorPool(d, b.depth_pool, nullptr);
     DestroyBuffer(device_, b.constants);
@@ -312,6 +313,8 @@ bool VulkanRenderer::Initialize() {
   textures_->SetRecorder([this] {
     VkCommandBuffer cb = Record();
     EndRendering();  // transfers and barriers are recorded outside rendering
+    cb = Record();
+    GpuMark(batch(), cb, kGpuTextureCopies);
     return cb;
   });
   // Texture sets: allocated per draw, each batch's pool reset once the batch has run.
@@ -388,6 +391,8 @@ bool VulkanRenderer::Initialize() {
   queries.queryType = VK_QUERY_TYPE_TIMESTAMP;
   queries.queryCount = 4 * kBatches;  // a batch's start and end, its upload's start and end
   if (f.vkCreateQueryPool(d, &queries, nullptr, &timestamps_) != VK_SUCCESS) timestamps_ = VK_NULL_HANDLE;
+  queries.queryCount = kGpuMarks * kBatches;
+  if (f.vkCreateQueryPool(d, &queries, nullptr, &gpu_marks_) != VK_SUCCESS) gpu_marks_ = VK_NULL_HANDLE;
   VkQueryPoolCreateInfo occlusion{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
   occlusion.queryType = VK_QUERY_TYPE_OCCLUSION;
   occlusion.queryCount = kQueriesPerBatch * kBatches;
@@ -578,6 +583,8 @@ void VulkanRenderer::ResolveSamples(VkCommandBuffer cb, Surface& s, int32_t x0, 
   if (d[2] <= d[0] || d[3] <= d[1]) d[0] = d[1] = INT32_MAX, d[2] = d[3] = INT32_MIN;
   ++stats_.sample_resolves;
   stats_.sample_resolve_pixels += uint64_t(right - left) * uint64_t(bottom - top);
+  const bool in_batch = batch_open_ && cb == current_piece_;  // not the presenter's command buffer
+  if (in_batch) GpuMark(batch(), cb, kGpuSampleResolves);
   const Functions& f = device_.fn();
   const bool depth = s.key.depth != 0;
   const VkImageLayout attachment =
@@ -1758,6 +1765,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         s.tasks.clear();
         order_.push_back({VK_NULL_HANDLE, int32_t(segment_count_++)});
       } else {
+        GpuMark(batch(), cb, kGpuDraws);
         f.vkCmdBeginRendering(cb, &rendering);
       }
       rendering_open_ = true;
@@ -2265,6 +2273,11 @@ VkCommandBuffer VulkanRenderer::Record() {
       f.vkCmdResetQueryPool(b.cb, timestamps_, 4 * index, 2);
       f.vkCmdWriteTimestamp2(b.cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, 4 * index);
     }
+    if (gpu_marks_) {
+      f.vkCmdResetQueryPool(b.cb, gpu_marks_, kGpuMarks * uint32_t(&b - batches_.data()), kGpuMarks);
+      b.marks = 0;
+      GpuMark(b, b.cb, kGpuOther);
+    }
     recorded_.valid = false;  // a new command buffer has no state
     batch_open_ = true;
     b.pieces_used = 0;
@@ -2314,6 +2327,7 @@ void VulkanRenderer::EndRendering() {
     return;
   }
   device_.fn().vkCmdEndRendering(current_piece_);
+  GpuMark(batch(), current_piece_, kGpuOther);
 }
 
 uint32_t VulkanRenderer::AutoRecordThreads() {
@@ -2409,6 +2423,7 @@ void VulkanRenderer::Submit(uint32_t index) {
       VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
       begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
       f.vkBeginCommandBuffer(entry.cb, &begin);
+      GpuMark(b, entry.cb, kGpuDraws);
       VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
       rendering.flags = VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
       rendering.renderArea = seg.area;
@@ -2426,6 +2441,7 @@ void VulkanRenderer::Submit(uint32_t index) {
       seg.tasks.clear();
       if (!s.segment_cbs.empty()) f.vkCmdExecuteCommands(entry.cb, uint32_t(s.segment_cbs.size()), s.segment_cbs.data());
       f.vkCmdEndRendering(entry.cb);
+      GpuMark(b, entry.cb, kGpuOther);
       f.vkEndCommandBuffer(entry.cb);
     }
     s.segment_count = 0;
@@ -2812,6 +2828,15 @@ void VulkanRenderer::WriteQuery(const Batch::Query& query) {
   }
 }
 
+void VulkanRenderer::GpuMark(Batch& b, VkCommandBuffer cb, GpuKind kind) {
+  if (!gpu_marks_) return;
+  const uint32_t n = b.marks.fetch_add(1, std::memory_order_relaxed);
+  if (n >= kGpuMarks) return;  // the rest of the batch counted with the last kind
+  b.mark_kinds[n] = kind;
+  device_.fn().vkCmdWriteTimestamp2(cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, gpu_marks_,
+                                    kGpuMarks * uint32_t(&b - batches_.data()) + n);
+}
+
 void VulkanRenderer::FinishBatch(Batch& b) {
   for (const Batch::Query& query : b.queries) WriteQuery(query);
   b.queries.clear();
@@ -2824,6 +2849,22 @@ void VulkanRenderer::FinishBatch(Batch& b) {
     if (device_.fn().vkGetQueryPoolResults(device_.device(), timestamps_, 4 * index, 2, 16, stamps, 8,
                                            VK_QUERY_RESULT_64_BIT) == VK_SUCCESS && stamps[1] > stamps[0]) {
       stats_.ns_gpu += uint64_t(double(stamps[1] - stamps[0]) * period);
+    }
+    // The batch's time by kind: its marks in the order they ran (by time stamp), each interval to the kind that
+    // started it, the last until the batch's end.
+    const uint32_t marks = std::min(b.marks.load(), kGpuMarks);
+    if (gpu_marks_ && marks && stamps[1] > stamps[0]) {
+      std::vector<uint64_t> values(marks);
+      if (device_.fn().vkGetQueryPoolResults(device_.device(), gpu_marks_, kGpuMarks * index, marks, marks * 8,
+                                             values.data(), 8, VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
+        std::vector<std::pair<uint64_t, uint8_t>> order(marks);
+        for (uint32_t i = 0; i < marks; ++i) order[i] = {values[i], b.mark_kinds[i]};
+        std::sort(order.begin(), order.end());
+        for (uint32_t i = 0; i < marks; ++i) {
+          const uint64_t end = i + 1 < marks ? order[i + 1].first : stamps[1];
+          if (end > order[i].first) stats_.ns_gpu_kind[order[i].second] += uint64_t(double(end - order[i].first) * period);
+        }
+      }
     }
     if (b.uploaded && device_.fn().vkGetQueryPoolResults(device_.device(), timestamps_, 4 * index + 2, 2, 16, stamps + 2, 8,
                                                          VK_QUERY_RESULT_64_BIT) == VK_SUCCESS && stamps[3] > stamps[2]) {
@@ -2991,8 +3032,10 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   // copied as it is, or the samples averaged (a linear blit to half the size averages each 2x2 or 1x2 block).
   EndRendering();
   VkCommandBuffer cb = Record();
+  GpuMark(batch(), cb, kGpuResolves);
   ResolveSamples(cb, surface, x0 * int32_t(sample_x) * s, y0 * int32_t(sample_y) * s,
                  (x0 + int32_t(width)) * int32_t(sample_x) * s, (y0 + int32_t(height)) * int32_t(sample_y) * s);
+  GpuMark(batch(), cb, kGpuResolves);
   Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   VkImageBlit region{};
@@ -3415,6 +3458,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       // load and stores: clears exactly the rectangle.
       EndRendering();
       VkCommandBuffer cb = Record();
+      GpuMark(batch(), cb, kGpuResolves);  // a resolve clearing its targets
       const int32_t area[4] = {x0 * int32_t(host_x), y0 * int32_t(host_y), (x0 + int32_t(width)) * int32_t(host_x),
                                (y0 + int32_t(height)) * int32_t(host_y)};
       // A clear over all a target holds: one drawn back at one sample may have its samples again.
@@ -3596,6 +3640,7 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
   }
   EndRendering();
   VkCommandBuffer cb = Record();
+  GpuMark(batch(), cb, kGpuWriteBacks);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   Image* source = &r.image;
   if (r.scale > 1) {
@@ -3968,8 +4013,10 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   // After the draws in the batch. The sample's position in its pixel: bit 0 down, bit 1 right.
   EndRendering();
   VkCommandBuffer cb = Record();
+  GpuMark(batch(), cb, kGpuDepthResolves);
   ResolveSamples(cb, surface, x0 * int32_t(sample_x), y0 * int32_t(sample_y),
                  (x0 + int32_t(width)) * int32_t(sample_x), (y0 + int32_t(height)) * int32_t(sample_y));
+  GpuMark(batch(), cb, kGpuDepthResolves);
   Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
              VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);

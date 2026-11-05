@@ -421,6 +421,19 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
                     (s.guest_upload_bytes - last_.guest_upload_bytes) / 1e6 / n);
       log_(gpu);
     }
+    {
+      // The GPU's time by kind of work (time stamps at each piece's start).
+      auto kind = [&](int k) { return (s.ns_gpu_kind[k] - last_.ns_gpu_kind[k]) / ms; };
+      char kinds[256];
+      std::snprintf(kinds, sizeof(kinds),
+                    "Any360: GPU ms per frame by kind: draws %.2f, resolves %.2f, MSAA resolves %.2f, depth resolves %.2f, "
+                    "texture copies %.2f, write-backs %.2f, other %.2f",
+                    kind(gfx::vk::kGpuDraws), kind(gfx::vk::kGpuResolves),
+                    kind(gfx::vk::kGpuSampleResolves), kind(gfx::vk::kGpuDepthResolves),
+                    kind(gfx::vk::kGpuTextureCopies), kind(gfx::vk::kGpuWriteBacks),
+                    kind(gfx::vk::kGpuOther));
+      log_(kinds);
+    }
     if (cp_) {
       const uint64_t busy = cp_->ns_busy(), waiting = cp_->ns_waiting(), kicks = cp_->kicks();
       char line_cp[256];
