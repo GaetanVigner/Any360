@@ -6,7 +6,10 @@
 
 #include <vector>
 
+#include <cstring>
+
 #include "any360/sys/audio.h"
+#include "any360/sys/variables.h"
 #include "any360/sys/config.h"
 #include "any360/sys/crypt.h"
 #include "any360/sys/exports.h"
@@ -1541,5 +1544,37 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XAudioQueryDriverPerformance),
 };
 const unsigned kExportCount = sizeof(kExports) / sizeof(kExports[0]);
+
+// The kernel's exported variables (sys_object_tests); their data is KernelVariables'.
+#define ANY360_SYS_VARIABLE(name) {#name}
+const Variable kVariables[] = {
+    ANY360_SYS_VARIABLE(ExConsoleGameRegion),
+    ANY360_SYS_VARIABLE(ExEventObjectType),
+    ANY360_SYS_VARIABLE(ExLoadedCommandLine),
+    ANY360_SYS_VARIABLE(ExLoadedImageName),
+    ANY360_SYS_VARIABLE(ExMutantObjectType),
+    ANY360_SYS_VARIABLE(ExSemaphoreObjectType),
+    ANY360_SYS_VARIABLE(ExThreadObjectType),
+    ANY360_SYS_VARIABLE(ExTimerObjectType),
+    ANY360_SYS_VARIABLE(IoCompletionObjectType),
+    ANY360_SYS_VARIABLE(IoDeviceObjectType),
+    ANY360_SYS_VARIABLE(IoFileObjectType),
+    ANY360_SYS_VARIABLE(KeCertMonitorData),
+    ANY360_SYS_VARIABLE(KeDebugMonitorData),
+    ANY360_SYS_VARIABLE(KeTimeStampBundle),
+    ANY360_SYS_VARIABLE(ObDirectoryObjectType),
+    ANY360_SYS_VARIABLE(ObSymbolicLinkObjectType),
+    ANY360_SYS_VARIABLE(XboxHardwareInfo),
+    ANY360_SYS_VARIABLE(XboxKrnlVersion),
+    ANY360_SYS_VARIABLE(XexExecutableModuleHandle),
+};
+const unsigned kVariableCount = sizeof(kVariables) / sizeof(kVariables[0]);
+
+uint32_t VariableAddress(uint8_t* base, const char* name) {
+  for (const Variable& v : kVariables) {
+    if (!std::strcmp(v.name, name)) return Variables().Address({base}, name);
+  }
+  return 0;
+}
 
 }  // namespace any360::sys

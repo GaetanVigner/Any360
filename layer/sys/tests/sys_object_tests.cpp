@@ -20,6 +20,7 @@
 #include "any360/sys/video.h"
 #include "any360/sys/crypt.h"
 #include "any360/sys/rtl.h"
+#include "any360/sys/variables.h"
 #include "any360/sys/xam.h"
 
 #include <atomic>
@@ -641,6 +642,33 @@ void UserProfileTests() {
   CHECK(XamState().UserContentRestrictionCheckAccess(g, out, 0) == 0 && g.Load32(out) == 1);
   CHECK(XamState().UserContentRestrictionCheckAccess(g, out, ov) == kErrorIoPending && g.Load32(ov) == 0);
   CHECK(XamState().UserGetDeviceContext(g, 0x1FF, out) == 0 && XamState().UserGetDeviceContext(g, 2, out) == 0x8007048Fu);
+  XamState().Reset();
+}
+
+// The kernel's exported variables, created once in the kernel heap.
+void VariableTests() {
+  Fresh();
+  XamState().Reset();
+  Variables().Reset();
+  const uint32_t info = Variables().Address(g, "XboxHardwareInfo");
+  CHECK(info != 0 && Variables().Address(g, "XboxHardwareInfo") == info && g.Load32(info) == 0x20 && g.Load8(info + 4) == 6);
+  const uint32_t version = Variables().Address(g, "XboxKrnlVersion");
+  CHECK(version != 0 && g.Load16(version) == 2 && g.Load16(version + 2) == 0xFFFF && g.Load8(version + 6) == 0x80);
+  const uint32_t region = Variables().Address(g, "ExConsoleGameRegion");
+  CHECK(region != 0 && g.Load32(region) == 0xFFFFFFFF);
+  const uint32_t event_type = Variables().Address(g, "ExEventObjectType"), thread_type = Variables().Address(g, "ExThreadObjectType");
+  CHECK(event_type && thread_type && event_type != thread_type && g.Load32(event_type + 0x18) == 0x45766E74u);  // "Evnt"
+  const uint32_t line = Variables().Address(g, "ExLoadedCommandLine"), image = Variables().Address(g, "ExLoadedImageName");
+  CHECK(std::string(reinterpret_cast<const char*>(g.host(line))) == "\"default.xex\"");
+  CHECK(std::string(reinterpret_cast<const char*>(g.host(image))) == "\\Device\\Cdrom0\\default.xex");
+  CHECK(g.Load32(Variables().Address(g, "KeDebugMonitorData")) == 0 && Variables().Address(g, "NotAVariable") == 0);
+  // The time stamp bundle keeps time on its own.
+  const uint32_t bundle = Variables().Address(g, "KeTimeStampBundle");
+  const uint32_t ticks = g.Load32(bundle + 16);
+  const uint64_t system = g.Load64(bundle + 8);
+  std::this_thread::sleep_for(std::chrono::milliseconds(80));  // the clock sleeps 1 ms, about 16 on Windows
+  CHECK(g.Load32(bundle + 16) >= ticks + 40 && g.Load64(bundle + 8) > system && g.Load64(bundle) > 0);
+  Variables().Reset();
   XamState().Reset();
 }
 
@@ -1951,6 +1979,7 @@ int main() {
   LocaleTests();
   VideoTests();
   Win32FileTests();
+  VariableTests();
   UserProfileTests();
   MemoryTests();
   SchedulerTests();

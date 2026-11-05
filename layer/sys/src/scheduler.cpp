@@ -10,6 +10,7 @@
 
 #include "any360/sys/objects.h"
 #include "any360/sys/threading.h"
+#include "any360/sys/variables.h"
 
 namespace any360::sys {
 
@@ -83,7 +84,8 @@ void Scheduler::Shutdown() {
   }
   process_ = 0;
   next_thread_id_ = 1;
-  ResetDpcs();  // the DPC thread runs guest code too
+  ResetDpcs();           // the DPC thread runs guest code too
+  Variables().Reset();   // and the clock thread writes guest memory
   std::lock_guard lock(apc_mutex_);
   apcs_.clear();
 }

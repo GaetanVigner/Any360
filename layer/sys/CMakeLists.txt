@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(any360_sys STATIC src/rtl.cpp src/info.cpp src/config.cpp src/error_tables.cpp src/video.cpp src/net.cpp
             src/threading.cpp src/format.cpp src/objects.cpp src/scheduler.cpp src/memory.cpp src/files.cpp src/xam.cpp src/crypt.cpp
-            src/graphics.cpp src/audio.cpp)
+            src/graphics.cpp src/audio.cpp src/variables.cpp)
 target_include_directories(any360_sys PUBLIC include)
 target_compile_options(any360_sys PRIVATE -Wall -Wextra)
 

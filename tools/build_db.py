@@ -277,9 +277,10 @@ def main():
     if not sdk:
         sys.exit('no title names an existing SDK (titles/<title>/pipeline.json "sdk")')
     native = load_json(NATIVE, {'system_calls': [], 'instructions': [], 'xdk': []})
-    # What layer/sys provides: every ANY360_SYS_EXPORT(name) of its PowerPC export table (verified by sys_io_tests).
+    # What layer/sys provides: every ANY360_SYS_EXPORT(name) of its PowerPC export table and every
+    # ANY360_SYS_VARIABLE(name) of its variable table (verified by sys_io_tests and sys_object_tests).
     for path in (ROOT / 'layer' / 'sys' / 'ppc').glob('*.cpp'):
-        native.setdefault('system_calls', []).extend(re.findall(r'ANY360_SYS_EXPORT\((\w+)\)', path.read_text(encoding='utf-8')))
+        native.setdefault('system_calls', []).extend(re.findall(r'ANY360_SYS_(?:EXPORT|VARIABLE)\((\w+)\)', path.read_text(encoding='utf-8')))
     calls = build_system_calls(sdk, known, native)
     sites = call_sites(known)
     for r in calls:

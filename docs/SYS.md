@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (565 system calls)
+## What is verified (584 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -188,6 +188,15 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XMACreateContext` / `XMAReleaseContext` (64-byte contexts in physical memory, announced to an `XmaBackend`). Guest
   callbacks run through `Scheduler::CreateContext` and `Scheduler::Dispatch`. The renderer, the audio output and the
   XMA decoder are the backends still to write.
+- **The kernel's exported variables** (`sys_object_tests`): a second table in `exports.cpp`
+  (`ANY360_SYS_VARIABLE`, `kVariables`, `VariableAddress`) for the data a title imports by address, created once in
+  the kernel heap by `KernelVariables` (`variables.h`): `XboxHardwareInfo` (flags 0x20, six hardware threads),
+  `XboxKrnlVersion` (2.0xFFFF.0xFFFF.0x80), `ExConsoleGameRegion` (every region), `KeTimeStampBundle` (interrupt
+  time, system time and tick count kept current by a clock thread every millisecond, where the reference updates only
+  the tick count), the ten object types (`ExEventObjectType`, `ExThreadObjectType`... with their pool tags),
+  `ExLoadedImageName` ("\\Device\\Cdrom0\\<module>"), `ExLoadedCommandLine` (the quoted module name),
+  `XexExecutableModuleHandle` (the title's module handle), `KeDebugMonitorData` / `KeCertMonitorData` (none). The
+  binder resolves a title's variable imports through `VariableAddress`; the video variables belong to the video batch.
 - **Kernel odds and ends** (`sys_runtime_tests` and `sys_io_tests` against the reference where comparable,
   `sys_object_tests`): `RtlCopyString`, `RtlCopyUnicodeString` (lengths as character counts, as the reference),
   `RtlFreeUnicodeString`, `RtlImageNtHeader`; the debug strings (`OutputDebugStringA` / `W`, `RtlOutputDebugString`,

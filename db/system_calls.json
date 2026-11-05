@@ -25024,7 +25024,7 @@
 "kind":"variable",
 "group":"misc",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -25056,7 +25056,7 @@
 "kind":"variable",
 "group":"misc",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -25118,7 +25118,7 @@
 "kind":"variable",
 "group":"misc",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -25186,7 +25186,7 @@
 "kind":"variable",
 "group":"misc",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -25242,7 +25242,7 @@
 "kind":"variable",
 "group":"misc",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -25254,7 +25254,7 @@
 "kind":"variable",
 "group":"misc",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -25591,7 +25591,7 @@
 "kind":"variable",
 "group":"io",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -25645,7 +25645,7 @@
 "kind":"variable",
 "group":"io",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -25702,7 +25702,7 @@
 "kind":"variable",
 "group":"io",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -26061,7 +26061,7 @@
 "kind":"variable",
 "group":"threading",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -27241,7 +27241,7 @@
 "kind":"variable",
 "group":"threading",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -28692,7 +28692,7 @@
 "kind":"variable",
 "group":"ob",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -28865,7 +28865,7 @@
 "kind":"variable",
 "group":"ob",
 "reference":"missing",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -29915,7 +29915,7 @@
 "kind":"variable",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -29939,7 +29939,7 @@
 "kind":"variable",
 "group":"info",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -30665,7 +30665,7 @@
 "kind":"variable",
 "group":"module",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -31046,7 +31046,7 @@
 "kind":"variable",
 "group":"misc",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -31058,7 +31058,7 @@
 "kind":"variable",
 "group":"misc",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -33565,7 +33565,7 @@
 "kind":"variable",
 "group":"threading",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
