@@ -933,6 +933,7 @@ int main(int argc, char** argv) {
       float x, y, tolerance;
       std::vector<uint32_t> ps = {}, vs = {};  // whole shaders instead of `alus` (and the default vertex shader)
       uint32_t bools = 0, loop0 = 0;          // bool constants 0-31 and loop constant 0
+      std::function<void()> setup = {};       // after the default vertices: other vertices, textures
     };
     std::vector<Case> cases;
     const t::AluOperand c0{0, false}, c1{1, false}, c2{2, false}, c3{3, false};
@@ -1008,6 +1009,15 @@ int main(int argc, char** argv) {
     vname(vector(V::kDp3, {1, 2, 3, 4}, {5, 6, 7, 8}, {}, 38, 38), V::kDp3);
     vname(vector(V::kDp2Add, {1, 2, 3, 4}, {5, 6, 7, 8}, {0.5f, 9}, 17.5f, 17.5f), V::kDp2Add);
     vname(vector(V::kMax4, {1, 9, 3, 4}, {}, {}, 9, 9), V::kMax4);
+    // cube r, s.zzxy, s.yxzz: x = T, y = S of the face of the major axis (z here, then x).
+    auto cube = [&](float sx, float sy, float sz, float t_coord, float s_coord) {
+      Case* k = vector(V::kCube, {sx, sy, sz, 0}, {sx, sy, sz, 0}, {}, t_coord, s_coord);
+      k->alus[0].src1_swizzle = 2 | 1 << 2 | 2 << 4 | 2 << 6;  // zzxy
+      k->alus[0].src2_swizzle = 1 | 3 << 2 | 0 << 4 | 3 << 6;  // yxzz
+      vname(k, V::kCube);
+    };
+    cube(0.5f, 0.25f, 1, -0.25f, 0.5f);
+    cube(-1, 0.5f, 0.25f, -0.5f, 0.25f);
     // setp_*_push: dest = 0 when src0.x == 0 and the comparison of src1.x holds, else src0.x + 1.
     vname(vector(V::kSetpEqPush, {0, 0, 0, 0}, {0, 0, 0, 0}, {}, 0, 0), V::kSetpEqPush);
     vname(vector(V::kSetpNePush, {2, 0, 0, 0}, {1, 0, 0, 0}, {}, 3, 3), V::kSetpNePush);
@@ -1156,6 +1166,101 @@ int main(int argc, char** argv) {
       }
     }
 
+    // The texture unit's queries and setters, on a full-target quad whose texcoords (u right, v down, 0 to 1) reach
+    // the pixel shader in r0: a 128x128 texture with two levels (red, then green at 64x64) and a 32x32 one (four
+    // coloured quadrants). Read at pixel (32, 32).
+    {
+      using F = uc::FetchOpcode;
+      const uint32_t quad = kVertices + 0x400, mip_base = 0xA0000, mip_levels = 0xB0000, small = 0x50000;
+      const float v[4][6] = {{-1, -1, 0, 1, 0, 1}, {1, -1, 0, 1, 1, 1}, {-1, 1, 0, 1, 0, 0}, {1, 1, 0, 1, 1, 0}};
+      for (uint32_t i = 0; i < 4; ++i) {
+        for (uint32_t c = 0; c < 6; ++c) SetBig(quad + 24 * i + 4 * c, Bits(v[i][c]));
+      }
+      for (uint32_t y = 0; y < 128; ++y) {
+        for (uint32_t x = 0; x < 128; ++x) {
+          SetBig(mip_base + uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), 128, 2)), Rgba(255, 0, 0, 255));
+          if (x < 64 && y < 64) SetBig(mip_levels + uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), 64, 2)), Rgba(0, 255, 0, 255));
+          if (x < 32 && y < 32) SetBig(small + y * 256 + x * 4, Rgba(x < 16 ? 255 : 0, y < 16 ? 255 : 0, 0, 255));
+        }
+      }
+      // tf1: the two-level texture (tiled, point filters, levels 0-1), or the small one (linear, one level).
+      auto bind = [&s, quad, mip_base, mip_levels, small](bool mipped) {
+        s.Shader(0, t::BuildTexturedVertexShader());
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+        if (mipped) {
+          s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 4u << 22 | 1u << 31,
+                 6u | 2u << 6 | mip_base, 127u | 127u << 13, 0x688u << 1, 1u << 6, 1u << 9 | mip_levels});
+        } else {
+          s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 1u << 22, 6u | 2u << 6 | small,
+                 31u | 31u << 13, 0x688u << 1, 0, 1u << 9});
+        }
+      };
+      t::Alu export_r1;
+      export_r1.vector_mask = 0b0011, export_r1.dest = kColor0, export_r1.is_export = true;
+      export_r1.src1 = export_r1.src2 = {1, true};
+      t::Alu load_r2, load_r3;
+      load_r2.vector_mask = 0b1111, load_r2.dest = 2, load_r2.src1 = load_r2.src2 = c0;
+      load_r3.vector_mask = 0b1111, load_r3.dest = 3, load_r3.src1 = load_r3.src2 = c1;
+      // `program`: the instructions in order, `fetches` a bit for each that is a fetch; then r1.xy exported.
+      auto fetch_case = [&](const char* unit, bool mipped, std::vector<std::function<void(std::vector<uint32_t>&)>> program,
+                            uint32_t fetches, std::initializer_list<float> c0_value, std::initializer_list<float> c1_value,
+                            float x, float y, float tolerance) {
+        std::vector<uint32_t> words;
+        for (auto& push : program) push(words);
+        t::PushAlu(words, export_r1);
+        const uint32_t count = uint32_t(program.size()) + 1;
+        uint32_t sequence = 0;
+        for (uint32_t i = 0; i < count; ++i) sequence |= ((fetches >> i) & 1) << (2 * i);
+        Case k{std::string("shader fetch:") + unit, {}, {}, x, y, tolerance};
+        k.ps = t::BuildCfShader({t::CfAlloc(uc::AllocType::kPsColors, 0),
+                                 t::CfExec(uc::ControlFlowOpcode::kExecEnd, 1, count, sequence)},
+                                words);
+        std::copy(c0_value.begin(), c0_value.end(), k.c[0]);
+        std::copy(c1_value.begin(), c1_value.end(), k.c[1]);
+        k.setup = [bind, mipped] { bind(mipped); };
+        cases.push_back(k);
+      };
+      auto tex = [](t::Tex x) { return [x](std::vector<uint32_t>& w) { t::PushTex(w, x); }; };
+      auto alu = [](t::Alu a) { return [a](std::vector<uint32_t>& w) { t::PushAlu(w, a); }; };
+      constexpr uint32_t kXYKeep = 7u << 6 | 7u << 9;
+      t::Tex gradients;
+      gradients.opcode = F::kGetTextureGradients, gradients.src_swizzle = 0 | 1 << 2;
+      fetch_case("kGetTextureGradients", false, {tex(gradients)}, 0b1, {}, {}, 1.0f / 64, 0, 1e-4f);  // ddx(u), ddy(u)
+      gradients.dest_swizzle = 2 | 3 << 3 | kXYKeep;
+      fetch_case("kGetTextureGradients", false, {tex(gradients)}, 0b1, {}, {}, 0, 1.0f / 64, 1e-4f);  // ddx(v), ddy(v)
+      t::Tex lod;
+      lod.opcode = F::kGetTextureComputedLod, lod.dest_swizzle = 0 | 0 << 3 | kXYKeep;
+      fetch_case("kGetTextureComputedLod", true, {tex(lod)}, 0b1, {}, {}, 1, 1, 1e-2f);  // 128 texels over 64 pixels
+      // setTexLOD r2.x, then a fetch at the register LOD (point mip filter): level 1 (green) or 0 (red).
+      t::Tex set_lod, at_lod;
+      set_lod.opcode = F::kSetTextureLod, set_lod.src = 2, set_lod.src_swizzle = 0;
+      at_lod.computed_lod = false, at_lod.register_lod = true, at_lod.mip = 0;
+      for (float level : {1.0f, 0.0f}) {
+        fetch_case("kSetTextureLod", true, {alu(load_r2), tex(set_lod), tex(at_lod)}, 0b110, {level}, {},
+                   level ? 0.0f : 1.0f, level ? 1.0f : 0.0f, 0.0f);
+      }
+      // setTexGradientsH r2.xyz, setTexGradientsV r3.xyz, then a fetch with the register gradients: two texels a
+      // pixel (level 1, green) or half a texel (level 0, red).
+      t::Tex set_h, set_v, at_gradients;
+      set_h.opcode = F::kSetTextureGradientsHorz, set_h.src = 2;
+      set_v.opcode = F::kSetTextureGradientsVert, set_v.src = 3;
+      at_gradients.register_gradients = true, at_gradients.mip = 0;
+      for (float texels : {2.0f, 0.5f}) {
+        for (const char* unit : {"kSetTextureGradientsHorz", "kSetTextureGradientsVert"}) {
+          fetch_case(unit, true, {alu(load_r2), alu(load_r3), tex(set_h), tex(set_v), tex(at_gradients)}, 0b11100,
+                     {texels / 128, 0, 0}, {0, texels / 128, 0}, texels > 1 ? 0.0f : 1.0f, texels > 1 ? 1.0f : 0.0f,
+                     0.0f);
+        }
+      }
+      // Bilinear weights on the 32x32 texture magnified twice: D3D pixel centres are at integer coordinates, so pixel
+      // 32 reads u = 0.5, texel coordinate 16 - 0.5: weights 0.5 (the translator adds a 1.5/1024 rounding offset).
+      t::Tex weights;
+      weights.opcode = F::kGetTextureWeights, weights.mag = weights.min = 1, weights.mip = 0;
+      weights.dest_swizzle = 0 | 1 << 3 | kXYKeep;
+      fetch_case("kGetTextureWeights", false, {tex(weights)}, 0b1, {}, {}, 0.5f, 0.5f, 1.0f / 256);
+      // kGetTextureBorderColorFrac: not tested, the translator does not implement it (a translation error).
+    }
+
     const float clear[4] = {kKilled, kKilled, 0, 0};
     std::vector<std::string> passed;
     for (const Case& k : cases) {
@@ -1170,8 +1275,9 @@ int main(int argc, char** argv) {
       s.Put({Type3(pm4::SET_CONSTANT, 17), 0u << 16 | 1024});
       for (uint32_t i = 0; i < 16; ++i) s.Put(Bits(k.c[i / 4][i % 4]));
       s.Vertices(0);
+      if (k.setup) k.setup();
       s.DrawAuto(kTriangleStrip, 4);
-      if (!k.vs.empty()) s.Shader(0, t::BuildFetchPositionShader());
+      if (!k.vs.empty() || k.setup) s.Shader(0, t::BuildFetchPositionShader());
       s.Run();
       std::vector<uint8_t> bytes;
       CHECK(renderer.ReadBack(target, kSize, kSize, bytes));

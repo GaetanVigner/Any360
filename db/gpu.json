@@ -592,7 +592,7 @@
 "name":"kCube",
 "family":"shader ALU vector",
 "value":18,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader ALU vector:kMax4",
@@ -1047,42 +1047,42 @@
 "name":"kGetTextureComputedLod",
 "family":"shader fetch",
 "value":17,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader fetch:kGetTextureGradients",
 "name":"kGetTextureGradients",
 "family":"shader fetch",
 "value":18,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader fetch:kGetTextureWeights",
 "name":"kGetTextureWeights",
 "family":"shader fetch",
 "value":19,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader fetch:kSetTextureLod",
 "name":"kSetTextureLod",
 "family":"shader fetch",
 "value":24,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader fetch:kSetTextureGradientsHorz",
 "name":"kSetTextureGradientsHorz",
 "family":"shader fetch",
 "value":25,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"shader fetch:kSetTextureGradientsVert",
 "name":"kSetTextureGradientsVert",
 "family":"shader fetch",
 "value":26,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"primitive types:kPointList",

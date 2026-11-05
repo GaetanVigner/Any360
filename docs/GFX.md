@@ -166,7 +166,7 @@ From the Crackdown runs (each one cost a debugging session there):
    window comes from SDL3 and the platform layer makes the Vulkan surface from its native handle (Win32 for now,
    X11 / Wayland next), which also works with SDL builds that lack SDL's own Vulkan support (the reference SDK's).
    Learned: readback buffers need cached host memory (from 3 to 77 FPS on the first version).
-   ALU opcodes (2026-11-04): `gfx_render_tests` runs every vector and scalar operation of the microcode but `cube`
+   ALU opcodes (2026-11-04): `gfx_render_tests` runs every vector and scalar operation of the microcode
    (79 cases: the predicate setters, kills, previous-scalar and constant-scalar forms included) in a hand-encoded
    pixel shader on constants, exports the result to a k_32_32_FLOAT target and checks it against the semantics
    ucode.h documents; a killed pixel keeps the clear value. A scalar operation reads src3 as `a` = W, `b` = X.
@@ -174,6 +174,9 @@ From the Crackdown runs (each one cost a debugging session there):
    forms, loops, calls and returns, jumps, the vertex fetch hint) in the same bench; calls and returns, which the
    reference translator left unimplemented (a called function never ran), are now implemented (see the
    translator's NOTICE.md).
+   Texture unit (2026-11-05): the gradients, the computed LOD, the register LOD and gradients a fetch then uses
+   (the level it reads), the bilinear weights (D3D pixel centres: integer coordinates) on 128x128 two-level and
+   32x32 textures. `getBCF` (the border colour fraction) is not implemented by the translator: it stays to do.
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured

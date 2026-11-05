@@ -71,11 +71,13 @@ struct Alu {
   bool is_export = false;
   AluOperand src1{}, src2{}, src3{};
   uint32_t src3_swizzle = 0;  // raw (constant-scalar operations keep a temp register's bits there)
+  // src1 and src2 swizzles, component-relative: 2 bits a component, (source component - component) & 3.
+  uint32_t src1_swizzle = 0, src2_swizzle = 0;
 };
 inline void PushAlu(std::vector<uint32_t>& words, const Alu& a) {
   words.push_back((a.dest & 0x3F) | (a.scalar_dest & 0x3F) << 8 | (a.is_export ? 1u : 0u) << 15 |
                   (a.vector_mask & 0xF) << 16 | (a.scalar_mask & 0xF) << 20 | (uint32_t(a.scalar) & 0x3F) << 26);
-  words.push_back(a.src3_swizzle & 0xFF);
+  words.push_back((a.src3_swizzle & 0xFF) | (a.src2_swizzle & 0xFF) << 8 | (a.src1_swizzle & 0xFF) << 16);
   words.push_back((a.src3.reg & 0xFF) | (a.src2.reg & 0xFF) << 8 | (a.src1.reg & 0xFF) << 16 |
                   (uint32_t(a.vector) & 0x1F) << 24 | (a.src3.is_temp ? 1u : 0u) << 29 |
                   (a.src2.is_temp ? 1u : 0u) << 30 | (a.src1.is_temp ? 1u : 0u) << 31);
@@ -110,6 +112,25 @@ inline Cf CfBranch(uc::ControlFlowOpcode opcode, uint32_t address, bool uncondit
 }
 inline Cf CfReturn() { return {0, uint32_t(uc::ControlFlowOpcode::kReturn) << 12}; }
 inline Cf CfMarkVsFetchDone() { return {0, uint32_t(uc::ControlFlowOpcode::kMarkVsFetchDone) << 12}; }
+
+// Any texture fetch unit instruction (ucode::TextureFetchInstruction): tfetch and the texture queries and
+// setters. Swizzles: source 2 bits a component (x, y, z), destination 3 bits (0-3 a component, 4 zero, 5 one,
+// 7 keep). Filters: 0 point, 1 linear, 3 the fetch constant's.
+struct Tex {
+  uc::FetchOpcode opcode = uc::FetchOpcode::kTextureFetch;
+  uint32_t dest = 1, src = 0, fetch_constant = 1;
+  uint32_t src_swizzle = 0 | 1 << 2 | 2 << 4, dest_swizzle = 0 | 1 << 3 | 2 << 6 | 3 << 9;
+  uint32_t mag = 3, min = 3, mip = 3;
+  bool computed_lod = true, register_lod = false, register_gradients = false;
+};
+inline void PushTex(std::vector<uint32_t>& words, const Tex& t) {
+  words.push_back(uint32_t(t.opcode) | (t.src & 0x3F) << 5 | (t.dest & 0x3F) << 12 | (t.fetch_constant & 0x1F) << 20 |
+                  (t.src_swizzle & 0x3F) << 26);
+  words.push_back((t.dest_swizzle & 0xFFF) | (t.mag & 3) << 12 | (t.min & 3) << 14 | (t.mip & 3) << 16 | 7u << 18 |
+                  3u << 24 | 3u << 26 | (t.computed_lod ? 1u : 0u) << 28 | (t.register_lod ? 1u : 0u) << 29);
+  words.push_back((t.register_gradients ? 1u : 0u) | 1u << 1 |
+                  uint32_t(rex::graphics::xenos::FetchOpDimension::k2D) << 14);
+}
 
 // A shader of control flow `cf` (padded with a nop to pairs) then the instruction words, from slot cf pairs on.
 inline std::vector<uint32_t> BuildCfShader(std::vector<Cf> cf, const std::vector<uint32_t>& instructions) {
