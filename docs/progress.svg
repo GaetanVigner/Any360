@@ -5065,7 +5065,7 @@
 <text x="278" y="741" font-size="11" fill="#8b949e">reference (hooked by name)</text>
 <rect x="450" y="732" width="10" height="10" rx="2" fill="#f85149"/>
 <text x="464" y="741" font-size="11" fill="#8b949e">to do</text>
-<text x="0" y="763" font-size="16" fill="#c9d1d9" font-weight="600">GPU (Xenos) native: 83.3% (269/323) <tspan font-size="12" font-weight="400" fill="#8b949e">· 95.7% handled by the reference GPU · one square per opcode, format or feature</tspan></text>
+<text x="0" y="763" font-size="16" fill="#c9d1d9" font-weight="600">GPU (Xenos) native: 83.9% (271/323) <tspan font-size="12" font-weight="400" fill="#8b949e">· 96.3% handled by the reference GPU · one square per opcode, format or feature</tspan></text>
 <rect x="0" y="772" width="1000" height="150" fill="#0d1117"/>
 <a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>texture formats: 64 (64% native; 41 native, 23 reference)</title>
 <rect x="0.00" y="772.00" width="21.52" height="18.25" fill="#2ea043"/>
@@ -5194,7 +5194,7 @@
 <rect x="198.1" y="772.0" width="170.3" height="150.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="202.1" y="785.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">render features</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>command processor: 50 (72% native; 36 native, 14 missing)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>command processor: 50 (76% native; 38 native, 12 missing)</title>
 <rect x="368.42" y="772.00" width="21.61" height="18.25" fill="#2ea043"/>
 <rect x="390.54" y="772.00" width="21.61" height="18.25" fill="#2ea043"/>
 <rect x="412.65" y="772.00" width="21.61" height="18.25" fill="#2ea043"/>
@@ -5231,8 +5231,8 @@
 <rect x="478.99" y="847.00" width="21.61" height="18.25" fill="#2ea043"/>
 <rect x="501.11" y="847.00" width="21.61" height="18.25" fill="#2ea043"/>
 <rect x="368.42" y="865.75" width="21.61" height="18.25" fill="#2ea043"/>
-<rect x="390.54" y="865.75" width="21.61" height="18.25" fill="#f85149"/>
-<rect x="412.65" y="865.75" width="21.61" height="18.25" fill="#f85149"/>
+<rect x="390.54" y="865.75" width="21.61" height="18.25" fill="#2ea043"/>
+<rect x="412.65" y="865.75" width="21.61" height="18.25" fill="#2ea043"/>
 <rect x="434.76" y="865.75" width="21.61" height="18.25" fill="#f85149"/>
 <rect x="456.88" y="865.75" width="21.61" height="18.25" fill="#f85149"/>
 <rect x="478.99" y="865.75" width="21.61" height="18.25" fill="#f85149"/>

@@ -80,12 +80,12 @@
  },
  "gpu": {
   "total": 323,
-  "native": 269,
+  "native": 271,
   "reference": 40,
   "by_family": {
    "command processor": {
-    "native": 36,
-    "missing": 14
+    "native": 38,
+    "missing": 12
    },
    "primitive types": {
     "native": 11,

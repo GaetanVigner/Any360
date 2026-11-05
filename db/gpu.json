@@ -81,14 +81,14 @@
 "name":"WAIT_UNTIL_READ",
 "family":"command processor",
 "value":92,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:WAIT_IB_PFD_COMPLETE",
 "name":"WAIT_IB_PFD_COMPLETE",
 "family":"command processor",
 "value":93,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:REG_RMW",
