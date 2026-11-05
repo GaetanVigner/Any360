@@ -231,6 +231,8 @@
   "texture formats:k_16_16_EXPAND",
   "texture formats:k_16_16_16_16_EXPAND",
   "texture formats:k_DXT3A",
-  "texture formats:k_CTX1"
+  "texture formats:k_CTX1",
+  "texture formats:k_Cr_Y1_Cb_Y0_REP",
+  "texture formats:k_Y1_Cr_Y0_Cb_REP"
  ]
 }

@@ -35,11 +35,14 @@ struct TextureFormatInfo {
   // (4-bit alpha) and CTX1 blocks (two-channel) decoded to texels.
   enum Convert : uint32_t {
     kNone, kDepthUnorm24, kDepthFloat24, kSwapRedBlue565, kSwapRedBlue1555, kUnpack10_11_11, kUnpack11_11_10,
-    kRotate655, kDecodeDxt3a, kDecodeCtx1
+    kRotate655, kDecodeDxt3a, kDecodeCtx1, kDecodeGbgr, kDecodeBgrg
   } convert = kNone;
   // The format a view reads signed components with (the same bits as signed normalized; float formats are signed
   // already), VK_FORMAT_UNDEFINED when there is none yet.
-  VkFormat signed_format = VK_FORMAT_UNDEFINED;};
+  VkFormat signed_format = VK_FORMAT_UNDEFINED;
+  uint32_t block_height = 0;  // texels a block spans in y when not `block_size` (the 4:2:2 formats' 2x1 blocks)
+  uint32_t block_rows() const { return block_height ? block_height : block_size; }
+};
 
 // Xenos float24 depth (20e4: 4 exponent bits, bias 15, 20 mantissa bits, no sign) to and from float, as the
 // reference converts it (round to nearest even; negative and NaN give 0, too large the largest value).

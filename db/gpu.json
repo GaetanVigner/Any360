@@ -1411,14 +1411,14 @@
 "name":"k_Cr_Y1_Cb_Y0_REP",
 "family":"texture formats",
 "value":11,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_Y1_Cr_Y0_Cb_REP",
 "name":"k_Y1_Cr_Y0_Cb_REP",
 "family":"texture formats",
 "value":12,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16_EDRAM",

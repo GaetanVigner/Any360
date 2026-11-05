@@ -1625,6 +1625,7 @@ int main(int argc, char** argv) {
       names[2] = "k_8", names[3] = "k_1_5_5_5", names[4] = "k_5_6_5", names[6] = "k_8_8_8_8", names[7] = "k_2_10_10_10",
       names[8] = "k_8_A", names[10] = "k_8_8", names[15] = "k_4_4_4_4", names[5] = "k_6_5_5", names[27] = "k_16_EXPAND",
       names[28] = "k_16_16_EXPAND", names[29] = "k_16_16_16_16_EXPAND", names[58] = "k_DXT3A", names[60] = "k_CTX1",
+      names[11] = "k_Cr_Y1_Cb_Y0_REP", names[12] = "k_Y1_Cr_Y0_Cb_REP",
       names[18] = "k_DXT1", names[19] = "k_DXT2_3", names[20] = "k_DXT4_5", names[23] = "k_24_8_FLOAT", names[24] = "k_16",
       names[25] = "k_16_16", names[26] = "k_16_16_16_16", names[30] = "k_16_FLOAT", names[31] = "k_16_16_FLOAT",
       names[32] = "k_16_16_16_16_FLOAT", names[36] = "k_32_FLOAT", names[37] = "k_32_32_FLOAT",
@@ -1740,6 +1741,10 @@ int main(int argc, char** argv) {
       texture_case(58, std::vector<uint8_t>(8, 0x88), 4, 2, r001, 0, {136 * u8, 0, 0, 1}, kUnorm8);
       texture_case(60, {0x40, 0x80, 0x40, 0x80, 0, 0, 0, 0}, 4, 2, rg01, 0, {128 * u8, 64 * u8, 0, 1}, kUnorm8);
       texture_case(27, le16({0x3800}), 1, 2, r001, 0, {0.5f, 0, 0, 1}, 0.0f);
+      // 4:2:2 YUV (two texels a 32-bit block): Y0 0x40, Y1 0xC0, Cb 0x80, Cr 0x20 in each format's byte order; pixel
+      // 32 reads texel 2, a block's first: (Cr, Y0, Cb).
+      texture_case(11, {0x40, 0x80, 0xC0, 0x20}, 1, 4, rgb1, 0, {0x20 * u8, 0x40 * u8, 0x80 * u8, 1}, kUnorm8);
+      texture_case(12, {0x80, 0x40, 0x20, 0xC0}, 1, 4, rgb1, 0, {0x20 * u8, 0x40 * u8, 0x80 * u8, 1}, kUnorm8);
       texture_case(28, le16({0x3800, 0xC000}), 1, 2, rg01, 0, {0.5f, -2, 0, 1}, 0.0f);
       texture_case(29, le16({0x3800, 0xC000, 0x6400, 0x3000}), 1, 2, rgba, 0, {0.5f, -2, 1024, 0.125f}, 0.0f);
       for (uint32_t format : {16u, 55u}) {
