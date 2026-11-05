@@ -151,6 +151,21 @@ What the game found that the tests could not:
 - `trace_every_call` reports, besides any360::sys's calls, each runtime call handed one of any360::sys's handles, and
   the start of every wait (a wait that never returns shows).
 
+## Step 4: done (the threads in Crackdown)
+
+With `stateless,files,objects,threads` Crackdown loads and plays (2026-11-05, 270-291 FPS on the city route at
+~2,250 draws, as with the objects alone); its 29 thread calls include `ExCreateThread`, the TLS, critical sections,
+spin locks and IRQL, `KeDelayExecutionThread`, affinity and priority, `ExTerminateThread`.
+
+What the game found that the tests could not:
+
+- The runtime answers its calls only on its own threads: the first `XMsgInProcessCall` (XAM, still the runtime's)
+  from a thread any360::sys made read a null current thread. `Scheduler::SetThreadRunner` lets a binder say how the
+  host threads that run guest code run it; the ReXGlue binder runs each of them (the threads, the DPC worker) inside an
+  `XHostThread`, so the runtime sees a thread of its own while the guest code keeps any360::sys's KTHREAD and PCR.
+  `host_system_tests` checks it. The main thread and the threads made before the switch stay the runtime's; nothing in
+  Crackdown needed any360::sys to adopt them.
+
 ## Who does what
 
 - `layer/sys` (the calls, `SetHandleBase`, `AdoptCurrentThread`, the page map import): the sys session.

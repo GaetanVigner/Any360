@@ -52,17 +52,21 @@ class Presenter {
   VkFormat format_ = VK_FORMAT_UNDEFINED;
   VkExtent2D extent_{};
   VkCommandPool pool_ = VK_NULL_HANDLE;
-  VkCommandBuffer cb_ = VK_NULL_HANDLE;
-  VkSemaphore acquired_ = VK_NULL_HANDLE;
+  // Frames in flight: a present waits for the one three frames back, not the last (the renderer's thread otherwise
+  // waits for the GPU to finish every frame before it records the next).
+  static constexpr uint32_t kFrames = 3;
+  VkCommandBuffer cbs_[kFrames] = {};
+  VkSemaphore acquired_[kFrames] = {};
+  VkFence fences_[kFrames] = {};
+  uint32_t slot_ = 0;
   std::vector<VkSemaphore> rendered_;  // one per swapchain image
-  VkFence fence_ = VK_NULL_HANDLE;
   Image frame_;
   Buffer staging_;
   std::string overlay_text_;
   Buffer overlay_;  // the overlay's pixels, in the swapchain's format
   uint32_t overlay_width_ = 0, overlay_height_ = 0, overlay_scale_ = 0;
   bool overlay_dirty_ = false;
-  void DrawOverlay(VkCommandBuffer cb, VkImage target);
+  void DrawOverlay(VkCommandBuffer cb, VkImage target, uint32_t slot);  // slot: the frame being recorded
   uint64_t presented_ = 0;
   bool vsync_ = false;
   std::string error_;

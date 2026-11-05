@@ -54,7 +54,7 @@ void Presenter::SetOverlay(const std::string& text) {
   overlay_dirty_ = true;
 }
 
-void Presenter::DrawOverlay(VkCommandBuffer cb, VkImage target) {
+void Presenter::DrawOverlay(VkCommandBuffer cb, VkImage target, uint32_t slot) {
   if (overlay_text_.empty()) return;
   const Functions& f = device_.fn();
   // Glyph cells of 6 x 9 font pixels (a pixel apart, a pixel of border), each font pixel `scale` swapchain pixels.
@@ -63,6 +63,14 @@ void Presenter::DrawOverlay(VkCommandBuffer cb, VkImage target) {
   const uint32_t height = std::min(9 * scale, extent_.height);
   if (!width || !height) return;
   if (overlay_dirty_ || scale != overlay_scale_ || width != overlay_width_ || height != overlay_height_) {
+    // The other frames in flight may still copy from the buffer: they finish before it is written (rarely, the text
+    // changes about once a second). This frame's own fence was reset already and is not waited.
+    VkFence others[kFrames];
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < kFrames; ++i) {
+      if (i != slot) others[count++] = fences_[i];
+    }
+    f.vkWaitForFences(device_.device(), count, others, VK_TRUE, UINT64_MAX);
     if (overlay_.size < VkDeviceSize(width) * height * 4) {
       DestroyBuffer(device_, overlay_);
       if (!CreateBuffer(device_, VkDeviceSize(width) * height * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, overlay_)) return;
@@ -106,8 +114,10 @@ Presenter::~Presenter() {
   if (!d) return;
   f.vkDeviceWaitIdle(d);
   DestroySwapchain();
-  if (fence_) f.vkDestroyFence(d, fence_, nullptr);
-  if (acquired_) f.vkDestroySemaphore(d, acquired_, nullptr);
+  for (uint32_t i = 0; i < kFrames; ++i) {
+    if (fences_[i]) f.vkDestroyFence(d, fences_[i], nullptr);
+    if (acquired_[i]) f.vkDestroySemaphore(d, acquired_[i], nullptr);
+  }
   if (pool_) f.vkDestroyCommandPool(d, pool_, nullptr);
   DestroyImage(device_, frame_);
   DestroyBuffer(device_, staging_);
@@ -134,15 +144,18 @@ bool Presenter::Resize(uint32_t width, uint32_t height) {
     pool_info.queueFamilyIndex = device_.queue_family();
     VkCommandBufferAllocateInfo alloc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
     alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    alloc.commandBufferCount = 1;
+    alloc.commandBufferCount = kFrames;
     VkSemaphoreCreateInfo semaphore{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     fence.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     if (f.vkCreateCommandPool(d, &pool_info, nullptr, &pool_) != VK_SUCCESS) return Fail("command pool");
     alloc.commandPool = pool_;
-    if (f.vkAllocateCommandBuffers(d, &alloc, &cb_) != VK_SUCCESS || f.vkCreateSemaphore(d, &semaphore, nullptr, &acquired_) != VK_SUCCESS ||
-        f.vkCreateFence(d, &fence, nullptr, &fence_) != VK_SUCCESS) {
-      return Fail("presentation objects");
+    if (f.vkAllocateCommandBuffers(d, &alloc, cbs_) != VK_SUCCESS) return Fail("presentation objects");
+    for (uint32_t i = 0; i < kFrames; ++i) {
+      if (f.vkCreateSemaphore(d, &semaphore, nullptr, &acquired_[i]) != VK_SUCCESS ||
+          f.vkCreateFence(d, &fence, nullptr, &fences_[i]) != VK_SUCCESS) {
+        return Fail("presentation objects");
+      }
     }
   }
 
@@ -221,7 +234,14 @@ bool Presenter::PresentWith(const uint32_t* rgba, const BlitFn* blit_source, uin
   if (!swapchain_) return extent_.width && extent_.height ? Fail("no swapchain (call Resize)") : true;
   if (!width || !height) return Fail("empty frame");
 
-  f.vkWaitForFences(d, 1, &fence_, VK_TRUE, UINT64_MAX);
+  const uint32_t slot = slot_;
+  // This slot's last present has run; a CPU frame rewrites the shared frame image and staging: all of them.
+  if (rgba) {
+    f.vkWaitForFences(d, kFrames, fences_, VK_TRUE, UINT64_MAX);
+  } else {
+    f.vkWaitForFences(d, 1, &fences_[slot], VK_TRUE, UINT64_MAX);
+  }
+  const VkCommandBuffer cb = cbs_[slot];
   // The frame image (RGBA8, the front buffer's size) and its staging memory, for CPU frames.
   if (rgba && (frame_.width != width || frame_.height != height)) {
     DestroyImage(device_, frame_);
@@ -235,34 +255,34 @@ bool Presenter::PresentWith(const uint32_t* rgba, const BlitFn* blit_source, uin
   if (rgba) std::memcpy(staging_.mapped, rgba, size_t(width) * height * 4);
 
   uint32_t index = 0;
-  const VkResult acquired = f.vkAcquireNextImageKHR(d, swapchain_, UINT64_MAX, acquired_, VK_NULL_HANDLE, &index);
+  const VkResult acquired = f.vkAcquireNextImageKHR(d, swapchain_, UINT64_MAX, acquired_[slot], VK_NULL_HANDLE, &index);
   if (acquired == VK_ERROR_OUT_OF_DATE_KHR) return Fail("swapchain out of date (resize)");
   if (acquired != VK_SUCCESS && acquired != VK_SUBOPTIMAL_KHR) return Fail("vkAcquireNextImageKHR failed");
-  f.vkResetFences(d, 1, &fence_);
+  f.vkResetFences(d, 1, &fences_[slot]);
 
-  f.vkResetCommandBuffer(cb_, 0);
+  f.vkResetCommandBuffer(cb, 0);
   VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-  f.vkBeginCommandBuffer(cb_, &begin);
+  f.vkBeginCommandBuffer(cb, &begin);
   if (rgba) {
-    Barrier(f, cb_, frame_.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    Barrier(f, cb, frame_.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     VkBufferImageCopy upload{};
     upload.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     upload.imageExtent = {width, height, 1};
-    f.vkCmdCopyBufferToImage(cb_, staging_.buffer, frame_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &upload);
-    Barrier(f, cb_, frame_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    f.vkCmdCopyBufferToImage(cb, staging_.buffer, frame_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &upload);
+    Barrier(f, cb, frame_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
   }
   const VkImage target = images_[index];
-  Barrier(f, cb_, target, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+  Barrier(f, cb, target, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
   const VkClearColorValue black{{0, 0, 0, 1}};
   const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-  f.vkCmdClearColorImage(cb_, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+  f.vkCmdClearColorImage(cb, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
   // Fit the frame in the window with its aspect ratio (black bars on the long side).
   const float scale = std::min(float(extent_.width) / width, float(extent_.height) / height);
   const int32_t w = std::max(1, int32_t(width * scale)), h = std::max(1, int32_t(height * scale));
   const int32_t x = (int32_t(extent_.width) - w) / 2, y = (int32_t(extent_.height) - h) / 2;
   if (blit_source) {
-    (*blit_source)(cb_, target, VkOffset3D{x, y, 0}, VkOffset3D{x + w, y + h, 1});
+    (*blit_source)(cb, target, VkOffset3D{x, y, 0}, VkOffset3D{x + w, y + h, 1});
   } else {
     VkImageBlit blit{};
     blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
@@ -270,23 +290,24 @@ bool Presenter::PresentWith(const uint32_t* rgba, const BlitFn* blit_source, uin
     blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     blit.dstOffsets[0] = {x, y, 0};
     blit.dstOffsets[1] = {x + w, y + h, 1};
-    f.vkCmdBlitImage(cb_, frame_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+    f.vkCmdBlitImage(cb, frame_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                      &blit, VK_FILTER_LINEAR);
   }
-  DrawOverlay(cb_, target);
-  Barrier(f, cb_, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-  f.vkEndCommandBuffer(cb_);
+  DrawOverlay(cb, target, slot);
+  Barrier(f, cb, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+  f.vkEndCommandBuffer(cb);
 
   const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
   VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
   submit.waitSemaphoreCount = 1;
-  submit.pWaitSemaphores = &acquired_;
+  submit.pWaitSemaphores = &acquired_[slot];
   submit.pWaitDstStageMask = &wait_stage;
   submit.commandBufferCount = 1;
-  submit.pCommandBuffers = &cb_;
+  submit.pCommandBuffers = &cb;
   submit.signalSemaphoreCount = 1;
   submit.pSignalSemaphores = &rendered_[index];
-  if (f.vkQueueSubmit(device_.queue(), 1, &submit, fence_) != VK_SUCCESS) return Fail("vkQueueSubmit failed");
+  if (f.vkQueueSubmit(device_.queue(), 1, &submit, fences_[slot]) != VK_SUCCESS) return Fail("vkQueueSubmit failed");
+  slot_ = (slot + 1) % kFrames;
   VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
   present.waitSemaphoreCount = 1;
   present.pWaitSemaphores = &rendered_[index];

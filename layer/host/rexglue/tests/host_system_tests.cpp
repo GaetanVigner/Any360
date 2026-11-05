@@ -32,7 +32,7 @@ namespace {
 
 using namespace any360::host::rexglue;
 
-constexpr uint32_t kEntry = 0x82000000, kSum = 0x82000100;
+constexpr uint32_t kEntry = 0x82000000, kSum = 0x82000100, kInThread = 0x82000300;
 
 int g_failures = 0;
 #define CHECK(condition)                                          \
@@ -51,6 +51,10 @@ void Sum(PPCContext& ctx, uint8_t*) {
   CHECK(ctx.r1.u32 == 0x12340000 && ctx.r13.u32 == 0x56780000);
   ctx.r3.u64 = ctx.r3.u64 + ctx.r4.u64 + ctx.r5.u64 + ctx.r6.u64 + ctx.r7.u64 + ctx.r8.u64 + ctx.r9.u64 + ctx.r10.u64;
 }
+
+// Guest code on a thread any360::sys made: whether the runtime sees a thread of its own there (its calls need one).
+std::atomic<int> g_in_runtime_thread{-1};
+void InThread(PPCContext&, uint8_t*) { g_in_runtime_thread = rex::system::XThread::IsInThread() ? 1 : 0; }
 
 uint32_t Load32(const uint8_t* base, uint32_t address) {
   uint32_t v;
@@ -185,6 +189,14 @@ void Entry(PPCContext& ctx, uint8_t* base) {
   __imp__CreateFileA(call, base);
   CHECK(!any360::sys::Objects().OwnsHandle(call.r3.u32));  // the runtime's answer (no such device there either)
   EnableSystemGroup(SysGroup::kFiles, false);
+  // A thread any360::sys creates runs inside one of the runtime's.
+  {
+    const uint32_t handle_out = g_runtime->memory()->SystemHeapAlloc(8);
+    CHECK(any360::sys::Threads().CreateThread(any360::sys::Guest{base}, handle_out, 0, 0, 0, kInThread, 0, 0) == 0);
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (g_in_runtime_thread < 0 && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    CHECK(g_in_runtime_thread == 1);
+  }
   // Guest code through the dispatcher, eight arguments.
   CHECK(DispatchGuest(kSum, 0x12340000, 0x56780000, std::initializer_list<uint64_t>{1, 2, 3, 4, 5, 6, 7, 8}.begin(), 8, nullptr) == 36);
   CHECK(any360::sys::Threads().Dispatch(kSum, {0, 0x56780000, 0x12340000}, {10, 20}) == 30);
@@ -207,7 +219,7 @@ int main() {
   g_runtime = &runtime;
   auto* dispatcher = runtime.function_dispatcher();
   if (!dispatcher->InitializeFunctionTable(kEntry, 0x10000, kEntry, 0x20000, true) || !dispatcher->SetFunction(kEntry, &Entry) ||
-      !dispatcher->SetFunction(kSum, &Sum)) {
+      !dispatcher->SetFunction(kSum, &Sum) || !dispatcher->SetFunction(kInThread, &InThread)) {
     std::printf("host_system_tests: cannot register the guest functions\n");
     return 2;
   }

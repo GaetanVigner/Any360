@@ -254,7 +254,10 @@ uint32_t KeInsertQueueDpc(Guest g, uint32_t dpc, uint32_t arg1, uint32_t arg2) {
     GuestContext context;
     if (Threads().CreateContext(g, 0x4000, context) == 0) {
       dpc_stop = false;
-      dpc_thread = std::thread(RunDpcs, Objects().guest(), context);
+      dpc_thread = std::thread([context] {
+        GuestContext c = context;
+        Threads().RunAsGuestThread([](void* p) { RunDpcs(Objects().guest(), *static_cast<GuestContext*>(p)); }, &c);
+      });
     }
   }
   dpc_ready.notify_one();
