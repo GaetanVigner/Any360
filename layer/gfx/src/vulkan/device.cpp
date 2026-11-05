@@ -179,7 +179,16 @@ bool Device::Create(const DeviceOptions& options) {
   // What the translated shaders use where the device has it (every desktop driver and RADV do).
   VkPhysicalDeviceFeatures2 supported{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
   fn_.vkGetPhysicalDeviceFeatures2(physical_, &supported);
-  VkPhysicalDeviceFeatures2 enabled{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &v13};
+  // Uniform blocks laid out as the translated shaders declare them (std430-like offsets), where the device has it.
+  VkPhysicalDeviceVulkan12Features v12_supported{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+  {
+    VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &v12_supported};
+    fn_.vkGetPhysicalDeviceFeatures2(physical_, &query);
+  }
+  VkPhysicalDeviceVulkan12Features v12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &v13};
+  v12.uniformBufferStandardLayout = v12_supported.uniformBufferStandardLayout;
+  v12.scalarBlockLayout = v12_supported.scalarBlockLayout;  // the system constants' vec3 + float members
+  VkPhysicalDeviceFeatures2 enabled{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &v12};
   enabled.features.shaderClipDistance = supported.features.shaderClipDistance;
   enabled.features.shaderCullDistance = supported.features.shaderCullDistance;
   enabled.features.fragmentStoresAndAtomics = supported.features.fragmentStoresAndAtomics;
@@ -192,6 +201,7 @@ bool Device::Create(const DeviceOptions& options) {
   enabled.features.depthClamp = supported.features.depthClamp;
   enabled.features.imageCubeArray = supported.features.imageCubeArray;
   enabled.features.shaderStorageImageWriteWithoutFormat = supported.features.shaderStorageImageWriteWithoutFormat;
+  enabled.features.sampleRateShading = supported.features.sampleRateShading;
   // A lost device's fault (address, vendor data) when the driver reports it (VK_EXT_device_fault).
   VkPhysicalDeviceFaultFeaturesEXT fault{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT};
   VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, &enabled};

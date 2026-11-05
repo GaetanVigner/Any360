@@ -690,6 +690,7 @@ class VulkanRenderer : public gfx::Renderer {
   std::condition_variable submit_cv_, submitted_cv_;
   std::deque<uint32_t> to_submit_;
   bool submitting_ = false, submit_stopping_ = false;
+  uint32_t submitting_index_ = 0;  // the batch being submitted, while submitting_
   bool segment_secondary_ = false;  // the open pass takes secondary command buffers
   VkFormat segment_formats_[4] = {};
   VkFormat segment_depth_ = VK_FORMAT_UNDEFINED;
@@ -735,10 +736,17 @@ class VulkanRenderer : public gfx::Renderer {
   VkPipelineLayout gamma_pipeline_layout_ = VK_NULL_HANDLE;
   VkPipeline gamma_pipeline_ = VK_NULL_HANDLE;
   VkDescriptorPool gamma_pool_ = VK_NULL_HANDLE;
-  VkDescriptorSet gamma_set_ = VK_NULL_HANDLE;
-  Buffer gamma_lut_buffer_;
-  Image gamma_image_;
-  VkImageLayout gamma_image_layout_ = VK_IMAGE_LAYOUT_UNDEFINED;
+  // One set, LUT and output image a presented frame, used in turn: the presenter keeps frames in flight, and a frame
+  // still running on the GPU must not see its set rewritten (a lost device) or its image overwritten.
+  struct GammaFrame {
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    Buffer lut;
+    Image image;
+    VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  };
+  static constexpr uint32_t kGammaFrames = 4;  // more than the presenter's frames in flight
+  std::array<GammaFrame, kGammaFrames> gamma_frames_;
+  uint32_t gamma_next_ = 0;
   std::array<std::array<uint8_t, 256>, 3> gamma_lut_ = [] {
     std::array<std::array<uint8_t, 256>, 3> lut{};
     for (auto& channel : lut) {
