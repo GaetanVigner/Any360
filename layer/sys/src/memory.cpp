@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <utility>
 
 namespace any360::sys {
 
@@ -32,6 +33,7 @@ MemoryManager& Memory() {
 MemoryManager::MemoryManager() { Reset(); }
 
 void MemoryManager::Reset() {
+  std::lock_guard lock(mutex_);
   Reset({{0x00000000, 0x40000000, 0x1000, false},
          {0x40000000, 0x3F000000, 0x10000, false},
          {0xA0000000, 0x20000000, 0x10000, true},
@@ -41,6 +43,7 @@ void MemoryManager::Reset() {
 }
 
 void MemoryManager::Reset(const std::vector<HeapSpec>& specs) {
+  std::lock_guard lock(mutex_);
   heaps_.clear();
   physical_space_ = 0;
   for (const HeapSpec& spec : specs) {
@@ -118,13 +121,13 @@ bool MemoryManager::AllocRange(Heap& heap, uint32_t low, uint32_t high, uint32_t
     uint32_t start = std::min<uint32_t>(last, uint32_t(heap.pages.size() - 1));
     start = start + 1 >= pages ? (start + 1 - pages) / align_pages * align_pages : 0;
     for (;; start -= align_pages) {
-      if (start >= start_min && fits(start)) return take(start);
+      if (start >= start_min && fits(start) && Claim(heap, start, pages, protect)) return take(start);
       if (start < align_pages || start < start_min) break;
     }
     return false;
   }
   for (uint32_t start = RoundUp(start_min, align_pages); start + pages <= heap.pages.size(); start += align_pages) {
-    if (fits(start)) return take(start);
+    if (fits(start) && Claim(heap, start, pages, protect)) return take(start);
   }
   return false;
 }
@@ -135,6 +138,24 @@ bool MemoryManager::AllocFixed(Heap& heap, uint32_t address, uint32_t size, uint
   // Reserving needs free pages; committing needs free or reserved ones (committed pages stay as they are).
   for (uint32_t p = start; p < start + pages; ++p) {
     if (state == kReserved && heap.pages[p].state != kFree) return false;
+  }
+  // The runs of free pages are new here: claimed from the shared owner, all or none.
+  std::vector<std::pair<uint32_t, uint32_t>> claimed;
+  for (uint32_t p = start; p < start + pages;) {
+    if (heap.pages[p].state != kFree) {
+      ++p;
+      continue;
+    }
+    uint32_t q = p;
+    while (q < start + pages && heap.pages[q].state == kFree) ++q;
+    if (!Claim(heap, p, q - p, protect)) {
+      for (const auto& [first, count] : claimed) {
+        if (owner_.release) owner_.release(heap.spec.base + (first << heap.shift), owner_.user);
+      }
+      return false;
+    }
+    claimed.push_back({p, q - p});
+    p = q;
   }
   for (uint32_t p = start; p < start + pages; ++p) {
     Page& page = heap.pages[p];
@@ -156,6 +177,7 @@ bool MemoryManager::Release(Heap& heap, uint32_t address, uint32_t* size) {
   if (size) *size = pages << heap.shift;
   if (heap.spec.physical) MarkPhysical(PhysicalAddress(address), pages << heap.shift, false);
   for (uint32_t p = start; p < start + pages && p < heap.pages.size(); ++p) heap.pages[p] = {};
+  if (owner_.release) owner_.release(address, owner_.user);
   return true;
 }
 
@@ -168,7 +190,38 @@ bool MemoryManager::Decommit(Heap& heap, uint32_t address, uint32_t size) {
   return true;
 }
 
+bool MemoryManager::Claim(Heap& heap, uint32_t start, uint32_t pages, uint32_t protect) {
+  if (!owner_.claim) return true;
+  const uint32_t address = heap.spec.base + (start << heap.shift);
+  if (owner_.claim(address, pages << heap.shift, protect, owner_.user)) return true;
+  // The other side holds part of the range; its binder marks what it holds. Should it mark nothing, the first page is
+  // taken as the other side's, so a search moves on.
+  bool unmarked = true;
+  for (uint32_t p = start; p < start + pages && unmarked; ++p) unmarked = heap.pages[p].state == kFree;
+  if (unmarked) MarkForeign(address, heap.spec.page_size);
+  return false;
+}
+
+void MemoryManager::SetSharedOwner(const SharedOwner& owner) {
+  std::lock_guard lock(mutex_);
+  owner_ = owner;
+}
+
+void MemoryManager::MarkForeign(uint32_t address, uint32_t size) {
+  std::lock_guard lock(mutex_);
+  Heap* heap = Find(address);
+  if (!heap || !size) return;
+  const uint32_t start = (address - heap->spec.base) >> heap->shift;
+  const uint32_t end = std::min<uint32_t>(uint32_t(heap->pages.size()), (address - heap->spec.base + size - 1) / heap->spec.page_size + 1);
+  for (uint32_t p = start; p < end; ++p) {
+    if (heap->pages[p].state != kFree) continue;
+    heap->pages[p] = {start, end - start, kCommitted, uint16_t(kPageReadWrite), uint16_t(kPageReadWrite)};
+  }
+  if (heap->spec.physical) MarkPhysical(PhysicalAddress(heap->spec.base + (start << heap->shift)), (end - start) << heap->shift, true);
+}
+
 bool MemoryManager::QueryRegion(uint32_t address, RegionInfo& info) const {
+  std::lock_guard lock(mutex_);
   const Heap* heap = Find(address);
   if (!heap) return false;
   const uint32_t start = (address - heap->spec.base) >> heap->shift;
@@ -195,6 +248,7 @@ bool MemoryManager::QueryRegion(uint32_t address, RegionInfo& info) const {
 
 uint32_t MemoryManager::AllocateVirtual(Guest g, uint32_t base_ptr, uint32_t size_ptr, uint32_t allocation_type, uint32_t protect,
                                         uint32_t) {
+  std::lock_guard lock(mutex_);
   if (!base_ptr || !size_ptr || !g.Load32(size_ptr)) return kStatusInvalidParameter;
   if (!(allocation_type & (kMemCommit | kMemReset | kMemReserve))) return kStatusInvalidParameter;
   if ((allocation_type & kMemReset) && (allocation_type & ~kMemReset)) return kStatusInvalidParameter;
@@ -232,6 +286,7 @@ uint32_t MemoryManager::AllocateVirtual(Guest g, uint32_t base_ptr, uint32_t siz
 }
 
 uint32_t MemoryManager::FreeVirtual(Guest g, uint32_t base_ptr, uint32_t size_ptr, uint32_t free_type, uint32_t) {
+  std::lock_guard lock(mutex_);
   if (!base_ptr || !size_ptr) return kStatusInvalidParameter;
   uint32_t address = g.Load32(base_ptr), size = g.Load32(size_ptr);
   if (!address) return kStatusMemoryNotAllocated;
@@ -251,6 +306,7 @@ uint32_t MemoryManager::FreeVirtual(Guest g, uint32_t base_ptr, uint32_t size_pt
 }
 
 uint32_t MemoryManager::QueryVirtual(Guest g, uint32_t address, uint32_t info_ptr, uint32_t region_type) {
+  std::lock_guard lock(mutex_);
   if (region_type > 2) return kStatusInvalidParameter;
   RegionInfo info;
   if (!QueryRegion(address, info)) return kStatusInvalidParameter;
@@ -266,6 +322,7 @@ uint32_t MemoryManager::QueryVirtual(Guest g, uint32_t address, uint32_t info_pt
 
 uint32_t MemoryManager::AllocatePhysical(Guest g, uint32_t, uint32_t size, uint32_t protect, uint32_t min_address,
                                          uint32_t max_address, uint32_t alignment) {
+  std::lock_guard lock(mutex_);
   if (!(protect & (kPageReadOnly | kPageReadWrite))) return 0;
   const uint32_t page_size = (protect & kMemLargePages) ? 0x10000 : (protect & kMem16MbPages) ? 0x1000000 : 0x1000;
   Heap* heap = ByPageSize(true, page_size);
@@ -282,10 +339,12 @@ uint32_t MemoryManager::AllocatePhysical(Guest g, uint32_t, uint32_t size, uint3
 }
 
 void MemoryManager::FreePhysical(uint32_t, uint32_t address) {
+  std::lock_guard lock(mutex_);
   if (Heap* heap = Find(address)) Release(*heap, address, nullptr);
 }
 
 uint32_t MemoryManager::QueryProtect(uint32_t address) const {
+  std::lock_guard lock(mutex_);
   const Heap* heap = Find(address);
   if (!heap) return 0;
   const Page& page = heap->pages[(address - heap->spec.base) >> heap->shift];
@@ -293,6 +352,7 @@ uint32_t MemoryManager::QueryProtect(uint32_t address) const {
 }
 
 void MemoryManager::SetProtect(uint32_t address, uint32_t size, uint32_t protect) {
+  std::lock_guard lock(mutex_);
   const uint32_t required = kPageNoAccess | kPageReadOnly | kPageReadWrite | kPageExecuteRead | kPageExecuteReadWrite;
   if (std::popcount(protect & required) != 1) return;
   Heap* heap = Find(address);
@@ -304,6 +364,7 @@ void MemoryManager::SetProtect(uint32_t address, uint32_t size, uint32_t protect
 }
 
 uint32_t MemoryManager::ProtectVirtual(Guest g, uint32_t base_ptr, uint32_t size_ptr, uint32_t protect, uint32_t old_protect_ptr) {
+  std::lock_guard lock(mutex_);
   constexpr uint32_t kStatusNotCommitted = 0xC000002D, kStatusInvalidPageProtection = 0xC0000045;
   if (!base_ptr || !size_ptr || !g.Load32(size_ptr)) return kStatusInvalidParameter;
   if (protect & (kPageExecuteRead | kPageExecuteReadWrite | 0x10 | 0x80)) return kStatusInvalidPageProtection;
@@ -327,6 +388,7 @@ uint32_t MemoryManager::ProtectVirtual(Guest g, uint32_t base_ptr, uint32_t size
 }
 
 uint32_t MemoryManager::QueryAllocationSize(uint32_t address) const {
+  std::lock_guard lock(mutex_);
   const Heap* heap = Find(address);
   if (!heap) return 0;
   const Page& page = heap->pages[(address - heap->spec.base) >> heap->shift];
@@ -334,6 +396,7 @@ uint32_t MemoryManager::QueryAllocationSize(uint32_t address) const {
 }
 
 uint32_t MemoryManager::QueryStatistics(Guest g, uint32_t stats) const {
+  std::lock_guard lock(mutex_);
   if (!stats) return kStatusInvalidParameter;
   if (g.Load32(stats) != 104) return kStatusBufferTooSmall;
   uint32_t used_physical_pages = 0, reserved_virtual_bytes = 0;
@@ -357,6 +420,7 @@ uint32_t MemoryManager::QueryStatistics(Guest g, uint32_t stats) const {
 }
 
 uint32_t MemoryManager::XamAlloc(Guest g, uint32_t, uint32_t size, uint32_t out_ptr) {
+  std::lock_guard lock(mutex_);
   if (!out_ptr) return kStatusInvalidParameter;
   Heap* heap = ByPageSize(false, 0x1000);
   uint32_t address = 0;
@@ -370,6 +434,7 @@ uint32_t MemoryManager::XamAlloc(Guest g, uint32_t, uint32_t size, uint32_t out_
 }
 
 uint32_t MemoryManager::AllocatePages(Guest g, uint32_t size) {
+  std::lock_guard lock(mutex_);
   Heap* heap = ByPageSize(false, 0x1000);
   const uint32_t bytes = RoundUp(std::max<uint32_t>(size, 1), 0x1000);
   uint32_t address = 0;
@@ -382,32 +447,38 @@ uint32_t MemoryManager::AllocatePages(Guest g, uint32_t size) {
 }
 
 void MemoryManager::FreePages(uint32_t address) {
+  std::lock_guard lock(mutex_);
   if (Heap* heap = Find(address)) Release(*heap, address, nullptr);
 }
 
 uint32_t MemoryManager::XamFree(Guest, uint32_t address) {
+  std::lock_guard lock(mutex_);
   if (Heap* heap = Find(address)) Release(*heap, address, nullptr);
   return kStatusSuccess;
 }
 
 uint32_t MemoryManager::IsAddressValid(uint32_t address) const {
+  std::lock_guard lock(mutex_);
   RegionInfo info;
   return QueryRegion(address, info) && info.state == kMemCommit && info.protect && !(info.protect & 0x01 /* PAGE_NOACCESS */) ? 1 : 0;
 }
 
 uint32_t MemoryManager::CreateKernelStack(Guest g, uint32_t size) {
+  std::lock_guard lock(mutex_);
   const uint32_t aligned = (size + 0xFFF) & ~0xFFFu;
   const uint32_t base = AllocatePages(g, aligned);
   return base ? base + aligned : 0;
 }
 
 uint32_t MemoryManager::DeleteKernelStack(uint32_t stack_end) {
+  std::lock_guard lock(mutex_);
   if (!QueryAllocationSize(stack_end)) return 0xC0000001;
   FreePages(stack_end);
   return 0;
 }
 
 uint32_t MemoryManager::AllocateEncrypted(Guest g, uint32_t size, uint32_t base_out) {
+  std::lock_guard lock(mutex_);
   if (!size) return kStatusInvalidParameter;
   const uint32_t bytes = RoundUp(size, 0x10000);
   if (bytes > 0x1000000) return kStatusInvalidParameter;
@@ -426,6 +497,7 @@ uint32_t MemoryManager::AllocateEncrypted(Guest g, uint32_t size, uint32_t base_
 }
 
 uint32_t MemoryManager::FreeEncrypted(Guest g, uint32_t base_ptr) {
+  std::lock_guard lock(mutex_);
   if (!base_ptr) return kStatusInvalidParameter;
   const uint32_t address = g.Load32(base_ptr);
   const Heap* heap = Find(address);

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <mutex>
 #include <vector>
 
 #include "guest.h"
@@ -63,6 +64,18 @@ class MemoryManager {
   uint32_t XamFree(Guest g, uint32_t address);
 
   bool QueryRegion(uint32_t address, RegionInfo& info) const;
+  // Another allocator sharing the guest address space (a binder's runtime, which goes on allocating its own
+  // structures): every range handed out here is claimed there first and released there when released here. A refused
+  // claim (the other side holds part of the range) leaves the range to it: the binder marks what it holds with
+  // MarkForeign, and the search goes on elsewhere. Unset, the manager owns the address space alone.
+  struct SharedOwner {
+    bool (*claim)(uint32_t address, uint32_t size, uint32_t protect, void* user) = nullptr;
+    void (*release)(uint32_t address, void* user) = nullptr;
+    void* user = nullptr;
+  };
+  void SetSharedOwner(const SharedOwner& owner);
+  // Pages the other allocator holds: committed read-write, a region of their own, never handed out here.
+  void MarkForeign(uint32_t address, uint32_t size);
   // MmIsAddressValid: whether the page is committed and accessible.
   uint32_t IsAddressValid(uint32_t address) const;
   // MmCreateKernelStack / MmDeleteKernelStack: committed read-write pages from the 4 KB heap; Create returns the stack's
@@ -97,6 +110,8 @@ class MemoryManager {
   bool AllocRange(Heap& heap, uint32_t low, uint32_t high, uint32_t size, uint32_t alignment, uint8_t state,
                   uint32_t protect, bool top_down, uint32_t& address);
   bool AllocFixed(Heap& heap, uint32_t address, uint32_t size, uint8_t state, uint32_t protect);
+  // The pages [start, start + pages) of `heap` claimed from the shared owner (true without one).
+  bool Claim(Heap& heap, uint32_t start, uint32_t pages, uint32_t protect);
   bool Release(Heap& heap, uint32_t address, uint32_t* size);
   bool Decommit(Heap& heap, uint32_t address, uint32_t size);
   bool PhysicalFree(uint32_t physical, uint32_t size) const;
@@ -105,6 +120,8 @@ class MemoryManager {
   std::vector<Heap> heaps_;
   std::vector<uint8_t> physical_pages_;  // 4 KB pages of the physical space, 1 = in use
   uint32_t physical_space_ = 0;
+  SharedOwner owner_;
+  mutable std::recursive_mutex mutex_;  // the public calls, from any thread
 };
 
 MemoryManager& Memory();

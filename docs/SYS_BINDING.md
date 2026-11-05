@@ -166,6 +166,28 @@ What the game found that the tests could not:
   `host_system_tests` checks it. The main thread and the threads made before the switch stay the runtime's; nothing in
   Crackdown needed any360::sys to adopt them.
 
+## Step 5: done (the memory in Crackdown)
+
+With `stateless,files,objects,threads,memory` Crackdown loads and plays (2026-11-05, ~230 FPS at 2,000-2,600 draws in a
+one-minute run; not yet compared on the same route against step 4). Its memory calls: `NtAllocateVirtualMemory`,
+`NtFreeVirtualMemory`, `NtQueryVirtualMemory`, `MmAllocatePhysicalMemoryEx`, `MmFreePhysicalMemory`,
+`MmGetPhysicalAddress`, `Mm{Query,Set}AddressProtect`, `MmQueryStatistics`, `XamAlloc`, `XamFree`.
+
+One guest address space, two allocators: the runtime goes on allocating its own structures (its system heap, the
+stacks of the `XHostThread`s, XAM's and audio's buffers). `MemoryManager::SetSharedOwner` gives the memory manager the
+other allocator: every range it hands out is claimed there first (the ReXGlue binder commits it read-write in the
+runtime's heap, which keeps the host pages accessible) and released there with it; a refused claim makes the binder
+mark what the runtime holds (`MarkForeign`, from `QueryRegionInfo`) and the search moves on. `StartSystem` imports the
+runtime's whole page map first. This also covers any360::sys's own allocations (pools, strings) while the memory
+group is still the runtime's. `host_system_tests` checks both directions.
+
+What the game found that the tests could not:
+
+- The memory manager had no lock (as the dispatcher before step 3): it has one now.
+- A thread with no handle left frees itself as it ends; since step 4 it runs on an `XHostThread`, not on the
+  `std::thread` the scheduler keeps, so `OnFree` took it for another thread and joined the thread waiting for it,
+  holding the objects' lock: the loading screen hung. The scheduler records the thread that really runs `Run`.
+
 ## Who does what
 
 - `layer/sys` (the calls, `SetHandleBase`, `AdoptCurrentThread`, the page map import): the sys session.

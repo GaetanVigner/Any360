@@ -24,6 +24,7 @@
 #include <thread>
 
 #include "any360/host/system.h"
+#include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
 #include "any360/host/system_exports.inc"
@@ -196,6 +197,36 @@ void Entry(PPCContext& ctx, uint8_t* base) {
     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     while (g_in_runtime_thread < 0 && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(5));
     CHECK(g_in_runtime_thread == 1);
+    // One with no handle frees itself as it ends, from the runtime's thread it ran on (it joined itself before). The
+    // object calls after it would wait for ever on the lock it held.
+    g_in_runtime_thread = -1;
+    CHECK(any360::sys::Threads().CreateThread(any360::sys::Guest{base}, 0, 0, 0, 0, kInThread, 0, 0) == 0);
+    while (g_in_runtime_thread < 0 && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    CHECK(g_in_runtime_thread == 1 && any360::sys::Objects().Lookup(Load32(base, handle_out)) != 0);
+  }
+  // One address space, two allocators: what any360::sys hands out is the runtime's too (allocated there), what the
+  // runtime had is never handed out, and a release here releases there.
+  {
+    auto* memory = g_runtime->memory();
+    const any360::sys::Guest g{base};
+    const uint32_t base_ptr = memory->SystemHeapAlloc(8), size_ptr = base_ptr + 4;
+    g.Store32(base_ptr, 0);
+    g.Store32(size_ptr, 0x20000);
+    CHECK(any360::sys::Memory().AllocateVirtual(g, base_ptr, size_ptr, 0x3000, 4, 0) == 0);  // reserve | commit, read-write
+    const uint32_t ours = g.Load32(base_ptr);
+    rex::memory::HeapAllocationInfo info{};
+    CHECK(ours && memory->LookupHeap(ours)->QueryRegionInfo(ours, &info) && info.state != 0);
+    // The runtime's own allocation lands elsewhere, and any360::sys's next one avoids it.
+    const uint32_t theirs = memory->SystemHeapAlloc(0x10000);
+    CHECK(theirs && (theirs + 0x10000 <= ours || theirs >= ours + 0x20000));
+    g.Store32(size_ptr, 0);
+    CHECK(any360::sys::Memory().FreeVirtual(g, base_ptr, size_ptr, 0x8000, 0) == 0);  // release
+    CHECK(memory->LookupHeap(ours)->QueryRegionInfo(ours, &info) && info.state == 0);
+    // Physical memory the same way.
+    const uint32_t physical = any360::sys::Memory().AllocatePhysical(g, 0, 0x2000, 4, 0, 0xFFFFFFFF, 0x1000);
+    CHECK(physical >= 0xA0000000 && memory->LookupHeap(physical)->QueryRegionInfo(physical, &info) && info.state != 0);
+    any360::sys::Memory().FreePhysical(0, physical);
   }
   // Guest code through the dispatcher, eight arguments.
   CHECK(DispatchGuest(kSum, 0x12340000, 0x56780000, std::initializer_list<uint64_t>{1, 2, 3, 4, 5, 6, 7, 8}.begin(), 8, nullptr) == 36);

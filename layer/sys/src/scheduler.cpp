@@ -53,6 +53,7 @@ uint8_t CpuOf(uint32_t affinity) {
 struct Scheduler::Thread {
   uint32_t kthread = 0, pcr = 0, stack_top = 0, start = 0, context = 0, xapi = 0;
   std::thread host;
+  std::thread::id runner;  // the host thread running Run: `host` itself, or one a ThreadRunner runs it on
   std::mutex mutex;
   std::condition_variable resumed;
   std::atomic<bool> done{false};
@@ -345,6 +346,7 @@ void Scheduler::PauseWhileSuspended(Guest g, Thread* thread) {
 void Scheduler::Run(Thread* t) {
   // The guest memory is the same for every thread: read it back through the objects' heap base.
   const Guest g = Objects().guest();
+  t->runner = std::this_thread::get_id();
   PauseWhileSuspended(g, t);
   g.Store8(t->kthread + kThreadState, 2);  // running
   uint32_t exit_code;
@@ -388,7 +390,7 @@ void Scheduler::OnFree(uint32_t kthread) {
   }
   if (!thread) return;
   // Freed from its own last instruction (Run's dereference) or from another thread once it has ended.
-  if (thread->host.get_id() == std::this_thread::get_id()) {
+  if (thread->host.get_id() == std::this_thread::get_id() || thread->runner == std::this_thread::get_id()) {
     thread->host.detach();
   } else if (thread->host.joinable()) {
     thread->host.join();

@@ -11,6 +11,7 @@
 #include <rex/system/xmemory.h>
 #include <rex/system/xthread.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdio>
@@ -18,10 +19,12 @@
 #include <mutex>
 #include <string>
 #include <unordered_set>
+#include <utility>
 
 #include "any360/sys/exports.h"
 #include "any360/sys/files.h"
 #include "any360/sys/guest.h"
+#include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
 #include "any360/sys/xam.h"
@@ -168,6 +171,46 @@ void CallBothExport(SysGroup group, const char* name, GuestFunction any360, Gues
   if (reference) RunReference(name, reference, copy, base);
 }
 
+// The heaps any360::sys's memory manager keeps (MemoryManager::Reset's layout).
+constexpr std::pair<uint32_t, uint32_t> kSharedHeaps[] = {{0x00000000, 0x40000000}, {0x40000000, 0x3F000000},
+                                                         {0xA0000000, 0x20000000}, {0xC0000000, 0x20000000},
+                                                         {0xE0000000, 0x1FD00000}, {0x8C000000, 0x04000000}};
+
+// The runtime's regions in [low, low + size) marked as its own in any360::sys's memory manager.
+static void ImportRuntimeRange(uint32_t low, uint32_t size) {
+  auto* memory = REX_KERNEL_STATE()->memory();
+  const uint64_t end = uint64_t(low) + size;
+  for (uint64_t address = low; address < end;) {
+    rex::memory::BaseHeap* heap = memory->LookupHeap(uint32_t(address));
+    rex::memory::HeapAllocationInfo info{};
+    if (!heap || !heap->QueryRegionInfo(uint32_t(address), &info) || !info.region_size) {
+      address += 0x1000;
+      continue;
+    }
+    if (info.state) {
+      any360::sys::Memory().MarkForeign(uint32_t(address), uint32_t(std::min<uint64_t>(info.region_size, end - address)));
+    }
+    address += info.region_size;
+  }
+}
+
+static bool ClaimInRuntime(uint32_t address, uint32_t size, uint32_t, void*) {
+  rex::memory::BaseHeap* heap = REX_KERNEL_STATE()->memory()->LookupHeap(address);
+  if (!heap) return true;  // a range the runtime does not manage
+  // Committed read-write there: the runtime keeps the host pages accessible for the guest code.
+  if (heap->AllocFixed(address, size, heap->page_size(),
+                       rex::memory::kMemoryAllocationReserve | rex::memory::kMemoryAllocationCommit,
+                       rex::memory::kMemoryProtectRead | rex::memory::kMemoryProtectWrite)) {
+    return true;
+  }
+  ImportRuntimeRange(address, size);  // what the runtime took since, so the search moves past it
+  return false;
+}
+
+static void ReleaseInRuntime(uint32_t address, void*) {
+  if (rex::memory::BaseHeap* heap = REX_KERNEL_STATE()->memory()->LookupHeap(address)) heap->Release(address);
+}
+
 static void RunInRuntimeThread(void (*body)(void*), void* arg, void*) {
   auto* kernel = REX_KERNEL_STATE();
   auto thread = rex::system::make_object<rex::system::XHostThread>(kernel, 16 * 1024, 0, [body, arg] {
@@ -291,6 +334,11 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
   // The runtime answers calls (its XAM, audio, input, memory while they are its) only on its own threads: any360::sys's
   // threads run inside one each (an XHostThread, whose KTHREAD and PCR the guest code never sees).
   any360::sys::Threads().SetThreadRunner(&RunInRuntimeThread, nullptr);
+  // One guest address space, two allocators: any360::sys's memory manager starts from the runtime's page map and
+  // claims each range it hands out in the runtime's heaps, which go on serving the runtime's own allocations.
+  any360::sys::Memory().Reset();
+  any360::sys::Memory().SetSharedOwner({&ClaimInRuntime, &ReleaseInRuntime, nullptr});
+  for (const auto& [low, size] : kSharedHeaps) ImportRuntimeRange(low, size);
   // The title as the runtime loaded it: XamGetCurrentTitleId, RtlImageXexHeaderField's callers and the variables
   // (XexExecutableModuleHandle, ExLoadedImageName...) answer from these.
   g_started = true;
