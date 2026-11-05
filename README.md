@@ -14,6 +14,16 @@ Started from the [Crackdown port](https://github.com/GaetanVigner/CrackdownRewri
 native Vulkan renderer in progress, 103 functions already rewritten). Next title:
 [The Simpsons Game](https://github.com/GaetanVigner/TheSimpsonsGameRewrite).
 
+## Games running on Any360
+
+Each frame below was drawn by Any360's own renderer (`any360::gfx`, Vulkan) from the game's recompiled code. Click a
+game to open its repository.
+
+| [Crackdown](https://github.com/GaetanVigner/CrackdownRewrite) | [The Simpsons Game](https://github.com/GaetanVigner/TheSimpsonsGameRewrite) | [Test Drive Unlimited](https://github.com/GaetanVigner/TDURewrite) |
+|:---:|:---:|:---:|
+| [![Crackdown on Any360](docs/showcase/crackdown.jpg)](https://github.com/GaetanVigner/CrackdownRewrite) | [![The Simpsons Game on Any360](docs/showcase/simpsons.jpg)](https://github.com/GaetanVigner/TheSimpsonsGameRewrite) | [![Test Drive Unlimited on Any360](docs/showcase/tdu.jpg)](https://github.com/GaetanVigner/TDURewrite) |
+| Pacific City, in game | Split-screen co-op | Title screen |
+
 **No game data, no game binaries.** Any360 holds the toolkit, the system layer, the renderer and reports made of counts,
 hashes, addresses and public API names. A title's reconstructed source lives in that title's own repository. Bring
 your own copy of the game.
