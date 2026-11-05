@@ -67,14 +67,14 @@
 "name":"WAIT_REG_EQ",
 "family":"command processor",
 "value":82,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:WAIT_REG_GTE",
 "name":"WAIT_REG_GTE",
 "family":"command processor",
 "value":83,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:WAIT_UNTIL_READ",
@@ -186,7 +186,7 @@
 "name":"DRAW_INDX_BIN",
 "family":"command processor",
 "value":52,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:DRAW_INDX_2_BIN",
@@ -256,7 +256,7 @@
 "name":"LOAD_CONSTANT_CONTEXT",
 "family":"command processor",
 "value":46,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:INVALIDATE_STATE",
@@ -270,7 +270,7 @@
 "name":"SET_SHADER_BASES",
 "family":"command processor",
 "value":74,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:SET_BIN_BASE_OFFSET",

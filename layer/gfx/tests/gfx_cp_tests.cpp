@@ -251,6 +251,25 @@ void IndirectAndShaders() {
     CHECK(im.source == DrawSource::kImmediate && im.index_count == 3 && im.immediate == std::vector<uint32_t>({0x00010002, 0x00030000}));
   }
   CHECK(cp.reg(reg::VGT_DMA_BASE) == (0xA0000000u | 0x40000) && cp.reg(reg::VGT_DRAW_INITIATOR) == auto_initiator);
+  // The a2xx packets Mesa's freedreno driver emits: DRAW_INDX_BIN (DRAW_INDX with two binning dwords after the
+  // initiator, ignored), WAIT_REG_EQ / WAIT_REG_GTE on a register that already holds the value (register, reference,
+  // mask, interval), LOAD_CONSTANT_CONTEXT (registers from memory at the address plus the offset), SET_SHADER_BASES.
+  const size_t draws_before = recorder.draws.size();
+  ring.Put({Type0(reg::RB_MODECONTROL, 1), 4, Type3(pm4::DRAW_INDX_BIN, 6), 0, dma_initiator, 0x11, 0x22,
+            0xA0000000u | 0x44000, 2u << 30 | 3});
+  SetBig(kData + 4 * 0x10, 0xABCD);
+  ring.Put({Type0(0x2011, 1), 5, Type3(pm4::WAIT_REG_EQ, 4), 0x2011, 5, 0xFF, 1, Type3(pm4::WAIT_REG_GTE, 4), 0x2011, 3, 0xFF, 1,
+            Type3(pm4::LOAD_CONSTANT_CONTEXT, 3), kData, 4u << 16 | 0x10, 1, Type3(pm4::SET_SHADER_BASES, 1), 0x80000180,
+            Type0(0x2012, 1), 0x99});
+  ring.Run();
+  CHECK(recorder.draws.size() == draws_before + 1);
+  if (recorder.draws.size() == draws_before + 1) {
+    const DrawCall& bin = recorder.draws.back();
+    CHECK(bin.primitive_type == 4 && bin.index_count == 6 && bin.source == DrawSource::kDma && bin.index_base == 0x44000 &&
+          bin.index_bytes == 6);
+  }
+  CHECK(cp.reg(0x2010) == 0xABCD && cp.reg(0x2012) == 0x99 && cp.opcode_counts()[pm4::WAIT_REG_EQ] == 1 &&
+        cp.opcode_counts()[pm4::WAIT_REG_GTE] == 1 && cp.opcode_counts()[pm4::SET_SHADER_BASES] == 1);
   // XE_SWAP: the front buffer to present.
   ring.Put({Type3(pm4::XE_SWAP, 64), 0x53574150, 0xBE000000u | 0x100000, 1280, 720});
   for (int i = 0; i < 60; ++i) ring.Put(Type2());
