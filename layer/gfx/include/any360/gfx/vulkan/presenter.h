@@ -28,6 +28,10 @@ class Presenter {
   bool Present(const BlitFn& blit, uint32_t width, uint32_t height);
 
   uint64_t presented() const { return presented_; }
+  // A line of text drawn over the top-left corner of every frame presented (a frame rate counter), in a small built-in
+  // font (digits, a few letters and signs; others are blank). Empty: none. Cheap: rasterized when it changes, copied
+  // onto the swapchain image (a few kilobytes) each frame.
+  void SetOverlay(const std::string& text);
   // Vertical sync (FIFO). Off (the default): frames as fast as they come, MAILBOX where the driver has it (no tearing),
   // else IMMEDIATE. Takes effect at the next Resize.
   void SetVsync(bool on) { vsync_ = on; }
@@ -54,6 +58,11 @@ class Presenter {
   VkFence fence_ = VK_NULL_HANDLE;
   Image frame_;
   Buffer staging_;
+  std::string overlay_text_;
+  Buffer overlay_;  // the overlay's pixels, in the swapchain's format
+  uint32_t overlay_width_ = 0, overlay_height_ = 0, overlay_scale_ = 0;
+  bool overlay_dirty_ = false;
+  void DrawOverlay(VkCommandBuffer cb, VkImage target);
   uint64_t presented_ = 0;
   bool vsync_ = false;
   std::string error_;
