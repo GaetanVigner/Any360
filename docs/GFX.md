@@ -198,6 +198,15 @@ From the Crackdown runs (each one cost a debugging session there):
    constants addressed by a0, each a scenario. Two were wrong: the alpha test compared with 0 (RB_ALPHA_REF never
    reached the shader), and user clip planes were ignored (PA_CL_CLIP_CNTL and PA_CL_UCP_n now set the vertex
    shader's clip or cull distances, as the reference translates them).
+   Texture dimensions (2026-11-05): stacked 2D layers (tfetch3D at normalized w, slices 4 KB-aligned), cube faces
+   (tfetchCube at face coordinates) and now 3D textures: a 3D host image whose z slices the cache loads at the row
+   pitch times 32 rows (the volume, depth aligned to 4, is what aligns to 4 KB) or, tiled, through the 3D tiling
+   (XGRAPHICS::TileVolume, as the reference computes it); the base level only for now.
+   Points (2026-11-05): point lists drawn as two-triangle strips, each the square of PA_SU_POINT_SIZE (or of the size
+   the vertex shader writes, clamped by PA_SU_POINT_MINMAX), the vertex shader expanding them as the reference does
+   without geometry shaders (the renderer drew sizeless host points). Point sprite coordinates (pixel parameter
+   generation on points) stay to do. Anisotropic filtering (a 4:1 fetch constant keeps the finer level of a
+   texture read obliquely) and bin predication (gfx_cp_tests) are tested too.
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured

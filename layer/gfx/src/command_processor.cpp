@@ -528,6 +528,10 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     case pm4::NOP:
     case pm4::VIZ_QUERY:
     case pm4::WAIT_FOR_IDLE:
+    // Waits for memory reads and indirect buffer prefetches to complete: this command processor reads memory as it
+    // goes, nothing is ever in flight.
+    case pm4::WAIT_UNTIL_READ:
+    case pm4::WAIT_IB_PFD_COMPLETE:
     case pm4::CONTEXT_UPDATE:
     case pm4::INVALIDATE_STATE:
       break;

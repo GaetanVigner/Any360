@@ -227,6 +227,12 @@
   "render features:MSAA 2x",
   "render features:texture filtering",
   "render features:vertex textures",
-  "render features:dynamic constant addressing"
+  "render features:dynamic constant addressing",
+  "render features:textures (3D)",
+  "render features:cube textures",
+  "render features:texture arrays",
+  "primitive types:kPointList",
+  "render features:anisotropic filtering",
+  "render features:predication (bins)"
  ]
 }

@@ -37,7 +37,7 @@ struct Timer {
 constexpr uint32_t kRbDepthInfo = 0x2002, kPaScScreenScissorTl = 0x200E, kPaScScreenScissorBr = 0x200F,
                    kPaScWindowOffset = 0x2080, kPaScWindowScissorTl = 0x2081, kPaScWindowScissorBr = 0x2082,
                    kRbColorMask = 0x2104, kRbBlendRed = 0x2105, kRbStencilRefMaskBf = 0x210C, kRbAlphaRef = 0x210E,
-                   kPaClClipCntl = 0x2204, kPaClUcp0X = 0x2388,
+                   kPaClClipCntl = 0x2204, kPaClUcp0X = 0x2388, kPaSuPointSize = 0x2280, kPaSuPointMinmax = 0x2281,
                    kRbStencilRefMask = 0x210D, kPaClVportXScale = 0x210F, kRbDepthControl = 0x2200,
                    kRbColorControl = 0x2202, kPaSuScModeCntl = 0x2205, kPaClVteCntl = 0x2206, kPaSuVtxCntl = 0x2302,
                    kRbModeControl = 0x2208, kPaSuPolyOffsetFrontScale = 0x2380, kRbSurfaceInfo = 0x2000,
@@ -941,18 +941,19 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
   // Rectangle lists are drawn as two-triangle strips whose fourth corner the vertex shader makes, quad lists as
   // triangle lists (a, b, c, a, c, d), as the reference does without geometry shaders; line loops as line strips
-  // back to their first vertex.
+  // back to their first vertex; point lists as two-triangle strips too, each the point's square of
+  // PA_SU_POINT_SIZE (or the size the vertex shader writes), as the reference does without geometry shaders.
   const bool rectangle_list = draw.primitive_type == 0x08, quad_list = draw.primitive_type == 0x0D,
-             line_loop = draw.primitive_type == 0x0C;
-  const VkPrimitiveTopology topology = rectangle_list ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
+             line_loop = draw.primitive_type == 0x0C, point_list = draw.primitive_type == 0x01;
+  const VkPrimitiveTopology topology = rectangle_list || point_list ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
                                        : quad_list    ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
                                        : line_loop    ? VK_PRIMITIVE_TOPOLOGY_LINE_STRIP
                                                       : Topology(draw.primitive_type);
   const uint32_t primitives = rectangle_list ? draw.index_count / 3
                               : quad_list    ? draw.index_count / 4
-                              : line_loop    ? draw.index_count
-                                             : 0;
-  const uint32_t host_index_count = rectangle_list ? (primitives ? 5 * primitives - 1 : 0)
+                              : line_loop || point_list ? draw.index_count
+                                                        : 0;
+  const uint32_t host_index_count = rectangle_list || point_list ? (primitives ? 5 * primitives - 1 : 0)
                                     : quad_list    ? 6 * primitives
                                     : line_loop    ? (primitives ? primitives + 1 : 0)
                                                    : draw.index_count;
@@ -964,13 +965,13 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     Fail("immediate indices");
     return;
   }
-  const bool polygonal = IsPolygonal(topology);
+  const bool polygonal = IsPolygonal(topology) && !point_list;
   // Primitive reset (PA_SU_SC_MODE_CNTL multi_prim_ib_ena, VGT_MULTI_PRIM_IB_RESET_INDX): strips of DMA indices are
   // cut at the reset index, as the reference does (16-bit indices only when the reset index fits in 16 bits).
   const uint32_t reset_index = regs[kVgtMultiPrimIbResetIndx];
   const bool strip = topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP || topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP ||
                      topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
-  const bool restart = rectangle_list || (draw.source == DrawSource::kDma && strip && ((regs[kPaSuScModeCntl] >> 21) & 1) &&
+  const bool restart = rectangle_list || point_list || (draw.source == DrawSource::kDma && strip && ((regs[kPaSuScModeCntl] >> 21) & 1) &&
                                           (draw.index_32 || reset_index <= UINT16_MAX));
 
   const bool wants_ps = edram_mode == 4 && draw.pixel_shader && !draw.pixel_shader->microcode.empty();
@@ -981,7 +982,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint64_t shader_key[4] = {draw.vertex_shader->hash, wants_ps ? draw.pixel_shader->hash : 0,
                                   uint64_t(regs[kSqProgramCntl]) << 32 | regs[kSqContextMisc],
                                   uint64_t(wants_ps) | uint64_t(rectangle_list) << 1 |
-                                      uint64_t(topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) << 2 |
+                                      uint64_t(point_list) << 2 |
                                       uint64_t(clip_planes) << 3 | uint64_t(clip_cull) << 9};
   const bool shaders_known = shader_memo_.valid && std::memcmp(shader_memo_.key, shader_key, sizeof(shader_key)) == 0;
   TranslatedShader* vs = shaders_known ? shader_memo_.vs : GetShader(*draw.vertex_shader);
@@ -1017,14 +1018,16 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   uint32_t param_gen = UINT32_MAX;
   if (ps) {
     interpolators = vs->shader->writes_interpolators() & ps->shader->GetInterpolatorInputMask(program_cntl, context_misc, param_gen);
-    if (param_gen != UINT32_MAX && topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) {
+    if (param_gen != UINT32_MAX && point_list) {
       Fail("point sprites with pixel parameter generation (not yet)");
       return;
     }
   }
   SpirvShaderTranslator::Modification vs_modification(translator_->GetDefaultVertexShaderModification(
       vs->shader->GetDynamicAddressableRegisterCount(program_cntl.vs_num_reg),
-      rectangle_list ? rg::Shader::HostVertexShaderType::kRectangleListAsTriangleStrip : rg::Shader::HostVertexShaderType::kVertex));
+      rectangle_list ? rg::Shader::HostVertexShaderType::kRectangleListAsTriangleStrip
+      : point_list   ? rg::Shader::HostVertexShaderType::kPointListAsTriangleStrip
+                     : rg::Shader::HostVertexShaderType::kVertex));
   vs_modification.vertex.interpolator_mask = interpolators;
   vs_modification.vertex.user_clip_plane_count = uint32_t(std::popcount(clip_planes));
   vs_modification.vertex.user_clip_plane_cull = clip_planes ? clip_cull : 0;
@@ -1317,7 +1320,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
                         kFetchBytes + 5 * constant_alignment_ + kFloatBufferBytes;
   // Everything this draw takes from the batch, checked up front: a flush once its constants are written would let
   // later draws overwrite them.
-  const uint32_t index_need = rectangle_list || quad_list || line_loop ? host_index_count * 4 + 4
+  const uint32_t index_need = rectangle_list || quad_list || line_loop || point_list ? host_index_count * 4 + 4
                               : draw.source == DrawSource::kDma ? draw.index_bytes + 4
                                                                 : 0;
   const uint32_t images_need = uint32_t(stage_textures[0].views.size() + stage_textures[1].views.size());
@@ -1366,6 +1369,18 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     system->flags |= SpirvShaderTranslator::kSysFlag_PrimitiveLine;
   }
   const float size[2] = {float(width), float(height)};
+  // Points: PA_SU_POINT_SIZE (half width and height) and PA_SU_POINT_MINMAX (the radius a vertex shader's size is
+  // clamped to), both 12.4 fixed point, as diameters in guest pixels; and how a guest pixel diameter becomes a
+  // radius in host normalized device coordinates (a guest pixel is `sample` host pixels).
+  if (point_list) {
+    const uint32_t point_size = regs[kPaSuPointSize], point_minmax = regs[kPaSuPointMinmax];
+    system->point_constant_diameter[0] = float(point_size >> 16) * 0.125f;
+    system->point_constant_diameter[1] = float(point_size & 0xFFFF) * 0.125f;
+    system->point_vertex_diameter_min = float(point_minmax & 0xFFFF) * 0.125f;
+    system->point_vertex_diameter_max = float(point_minmax >> 16) * 0.125f;
+    system->point_screen_diameter_to_ndc_radius[0] = float(sample_x) / size[0];
+    system->point_screen_diameter_to_ndc_radius[1] = float(sample_y) / size[1];
+  }
   // The window offset moves vertices too when PA_SU_SC_MODE_CNTL asks for it.
   // D3D's pixel centres (PA_SU_VTX_CNTL pix_center 0) are at integer window coordinates, the host's at .5: the
   // reference moves the window coordinates by half a pixel then.
@@ -1388,8 +1403,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   system->vertex_base_index = int32_t(regs[kVgtIndxOffset]);
   system->vertex_index_min = regs[kVgtMinVtxIndx];
   system->vertex_index_max = regs[kVgtMaxVtxIndx];
-  // A rectangle list's vertex shader loads its guest indices itself (from the strip vertex it runs for).
-  if (rectangle_list && draw.source == DrawSource::kDma) {
+  // A rectangle or point list's vertex shader loads its guest indices itself (from the strip vertex it runs for).
+  if ((rectangle_list || point_list) && draw.source == DrawSource::kDma) {
     system->flags |= SpirvShaderTranslator::kSysFlag_ComputeOrPrimitiveVertexIndexLoad;
     if (draw.index_32) system->flags |= SpirvShaderTranslator::kSysFlag_ComputeOrPrimitiveVertexIndexLoad32Bit;
     system->vertex_index_load_address = draw.index_base;
@@ -1483,12 +1498,12 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   job.restart = restart;
   job.reset_index = reset_index;
   job.primitives = primitives;
-  if (rectangle_list || quad_list || line_loop) {
+  if (rectangle_list || quad_list || line_loop || point_list) {
     if (draw.source == DrawSource::kDma && uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_) {
       Fail("index buffer outside the mirrored memory");
       return;
     }
-    job.indices = rectangle_list ? DrawJob::Indices::kRectangles
+    job.indices = rectangle_list || point_list ? DrawJob::Indices::kRectangles
                   : quad_list    ? DrawJob::Indices::kQuads
                                  : DrawJob::Indices::kLineLoop;
     job.index_type = VK_INDEX_TYPE_UINT32;
@@ -1509,7 +1524,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   job.index_src = physical_ + draw.index_base;
   job.index_bytes = draw.index_bytes;
   job.index_dst = static_cast<uint8_t*>(batch().indices.mapped) + job.index_offset;
-  if (draw.source == DrawSource::kDma && !rectangle_list && draw.index_endian != Endian::kNone) {
+  if (draw.source == DrawSource::kDma && !rectangle_list && !point_list && draw.index_endian != Endian::kNone) {
     CountSwapped(g_swapped.indices, draw.index_bytes);
   }
   mark(stats_.ns_draw_constants);

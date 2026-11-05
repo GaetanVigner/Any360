@@ -110,6 +110,11 @@ void RingAndRegisters() {
   w.Put({Type0(0x2005, 2), 0x55, 0x66, Type3(pm4::NOP, 1), 0});
   w.Run();
   CHECK(wrap.reg(0x2005) == 0x55 && wrap.reg(0x2006) == 0x66 && wrap.read_pointer() == 3 && Big(kWriteBack) == 3);
+  // The waits for reads and prefetches to complete pass at once (nothing is in flight), their payload skipped.
+  w.Put({Type3(pm4::WAIT_UNTIL_READ, 1), 0x1234, Type3(pm4::WAIT_IB_PFD_COMPLETE, 1), 0x5678, Type0(0x2007, 1), 0x77});
+  w.Run();
+  CHECK(wrap.reg(0x2007) == 0x77 && wrap.opcode_counts()[pm4::WAIT_UNTIL_READ] == 1 &&
+        wrap.opcode_counts()[pm4::WAIT_IB_PFD_COMPLETE] == 1);
   // MMIO reads: the display constants and the register file.
   CHECK(cp.ReadRegister(reg::D1MODE_VIEWPORT_SIZE) == (1280u << 16 | 720u) && cp.ReadRegister(reg::RB_EDRAM_TIMING) == 0x08100748);
   CHECK(cp.ReadRegister(reg::D1MODE_INTERRUPT_STATUS) == 1 && cp.ReadRegister(0x2001) == 0x22);
