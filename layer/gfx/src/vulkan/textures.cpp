@@ -73,6 +73,21 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
                                              VK_FORMAT_R8G8B8A8_SNORM};
   static const TextureFormatInfo k5_6_5 = {VK_FORMAT_R5G6B5_UNORM_PACK16, 2, 1, kRGBB, TextureFormatInfo::kSwapRedBlue565};
   static const TextureFormatInfo k2_10_10_10 = {VK_FORMAT_A2B10G10R10_UNORM_PACK32, 4, 1, kRGBA};
+  // 1:5:5:5 (red in the low bits, alpha the top bit) as A1R5G5B5 with red and blue exchanged; 4:4:4:4 (red in the
+  // low nibble) as A4B4G4R4, the same bits.
+  static const TextureFormatInfo k1_5_5_5 = {VK_FORMAT_A1R5G5B5_UNORM_PACK16, 2, 1, kRGBA, TextureFormatInfo::kSwapRedBlue1555};
+  static const TextureFormatInfo k4_4_4_4 = {VK_FORMAT_A4B4G4R4_UNORM_PACK16, 2, 1, kRGBA};
+  // 16-bit normalized components (textures read them as 0...1 or -1...1, unlike render targets' -32...32).
+  static const TextureFormatInfo k16 = {VK_FORMAT_R16_UNORM, 2, 1, kRRRR, TextureFormatInfo::kNone, VK_FORMAT_R16_SNORM};
+  static const TextureFormatInfo k16_16 = {VK_FORMAT_R16G16_UNORM, 4, 1, kRGGG, TextureFormatInfo::kNone,
+                                           VK_FORMAT_R16G16_SNORM};
+  static const TextureFormatInfo k16_16_16_16 = {VK_FORMAT_R16G16B16A16_UNORM, 8, 1, kRGBA, TextureFormatInfo::kNone,
+                                                 VK_FORMAT_R16G16B16A16_SNORM};
+  // DXN: two DXT5 alpha blocks (red, green), as BC5; DXT5A: one, as BC4.
+  static const TextureFormatInfo kDxn = {VK_FORMAT_BC5_UNORM_BLOCK, 16, 4, kRGGG, TextureFormatInfo::kNone,
+                                         VK_FORMAT_BC5_SNORM_BLOCK};
+  static const TextureFormatInfo kDxt5a = {VK_FORMAT_BC4_UNORM_BLOCK, 8, 4, kRRRR, TextureFormatInfo::kNone,
+                                           VK_FORMAT_BC4_SNORM_BLOCK};
   static const TextureFormatInfo kDxt1 = {VK_FORMAT_BC1_RGBA_UNORM_BLOCK, 8, 4, kRGBA};
   static const TextureFormatInfo kDxt3 = {VK_FORMAT_BC2_UNORM_BLOCK, 16, 4, kRGBA};
   static const TextureFormatInfo kDxt5 = {VK_FORMAT_BC3_UNORM_BLOCK, 16, 4, kRGBA};
@@ -90,14 +105,23 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
   static const TextureFormatInfo k24_8 = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kDepthUnorm24};
   static const TextureFormatInfo k24_8Float = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kDepthFloat24};
   switch (xenos_format) {
-    case 2: case 8: return &k8;  // k_8, k_8_A
+    // The interlaced and MPEG forms and the _A / _B / _AS_16_16_16_16 ones read the same bits (the latter only ask
+    // for more filtering precision), as the reference maps them.
+    case 2: case 8: case 9: case 43: return &k8;  // k_8, k_8_A, k_8_B, k_8_INTERLACED
+    case 3: return &k1_5_5_5;
     case 10: return &k8_8;
     case 4: return &k5_6_5;
-    case 6: return &k8_8_8_8;
-    case 7: return &k2_10_10_10;
-    case 18: return &kDxt1;
-    case 19: return &kDxt3;
-    case 20: return &kDxt5;
+    case 6: case 14: case 50: return &k8_8_8_8;  // k_8_8_8_8, _A, _AS_16_16_16_16
+    case 7: case 54: return &k2_10_10_10;
+    case 15: return &k4_4_4_4;
+    case 18: case 51: return &kDxt1;
+    case 19: case 52: return &kDxt3;
+    case 20: case 53: return &kDxt5;
+    case 24: case 41: case 46: case 47: return &k16;  // k_16, _MPEG, _INTERLACED, _MPEG_INTERLACED
+    case 25: case 42: case 48: return &k16_16;        // k_16_16, _MPEG, _MPEG_INTERLACED
+    case 26: return &k16_16_16_16;
+    case 49: return &kDxn;
+    case 59: return &kDxt5a;
     case 22: return &k24_8;
     case 23: return &k24_8Float;
     case 30: return &k16Float;
@@ -301,6 +325,13 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
       v = uint16_t((v & 0x07E0) | (v & 0x1F) << 11 | v >> 11);
       std::memcpy(&blocks[i], &v, 2);
     }
+  } else if (info->convert == TextureFormatInfo::kSwapRedBlue1555) {
+    for (size_t i = 0; i + 2 <= blocks.size(); i += 2) {
+      uint16_t v;
+      std::memcpy(&v, &blocks[i], 2);
+      v = uint16_t((v & 0x83E0) | (v & 0x1F) << 10 | (v >> 10 & 0x1F));
+      std::memcpy(&blocks[i], &v, 2);
+    }
   } else if (info->convert != TextureFormatInfo::kNone) {
     for (size_t i = 0; i + 4 <= blocks.size(); i += 4) {
       uint32_t v;
@@ -485,7 +516,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   std::vector<const GpuSource*> sources;
   uint64_t source_generation = 0;
   if (t.tiled && t.dimension == 1 && first_level == 0 && last_level == 0 &&
-      info->convert != TextureFormatInfo::kSwapRedBlue565) {
+      info->convert != TextureFormatInfo::kSwapRedBlue565 && info->convert != TextureFormatInfo::kSwapRedBlue1555) {
     const bool depth_texture = info->convert == TextureFormatInfo::kDepthUnorm24 ||
                                info->convert == TextureFormatInfo::kDepthFloat24;
     const uint32_t slice_stride = Place(t, *info, 0).slice_stride;

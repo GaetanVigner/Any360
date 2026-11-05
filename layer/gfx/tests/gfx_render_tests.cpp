@@ -1461,6 +1461,131 @@ int main(int argc, char** argv) {
       vertex_case(VF::k_32_32_32_32_FLOAT, false, false, 0, {Bits(1), Bits(-2), Bits(3), Bits(-4)}, {1, -2, 3, -4}, 0.0f);
     }
 
+    // Texture formats: a 4x4 texture of one texel (or one block) value in the format under test, linear, at its own
+    // address, its texels stored as the title does (big-endian units of `swap` bytes, undone by the fetch constant's
+    // endian mode); sampled with point filtering by the textured quad, x and y then z and w of the fetch exported.
+    // The fetch constant's swizzle (3 bits a component: 0-3, 4 zero, 5 one) fills what the format lacks.
+    {
+      const uint32_t quad = kVertices + 0x400;
+      const float v[4][6] = {{-1, -1, 0, 1, 0, 1}, {1, -1, 0, 1, 1, 1}, {-1, 1, 0, 1, 0, 0}, {1, 1, 0, 1, 1, 0}};
+      for (uint32_t i = 0; i < 4; ++i) {
+        for (uint32_t c = 0; c < 6; ++c) SetBig(quad + 24 * i + 4 * c, Bits(v[i][c]));
+      }
+      const char* names[64] = {};
+      names[2] = "k_8", names[3] = "k_1_5_5_5", names[4] = "k_5_6_5", names[6] = "k_8_8_8_8", names[7] = "k_2_10_10_10",
+      names[8] = "k_8_A", names[9] = "k_8_B", names[10] = "k_8_8", names[14] = "k_8_8_8_8_A", names[15] = "k_4_4_4_4",
+      names[18] = "k_DXT1", names[19] = "k_DXT2_3", names[20] = "k_DXT4_5", names[23] = "k_24_8_FLOAT", names[24] = "k_16",
+      names[25] = "k_16_16", names[26] = "k_16_16_16_16", names[30] = "k_16_FLOAT", names[31] = "k_16_16_FLOAT",
+      names[32] = "k_16_16_16_16_FLOAT", names[36] = "k_32_FLOAT", names[37] = "k_32_32_FLOAT",
+      names[38] = "k_32_32_32_32_FLOAT", names[41] = "k_16_MPEG", names[42] = "k_16_16_MPEG", names[43] = "k_8_INTERLACED",
+      names[46] = "k_16_INTERLACED", names[47] = "k_16_MPEG_INTERLACED", names[48] = "k_16_16_MPEG_INTERLACED",
+      names[49] = "k_DXN", names[50] = "k_8_8_8_8_AS_16_16_16_16", names[51] = "k_DXT1_AS_16_16_16_16",
+      names[52] = "k_DXT2_3_AS_16_16_16_16", names[53] = "k_DXT4_5_AS_16_16_16_16", names[54] = "k_2_10_10_10_AS_16_16_16_16",
+      names[59] = "k_DXT5A";
+      t::Tex fetch;
+      fetch.mag = fetch.min = 0, fetch.mip = 0;
+      t::Alu out_xy, out_zw;
+      out_xy.vector_mask = out_zw.vector_mask = 0b0011, out_xy.dest = out_zw.dest = kColor0;
+      out_xy.is_export = out_zw.is_export = true;
+      out_xy.src1 = out_xy.src2 = out_zw.src1 = out_zw.src2 = {1, true};
+      out_zw.src1_swizzle = out_zw.src2_swizzle = 2 | 2 << 2;  // x <- z, y <- w
+      uint32_t address = 0x100000;
+      // `unit`: the host bytes of one texel or block; `block`: 1 or 4 texels; `swap`: 2 (8-in-16) or 4 (8-in-32).
+      auto texture_case = [&](uint32_t format, std::vector<uint8_t> unit, uint32_t block, uint32_t swap, uint32_t swizzle,
+                              uint32_t signs, std::array<float, 4> expected, float tolerance) {
+        const uint32_t base = address;
+        address += 0x1000;
+        // Rows of 32 texels (the pitch's unit): units of `unit` bytes, 32 / block of them a row, rows 256-byte aligned
+        // (linear textures' pitch alignment).
+        const uint32_t row_units = 32 / block, rows = 4 / block, unit_bytes = uint32_t(unit.size());
+        const uint32_t row_bytes = (row_units * unit_bytes + 255) & ~255u;
+        for (uint32_t r = 0; r < rows; ++r) {
+          for (uint32_t u = 0; u < row_units; ++u) {
+            const uint32_t at = base + r * row_bytes + u * unit_bytes;
+            for (uint32_t b = 0; b < unit_bytes; ++b) g_memory[at + (b ^ (swap - 1))] = unit[b];
+          }
+        }
+        const uint32_t endian = swap == 2 ? 1 : 2;
+        for (bool zw : {false, true}) {
+          std::vector<uint32_t> words;
+          t::PushTex(words, fetch);
+          t::PushAlu(words, zw ? out_zw : out_xy);
+          Case k{std::string("texture formats:") + names[format], {}, {}, expected[zw ? 2 : 0], expected[zw ? 3 : 1],
+                 tolerance};
+          k.ps = t::BuildCfShader({t::CfAlloc(uc::AllocType::kPsColors, 0),
+                                   t::CfExec(uc::ControlFlowOpcode::kExecEnd, 1, 2, 0b01)},
+                                  words);
+          k.setup = [&s, quad, base, format, endian, swizzle, signs] {
+            s.Shader(0, t::BuildTexturedVertexShader());
+            s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+            s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | signs << 2 | 2u << 10 | 2u << 13 | 1u << 22,
+                   format | endian << 6 | base, 3u | 3u << 13, swizzle << 1, 0, 1u << 9});
+          };
+          cases.push_back(k);
+        }
+      };
+      auto sw = [](uint32_t x, uint32_t y, uint32_t z, uint32_t w) { return x | y << 3 | z << 6 | w << 9; };
+      const uint32_t rgba = sw(0, 1, 2, 3), r001 = sw(0, 4, 4, 5), rg01 = sw(0, 1, 4, 5), rgb1 = sw(0, 1, 2, 5);
+      auto le16 = [](std::initializer_list<uint16_t> values) {
+        std::vector<uint8_t> out;
+        for (uint16_t v : values) out.push_back(uint8_t(v)), out.push_back(uint8_t(v >> 8));
+        return out;
+      };
+      auto le32 = [](std::initializer_list<uint32_t> values) {
+        std::vector<uint8_t> out;
+        for (uint32_t v : values) {
+          for (uint32_t b = 0; b < 4; ++b) out.push_back(uint8_t(v >> (8 * b)));
+        }
+        return out;
+      };
+      // 5-bit components reach the sampler through 8 bits (bit replication: 16/31 reads 132/255).
+      const float u8 = 1.0f / 255, u16 = 1.0f / 65535, kUnorm8 = 1.0f / 1024, kUnorm5 = 1.0f / 256, kUnorm16 = 1e-4f;
+      for (uint32_t format : {2u, 8u, 9u, 43u}) {
+        texture_case(format, {0x80, 0x80, 0x80, 0x80}, 1, 4, r001, 0, {128 * u8, 0, 0, 1}, kUnorm8);
+      }
+      texture_case(10, {0x40, 0xC0}, 1, 2, rg01, 0, {64 * u8, 192 * u8, 0, 1}, kUnorm8);
+      texture_case(4, le16({uint16_t(31 | 0 << 5 | 16 << 11)}), 1, 2, rgb1, 0, {1, 0, 16.0f / 31, 1}, kUnorm5);
+      texture_case(3, le16({uint16_t(31 | 16 << 5 | 0 << 10 | 1 << 15)}), 1, 2, rgba, 0, {1, 16.0f / 31, 0, 1}, kUnorm5);
+      texture_case(15, le16({uint16_t(0xF | 0x8 << 4 | 0x4 << 8)}), 1, 2, rgba, 0, {1, 8.0f / 15, 4.0f / 15, 0}, kUnorm8);
+      for (uint32_t format : {6u, 14u, 50u}) {
+        texture_case(format, {0x40, 0x80, 0xC0, 0xFF}, 1, 4, rgba, 0, {64 * u8, 128 * u8, 192 * u8, 1}, kUnorm8);
+      }
+      for (uint32_t format : {7u, 54u}) {
+        texture_case(format, le32({100u | 1000u << 10 | 512u << 20 | 3u << 30}), 1, 4, rgba, 0,
+                     {100.0f / 1023, 1000.0f / 1023, 512.0f / 1023, 1}, kUnorm8);
+      }
+      for (uint32_t format : {24u, 41u, 46u, 47u}) {
+        texture_case(format, le16({0x4000}), 1, 2, r001, 0, {16384 * u16, 0, 0, 1}, kUnorm16);
+      }
+      for (uint32_t format : {25u, 42u, 48u}) {
+        texture_case(format, le16({0x4000, 0xC000}), 1, 2, rg01, 0, {16384 * u16, 49152 * u16, 0, 1}, kUnorm16);
+      }
+      // Signed x and y (fetch constant sign 1 each): the same bits as -1...1.
+      texture_case(25, le16({0x4000, 0xC000}), 1, 2, rg01, 1 | 1 << 2, {16384.0f / 32767, -16384.0f / 32767, 0, 1}, kUnorm16);
+      texture_case(26, le16({0x4000, 0xC000, 0xFFFF, 0}), 1, 2, rgba, 0, {16384 * u16, 49152 * u16, 1, 0}, kUnorm16);
+      texture_case(30, le16({0x3800}), 1, 2, r001, 0, {0.5f, 0, 0, 1}, 0.0f);
+      texture_case(31, le16({0x3800, 0xC000}), 1, 2, rg01, 0, {0.5f, -2, 0, 1}, 0.0f);
+      texture_case(32, le16({0x3800, 0xC000, 0x6400, 0x3000}), 1, 2, rgba, 0, {0.5f, -2, 1024, 0.125f}, 0.0f);
+      texture_case(36, le32({Bits(2.5f)}), 1, 4, r001, 0, {2.5f, 0, 0, 1}, 0.0f);
+      texture_case(37, le32({Bits(2.5f), Bits(-3)}), 1, 4, rg01, 0, {2.5f, -3, 0, 1}, 0.0f);
+      texture_case(38, le32({Bits(1), Bits(-2), Bits(3), Bits(-4)}), 1, 4, rgba, 0, {1, -2, 3, -4}, 0.0f);
+      texture_case(23, le32({vk::FloatTo20e4(0.5f) << 8}), 1, 4, r001, 0, {0.5f, 0, 0, 1}, 1e-6f);
+      // Blocks of 4x4 texels, both end points the same colour: red (DXT1), green (DXT2/3, alpha 15 of 15), blue
+      // (DXT4/5, alpha end points 255); DXN 128 and 64 in red and green, DXT5A 192.
+      const std::vector<uint8_t> red = le16({0xF800, 0xF800, 0, 0}), green = le16({0x07E0, 0x07E0, 0, 0}),
+                                 blue = le16({0x001F, 0x001F, 0, 0});
+      for (uint32_t format : {18u, 51u}) texture_case(format, red, 4, 2, rgba, 0, {1, 0, 0, 1}, kUnorm8);
+      std::vector<uint8_t> dxt3(8, 0xFF);
+      dxt3.insert(dxt3.end(), green.begin(), green.end());
+      for (uint32_t format : {19u, 52u}) texture_case(format, dxt3, 4, 2, rgba, 0, {0, 1, 0, 1}, kUnorm8);
+      std::vector<uint8_t> dxt5 = {0xFF, 0xFF, 0, 0, 0, 0, 0, 0};
+      dxt5.insert(dxt5.end(), blue.begin(), blue.end());
+      for (uint32_t format : {20u, 53u}) texture_case(format, dxt5, 4, 2, rgba, 0, {0, 0, 1, 1}, kUnorm8);
+      texture_case(49, {0x80, 0x80, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0, 0, 0, 0, 0, 0}, 4, 2, rg01, 0, {128 * u8, 64 * u8, 0, 1},
+                   kUnorm8);
+      texture_case(59, {0xC0, 0xC0, 0, 0, 0, 0, 0, 0}, 4, 2, r001, 0, {192 * u8, 0, 0, 1}, kUnorm8);
+    }
+
     const float clear[4] = {kKilled, kKilled, 0, 0};
     std::vector<std::string> passed;
     for (const Case& k : cases) {

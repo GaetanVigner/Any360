@@ -184,6 +184,14 @@ From the Crackdown runs (each one cost a debugging session there):
    strips and loops (a strip back to the first vertex, expanded like quad lists). The command processor now
    gathers an immediate shader load that wraps around the ring's end (it assumed it never would; the bench's
    ring did).
+   Texture formats (2026-11-05): 36 formats sampled from a 4x4 texture of one value as a title stores it (linear
+   rows 256-byte aligned, big-endian units the fetch constant's endian mode undoes): the 8-bit, 5:6:5, 1:5:5:5,
+   4:4:4:4, 8:8:8:8, 2:10:10:10, normalized 16-bit (signed too), half and 32-bit float, float24 depth and DXT1-5,
+   DXN, DXT5A ones, with their _A, _B, interlaced, MPEG and _AS_16_16_16_16 forms (the same bits). The texture
+   cache gained 1:5:5:5 (A1R5G5B5, red and blue exchanged), 4:4:4:4 (A4B4G4R4), the 16-bit normalized formats,
+   DXN (BC5), DXT5A (BC4) and those forms. 5-bit components reach the sampler through 8 bits (bit replication).
+   Still to do: the 1-bit, 6:5:5, YUV, EXPAND, 10:11:11, 32-bit integer, _AS_8 views, 32_32_32_FLOAT, DXT3A, CTX1
+   and EDRAM formats.
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured
