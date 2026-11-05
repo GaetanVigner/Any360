@@ -6,6 +6,8 @@
 #include <bit>
 #include <cstring>
 
+#include <immintrin.h>
+
 namespace any360::gfx::vk {
 
 namespace {
@@ -13,6 +15,18 @@ namespace {
 constexpr uint32_t Swizzle(uint32_t x, uint32_t y, uint32_t z, uint32_t w) { return x | y << 3 | z << 6 | w << 9; }
 constexpr uint32_t kRGBA = Swizzle(0, 1, 2, 3), kRRRR = Swizzle(0, 0, 0, 0), kRGGG = Swizzle(0, 1, 1, 1),
                    kRGBB = Swizzle(0, 1, 2, 2);
+
+// Byte orders as 16-byte shuffles (each 32-bit word): none, 8 in 16, 8 in 32, 16 in 32.
+alignas(16) constexpr uint8_t kWordShuffles[4][16] = {
+    {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, {1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14},
+    {3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12}, {2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13}};
+// SSSE3's byte shuffle (every x86-64 CPU this runs on has it; the build targets the baseline).
+#if defined(__clang__) || defined(__GNUC__)
+__attribute__((target("ssse3")))
+#endif
+__m128i ShuffleBytes(__m128i v, __m128i mask) {
+  return _mm_shuffle_epi8(v, mask);
+}
 
 uint32_t Swap(uint32_t v, uint32_t endian) {
   switch (endian) {
@@ -362,7 +376,31 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
       std::memcpy(out, reinterpret_cast<const uint8_t*>(&v) + (address & 3), bpb);
     }
   };
-  for (uint32_t s = 0; s < slices; ++s) {
+  if (t.dimension != 2 && t.tiled && bpb >= 4 && t.endian <= 3) {
+    // Tiled 2D levels of 4, 8 or 16-byte blocks: 16 bytes of a tiled row are contiguous from a block x aligned to their
+    // count (as for resolves written back): one tiled offset and one byte shuffle for them.
+    const uint32_t group = 16 / bpb;
+    const __m128i mask = _mm_load_si128(reinterpret_cast<const __m128i*>(kWordShuffles[t.endian]));
+    for (uint32_t s = 0; s < slices; ++s) {
+      for (uint32_t y = 0; y < bh; ++y) {
+        uint8_t* row = &blocks[s * slice_bytes + size_t(y) * bw * bpb];
+        for (uint32_t x = 0; x < bw;) {
+          const uint32_t tx = x + p.x;
+          const uint32_t address = p.address + s * p.slice_stride +
+                                   uint32_t(TiledOffset2D(int32_t(tx), int32_t(y + p.y), p.pitch_blocks, bpb_log2));
+          if (tx % group == 0 && x + group <= bw && uint64_t(address) + 16 <= mirror_bytes_) {
+            const __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(physical_ + address));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(row + size_t(x) * bpb), ShuffleBytes(v, mask));
+            x += group;
+            continue;
+          }
+          read(address, row + size_t(x) * bpb);
+          ++x;
+        }
+      }
+    }
+  }
+  for (uint32_t s = 0; s < slices && !(t.dimension != 2 && t.tiled && bpb >= 4 && t.endian <= 3); ++s) {
     for (uint32_t y = 0; y < bh; ++y) {
       for (uint32_t x = 0; x < bw; ++x) {
         uint32_t offset;
