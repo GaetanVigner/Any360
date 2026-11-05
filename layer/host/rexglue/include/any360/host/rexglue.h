@@ -65,6 +65,11 @@ struct GraphicsOptions {
   // With fences_after_draws: a fence once the batches before it no longer read guest memory (what they fetch copied
   // at their submission), unless they write some (resolves): not after the GPU has run them.
   bool fences_when_captured = true;
+  // A texture the renderer must read from guest memory over a resolve it keeps on the GPU (a mip chain built from
+  // per-level resolves) reads the resolve of a frame or so before instead of waiting for the GPU there: a stall each
+  // time otherwise (Test Drive Unlimited: 105 -> 155 FPS in heavy scenes). Off by default: a title mixing CPU-written
+  // and resolved texels in one texture would see them a frame apart.
+  bool late_resolve_reads = false;
   // The renderer on a thread of its own (gfx::AsyncRenderer): the command processor reads the stream meanwhile.
   bool async_renderer = true;
   // Threads recording draws (secondary command buffers): -1 as many as the machine leaves (AutoRecordThreads), 0 none.
@@ -92,6 +97,8 @@ struct GraphicsOptions {
 #define ANY360_REXGLUE_CAPTURE 1
 // GraphicsOptions has show_fps.
 #define ANY360_REXGLUE_SHOW_FPS 1
+// GraphicsOptions has late_resolve_reads.
+#define ANY360_REXGLUE_LATE_RESOLVE_READS 1
 
 // Binds the graphics to Any360: makes the window, the Vulkan device and renderer, the command processor; takes over
 // the GPU MMIO range; starts the command processor's thread, the interrupt thread and vertical blanks. False with

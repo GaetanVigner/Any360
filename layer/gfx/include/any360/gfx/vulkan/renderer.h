@@ -149,6 +149,11 @@ class VulkanRenderer : public gfx::Renderer {
   // once the GPU has run it (as the console's GPU passes a fence once it has fetched what precedes it); resolves read
   // back into guest memory land when it has run. Off: once it has run.
   void SetFencesWhenCaptured(bool on) { fences_when_captured_ = on; }
+  // A texture read from guest memory over a resolve kept on the GPU (one it cannot take from there: a mip chain
+  // built from resolves of each level) reads what the resolve wrote a frame or so before, its write-back queued in
+  // the batch, instead of the batch flushed and waited for there. Off by default: a title mixing CPU-written and
+  // resolved texels in one texture would see them a frame apart.
+  void SetLateResolveReads(bool on) { late_resolve_reads_ = on; }
   // A count for this machine: what its cores leave after the title's threads and the command processor's.
   static uint32_t AutoRecordThreads();
   uint32_t record_threads() const { return record_threads_; }
@@ -464,6 +469,7 @@ class VulkanRenderer : public gfx::Renderer {
   // them is taken into `actions`, in order (under done_mutex_).
   void TakeReleased(std::vector<std::function<void()>>& actions);
   bool fences_when_captured_ = true;
+  bool late_resolve_reads_ = false;
   int32_t submitted_unlisted_ = -1;  // the batch handed to the submission thread before Flush listed it in flight
   std::vector<std::function<void()>> released_actions_;  // the submission thread's
   void WaitBatch(uint32_t index);

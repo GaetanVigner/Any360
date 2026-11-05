@@ -925,6 +925,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->cp->SetWritesAfterDraws(options.writes_after_draws);
   binding->cp->SetFencesAfterDraws(options.fences_after_draws);
   binding->renderer->SetFencesWhenCaptured(options.fences_when_captured);
+  binding->renderer->SetLateResolveReads(options.late_resolve_reads);
   // What the command processor writes into guest memory itself (fences, query counts), the page watch does not see:
   // the vertices copied into video memory over it are stale (textures are not kept over such words).
   binding->cp->SetMemoryWrittenHook([renderer = binding->renderer.get()](uint32_t begin, uint32_t end) {

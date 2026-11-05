@@ -296,6 +296,10 @@ bool VulkanRenderer::Initialize() {
       const uint32_t element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
       const uint64_t bytes = uint64_t(r.pitch) * ((r.y + r.height + 31) & ~31u) * element;
       if (base < end && begin < base + bytes) {
+        if (late_resolve_reads_) {
+          if (r.stale) QueueWriteBack(base, r);  // lands once its batch has run: the texture reads the frame before
+          continue;
+        }
         if (r.stale) {
           WriteBackResolved(base, r);
         } else {
