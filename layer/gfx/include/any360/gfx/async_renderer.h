@@ -41,9 +41,11 @@ class AsyncRenderer : public Renderer {
   void WhenDone(std::function<void()> action) override;
   void Invalidate(uint32_t base, uint32_t size) override;
   void GammaRamp(const uint32_t* table, const uint32_t* pwl) override;
+  bool CountsSamples() const override { return target_.CountsSamples(); }  // set when the target starts
+  void OcclusionQuery(bool end, uint32_t address) override;
 
  private:
-  enum class Op : uint32_t { kWrap, kRegisters, kShaderLoaded, kDraw, kCopy, kSwap, kFlush, kWhenDone, kInvalidate, kGammaRamp };
+  enum class Op : uint32_t { kWrap, kRegisters, kShaderLoaded, kDraw, kCopy, kSwap, kFlush, kWhenDone, kInvalidate, kGammaRamp, kQuery };
   struct Header {
     Op op;
     uint32_t bytes;  // the payload's, after the header

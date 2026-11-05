@@ -185,6 +185,8 @@ bool Device::Create(const DeviceOptions& options) {
   enabled.features.fragmentStoresAndAtomics = supported.features.fragmentStoresAndAtomics;
   enabled.features.vertexPipelineStoresAndAtomics = supported.features.vertexPipelineStoresAndAtomics;
   enabled.features.samplerAnisotropy = supported.features.samplerAnisotropy;
+  enabled.features.occlusionQueryPrecise = supported.features.occlusionQueryPrecise;
+  occlusion_query_precise_ = supported.features.occlusionQueryPrecise;
   enabled.features.fullDrawIndexUint32 = supported.features.fullDrawIndexUint32;
   enabled.features.independentBlend = supported.features.independentBlend;
   enabled.features.depthClamp = supported.features.depthClamp;

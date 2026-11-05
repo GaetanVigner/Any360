@@ -634,6 +634,12 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
         const uint32_t counts = reg(reg::RB_SAMPLE_COUNT_ADDR) & 0x1FFFFFFF;
         const bool ended = LoadBig(counts + 16) == kQueryFinished || LoadBig(counts + 20) == kQueryFinished ||
                            LoadBig(counts + 8) == kQueryFinished || LoadBig(counts + 12) == kQueryFinished;
+        if (renderer_ && renderer_->CountsSamples()) {
+          // D3D subtracts a begin block from an end block: the begin reads zero, the end waits for the renderer.
+          if (!ended) std::memset(Host(counts), 0, 32);
+          renderer_->OcclusionQuery(ended, counts);
+          break;
+        }
         std::memset(Host(counts), 0, 32);
         if (ended) {
           StoreRaw(counts + 0, kFakeSampleCount);   // Total_A

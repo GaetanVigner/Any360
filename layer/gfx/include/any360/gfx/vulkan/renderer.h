@@ -189,6 +189,8 @@ class VulkanRenderer : public gfx::Renderer {
   void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* registers) override;
   void Invalidate(uint32_t base, uint32_t size) override;
   void GammaRamp(const uint32_t* table, const uint32_t* pwl) override;
+  bool CountsSamples() const override { return query_pool_ != VK_NULL_HANDLE; }
+  void OcclusionQuery(bool end, uint32_t address) override;
 
   // The last presented frame: RGBA8 pixels (R in the low byte), row after row; `number` counts swaps.
   // A frame is either still on the GPU (the surface the front buffer was resolved from, when guest memory holds
@@ -397,6 +399,12 @@ class VulkanRenderer : public gfx::Renderer {
     std::vector<Buffer> staging;
     std::vector<Image> retired;
     std::vector<VkImageView> retired_views;  // of textures dropped from the cache
+    // Occlusion queries ended in it: their counts written into guest memory once it has run.
+    struct Query {
+      uint32_t address;
+      std::vector<uint32_t> parts;  // host queries (a draw each), maybe of earlier batches
+    };
+    std::vector<Query> queries;
     std::vector<PendingWriteBack> write_backs;
     std::vector<std::function<void()>> actions;
     bool done = true;  // run, and what follows it done (guarded by done_mutex_)
@@ -408,6 +416,14 @@ class VulkanRenderer : public gfx::Renderer {
     bool uploaded = false;  // its upload command buffer ran too (time stamped)
   };
   static constexpr uint32_t kBatches = 8;
+  // Occlusion queries: a host query around each draw of an open guest query (so none spans command buffers or render
+  // passes), a range of the pool by batch, reset when the batch begins; the guest query's count is their sum.
+  static constexpr uint32_t kQueriesPerBatch = 1024;
+  VkQueryPool query_pool_ = VK_NULL_HANDLE;
+  uint32_t queries_used_ = 0;  // of the open batch's range
+  bool query_open_ = false;
+  std::vector<uint32_t> query_parts_;
+  void WriteQuery(const Batch::Query& query);
   int32_t last_submitted_ = -1;  // the batch submitted last (its actions take what follows it)
   std::array<Batch, kBatches> batches_;
   uint32_t current_ = 0;  // the batch being recorded (not in flight)
@@ -557,6 +573,7 @@ class VulkanRenderer : public gfx::Renderer {
     uint8_t* index_dst;
     const uint8_t* index_src;
     uint32_t index_bytes, primitives, reset_index, host_index_count;
+    uint32_t query;  // the host occlusion query around the draw (UINT32_MAX: none)
     // The texture sets a recording thread makes (sets[2 + stage] then), by layout: images, then samplers.
     static constexpr uint32_t kMaxBindings = 16;
     VkDescriptorSetLayout texture_layouts[2];

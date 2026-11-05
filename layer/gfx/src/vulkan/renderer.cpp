@@ -164,6 +164,7 @@ VulkanRenderer::~VulkanRenderer() {
   for (Batch& b : batches_) {
     if (b.fence) f.vkDestroyFence(d, b.fence, nullptr);
     if (timestamps_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, timestamps_, nullptr);
+    if (query_pool_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, query_pool_, nullptr);
     if (b.draw_pool) f.vkDestroyDescriptorPool(d, b.draw_pool, nullptr);
     if (b.depth_pool) f.vkDestroyDescriptorPool(d, b.depth_pool, nullptr);
     DestroyBuffer(device_, b.constants);
@@ -337,6 +338,10 @@ bool VulkanRenderer::Initialize() {
   queries.queryType = VK_QUERY_TYPE_TIMESTAMP;
   queries.queryCount = 4 * kBatches;  // a batch's start and end, its upload's start and end
   if (f.vkCreateQueryPool(d, &queries, nullptr, &timestamps_) != VK_SUCCESS) timestamps_ = VK_NULL_HANDLE;
+  VkQueryPoolCreateInfo occlusion{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+  occlusion.queryType = VK_QUERY_TYPE_OCCLUSION;
+  occlusion.queryCount = kQueriesPerBatch * kBatches;
+  if (f.vkCreateQueryPool(d, &occlusion, nullptr, &query_pool_) != VK_SUCCESS) query_pool_ = VK_NULL_HANDLE;
   for (Batch& b : batches_) {
     if (f.vkCreateFence(d, &fence, nullptr, &b.fence) != VK_SUCCESS) return Fail("batch objects");
     VkCommandBufferAllocateInfo batch_alloc{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
@@ -1323,6 +1328,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t images_need = uint32_t(stage_textures[0].views.size() + stage_textures[1].views.size());
   const uint32_t samplers_need = uint32_t(stage_textures[0].samplers.size() + stage_textures[1].samplers.size());
   if (constant_head_ + most > batch().constants.size || index_head_ + index_need > batch().indices.size || draw_sets_ + 2 > kDrawSets ||
+      (query_open_ && queries_used_ >= kQueriesPerBatch) ||
       draw_images_ + images_need > kDrawDescriptors || draw_samplers_ + samplers_need > kDrawDescriptors) {
     Flush();
   }
@@ -1474,6 +1480,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // The indices: room in the batch's ring, reserved here; converted (endian-swapped to host order) where the draw
   // is recorded.
   DrawJob job{};
+  job.query = UINT32_MAX;
   job.index_type = VK_INDEX_TYPE_NONE_KHR;
   job.host_index_count = host_index_count;
   job.index_buffer = batch().indices.buffer;
@@ -1568,6 +1575,10 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     batch_sets_.emplace(set_key, texture_sets[stage]);  // a copy: the key's buffer stays for the next draw
   }
 
+  if (query_open_) {
+    job.query = kQueriesPerBatch * current_ + queries_used_++;
+    query_parts_.push_back(job.query);
+  }
   job.pipeline = pipeline;
   job.layout = pipeline_layout;
   job.sets[SpirvShaderTranslator::kDescriptorSetSharedMemoryAndEdram] = shared_set_;
@@ -1822,12 +1833,16 @@ void VulkanRenderer::RecordJob(VkCommandBuffer cb, const DrawJob& job, RecordedS
   std::memcpy(rs.blend, job.blend, sizeof(rs.blend));
   rs.stencil[0] = job.stencil[0], rs.stencil[1] = job.stencil[1];
   rs.valid = true;
+  if (job.query != UINT32_MAX) {
+    f.vkCmdBeginQuery(cb, query_pool_, job.query, device_.occlusion_query_precise() ? VK_QUERY_CONTROL_PRECISE_BIT : 0);
+  }
   if (job.index_type != VK_INDEX_TYPE_NONE_KHR) {
     f.vkCmdBindIndexBuffer(cb, job.index_buffer, job.index_offset, job.index_type);
     f.vkCmdDrawIndexed(cb, job.host_index_count, 1, 0, 0, 0);
   } else {
     f.vkCmdDraw(cb, job.host_index_count, 1, 0, 0);
   }
+  if (job.query != UINT32_MAX) f.vkCmdEndQuery(cb, query_pool_, job.query);
 }
 
 void VulkanRenderer::MakeTextureSets(RecordWorker& w, uint32_t batch, DrawJob& job) const {
@@ -1970,6 +1985,7 @@ VkCommandBuffer VulkanRenderer::Record() {
     dependency.memoryBarrierCount = 1;
     dependency.pMemoryBarriers = &barrier;
     f.vkCmdPipelineBarrier2(b.cb, &dependency);
+    if (query_pool_) f.vkCmdResetQueryPool(b.cb, query_pool_, kQueriesPerBatch * uint32_t(&b - batches_.data()), kQueriesPerBatch);
     if (timestamps_) {
       const uint32_t index = uint32_t(&b - batches_.data());
       f.vkCmdResetQueryPool(b.cb, timestamps_, 4 * index, 2);
@@ -2163,8 +2179,7 @@ void VulkanRenderer::TakeReleased(std::vector<std::function<void()>>& actions) {
     Batch& b = batches_[i];
     if (b.done || b.released) return true;
     // Colour resolves it reads back into guest memory do not hold it (they land when the batch has run; the runtime
-    // never writes them back at all). Depth resolves do: titles read them on the CPU (Crackdown tests its light flares
-    // against the depth it resolved), and a stale depth showed the flares through walls.
+    // never writes them back at all). Depth resolves do: a title reading depth on the CPU must see this frame's.
     if (!b.submitted || !b.captured) return false;
     for (const PendingWriteBack& w : b.write_backs) {
       if (w.depth) return false;
@@ -2195,6 +2210,7 @@ void VulkanRenderer::Flush() {
   piece_open_ = false;
   const uint32_t submitted = current_;
   Submission& submission = submissions_[submitted];
+  queries_used_ = 0;
   std::swap(submission.order, order_);
   std::swap(submission.segments, segments_);
   submission.segment_count = segment_count_;
@@ -2441,7 +2457,44 @@ void VulkanRenderer::Complete() {
   }
 }
 
+void VulkanRenderer::OcclusionQuery(bool end, uint32_t address) {
+  if (!end) {
+    query_open_ = true;  // a begin without an end replaces the open query
+    query_parts_.clear();
+    return;
+  }
+  Batch::Query query{address, {}};
+  if (query_open_) query.parts.swap(query_parts_);
+  query_open_ = false;
+  if (batch_open_) {
+    batch().queries.push_back(std::move(query));  // with the batch that holds its last draws
+  } else {
+    // Its draws, if any, are in batches submitted already: after the last of them.
+    WhenDone([this, query = std::move(query)] { WriteQuery(query); });
+  }
+}
+
+void VulkanRenderer::WriteQuery(const Batch::Query& query) {
+  uint64_t samples = 0;
+  for (uint32_t part : query.parts) {
+    uint64_t count = 0;
+    if (device_.fn().vkGetQueryPoolResults(device_.device(), query_pool_, part, 1, sizeof(count), &count, sizeof(count),
+                                           VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
+      samples += count;
+    }
+  }
+  // Guest samples: the host draws scale x scale pixels a guest pixel, and its MSAA counts each sample.
+  samples /= uint64_t(scale_) * scale_ * std::max(1u, msaa_);
+  // The counts as D3D lays them out (Total, ZFail, ZPass, StencilFail; A and B each), in host order as the
+  // reference writes them; ZFail and the rest zero.
+  uint32_t counts[8] = {};
+  counts[0] = counts[4] = uint32_t(std::min<uint64_t>(samples, UINT32_MAX));
+  if (uint64_t(query.address) + sizeof(counts) <= mirror_bytes_) std::memcpy(physical_ + query.address, counts, sizeof(counts));
+}
+
 void VulkanRenderer::FinishBatch(Batch& b) {
+  for (const Batch::Query& query : b.queries) WriteQuery(query);
+  b.queries.clear();
   const uint32_t index = uint32_t(&b - batches_.data());
   stats_.ns_gpu_latency += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                         std::chrono::steady_clock::now() - submitted_at_[index]).count());
