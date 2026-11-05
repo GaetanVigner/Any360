@@ -193,6 +193,11 @@ From the Crackdown runs (each one cost a debugging session there):
    normalized RGBA, as the reference) and those forms. 5-bit components reach the sampler through 8 bits (bit replication).
    Still to do: the 1-bit, 6:5:5, YUV, EXPAND, 32-bit integer, _AS_8 views, 32_32_32_FLOAT, DXT3A, CTX1
    and EDRAM formats.
+   Render features (2026-11-05): back-face stencil, blend constants, the alpha test, wireframe fill, polygon offset,
+   the window offset, MSAA 2x as samples, user clip planes, linear texture filtering, vertex shader textures and
+   constants addressed by a0, each a scenario. Two were wrong: the alpha test compared with 0 (RB_ALPHA_REF never
+   reached the shader), and user clip planes were ignored (PA_CL_CLIP_CNTL and PA_CL_UCP_n now set the vertex
+   shader's clip or cull distances, as the reference translates them).
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured

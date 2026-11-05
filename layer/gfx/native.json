@@ -216,6 +216,17 @@
   "texture formats:k_10_11_11",
   "texture formats:k_11_11_10",
   "texture formats:k_10_11_11_AS_16_16_16_16",
-  "texture formats:k_11_11_10_AS_16_16_16_16"
+  "texture formats:k_11_11_10_AS_16_16_16_16",
+  "render features:window offset",
+  "render features:stencil back",
+  "render features:blend constants",
+  "render features:alpha test",
+  "render features:wireframe fill",
+  "render features:polygon offset",
+  "render features:user clip planes",
+  "render features:MSAA 2x",
+  "render features:texture filtering",
+  "render features:vertex textures",
+  "render features:dynamic constant addressing"
  ]
 }

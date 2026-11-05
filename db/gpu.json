@@ -1887,7 +1887,7 @@
 "name":"window offset",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:window scissor",
@@ -1929,7 +1929,7 @@
 "name":"stencil back",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:blending",
@@ -1943,7 +1943,7 @@
 "name":"blend constants",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:colour write mask",
@@ -1957,7 +1957,7 @@
 "name":"alpha test",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:alpha to coverage",
@@ -1992,21 +1992,21 @@
 "name":"wireframe fill",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:polygon offset",
 "name":"polygon offset",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:user clip planes",
 "name":"user clip planes",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:point sprites",
@@ -2034,7 +2034,7 @@
 "name":"MSAA 2x",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:MSAA 4x",
@@ -2097,7 +2097,7 @@
 "name":"texture filtering",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:anisotropic filtering",
@@ -2125,7 +2125,7 @@
 "name":"vertex textures",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:resolve colour",
@@ -2251,7 +2251,7 @@
 "name":"dynamic constant addressing",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:predication (bins)",

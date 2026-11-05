@@ -479,6 +479,146 @@ int main(int argc, char** argv) {
     CHECK(p.At(4, 59) == yellow && p.At(59, 4) == kBlack && wrong == 0);
   }
 
+  // Back-face stencil: the lower-left triangle, a back face with clockwise front faces, writes 1 through the back
+  // stencil state (RB_DEPTHCONTROL backface_enable, RB_STENCILREFMASK_BF) while the front state keeps; then the
+  // quad draws where stencil EQUALS 1.
+  {
+    const uint32_t yellow = Rgba(255, 255, 0, 255);
+    Pixels p = scenario("stencil back", nullptr, [&] {
+      s.Reg(kRbColorMask, 0);
+      s.Reg(kPaSuScModeCntl, 1u << 2);
+      s.Reg(kRbStencilRefMask, 0xFFu << 16 | 0xFFu << 8 | 1);
+      s.Reg(0x210C, 0xFFu << 16 | 0xFFu << 8 | 1);  // RB_STENCILREFMASK_BF
+      s.Reg(kRbDepthControl, 1u | 1u << 7 | 7u << 8 | 7u << 20 | 2u << 26);  // front ALWAYS keep, back ALWAYS REPLACE
+      s.Vertices(0);
+      s.DrawAuto(kTriangleList, 3);
+      s.Reg(kRbColorMask, 0xF);
+      s.Reg(kPaSuScModeCntl, 0);
+      s.Reg(kRbDepthControl, 1u | 2u << 8);
+      s.Color(255, 255, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    uint32_t wrong = 0;
+    for (uint32_t y = 0; y < kSize; ++y) {
+      for (uint32_t x = 0; x < kSize; ++x) {
+        if (!OnDiagonal(x, y)) wrong += (p.At(x, y) == yellow) != LowerLeft(x, y);
+      }
+    }
+    std::printf("gfx_render_tests: back-face stencil %u pixels, %u off the triangle\n", p.Count(yellow), wrong);
+    CHECK(p.At(4, 59) == yellow && p.At(59, 4) == kBlack && wrong == 0);
+  }
+  // Blend constants: source factor CONSTANT_COLOR (RB_BLEND_RED-ALPHA 0.5, 0.25, 1, 1), destination ZERO.
+  {
+    Pixels p = scenario("blend constants", nullptr, [&] {
+      s.Put({Type0(0x2105, 4), Bits(0.5f), Bits(0.25f), Bits(1), Bits(1)});
+      s.Reg(kRbBlendControl0, 12u | 1u << 16);  // colour CONSTANT_COLOR * src + 0, alpha ONE * src + 0
+      s.Vertices(0);
+      s.Color(200, 200, 200, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    const uint32_t px = p.At(32, 32);
+    std::printf("gfx_render_tests: blend constants: %08X\n", px);
+    CHECK(std::abs(int(px & 0xFF) - 100) <= 1 && std::abs(int(px >> 8 & 0xFF) - 50) <= 1 && (px >> 16 & 0xFF) == 200);
+  }
+  // Alpha test (RB_COLORCONTROL, RB_ALPHA_REF 0.5) on alpha 0.25: GREATER passes nothing, LESS everything.
+  {
+    const uint32_t color = Rgba(90, 40, 200, 64);
+    uint32_t passed[2] = {};
+    for (uint32_t i = 0; i < 2; ++i) {
+      Pixels p = scenario("alpha test", nullptr, [&] {
+        s.Reg(0x210E, Bits(0.5f));
+        s.Reg(0x2202, (i ? 1u : 4u) | 1u << 3);
+        s.Vertices(0);
+        s.Color(90, 40, 200, 64);
+        s.DrawAuto(kTriangleStrip, 4);
+        s.Reg(0x2202, 0);
+      });
+      passed[i] = p.Count(color);
+    }
+    std::printf("gfx_render_tests: alpha test: GREATER %u, LESS %u pixels\n", passed[0], passed[1]);
+    CHECK(passed[0] == 0 && passed[1] == kSize * kSize);
+  }
+  // Wireframe fill (PA_SU_SC_MODE_CNTL poly_mode dual, both faces as lines): the quad's two triangles as their
+  // edges only.
+  {
+    const uint32_t color = Rgba(250, 250, 250, 255);
+    Pixels p = scenario("wireframe", nullptr, [&] {
+      s.Reg(kPaSuScModeCntl, 1u << 3 | 1u << 5 | 1u << 8);
+      s.Vertices(0);
+      s.Color(250, 250, 250, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    std::printf("gfx_render_tests: wireframe: %u pixels\n", p.Count(color));
+    CHECK(p.Count(color) > 60 && p.Count(color) < 400 && p.At(20, 30) == kBlack);
+  }
+  // Polygon offset: a second quad at the same depth passes LESS only moved towards the viewer by
+  // PA_SU_POLY_OFFSET_FRONT_OFFSET (poly_offset_front_enable), in the depth format's units.
+  {
+    const uint32_t green = Rgba(0, 255, 0, 255), red = Rgba(255, 0, 0, 255);
+    uint32_t reds[2] = {};
+    for (uint32_t offset = 0; offset < 2; ++offset) {
+      Pixels p = scenario("polygon offset", nullptr, [&] {
+        s.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 1u << 4);
+        s.Vertices(0);
+        s.Color(0, 255, 0, 255);
+        s.DrawAuto(kTriangleStrip, 4);
+        s.Put({Type0(0x2380, 2), Bits(0), Bits(offset ? -0.001f : 0.0f)});
+        s.Reg(kPaSuScModeCntl, 1u << 11);
+        s.Color(255, 0, 0, 255);
+        s.DrawAuto(kTriangleStrip, 4);
+        s.Put({Type0(0x2380, 2), 0, 0});
+      });
+      reds[offset] = p.Count(red);
+      if (!offset) CHECK(p.Count(green) == kSize * kSize);
+    }
+    std::printf("gfx_render_tests: polygon offset: %u red pixels without, %u with\n", reds[0], reds[1]);
+    CHECK(reds[0] == 0 && reds[1] == kSize * kSize);
+  }
+  // Window offset (PA_SC_WINDOW_OFFSET x 16, vtx_window_offset_enable): the quad and the window scissor move right.
+  {
+    const uint32_t color = Rgba(20, 220, 220, 255);
+    Pixels p = scenario("window offset", nullptr, [&] {
+      s.Reg(0x2080, 16);
+      s.Reg(kPaSuScModeCntl, 1u << 16);
+      s.Vertices(0);
+      s.Color(20, 220, 220, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    std::printf("gfx_render_tests: window offset: %u pixels, first column %u\n", p.Count(color), p.At(15, 30) == color ? 15 : 16);
+    CHECK(p.Count(color) == 48 * kSize && p.At(15, 30) == kBlack && p.At(16, 30) == color);
+  }
+  // MSAA 2x as samples: RB_SURFACE_INFO msaa 1 at pitch 64 (a 64x32 viewport and scissor) covers the 64x64 samples.
+  {
+    const uint32_t color = Rgba(200, 60, 120, 255);
+    Pixels p = scenario("MSAA 2x as samples", nullptr, [&] {
+      s.Reg(0x2000, 64u | 1u << 16);
+      s.Reg(0x2302, 1);
+      s.Put({Type0(0x210F, 6), Bits(32), Bits(32), Bits(-16), Bits(16), Bits(1), Bits(0)});
+      s.Put({Type0(0x200E, 2), 0, 32u << 16 | 64u});
+      s.Put({Type0(0x2080, 3), 0, 0, 32u << 16 | 64u});
+      s.Vertices(0);
+      s.Color(200, 60, 120, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2302, 0);
+    });
+    std::printf("gfx_render_tests: MSAA 2x as samples: %u of %u samples\n", p.Count(color), kSize * kSize);
+    CHECK(p.Count(color) == kSize * kSize);
+  }
+  // User clip plane 0 (PA_CL_CLIP_CNTL ucp_ena_0, PA_CL_UCP_0 = x >= 0 in clip space): the right half is kept.
+  {
+    const uint32_t color = Rgba(240, 120, 0, 255);
+    Pixels p = scenario("user clip plane", nullptr, [&] {
+      s.Put({Type0(0x2388, 4), Bits(1), Bits(0), Bits(0), Bits(0)});
+      s.Reg(0x2204, 1);
+      s.Vertices(0);
+      s.Color(240, 120, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2204, 0);
+    });
+    std::printf("gfx_render_tests: user clip plane: %u pixels\n", p.Count(color));
+    CHECK(p.Count(color) == kSize * kSize / 2 && p.At(31, 30) == kBlack && p.At(32, 30) == color);
+  }
+
   // Several targets and formats: a pixel shader writing oC0 = c0 and oC1 = c1; colour 1 a k_16_16_16_16_FLOAT
   // surface at EDRAM tile 512 (its own host image, apart from colour 0's).
 
@@ -1593,6 +1733,83 @@ int main(int argc, char** argv) {
         texture_case(format, le32({500u | 1000u << 10 | 2000u << 21}), 1, 4, rgb1, 0, {500.0f / 1023, 1000.0f / 2047, 2000.0f / 2047, 1},
                      kUnorm16);
       }
+    }
+
+    // Vertex textures: the vertex shader fetches tf1 (a 4x4 texture of one 32-bit float pair) at c0.xy into
+    // interpolator 0, which the pixel shader exports.
+    {
+      const uint32_t base = 0x1F0000;
+      for (uint32_t i = 0; i < 16; ++i) {
+        SetBig(base + (i / 4) * 256 + (i % 4) * 8, Bits(0.75f));
+        SetBig(base + (i / 4) * 256 + (i % 4) * 8 + 4, Bits(-6));
+      }
+      std::vector<uint32_t> words;
+      t::VertexFetch position;
+      t::PushVertexFetch(words, position);
+      t::Alu coords, out_position, out_value;
+      coords.vector_mask = 0b1111, coords.dest = 3, coords.src1 = coords.src2 = c0;
+      out_position.vector_mask = out_value.vector_mask = 0b1111, out_position.is_export = out_value.is_export = true;
+      out_position.dest = uint32_t(uc::ExportRegister::kVSPosition), out_position.src1 = out_position.src2 = {1, true};
+      out_value.dest = uint32_t(uc::ExportRegister::kVSInterpolator0), out_value.src1 = out_value.src2 = {2, true};
+      t::PushAlu(words, coords);
+      t::Tex vertex_fetch;
+      vertex_fetch.dest = 2, vertex_fetch.src = 3, vertex_fetch.mag = vertex_fetch.min = 0, vertex_fetch.mip = 0;
+      vertex_fetch.computed_lod = false;
+      t::PushTex(words, vertex_fetch);
+      t::PushAlu(words, out_position);
+      t::PushAlu(words, out_value);
+      t::Alu export_r0;
+      export_r0.vector_mask = 0b0011, export_r0.dest = kColor0, export_r0.is_export = true;
+      export_r0.src1 = export_r0.src2 = {0, true};
+      Case k{"render features:vertex textures", {export_r0}, {}, 0.75f, -6, 0.0f};
+      k.vs = t::BuildCfShader({t::CfAlloc(uc::AllocType::kVsPosition, 0),
+                               t::CfExec(uc::ControlFlowOpcode::kExec, 2, 4, 0b00010001),
+                               t::CfAlloc(uc::AllocType::kVsInterpolators, 0),
+                               t::CfExec(uc::ControlFlowOpcode::kExecEnd, 6, 1, 0)},
+                              words);
+      k.c[0][0] = 0.5f, k.c[0][1] = 0.5f;  // vertex shader c0 (float constant 0) set below, pixel c0 unused
+      k.setup = [&s, base] {
+        s.Put({Type3(pm4::SET_CONSTANT, 5), 0u << 16 | 0, Bits(0.5f), Bits(0.5f), 0, 0});
+        s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 1u << 22, 37u | 2u << 6 | base,
+               3u | 3u << 13, (0u | 1u << 3 | 4u << 6 | 5u << 9) << 1, 0, 1u << 9});
+      };
+      cases.push_back(k);
+    }
+    // Texture filtering: a 32x32 k_8_8_8_8 texture, its left half black and right half white, magnified twice with
+    // linear filtering: pixel 32 reads texel coordinate 15.5 (D3D pixel centres), half of each half (point: one).
+    for (uint32_t linear : {1u, 0u}) {
+      const uint32_t base = 0x1E0000, quad = kVertices + 0x400;
+      for (uint32_t y = 0; y < 32; ++y) {
+        for (uint32_t x = 0; x < 32; ++x) SetBig(base + y * 256 + x * 4, x < 16 ? Rgba(0, 0, 0, 255) : Rgba(255, 255, 255, 255));
+      }
+      t::Tex filtered;
+      filtered.mag = filtered.min = linear, filtered.mip = 0;
+      t::Alu out;
+      out.vector_mask = 0b0011, out.dest = kColor0, out.is_export = true, out.src1 = out.src2 = {1, true};
+      std::vector<uint32_t> words;
+      t::PushTex(words, filtered);
+      t::PushAlu(words, out);
+      Case k{"render features:texture filtering", {}, {}, linear ? 0.5f : 1.0f, linear ? 0.5f : 1.0f, 1.0f / 256};
+      k.ps = t::BuildCfShader({t::CfAlloc(uc::AllocType::kPsColors, 0), t::CfExec(uc::ControlFlowOpcode::kExecEnd, 1, 2, 0b01)},
+                              words);
+      k.setup = [&s, base, quad] {
+        s.Shader(0, t::BuildTexturedVertexShader());
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+        s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 1u << 22, 6u | 2u << 6 | base,
+               31u | 31u << 13, 0x688u << 1, 0, 1u << 9});
+      };
+      cases.push_back(k);
+    }
+    // Dynamic constant addressing: maxas sets a0 = 2 from c3.w, then the export reads c[a0 + 0] = c2.
+    {
+      t::Alu set_a0, read;
+      set_a0.scalar = S::kMaxAs, set_a0.src3 = c3, set_a0.dest = 2, set_a0.scalar_dest = 2;
+      read.vector_mask = 0b0011, read.dest = kColor0, read.is_export = true, read.src1 = read.src2 = c0;
+      read.src1_constant_by_a0 = true;
+      Case k{"render features:dynamic constant addressing", {set_a0, read}, {}, 5, 6, 0.0f};
+      k.c[2][0] = 5, k.c[2][1] = 6, k.c[3][3] = 2, k.c[3][0] = 2;
+      k.c[0][0] = -100, k.c[0][1] = -100;  // c0 itself: below anything c2 holds (max(c[a0], c0) = c2)
+      cases.push_back(k);
     }
 
     const float clear[4] = {kKilled, kKilled, 0, 0};
