@@ -76,6 +76,22 @@ REFERENCE(__C_specific_handler)
 REFERENCE(VdShutdownEngines)
 REFERENCE(VdSetSystemCommandBufferGpuIdentifierAddress)
 REFERENCE(XeCryptSha)
+REFERENCE(XamUserGetMembershipTier)
+REFERENCE(XamUserContentRestrictionGetFlags)
+REFERENCE(XamUserContentRestrictionGetRating)
+REFERENCE(XamUserGetDeviceContext)
+REFERENCE(XamPartyGetUserList)
+REFERENCE(XamPartySendGameInvites)
+REFERENCE(XamPartySetCustomData)
+REFERENCE(XamPartyGetBandwidth)
+REFERENCE(XamShowPartyUI)
+REFERENCE(XamShowCommunitySessionsUI)
+REFERENCE(XamShowNuiTroubleshooterUI)
+REFERENCE(XamAvatarInitialize)
+REFERENCE(XamAvatarShutdown)
+REFERENCE(XamIsUIActive)
+REFERENCE(XamFeatureEnabled)
+REFERENCE(XamVoiceIsActiveProcess)
 REFERENCE(XamGetLocale)
 REFERENCE(XamGetLocaleEx)
 REFERENCE(XamGetOnlineCountryFromLocale)
@@ -608,6 +624,33 @@ const Case kCases[] = {
       ctx.r5.u64 = rng() % 32;
     }),
     CASE(XeCryptBnDwLePkcs1Verify, nullptr),
+    // XAM's user answers that follow the reference (users 0 to 5, outputs in block B).
+    CASE(XamUserGetMembershipTier, [](Scene&, PPCContext& ctx, std::mt19937& rng) { ctx.r3.u64 = rng() % 6; }),
+    CASE(XamUserContentRestrictionGetFlags, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 3 ? 0 : rng() % 6;
+      ctx.r4.u64 = kBlockB + 0x100;
+    }),
+    CASE(XamUserContentRestrictionGetRating, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 3 ? 0 : rng() % 6;
+      ctx.r5.u64 = kBlockB + 0x100;
+      ctx.r6.u64 = kBlockB + 0x104;
+    }),
+    CASE(XamUserGetDeviceContext, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      ctx.r3.u64 = rng() % 3 ? rng() % 4 : 0xFF | (rng() % 4) << 8;
+      ctx.r5.u64 = kBlockB + 0x100;
+    }),
+    CASE(XamPartyGetUserList, nullptr),
+    CASE(XamPartySendGameInvites, nullptr),
+    CASE(XamPartySetCustomData, nullptr),
+    CASE(XamPartyGetBandwidth, nullptr),
+    CASE(XamShowPartyUI, nullptr),
+    CASE(XamShowCommunitySessionsUI, nullptr),
+    CASE(XamShowNuiTroubleshooterUI, nullptr),
+    CASE(XamAvatarInitialize, nullptr),
+    CASE(XamAvatarShutdown, nullptr),
+    CASE(XamIsUIActive, nullptr),
+    CASE(XamFeatureEnabled, nullptr),
+    CASE(XamVoiceIsActiveProcess, nullptr),
     // XAM's locales: ids in and out of the tables (and past 255, which wrap), buffers too short or the right size.
     CASE(XamGetLocale, nullptr),
     CASE(XamGetLocaleEx, [](Scene&, PPCContext& ctx, std::mt19937& rng) {

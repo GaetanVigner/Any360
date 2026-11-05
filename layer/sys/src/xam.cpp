@@ -137,6 +137,40 @@ void Xam::OnClose(uint32_t object) {
   std::erase_if(enumerators_, [&](const Enumerator& e) { return e.object == object; });
 }
 
+uint32_t Xam::UserGetGamerTag(Guest g, uint32_t user, uint32_t buffer, uint32_t length) {
+  if (user >= 4) return 0x80070057;  // E_INVALIDARG
+  if (user) return 0x80070000 | kErrorNoSuchUser;
+  if (!buffer || length < 16) return 0x80070057;
+  const std::string& tag = title_.gamertag;
+  const uint32_t n = std::min<uint32_t>(uint32_t(tag.size()), std::min<uint32_t>(length, 16) - 1);
+  for (uint32_t i = 0; i < n; ++i) g.Store16(buffer + 2 * i, uint8_t(tag[i]));
+  g.Store16(buffer + 2 * n, 0);
+  return 0;
+}
+
+uint32_t Xam::UserContentRestrictionGetFlags(Guest g, uint32_t user, uint32_t flags_out) {
+  if (user) return kErrorNoSuchUser;
+  g.Store32(flags_out, 0);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::UserContentRestrictionGetRating(Guest g, uint32_t user, uint32_t rating_out, uint32_t extra_out) {
+  if (user) return kErrorNoSuchUser;
+  g.Store32(rating_out, 0x3F);  // no rating limit, as the reference answers
+  g.Store32(extra_out, 0);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::UserContentRestrictionCheckAccess(Guest g, uint32_t allowed_out, uint32_t overlapped) {
+  g.Store32(allowed_out, 1);
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::UserGetDeviceContext(Guest g, uint32_t user, uint32_t context_out) {
+  g.Store32(context_out, 0);
+  return !user || (user & 0xFF) == 0xFF ? 0 : 0x80070000 | kErrorDeviceNotConnected;
+}
+
 uint32_t Xam::NotifyCreateListener(Guest g, uint64_t mask, uint32_t) {
   const uint32_t object = Objects().AllocateObject(16, true);
   if (!object) return 0;

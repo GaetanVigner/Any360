@@ -881,6 +881,49 @@ ANY360_SYS_EXPORT(NtRemoveIoCompletion) {
   ctx.r3.u64 = Objects().RemoveIoCompletion({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, Timeout(base, ctx.r7.u32, storage));
 }
 
+// Batch 24: XAM's user and profile calls, parties, avatars, a few system queries (sys_io_tests, sys_object_tests).
+ANY360_SYS_EXPORT(XamUserGetGamerTag) { ctx.r3.u64 = XamState().UserGetGamerTag({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamUserIsOnlineEnabled) { ctx.r3.u64 = 0; }  // no Xbox Live (the reference answers 1)
+ANY360_SYS_EXPORT(XamUserGetMembershipTier) {
+  // The local profile's tier as the reference answers it (6, Gold); ERROR_INVALID_PARAMETER past user 3.
+  ctx.r3.u64 = ctx.r3.u32 >= 4 ? 0x57 : ctx.r3.u32 ? kErrorNoSuchUser : 6;
+}
+ANY360_SYS_EXPORT(XamUserContentRestrictionGetFlags) {
+  ctx.r3.u64 = XamState().UserContentRestrictionGetFlags({base}, ctx.r3.u32, ctx.r4.u32);
+}
+ANY360_SYS_EXPORT(XamUserContentRestrictionGetRating) {
+  ctx.r3.u64 = XamState().UserContentRestrictionGetRating({base}, ctx.r3.u32, ctx.r5.u32, ctx.r6.u32);
+}
+ANY360_SYS_EXPORT(XamUserContentRestrictionCheckAccess) {
+  // (user, four arguments, allowed out, overlapped)
+  ctx.r3.u64 = XamState().UserContentRestrictionCheckAccess({base}, ctx.r8.u32, ctx.r9.u32);
+}
+ANY360_SYS_EXPORT(XamUserGetDeviceContext) {
+  // A signed result, sign-extended into r3 as the reference returns it.
+  ctx.r3.u64 = uint64_t(int64_t(int32_t(XamState().UserGetDeviceContext({base}, ctx.r3.u32, ctx.r5.u32))));
+}
+ANY360_SYS_EXPORT(XamUserReadProfileSettingsEx) {
+  // XamUserReadProfileSettings with one more argument (r10) before the buffer.
+  ctx.r3.u64 = XamState().UserReadProfileSettings({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32,
+                                                  ctx.r9.u32, StackArgument(ctx, base, 8), StackArgument(ctx, base, 9));
+}
+ANY360_SYS_EXPORT(XamNotifyCreateListenerInternal) { ctx.r3.u64 = XamState().NotifyCreateListener({base}, ctx.r3.u64, ctx.r5.u32); }
+// Parties need Xbox Live: no party (the code the reference found titles to expect), the rest fails.
+ANY360_SYS_EXPORT(XamPartyGetUserList) { ctx.r3.u64 = 0x807D0003; }
+ANY360_SYS_EXPORT(XamPartySendGameInvites) { ctx.r3.u64 = kErrorFunctionFailed; }
+ANY360_SYS_EXPORT(XamPartySetCustomData) { ctx.r3.u64 = kErrorFunctionFailed; }
+ANY360_SYS_EXPORT(XamPartyGetBandwidth) { ctx.r3.u64 = kErrorFunctionFailed; }
+ANY360_SYS_EXPORT(XamShowPartyUI) { ctx.r3.u64 = kErrorFunctionFailed; }
+ANY360_SYS_EXPORT(XamShowCommunitySessionsUI) { ctx.r3.u64 = kErrorFunctionFailed; }
+ANY360_SYS_EXPORT(XamShowNuiTroubleshooterUI) { ctx.r3.u64 = 0; }  // no Kinect to troubleshoot: closed at once
+// Avatars are not rendered: initialization fails (negative), so a title shuts them down at once.
+ANY360_SYS_EXPORT(XamAvatarInitialize) { ctx.r3.u64 = 0xFFFFFFFF; }
+ANY360_SYS_EXPORT(XamAvatarShutdown) {}
+ANY360_SYS_EXPORT(XamIsUIActive) { ctx.r3.u64 = 0; }  // the system UI opens and closes at once
+ANY360_SYS_EXPORT(XamFeatureEnabled) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamVoiceIsActiveProcess) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamGetCurrentTitleId) { ctx.r3.u64 = XamState().title().title_id; }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1264,6 +1307,28 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ExAllocatePool),
     ANY360_SYS_ENTRY(ExFreePool),
     ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(XamUserGetGamerTag),
+    ANY360_SYS_ENTRY(XamUserIsOnlineEnabled),
+    ANY360_SYS_ENTRY(XamUserGetMembershipTier),
+    ANY360_SYS_ENTRY(XamUserContentRestrictionGetFlags),
+    ANY360_SYS_ENTRY(XamUserContentRestrictionGetRating),
+    ANY360_SYS_ENTRY(XamUserContentRestrictionCheckAccess),
+    ANY360_SYS_ENTRY(XamUserGetDeviceContext),
+    ANY360_SYS_ENTRY(XamUserReadProfileSettingsEx),
+    ANY360_SYS_ENTRY(XamNotifyCreateListenerInternal),
+    ANY360_SYS_ENTRY(XamPartyGetUserList),
+    ANY360_SYS_ENTRY(XamPartySendGameInvites),
+    ANY360_SYS_ENTRY(XamPartySetCustomData),
+    ANY360_SYS_ENTRY(XamPartyGetBandwidth),
+    ANY360_SYS_ENTRY(XamShowPartyUI),
+    ANY360_SYS_ENTRY(XamShowCommunitySessionsUI),
+    ANY360_SYS_ENTRY(XamShowNuiTroubleshooterUI),
+    ANY360_SYS_ENTRY(XamAvatarInitialize),
+    ANY360_SYS_ENTRY(XamAvatarShutdown),
+    ANY360_SYS_ENTRY(XamIsUIActive),
+    ANY360_SYS_ENTRY(XamFeatureEnabled),
+    ANY360_SYS_ENTRY(XamVoiceIsActiveProcess),
+    ANY360_SYS_ENTRY(XamGetCurrentTitleId),
     ANY360_SYS_ENTRY(NtCreateIoCompletion),
     ANY360_SYS_ENTRY(NtSetIoCompletion),
     ANY360_SYS_ENTRY(NtRemoveIoCompletion),

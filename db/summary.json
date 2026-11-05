@@ -1,5 +1,5 @@
 {
- "date": "2026-11-03",
+ "date": "2026-11-05",
  "reference": {
   "sdk": "ReXGlue",
   "version": "0.10.0"
@@ -66,8 +66,8 @@
   "total": 2914,
   "used": 374,
   "any360": {
-   "native": 521,
-   "todo": 2393
+   "native": 543,
+   "todo": 2371
   },
   "reference": {
    "implemented": 493,

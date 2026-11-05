@@ -618,6 +618,32 @@ void MemoryTests() {
 
 // The file system on a temporary directory: a read-only "game" device and a writable "hdd" one.
 // The Win32 file calls XAM exports, on the same file system.
+// The local profile's gamertag and parental controls.
+void UserProfileTests() {
+  Fresh();
+  XamState().Reset();
+  const uint32_t buf = kScratch + 0x400, out = kScratch + 0x200, ov = kScratch + 0x300;
+  auto wide = [&](uint32_t at) {
+    std::string text;
+    for (; g.Load16(at); at += 2) text += char(g.Load16(at));
+    return text;
+  };
+  XamState().title().gamertag = "A very long gamertag";
+  CHECK(XamState().UserGetGamerTag(g, 0, buf, 32) == 0 && wide(buf) == "A very long gam");  // 15 characters and the end
+  XamState().title().gamertag = "Player";
+  CHECK(XamState().UserGetGamerTag(g, 0, buf, 16) == 0 && wide(buf) == "Player");
+  CHECK(XamState().UserGetGamerTag(g, 0, buf, 8) == 0x80070057u && XamState().UserGetGamerTag(g, 4, buf, 16) == 0x80070057u);
+  CHECK(XamState().UserGetGamerTag(g, 1, buf, 16) == 0x80070525u);
+  CHECK(XamState().UserContentRestrictionGetFlags(g, 0, out) == 0 && g.Load32(out) == 0);
+  CHECK(XamState().UserContentRestrictionGetRating(g, 0, out, out + 4) == 0 && g.Load32(out) == 0x3F);
+  CHECK(XamState().UserContentRestrictionGetRating(g, 2, out, out + 4) == kErrorNoSuchUser);
+  g.Store32(out, 0);
+  CHECK(XamState().UserContentRestrictionCheckAccess(g, out, 0) == 0 && g.Load32(out) == 1);
+  CHECK(XamState().UserContentRestrictionCheckAccess(g, out, ov) == kErrorIoPending && g.Load32(ov) == 0);
+  CHECK(XamState().UserGetDeviceContext(g, 0x1FF, out) == 0 && XamState().UserGetDeviceContext(g, 2, out) == 0x8007048Fu);
+  XamState().Reset();
+}
+
 void Win32FileTests() {
   Fresh();
   namespace fs = std::filesystem;
@@ -1848,6 +1874,7 @@ int main() {
   LocaleTests();
   VideoTests();
   Win32FileTests();
+  UserProfileTests();
   MemoryTests();
   SchedulerTests();
   ReclaimTests();

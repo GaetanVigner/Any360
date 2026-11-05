@@ -46,8 +46,9 @@ struct TitleSettings {
   std::filesystem::path content_root;  // where content packages (saves, DLC) live on the host
   uint64_t xuid = 0xE000000000000001ull;  // the local profile (an offline XUID)
   std::string gamertag = "Player";
-  uint32_t license_mask = 0;
-  uint64_t machine_id = 0xFA00000000000001ull;  // XNetLogonGetMachineID: the console's id  // XContentGetLicenseMask: no content license granted, as the reference answers
+  uint32_t license_mask = 0;                    // XContentGetLicenseMask: no content license granted, as the reference answers
+  uint64_t machine_id = 0xFA00000000000001ull;  // XNetLogonGetMachineID: the console's id
+  uint32_t title_id = 0;                        // XamGetCurrentTitleId: the title's id from its XEX (0 until the host sets it)
 };
 
 class Xam {
@@ -90,6 +91,16 @@ class Xam {
   uint32_t SessionCreateHandle(Guest g, uint32_t handle_ptr);
   uint32_t SessionRefObjByHandle(Guest g, uint32_t handle, uint32_t object_ptr);
   uint32_t ShowSigninUI(uint32_t users, uint32_t flags);
+  // XamUserGetGamerTag: the local profile's gamertag, truncated to `length` characters (16 at most) with a terminator;
+  // E_INVALIDARG for a user past 3, no buffer or under 16 characters, the NO_SUCH_USER HRESULT for users 1 to 3.
+  uint32_t UserGetGamerTag(Guest g, uint32_t user, uint32_t buffer, uint32_t length);
+  // Parental controls: none set; every content access allowed (1), completed through the overlapped when given.
+  uint32_t UserContentRestrictionGetFlags(Guest g, uint32_t user, uint32_t flags_out);
+  uint32_t UserContentRestrictionGetRating(Guest g, uint32_t user, uint32_t rating_out, uint32_t extra_out);
+  uint32_t UserContentRestrictionCheckAccess(Guest g, uint32_t allowed_out, uint32_t overlapped);
+  // XamUserGetDeviceContext: no device context (0); success for user 0 or "any user" (0xFF in the low byte), else the
+  // DEVICE_NOT_CONNECTED HRESULT, as the reference.
+  uint32_t UserGetDeviceContext(Guest g, uint32_t user, uint32_t context_out);
   uint32_t ShowMessageBoxUI(Guest g, uint32_t result_ptr, uint32_t overlapped);
   uint32_t ShowDeviceSelectorUI(Guest g, uint32_t device_id_ptr, uint32_t overlapped);
   // The virtual keyboard, accepted at once with its default text (the buffer emptied without one), truncated to the
