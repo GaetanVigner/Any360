@@ -71,6 +71,11 @@ class GraphicsKernel {
   // A host thread raising vertical-blank interrupts at `hz` until StopVblank.
   void StartVblank(double hz);
   void StopVblank();
+  // The running vertical blanks' rate from now on (a title whose videos advance a frame a vertical blank: their
+  // rate while one plays, the unlocked one after).
+  void SetVblankHz(double hz) {
+    if (hz > 0.0) vblank_hz_.store(hz, std::memory_order_relaxed);
+  }
 
   uint32_t ring_base() const { return ring_base_; }
   uint32_t ring_size_log2() const { return ring_size_log2_; }
@@ -85,6 +90,7 @@ class GraphicsKernel {
   uint32_t callback_ = 0, user_data_ = 0;
   GuestContext context_{};
   std::atomic<bool> vblank_running_{false};
+  std::atomic<double> vblank_hz_{60.0};
   std::thread vblank_;
 };
 

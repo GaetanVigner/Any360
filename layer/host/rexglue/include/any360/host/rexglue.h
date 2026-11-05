@@ -109,6 +109,10 @@ struct GraphicsOptions {
 void StartSampling(const std::string& path);
 
 bool StartGraphics(const GraphicsOptions& options, std::string& error);
+// Changes the vertical blanks' rate while bound (a title pacing its videos on them: 60 while one plays, the unlocked
+// rate after); 0: back to the rate StartGraphics chose. Nothing while not bound.
+#define ANY360_REXGLUE_SET_VBLANK_HZ 1
+void SetVblankHz(double hz);
 // For comparison with the runtime's own GPU (the graphics not bound): its VdSwap calls counted, `log` given frames
 // per second and the slowest frame every `seconds`, as the binding's own report does. Call before the title's first
 // VdSwap; null `log`: nothing reported.

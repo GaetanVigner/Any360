@@ -93,11 +93,18 @@ bool GraphicsKernel::RaiseInterrupt(Guest g, uint32_t source) {
 void GraphicsKernel::StartVblank(double hz) {
   StopVblank();
   vblank_running_ = true;
-  vblank_ = std::thread([this, hz] {
-    const auto period = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(1.0 / hz));
+  vblank_hz_.store(hz, std::memory_order_relaxed);
+  vblank_ = std::thread([this] {
+    double hz = vblank_hz_.load(std::memory_order_relaxed);
+    auto period = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(1.0 / hz));
     auto next = std::chrono::steady_clock::now() + period;
     while (vblank_running_) {
       std::this_thread::sleep_until(next);
+      if (const double now_hz = vblank_hz_.load(std::memory_order_relaxed); now_hz != hz) {
+        hz = now_hz;  // SetVblankHz: the new rate from this blank on
+        period = std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(1.0 / hz));
+        next = std::chrono::steady_clock::now();
+      }
       next += period;
       if (backend_) backend_->Vblank();
       RaiseInterrupt(Objects().guest(), 0);

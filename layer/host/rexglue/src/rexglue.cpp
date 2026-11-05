@@ -712,6 +712,7 @@ struct Binding {
 };
 
 std::atomic<bool> g_bound{false};
+std::atomic<double> g_vblank_hz{60.0};  // the rate StartGraphics chose (SetVblankHz(0) goes back to it)
 Binding* g_binding = nullptr;
 
 // A CPU write to watched guest memory (the runtime's physical memory access callbacks): the textures over it are
@@ -932,6 +933,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
     renderer->GuestMemoryWritten(begin, end);
   });
   sys::Graphics().StartVblank(vblank_hz);
+  g_vblank_hz = vblank_hz;
   g_binding = binding.release();
   g_bound = true;
   return true;
@@ -952,6 +954,11 @@ void StopGraphics() {
 }
 
 bool GraphicsBound() { return g_bound; }
+
+void SetVblankHz(double hz) {
+  if (!g_bound) return;
+  sys::Graphics().SetVblankHz(hz > 0.0 ? hz : g_vblank_hz.load());
+}
 
 uint64_t GpuProgress() { return g_binding ? g_binding->cp->Progress() : 0; }
 
