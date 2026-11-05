@@ -449,7 +449,7 @@ VkFormat ColorTargetFormat(uint32_t color_format) {
   switch (color_format) {
     case 0: return VK_FORMAT_R8G8B8A8_UNORM;            // k_8_8_8_8
     case 1: return VK_FORMAT_R8G8B8A8_UNORM;            // k_8_8_8_8_GAMMA (gamma applied in the shader)
-    case 2: case 10: return VK_FORMAT_A8B8G8R8_UNORM_PACK32;  // k_2_10_10_10 (and AS_10_10_10_10), as the reference
+    case 2: case 10: return VK_FORMAT_A2B10G10R10_UNORM_PACK32;  // k_2_10_10_10 (and AS_10_10_10_10)
     case 3: case 12: return VK_FORMAT_R16G16B16A16_SFLOAT;   // k_2_10_10_10_FLOAT (and AS_16_16_16_16)
     case 4: return VK_FORMAT_R16G16_SNORM;              // k_16_16: -32...32 scaled to -1...1 by the exponent bias
     case 5: return VK_FORMAT_R16G16B16A16_SNORM;        // k_16_16_16_16: likewise

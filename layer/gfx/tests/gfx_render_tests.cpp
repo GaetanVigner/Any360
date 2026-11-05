@@ -353,8 +353,9 @@ int main(int argc, char** argv) {
     };
     const Target targets[] = {
         {"k_8_8_8_8_GAMMA", 1, {1, 0, 1, 0}, 4, {255, 0, 255, 0}},
-        {"k_2_10_10_10", 2, {0.2f, 0.6f, 1, 0.4f}, 4, {51, 153, 255, 102}},
-        {"k_2_10_10_10_AS_10_10_10_10", 10, {0.2f, 0.6f, 1, 0.4f}, 4, {51, 153, 255, 102}},
+        // 10-bit components and a 2-bit alpha, kept at that precision (titles pack data into them).
+        {"k_2_10_10_10", 2, {0.2f, 0.6f, 1, 0.4f}, 4, {205, 614, 1023, 1}},
+        {"k_2_10_10_10_AS_10_10_10_10", 10, {0.2f, 0.6f, 1, 0.4f}, 4, {205, 614, 1023, 1}},
         {"k_2_10_10_10_FLOAT", 3, {0.5f, -2, 1024, 0.125f}, 8, {0x3800, 0xC000, 0x6400, 0x3000}},
         {"k_2_10_10_10_FLOAT_AS_16_16_16_16", 12, {0.5f, -2, 1024, 0.125f}, 8, {0x3800, 0xC000, 0x6400, 0x3000}},
         // The 16-bit fixed-point formats hold -32...32: the shader's 8 is a quarter of full scale.
@@ -379,11 +380,15 @@ int main(int argc, char** argv) {
       int64_t got[4] = {};
       if (bytes.size() == size_t(kSize) * kSize * target.bytes) {
         const uint8_t* texel = bytes.data() + (32 * kSize + 32) * target.bytes;
-        const bool unorm8 = target.format == 1 || target.format == 2 || target.format == 10;
+        const bool unorm8 = target.format == 1, unorm10 = target.format == 2 || target.format == 10;
         const bool snorm = target.format == 4 || target.format == 5;
-        const uint32_t count = target.format == 14 ? 1 : target.bytes == 8 || unorm8 ? 4 : 2;
+        const uint32_t count = target.format == 14 ? 1 : target.bytes == 8 || unorm8 || unorm10 ? 4 : 2;
         for (uint32_t i = 0; i < count; ++i) {
-          if (unorm8) {
+          if (unorm10) {
+            uint32_t v;
+            std::memcpy(&v, texel, 4);
+            got[i] = i < 3 ? (v >> (10 * i)) & 0x3FF : v >> 30;
+          } else if (unorm8) {
             got[i] = texel[i];
           } else if (target.format == 14) {
             uint32_t v;
