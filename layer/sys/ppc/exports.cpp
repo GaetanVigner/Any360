@@ -924,6 +924,23 @@ ANY360_SYS_EXPORT(XamFeatureEnabled) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(XamVoiceIsActiveProcess) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(XamGetCurrentTitleId) { ctx.r3.u64 = XamState().title().title_id; }
 
+// Batch 25: the rest of XAM's content calls (sys_object_tests).
+ANY360_SYS_EXPORT(XamContentCreate) {
+  // XamContentCreateEx without cache and content sizes: (user, root name, content data, flags, disposition, license, overlapped)
+  ctx.r3.u64 = XamState().ContentCreate({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32);
+}
+ANY360_SYS_EXPORT(XamContentCreateInternal) {
+  // The system's form (user 0xFE) on an XCONTENT_AGGREGATE_DATA, whose XCONTENT_DATA comes first:
+  // (root name, content data, flags, disposition, license, cache size, content size, overlapped)
+  ctx.r3.u64 = XamState().ContentCreate({base}, 0xFE, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r10.u32);
+}
+ANY360_SYS_EXPORT(XamContentDeleteInternal) { ctx.r3.u64 = XamState().ContentDelete({base}, 0xFE, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamContentOpenFile) { ctx.r3.u64 = kErrorFileNotFound; }  // arguments unknown; not found, as the reference
+ANY360_SYS_EXPORT(XamContentAggregateCreateEnumerator) {
+  // (XUID, device, content type, unknown, handle out)
+  ctx.r3.u64 = XamState().ContentAggregateCreateEnumerator({base}, ctx.r4.u32, ctx.r5.u32, ctx.r7.u32);
+}
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1307,6 +1324,11 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ExAllocatePool),
     ANY360_SYS_ENTRY(ExFreePool),
     ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(XamContentCreate),
+    ANY360_SYS_ENTRY(XamContentCreateInternal),
+    ANY360_SYS_ENTRY(XamContentDeleteInternal),
+    ANY360_SYS_ENTRY(XamContentOpenFile),
+    ANY360_SYS_ENTRY(XamContentAggregateCreateEnumerator),
     ANY360_SYS_ENTRY(XamUserGetGamerTag),
     ANY360_SYS_ENTRY(XamUserIsOnlineEnabled),
     ANY360_SYS_ENTRY(XamUserGetMembershipTier),

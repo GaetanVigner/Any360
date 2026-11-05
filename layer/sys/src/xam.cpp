@@ -20,7 +20,7 @@ namespace {
 
 constexpr uint32_t kStatusSuccess = 0, kStatusNotFound = 0xC0000225, kStatusProcedureNotFound = 0xC000007A;
 constexpr uint32_t kXuserSize = 40;                    // X_USER_PROFILE_SETTING
-constexpr uint32_t kContentDataSize = 0x134;           // XCONTENT_DATA: device, type, 128 wide chars, 42-byte file name
+constexpr uint32_t kContentDataSize = 0x134, kContentAggregateSize = 0x148;           // XCONTENT_DATA: device, type, 128 wide chars, 42-byte file name
 constexpr uint32_t kContentFileNameOffset = 0x108;
 constexpr uint32_t kWsaENetDown = 10050, kWsaENotSock = 10038, kWsaInvalidHandle = 6, kWsaInvalidParameter = 87;
 constexpr uint32_t kWsaWaitTimeout = 0x102, kWsaWaitFailed = 0xFFFFFFFF;
@@ -505,9 +505,7 @@ uint32_t Xam::ContentDelete(Guest g, uint32_t, uint32_t content_data, uint32_t o
   return Finish(g, overlapped, kErrorSuccess);
 }
 
-uint32_t Xam::ContentCreateEnumerator(Guest g, uint32_t, uint32_t device_id, uint32_t content_type, uint32_t, uint32_t per_call,
-                                      uint32_t size_ptr, uint32_t handle_out) {
-  if (!handle_out) return kErrorInvalidParameter;
+std::vector<std::vector<uint8_t>> Xam::ContentItems(uint32_t device_id, uint32_t content_type, uint32_t item_size) const {
   std::vector<std::vector<uint8_t>> items;
   char type[16];
   std::snprintf(type, sizeof type, "%08X", content_type);
@@ -518,7 +516,7 @@ uint32_t Xam::ContentCreateEnumerator(Guest g, uint32_t, uint32_t device_id, uin
   }
   std::sort(names.begin(), names.end());
   for (const std::string& name : names) {
-    std::vector<uint8_t> item(kContentDataSize, 0);
+    std::vector<uint8_t> item(item_size, 0);
     const uint32_t device = device_id ? device_id : 1;
     const uint8_t be_device[4] = {uint8_t(device >> 24), uint8_t(device >> 16), uint8_t(device >> 8), uint8_t(device)};
     const uint8_t be_type[4] = {uint8_t(content_type >> 24), uint8_t(content_type >> 16), uint8_t(content_type >> 8), uint8_t(content_type)};
@@ -528,9 +526,30 @@ uint32_t Xam::ContentCreateEnumerator(Guest g, uint32_t, uint32_t device_id, uin
     std::memcpy(item.data() + kContentFileNameOffset, name.data(), std::min<size_t>(name.size(), 41));
     items.push_back(std::move(item));
   }
+  return items;
+}
+
+uint32_t Xam::ContentCreateEnumerator(Guest g, uint32_t, uint32_t device_id, uint32_t content_type, uint32_t, uint32_t per_call,
+                                      uint32_t size_ptr, uint32_t handle_out) {
+  if (!handle_out) return kErrorInvalidParameter;
+  std::vector<std::vector<uint8_t>> items = ContentItems(device_id, content_type, kContentDataSize);
   if (size_ptr) g.Store32(size_ptr, kContentDataSize * std::max<uint32_t>(1, per_call));
   const uint32_t handle = CreateEnumerator(g, kContentDataSize, per_call, std::move(items));
   if (!handle) return kErrorInvalidParameter;
+  g.Store32(handle_out, handle);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ContentAggregateCreateEnumerator(Guest g, uint32_t device_id, uint32_t content_type, uint32_t handle_out) {
+  if (!handle_out || (device_id && device_id != 1)) return 0x80070057;  // E_INVALIDARG: no other device to look at
+  // XCONTENT_AGGREGATE_DATA: the XCONTENT_DATA, then the owner's XUID (8-aligned) and the title id.
+  std::vector<std::vector<uint8_t>> items = ContentItems(device_id, content_type, kContentAggregateSize);
+  for (auto& item : items) {
+    for (int i = 0; i < 8; ++i) item[0x138 + i] = uint8_t(title_.xuid >> (56 - 8 * i));
+    for (int i = 0; i < 4; ++i) item[0x140 + i] = uint8_t(title_.title_id >> (24 - 8 * i));
+  }
+  const uint32_t handle = CreateEnumerator(g, kContentAggregateSize, 1, std::move(items));
+  if (!handle) return 0x80070057;
   g.Store32(handle_out, handle);
   return kErrorSuccess;
 }

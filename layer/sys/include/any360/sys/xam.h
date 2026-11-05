@@ -137,6 +137,9 @@ class Xam {
   uint32_t ContentCreateEnumerator(Guest g, uint32_t user, uint32_t device_id, uint32_t content_type, uint32_t flags, uint32_t per_call,
                                    uint32_t size_ptr, uint32_t handle_out);
   uint32_t ContentGetDeviceState(Guest g, uint32_t device_id, uint32_t overlapped);
+  // XamContentAggregateCreateEnumerator: the packages of a type on the hard drive (device 0 or 1) as
+  // XCONTENT_AGGREGATE_DATA, one per call, with the local profile's XUID and the title's id; E_INVALIDARG otherwise.
+  uint32_t ContentAggregateCreateEnumerator(Guest g, uint32_t device_id, uint32_t content_type, uint32_t handle_out);
   // The package's thumbnail (PNG bytes), kept next to its folder as "<file name>.png"; ERROR_FILE_NOT_FOUND when the
   // package does not exist.
   uint32_t ContentSetThumbnail(Guest g, uint32_t content_data, uint32_t buffer, uint32_t size, uint32_t overlapped);
@@ -243,6 +246,8 @@ class Xam {
   Listener* FindListener(uint32_t handle);
   Enumerator* FindEnumerator(uint32_t handle);
   std::filesystem::path ContentPath(Guest g, uint32_t content_data) const;
+  // The packages of a type as enumerator items of `item_size` bytes starting with their XCONTENT_DATA, sorted by name.
+  std::vector<std::vector<uint8_t>> ContentItems(uint32_t device_id, uint32_t content_type, uint32_t item_size) const;
 
   XamHost host_;
   TitleSettings title_;

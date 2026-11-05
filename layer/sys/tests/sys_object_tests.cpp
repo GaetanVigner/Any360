@@ -1676,6 +1676,32 @@ void TduTests() {
 }
 
 // The calls The Simpsons Game still needed outside graphics and audio.
+// The aggregate content enumerator: the hard drive's packages of a type with their owner and title.
+void ContentAggregateTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  XamState().Reset();
+  std::error_code ec;
+  const fs::path content = fs::temp_directory_path() / "any360-sys-aggregate";
+  fs::remove_all(content, ec);
+  fs::create_directories(content / "00000001" / "slotB");
+  fs::create_directories(content / "00000001" / "slotA");
+  XamState().title().content_root = content;
+  XamState().title().title_id = 0x4D5307E6;
+  const uint32_t out = kScratch + 0x200, buf = kScratch + 0x400;
+  CHECK(XamState().ContentAggregateCreateEnumerator(g, 0, 1, out) == 0);
+  const uint32_t handle = g.Load32(out);
+  CHECK(XamState().Enumerate(g, handle, 0, buf, 0x148, out + 4, 0) == 0 && g.Load32(out + 4) == 1);
+  CHECK(g.Load32(buf) == 1 && g.Load32(buf + 4) == 1 && std::string(reinterpret_cast<const char*>(g.host(buf + 0x108))) == "slotA");
+  CHECK(g.Load64(buf + 0x138) == XamState().title().xuid && g.Load32(buf + 0x140) == 0x4D5307E6);
+  CHECK(XamState().Enumerate(g, handle, 0, buf, 0x148, out + 4, 0) == 0 &&
+        std::string(reinterpret_cast<const char*>(g.host(buf + 0x108))) == "slotB");
+  CHECK(XamState().Enumerate(g, handle, 0, buf, 0x148, out + 4, 0) != 0);  // no more
+  CHECK(XamState().ContentAggregateCreateEnumerator(g, 2, 1, out) == 0x80070057u);
+  XamState().Reset();
+  fs::remove_all(content, ec);
+}
+
 void SimpsonsTests() {
   Fresh();
   namespace fs = std::filesystem;
@@ -1865,6 +1891,7 @@ void SimpsonsTests() {
 
 int main() {
   SimpsonsTests();
+  ContentAggregateTests();
   TduTests();
   GraphicsAudioTests();
   SonicTests();

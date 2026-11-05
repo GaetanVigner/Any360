@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (543 system calls)
+## What is verified (548 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -188,6 +188,11 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XMACreateContext` / `XMAReleaseContext` (64-byte contexts in physical memory, announced to an `XmaBackend`). Guest
   callbacks run through `Scheduler::CreateContext` and `Scheduler::Dispatch`. The renderer, the audio output and the
   XMA decoder are the backends still to write.
+- **The rest of XAM's content calls** (scenario tests): `XamContentCreate` (`XamContentCreateEx` without the
+  sizes), `XamContentCreateInternal` / `XamContentDeleteInternal` (the system's forms, user 0xFE, on an
+  XCONTENT_AGGREGATE_DATA), `XamContentAggregateCreateEnumerator` (the hard drive's packages of a type, one per call,
+  each with the local profile's XUID and the title's id; another device is E_INVALIDARG), `XamContentOpenFile` (not
+  found, as the reference: its arguments are not known).
 - **XAM's user and profile calls** (`sys_io_tests` against the reference where the answers are the same,
   `sys_object_tests`): `XamUserGetGamerTag` (the local profile's, 15 characters at most), `XamUserGetMembershipTier`
   (6, as the reference), the parental controls (`XamUserContentRestrictionGetFlags` / `GetRating` / `CheckAccess`:
