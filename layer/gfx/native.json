@@ -131,6 +131,13 @@
   "shader control flow:kCondJmp",
   "shader control flow:kCondExecPredClean",
   "shader control flow:kCondExecPredCleanEnd",
-  "shader control flow:kMarkVsFetchDone"
+  "shader control flow:kMarkVsFetchDone",
+  "shader ALU vector:kCube",
+  "shader fetch:kGetTextureGradients",
+  "shader fetch:kGetTextureComputedLod",
+  "shader fetch:kSetTextureLod",
+  "shader fetch:kSetTextureGradientsHorz",
+  "shader fetch:kSetTextureGradientsVert",
+  "shader fetch:kGetTextureWeights"
  ]
 }

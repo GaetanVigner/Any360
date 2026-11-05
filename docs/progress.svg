@@ -5065,7 +5065,7 @@
 <text x="278" y="741" font-size="11" fill="#8b949e">reference (hooked by name)</text>
 <rect x="450" y="732" width="10" height="10" rx="2" fill="#f85149"/>
 <text x="464" y="741" font-size="11" fill="#8b949e">to do</text>
-<text x="0" y="763" font-size="16" fill="#c9d1d9" font-weight="600">GPU (Xenos) native: 51.7% (167/323) <tspan font-size="12" font-weight="400" fill="#8b949e">· 95.7% handled by the reference GPU · one square per opcode, format or feature</tspan></text>
+<text x="0" y="763" font-size="16" fill="#c9d1d9" font-weight="600">GPU (Xenos) native: 53.9% (174/323) <tspan font-size="12" font-weight="400" fill="#8b949e">· 95.7% handled by the reference GPU · one square per opcode, format or feature</tspan></text>
 <rect x="0" y="772" width="1000" height="150" fill="#0d1117"/>
 <a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>texture formats: 64 (3% native; 2 native, 62 reference)</title>
 <rect x="0.00" y="772.00" width="21.52" height="18.25" fill="#2ea043"/>
@@ -5302,7 +5302,7 @@
 <rect x="523.2" y="772.0" width="154.8" height="150.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="527.2" y="785.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">shader ALU scalar</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>shader ALU vector: 30 (97% native; 29 native, 1 reference)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>shader ALU vector: 30 (100% native; 30 native)</title>
 <rect x="678.02" y="772.00" width="22.72" height="18.25" fill="#2ea043"/>
 <rect x="701.24" y="772.00" width="22.72" height="18.25" fill="#2ea043"/>
 <rect x="724.46" y="772.00" width="22.72" height="18.25" fill="#2ea043"/>
@@ -5332,7 +5332,7 @@
 <rect x="724.46" y="884.50" width="22.72" height="18.25" fill="#2ea043"/>
 <rect x="747.68" y="884.50" width="22.72" height="18.25" fill="#2ea043"/>
 <rect x="678.02" y="903.25" width="22.72" height="18.25" fill="#2ea043"/>
-<rect x="701.24" y="903.25" width="22.72" height="18.25" fill="#8957e5"/>
+<rect x="701.24" y="903.25" width="22.72" height="18.25" fill="#2ea043"/>
 <rect x="678.0" y="772.0" width="92.9" height="150.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="682.0" y="785.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">shader ALU ve</text>
 </g></a>
@@ -5417,15 +5417,15 @@
 <rect x="879.3" y="833.5" width="73.5" height="88.5" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="883.3" y="846.5" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">render tar</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>shader fetch: 9 (22% native; 2 native, 7 reference)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#gpu"><g class="blk"><title>shader fetch: 9 (89% native; 8 native, 1 reference)</title>
 <rect x="952.75" y="833.54" width="23.12" height="17.19" fill="#2ea043"/>
 <rect x="976.38" y="833.54" width="23.12" height="17.19" fill="#2ea043"/>
-<rect x="952.75" y="851.23" width="23.12" height="17.19" fill="#8957e5"/>
-<rect x="976.38" y="851.23" width="23.12" height="17.19" fill="#8957e5"/>
-<rect x="952.75" y="868.92" width="23.12" height="17.19" fill="#8957e5"/>
-<rect x="976.38" y="868.92" width="23.12" height="17.19" fill="#8957e5"/>
-<rect x="952.75" y="886.62" width="23.12" height="17.19" fill="#8957e5"/>
-<rect x="976.38" y="886.62" width="23.12" height="17.19" fill="#8957e5"/>
+<rect x="952.75" y="851.23" width="23.12" height="17.19" fill="#2ea043"/>
+<rect x="976.38" y="851.23" width="23.12" height="17.19" fill="#2ea043"/>
+<rect x="952.75" y="868.92" width="23.12" height="17.19" fill="#2ea043"/>
+<rect x="976.38" y="868.92" width="23.12" height="17.19" fill="#2ea043"/>
+<rect x="952.75" y="886.62" width="23.12" height="17.19" fill="#2ea043"/>
+<rect x="976.38" y="886.62" width="23.12" height="17.19" fill="#2ea043"/>
 <rect x="952.75" y="904.31" width="23.12" height="17.19" fill="#8957e5"/>
 <rect x="952.8" y="833.5" width="47.2" height="88.5" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="956.8" y="846.5" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">shader</text>
