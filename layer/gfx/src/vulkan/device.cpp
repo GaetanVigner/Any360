@@ -180,7 +180,8 @@ bool Device::Create(const DeviceOptions& options) {
   VkPhysicalDeviceFeatures2 supported{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
   fn_.vkGetPhysicalDeviceFeatures2(physical_, &supported);
   // Uniform blocks laid out as the translated shaders declare them (std430-like offsets), where the device has it.
-  VkPhysicalDeviceVulkan12Features v12_supported{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+  VkPhysicalDeviceVulkan13Features v13_supported{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+  VkPhysicalDeviceVulkan12Features v12_supported{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &v13_supported};
   {
     VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &v12_supported};
     fn_.vkGetPhysicalDeviceFeatures2(physical_, &query);
@@ -188,6 +189,7 @@ bool Device::Create(const DeviceOptions& options) {
   VkPhysicalDeviceVulkan12Features v12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &v13};
   v12.uniformBufferStandardLayout = v12_supported.uniformBufferStandardLayout;
   v12.scalarBlockLayout = v12_supported.scalarBlockLayout;  // the system constants' vec3 + float members
+  v13.shaderDemoteToHelperInvocation = v13_supported.shaderDemoteToHelperInvocation;
   VkPhysicalDeviceFeatures2 enabled{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &v12};
   enabled.features.shaderClipDistance = supported.features.shaderClipDistance;
   enabled.features.shaderCullDistance = supported.features.shaderCullDistance;
@@ -407,6 +409,11 @@ bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat fo
   alloc.memoryTypeIndex = d.MemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   if (alloc.memoryTypeIndex == UINT32_MAX || f.vkAllocateMemory(d.device(), &alloc, nullptr, &out.memory) != VK_SUCCESS) return false;
   f.vkBindImageMemory(d.device(), out.image, out.memory, 0);
+  // A view only for an image that can have one (a transfer-only image, a resolve's staging, has none).
+  constexpr VkImageUsageFlags kViewUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                           VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                                           VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+  if (!(usage & kViewUsage)) return true;
   VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
   view.image = out.image;
   view.viewType = VK_IMAGE_VIEW_TYPE_2D;

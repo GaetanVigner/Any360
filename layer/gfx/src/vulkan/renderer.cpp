@@ -2956,8 +2956,18 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
                                   uint32_t dest_endian, VkFormat format, int32_t dest_dx, int32_t dest_dy) {
   const Functions& f = device_.fn();
   // The destination's texels: the source's coordinates, moved by dest_dx/dest_dy within a containing resolve.
+  // Within the source surface (its pixels: samples x scale a guest pixel).
+  const int32_t surface_w = int32_t(surface.image.width / (sample_x * scale_));
+  const int32_t surface_h = int32_t(surface.image.height / (sample_y * scale_));
+  if (x0 < 0 || y0 < 0 || x0 >= surface_w || y0 >= surface_h) return Fail("resolve outside its surface");
+  width = std::min<uint32_t>(width, uint32_t(surface_w - x0));
+  height = std::min<uint32_t>(height, uint32_t(surface_h - y0));
   const int32_t dx0 = x0 + dest_dx, dy0 = y0 + dest_dy;
-  const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(dy0) + height + 31) & ~31u;
+  const uint32_t pitch = (dest_pitch + 31) & ~31u;
+  // Within the destination's pitch (the image is that wide).
+  if (dx0 < 0 || dy0 < 0 || uint32_t(dx0) >= pitch) return Fail("resolve outside its destination");
+  width = std::min<uint32_t>(width, pitch - uint32_t(dx0));
+  const uint32_t rows = (uint32_t(dy0) + height + 31) & ~31u;
   Resolved& r = resolved_[dest_base];
   // Scaled as the surface is: textures copied from it keep the resolution.
   const int32_t s = int32_t(scale_);
@@ -3187,7 +3197,8 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
           }
         }
       }
-      if (dx < 0) continue;
+      // Only where it fits whole: a match of the tiled offset elsewhere would write past the image.
+      if (dx < 0 || uint32_t(dx) + width > c.image.width / c.scale || uint32_t(dy) + height > held_rows) continue;
       const auto own = resolved_.find(dest_base);
       if (own != resolved_.end()) {
         // An image of its own from before: superseded (its texels now live in the containing one).
