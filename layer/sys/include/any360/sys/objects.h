@@ -137,8 +137,8 @@ class ObjectManager {
     std::function<uint32_t(uint32_t handle)> set_event;
   };
   void SetForeignHandles(ForeignHandles foreign) { foreign_ = std::move(foreign); }
-  // A signal state changed outside these routines (a thread ended): the waits look again.
-  void SignalChanged() { dispatcher_changed_.notify_all(); }
+  // An object's signal state changed outside these routines (a thread ended): its waits look again.
+  void SignalChanged(uint32_t object);
   // Whether a handle given as an event names an object here, or (outside this range) an event in the other kernel.
   bool EventHandleValid(uint32_t handle);
   // For the other managers: a guest region from the kernel heap (0 when exhausted), a handle on an existing object,
@@ -190,11 +190,18 @@ class ObjectManager {
   std::unordered_map<uint32_t, uint32_t> freeable_;  // freed-on-close object -> its size
   std::recursive_mutex lifetime_mutex_;              // allocation, references, release, the handle table
   // The dispatcher's lock, as the kernel's: signal states, timers and their APCs change under it, and a wait takes or
-  // tests its objects under it, so a release and a wait on two threads never lose a count. Waits sleep on
-  // `dispatcher_changed_`; the routines here wake them, and they look again every millisecond for states written
-  // elsewhere (the title's inline code, the other kernel). Taken after lifetime_mutex_, never before.
+  // tests its objects under it, so a release and a wait on two threads never lose a count. A wait sleeps on its
+  // thread's condition, listed in `waiters_` under each object it waits on: a signal wakes only the waits on that
+  // object (waking every wait made the title's threads queue on the lock, a fifth of Crackdown's frame rate), and each
+  // looks again every millisecond for states written elsewhere (the title's inline code, the other kernel). Taken
+  // after lifetime_mutex_, never before.
   std::recursive_mutex dispatcher_mutex_;
-  std::condition_variable_any dispatcher_changed_;
+  struct Waiter {
+    std::condition_variable_any ready;
+  };
+  std::unordered_multimap<uint32_t, Waiter*> waiters_;  // object -> the waits on it
+  void Wake(uint32_t object);                           // under dispatcher_mutex_
+  class WaitRegistration;
   struct Packet {
     uint32_t key, apc_context, status, bytes;
   };
