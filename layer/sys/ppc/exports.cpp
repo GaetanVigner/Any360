@@ -1010,6 +1010,11 @@ ANY360_SYS_EXPORT(XamSwapDisc) { ctx.r3.u64 = 0; }                 // the one di
 ANY360_SYS_EXPORT(XAudioEnableDucker) { ctx.r3.u64 = 0; }          // no voice chat to duck under
 ANY360_SYS_EXPORT(XCustomRegisterDynamicActions) {}               // the guide's custom actions are not shown
 
+// Batch 31: the executable's image range (sys_io_tests against the reference, sys_object_tests).
+ANY360_SYS_EXPORT(KeGetImagePageTableEntry) { ctx.r3.u64 = MemoryManager::ImagePageTableEntry(ctx.r3.u32); }
+ANY360_SYS_EXPORT(NtAllocateEncryptedMemory) { ctx.r3.u64 = Memory().AllocateEncrypted({base}, ctx.r4.u32, ctx.r5.u32); }  // (?, size, base out)
+ANY360_SYS_EXPORT(NtFreeEncryptedMemory) { ctx.r3.u64 = Memory().FreeEncrypted({base}, ctx.r4.u32); }  // (region type, base pointer)
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1393,6 +1398,9 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ExAllocatePool),
     ANY360_SYS_ENTRY(ExFreePool),
     ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(KeGetImagePageTableEntry),
+    ANY360_SYS_ENTRY(NtAllocateEncryptedMemory),
+    ANY360_SYS_ENTRY(NtFreeEncryptedMemory),
     ANY360_SYS_ENTRY(XamGetOnlineSchema),
     ANY360_SYS_ENTRY(XamQueryLiveHiveW),
     ANY360_SYS_ENTRY(XamSwapDisc),

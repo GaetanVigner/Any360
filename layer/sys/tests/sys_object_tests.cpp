@@ -882,6 +882,17 @@ void KernelOddsTests() {
   CHECK(top != 0 && Memory().IsAddressValid(top - 4) == 1 && Memory().IsAddressValid(top - 0x3000) == 1);
   CHECK(Memory().DeleteKernelStack(top - 0x3000) == 0 && Memory().IsAddressValid(top - 4) == 0);
   CHECK(Memory().DeleteKernelStack(top - 0x3000) == 0xC0000001u && Memory().IsAddressValid(0x1000) == 0);
+  // Encrypted memory: its own heap of 64 KB pages, 16 MB at most, never handed out otherwise.
+  Memory().Reset({{0x40000, 0x10000, 0x1000, false}, {0x50000, 0x30000, 0x10000, false, true}});  // the test's guest memory
+  CHECK(Memory().AllocateEncrypted(g, 0x8000, out) == 0 && g.Load32(out) >= 0x50000 && g.Load32(out) % 0x10000 == 0 &&
+        Memory().IsAddressValid(g.Load32(out) + 0xFFFC) == 1);
+  CHECK(Memory().AllocateEncrypted(g, 0, out + 4) == 0xC000000Du && Memory().AllocateEncrypted(g, 0x1000001, out + 4) == 0xC000000Du);
+  CHECK(Memory().AllocateEncrypted(g, 0x10000, out + 4) == 0 && g.Load32(out + 4) == g.Load32(out) + 0x10000);
+  const uint32_t first = g.Load32(out);
+  CHECK(Memory().FreeEncrypted(g, out) == 0 && Memory().IsAddressValid(first) == 0 && Memory().FreeEncrypted(g, out) == 0xC000000Du);
+  CHECK(MemoryManager::ImagePageTableEntry(0x82010000) == 0x201 && MemoryManager::ImagePageTableEntry(0x90003000) == 0x40000003 &&
+        MemoryManager::ImagePageTableEntry(0x70000000) == 0);
+  Memory().Reset({{0x40000, 0x40000, 0x1000, false}});
   // A string whose buffer the kernel allocated, freed and emptied.
   const uint32_t unicode = kScratch + 0x410, buffer = Memory().AllocatePages(g, 0x100);
   g.Store16(unicode, 6);

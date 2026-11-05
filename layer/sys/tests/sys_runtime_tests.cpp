@@ -26,6 +26,7 @@
 
 #define REFERENCE(name) extern "C" void __imp__##name(PPCContext& ctx, uint8_t* base);
 REFERENCE(KeGetCurrentProcessType)
+REFERENCE(KeGetImagePageTableEntry)
 REFERENCE(RtlCopyString)
 REFERENCE(RtlCopyUnicodeString)
 REFERENCE(RtlImageNtHeader)
@@ -214,6 +215,11 @@ const Case kCases[] = {
       ctx.r4.u64 = uint32_t(rng());
     }),
     CASE(KeQueryPerformanceFrequency, nullptr),
+    // Addresses inside and around the executable's range (the reference looks its heaps up).
+    CASE(KeGetImagePageTableEntry, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
+      static constexpr uint32_t kBases[] = {0x70000000, 0x80000000, 0x82000000, 0x8C000000, 0x90000000, 0x9FFF0000, 0xA0000000};
+      ctx.r3.u64 = kBases[rng() % 7] + rng() % 0x1000000;
+    }),
     // Counted strings at block A whose buffers are in block B (the reference translates them through its runtime's
     // memory); a null source sometimes.
     CASE(RtlCopyString, [](Scene& s, PPCContext& ctx, std::mt19937& rng) { CountedStrings(s, ctx, rng); }),

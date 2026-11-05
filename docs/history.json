@@ -97,7 +97,7 @@
  {
   "date": "2026-11-05",
   "system_calls": {
-   "native": 599,
+   "native": 602,
    "ported": 0,
    "runnable": 606,
    "total": 2914

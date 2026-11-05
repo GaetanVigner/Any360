@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 946" width="1000" height="946" font-family="sans-serif">
 <style>.blk:hover rect{opacity:.8}</style>
 <rect width="1000" height="946" fill="#0d1117"/>
-<text x="0" y="25" font-size="16" fill="#c9d1d9" font-weight="600">System calls native: 20.6% (599/2,914) <tspan font-size="12" font-weight="400" fill="#8b949e">· 20.8% run on the reference runtime · one square per export</tspan></text>
+<text x="0" y="25" font-size="16" fill="#c9d1d9" font-weight="600">System calls native: 20.7% (602/2,914) <tspan font-size="12" font-weight="400" fill="#8b949e">· 20.8% run on the reference runtime · one square per export</tspan></text>
 <rect x="0" y="34" width="1000" height="300" fill="#0d1117"/>
 <a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xam ui: 340 (6% native/ported; 21 native, 318 stub, 1 missing)</title>
 <rect x="0.00" y="34.00" width="9.71" height="9.58" fill="#2ea043"/>
@@ -2354,7 +2354,7 @@
 <rect x="877.1" y="34.0" width="64.5" height="67.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="881.1" y="47.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">xboxkrnl </text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl memory: 38 (58% native/ported; 22 native, 3 reference, 13 stub)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xboxkrnl memory: 38 (66% native/ported; 25 native, 13 stub)</title>
 <rect x="941.62" y="34.00" width="9.23" height="9.07" fill="#2ea043"/>
 <rect x="951.35" y="34.00" width="9.23" height="9.07" fill="#2ea043"/>
 <rect x="961.08" y="34.00" width="9.23" height="9.07" fill="#2ea043"/>
@@ -2377,9 +2377,9 @@
 <rect x="951.35" y="62.72" width="9.23" height="9.07" fill="#2ea043"/>
 <rect x="961.08" y="62.72" width="9.23" height="9.07" fill="#2ea043"/>
 <rect x="970.81" y="62.72" width="9.23" height="9.07" fill="#2ea043"/>
-<rect x="980.54" y="62.72" width="9.23" height="9.07" fill="#8957e5"/>
-<rect x="990.27" y="62.72" width="9.23" height="9.07" fill="#8957e5"/>
-<rect x="941.62" y="72.29" width="9.23" height="9.07" fill="#8957e5"/>
+<rect x="980.54" y="62.72" width="9.23" height="9.07" fill="#2ea043"/>
+<rect x="990.27" y="62.72" width="9.23" height="9.07" fill="#2ea043"/>
+<rect x="941.62" y="72.29" width="9.23" height="9.07" fill="#2ea043"/>
 <rect x="951.35" y="72.29" width="9.23" height="9.07" fill="#d29922"/>
 <rect x="961.08" y="72.29" width="9.23" height="9.07" fill="#d29922"/>
 <rect x="970.81" y="72.29" width="9.23" height="9.07" fill="#d29922"/>

@@ -1,6 +1,7 @@
 // The memory manager: the guest address space's heaps as the Xbox 360 kernel lays them out (virtual 4 KB pages below
 // 0x40000000, 64 KB pages from 0x40000000; the physical views at 0xA0000000 (64 KB), 0xC0000000 (16 MB) and
-// 0xE0000000 (4 KB) over one 512 MB physical space; the executable's own range is not allocatable), with per-page
+// 0xE0000000 (4 KB) over one 512 MB physical space; the executable's own range is not allocatable except its
+// encrypted part at 0x8C000000, 64 KB pages only NtAllocateEncryptedMemory hands out), with per-page
 // state (free, reserved, committed), protection and the region a page belongs to. Addresses are the manager's own:
 // a title gets consistent regions, not the reference's numbers.
 #pragma once
@@ -23,6 +24,7 @@ constexpr uint32_t kStatusUnsuccessful = 0xC0000001, kStatusAccessDenied = 0xC00
 struct HeapSpec {
   uint32_t base, size, page_size;
   bool physical;
+  bool encrypted = false;  // NtAllocateEncryptedMemory's alone: no other allocation lands there
 };
 
 struct RegionInfo {
@@ -66,6 +68,13 @@ class MemoryManager {
   // MmCreateKernelStack / MmDeleteKernelStack: committed read-write pages from the 4 KB heap; Create returns the stack's
   // top (its base address plus the size), Delete takes the low end back (STATUS_UNSUCCESSFUL for anything else).
   uint32_t CreateKernelStack(Guest g, uint32_t size);
+  // NtAllocateEncryptedMemory: committed read-write 64 KB pages of the encrypted heap, the size rounded up to 64 KB
+  // (16 MB at most); NtFreeEncryptedMemory takes back the allocation at the address `base_ptr` holds.
+  uint32_t AllocateEncrypted(Guest g, uint32_t size, uint32_t base_out);
+  uint32_t FreeEncrypted(Guest g, uint32_t base_ptr);
+  // KeGetImagePageTableEntry: an address of the executable's range as its page number (64 KB pages from 0x80000000,
+  // 4 KB pages from 0x90000000 flagged 0x40000000), masked to 0x400FFFFF; 0 outside it.
+  static uint32_t ImagePageTableEntry(uint32_t address);
   uint32_t DeleteKernelStack(uint32_t stack_end);
   // Committed, zeroed read-write pages from the 4 KB heap (the kernel pool, strings the kernel allocates); 0 when full.
   uint32_t AllocatePages(Guest g, uint32_t size);
