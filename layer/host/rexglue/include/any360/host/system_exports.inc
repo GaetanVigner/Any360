@@ -202,37 +202,37 @@ ANY360_REXGLUE_BIND_SYSTEM(KeReleaseSemaphore, kObjects)
 ANY360_REXGLUE_BIND_SYSTEM(NtCreateEvent, kObjects)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtSetEvent
-ANY360_REXGLUE_BIND_SYSTEM(NtSetEvent, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(NtSetEvent, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtClearEvent
-ANY360_REXGLUE_BIND_SYSTEM(NtClearEvent, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(NtClearEvent, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtPulseEvent
-ANY360_REXGLUE_BIND_SYSTEM(NtPulseEvent, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(NtPulseEvent, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtQueryEvent
-ANY360_REXGLUE_BIND_SYSTEM(NtQueryEvent, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(NtQueryEvent, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtCreateSemaphore
 ANY360_REXGLUE_BIND_SYSTEM(NtCreateSemaphore, kObjects)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtReleaseSemaphore
-ANY360_REXGLUE_BIND_SYSTEM(NtReleaseSemaphore, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(NtReleaseSemaphore, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtCreateMutant
 ANY360_REXGLUE_BIND_SYSTEM(NtCreateMutant, kObjects)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtReleaseMutant
-ANY360_REXGLUE_BIND_SYSTEM(NtReleaseMutant, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(NtReleaseMutant, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtClose
-ANY360_REXGLUE_BIND_SYSTEM(NtClose, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(NtClose, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtDuplicateObject
-ANY360_REXGLUE_BIND_SYSTEM(NtDuplicateObject, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(NtDuplicateObject, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_ObReferenceObjectByHandle
-ANY360_REXGLUE_BIND_SYSTEM(ObReferenceObjectByHandle, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(ObReferenceObjectByHandle, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_ObDereferenceObject
 ANY360_REXGLUE_BIND_SYSTEM(ObDereferenceObject, kObjects)
@@ -241,7 +241,7 @@ ANY360_REXGLUE_BIND_SYSTEM(ObDereferenceObject, kObjects)
 ANY360_REXGLUE_BIND_SYSTEM(KeWaitForSingleObject, kObjects)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtWaitForSingleObjectEx
-ANY360_REXGLUE_BIND_SYSTEM(NtWaitForSingleObjectEx, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(NtWaitForSingleObjectEx, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_KeQuerySystemTime
 ANY360_REXGLUE_BIND_SYSTEM(KeQuerySystemTime, kThreads)
@@ -253,16 +253,16 @@ ANY360_REXGLUE_BIND_SYSTEM(KeInitializeTimerEx, kObjects)
 ANY360_REXGLUE_BIND_SYSTEM(NtCreateTimer, kObjects)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtSetTimerEx
-ANY360_REXGLUE_BIND_SYSTEM(NtSetTimerEx, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(NtSetTimerEx, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtCancelTimer
-ANY360_REXGLUE_BIND_SYSTEM(NtCancelTimer, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(NtCancelTimer, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_KeWaitForMultipleObjects
 ANY360_REXGLUE_BIND_SYSTEM(KeWaitForMultipleObjects, kObjects)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtWaitForMultipleObjectsEx
-ANY360_REXGLUE_BIND_SYSTEM(NtWaitForMultipleObjectsEx, kObjects)
+ANY360_REXGLUE_BIND_HANDLE_AT(NtWaitForMultipleObjectsEx, kObjects, r4)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_ExCreateThread
 ANY360_REXGLUE_BIND_SYSTEM(ExCreateThread, kThreads)
@@ -280,10 +280,10 @@ ANY360_REXGLUE_BIND_SYSTEM(NtYieldExecution, kThreads)
 ANY360_REXGLUE_BIND_SYSTEM(KeResumeThread, kThreads)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtResumeThread
-ANY360_REXGLUE_BIND_SYSTEM(NtResumeThread, kThreads)
+ANY360_REXGLUE_BIND_HANDLE(NtResumeThread, kThreads, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtSuspendThread
-ANY360_REXGLUE_BIND_SYSTEM(NtSuspendThread, kThreads)
+ANY360_REXGLUE_BIND_HANDLE(NtSuspendThread, kThreads, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_KeSetAffinityThread
 ANY360_REXGLUE_BIND_SYSTEM(KeSetAffinityThread, kThreads)
@@ -337,40 +337,40 @@ ANY360_REXGLUE_BIND_SYSTEM(XamAlloc, kMemory)
 ANY360_REXGLUE_BIND_SYSTEM(XamFree, kMemory)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtCreateFile
-ANY360_REXGLUE_BIND_SYSTEM(NtCreateFile, kFiles)
+ANY360_REXGLUE_BIND_PATH(NtCreateFile, kFiles, r5, kAttributes)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtOpenFile
-ANY360_REXGLUE_BIND_SYSTEM(NtOpenFile, kFiles)
+ANY360_REXGLUE_BIND_PATH(NtOpenFile, kFiles, r5, kAttributes)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtReadFile
-ANY360_REXGLUE_BIND_SYSTEM(NtReadFile, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtReadFile, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtWriteFile
-ANY360_REXGLUE_BIND_SYSTEM(NtWriteFile, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtWriteFile, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtQueryInformationFile
-ANY360_REXGLUE_BIND_SYSTEM(NtQueryInformationFile, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtQueryInformationFile, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtSetInformationFile
-ANY360_REXGLUE_BIND_SYSTEM(NtSetInformationFile, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtSetInformationFile, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtQueryFullAttributesFile
-ANY360_REXGLUE_BIND_SYSTEM(NtQueryFullAttributesFile, kFiles)
+ANY360_REXGLUE_BIND_PATH(NtQueryFullAttributesFile, kFiles, r3, kAttributes)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtQueryDirectoryFile
-ANY360_REXGLUE_BIND_SYSTEM(NtQueryDirectoryFile, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtQueryDirectoryFile, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtQueryVolumeInformationFile
-ANY360_REXGLUE_BIND_SYSTEM(NtQueryVolumeInformationFile, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtQueryVolumeInformationFile, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtFlushBuffersFile
-ANY360_REXGLUE_BIND_SYSTEM(NtFlushBuffersFile, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtFlushBuffersFile, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_ObCreateSymbolicLink
-ANY360_REXGLUE_BIND_SYSTEM(ObCreateSymbolicLink, kFiles)
+ANY360_REXGLUE_BIND_BOTH(ObCreateSymbolicLink, kFiles)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_ObDeleteSymbolicLink
-ANY360_REXGLUE_BIND_SYSTEM(ObDeleteSymbolicLink, kFiles)
+ANY360_REXGLUE_BIND_BOTH(ObDeleteSymbolicLink, kFiles)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_XMsgStartIORequest
 ANY360_REXGLUE_BIND_SYSTEM(XMsgStartIORequest, kXam)
@@ -703,7 +703,7 @@ ANY360_REXGLUE_BIND_SYSTEM(KeSaveFloatingPointState, kThreads)
 ANY360_REXGLUE_BIND_SYSTEM(KeRestoreFloatingPointState, kThreads)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtDeviceIoControlFile
-ANY360_REXGLUE_BIND_SYSTEM(NtDeviceIoControlFile, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtDeviceIoControlFile, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_XexLoadImage
 ANY360_REXGLUE_BIND_SYSTEM(XexLoadImage, kXam)
@@ -772,7 +772,7 @@ ANY360_REXGLUE_BIND_SYSTEM(KeRemoveQueueDpc, kThreads)
 ANY360_REXGLUE_BIND_SYSTEM(MmMapIoSpace, kMemory)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtWriteFileGather
-ANY360_REXGLUE_BIND_SYSTEM(NtWriteFileGather, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtWriteFileGather, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_ObOpenObjectByName
 ANY360_REXGLUE_BIND_SYSTEM(ObOpenObjectByName, kObjects)
@@ -907,10 +907,10 @@ ANY360_REXGLUE_BIND_SYSTEM(XamShowFriendRequestUI, kXam)
 ANY360_REXGLUE_BIND_SYSTEM(NtProtectVirtualMemory, kMemory)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtQueueApcThread
-ANY360_REXGLUE_BIND_SYSTEM(NtQueueApcThread, kThreads)
+ANY360_REXGLUE_BIND_HANDLE(NtQueueApcThread, kThreads, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtSignalAndWaitForSingleObjectEx
-ANY360_REXGLUE_BIND_SYSTEM(NtSignalAndWaitForSingleObjectEx, kObjects)
+ANY360_REXGLUE_BIND_HANDLE(NtSignalAndWaitForSingleObjectEx, kObjects, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_ObLookupThreadByThreadId
 ANY360_REXGLUE_BIND_SYSTEM(ObLookupThreadByThreadId, kObjects)
@@ -988,7 +988,7 @@ ANY360_REXGLUE_BIND_SYSTEM(RtlUnicodeStringToAnsiString, kMemory)
 ANY360_REXGLUE_BIND_SYSTEM(RtlUpcaseUnicodeChar, kStateless)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtReadFileScatter
-ANY360_REXGLUE_BIND_SYSTEM(NtReadFileScatter, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtReadFileScatter, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_XamEnableInactivityProcessing
 ANY360_REXGLUE_BIND_SYSTEM(XamEnableInactivityProcessing, kInput)
@@ -1177,67 +1177,67 @@ ANY360_REXGLUE_BIND_SYSTEM(XeKeysAesCbcUsingKey, kStateless)
 ANY360_REXGLUE_BIND_SYSTEM(XeKeysHmacShaUsingKey, kStateless)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_CreateFileA
-ANY360_REXGLUE_BIND_SYSTEM(CreateFileA, kFiles)
+ANY360_REXGLUE_BIND_PATH(CreateFileA, kFiles, r3, kString)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_ReadFile
-ANY360_REXGLUE_BIND_SYSTEM(ReadFile, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(ReadFile, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_WriteFile
-ANY360_REXGLUE_BIND_SYSTEM(WriteFile, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(WriteFile, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_SetFilePointer
-ANY360_REXGLUE_BIND_SYSTEM(SetFilePointer, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(SetFilePointer, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_SetFilePointerEx
-ANY360_REXGLUE_BIND_SYSTEM(SetFilePointerEx, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(SetFilePointerEx, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_GetFileSize
-ANY360_REXGLUE_BIND_SYSTEM(GetFileSize, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(GetFileSize, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_GetFileSizeEx
-ANY360_REXGLUE_BIND_SYSTEM(GetFileSizeEx, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(GetFileSizeEx, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_SetEndOfFile
-ANY360_REXGLUE_BIND_SYSTEM(SetEndOfFile, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(SetEndOfFile, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_FlushFileBuffers
-ANY360_REXGLUE_BIND_SYSTEM(FlushFileBuffers, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(FlushFileBuffers, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_DeleteFileA
-ANY360_REXGLUE_BIND_SYSTEM(DeleteFileA, kFiles)
+ANY360_REXGLUE_BIND_PATH(DeleteFileA, kFiles, r3, kString)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_CreateDirectoryA
-ANY360_REXGLUE_BIND_SYSTEM(CreateDirectoryA, kFiles)
+ANY360_REXGLUE_BIND_PATH(CreateDirectoryA, kFiles, r3, kString)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_MoveFileA
-ANY360_REXGLUE_BIND_SYSTEM(MoveFileA, kFiles)
+ANY360_REXGLUE_BIND_PATH(MoveFileA, kFiles, r3, kString)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_CopyFileA
-ANY360_REXGLUE_BIND_SYSTEM(CopyFileA, kFiles)
+ANY360_REXGLUE_BIND_PATH(CopyFileA, kFiles, r3, kString)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_GetFileAttributesA
-ANY360_REXGLUE_BIND_SYSTEM(GetFileAttributesA, kFiles)
+ANY360_REXGLUE_BIND_PATH(GetFileAttributesA, kFiles, r3, kString)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_GetFileAttributesExA
-ANY360_REXGLUE_BIND_SYSTEM(GetFileAttributesExA, kFiles)
+ANY360_REXGLUE_BIND_PATH(GetFileAttributesExA, kFiles, r4, kString)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_GetDiskFreeSpaceExA
-ANY360_REXGLUE_BIND_SYSTEM(GetDiskFreeSpaceExA, kFiles)
+ANY360_REXGLUE_BIND_PATH(GetDiskFreeSpaceExA, kFiles, r3, kString)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_FindFirstFileA
-ANY360_REXGLUE_BIND_SYSTEM(FindFirstFileA, kFiles)
+ANY360_REXGLUE_BIND_PATH(FindFirstFileA, kFiles, r3, kString)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_FindNextFileA
-ANY360_REXGLUE_BIND_SYSTEM(FindNextFileA, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(FindNextFileA, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_CloseHandle
-ANY360_REXGLUE_BIND_SYSTEM(CloseHandle, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(CloseHandle, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_SetFileAttributesA
 ANY360_REXGLUE_BIND_SYSTEM(SetFileAttributesA, kFiles)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_SetFileTime
-ANY360_REXGLUE_BIND_SYSTEM(SetFileTime, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(SetFileTime, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_CompareFileTime
 ANY360_REXGLUE_BIND_SYSTEM(CompareFileTime, kFiles)
@@ -1333,10 +1333,10 @@ ANY360_REXGLUE_BIND_SYSTEM(XamBuildXamResourceLocator, kStateless)
 ANY360_REXGLUE_BIND_SYSTEM(NtCreateIoCompletion, kFiles)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtSetIoCompletion
-ANY360_REXGLUE_BIND_SYSTEM(NtSetIoCompletion, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtSetIoCompletion, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtRemoveIoCompletion
-ANY360_REXGLUE_BIND_SYSTEM(NtRemoveIoCompletion, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtRemoveIoCompletion, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_XamUserGetGamerTag
 ANY360_REXGLUE_BIND_SYSTEM(XamUserGetGamerTag, kXam)
@@ -1462,10 +1462,10 @@ ANY360_REXGLUE_BIND_SYSTEM(KeSuspendThread, kThreads)
 ANY360_REXGLUE_BIND_SYSTEM(KeSetCurrentStackPointers, kThreads)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtOpenSymbolicLinkObject
-ANY360_REXGLUE_BIND_SYSTEM(NtOpenSymbolicLinkObject, kFiles)
+ANY360_REXGLUE_BIND_PATH(NtOpenSymbolicLinkObject, kFiles, r4, kAttributes)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NtQuerySymbolicLinkObject
-ANY360_REXGLUE_BIND_SYSTEM(NtQuerySymbolicLinkObject, kFiles)
+ANY360_REXGLUE_BIND_HANDLE(NtQuerySymbolicLinkObject, kFiles, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_NetDll_XNetSetSystemLinkPort
 ANY360_REXGLUE_BIND_SYSTEM(NetDll_XNetSetSystemLinkPort, kXam)

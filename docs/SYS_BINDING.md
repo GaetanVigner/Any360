@@ -88,6 +88,40 @@ What the game found that the tests could not:
   the runtime's `ObReferenceObjectByHandle` and the title read through a null object. `BindVariables` (called after
   `EnableSystemGroup`) now binds only the variables of the groups switched (`VariableGroup`).
 
+## Step 2: done (the files in Crackdown)
+
+The runtime and any360::sys now both hold handles and paths, so the overrides that take one route by owner instead of
+by group (`gen_host_binding.py`: `HANDLE_ROUTES`, `PATH_ROUTES`, `BOTH_ROUTES`):
+
+- A handle goes back to the manager that made it: any360::sys's start at `SystemOptions::handle_base` (0xF8100000,
+  `ObjectManager::SetHandleBase`, `OwnsHandle`), the runtime's below. `NtClose`, `NtReadFile`, the waits and the other
+  56 calls that take a handle follow it whatever the groups say.
+- A path goes to any360::sys when its files are on and its file system knows the device (`FileSystem::Knows`,
+  `KnowsAttributes`): `StartSystem` mounts `SystemOptions::mounts` as the runtime does (Crackdown: `game:` and `d:` on
+  the title's files, `\Device\cache0` on the cache partition). Devices the title or the runtime add on their own
+  (Crackdown's button glyphs) stay the runtime's.
+- `ObCreateSymbolicLink` and `ObDeleteSymbolicLink` run on both sides, so a link the title makes resolves on either.
+
+With `stateless,files` and Any360's GPU Crackdown reaches play at 240-280 FPS (2026-11-05); its file calls are
+`NtCreateFile`, `NtOpenFile`, `NtReadFile`, `NtWriteFile`, `NtQueryInformationFile`, `NtSetInformationFile`,
+`NtQueryFullAttributesFile`, `NtQueryDirectoryFile`, `StfsCreateDevice`, `StfsControlDevice`,
+`IoDismountVolumeByFileHandle` and the symbolic links.
+
+What the game found that the tests could not:
+
+- A file read's event is the runtime's while the objects are: the read failed with `STATUS_INVALID_HANDLE` and the
+  title waited for ever. `ObjectManager::SetForeignHandles` lets `NtSetEvent` (and the files' event checks,
+  `EventHandleValid`) reach the other kernel's events for handles outside any360::sys's range.
+- On Windows the runtime maps guest addresses from 0xE0000000 up 0x1000 bytes further on the host (64 KB mapping
+  granularity, `PhysicalHostOffset`), and the title's code adds the same. `Guest` did not: reads into physical memory
+  landed 4 KB off and the title parsed garbage. `Guest::host` now adds `g_physical_host_offset`, which `StartSystem`
+  takes from the runtime's 0xE0000000 heap.
+- Finding those took a trace of every call: `SystemOptions::trace_every_call` (Crackdown: `any360_sys_trace_all`)
+  logs each call that goes to any360::sys with eight arguments, its result and, for a path call, the path.
+
+Still the runtime's while only the files are switched: an I/O APC (queued on any360::sys's scheduler, which runs no
+runtime thread) and a completion port the runtime made; Crackdown uses neither.
+
 ## Who does what
 
 - `layer/sys` (the calls, `SetHandleBase`, `AdoptCurrentThread`, the page map import): the sys session.

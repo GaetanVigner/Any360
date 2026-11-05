@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include "any360/host/rexglue.h"
 
@@ -33,6 +34,14 @@ enum class SysGroup : uint32_t { kStateless, kFiles, kObjects, kThreads, kMemory
 const char* SysGroupName(SysGroup group);
 bool ParseSysGroup(const std::string& name, SysGroup& group);
 
+// A device of the title's file system and the links to it, mirrored on any360::sys's.
+struct SystemMount {
+  std::string device;  // \Device\Harddisk0\Partition1
+  std::string host;    // the host directory
+  bool read_only = true;
+  std::vector<std::string> links;  // game:, d:
+};
+
 struct SystemOptions {
   // Bytes of the runtime's system heap given to any360::sys's object manager as its kernel heap (the objects,
   // threads' KTHREADs, PCRs and stacks, the variables it creates).
@@ -41,6 +50,13 @@ struct SystemOptions {
   // really makes of the groups switched). None: nothing reported.
   std::function<void(const std::string&)> log;
   bool trace_calls = false;
+  // Every call that goes to any360::sys, reported with its first eight arguments and its result (r3), a path call with its path, for finding the
+  // call whose answer a title did not expect. Slow: for a debugging run.
+  bool trace_every_call = false;
+  // Where any360::sys's handles start: apart from the runtime's (0xF8000000 up), so a handle names its owner.
+  uint32_t handle_base = 0xF8100000;
+  // The devices the runtime mounted (the title's files, its cache partition...), mounted the same on any360::sys.
+  std::vector<SystemMount> mounts;
 };
 
 // Prepares any360::sys inside the running runtime: the guest memory, the kernel heap, the dispatcher its scheduler
@@ -52,9 +68,20 @@ bool StartSystem(const SystemOptions& options, std::string& error);
 void EnableSystemGroup(SysGroup group, bool enabled);
 bool SystemGroupEnabled(SysGroup group);
 
-// One call: Any360's when its group is on or the runtime has no such export, the runtime's otherwise.
+// One call: Any360's when its group is on or the runtime has no such export, the runtime's otherwise. Until StartSystem
+// every call is the runtime's.
 void CallSystemExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, PPCContext& ctx,
                       uint8_t* base);
+// A call taking a handle: the side that made the handle (pseudo handles: as the group says).
+void CallHandleExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, uint32_t handle,
+                      PPCContext& ctx, uint8_t* base);
+// A call naming a path: Any360's when its group is on and its file system knows the path's device.
+enum class PathKind { kAttributes, kString };
+void CallPathExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, PathKind kind,
+                    uint32_t path, PPCContext& ctx, uint8_t* base);
+// A call both sides must see: with its group on, Any360's (its answer) and then the runtime's.
+void CallBothExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, PPCContext& ctx,
+                    uint8_t* base);
 
 // any360::sys's Dispatcher on the runtime: runs the guest function at `address` (the runtime's function table) on the
 // calling host thread, with r1 = `stack_top`, r13 = `pcr` and r3 onwards = `args`; returns r3, 0 for an address with
@@ -80,4 +107,42 @@ bool VariableGroup(const char* name, SysGroup& group);
         ::any360::host::rexglue::ReferenceExport("__imp__" #name);                                                  \
     ::any360::host::rexglue::CallSystemExport(::any360::host::rexglue::SysGroup::group, #name, &any360_##name, reference, \
                                               ctx, base);                                                                \
+  }
+
+#define ANY360_REXGLUE_SYSTEM_REFERENCE(name)                                \
+  static const ::any360::host::rexglue::GuestFunction reference =          \
+      ::any360::host::rexglue::ReferenceExport("__imp__" #name)
+
+#define ANY360_REXGLUE_BIND_HANDLE(name, group, reg)                                                                    \
+  extern "C" void any360_##name(PPCContext& ctx, uint8_t* base);                                                         \
+  extern "C" void __imp__##name(PPCContext& __restrict ctx, uint8_t* base) {                                             \
+    ANY360_REXGLUE_SYSTEM_REFERENCE(name);                                                                               \
+    ::any360::host::rexglue::CallHandleExport(::any360::host::rexglue::SysGroup::group, #name, &any360_##name, reference, \
+                                              ctx.reg.u32, ctx, base);                                                   \
+  }
+
+#define ANY360_REXGLUE_BIND_HANDLE_AT(name, group, reg)                                                                 \
+  extern "C" void any360_##name(PPCContext& ctx, uint8_t* base);                                                         \
+  extern "C" void __imp__##name(PPCContext& __restrict ctx, uint8_t* base) {                                             \
+    ANY360_REXGLUE_SYSTEM_REFERENCE(name);                                                                               \
+    uint32_t handle = 0;                                                                                                 \
+    if (ctx.reg.u32) handle = __builtin_bswap32(*reinterpret_cast<const uint32_t*>(base + ctx.reg.u32));                 \
+    ::any360::host::rexglue::CallHandleExport(::any360::host::rexglue::SysGroup::group, #name, &any360_##name, reference, \
+                                              handle, ctx, base);                                                        \
+  }
+
+#define ANY360_REXGLUE_BIND_PATH(name, group, reg, kind)                                                                \
+  extern "C" void any360_##name(PPCContext& ctx, uint8_t* base);                                                         \
+  extern "C" void __imp__##name(PPCContext& __restrict ctx, uint8_t* base) {                                             \
+    ANY360_REXGLUE_SYSTEM_REFERENCE(name);                                                                               \
+    ::any360::host::rexglue::CallPathExport(::any360::host::rexglue::SysGroup::group, #name, &any360_##name, reference,   \
+                                            ::any360::host::rexglue::PathKind::kind, ctx.reg.u32, ctx, base);            \
+  }
+
+#define ANY360_REXGLUE_BIND_BOTH(name, group)                                                                           \
+  extern "C" void any360_##name(PPCContext& ctx, uint8_t* base);                                                         \
+  extern "C" void __imp__##name(PPCContext& __restrict ctx, uint8_t* base) {                                             \
+    ANY360_REXGLUE_SYSTEM_REFERENCE(name);                                                                               \
+    ::any360::host::rexglue::CallBothExport(::any360::host::rexglue::SysGroup::group, #name, &any360_##name, reference,   \
+                                            ctx, base);                                                                  \
   }

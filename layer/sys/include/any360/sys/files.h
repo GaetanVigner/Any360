@@ -104,6 +104,11 @@ class FileSystem {
   // I/O status block, 0 without one) on the completion port the file is associated with, if any.
   void Completed(Guest g, uint32_t handle, uint32_t apc_context, uint32_t status, uint32_t io_status);
 
+  // Whether a guest path names a device mounted here (links followed); a binder sends the paths of devices it does not
+  // know to another file system. With OBJECT_ATTRIBUTES, a root directory handle must be an open directory here.
+  bool Knows(const std::string& guest_path) const;
+  bool KnowsAttributes(Guest g, uint32_t attributes) const;
+
   // The host path a guest path resolves to; empty when the device or a parent directory does not exist.
   std::filesystem::path Resolve(const std::string& guest_path, bool* parent_exists = nullptr) const;
   // Called by the object manager when the last handle of an object closes.

@@ -44,6 +44,31 @@ OVERRIDES = {
     'XamLoaderSetLaunchData': 'kXam', 'XamLoaderGetLaunchData': 'kXam', 'XamLoaderGetLaunchDataSize': 'kXam',
     'XamLoaderLaunchTitle': 'kXam', 'XamLoaderTerminateTitle': 'kXam',
 }
+# Calls taking a handle go to the side that made it, whatever their group (the register holding it). While the two
+# kernels share a title, either may have made a given handle.
+HANDLE_ROUTES = {name: 'r3' for name in (
+    'NtClose', 'NtDuplicateObject', 'ObReferenceObjectByHandle', 'NtReadFile', 'NtWriteFile', 'NtReadFileScatter',
+    'NtWriteFileGather', 'NtQueryInformationFile', 'NtSetInformationFile', 'NtQueryVolumeInformationFile',
+    'NtQueryDirectoryFile', 'NtFlushBuffersFile', 'NtDeviceIoControlFile', 'NtWaitForSingleObjectEx', 'NtSetEvent',
+    'NtClearEvent', 'NtPulseEvent', 'NtQueryEvent', 'NtReleaseSemaphore', 'NtReleaseMutant', 'NtSetTimerEx',
+    'NtCancelTimer', 'NtSuspendThread', 'NtResumeThread', 'NtQueueApcThread', 'NtSetIoCompletion',
+    'NtRemoveIoCompletion', 'NtSignalAndWaitForSingleObjectEx', 'NtQuerySymbolicLinkObject', 'ReadFile', 'WriteFile',
+    'CloseHandle', 'SetFilePointer', 'SetFilePointerEx', 'GetFileSize', 'GetFileSizeEx', 'SetEndOfFile',
+    'FlushFileBuffers', 'FindNextFileA', 'SetFileTime')}
+# The same with the handle in memory: the first of an array.
+HANDLE_AT_ROUTES = {'NtWaitForMultipleObjectsEx': 'r4'}
+# Calls naming a path go to Any360 only when its file system knows the device (the others: content packages the
+# runtime's XAM mounted, raw partitions): the register and whether it holds OBJECT_ATTRIBUTES or a C string.
+PATH_ROUTES = {
+    'NtCreateFile': ('r5', 'kAttributes'), 'NtOpenFile': ('r5', 'kAttributes'),
+    'NtQueryFullAttributesFile': ('r3', 'kAttributes'), 'NtOpenSymbolicLinkObject': ('r4', 'kAttributes'),
+    'CreateFileA': ('r3', 'kString'), 'DeleteFileA': ('r3', 'kString'), 'CreateDirectoryA': ('r3', 'kString'),
+    'GetFileAttributesA': ('r3', 'kString'), 'GetFileAttributesExA': ('r4', 'kString'),
+    'FindFirstFileA': ('r3', 'kString'), 'MoveFileA': ('r3', 'kString'), 'CopyFileA': ('r3', 'kString'),
+    'GetDiskFreeSpaceExA': ('r3', 'kString'),
+}
+# Calls both sides must see (the symbolic links: either side may open a path through them).
+BOTH_ROUTES = {'ObCreateSymbolicLink', 'ObDeleteSymbolicLink'}
 # Dispatcher objects and their waits live in the object manager, whatever file the reference keeps them in.
 OBJECT_NAMES = re.compile(r'Event|Semaphore|Mutant|Timer|WaitFor|SignalAndWait|IoCompletion')
 
@@ -72,7 +97,18 @@ def main():
             if group == 'kThreads' and OBJECT_NAMES.search(name):
                 group = 'kObjects'
         counts[group] = counts.get(group, 0) + 1
-        lines += [f'#ifndef ANY360_REXGLUE_SKIP_{name}', f'ANY360_REXGLUE_BIND_SYSTEM({name}, {group})', '#endif']
+        if name in HANDLE_ROUTES:
+            bind = f'ANY360_REXGLUE_BIND_HANDLE({name}, {group}, {HANDLE_ROUTES[name]})'
+        elif name in HANDLE_AT_ROUTES:
+            bind = f'ANY360_REXGLUE_BIND_HANDLE_AT({name}, {group}, {HANDLE_AT_ROUTES[name]})'
+        elif name in PATH_ROUTES:
+            reg, kind = PATH_ROUTES[name]
+            bind = f'ANY360_REXGLUE_BIND_PATH({name}, {group}, {reg}, {kind})'
+        elif name in BOTH_ROUTES:
+            bind = f'ANY360_REXGLUE_BIND_BOTH({name}, {group})'
+        else:
+            bind = f'ANY360_REXGLUE_BIND_SYSTEM({name}, {group})'
+        lines += [f'#ifndef ANY360_REXGLUE_SKIP_{name}', bind, '#endif']
     OUT.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     print(f'{OUT.relative_to(ROOT)}: {sum(counts.values())} overrides ' +
           ', '.join(f'{k[1:].lower()} {v}' for k, v in sorted(counts.items())))

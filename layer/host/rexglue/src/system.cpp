@@ -6,17 +6,20 @@
 #include <rex/system/function_dispatcher.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/user_module.h>
+#include <rex/system/xevent.h>
 #include <rex/system/xex_module.h>
 #include <rex/system/xmemory.h>
 
 #include <array>
 #include <atomic>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <string>
 #include <unordered_set>
 
 #include "any360/sys/exports.h"
+#include "any360/sys/files.h"
 #include "any360/sys/guest.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
@@ -30,9 +33,11 @@ constexpr const char* kGroupNames[] = {"stateless", "files", "objects", "threads
 static_assert(std::size(kGroupNames) == size_t(SysGroup::kCount));
 
 std::array<std::atomic<bool>, size_t(SysGroup::kCount)> g_enabled{};
+std::atomic<bool> g_started{false};
 uint8_t* g_base = nullptr;
 std::function<void(const std::string&)> g_log;
 std::atomic<bool> g_trace{false};
+std::atomic<bool> g_trace_every{false};
 std::mutex g_traced_mutex;
 std::unordered_set<const char*> g_traced;  // the names' literals, one each
 
@@ -65,14 +70,76 @@ void EnableSystemGroup(SysGroup group, bool enabled) {
 
 bool SystemGroupEnabled(SysGroup group) { return group < SysGroup::kCount && g_enabled[size_t(group)]; }
 
+bool Enabled(SysGroup group) { return g_enabled[size_t(group)].load(std::memory_order_relaxed); }
+
+void RunAny360(SysGroup group, const char* name, GuestFunction any360, PPCContext& ctx, uint8_t* base) {
+  if (g_trace.load(std::memory_order_relaxed)) Trace(group, name);
+  if (!g_trace_every.load(std::memory_order_relaxed)) {
+    any360(ctx, base);
+    return;
+  }
+  char line[200];
+  const int n = std::snprintf(line, sizeof(line), "%s(%08X %08X %08X %08X %08X %08X %08X %08X) lr %08X", name, ctx.r3.u32,
+                              ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32,
+                              uint32_t(ctx.lr));
+  any360(ctx, base);
+  std::snprintf(line + n, sizeof(line) - n, " = %08X", ctx.r3.u32);
+  if (g_log) g_log(line);
+}
+
 void CallSystemExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, PPCContext& ctx,
                       uint8_t* base) {
-  if (!reference || g_enabled[size_t(group)].load(std::memory_order_relaxed)) {
-    if (g_trace.load(std::memory_order_relaxed)) Trace(group, name);
-    any360(ctx, base);
+  if (!reference || (g_started.load(std::memory_order_relaxed) && g_enabled[size_t(group)].load(std::memory_order_relaxed))) {
+    RunAny360(group, name, any360, ctx, base);
   } else {
     reference(ctx, base);
   }
+}
+
+void CallHandleExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, uint32_t handle,
+                      PPCContext& ctx, uint8_t* base) {
+  bool ours;
+  if (!reference) ours = true;
+  else if (!g_started.load(std::memory_order_relaxed)) ours = false;
+  else if (handle >= 0xFFFFFFF0) ours = Enabled(group);  // the current thread or process
+  else ours = any360::sys::Objects().OwnsHandle(handle);
+  if (ours) RunAny360(group, name, any360, ctx, base);
+  else reference(ctx, base);
+}
+
+void CallPathExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, PathKind kind,
+                    uint32_t path, PPCContext& ctx, uint8_t* base) {
+  bool ours = !reference;
+  if (!ours && g_started.load(std::memory_order_relaxed) && Enabled(group) && path) {
+    ours = kind == PathKind::kAttributes
+               ? any360::sys::Files().KnowsAttributes(any360::sys::Guest{base}, path)
+               : any360::sys::Files().Knows(reinterpret_cast<const char*>(any360::sys::Guest{base}.host(path)));
+  }
+  if (ours && g_trace_every.load(std::memory_order_relaxed) && g_log && path) {
+    std::string text;
+    if (kind == PathKind::kAttributes) {
+      // OBJECT_ATTRIBUTES: root, then the name (an ANSI_STRING: length, maximum, buffer).
+      const any360::sys::Guest g{base};
+      const uint32_t string = g.Load32(path + 4);
+      if (string) text.assign(reinterpret_cast<const char*>(g.host(g.Load32(string + 4))), g.Load16(string));
+    } else {
+      text = reinterpret_cast<const char*>(any360::sys::Guest{base}.host(path));
+    }
+    g_log(std::string(name) + " path " + text);
+  }
+  if (ours) RunAny360(group, name, any360, ctx, base);
+  else reference(ctx, base);
+}
+
+void CallBothExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, PPCContext& ctx,
+                    uint8_t* base) {
+  if (reference && !(g_started.load(std::memory_order_relaxed) && Enabled(group))) {
+    reference(ctx, base);
+    return;
+  }
+  PPCContext copy = ctx;
+  RunAny360(group, name, any360, ctx, base);
+  if (reference) reference(copy, base);
 }
 
 uint64_t DispatchGuest(uint32_t address, uint32_t stack_top, uint32_t pcr, const uint64_t* args, uint32_t count, void*) {
@@ -155,18 +222,39 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
   g_base = kernel->memory()->virtual_membase();
   g_log = options.log;
   g_trace = options.trace_calls;
+  g_trace_every = options.trace_every_call;
   const uint32_t heap = kernel->memory()->SystemHeapAlloc(options.kernel_heap_size, 0x10000);
   if (!heap) {
     error = "no room in the runtime's system heap for the kernel heap";
     return false;
   }
   std::memset(g_base + heap, 0, options.kernel_heap_size);
+  // The runtime's physical view from 0xE0000000 (Memory::MapViews, PhysicalHostOffset): the title's code and any360::sys
+  // must find the same bytes there.
+  const auto* physical = kernel->memory()->LookupHeap(0xE0000000);
+  any360::sys::SetPhysicalHostOffset(physical ? physical->host_address_offset() : 0);
   any360::sys::Objects().SetGuest(any360::sys::Guest{g_base});
   any360::sys::Objects().SetKernelHeap(heap, options.kernel_heap_size);
+  any360::sys::Objects().SetHandleBase(options.handle_base);
+  // The runtime's handles, for a group switched here that takes an object the runtime made (an event a file read sets).
+  any360::sys::Objects().SetForeignHandles(
+      {[](uint32_t handle) { return bool(REX_KERNEL_OBJECTS()->LookupObject<rex::system::XEvent>(handle)); },
+       [](uint32_t handle) -> uint32_t {
+         auto event = REX_KERNEL_OBJECTS()->LookupObject<rex::system::XEvent>(handle);
+         if (!event) return 0xC0000008;  // STATUS_INVALID_HANDLE
+         event->Set(0, false);
+         return 0;
+       }});
   any360::sys::Objects().Reset();
+  any360::sys::Files().Reset();
+  for (const SystemMount& mount : options.mounts) {
+    any360::sys::Files().Mount(mount.device, mount.host, mount.read_only);
+    for (const std::string& link : mount.links) any360::sys::Files().Link(link, mount.device);
+  }
   any360::sys::Threads().SetDispatcher(&DispatchGuest, nullptr);
   // The title as the runtime loaded it: XamGetCurrentTitleId, RtlImageXexHeaderField's callers and the variables
   // (XexExecutableModuleHandle, ExLoadedImageName...) answer from these.
+  g_started = true;
   if (auto module = kernel->GetExecutableModule()) {
     any360::sys::TitleSettings& title = any360::sys::XamState().title();
     title.module_handle = module->hmodule_ptr();

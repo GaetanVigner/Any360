@@ -232,6 +232,19 @@ std::string FileSystem::PathOf(Guest g, uint32_t attributes) const {
   return path;
 }
 
+bool FileSystem::Knows(const std::string& guest_path) const {
+  std::string rest;
+  const std::string canonical = Canonical(guest_path);
+  return !canonical.empty() && MountOf(canonical, rest) != nullptr;
+}
+
+bool FileSystem::KnowsAttributes(Guest g, uint32_t attributes) const {
+  if (!attributes) return false;
+  const uint32_t root = g.Load32(attributes);
+  if (root && root != kRootDosDevices) return open_.count(Objects().Lookup(root)) != 0;
+  return Knows(AnsiString(g, g.Load32(attributes + 4)));
+}
+
 FileSystem::Open* FileSystem::Find(uint32_t handle) {
   auto it = open_.find(Objects().Lookup(handle));
   return it == open_.end() ? nullptr : &it->second;
@@ -303,7 +316,7 @@ uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access
 
 uint32_t FileSystem::Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length,
                               uint32_t offset_ptr, bool write, const uint64_t* at) {
-  if (event && !Objects().Lookup(event)) return kStatusInvalidHandle;
+  if (event && !Objects().EventHandleValid(event)) return kStatusInvalidHandle;
   Open* file = Find(handle);
   if (!file) return kStatusInvalidHandle;
   if (file->directory) return kStatusInvalidParameter;
@@ -343,7 +356,7 @@ uint32_t FileSystem::ReadFile(Guest g, uint32_t handle, uint32_t event, uint32_t
 
 uint32_t FileSystem::ReadFileScatter(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t segments, uint32_t length,
                                      uint32_t offset_ptr) {
-  if (event && !Objects().Lookup(event)) return kStatusInvalidHandle;
+  if (event && !Objects().EventHandleValid(event)) return kStatusInvalidHandle;
   Open* file = Find(handle);
   if (!file) return kStatusInvalidHandle;
   uint64_t offset = offset_ptr ? g.Load64(offset_ptr) : ~0ull;
@@ -371,7 +384,7 @@ uint32_t FileSystem::ReadFileScatter(Guest g, uint32_t handle, uint32_t event, u
 
 uint32_t FileSystem::WriteFileGather(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t segments, uint32_t length,
                                      uint32_t offset_ptr) {
-  if (event && !Objects().Lookup(event)) return kStatusInvalidHandle;
+  if (event && !Objects().EventHandleValid(event)) return kStatusInvalidHandle;
   Open* file = Find(handle);
   if (!file) return kStatusInvalidHandle;
   if (file->directory) return kStatusInvalidParameter;

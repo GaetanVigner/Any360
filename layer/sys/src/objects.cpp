@@ -135,16 +135,16 @@ uint32_t ObjectManager::AddHandle(uint32_t object, const std::string& name) {
   for (size_t i = 0; i < entries_.size(); ++i) {
     if (!entries_[i].open) {
       entries_[i] = {object, true, name};
-      return kHandleBase + uint32_t(i) * 4;
+      return handle_base_ + uint32_t(i) * 4;
     }
   }
   entries_.push_back({object, true, name});
-  return kHandleBase + uint32_t(entries_.size() - 1) * 4;
+  return handle_base_ + uint32_t(entries_.size() - 1) * 4;
 }
 
 ObjectManager::Entry* ObjectManager::Find(uint32_t handle) {
-  if (handle < kHandleBase || (handle & 3)) return nullptr;
-  const uint32_t index = (handle - kHandleBase) / 4;
+  if (handle < handle_base_ || (handle & 3)) return nullptr;
+  const uint32_t index = (handle - handle_base_) / 4;
   if (index >= entries_.size() || !entries_[index].open) return nullptr;
   return &entries_[index];
 }
@@ -340,7 +340,16 @@ uint32_t ObjectManager::CreateMutant(Guest g, uint32_t handle_out, uint32_t attr
   return kStatusSuccess;
 }
 
+bool ObjectManager::EventHandleValid(uint32_t handle) {
+  if (!OwnsHandle(handle) && foreign_.is_event) return foreign_.is_event(handle);
+  return Lookup(handle) != 0;
+}
+
 uint32_t ObjectManager::NtSetEvent(Guest g, uint32_t handle, uint32_t previous_out) {
+  if (!OwnsHandle(handle) && foreign_.set_event) {
+    if (previous_out) g.Store32(previous_out, 0);
+    return foreign_.set_event(handle);
+  }
   const Entry* e = Find(handle);
   if (!e) return kStatusInvalidHandle;
   const uint32_t previous = SetEvent(g, e->object);
