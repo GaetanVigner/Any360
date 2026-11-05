@@ -234,6 +234,15 @@ From the Crackdown runs (each one cost a debugging session there):
    VGT_GRP_2D_COPY_RECT_V0-V3 / FILL_RECT / LINE / TRI likewise; PA_SC_LINE_CNTL's Bresenham control is "set for 2D
    lines"). Their vertex counts, what V0-V3 differ in and whether they bypass clipping and the viewport transform
    are not documented there; no known title draws them.
+   Memory export (2026-11-05): the translator already wrote memexport streams into the guest memory buffer, but
+   nothing brought them back. The renderer now gathers each draw's streams as the reference does (the stream
+   constants the shaders' `mad eA` read, checked by their marks; a range of count x element size each), submits the
+   batch with them and waits: guest memory in video memory (the default) copies the ranges into a readback buffer
+   and then into guest memory, a mirror copies them back, imported memory has them in place; the texture cache
+   forgets those ranges. Rare and synchronous by design (later draws and the title's code may read the results).
+   A vertex shader exporting with rasterization off (EDRAM mode other than 4 or 5; the reference draws it with
+   rasterizer discard) is reported as a failure, not dropped: not done yet. Scenario: a vertex shader writing a
+   32_32_32_32_FLOAT element per point (video memory path; the mirror and imported paths are untested).
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured

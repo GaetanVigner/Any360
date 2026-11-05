@@ -71,6 +71,22 @@ VkPrimitiveTopology Topology(uint32_t primitive_type) {
   }
 }
 
+// The bytes of a memory export element of a ColorFormat, as the translator packs them (0: one it does not write).
+uint32_t MemExportElementBytes(uint32_t format) {
+  using F = rg::xenos::ColorFormat;
+  switch (F(format)) {
+    case F::k_8: case F::k_8_A: case F::k_8_B: return 1;
+    case F::k_1_5_5_5: case F::k_5_6_5: case F::k_6_5_5: case F::k_8_8: case F::k_4_4_4_4: case F::k_16:
+    case F::k_16_FLOAT: return 2;
+    case F::k_8_8_8_8: case F::k_8_8_8_8_A: case F::k_8_8_8_8_AS_16_16_16_16: case F::k_2_10_10_10:
+    case F::k_2_10_10_10_AS_16_16_16_16: case F::k_10_11_11: case F::k_10_11_11_AS_16_16_16_16: case F::k_11_11_10:
+    case F::k_11_11_10_AS_16_16_16_16: case F::k_16_16: case F::k_16_16_FLOAT: case F::k_32_FLOAT: return 4;
+    case F::k_16_16_16_16: case F::k_16_16_16_16_FLOAT: case F::k_32_32_FLOAT: return 8;
+    case F::k_32_32_32_32_FLOAT: return 16;
+    default: return 0;
+  }
+}
+
 bool IsPolygonal(VkPrimitiveTopology topology) {
   return topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST || topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN ||
          topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
@@ -214,6 +230,7 @@ VulkanRenderer::~VulkanRenderer() {
   textures_.reset();
   DestroyBuffer(device_, shared_memory_);
   DestroyBuffer(device_, vram_guest_);
+  DestroyBuffer(device_, memexport_readback_);
   for (auto& [key, surface] : surfaces_) {
     if (surface->depth_view) f.vkDestroyImageView(d, surface->depth_view, nullptr);
     DestroyImage(device_, surface->image);
@@ -290,8 +307,8 @@ bool VulkanRenderer::Initialize() {
   // on the CPU at the flush) as draws fetch them. Not imported into the device (VK_EXT_external_memory_host): the
   // title's own code ran ~1.4x slower on imported memory (measured in game on the same route). Without video memory
   // for it: imported in place, or else a mirror copied before each draw.
-  vram_guest_on_ = CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                false, vram_guest_);
+  vram_guest_on_ = CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false, vram_guest_);
   shared_memory_imported_ = !vram_guest_on_ && ImportGuestMemory();
   if (!shared_memory_imported_ && !vram_guest_on_ && !CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, shared_memory_)) {
     return Fail("guest memory buffer");
@@ -949,6 +966,15 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // EDRAM mode: 4 colour and depth, 5 depth only; anything else leaves the targets alone.
   const uint32_t edram_mode = regs[kRbModeControl] & 7;
   if (edram_mode != 4 && edram_mode != 5) {
+    // A vertex shader exporting to memory runs without rasterization too (the reference draws it with rasterizer
+    // discard): not done here yet, and better reported than dropped.
+    if (draw.vertex_shader && !draw.vertex_shader->microcode.empty()) {
+      const TranslatedShader* exporting = GetShader(*draw.vertex_shader);
+      if (exporting && exporting->shader->memexport_eM_written()) {
+        Fail("memexport without rasterization (EDRAM mode " + std::to_string(edram_mode) + ", not yet)");
+        return;
+      }
+    }
     ++stats_.skipped;
     return;
   }
@@ -1021,6 +1047,28 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   if (!vs || (wants_ps && !ps)) {
     Fail("shader analysis");
     return;
+  }
+  // Memory exports (memexport): the streams the shaders' eA writes name (`mad eA, r#, const0100, c#`: the stream
+  // constant c# of the stage's float constants), as the reference gathers them, a range each (several exports to one
+  // base address: the largest), checked as the hardware checks eA (the 0b01, 0x4B0 and 0x96 marks, a count).
+  std::vector<MemExport> exports;
+  for (const TranslatedShader* t : {vs, ps}) {
+    if (!t || !t->shader->memexport_eM_written()) continue;
+    const uint32_t* floats = regs + 0x4000 + (t == ps ? 256 * 4 : 0);
+    for (uint32_t c : t->shader->memexport_stream_constants()) {
+      if (c >= 256) continue;
+      const uint32_t* stream = floats + 4 * c;
+      const uint32_t count = stream[3] & 0x7FFFFF, bytes = MemExportElementBytes((stream[2] >> 8) & 0x3F);
+      if ((stream[0] >> 30) != 1 || (stream[2] >> 20) != 0x4B0 || (stream[3] >> 23) != 0x96 || !count || !bytes) continue;
+      const uint32_t base = (stream[0] & 0x3FFFFFFF) << 2;
+      if (base >= mirror_bytes_) continue;
+      const uint32_t size = uint32_t(std::min<uint64_t>(uint64_t(count) * bytes, mirror_bytes_ - base));
+      bool merged = false;
+      for (MemExport& e : exports) {
+        if (e.base == base) e.bytes = std::max(e.bytes, size), merged = true;
+      }
+      if (!merged) exports.push_back({base, size, 0});
+    }
   }
   // The vertex buffers the vertex shader fetches from (vertex fetch constants: address in dword 0, size in words in
   // dword 1, and as far again as VGT_INDX_OFFSET moves the indices), for the copy into the mirror when guest memory
@@ -1738,6 +1786,38 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
   mark(stats_.ns_draw_record);
   ++stats_.draws;
+  if (!exports.empty()) MemExported(std::move(exports));
+}
+
+void VulkanRenderer::MemExported(std::vector<MemExport> exports) {
+  // The draw's writes reach guest memory before anything else runs: the batch is submitted with them and awaited
+  // (memexport is rare; later draws and the title's code may read what it wrote). Guest memory in video memory: the
+  // ranges copied into the readback buffer at the flush, then into guest memory; a mirror: copied back from it;
+  // imported: written in place. The texture cache forgets what it held there.
+  ++stats_.memexports;
+  uint32_t readback_bytes = 0;
+  for (MemExport& e : exports) e.readback = readback_bytes, readback_bytes += (e.bytes + 15) & ~15u;
+  if (vram_guest_on_ && memexport_readback_.size < readback_bytes) {
+    WaitIdle();  // the buffer may still be read by an earlier batch's completion
+    DestroyBuffer(device_, memexport_readback_);
+    if (!CreateBuffer(device_, std::max<VkDeviceSize>(readback_bytes, 1u << 20), VK_BUFFER_USAGE_TRANSFER_DST_BIT, true,
+                      memexport_readback_)) {
+      Fail("memexport readback buffer");
+      return;
+    }
+  }
+  memexports_ = exports;
+  WhenDone([this, exports = std::move(exports)] {
+    for (const MemExport& e : exports) {
+      if (vram_guest_on_) {
+        std::memcpy(physical_ + e.base, static_cast<const uint8_t*>(memexport_readback_.mapped) + e.readback, e.bytes);
+      } else if (!shared_memory_imported_) {
+        std::memcpy(physical_ + e.base, static_cast<const uint8_t*>(shared_memory_.mapped) + e.base, e.bytes);
+      }
+      if (textures_) textures_->MemoryChanged(e.base, e.base + e.bytes);
+    }
+  });
+  WaitIdle();
 }
 
 void VulkanRenderer::RecordJob(VkCommandBuffer cb, const DrawJob& job, RecordedState& rs, std::vector<uint16_t>& scratch) const {
@@ -2257,6 +2337,30 @@ void VulkanRenderer::Flush() {
   Batch& b = batch();
   EndRendering();
   const VkCommandBuffer last = Record();  // after the last render pass
+  if (!memexports_.empty()) {
+    // A draw's memory exports: its shader writes visible to the copy into the readback buffer (guest memory in
+    // video memory) and to the host.
+    VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+    barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
+    barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_HOST_READ_BIT;
+    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependency.memoryBarrierCount = 1;
+    dependency.pMemoryBarriers = &barrier;
+    f.vkCmdPipelineBarrier2(last, &dependency);
+    if (vram_guest_on_) {
+      std::vector<VkBufferCopy> regions;
+      for (const MemExport& e : memexports_) regions.push_back({e.base, e.readback, e.bytes});
+      f.vkCmdCopyBuffer(last, vram_guest_.buffer, memexport_readback_.buffer, uint32_t(regions.size()), regions.data());
+      barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+      barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+      barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+      barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+      f.vkCmdPipelineBarrier2(last, &dependency);
+    }
+    memexports_.clear();
+  }
   if (timestamps_) {
     f.vkCmdWriteTimestamp2(last, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, 4 * uint32_t(&b - batches_.data()) + 1);
   }
