@@ -395,6 +395,8 @@ class VulkanRenderer : public gfx::Renderer {
     Image spare;
     VkImageLayout spare_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     uint32_t spare_scale = 1;
+    Image spare_small;  // the spare's own small image, swapped in with it (else made again at each write-back)
+    VkImageLayout spare_small_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   };
   // Writes a resolve kept on the GPU into guest memory: now (WriteBackResolved: the batch runs), or when the batch
   // has run (QueueWriteBack: its copy recorded in the batch; the CPU reads guest memory only after a fence, which runs

@@ -250,7 +250,8 @@ VulkanRenderer::~VulkanRenderer() {
     DestroyImage(device_, surface->image);
     DestroyImage(device_, surface->ms);
   }
-  for (auto& [base, r] : resolved_) DestroyImage(device_, r.image), DestroyImage(device_, r.small), DestroyImage(device_, r.spare);
+  for (auto& [base, r] : resolved_) DestroyImage(device_, r.image), DestroyImage(device_, r.small), DestroyImage(device_, r.spare),
+                                        DestroyImage(device_, r.spare_small);
 }
 
 bool VulkanRenderer::Fail(const std::string& why) {
@@ -3197,8 +3198,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
           }
         }
       }
-      // Only where it fits whole: a match of the tiled offset elsewhere would write past the image.
-      if (dx < 0 || uint32_t(dx) + width > c.image.width / c.scale || uint32_t(dy) + height > held_rows) continue;
+      // Only where its width fits (a match of the tiled offset elsewhere would write past the image's side); it may
+      // reach below the image, which grows to hold it (Test Drive Unlimited's second screen band starts at row 352
+      // of the first band's 384-row image).
+      if (dx < 0 || uint32_t(dx) + width > c.image.width / c.scale) continue;
       const auto own = resolved_.find(dest_base);
       if (own != resolved_.end()) {
         // An image of its own from before: superseded (its texels now live in the containing one).
@@ -3206,6 +3209,8 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
         Record();
         batch().retired.push_back(own->second.image);
         if (own->second.small.image) batch().retired.push_back(own->second.small);
+        if (own->second.spare.image) batch().retired.push_back(own->second.spare);
+        if (own->second.spare_small.image) batch().retired.push_back(own->second.spare_small);
         resolved_.erase(own);
         if (textures_) textures_->DropGpuSources(dest_base, dest_base + 1);
       }
@@ -3515,15 +3520,24 @@ bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t p
     if (r.spare.image && r.spare.format == format && r.spare_scale == r.scale && r.spare.width >= pitch && r.spare.height >= rows) {
       std::swap(r.image, r.spare);
       std::swap(r.layout, r.spare_layout);
+      std::swap(r.small, r.spare_small);
+      std::swap(r.small_layout, r.spare_small_layout);
       return true;
     }
     if (r.spare.image) {
       Record();
       batch().retired.push_back(r.spare);  // batches may still read it: freed after this one has run
     }
+    if (r.spare_small.image) {
+      Record();
+      batch().retired.push_back(r.spare_small);
+    }
     r.spare = r.image, r.spare_layout = r.layout, r.spare_scale = r.scale;
+    r.spare_small = r.small, r.spare_small_layout = r.small_layout;
     r.image = Image{};
     r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    r.small = Image{};
+    r.small_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   }
   Image grown;
   const bool keep = r.image.image && r.image.format == format;
