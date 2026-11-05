@@ -176,7 +176,13 @@ From the Crackdown runs (each one cost a debugging session there):
    translator's NOTICE.md).
    Texture unit (2026-11-05): the gradients, the computed LOD, the register LOD and gradients a fetch then uses
    (the level it reads), the bilinear weights (D3D pixel centres: integer coordinates) on 128x128 two-level and
-   32x32 textures. `getBCF` (the border colour fraction) is not implemented by the translator: it stays to do.
+   32x32 textures. `getBCF` (the border colour fraction), which the translator and the reference left unimplemented (a translation
+   error; the reference's note suggests sampling a black texture with a white border), is now worked out like
+   getWeights: per axis, the magnification filter's taps (linear: the two texels either side of the coordinate less
+   half a texel, by its fraction; point: the nearer one) and the weight of those outside the texture where the axis
+   clamps to the border (ClampToBorder; MirrorClampToBorder mirrored about 0 first); 1 less the product of each
+   axis' share inside; 3D's Z only for 3D data; cube maps 0. Like getWeights, at the base level (the LOD
+   disregarded). Six bench cases: inside, an edge, a mirrored edge, a corner, a mirrored side inside, a point tap.
    Formats and primitives (2026-11-05): every vertex format through a vertex shader's fetch into an interpolator
    (unsigned, signed and integer forms, an exponent adjustment; components a format lacks read 0, a title's
    shader asking for 1 through the swizzle), every colour render target format but k_8_8_8_8 read back as the host
