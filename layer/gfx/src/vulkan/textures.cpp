@@ -728,6 +728,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
           it != gpu_sources_.end() &&
           (it->second.format == info->format ||
            (it->second.format == VK_FORMAT_B8G8R8A8_UNORM && info->format == VK_FORMAT_R8G8B8A8_UNORM) ||
+           (it->second.format == VK_FORMAT_R16G16_SNORM && info->format == VK_FORMAT_R16G16_UNORM) ||
            (it->second.format == VK_FORMAT_A2R10G10B10_UNORM_PACK32 &&
             info->format == VK_FORMAT_A2B10G10R10_UNORM_PACK32));
       if (!same_bytes || it->second.depth != depth_texture || it->second.pitch != t.pitch ||

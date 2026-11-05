@@ -192,6 +192,8 @@ bool Device::Create(const DeviceOptions& options) {
   enabled.features.depthClamp = supported.features.depthClamp;
   enabled.features.imageCubeArray = supported.features.imageCubeArray;
   enabled.features.shaderStorageImageWriteWithoutFormat = supported.features.shaderStorageImageWriteWithoutFormat;
+  // A lost device's fault (address, vendor data) when the driver reports it (VK_EXT_device_fault).
+  VkPhysicalDeviceFaultFeaturesEXT fault{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT};
   VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, &enabled};
   device_info.queueCreateInfoCount = 1;
   device_info.pQueueCreateInfos = &queue_info;
@@ -211,6 +213,19 @@ bool Device::Create(const DeviceOptions& options) {
         fn_.vkGetPhysicalDeviceProperties2(physical_, &props2);
         host_pointer_alignment_ = host.minImportedHostPointerAlignment;
       }
+      if (std::strcmp(e.extensionName, VK_EXT_DEVICE_FAULT_EXTENSION_NAME) == 0) {
+        VkPhysicalDeviceFaultFeaturesEXT has{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT};
+        VkPhysicalDeviceFeatures2 features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &has};
+        fn_.vkGetPhysicalDeviceFeatures2(physical_, &features);
+        if (has.deviceFault) {
+          device_extensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+          fault.deviceFault = VK_TRUE;
+          fault.deviceFaultVendorBinary = VK_FALSE;
+          fault.pNext = enabled.pNext;
+          enabled.pNext = &fault;
+          device_fault_ = true;
+        }
+      }
     }
   }
   device_info.enabledExtensionCount = uint32_t(device_extensions.size());
@@ -227,6 +242,9 @@ bool Device::Create(const DeviceOptions& options) {
 #include "any360/gfx/vulkan/functions.inc"
 #undef ANY360_VK_FN
   fn_.vkGetDeviceQueue(device_, queue_family_, 0, &queue_);
+  if (device_fault_) {
+    get_fault_ = reinterpret_cast<PFN_vkGetDeviceFaultInfoEXT>(fn_.vkGetDeviceProcAddr(device_, "vkGetDeviceFaultInfoEXT"));
+  }
 
   VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
   pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -236,6 +254,36 @@ bool Device::Create(const DeviceOptions& options) {
     return false;
   }
   return true;
+}
+
+std::string Device::DescribeFault() const {
+  if (!get_fault_) return "no fault information (VK_EXT_device_fault unavailable)";
+  VkDeviceFaultCountsEXT counts{VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT};
+  if (get_fault_(device_, &counts, nullptr) != VK_SUCCESS) return "no fault information";
+  std::vector<VkDeviceFaultAddressInfoEXT> addresses(counts.addressInfoCount);
+  std::vector<VkDeviceFaultVendorInfoEXT> vendor(counts.vendorInfoCount);
+  counts.vendorBinarySize = 0;
+  VkDeviceFaultInfoEXT info{VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT};
+  info.pAddressInfos = addresses.data();
+  info.pVendorInfos = vendor.data();
+  if (get_fault_(device_, &counts, &info) != VK_SUCCESS) return "no fault information";
+  std::string text = std::string("fault: ") + info.description;
+  static const char* const kTypes[] = {"none", "read invalid", "write invalid", "execute invalid",
+                                       "instruction pointer unknown", "instruction pointer invalid",
+                                       "instruction pointer fault"};
+  for (const VkDeviceFaultAddressInfoEXT& a : addresses) {
+    char line[128];
+    std::snprintf(line, sizeof(line), "; %s at 0x%llX (+-0x%llX)", a.addressType < 7 ? kTypes[a.addressType] : "?",
+                  (unsigned long long)a.reportedAddress, (unsigned long long)a.addressPrecision);
+    text += line;
+  }
+  for (const VkDeviceFaultVendorInfoEXT& v : vendor) {
+    char line[320];
+    std::snprintf(line, sizeof(line), "; %s (code 0x%llX, data 0x%llX)", v.description,
+                  (unsigned long long)v.vendorFaultCode, (unsigned long long)v.vendorFaultData);
+    text += line;
+  }
+  return text;
 }
 
 void Device::Destroy() {

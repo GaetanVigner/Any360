@@ -6,6 +6,7 @@
 //   gfx_replay CAPTURE [--gpu NAME] [--out DIR]
 //     --gpu NAME  a substring of the device to use ("NVIDIA", "Radeon")
 //     --out DIR   writes each compared frame as DIR/frame_N_ours.png and DIR/frame_N_reference.png
+//     --swaps DIR writes each presented frame as DIR/swap_N.png (a capture without reference frames too)
 //     --trace     prints the frames' structure: runs of draws by render target (drawn, skipped, failed), each
 //                 resolve and each swap, in order
 //     --dump-resolves DIR  with --trace, writes each 32-bit resolve's destination as DIR/resolve_N.png (and depth
@@ -338,7 +339,7 @@ int main(int argc, char** argv) {
     return EXCEPTION_EXECUTE_HANDLER;
   });
 #endif
-  std::string path, out;
+  std::string path, out, swaps;
   bool trace = false;
   int repeat = 1;  // --repeat N: the capture replayed N times, the timings of the last (warm caches, as in a game)
   std::string dump;
@@ -357,6 +358,7 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--gpu") && i + 1 < argc) options.prefer = argv[++i];
     else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
+    else if (!std::strcmp(argv[i], "--swaps") && i + 1 < argc) swaps = argv[++i];
     else if (!std::strcmp(argv[i], "--trace")) trace = true;
     else if (!std::strcmp(argv[i], "--repeat") && i + 1 < argc) repeat = std::max(1, std::atoi(argv[++i]));
     else if (!std::strcmp(argv[i], "--dump-resolves") && i + 1 < argc) dump = argv[++i];
@@ -374,7 +376,7 @@ int main(int argc, char** argv) {
     else path = argv[i];
   }
   if (path.empty()) {
-    std::printf("usage: gfx_replay CAPTURE [--gpu NAME] [--out DIR] [--trace] [--dump-resolves DIR] [--watch ADDR]\n");
+    std::printf("usage: gfx_replay CAPTURE [--gpu NAME] [--out DIR] [--swaps DIR] [--trace] [--dump-resolves DIR] [--watch ADDR]\n");
     return 2;
   }
   vk::Device device;
@@ -406,6 +408,8 @@ int main(int argc, char** argv) {
     renderer.GuestMemoryWritten(begin, end);
   });
   uint64_t drain_ns = 0;  // waiting for the renderer's thread (part of the work with --async)
+  uint64_t last_swap = 0;
+  uint32_t swap_files = 0;
   auto drain = [&] {
     const auto start = std::chrono::steady_clock::now();
     if (async_renderer) async_renderer->Drain();
@@ -413,6 +417,15 @@ int main(int argc, char** argv) {
     // the replay rewrites that memory, as a title's own later writes would.
     renderer.Flush();
     renderer.WaitIdle();
+    if (!swaps.empty() && renderer.frame().number != last_swap) {
+      // Each presented frame as it is, with or without a reference (--swaps).
+      last_swap = renderer.frame().number;
+      std::vector<uint32_t> pixels;
+      if (renderer.ReadFrame(pixels) && !pixels.empty()) {
+        WritePng(swaps + "/swap_" + std::to_string(swap_files++) + ".png", renderer.frame().width,
+                 renderer.frame().height, pixels.data());
+      }
+    }
     drain_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
   };
   cp.SetInterruptHandler([](uint32_t, uint32_t) {});
