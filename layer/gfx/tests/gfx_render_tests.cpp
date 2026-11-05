@@ -931,6 +931,8 @@ int main(int argc, char** argv) {
       std::vector<t::Alu> alus;
       float c[4][4];
       float x, y, tolerance;
+      std::vector<uint32_t> ps = {}, vs = {};  // whole shaders instead of `alus` (and the default vertex shader)
+      uint32_t bools = 0, loop0 = 0;          // bool constants 0-31 and loop constant 0
     };
     std::vector<Case> cases;
     const t::AluOperand c0{0, false}, c1{1, false}, c2{2, false}, c3{3, false};
@@ -1077,6 +1079,83 @@ int main(int argc, char** argv) {
       sname(constant(S::kSubsc0, temp, 3, 4, -1), S(uint32_t(S::kSubsc0) | temp));
     }
 
+    // Control flow: r1 = c0 (A), the flow under test may add c1 to it (B), then oC0 = r1 (C); E exports c1 instead,
+    // P sets the predicate from c2.w == 0. c0 = (1, 2), c1 = (10, 20): (1, 2) when B is skipped, (11, 22) when it
+    // runs once.
+    {
+      using O = uc::ControlFlowOpcode;
+      t::Alu a, b, c, e, p;
+      a.vector_mask = 0b1111, a.dest = 1, a.src1 = c0, a.src2 = c0;
+      b.vector = V::kAdd, b.vector_mask = 0b1111, b.dest = 1, b.src1 = {1, true}, b.src2 = c1;
+      c.vector_mask = 0b0011, c.dest = kColor0, c.is_export = true, c.src1 = c.src2 = {1, true};
+      e.vector_mask = 0b0011, e.dest = kColor0, e.is_export = true, e.src1 = e.src2 = c1;
+      p.scalar = S::kSetpEq, p.src3 = c2, p.dest = 2, p.scalar_dest = 2;
+      // Instruction slots after four control flow pairs: A 4, P 5, B 6, C 7, E 8.
+      constexpr uint32_t kA = 4, kB = 6, kC = 7, kE = 8;
+      std::vector<uint32_t> body;
+      for (const t::Alu* alu : {&a, &p, &b, &c, &e}) t::PushAlu(body, *alu);
+      auto flow = [&](const char* unit, std::vector<t::Cf> cf, uint32_t bools, uint32_t loop0, float p_source, float x,
+                      float y) {
+        cf.insert(cf.begin(), t::CfAlloc(uc::AllocType::kPsColors, 0));
+        while (cf.size() < 8) cf.push_back(t::CfNop());
+        Case k{std::string("shader control flow:") + unit, {}, {}, x, y, 0.0f};
+        k.ps = t::BuildCfShader(cf, body);
+        k.bools = bools, k.loop0 = loop0;
+        k.c[0][0] = 1, k.c[0][1] = 2, k.c[1][0] = 10, k.c[1][1] = 20, k.c[2][3] = p_source;
+        cases.push_back(k);
+      };
+      const t::Cf exec_a = t::CfExec(O::kExec, kA, 1, 0), exec_ap = t::CfExec(O::kExec, kA, 2, 0),
+                  exec_b = t::CfExec(O::kExec, kB, 1, 0), end_c = t::CfExec(O::kExecEnd, kC, 1, 0);
+      flow("kNop", {t::CfNop(), exec_a, end_c}, 0, 0, 1, 1, 2);
+      for (bool taken : {true, false}) {
+        const float x = taken ? 11 : 1, y = taken ? 22 : 2, ex = taken ? 10 : 1, ey = taken ? 20 : 2;
+        flow("kCondExec", {exec_a, t::CfCondExec(O::kCondExec, kB, 1, 0, 3, true), end_c}, taken ? 8 : 0, 0, 1, x, y);
+        flow("kCondExecEnd", {exec_a, t::CfCondExec(O::kCondExecEnd, kE, 1, 0, 3, true), end_c}, taken ? 8 : 0, 0, 1,
+             ex, ey);
+        flow("kCondExecPredClean", {exec_a, t::CfCondExec(O::kCondExecPredClean, kB, 1, 0, 3, true), end_c},
+             taken ? 8 : 0, 0, 1, x, y);
+        flow("kCondExecPredCleanEnd", {exec_a, t::CfCondExec(O::kCondExecPredCleanEnd, kE, 1, 0, 3, true), end_c},
+             taken ? 8 : 0, 0, 1, ex, ey);
+        // The predicate: p0 = (c2.w == 0).
+        flow("kCondExecPred", {exec_ap, t::CfCondExecPred(O::kCondExecPred, kB, 1, 0, true), end_c}, 0, 0,
+             taken ? 0.0f : 5.0f, x, y);
+        flow("kCondExecPredEnd", {exec_ap, t::CfCondExecPred(O::kCondExecPredEnd, kE, 1, 0, true), end_c}, 0, 0,
+             taken ? 0.0f : 5.0f, ex, ey);
+        // A call to B (control flow 4) and its return, unconditional or on bool 3; C after it.
+        for (const char* unit : {"kCondCall", "kReturn"}) {
+          flow(unit, {exec_a, t::CfBranch(O::kCondCall, 4, taken, 3, true), end_c, exec_b, t::CfReturn()}, 0, 0, 1,
+               taken ? 11 : 1, taken ? 22 : 2);
+        }
+        // A jump over B: unconditional (B skipped) or on bool 3 being set (clear here: B runs).
+        flow("kCondJmp", {exec_a, t::CfBranch(O::kCondJmp, 4, taken, 3, true), exec_b, end_c}, 0, 0, 1,
+             taken ? 1 : 11, taken ? 2 : 22);
+      }
+      // A loop of B, three iterations (loop constant 0: count 3, start 0, step 1): r1 = c0 + 3 c1. The loop start
+      // jumps past its end (control flow 5) when the count is 0; the end back to the body (control flow 3).
+      for (const char* unit : {"kLoopStart", "kLoopEnd"}) {
+        flow(unit, {exec_a, t::CfLoopStart(5, 0), exec_b, t::CfLoopEnd(3, 0), end_c}, 0, 3u | 0u << 8 | 1u << 16, 1,
+             31, 62);
+      }
+      // kMarkVsFetchDone in a vertex shader between its fetch and its position export.
+      {
+        Case k{"shader control flow:kMarkVsFetchDone", {}, {}, 1, 2, 0.0f};
+        t::Alu position;
+        position.vector_mask = 0b1111, position.dest = uint32_t(uc::ExportRegister::kVSPosition), position.is_export = true;
+        position.src1 = position.src2 = {1, true};
+        std::vector<uint32_t> vs_body;
+        t::PushVertexFetch(vs_body, 1, 0, 0, rex::graphics::xenos::VertexFormat::k_32_32_32_32_FLOAT, 4, 0);
+        t::PushAlu(vs_body, position);
+        k.vs = t::BuildCfShader({t::CfAlloc(uc::AllocType::kVsPosition, 0), t::CfExec(O::kExec, 2, 1, 0b01),
+                                 t::CfMarkVsFetchDone(), t::CfExec(O::kExecEnd, 3, 1, 0)},
+                                vs_body);
+        t::Alu export_c0;
+        export_c0.vector_mask = 0b0011, export_c0.dest = kColor0, export_c0.is_export = true, export_c0.src1 = export_c0.src2 = c0;
+        k.alus = {export_c0};
+        k.c[0][0] = 1, k.c[0][1] = 2;
+        cases.push_back(k);
+      }
+    }
+
     const float clear[4] = {kKilled, kKilled, 0, 0};
     std::vector<std::string> passed;
     for (const Case& k : cases) {
@@ -1084,11 +1163,15 @@ int main(int argc, char** argv) {
       CHECK(renderer.ClearColor(target, clear));
       s.Defaults();
       s.Reg(0x2001, 15u << 16 | 1536);  // RB_COLOR_INFO: k_32_32_FLOAT at tile 1536
-      s.Shader(1, t::BuildAluPixelShader(k.alus));
+      s.Shader(1, k.ps.empty() ? t::BuildAluPixelShader(k.alus) : k.ps);
+      if (!k.vs.empty()) s.Shader(0, k.vs);
+      s.Reg(0x4900, k.bools);  // SHADER_CONSTANT_BOOL_000_031
+      s.Reg(0x4908, k.loop0);  // SHADER_CONSTANT_LOOP_00
       s.Put({Type3(pm4::SET_CONSTANT, 17), 0u << 16 | 1024});
       for (uint32_t i = 0; i < 16; ++i) s.Put(Bits(k.c[i / 4][i % 4]));
       s.Vertices(0);
       s.DrawAuto(kTriangleStrip, 4);
+      if (!k.vs.empty()) s.Shader(0, t::BuildFetchPositionShader());
       s.Run();
       std::vector<uint8_t> bytes;
       CHECK(renderer.ReadBack(target, kSize, kSize, bytes));
@@ -1105,7 +1188,7 @@ int main(int argc, char** argv) {
         ++g_failures;
       }
     }
-    std::printf("gfx_render_tests: ALU opcodes: %zu of %zu right\n", passed.size(), cases.size());
+    std::printf("gfx_render_tests: shader opcodes: %zu of %zu cases right\n", passed.size(), cases.size());
     s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
   }
   std::printf("gfx_render_tests: guest memory %s\n", renderer.guest_memory_in_place() ? "read in place" : "copied per draw");

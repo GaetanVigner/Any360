@@ -170,6 +170,10 @@ From the Crackdown runs (each one cost a debugging session there):
    (79 cases: the predicate setters, kills, previous-scalar and constant-scalar forms included) in a hand-encoded
    pixel shader on constants, exports the result to a k_32_32_FLOAT target and checks it against the semantics
    ucode.h documents; a killed pixel keeps the clear value. A scalar operation reads src3 as `a` = W, `b` = X.
+   Control flow (2026-11-05): every opcode (nops, conditional execs on bools and on the predicate, their ending
+   forms, loops, calls and returns, jumps, the vertex fetch hint) in the same bench; calls and returns, which the
+   reference translator left unimplemented (a called function never ran), are now implemented (see the
+   translator's NOTICE.md).
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured

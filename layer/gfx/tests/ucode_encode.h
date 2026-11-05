@@ -81,6 +81,45 @@ inline void PushAlu(std::vector<uint32_t>& words, const Alu& a) {
                   (a.src2.is_temp ? 1u : 0u) << 30 | (a.src1.is_temp ? 1u : 0u) << 31);
 }
 
+// The other control flow instructions (ucode::ControlFlow*Instruction). Addresses of exec forms are instruction
+// slots (3 dwords, counted from the shader's start); of loops, calls and jumps, control flow instruction indices.
+inline Cf CfNop() { return {}; }
+inline Cf CfCondExec(uc::ControlFlowOpcode opcode, uint32_t address, uint32_t count, uint32_t sequence,
+                     uint32_t bool_index, bool condition) {
+  Cf cf = CfExec(opcode, address, count, sequence);
+  cf.dword_1 = (bool_index & 0xFF) << 2 | (condition ? 1u : 0u) << 10 | uint32_t(opcode) << 12;
+  return cf;
+}
+inline Cf CfCondExecPred(uc::ControlFlowOpcode opcode, uint32_t address, uint32_t count, uint32_t sequence,
+                         bool condition) {
+  Cf cf = CfExec(opcode, address, count, sequence);
+  cf.dword_1 = (condition ? 1u : 0u) << 10 | uint32_t(opcode) << 12;
+  return cf;
+}
+inline Cf CfLoopStart(uint32_t address, uint32_t loop_id) {
+  return {(address & 0x1FFF) | (loop_id & 0x1F) << 16, uint32_t(uc::ControlFlowOpcode::kLoopStart) << 12};
+}
+inline Cf CfLoopEnd(uint32_t address, uint32_t loop_id) {
+  return {(address & 0x1FFF) | (loop_id & 0x1F) << 16, uint32_t(uc::ControlFlowOpcode::kLoopEnd) << 12};
+}
+// A call or jump: unconditional, or on bool constant `bool_index` being `condition`.
+inline Cf CfBranch(uc::ControlFlowOpcode opcode, uint32_t address, bool unconditional, uint32_t bool_index = 0,
+                   bool condition = true) {
+  return {(address & 0x1FFF) | (unconditional ? 1u : 0u) << 13,
+          (bool_index & 0xFF) << 2 | (condition ? 1u : 0u) << 10 | uint32_t(opcode) << 12};
+}
+inline Cf CfReturn() { return {0, uint32_t(uc::ControlFlowOpcode::kReturn) << 12}; }
+inline Cf CfMarkVsFetchDone() { return {0, uint32_t(uc::ControlFlowOpcode::kMarkVsFetchDone) << 12}; }
+
+// A shader of control flow `cf` (padded with a nop to pairs) then the instruction words, from slot cf pairs on.
+inline std::vector<uint32_t> BuildCfShader(std::vector<Cf> cf, const std::vector<uint32_t>& instructions) {
+  if (cf.size() % 2) cf.push_back(CfNop());
+  std::vector<uint32_t> words;
+  for (size_t i = 0; i < cf.size(); i += 2) PushCfPair(words, cf[i], cf[i + 1]);
+  words.insert(words.end(), instructions.begin(), instructions.end());
+  return words;
+}
+
 // A pixel shader of `alus` ALU instructions in one exec (at most 6), ending the shader.
 inline std::vector<uint32_t> BuildAluPixelShader(const std::vector<Alu>& alus) {
   std::vector<uint32_t> words;

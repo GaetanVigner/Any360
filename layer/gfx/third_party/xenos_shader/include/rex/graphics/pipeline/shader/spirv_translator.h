@@ -494,6 +494,9 @@ class SpirvShaderTranslator : public ShaderTranslator {
   void ProcessLoopStartInstruction(const ParsedLoopStartInstruction& instr) override;
   void ProcessLoopEndInstruction(const ParsedLoopEndInstruction& instr) override;
   void ProcessJumpInstruction(const ParsedJumpInstruction& instr) override;
+  // any360: calls and returns (the reference leaves them unimplemented: a called function never ran).
+  void ProcessCallInstruction(const ParsedCallInstruction& instr) override;
+  void ProcessReturnInstruction(const ParsedReturnInstruction& instr) override;
   void ProcessAllocInstruction(const ParsedAllocInstruction& instr, uint8_t export_eM) override;
 
   void ProcessVertexFetchInstruction(const ParsedVertexFetchInstruction& instr) override;
@@ -973,6 +976,9 @@ class SpirvShaderTranslator : public ShaderTranslator {
   spv::Id var_main_loop_count_;
   // int4.
   spv::Id var_main_loop_address_;
+  // any360: the return addresses of up to four nested calls (control flow indices), and how many are pushed.
+  spv::Id var_main_call_return_;
+  spv::Id var_main_call_depth_;
   // int.
   spv::Id var_main_address_register_;
   // float.
