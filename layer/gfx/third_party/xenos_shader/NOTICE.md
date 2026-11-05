@@ -43,6 +43,9 @@ Each vendored file also keeps its original header.
   Any360 keeps each guest sample in its own host pixels, so the fragment's guest pixel and sample come from its
   position and an uncovered fragment is discarded, with the reference's thresholds and dither offsets; no sample
   mask output is declared then.
+- `spirv_translator.cpp` `StoreResult`: a position export in the memexport compute translation
+  (`HostVertexShaderType::kMemExportCompute`, which has no gl_PerVertex output) is dropped instead of crashing the
+  translation; the reference's Vulkan backend never used that translation.
 
 ## Ours: `shim/include/rex/...`
 

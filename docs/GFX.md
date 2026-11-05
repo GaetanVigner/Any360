@@ -240,9 +240,16 @@ From the Crackdown runs (each one cost a debugging session there):
    batch with them and waits: guest memory in video memory (the default) copies the ranges into a readback buffer
    and then into guest memory, a mirror copies them back, imported memory has them in place; the texture cache
    forgets those ranges. Rare and synchronous by design (later draws and the title's code may read the results).
-   A vertex shader exporting with rasterization off (EDRAM mode other than 4 or 5; the reference draws it with
-   rasterizer discard) is reported as a failure, not dropped: not done yet. Scenario: a vertex shader writing a
-   32_32_32_32_FLOAT element per point (video memory path; the mirror and imported paths are untested).
+   The ranges are uploaded to the GPU's copy first: they come back whole, and elements the shaders did not write
+   would otherwise undo what the title wrote there since (a scenario caught it).
+   Without rasterization (EDRAM mode other than 4 or 5, no target bound, an empty scissor: the "compute shaders"
+   titles make of point draws covering nothing, which the renderer skipped), a memory-exporting vertex shader runs
+   as a compute dispatch of the translator's memexport translation (kMemExportCompute, one invocation a guest
+   vertex, auto or DMA indices), outside the render passes; the reference's Vulkan backend draws it with
+   rasterizer discard instead and never used that translation, whose position export crashed the translator
+   (fixed, see the translator's NOTICE.md). Not yet: immediate indices, vertex shader textures there. Scenarios: a
+   vertex shader writing a 32_32_32_32_FLOAT element per point, drawn, without rasterization, and from DMA indices
+   {2, 3} (elements 0 and 1 untouched); the video memory path (mirror and imported paths untested).
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured

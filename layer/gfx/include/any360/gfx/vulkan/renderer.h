@@ -351,6 +351,16 @@ class VulkanRenderer : public gfx::Renderer {
   std::vector<MemExport> memexports_;
   Buffer memexport_readback_;
   void MemExported(std::vector<MemExport> exports);
+  std::vector<MemExport> MemExportRanges(const uint32_t* regs, const TranslatedShader* vs, const TranslatedShader* ps) const;
+  // A draw nothing of which reaches a target (EDRAM mode other than 4 or 5, no target, an empty scissor): a vertex
+  // shader exporting to memory still runs, as a compute dispatch of its translation for memexport (one invocation a
+  // guest vertex). False when the vertex shader exports nothing.
+  bool MemExportWithoutRasterization(const DrawCall& draw);
+  std::map<VkShaderModule, VkPipeline> memexport_pipelines_;
+  uint32_t memexport_dispatches_ = 0;
+ public:
+  uint32_t memexport_dispatches() const { return memexport_dispatches_; }
+ private:
   bool vram_guest_on_ = false;
   // Pages (4 KB) of guest memory whose copy in video memory is current (with a watch set; else none are kept).
   static constexpr uint32_t kGuestPageShift = 12;

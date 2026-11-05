@@ -3709,6 +3709,11 @@ void SpirvShaderTranslator::StoreResult(const InstructionResult& result, spv::Id
     } break;
     case InstructionStorageTarget::kPosition: {
       assert_true(is_vertex_shader());
+      // any360: the memexport compute translation has no gl_PerVertex output: its position is dropped (the
+      // reference's Vulkan backend never used that translation).
+      if (output_per_vertex_ == spv::NoResult) {
+        break;
+      }
       id_vector_temp_util_.clear();
       id_vector_temp_util_.push_back(builder_->makeIntConstant(kOutputPerVertexMemberPosition));
       target_pointer = builder_->createAccessChain(spv::StorageClassOutput, output_per_vertex_,

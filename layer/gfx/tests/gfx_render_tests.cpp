@@ -139,6 +139,7 @@ bool OnDiagonal(uint32_t x, uint32_t y) { return x + (kSize - 1 - y) == kSize - 
 }  // namespace
 
 int main(int argc, char** argv) {
+  std::setvbuf(stdout, nullptr, _IONBF, 0);  // the lines so far survive a crash
   vk::Device device;
   vk::DeviceOptions options;
   for (int i = 1; i < argc; ++i) {
@@ -449,7 +450,7 @@ int main(int argc, char** argv) {
                                   t::CfExec(uc::ControlFlowOpcode::kExecEnd, 4, 2, 0)},
                                  words));
     const uint32_t memexports_before = renderer.stats().memexports;
-    scenario("memexport", nullptr, [&] {
+    auto stream_constants = [&] {
       s.Put({Type3(pm4::SET_CONSTANT, 21), 0u << 16 | 0,
              Bits(0), Bits(1), Bits(0), Bits(0),
              1u << 30 | dest >> 2, 0x4B000000u, 0x4B0u << 20 | 7u << 16 | 38u << 8, 0x96u << 23 | 4u,
@@ -458,18 +459,50 @@ int main(int argc, char** argv) {
              Bits(0), Bits(10), Bits(20), Bits(30)});
       s.Reg(0x2280, 0);
       s.Vertices(9);
+    };
+    // Which of the four elements hold (i, 10, 20, 30); the rest still the fill.
+    auto written = [&] {
+      uint32_t mask = 0;
+      for (uint32_t i = 0; i < 4; ++i) {
+        float e[4];
+        std::memcpy(e, g_memory + dest + 16 * i, 16);
+        if (e[0] == float(i) && e[1] == 10 && e[2] == 20 && e[3] == 30) mask |= 1u << i;
+        else if (g_memory[dest + 16 * i] != 0xCD) mask |= 0x10;  // neither written nor untouched
+      }
+      return mask;
+    };
+    scenario("memexport", nullptr, [&] {
+      stream_constants();
       s.DrawAuto(1, 4);
     });
+    const uint32_t drawn = written();
+    const bool counted = renderer.stats().memexports == memexports_before + 1;
+    // Without rasterization (EDRAM mode 0: nothing reaches a target), as a compute dispatch: auto indices, then 16-bit
+    // DMA indices {2, 3} (swapped 8-in-16) that write elements 2 and 3 only.
+    const uint32_t dispatches_before = renderer.memexport_dispatches();
+    std::memset(g_memory + dest, 0xCD, 128);
+    scenario("memexport without rasterization", nullptr, [&] {
+      s.Reg(0x2208, 0);
+      stream_constants();
+      s.DrawAuto(1, 4);
+      s.Reg(0x2208, 4);
+    });
+    const uint32_t computed = written();
+    std::memset(g_memory + dest, 0xCD, 128);
+    const uint32_t indices = kIndices + 0x300;
+    SetBig(indices, 2u << 16 | 3u);  // big-endian halves: 2 then 3
+    scenario("memexport without rasterization, DMA indices", nullptr, [&] {
+      s.Reg(0x2208, 0);
+      stream_constants();
+      s.Put({Type3(pm4::DRAW_INDX, 4), 0, 2u << 16 | 0u << 6 | 1u, indices, 1u << 30 | 2u});
+      s.Reg(0x2208, 4);
+    });
+    const uint32_t indexed = written();
     s.Shader(0, t::BuildFetchPositionShader());
-    float elements[4][4];
-    std::memcpy(elements, g_memory + dest, sizeof(elements));
-    bool right = renderer.stats().memexports == memexports_before + 1;
-    for (uint32_t i = 0; i < 4; ++i) {
-      right = right && elements[i][0] == float(i) && elements[i][1] == 10 && elements[i][2] == 20 && elements[i][3] == 30;
-    }
-    std::printf("gfx_render_tests: memexport: %s (element 3: %g %g %g %g)\n", right ? "4 elements written" : "wrong",
-                elements[3][0], elements[3][1], elements[3][2], elements[3][3]);
-    CHECK(right && g_memory[dest + 64] == 0xCD);
+    const uint32_t dispatches = renderer.memexport_dispatches() - dispatches_before;
+    std::printf("gfx_render_tests: memexport: drawn %X, without rasterization %X, from DMA indices %X (elements written), "
+                "%u dispatches\n", drawn, computed, indexed, dispatches);
+    CHECK(counted && drawn == 0xF && computed == 0xF && indexed == 0xC && dispatches == 2 && g_memory[dest + 64] == 0xCD);
   }
   // Centroid interpolation: which interpolators the pixel shader samples at their centroid (none at 1x or with
   // centres only; all with centroids only; by SQ_INTERPOLATOR_CNTL's pattern, a set bit a centre, otherwise), and a
