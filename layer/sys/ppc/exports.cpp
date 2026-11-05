@@ -450,8 +450,10 @@ ANY360_SYS_EXPORT(XamInputGetCapabilities) { ctx.r3.u64 = XamState().InputGetCap
 ANY360_SYS_EXPORT(XamInputGetState) { ctx.r3.u64 = XamState().InputGetState({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XamInputSetState) { ctx.r3.u64 = XamState().InputSetState({base}, ctx.r3.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XamInputGetKeystrokeEx) {
-  const uint32_t user = ctx.r3.u32 ? Guest{base}.Load32(ctx.r3.u32) : 0;
+  // The user index in and out through r3: the keystroke's user (XINPUT_KEYSTROKE + 6) written back, as the reference.
+  const uint32_t user_ptr = ctx.r3.u32, user = user_ptr ? Guest{base}.Load32(user_ptr) : 0;
   ctx.r3.u64 = XamState().InputGetKeystroke({base}, user, ctx.r4.u32, ctx.r5.u32);
+  if (ctx.r3.u32 == 0 && user_ptr && ctx.r5.u32) Guest{base}.Store32(user_ptr, Guest{base}.Load8(ctx.r5.u32 + 6));
 }
 ANY360_SYS_EXPORT(RtlImageXexHeaderField) { ctx.r3.u64 = XamState().ImageXexHeaderField({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XexGetModuleHandle) { ctx.r3.u64 = XamState().GetModuleHandle({base}, ctx.r3.u32, ctx.r4.u32); }
@@ -975,6 +977,29 @@ ANY360_SYS_EXPORT(NtOpenSymbolicLinkObject) { ctx.r3.u64 = Files().OpenSymbolicL
 ANY360_SYS_EXPORT(NtQuerySymbolicLinkObject) { ctx.r3.u64 = Files().QuerySymbolicLink({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(NetDll_XNetSetSystemLinkPort) { ctx.r3.u64 = 1; }  // as the reference: no system link offline anyway
 
+// Batch 28: input and the devices a retail console without them reports (sys_io_tests against the reference).
+ANY360_SYS_EXPORT(XamInputGetCapabilitiesEx) {
+  // (unknown, user, flags, capabilities): XamInputGetCapabilities with one more argument first.
+  ctx.r3.u64 = XamState().InputGetCapabilities({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+}
+ANY360_SYS_EXPORT(XamInputGetKeystroke) { ctx.r3.u64 = XamState().InputGetKeystroke({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamNuiGetDeviceStatus) {
+  // XAM_NUI_DEVICE_STATUS (24 bytes) all zero: no Kinect connected.
+  if (ctx.r3.u32) std::memset(Guest{base}.host(ctx.r3.u32), 0, 24);
+}
+// No keyboard or mouse on the console's HID: STATUS_DEVICE_NOT_CONNECTED for keys (which titles turn into
+// ERROR_DEVICE_NOT_CONNECTED), STATUS_UNSUCCESSFUL for the rest, no input ever.
+ANY360_SYS_EXPORT(HidReadKeys) { ctx.r3.u64 = 0xC000009D; }
+ANY360_SYS_EXPORT(HidGetCapabilities) { ctx.r3.u64 = 0xC0000001; }
+ANY360_SYS_EXPORT(HidReadMouseChanges) { ctx.r3.u64 = 0xC0000001; }
+ANY360_SYS_EXPORT(HidGetLastInputTime) {
+  if (ctx.r3.u32) Guest{base}.Store32(ctx.r3.u32, 0);
+  ctx.r3.u64 = 0;
+}
+// The Xbox Live Vision camera: creating its buffers succeeds (titles stop loading otherwise), and it is not connected.
+ANY360_SYS_EXPORT(XUsbcamCreate) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XUsbcamGetState) { ctx.r3.u64 = 0; }
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1358,6 +1383,15 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ExAllocatePool),
     ANY360_SYS_ENTRY(ExFreePool),
     ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(XamInputGetCapabilitiesEx),
+    ANY360_SYS_ENTRY(XamInputGetKeystroke),
+    ANY360_SYS_ENTRY(XamNuiGetDeviceStatus),
+    ANY360_SYS_ENTRY(HidReadKeys),
+    ANY360_SYS_ENTRY(HidGetCapabilities),
+    ANY360_SYS_ENTRY(HidReadMouseChanges),
+    ANY360_SYS_ENTRY(HidGetLastInputTime),
+    ANY360_SYS_ENTRY(XUsbcamCreate),
+    ANY360_SYS_ENTRY(XUsbcamGetState),
     ANY360_SYS_ENTRY(RtlCopyString),
     ANY360_SYS_ENTRY(RtlCopyUnicodeString),
     ANY360_SYS_ENTRY(RtlFreeUnicodeString),

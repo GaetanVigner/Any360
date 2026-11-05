@@ -76,6 +76,11 @@ REFERENCE(__C_specific_handler)
 REFERENCE(VdShutdownEngines)
 REFERENCE(VdSetSystemCommandBufferGpuIdentifierAddress)
 REFERENCE(XeCryptSha)
+REFERENCE(XamNuiGetDeviceStatus)
+REFERENCE(HidReadKeys)
+REFERENCE(HidGetCapabilities)
+REFERENCE(HidReadMouseChanges)
+REFERENCE(HidGetLastInputTime)
 REFERENCE(OutputDebugStringA)
 REFERENCE(OutputDebugStringW)
 REFERENCE(RtlOutputDebugString)
@@ -629,6 +634,12 @@ const Case kCases[] = {
       ctx.r5.u64 = rng() % 32;
     }),
     CASE(XeCryptBnDwLePkcs1Verify, nullptr),
+    // Devices the console does not have: Kinect, HID keyboard and mouse (the reference library lacks the USB camera's).
+    CASE(XamNuiGetDeviceStatus, [](Scene&, PPCContext& ctx, std::mt19937&) { ctx.r3.u64 = kBlockB + 0x100; }),
+    CASE(HidReadKeys, nullptr),
+    CASE(HidGetCapabilities, nullptr),
+    CASE(HidReadMouseChanges, nullptr),
+    CASE(HidGetLastInputTime, [](Scene&, PPCContext& ctx, std::mt19937& rng) { ctx.r3.u64 = rng() % 4 ? kBlockB + 0x100 : 0; }),
     CASE(OutputDebugStringA, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
       s.Text(kString1, rng, rng() % 40);
       ctx.r3.u64 = kString1;

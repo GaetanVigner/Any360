@@ -2669,7 +2669,7 @@
 "kind":"function",
 "group":"input",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -6374,7 +6374,7 @@
 "kind":"function",
 "group":"input",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -18540,7 +18540,7 @@
 "kind":"function",
 "group":"nui",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -31920,7 +31920,7 @@
 "kind":"function",
 "group":"hid",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -31932,7 +31932,7 @@
 "kind":"function",
 "group":"hid",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -32004,7 +32004,7 @@
 "kind":"function",
 "group":"hid",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -32581,7 +32581,7 @@
 "kind":"function",
 "group":"usbcam",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -32641,7 +32641,7 @@
 "kind":"function",
 "group":"usbcam",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -33737,7 +33737,7 @@
 "kind":"function",
 "group":"hid",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
