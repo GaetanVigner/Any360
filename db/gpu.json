@@ -1096,14 +1096,14 @@
 "name":"kLineList",
 "family":"primitive types",
 "value":2,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"primitive types:kLineStrip",
 "name":"kLineStrip",
 "family":"primitive types",
 "value":3,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"primitive types:kTriangleList",
@@ -1117,7 +1117,7 @@
 "name":"kTriangleFan",
 "family":"primitive types",
 "value":5,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"primitive types:kTriangleStrip",
@@ -1145,28 +1145,28 @@
 "name":"kLineLoop",
 "family":"primitive types",
 "value":12,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"primitive types:kQuadList",
 "name":"kQuadList",
 "family":"primitive types",
 "value":13,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"primitive types:kQuadStrip",
 "name":"kQuadStrip",
 "family":"primitive types",
 "value":14,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"primitive types:kPolygon",
 "name":"kPolygon",
 "family":"primitive types",
 "value":15,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"primitive types:kExplicitMajorModeForceStart",
@@ -1229,84 +1229,84 @@
 "name":"k_8_8_8_8",
 "family":"vertex formats",
 "value":6,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_2_10_10_10",
 "name":"k_2_10_10_10",
 "family":"vertex formats",
 "value":7,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_10_11_11",
 "name":"k_10_11_11",
 "family":"vertex formats",
 "value":16,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_11_11_10",
 "name":"k_11_11_10",
 "family":"vertex formats",
 "value":17,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_16_16",
 "name":"k_16_16",
 "family":"vertex formats",
 "value":25,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_16_16_16_16",
 "name":"k_16_16_16_16",
 "family":"vertex formats",
 "value":26,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_16_16_FLOAT",
 "name":"k_16_16_FLOAT",
 "family":"vertex formats",
 "value":31,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_16_16_16_16_FLOAT",
 "name":"k_16_16_16_16_FLOAT",
 "family":"vertex formats",
 "value":32,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_32",
 "name":"k_32",
 "family":"vertex formats",
 "value":33,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_32_32",
 "name":"k_32_32",
 "family":"vertex formats",
 "value":34,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_32_32_32_32",
 "name":"k_32_32_32_32",
 "family":"vertex formats",
 "value":35,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_32_FLOAT",
 "name":"k_32_FLOAT",
 "family":"vertex formats",
 "value":36,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"vertex formats:k_32_32_FLOAT",
@@ -1327,7 +1327,7 @@
 "name":"k_32_32_32_FLOAT",
 "family":"vertex formats",
 "value":57,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_1_REVERSE",
@@ -1488,7 +1488,7 @@
 "name":"k_24_8",
 "family":"texture formats",
 "value":22,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_24_8_FLOAT",
@@ -1789,42 +1789,42 @@
 "name":"k_8_8_8_8_GAMMA",
 "family":"render target formats",
 "value":1,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:k_2_10_10_10",
 "name":"k_2_10_10_10",
 "family":"render target formats",
 "value":2,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:k_2_10_10_10_FLOAT",
 "name":"k_2_10_10_10_FLOAT",
 "family":"render target formats",
 "value":3,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:k_16_16",
 "name":"k_16_16",
 "family":"render target formats",
 "value":4,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:k_16_16_16_16",
 "name":"k_16_16_16_16",
 "family":"render target formats",
 "value":5,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:k_16_16_FLOAT",
 "name":"k_16_16_FLOAT",
 "family":"render target formats",
 "value":6,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:k_16_16_16_16_FLOAT",
@@ -1838,28 +1838,28 @@
 "name":"k_2_10_10_10_AS_10_10_10_10",
 "family":"render target formats",
 "value":10,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:k_2_10_10_10_FLOAT_AS_16_16_16_16",
 "name":"k_2_10_10_10_FLOAT_AS_16_16_16_16",
 "family":"render target formats",
 "value":12,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:k_32_FLOAT",
 "name":"k_32_FLOAT",
 "family":"render target formats",
 "value":14,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:k_32_32_FLOAT",
 "name":"k_32_32_FLOAT",
 "family":"render target formats",
 "value":15,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render target formats:kD24S8",
@@ -1873,7 +1873,7 @@
 "name":"kD24FS8",
 "family":"render target formats",
 "value":1,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:viewport transform",
@@ -2020,7 +2020,7 @@
 "name":"primitive restart",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:multiple render targets",
@@ -2041,7 +2041,7 @@
 "name":"MSAA 4x",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:render targets from RB_* registers",
@@ -2055,14 +2055,14 @@
 "name":"gamma render targets",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:float24 depth",
 "name":"float24 depth",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:textures (2D)",
@@ -2118,7 +2118,7 @@
 "name":"mip maps",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:vertex textures",
@@ -2139,7 +2139,7 @@
 "name":"resolve depth",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:resolve with clear",
@@ -2202,7 +2202,7 @@
 "name":"gamma ramp",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:vertex fetch (shared memory)",
@@ -2244,7 +2244,7 @@
 "name":"shader constants (bool / loop)",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:dynamic constant addressing",

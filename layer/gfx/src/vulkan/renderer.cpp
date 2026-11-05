@@ -64,6 +64,8 @@ VkPrimitiveTopology Topology(uint32_t primitive_type) {
     case 0x04: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     case 0x05: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
     case 0x06: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+    case 0x0E: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;  // a quad strip: its quads are the strip's triangle pairs
+    case 0x0F: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;    // a polygon (convex): a fan from its first vertex
     default: return VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
   }
 }
@@ -937,14 +939,21 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     return;
   }
   // Rectangle lists are drawn as two-triangle strips whose fourth corner the vertex shader makes, quad lists as
-  // triangle lists (a, b, c, a, c, d), as the reference does without geometry shaders.
-  const bool rectangle_list = draw.primitive_type == 0x08, quad_list = draw.primitive_type == 0x0D;
+  // triangle lists (a, b, c, a, c, d), as the reference does without geometry shaders; line loops as line strips
+  // back to their first vertex.
+  const bool rectangle_list = draw.primitive_type == 0x08, quad_list = draw.primitive_type == 0x0D,
+             line_loop = draw.primitive_type == 0x0C;
   const VkPrimitiveTopology topology = rectangle_list ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP
                                        : quad_list    ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+                                       : line_loop    ? VK_PRIMITIVE_TOPOLOGY_LINE_STRIP
                                                       : Topology(draw.primitive_type);
-  const uint32_t primitives = rectangle_list ? draw.index_count / 3 : quad_list ? draw.index_count / 4 : 0;
+  const uint32_t primitives = rectangle_list ? draw.index_count / 3
+                              : quad_list    ? draw.index_count / 4
+                              : line_loop    ? draw.index_count
+                                             : 0;
   const uint32_t host_index_count = rectangle_list ? (primitives ? 5 * primitives - 1 : 0)
                                     : quad_list    ? 6 * primitives
+                                    : line_loop    ? (primitives ? primitives + 1 : 0)
                                                    : draw.index_count;
   if (topology == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM) {
     Fail("primitive type " + std::to_string(draw.primitive_type) + " needs expansion (not yet)");
@@ -1298,7 +1307,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
                         kFetchBytes + 5 * constant_alignment_ + kFloatBufferBytes;
   // Everything this draw takes from the batch, checked up front: a flush once its constants are written would let
   // later draws overwrite them.
-  const uint32_t index_need = rectangle_list || quad_list       ? host_index_count * 4 + 4
+  const uint32_t index_need = rectangle_list || quad_list || line_loop ? host_index_count * 4 + 4
                               : draw.source == DrawSource::kDma ? draw.index_bytes + 4
                                                                 : 0;
   const uint32_t images_need = uint32_t(stage_textures[0].views.size() + stage_textures[1].views.size());
@@ -1459,12 +1468,14 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   job.restart = restart;
   job.reset_index = reset_index;
   job.primitives = primitives;
-  if (rectangle_list || quad_list) {
+  if (rectangle_list || quad_list || line_loop) {
     if (draw.source == DrawSource::kDma && uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_) {
       Fail("index buffer outside the mirrored memory");
       return;
     }
-    job.indices = rectangle_list ? DrawJob::Indices::kRectangles : DrawJob::Indices::kQuads;
+    job.indices = rectangle_list ? DrawJob::Indices::kRectangles
+                  : quad_list    ? DrawJob::Indices::kQuads
+                                 : DrawJob::Indices::kLineLoop;
     job.index_type = VK_INDEX_TYPE_UINT32;
     job.index_offset = index_head_;
     index_head_ = AlignUp(index_head_ + host_index_count * 4, 4);
@@ -1659,7 +1670,7 @@ void VulkanRenderer::RecordJob(VkCommandBuffer cb, const DrawJob& job, RecordedS
       if (r) *dst++ = UINT32_MAX;
       for (uint32_t i = 0; i < 4; ++i) *dst++ = 4 * r + i;
     }
-  } else if (job.indices == DrawJob::Indices::kQuads) {
+  } else if (job.indices == DrawJob::Indices::kQuads || job.indices == DrawJob::Indices::kLineLoop) {
     uint32_t* dst = reinterpret_cast<uint32_t*>(job.index_dst);
     auto guest_index = [&](uint32_t i) -> uint32_t {
       if (job.source != DrawSource::kDma) return i;
@@ -1673,7 +1684,10 @@ void VulkanRenderer::RecordJob(VkCommandBuffer cb, const DrawJob& job, RecordedS
       if (job.endian == Endian::k8in16 || job.endian == Endian::k8in32) v = uint16_t(v << 8 | v >> 8);
       return v;
     };
-    for (uint32_t q = 0; q < job.primitives; ++q) {
+    if (job.indices == DrawJob::Indices::kLineLoop) {
+      for (uint32_t i = 0; i < job.primitives; ++i) *dst++ = guest_index(i);
+      if (job.primitives) *dst = guest_index(0);
+    } else for (uint32_t q = 0; q < job.primitives; ++q) {
       const uint32_t a = guest_index(4 * q), b = guest_index(4 * q + 1), cc = guest_index(4 * q + 2), d = guest_index(4 * q + 3);
       const uint32_t six[6] = {a, b, cc, a, cc, d};
       std::memcpy(dst, six, sizeof(six));
