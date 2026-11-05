@@ -349,7 +349,8 @@ int main(int argc, char** argv) {
   uint32_t record_threads = 0;  // --threads N: draws recorded on N threads (secondary command buffers)  // --async: the renderer on a thread of its own (AsyncRenderer), as in a title  // --bench: as in a title (diagnostics off, textures watched instead of hashed), kick time only
   std::string profile;  // --profile FILE: the main thread's instruction pointer sampled during the last pass
   uint32_t scale = 1;
-  bool profile_cp = false;  // --profile-cp: with --async, the command processor's thread sampled (else the renderer's)
+  bool profile_cp = false;
+  bool fences_after_gpu = false;  // --fences-after-gpu: fences once the GPU ran the batches before (not once captured)  // --profile-cp: with --async, the command processor's thread sampled (else the renderer's)
   vk::DeviceOptions options;
   std::string pipeline_cache;
   uint32_t msaa = 1;
@@ -362,6 +363,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--profile") && i + 1 < argc) profile = argv[++i];
     else if (!std::strcmp(argv[i], "--profile-cp")) profile_cp = true;
     else if (!std::strcmp(argv[i], "--bench")) bench = true;
+    else if (!std::strcmp(argv[i], "--fences-after-gpu")) fences_after_gpu = true;
     else if (!std::strcmp(argv[i], "--async")) async = true;
     else if (!std::strcmp(argv[i], "--pipeline-cache") && i + 1 < argc) pipeline_cache = argv[++i];
     else if (!std::strcmp(argv[i], "--msaa") && i + 1 < argc) msaa = uint32_t(std::atoi(argv[++i]));
@@ -393,17 +395,24 @@ int main(int argc, char** argv) {
     return 1;
   }
   renderer.SetRecordThreads(record_threads);
+  renderer.SetFencesWhenCaptured(!fences_after_gpu);
   CommandProcessor cp(physical);
   TracingRenderer tracing(renderer, physical, dump, watch, pick_x, pick_y);
   Renderer* target = trace ? static_cast<Renderer*>(&tracing) : &renderer;
   std::unique_ptr<AsyncRenderer> async_renderer;
   if (async) async_renderer = std::make_unique<AsyncRenderer>(cp, *target);
   cp.SetRenderer(async_renderer ? static_cast<Renderer*>(async_renderer.get()) : target);
+  cp.SetMemoryWrittenHook([&renderer](uint32_t begin, uint32_t end) {
+    renderer.GuestMemoryWritten(begin, end);
+  });
   uint64_t drain_ns = 0;  // waiting for the renderer's thread (part of the work with --async)
   auto drain = [&] {
-    if (!async_renderer) return;
     const auto start = std::chrono::steady_clock::now();
-    async_renderer->Drain();
+    if (async_renderer) async_renderer->Drain();
+    // What the batches write into guest memory (resolves read back, which fences no longer wait for) lands before
+    // the replay rewrites that memory, as a title's own later writes would.
+    renderer.Flush();
+    renderer.WaitIdle();
     drain_ns += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
   };
   cp.SetInterruptHandler([](uint32_t, uint32_t) {});

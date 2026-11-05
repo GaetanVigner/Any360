@@ -101,6 +101,7 @@ void CommandProcessor::StoreRaw(uint32_t address, uint32_t value) {
   uint32_t* word = reinterpret_cast<uint32_t*>(Host(address & ~3u));
   std::atomic_ref<uint32_t>(*word).store(value, std::memory_order_release);
   WakeWaiters(word);
+  if (memory_written_) memory_written_(address & 0x1FFFFFFC, (address & 0x1FFFFFFC) + 4);
 }
 uint32_t CommandProcessor::LoadBig(uint32_t address) const { return std::byteswap(LoadRaw(address)); }
 void CommandProcessor::StoreBig(uint32_t address, uint32_t value) { StoreRaw(address, std::byteswap(value)); }
@@ -517,7 +518,16 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     static constexpr uint32_t kBase[] = {reg::kAluConstants, reg::kFetchConstants, reg::kBoolConstants, reg::kLoopConstants,
                                          reg::kContextRegisters};
     if (type > 4) return;
-    for (uint32_t i = 0; i < n; ++i) SetRegister(kBase[type] + index + i, value_at(i));
+    const uint32_t first = kBase[type] + index;
+    // Constants (the usual case): written at once, none of them a register the command processor acts on.
+    auto touches = [&](uint32_t lo, uint32_t hi) { return first < hi && lo < first + n; };
+    if (uint64_t(first) + n <= reg::kRegisterCount && !touches(reg::DC_LUT_RW_INDEX, reg::DC_LUT_30_COLOR + 1) &&
+        !touches(reg::SCRATCH_REG0, reg::SCRATCH_REG0 + 8) && !touches(reg::COHER_STATUS_HOST, reg::COHER_STATUS_HOST + 1)) {
+      for (uint32_t i = 0; i < n; ++i) std::atomic_ref<uint32_t>(registers_[first + i]).store(value_at(i), std::memory_order_release);
+      if (n) MarkDirty(first, n);
+      return;
+    }
+    for (uint32_t i = 0; i < n; ++i) SetRegister(first + i, value_at(i));
   };
 
   // What the CPU can observe of the GPU's progress (fences, memory writes, interrupts) happens once the draws before
@@ -642,6 +652,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
           const uint16_t big = std::byteswap(kExtents[i]);
           std::memcpy(Host(address + 2 * i), &big, 2);
         }
+        if (memory_written_) memory_written_(address & 0x1FFFFFFF, (address & 0x1FFFFFFF) + 12);
       }
       break;
     case pm4::EVENT_WRITE_ZPD:
@@ -653,11 +664,15 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
                            LoadBig(counts + 8) == kQueryFinished || LoadBig(counts + 12) == kQueryFinished;
         if (renderer_ && renderer_->CountsSamples()) {
           // D3D subtracts a begin block from an end block: the begin reads zero, the end waits for the renderer.
-          if (!ended) std::memset(Host(counts), 0, 32);
+          if (!ended) {
+            std::memset(Host(counts), 0, 32);
+            if (memory_written_) memory_written_(counts, counts + 32);
+          }
           renderer_->OcclusionQuery(ended, counts);
           break;
         }
         std::memset(Host(counts), 0, 32);
+        if (memory_written_) memory_written_(counts, counts + 32);
         if (ended) {
           StoreRaw(counts + 0, kFakeSampleCount);   // Total_A
           StoreRaw(counts + 16, kFakeSampleCount);  // ZPass_A
@@ -821,7 +836,8 @@ void CommandProcessor::LoadShader(uint32_t type, uint32_t address, uint32_t dwor
   if (loaded_shaders_.size() > 4096) loaded_shaders_.clear();  // immediate loads land all over the ring
   LoadedShader& known = loaded_shaders_[uint64_t(shader.address) << 16 | dwords];
   if (known.raw.size() == dwords && std::memcmp(known.raw.data(), guest, 4 * size_t(dwords)) == 0) {
-    shader.microcode = known.microcode;  // into its capacity: no allocation
+    // The same shader reloaded into its slot (most loads): nothing to copy.
+    if (shader.hash != known.hash || shader.microcode.size() != dwords) shader.microcode = known.microcode;
     shader.hash = known.hash;
   } else {
     shader.microcode.resize(dwords);

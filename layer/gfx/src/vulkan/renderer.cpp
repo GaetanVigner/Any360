@@ -2771,7 +2771,10 @@ void VulkanRenderer::WriteQuery(const Batch::Query& query) {
   // reference writes them; ZFail and the rest zero.
   uint32_t counts[8] = {};
   counts[0] = counts[4] = uint32_t(std::min<uint64_t>(samples, UINT32_MAX));
-  if (uint64_t(query.address) + sizeof(counts) <= mirror_bytes_) std::memcpy(physical_ + query.address, counts, sizeof(counts));
+  if (uint64_t(query.address) + sizeof(counts) <= mirror_bytes_) {
+    std::memcpy(physical_ + query.address, counts, sizeof(counts));
+    GuestMemoryWritten(query.address, query.address + uint32_t(sizeof(counts)));
+  }
 }
 
 void VulkanRenderer::FinishBatch(Batch& b) {
@@ -3400,8 +3403,9 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   if (textures_) {
     const uint32_t element = is_depth ? 4 : (dest_format == 32 ? 8 : 4);
     const uint64_t rows = (uint64_t(y0) + height + 31) & ~uint64_t(31);
-    textures_->MemoryChanged(dest_base, uint32_t(std::min<uint64_t>(dest_base + rows * ((dest_pitch + 31) & ~31u) * element,
-                                                                    mirror_bytes_)));
+    const uint32_t end = uint32_t(std::min<uint64_t>(dest_base + rows * ((dest_pitch + 31) & ~31u) * element, mirror_bytes_));
+    textures_->MemoryChanged(dest_base, end);
+    GuestMemoryWritten(dest_base, end);  // the pages copied into video memory too (vertices a title resolved)
   }
   last_resolve_ = {surface, dest_base, dest_endian, uint32_t(x0), uint32_t(y0), width, height,
                    !is_depth && !msaa && dest_format == 6 && !dest_bias && !dest_swap};
