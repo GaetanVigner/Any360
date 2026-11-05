@@ -177,6 +177,13 @@ From the Crackdown runs (each one cost a debugging session there):
    Texture unit (2026-11-05): the gradients, the computed LOD, the register LOD and gradients a fetch then uses
    (the level it reads), the bilinear weights (D3D pixel centres: integer coordinates) on 128x128 two-level and
    32x32 textures. `getBCF` (the border colour fraction) is not implemented by the translator: it stays to do.
+   Formats and primitives (2026-11-05): every vertex format through a vertex shader's fetch into an interpolator
+   (unsigned, signed and integer forms, an exponent adjustment; components a format lacks read 0, a title's
+   shader asking for 1 through the swizzle), every colour render target format but k_8_8_8_8 read back as the host
+   stores it, D24FS8 depth, and triangle fans, polygons (a fan), quad strips (a triangle strip), line lists,
+   strips and loops (a strip back to the first vertex, expanded like quad lists). The command processor now
+   gathers an immediate shader load that wraps around the ring's end (it assumed it never would; the bench's
+   ring did).
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured

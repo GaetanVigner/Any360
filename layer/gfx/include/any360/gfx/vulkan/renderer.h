@@ -535,7 +535,7 @@ class VulkanRenderer : public gfx::Renderer {
     float depth_bias[2];
     float blend[4];
     uint32_t stencil[2];
-    enum class Indices : uint8_t { kNone, kRectangles, kQuads, kDma } indices;
+    enum class Indices : uint8_t { kNone, kRectangles, kQuads, kLineLoop, kDma } indices;
     bool index_32, restart;
     Endian endian;
     DrawSource source;

@@ -677,8 +677,19 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
         const uint32_t type = Next(r), start_size = Next(r);
         const uint32_t dwords = start_size & 0xFFFF;
         if (type > 1) return false;
-        // The microcode follows in the packet (the primary ring never wraps inside a shader the runtime writes).
-        if (has(dwords)) LoadShader(type, r.base + 4 * (r.offset % r.capacity), dwords);
+        // The microcode follows in the packet, gathered when it wraps around the ring's end.
+        if (has(dwords)) {
+          const uint32_t start = r.offset % r.capacity;
+          if (start + dwords <= r.capacity) {
+            LoadShader(type, r.base + 4 * start, dwords);
+          } else {
+            const uint32_t first = r.capacity - start;
+            wrapped_shader_.resize(dwords);
+            std::memcpy(wrapped_shader_.data(), Host(r.base + 4 * start), 4 * size_t(first));
+            std::memcpy(wrapped_shader_.data() + first, Host(r.base), 4 * size_t(dwords - first));
+            LoadShader(type, r.base + 4 * start, dwords, wrapped_shader_.data());
+          }
+        }
       }
       break;
     case pm4::SET_BIN_MASK:
@@ -760,12 +771,12 @@ void CommandProcessor::Draw(Reader& r, uint32_t opcode, uint32_t end) {
   }
 }
 
-void CommandProcessor::LoadShader(uint32_t type, uint32_t address, uint32_t dwords) {
+void CommandProcessor::LoadShader(uint32_t type, uint32_t address, uint32_t dwords, const uint32_t* words) {
   if (type > 1) return;
   Shader& shader = shaders_[type];
   shader.type = type;
   shader.address = address & 0x1FFFFFFF;
-  const uint32_t* guest = reinterpret_cast<const uint32_t*>(Host(shader.address));
+  const uint32_t* guest = words ? words : reinterpret_cast<const uint32_t*>(Host(shader.address));
   if (loaded_shaders_.size() > 4096) loaded_shaders_.clear();  // immediate loads land all over the ring
   LoadedShader& known = loaded_shaders_[uint64_t(shader.address) << 16 | dwords];
   if (known.raw.size() == dwords && std::memcmp(known.raw.data(), guest, 4 * size_t(dwords)) == 0) {

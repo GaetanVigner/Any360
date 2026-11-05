@@ -3,6 +3,7 @@
 // from the register file and indices by DMA; the render state comes from the registers. Each scenario clears the
 // targets, runs its packets and checks the pixels it read back. Skipped without a Vulkan 1.3 device.
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstdlib>
@@ -286,6 +287,121 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: depth front %u, middle %u, back %u\n", p.Count(front), p.Count(mid), p.Count(back));
     CHECK(p.Count(back) == 0 && p.At(4, 59) == front && p.At(59, 4) == mid);
     CHECK(p.Count(front) + p.Count(mid) == kSize * kSize && p.Count(front) > 1900);
+    // The same with a D24FS8 depth surface (RB_DEPTH_INFO depth_format 1: float24 depth).
+    CHECK(renderer.ClearDepthStencil({1024, kSize, 1, 1}, 1.0f, 0));
+    p = scenario("float24 depth", nullptr, [&] {
+      s.Reg(0x2002, 1u << 16 | 1024);
+      s.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 1u << 4);
+      s.Vertices(0);
+      s.Color(0, 255, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Vertices(1);
+      s.Color(255, 0, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Vertices(2);
+      s.Color(0, 0, 255, 255);
+      s.DrawAuto(kTriangleList, 3);
+    });
+    std::printf("gfx_render_tests: float24 depth front %u, middle %u, back %u\n", p.Count(front), p.Count(mid), p.Count(back));
+    CHECK(p.Count(back) == 0 && p.At(4, 59) == front && p.At(59, 4) == mid);
+    CHECK(p.Count(front) + p.Count(mid) == kSize * kSize && p.Count(front) > 1900);
+  }
+  // Primitive types the host draws otherwise: a triangle fan and a polygon over the four corners in order around
+  // the target, a quad strip over them in strip order, each covering it all; a line list, strip and loop over the
+  // corners of a square inset to +-0.7, each one more edge than the one before (about 45 pixels an edge).
+  {
+    const float inset[4][4] = {{-0.7f, -0.7f, 0.5f, 1}, {0.7f, -0.7f, 0.5f, 1}, {0.7f, 0.7f, 0.5f, 1}, {-0.7f, 0.7f, 0.5f, 1}};
+    for (uint32_t i = 0; i < 4; ++i) {
+      for (uint32_t c = 0; c < 4; ++c) SetBig(kVertices + 0x900 + 16 * i + 4 * c, Bits(inset[i][c]));
+    }
+    const uint32_t color = Rgba(30, 160, 90, 255);
+    const struct {
+      const char* name;
+      uint32_t primitive, set;
+    } fills[] = {{"triangle fan", 5, 7}, {"polygon", 15, 7}, {"quad strip", 14, 0}};
+    for (const auto& fill : fills) {
+      Pixels p = scenario(fill.name, nullptr, [&] {
+        s.Vertices(fill.set);
+        s.Color(30, 160, 90, 255);
+        s.DrawAuto(fill.primitive, 4);
+      });
+      std::printf("gfx_render_tests: %s: %u of %u pixels\n", fill.name, p.Count(color), kSize * kSize);
+      CHECK(p.Count(color) == kSize * kSize);
+    }
+    uint32_t lit[3] = {};
+    const uint32_t lines[3] = {2, 3, 12};  // line list, line strip, line loop
+    for (uint32_t i = 0; i < 3; ++i) {
+      Pixels p = scenario("lines", nullptr, [&] {
+        s.Vertices(9);
+        s.Color(30, 160, 90, 255);
+        s.DrawAuto(lines[i], 4);
+      });
+      lit[i] = p.Count(color);
+    }
+    std::printf("gfx_render_tests: line list %u, strip %u, loop %u pixels\n", lit[0], lit[1], lit[2]);
+    CHECK(lit[0] >= 80 && lit[0] <= 100 && lit[1] >= lit[0] + 40 && lit[1] <= lit[0] + 50 && lit[2] >= lit[1] + 40 &&
+          lit[2] <= lit[1] + 50);
+  }
+  // Render target formats: c0 written over the whole target of each format, read back as the host stores it.
+  {
+    struct Target {
+      const char* name;
+      uint32_t format;
+      float c[4];
+      uint32_t bytes;     // read back a texel
+      int64_t expect[4];  // host components (UNORM8 bytes, SNORM16, half or float bits)
+    };
+    const Target targets[] = {
+        {"k_8_8_8_8_GAMMA", 1, {1, 0, 1, 0}, 4, {255, 0, 255, 0}},
+        {"k_2_10_10_10", 2, {0.2f, 0.6f, 1, 0.4f}, 4, {51, 153, 255, 102}},
+        {"k_2_10_10_10_AS_10_10_10_10", 10, {0.2f, 0.6f, 1, 0.4f}, 4, {51, 153, 255, 102}},
+        {"k_2_10_10_10_FLOAT", 3, {0.5f, -2, 1024, 0.125f}, 8, {0x3800, 0xC000, 0x6400, 0x3000}},
+        {"k_2_10_10_10_FLOAT_AS_16_16_16_16", 12, {0.5f, -2, 1024, 0.125f}, 8, {0x3800, 0xC000, 0x6400, 0x3000}},
+        // The 16-bit fixed-point formats hold -32...32: the shader's 8 is a quarter of full scale.
+        {"k_16_16", 4, {8, -16, 0, 0}, 4, {8192, -16384}},
+        {"k_16_16_16_16", 5, {8, -16, 16, -8}, 8, {8192, -16384, 16384, -8192}},
+        {"k_16_16_FLOAT", 6, {0.5f, -2, 0, 0}, 4, {0x3800, 0xC000}},
+        {"k_32_FLOAT", 14, {3.25f, 0, 0, 0}, 4, {int64_t(Bits(3.25f))}},
+    };
+    for (const Target& target : targets) {
+      const vk::SurfaceKey key{1536, kSize, target.format, 0};
+      const float zero[4] = {};
+      CHECK(renderer.ClearColor(key, zero));
+      scenario(target.name, nullptr, [&] {
+        s.Reg(0x2001, target.format << 16 | 1536);
+        s.Vertices(0);
+        s.Put({Type3(pm4::SET_CONSTANT, 5), 0u << 16 | 1024, Bits(target.c[0]), Bits(target.c[1]), Bits(target.c[2]),
+               Bits(target.c[3])});
+        s.DrawAuto(kTriangleStrip, 4);
+      });
+      std::vector<uint8_t> bytes;
+      CHECK(renderer.ReadBack(key, kSize, kSize, bytes));
+      int64_t got[4] = {};
+      if (bytes.size() == size_t(kSize) * kSize * target.bytes) {
+        const uint8_t* texel = bytes.data() + (32 * kSize + 32) * target.bytes;
+        const bool unorm8 = target.format == 1 || target.format == 2 || target.format == 10;
+        const bool snorm = target.format == 4 || target.format == 5;
+        const uint32_t count = target.format == 14 ? 1 : target.bytes == 8 || unorm8 ? 4 : 2;
+        for (uint32_t i = 0; i < count; ++i) {
+          if (unorm8) {
+            got[i] = texel[i];
+          } else if (target.format == 14) {
+            uint32_t v;
+            std::memcpy(&v, texel, 4);
+            got[i] = v;
+          } else {
+            uint16_t v;
+            std::memcpy(&v, texel + 2 * i, 2);
+            got[i] = snorm ? int16_t(v) : v;
+          }
+        }
+      }
+      bool ok = true;
+      for (uint32_t i = 0; i < 4; ++i) ok &= std::llabs(got[i] - target.expect[i]) <= 1;
+      std::printf("gfx_render_tests: target %s: %lld %lld %lld %lld%s\n", target.name, (long long)got[0], (long long)got[1],
+                  (long long)got[2], (long long)got[3], ok ? "" : " (wrong)");
+      CHECK(ok);
+    }
   }
   // Blending: ONE + ONE over a grey clear: (51, 51, 51) + (51, 102, 0) = (102, 153, 51).
   {
@@ -734,7 +850,9 @@ int main(int argc, char** argv) {
               device.properties().deviceName, renderer.depth_format() == VK_FORMAT_D24_UNORM_S8_UINT ? "D24S8" : "D32S8",
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 4 && stats.texture_uploads == 6 && stats.resolves == 1);
+  // Render targets: colour 0, depth, colour 1, the 16_16_16_16_FLOAT target, the float24 depth surface and the nine
+  // render target formats.
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 14 && stats.texture_uploads == 6 && stats.resolves == 1);
   // (The resolved texture is copied from the resolve on the GPU, not uploaded: 6 uploads, not 7.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.
@@ -1261,6 +1379,88 @@ int main(int argc, char** argv) {
       // kGetTextureBorderColorFrac: not tested, the translator does not implement it (a translation error).
     }
 
+    // Vertex formats: a full-target quad whose vertices carry, after their float4 position, four dwords of an
+    // attribute in the format under test (the same in every vertex, big-endian, swapped 8-in-32 by the fetch
+    // constant); the vertex shader fetches it into interpolator 0, the pixel shader exports it. x and y, then z and
+    // w through the fetch's destination swizzle. Components the format lacks read 0 (a title's shader asks for 1
+    // through the swizzle, which the XNA compiler emits as the constant-1 selector).
+    {
+      using VF = rex::graphics::xenos::VertexFormat;
+      const uint32_t buffer = kVertices + 0x800;
+      const char* names[64] = {};
+      names[6] = "k_8_8_8_8", names[7] = "k_2_10_10_10", names[16] = "k_10_11_11", names[17] = "k_11_11_10",
+      names[25] = "k_16_16", names[26] = "k_16_16_16_16", names[31] = "k_16_16_FLOAT", names[32] = "k_16_16_16_16_FLOAT",
+      names[33] = "k_32", names[34] = "k_32_32", names[35] = "k_32_32_32_32", names[36] = "k_32_FLOAT",
+      names[37] = "k_32_32_FLOAT", names[38] = "k_32_32_32_32_FLOAT", names[57] = "k_32_32_32_FLOAT";
+      t::Alu export_r0;
+      export_r0.vector_mask = 0b0011, export_r0.dest = kColor0, export_r0.is_export = true;
+      export_r0.src1 = export_r0.src2 = {0, true};
+      auto vertex_case = [&](VF format, bool is_signed, bool is_integer, int32_t exp_adjust,
+                             std::array<uint32_t, 4> attribute, std::array<float, 4> expected, float tolerance) {
+        for (bool zw : {false, true}) {
+          t::VertexFetch position, value;
+          position.stride_dwords = value.stride_dwords = 8;
+          value.dest = 2, value.format = format, value.offset_dwords = 4, value.exp_adjust = exp_adjust;
+          value.is_signed = is_signed, value.is_integer = is_integer;
+          if (zw) value.dest_swizzle = 2 | 3 << 3 | 7 << 6 | 7 << 9;
+          std::vector<uint32_t> words;
+          t::PushVertexFetch(words, position);
+          t::PushVertexFetch(words, value);
+          t::Alu out_position, out_value;
+          out_position.vector_mask = out_value.vector_mask = 0b1111;
+          out_position.is_export = out_value.is_export = true;
+          out_position.dest = uint32_t(uc::ExportRegister::kVSPosition);
+          out_value.dest = uint32_t(uc::ExportRegister::kVSInterpolator0);
+          out_position.src1 = out_position.src2 = {1, true};
+          out_value.src1 = out_value.src2 = {2, true};
+          t::PushAlu(words, out_position);
+          t::PushAlu(words, out_value);
+          Case k{std::string("vertex formats:") + names[uint32_t(format)], {export_r0}, {},
+                 expected[zw ? 2 : 0], expected[zw ? 3 : 1], tolerance};
+          k.vs = t::BuildCfShader({t::CfAlloc(uc::AllocType::kVsPosition, 0),
+                                   t::CfExec(uc::ControlFlowOpcode::kExec, 2, 3, 0b000101),
+                                   t::CfAlloc(uc::AllocType::kVsInterpolators, 0),
+                                   t::CfExec(uc::ControlFlowOpcode::kExecEnd, 5, 1, 0)},
+                                  words);
+          k.setup = [&s, buffer, attribute] {
+            const float corners[4][2] = {{-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
+            for (uint32_t i = 0; i < 4; ++i) {
+              const float position[4] = {corners[i][0], corners[i][1], 0.5f, 1};
+              for (uint32_t c = 0; c < 4; ++c) SetBig(buffer + 32 * i + 4 * c, Bits(position[c]));
+              for (uint32_t c = 0; c < 4; ++c) SetBig(buffer + 32 * i + 16 + 4 * c, attribute[c]);
+            }
+            s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, buffer | 3, 2u | 32u << 2});
+          };
+          cases.push_back(k);
+        }
+      };
+      // Half floats: 0.5 = 0x3800, -2 = 0xC000, 1024 = 0x6400, 0.125 = 0x3000.
+      const float u8 = 1.0f / 255, s8 = 1.0f / 127;
+      vertex_case(VF::k_8_8_8_8, false, false, 0, {0x80C04020}, {32 * u8, 64 * u8, 192 * u8, 128 * u8}, 1e-6f);
+      vertex_case(VF::k_8_8_8_8, true, false, 0, {0x7FC0E020}, {32 * s8, -32 * s8, -64 * s8, 1}, 1e-6f);
+      vertex_case(VF::k_8_8_8_8, false, true, 0, {0x80C04020}, {32, 64, 192, 128}, 0.0f);
+      vertex_case(VF::k_2_10_10_10, false, false, 0, {100u | 1000u << 10 | 512u << 20 | 3u << 30},
+                  {100.0f / 1023, 1000.0f / 1023, 512.0f / 1023, 1}, 1e-6f);
+      vertex_case(VF::k_10_11_11, false, false, 0, {1000u | 2000u << 11 | 500u << 22},
+                  {1000.0f / 2047, 2000.0f / 2047, 500.0f / 1023, 0}, 1e-6f);
+      vertex_case(VF::k_11_11_10, false, false, 0, {500u | 1000u << 10 | 2000u << 21},
+                  {500.0f / 1023, 1000.0f / 2047, 2000.0f / 2047, 0}, 1e-6f);
+      vertex_case(VF::k_16_16, false, false, 0, {0xC0004000}, {16384.0f / 65535, 49152.0f / 65535, 0, 0}, 1e-6f);
+      vertex_case(VF::k_16_16, true, false, 0, {0xC0004000}, {16384.0f / 32767, -16384.0f / 32767, 0, 0}, 1e-6f);
+      vertex_case(VF::k_16_16, false, true, -1, {0x00080004}, {2, 4, 0, 0}, 0.0f);  // integer, times 2^-1
+      vertex_case(VF::k_16_16_16_16, false, true, 0, {1u | 2u << 16, 3u | 4u << 16}, {1, 2, 3, 4}, 0.0f);
+      vertex_case(VF::k_16_16_FLOAT, false, false, 0, {0xC0003800}, {0.5f, -2, 0, 0}, 0.0f);
+      vertex_case(VF::k_16_16_16_16_FLOAT, false, false, 0, {0xC0003800, 0x30006400},
+                  {0.5f, -2, 1024, 0.125f}, 0.0f);
+      vertex_case(VF::k_32, false, true, 0, {1234}, {1234, 0, 0, 0}, 0.0f);
+      vertex_case(VF::k_32_32, true, true, 0, {uint32_t(-5), 7}, {-5, 7, 0, 0}, 0.0f);
+      vertex_case(VF::k_32_32_32_32, false, true, 0, {1, 2, 3, 4}, {1, 2, 3, 4}, 0.0f);
+      vertex_case(VF::k_32_FLOAT, false, false, 0, {Bits(2.5f)}, {2.5f, 0, 0, 0}, 0.0f);
+      vertex_case(VF::k_32_32_FLOAT, false, false, 0, {Bits(2.5f), Bits(-3)}, {2.5f, -3, 0, 0}, 0.0f);
+      vertex_case(VF::k_32_32_32_FLOAT, false, false, 0, {Bits(1.5f), Bits(2.5f), Bits(3.5f)}, {1.5f, 2.5f, 3.5f, 0}, 0.0f);
+      vertex_case(VF::k_32_32_32_32_FLOAT, false, false, 0, {Bits(1), Bits(-2), Bits(3), Bits(-4)}, {1, -2, 3, -4}, 0.0f);
+    }
+
     const float clear[4] = {kKilled, kKilled, 0, 0};
     std::vector<std::string> passed;
     for (const Case& k : cases) {
@@ -1290,8 +1490,9 @@ int main(int argc, char** argv) {
       if (ok) {
         passed.push_back(k.unit);
       } else {
-        std::printf("gfx_render_tests: %s: got (%g, %g), expected (%g, %g)\n", k.unit.c_str(), got[0], got[1], k.x, k.y);
-        ++g_failures;
+        std::printf("gfx_render_tests: %s: got (%g, %g), expected (%g, %g)%s%s\n", k.unit.c_str(), got[0], got[1], k.x,
+                    k.y, renderer.stats().failed != failed_before ? ": " : "",
+                    renderer.stats().failed != failed_before ? renderer.last_error().c_str() : "");        ++g_failures;
       }
     }
     std::printf("gfx_render_tests: shader opcodes: %zu of %zu cases right\n", passed.size(), cases.size());

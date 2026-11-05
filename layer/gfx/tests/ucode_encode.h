@@ -164,6 +164,24 @@ inline void PushVertexFetch(std::vector<uint32_t>& words, uint32_t dest, uint32_
   words.push_back(w2);
 }
 
+// vfetch_full with every field a format test sets: signed components, integer (unnormalized) numbers, an
+// exponent adjustment, a destination swizzle (3 bits a component: 0-3, 4 zero, 5 one, 7 keep).
+struct VertexFetch {
+  uint32_t dest = 1, src = 0, fetch_constant = 0;
+  rex::graphics::xenos::VertexFormat format = rex::graphics::xenos::VertexFormat::k_32_32_32_32_FLOAT;
+  uint32_t stride_dwords = 4;
+  int32_t offset_dwords = 0, exp_adjust = 0;
+  bool is_signed = false, is_integer = false;
+  uint32_t dest_swizzle = 0 | 1 << 3 | 2 << 6 | 3 << 9;
+};
+inline void PushVertexFetch(std::vector<uint32_t>& words, const VertexFetch& f) {
+  words.push_back(uint32_t(uc::FetchOpcode::kVertexFetch) | (f.src & 0x3F) << 5 | (f.dest & 0x3F) << 12 | 1u << 19 |
+                  (f.fetch_constant / 3) << 20 | (f.fetch_constant % 3) << 25);
+  words.push_back((f.dest_swizzle & 0xFFF) | (f.is_signed ? 1u : 0u) << 12 | (f.is_integer ? 1u : 0u) << 13 |
+                  (uint32_t(f.format) & 0x3F) << 16 | (uint32_t(f.exp_adjust) & 0x3F) << 24);
+  words.push_back((f.stride_dwords & 0xFF) | (uint32_t(f.offset_dwords) & 0x7FFFFF) << 8);
+}
+
 // alloc <type>; exece (one ALU instruction at slot 1); export = max(src, src).
 inline std::vector<uint32_t> BuildSingleExportShader(uc::AllocType alloc, uint32_t export_reg, AluOperand src) {
   std::vector<uint32_t> words;
