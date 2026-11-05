@@ -53,6 +53,8 @@ void ObjectManager::SetKernelHeap(uint32_t begin, uint32_t size) {
 }
 
 void ObjectManager::Reset() {
+  std::lock_guard lock(lifetime_mutex_);
+  std::lock_guard dispatcher(dispatcher_mutex_);
   entries_.clear();
   references_.clear();
   timers_.clear();
@@ -102,8 +104,11 @@ void ObjectManager::Release(uint32_t object) {
   for (const Entry& e : entries_) {
     if (e.open && e.object == object) return;
   }
-  timers_.erase(std::remove(timers_.begin(), timers_.end(), object), timers_.end());
-  timer_apcs_.erase(object);
+  {
+    std::lock_guard dispatcher(dispatcher_mutex_);
+    timers_.erase(std::remove(timers_.begin(), timers_.end(), object), timers_.end());
+    timer_apcs_.erase(object);
+  }
   uint32_t at = object, size = owned->second;
   freeable_.erase(owned);
   for (auto hook : free_hooks_) hook(object);
@@ -132,6 +137,7 @@ void ObjectManager::Release(uint32_t object) {
 }
 
 uint32_t ObjectManager::AddHandle(uint32_t object, const std::string& name) {
+  std::lock_guard lock(lifetime_mutex_);
   for (size_t i = 0; i < entries_.size(); ++i) {
     if (!entries_[i].open) {
       entries_[i] = {object, true, name};
@@ -144,6 +150,7 @@ uint32_t ObjectManager::AddHandle(uint32_t object, const std::string& name) {
 
 ObjectManager::Entry* ObjectManager::Find(uint32_t handle) {
   if (handle < handle_base_ || (handle & 3)) return nullptr;
+  std::lock_guard lock(lifetime_mutex_);
   const uint32_t index = (handle - handle_base_) / 4;
   if (index >= entries_.size() || !entries_[index].open) return nullptr;
   return &entries_[index];
@@ -151,6 +158,7 @@ ObjectManager::Entry* ObjectManager::Find(uint32_t handle) {
 
 ObjectManager::Entry* ObjectManager::FindByName(const std::string& name) {
   if (name.empty()) return nullptr;
+  std::lock_guard lock(lifetime_mutex_);
   for (Entry& e : entries_) {
     if (e.open && e.name == name) return &e;
   }
@@ -180,18 +188,22 @@ void ObjectManager::InitializeEvent(Guest g, uint32_t event, uint32_t type, uint
 }
 
 uint32_t ObjectManager::SetEvent(Guest g, uint32_t event) {
+  std::lock_guard lock(dispatcher_mutex_);
   const uint32_t previous = g.Load32(event + kHeaderSignalState);
-  g.Store32(event + kHeaderSignalState, 1);  // a waiter would consume a synchronization event here
+  g.Store32(event + kHeaderSignalState, 1);  // a waiter consumes a synchronization event
+  dispatcher_changed_.notify_all();
   return previous;
 }
 
 uint32_t ObjectManager::ResetEvent(Guest g, uint32_t event) {
+  std::lock_guard lock(dispatcher_mutex_);
   const uint32_t previous = g.Load32(event + kHeaderSignalState);
   g.Store32(event + kHeaderSignalState, 0);
   return previous;
 }
 
 uint32_t ObjectManager::PulseEvent(Guest g, uint32_t event) {
+  std::lock_guard lock(dispatcher_mutex_);
   const uint32_t previous = g.Load32(event + kHeaderSignalState);
   g.Store32(event + kHeaderSignalState, 0);  // waiters are released, the event ends unsignalled
   return previous;
@@ -203,6 +215,7 @@ void ObjectManager::InitializeSemaphore(Guest g, uint32_t semaphore, uint32_t co
 }
 
 uint32_t ObjectManager::ReleaseSemaphore(Guest g, uint32_t semaphore, uint32_t adjustment, uint32_t& status) {
+  std::lock_guard lock(dispatcher_mutex_);
   const uint32_t previous = g.Load32(semaphore + kHeaderSignalState);
   const uint32_t limit = g.Load32(semaphore + kSemaphoreLimit);
   if (adjustment > limit || previous > limit - adjustment) {
@@ -210,6 +223,7 @@ uint32_t ObjectManager::ReleaseSemaphore(Guest g, uint32_t semaphore, uint32_t a
     return previous;
   }
   g.Store32(semaphore + kHeaderSignalState, previous + adjustment);
+  dispatcher_changed_.notify_all();
   status = kStatusSuccess;
   return previous;
 }
@@ -227,6 +241,7 @@ void ObjectManager::InitializeTimer(Guest g, uint32_t timer, uint32_t type, uint
 }
 
 uint32_t ObjectManager::SetTimer(Guest g, uint32_t timer, int64_t due_time, uint32_t period_ms) {
+  std::lock_guard lock(dispatcher_mutex_);
   const bool was_armed = std::find(timers_.begin(), timers_.end(), timer) != timers_.end();
   const uint64_t due = due_time < 0 ? SystemTime() + uint64_t(-due_time) : uint64_t(due_time);
   g.Store64(timer + kTimerDueTime, due);
@@ -238,6 +253,7 @@ uint32_t ObjectManager::SetTimer(Guest g, uint32_t timer, int64_t due_time, uint
 }
 
 uint32_t ObjectManager::CancelTimer(Guest g, uint32_t timer) {
+  std::lock_guard lock(dispatcher_mutex_);
   auto it = std::find(timers_.begin(), timers_.end(), timer);
   if (it == timers_.end()) return 0;
   timers_.erase(it);
@@ -246,6 +262,7 @@ uint32_t ObjectManager::CancelTimer(Guest g, uint32_t timer) {
 }
 
 void ObjectManager::Poll(Guest g) {
+  std::lock_guard lock(dispatcher_mutex_);
   const uint64_t now = SystemTime();
   for (size_t i = 0; i < timers_.size();) {
     const uint32_t timer = timers_[i];
@@ -279,6 +296,7 @@ void ObjectManager::InitializeMutant(Guest g, uint32_t mutant, uint32_t owner_th
 }
 
 uint32_t ObjectManager::ReleaseMutant(Guest g, uint32_t mutant, uint32_t current_thread, uint32_t& status) {
+  std::lock_guard lock(dispatcher_mutex_);
   const uint32_t previous = g.Load32(mutant + kHeaderSignalState);
   if (g.Load32(mutant + kMutantOwner) != current_thread) {
     status = kStatusMutantNotOwned;
@@ -287,6 +305,7 @@ uint32_t ObjectManager::ReleaseMutant(Guest g, uint32_t mutant, uint32_t current
   const uint32_t state = previous + 1;
   g.Store32(mutant + kHeaderSignalState, state);
   if (state == 1) g.Store32(mutant + kMutantOwner, 0);
+  dispatcher_changed_.notify_all();
   status = kStatusSuccess;
   return previous;
 }
@@ -418,10 +437,13 @@ uint32_t ObjectManager::NtSetTimerEx(Guest g, uint32_t handle, uint32_t due_time
   const Entry* e = Find(handle);
   if (!e) return kStatusInvalidHandle;
   if (!due_time_ptr) return kStatusInvalidParameter;
-  if (routine) {
-    timer_apcs_[e->object] = {thread, routine, context};
-  } else {
-    timer_apcs_.erase(e->object);
+  {
+    std::lock_guard lock(dispatcher_mutex_);
+    if (routine) {
+      timer_apcs_[e->object] = {thread, routine, context};
+    } else {
+      timer_apcs_.erase(e->object);
+    }
   }
   const uint32_t previous = SetTimer(g, e->object, int64_t(g.Load64(due_time_ptr)), period_ms);
   if (previous_out) g.Store32(previous_out, previous);
@@ -445,27 +467,34 @@ void ObjectManager::AddFreeHook(void (*hook)(uint32_t object)) {
 }
 
 void ObjectManager::Closed(uint32_t object) {
-  for (const Entry& e : entries_) {
-    if (e.open && e.object == object) return;
+  {
+    std::lock_guard lock(lifetime_mutex_);
+    for (const Entry& e : entries_) {
+      if (e.open && e.object == object) return;
+    }
   }
   for (auto hook : close_hooks_) hook(object);
 }
 
 uint32_t ObjectManager::Close(uint32_t handle) {
-  Entry* e = Find(handle);
-  if (!e) return kStatusInvalidHandle;
-  e->open = false;
-  const uint32_t object = e->object;
+  uint32_t object;
+  {
+    std::lock_guard lock(lifetime_mutex_);  // one of two threads closing a handle closes it
+    Entry* e = Find(handle);
+    if (!e) return kStatusInvalidHandle;
+    e->open = false;
+    object = e->object;
+  }
   Closed(object);
   Release(object);
   return kStatusSuccess;
 }
 
 uint32_t ObjectManager::Duplicate(Guest g, uint32_t handle, uint32_t new_handle_out, uint32_t options) {
+  std::lock_guard lock(lifetime_mutex_);
   Entry* e = Find(handle);
   if (!e) return kStatusInvalidHandle;
   const uint32_t duplicate = AddHandle(e->object, e->name);
-  e = Find(handle);  // the table may have grown
   if (new_handle_out) g.Store32(new_handle_out, duplicate);
   if (options == 1 && e) e->open = false;  // DUPLICATE_CLOSE_SOURCE (the duplicate keeps the object open)
   return kStatusSuccess;
@@ -511,6 +540,7 @@ uint32_t ObjectManager::OpenObjectByPointer(Guest g, uint32_t object, uint32_t h
   constexpr uint32_t kStatusUnsuccessful = 0xC0000001;
   std::string name;
   bool known = false;
+  std::lock_guard lock(lifetime_mutex_);
   for (const Entry& e : entries_) {
     if (e.open && e.object == object) {
       known = true;
@@ -607,13 +637,14 @@ uint32_t ObjectManager::WaitForObjects(Guest g, uint32_t count, const uint32_t* 
     for (uint32_t i = 0; i < count; ++i) TrySatisfy(g, objects[i], thread);
     return 0;
   };
+  std::unique_lock lock(dispatcher_mutex_);
   int32_t taken = attempt();
   if (taken >= 0) return uint32_t(taken);
   const auto limit = WaitLimit(timeout);
   if (limit.count() == 0) return kStatusTimeout;
   const auto start = std::chrono::steady_clock::now();
   for (;;) {
-    std::this_thread::yield();
+    dispatcher_changed_.wait_for(lock, std::chrono::milliseconds(1));
     taken = attempt();
     if (taken >= 0) return uint32_t(taken);
     if (alertable && Threads().PendingApcs(thread)) return kStatusUserApc;
@@ -636,13 +667,14 @@ uint32_t ObjectManager::WaitForHandles(Guest g, uint32_t count, uint32_t handles
 }
 
 uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread, const int64_t* timeout, bool alertable) {
+  std::unique_lock lock(dispatcher_mutex_);
   Poll(g);
   if (TrySatisfy(g, object, thread)) return kStatusSuccess;
   const auto limit = WaitLimit(timeout);
   if (limit.count() == 0) return kStatusTimeout;
   const auto start = std::chrono::steady_clock::now();
   for (;;) {
-    std::this_thread::yield();
+    dispatcher_changed_.wait_for(lock, std::chrono::milliseconds(1));
     Poll(g);
     if (TrySatisfy(g, object, thread)) return kStatusSuccess;
     if (alertable && Threads().PendingApcs(thread)) return kStatusUserApc;

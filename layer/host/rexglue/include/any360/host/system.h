@@ -89,9 +89,10 @@ void CallBothExport(SysGroup group, const char* name, GuestFunction any360, Gues
 uint64_t DispatchGuest(uint32_t address, uint32_t stack_top, uint32_t pcr, const uint64_t* args, uint32_t count, void* user);
 
 // Points the executable's variable imports any360::sys provides at its variables, for the groups switched on: each
-// variable belongs to the group whose calls read it (the object types to the objects, whose Ob* calls compare
-// against them; the time stamp bundle to the threads; the loaded image's names to XAM; the console's constants to the
-// stateless calls). Call after EnableSystemGroup; returns the number pointed.
+// variable belongs to the group whose calls read it (the time stamp bundle to the threads, the loaded image's names to
+// XAM, the console's constants to the stateless calls). The object types stay the runtime's: its Ob* calls compare
+// against them for the handles it keeps, any360::sys's never look. Call after EnableSystemGroup; returns the number
+// pointed.
 uint32_t BindVariables();
 // The group a variable belongs to; false for a name the binding does not provide.
 bool VariableGroup(const char* name, SysGroup& group);

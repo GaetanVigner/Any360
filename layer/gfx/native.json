@@ -231,6 +231,7 @@
   "render features:point sprites",
   "render features:centroid interpolation",
   "render features:immediate indices",
+  "render features:memexport",
   "texture formats:k_6_5_5",
   "texture formats:k_16_EXPAND",
   "texture formats:k_16_16_EXPAND",

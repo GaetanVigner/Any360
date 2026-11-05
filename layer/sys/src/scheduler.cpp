@@ -346,6 +346,7 @@ void Scheduler::Run(Thread* t) {
   g.Store8(t->kthread + kTerminated, 1);
   g.Store8(t->kthread + kThreadState, 4);  // terminated
   g.Store32(t->kthread + kHeaderSignalState, 1);
+  Objects().SignalChanged();
   t->done = true;
   // Last: with no handle left this frees the thread, `t` included.
   Objects().DereferenceObject(g, t->kthread);

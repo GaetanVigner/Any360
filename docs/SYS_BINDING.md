@@ -122,6 +122,30 @@ What the game found that the tests could not:
 Still the runtime's while only the files are switched: an I/O APC (queued on any360::sys's scheduler, which runs no
 runtime thread) and a completion port the runtime made; Crackdown uses neither.
 
+## Step 3: done (the objects in Crackdown)
+
+With `stateless,files,objects` Crackdown loads and plays (2026-11-05, 143-157 FPS in play, no hang in four minutes);
+its object calls are the events (`Nt*Event`, `Ke*Event`), semaphores, mutants, `NtDuplicateObject`, `NtClose`,
+`ObDereferenceObject` and the single and multiple waits.
+
+What the game found that the tests could not:
+
+- The dispatcher was not thread-safe: a `ReleaseSemaphore` and a wait taking the count on two threads each read the
+  count and wrote it back, so a release could be lost and a loading worker waited for ever (an intermittent hang in
+  the loading screen). The handle table had the same flaw (two threads creating events could get one slot, and a
+  growing table moved the entries `Find` had handed out). `ObjectManager` now keeps a dispatcher lock, as the kernel
+  does, for signal states, timers and the waits' tests, and the handle table (a deque) under `lifetime_mutex_`.
+  The waits sleep on a condition the routines signal instead of spinning, and look again every millisecond for states
+  written elsewhere (the title's inline `stw 0,4(r3)` resets, the other kernel). `sys_object_tests` has a
+  four-producer, four-consumer test.
+- The object type variables (`ExEventObjectType`...) stay the runtime's: a title only hands them back to
+  `ObReferenceObjectByHandle` and its kin, which any360::sys ignores and the runtime checks for the handles it keeps.
+- A redirection the title sets up on the runtime's VFS (Crackdown's HD button glyphs over `game:\Local\<language>`)
+  needs the same mount on any360::sys's file system once the files are switched, and `FileSystem::Canonical` joined
+  `game:\Local` into a double separator, which hid a mount over a folder of a device.
+- `trace_every_call` reports, besides any360::sys's calls, each runtime call handed one of any360::sys's handles, and
+  the start of every wait (a wait that never returns shows).
+
 ## Who does what
 
 - `layer/sys` (the calls, `SetHandleBase`, `AdoptCurrentThread`, the page map import): the sys session.

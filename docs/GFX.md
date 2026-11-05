@@ -234,6 +234,29 @@ From the Crackdown runs (each one cost a debugging session there):
    VGT_GRP_2D_COPY_RECT_V0-V3 / FILL_RECT / LINE / TRI likewise; PA_SC_LINE_CNTL's Bresenham control is "set for 2D
    lines"). Their vertex counts, what V0-V3 differ in and whether they bypass clipping and the viewport transform
    are not documented there; no known title draws them.
+   Memory export (2026-11-05): the translator already wrote memexport streams into the guest memory buffer, but
+   nothing brought them back. The renderer now gathers each draw's streams as the reference does (the stream
+   constants the shaders' `mad eA` read, checked by their marks; a range of count x element size each), submits the
+   batch with them and waits: guest memory in video memory (the default) copies the ranges into a readback buffer
+   and then into guest memory, a mirror copies them back, imported memory has them in place; the texture cache
+   forgets those ranges. Rare and synchronous by design (later draws and the title's code may read the results).
+   The ranges are uploaded to the GPU's copy first: they come back whole, and elements the shaders did not write
+   would otherwise undo what the title wrote there since (a scenario caught it).
+   Without rasterization (EDRAM mode other than 4 or 5, no target bound, an empty scissor: the "compute shaders"
+   titles make of point draws covering nothing, which the renderer skipped), a memory-exporting vertex shader runs
+   as a compute dispatch of the translator's memexport translation (kMemExportCompute, one invocation a guest
+   vertex, auto or DMA indices), outside the render passes; the reference's Vulkan backend draws it with
+   rasterizer discard instead and never used that translation, whose position export crashed the translator
+   (fixed, see the translator's NOTICE.md). Not yet: immediate indices, vertex shader textures there. Scenarios: a
+   vertex shader writing a 32_32_32_32_FLOAT element per point, drawn, without rasterization, and from DMA indices
+   {2, 3} (elements 0 and 1 untouched); the video memory path (mirror and imported paths untested).
+   PM4 packets left (COND_EXEC, MEM_WRITE_CNTR, EVENT_WRITE_CFL, DRAW_INDX_2_BIN, SET_STATE, SET_BIN_BASE_OFFSET,
+   IM_STORE): no layout to implement them from. The reference names them only (xenos.h, one-line purposes);
+   Mesa's adreno_pm4.xml gives the same one-liners, and its CP_COND_EXEC layout (64-bit addresses: bool, timestamp,
+   active timestamp, dword count) is the later Adreno one; no a2xx or Xenos code emits or parses any of them. None
+   is in the Crackdown capture (its packets: SET_BIN_MASK/SELECT, DRAW_INDX, DRAW_INDX_2, SET_CONSTANT,
+   LOAD_ALU_CONSTANT, IM_LOAD, IM_LOAD_IMMEDIATE, EVENT_WRITE, _EXT, _ZPD, _SHD, WAIT_REG_MEM, INDIRECT_BUFFER,
+   INVALIDATE_STATE, INTERRUPT, XE_SWAP, REG_RMW). The command processor skips them by their length, as before.
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured
