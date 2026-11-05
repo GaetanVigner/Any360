@@ -54,5 +54,8 @@ int32_t Vscwprintf(Guest g, uint32_t format, ArgumentSource& args);
 // DbgPrint: formats, hands the text to the debug sink when one is set, returns STATUS_SUCCESS.
 uint32_t DbgPrint(Guest g, uint32_t format, ArgumentSource& args);
 void SetDebugPrintSink(void (*sink)(const char* text, size_t length));
+// OutputDebugStringA / W, RtlOutputDebugString, RtlDebugTrace: the guest string (wide characters past ASCII as '?')
+// handed to the debug sink as it is.
+void DebugOutput(Guest g, uint32_t string, bool wide);
 
 }  // namespace any360::sys

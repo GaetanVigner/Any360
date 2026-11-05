@@ -389,4 +389,21 @@ uint32_t MemoryManager::XamFree(Guest, uint32_t address) {
   return kStatusSuccess;
 }
 
+uint32_t MemoryManager::IsAddressValid(uint32_t address) const {
+  RegionInfo info;
+  return QueryRegion(address, info) && info.state == kMemCommit && info.protect && !(info.protect & 0x01 /* PAGE_NOACCESS */) ? 1 : 0;
+}
+
+uint32_t MemoryManager::CreateKernelStack(Guest g, uint32_t size) {
+  const uint32_t aligned = (size + 0xFFF) & ~0xFFFu;
+  const uint32_t base = AllocatePages(g, aligned);
+  return base ? base + aligned : 0;
+}
+
+uint32_t MemoryManager::DeleteKernelStack(uint32_t stack_end) {
+  if (!QueryAllocationSize(stack_end)) return 0xC0000001;
+  FreePages(stack_end);
+  return 0;
+}
+
 }  // namespace any360::sys

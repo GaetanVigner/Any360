@@ -19,7 +19,7 @@ implementation a title keeps.
 A system call is *native* on the progress page only when it is in `kExports` and one of the oracles proves it equal
 to the reference, or, where the reference is not faithful, when the scenario tests prove the documented NT semantics.
 
-## What is verified (548 system calls)
+## What is verified (565 system calls)
 
 - **Rtl**: memory (`RtlCompareMemory`, `RtlCompareMemoryUlong`, `RtlFillMemoryUlong`), strings (`RtlUpperChar`,
   `RtlLowerChar`, `RtlCompareString`, `RtlCompareStringN`, `RtlInitAnsiString`, `RtlInitUnicodeString`,
@@ -188,6 +188,15 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XMACreateContext` / `XMAReleaseContext` (64-byte contexts in physical memory, announced to an `XmaBackend`). Guest
   callbacks run through `Scheduler::CreateContext` and `Scheduler::Dispatch`. The renderer, the audio output and the
   XMA decoder are the backends still to write.
+- **Kernel odds and ends** (`sys_runtime_tests` and `sys_io_tests` against the reference where comparable,
+  `sys_object_tests`): `RtlCopyString`, `RtlCopyUnicodeString` (lengths as character counts, as the reference),
+  `RtlFreeUnicodeString`, `RtlImageNtHeader`; the debug strings (`OutputDebugStringA` / `W`, `RtlOutputDebugString`,
+  `RtlDebugTrace`) and `XamDbgPrint` (DbgPrint's form) to the debug sink; `MmIsAddressValid` (committed and
+  accessible), `MmCreateKernelStack` / `MmDeleteKernelStack` (pages of the 4 KB heap; the top returned, the bottom
+  taken back), `KeSuspendThread`, `KeSetCurrentStackPointers` (the thread's and PCR's stack fields, then r1);
+  `NtOpenSymbolicLinkObject` / `NtQuerySymbolicLinkObject` on the file system's links; `NetDll_XNetSetSystemLinkPort`
+  (1, as the reference). Not yet: `KeGetImagePageTableEntry` and the encrypted memory calls, which need the
+  executable's image range and the 0x8C000000 heap as the layer's memory knows them.
 - **The rest of XAM's content calls** (scenario tests): `XamContentCreate` (`XamContentCreateEx` without the
   sizes), `XamContentCreateInternal` / `XamContentDeleteInternal` (the system's forms, user 0xFE, on an
   XCONTENT_AGGREGATE_DATA), `XamContentAggregateCreateEnumerator` (the hard drive's packages of a type, one per call,

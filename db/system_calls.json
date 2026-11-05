@@ -1242,7 +1242,7 @@
 "kind":"function",
 "group":"net",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -3654,7 +3654,7 @@
 "kind":"function",
 "group":"strings",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -10392,7 +10392,7 @@
 "kind":"function",
 "group":"debug",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -10500,7 +10500,7 @@
 "kind":"function",
 "group":"debug",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -10812,7 +10812,7 @@
 "kind":"function",
 "group":"debug",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -11016,7 +11016,7 @@
 "kind":"function",
 "group":"debug",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -27013,7 +27013,7 @@
 "kind":"function",
 "group":"threading",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -27193,7 +27193,7 @@
 "kind":"function",
 "group":"threading",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -27466,7 +27466,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -27478,7 +27478,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -27530,7 +27530,7 @@
 "kind":"function",
 "group":"memory",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -28061,7 +28061,7 @@
 "kind":"function",
 "group":"io",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -28241,7 +28241,7 @@
 "kind":"function",
 "group":"io",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -29068,7 +29068,7 @@
 "kind":"function",
 "group":"rtl",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -29080,7 +29080,7 @@
 "kind":"function",
 "group":"rtl",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -29174,7 +29174,7 @@
 "kind":"function",
 "group":"rtl",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -30986,7 +30986,7 @@
 "kind":"function",
 "group":"rtl",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false

@@ -26,6 +26,9 @@
 
 #define REFERENCE(name) extern "C" void __imp__##name(PPCContext& ctx, uint8_t* base);
 REFERENCE(KeGetCurrentProcessType)
+REFERENCE(RtlCopyString)
+REFERENCE(RtlCopyUnicodeString)
+REFERENCE(RtlImageNtHeader)
 REFERENCE(ExAcquireReadWriteLockExclusive)
 REFERENCE(ExTryToAcquireReadWriteLockExclusive)
 REFERENCE(ExAcquireReadWriteLockShared)
@@ -129,6 +132,16 @@ void SList(Scene& s, std::mt19937& rng) {
   s.Word(s.a + 4, n << 16 | (rng() & 0xFFFF));
 }
 
+// Two counted strings at block A (destination, source) with buffers in block B.
+void CountedStrings(Scene& s, PPCContext& ctx, std::mt19937& rng) {
+  s.Word(s.a, uint32_t(rng() % 40) << 16 | uint32_t(rng() % 40));
+  s.Word(s.a + 4, s.b + 0x1000);
+  s.Word(s.a + 8, uint32_t(rng() % 40) << 16 | uint32_t(rng() % 40));
+  s.Word(s.a + 12, s.b + 0x2000);
+  ctx.r3.u64 = s.a;
+  ctx.r4.u64 = rng() % 6 ? s.a + 8 : 0;
+}
+
 const Case kCases[] = {
     CASE(KeGetCurrentProcessType, [](Scene& s, PPCContext&, std::mt19937& rng) {
       s.Word(s.pcr + 0x150, rng() % 2);
@@ -201,6 +214,21 @@ const Case kCases[] = {
       ctx.r4.u64 = uint32_t(rng());
     }),
     CASE(KeQueryPerformanceFrequency, nullptr),
+    // Counted strings at block A whose buffers are in block B (the reference translates them through its runtime's
+    // memory); a null source sometimes.
+    CASE(RtlCopyString, [](Scene& s, PPCContext& ctx, std::mt19937& rng) { CountedStrings(s, ctx, rng); }),
+    CASE(RtlCopyUnicodeString, [](Scene& s, PPCContext& ctx, std::mt19937& rng) { CountedStrings(s, ctx, rng); }),
+    CASE(RtlImageNtHeader, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      // An image at block B: "MZ", e_lfanew (little-endian) to a "PE" signature, each spoiled now and then.
+      if (rng() % 4) {
+        s.base[s.b] = 'M';
+        s.base[s.b + 1] = 'Z';
+      }
+      const uint32_t lfanew = 0x40 + 8 * (rng() % 64);
+      std::memcpy(s.base + s.b + 0x3C, &lfanew, 4);
+      if (rng() % 4) std::memcpy(s.base + s.b + lfanew, "PE\0\0", 4);
+      ctx.r3.u64 = rng() % 8 ? s.b : 0;
+    }),
     // Read/write locks in the states where no call waits: counts at block A, the spin lock free. (Initializing one is
     // checked in sys_object_tests: the reference keeps its host objects in the event's and semaphore's headers.)
     CASE(ExTryToAcquireReadWriteLockExclusive, [](Scene& s, PPCContext&, std::mt19937& rng) { RwLock(s, rng); }),

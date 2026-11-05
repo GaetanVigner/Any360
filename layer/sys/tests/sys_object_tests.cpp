@@ -817,6 +817,55 @@ void CompletionPortTests() {
   fs::remove_all(root, ec);
 }
 
+// Kernel odds and ends: symbolic link objects, address checks, kernel stacks, a thread's stack pointers.
+void KernelOddsTests() {
+  Fresh();
+  Memory().Reset({{0x40000, 0x40000, 0x1000, false}});
+  const uint32_t out = kScratch + 0x200, attrs = kScratch + 0x100, name = kScratch + 0x120, text = kScratch + 0x140;
+  auto path = [&](const char* p) {
+    g.Store32(attrs, 0);
+    g.Store32(attrs + 4, name);
+    g.Store16(name, uint16_t(std::strlen(p)));
+    g.Store32(name + 4, text);
+    std::memcpy(g.host(text), p, std::strlen(p) + 1);
+    return attrs;
+  };
+  // Symbolic links opened by name and queried for their target, truncated to the buffer.
+  Files().Reset();
+  Files().Link("\\??\\D:", "\\Device\\Cdrom0");
+  CHECK(Files().OpenSymbolicLink(g, out, path("\\??\\D:")) == 0);
+  const uint32_t link = g.Load32(out), target = kScratch + 0x300;
+  g.Store16(target, 0);
+  g.Store16(target + 2, 64);
+  g.Store32(target + 4, kScratch + 0x340);
+  CHECK(Files().QuerySymbolicLink(g, link, target) == 0 && g.Load16(target) == 14 &&
+        std::string(reinterpret_cast<const char*>(g.host(kScratch + 0x340)), 14) == "\\Device\\Cdrom0");
+  g.Store16(target + 2, 4);
+  CHECK(Files().QuerySymbolicLink(g, link, target) == 0 && g.Load16(target) == 4);
+  CHECK(Files().OpenSymbolicLink(g, out, path("Z:")) == kStatusNoSuchFile);
+  CHECK(Objects().Close(link) == 0 && Files().QuerySymbolicLink(g, link, target) == kStatusNoSuchFile);
+  Files().Reset();
+  // Kernel stacks: committed pages, valid addresses, the top returned and the bottom taken back.
+  const uint32_t top = Memory().CreateKernelStack(g, 0x3000);
+  CHECK(top != 0 && Memory().IsAddressValid(top - 4) == 1 && Memory().IsAddressValid(top - 0x3000) == 1);
+  CHECK(Memory().DeleteKernelStack(top - 0x3000) == 0 && Memory().IsAddressValid(top - 4) == 0);
+  CHECK(Memory().DeleteKernelStack(top - 0x3000) == 0xC0000001u && Memory().IsAddressValid(0x1000) == 0);
+  // A string whose buffer the kernel allocated, freed and emptied.
+  const uint32_t unicode = kScratch + 0x410, buffer = Memory().AllocatePages(g, 0x100);
+  g.Store16(unicode, 6);
+  g.Store16(unicode + 2, 0x100);
+  g.Store32(unicode + 4, buffer);
+  CHECK(buffer != 0 && Memory().IsAddressValid(buffer) == 1);
+  RtlFreeUnicodeString(g, unicode);
+  CHECK(g.Load32(unicode) == 0 && g.Load32(unicode + 4) == 0 && Memory().IsAddressValid(buffer) == 0);
+  // A thread's stack fields replaced.
+  const uint32_t pcr = kScratch + 0x800, kthread = kScratch + 0xC00;
+  Threads().SetCurrentStackPointers(g, pcr, kthread, 0x50000, 0x58000, 0x54000);
+  CHECK(g.Load32(kthread + 0xD0) == 0x50000 && g.Load32(kthread + 0x5C) == 0x58000 && g.Load32(kthread + 0x60) == 0x54000);
+  CHECK(g.Load32(pcr + 0x70) == 0x58000 && g.Load32(pcr + 0x74) == 0x54000);
+  Memory().Reset();
+}
+
 void FileTests() {
   Fresh();
   namespace fs = std::filesystem;
@@ -1897,6 +1946,7 @@ int main() {
   SonicTests();
   XamTests();
   FileTests();
+  KernelOddsTests();
   CompletionPortTests();
   LocaleTests();
   VideoTests();

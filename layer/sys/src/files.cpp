@@ -123,6 +123,7 @@ FileSystem::FileSystem() { Reset(); }
 void FileSystem::Reset() {
   mounts_.clear();
   links_.clear();
+  link_objects_.clear();
   open_.clear();
   Objects().AddCloseHook([](uint32_t object) { Files().OnClose(object); });
 }
@@ -666,6 +667,7 @@ uint32_t FileSystem::Flush(Guest g, uint32_t handle, uint32_t io_status) {
 }
 
 void FileSystem::OnClose(uint32_t object) {
+  link_objects_.erase(object);
   auto it = open_.find(object);
   if (it == open_.end()) return;
   if (it->second.delete_on_close) {
@@ -920,6 +922,34 @@ void FileSystem::Completed(Guest g, uint32_t handle, uint32_t apc_context, uint3
   Open* file = Find(handle);
   if (!file || !file->port) return;
   Objects().QueueCompletion(file->port, file->key, apc_context, status, io_status ? g.Load32(io_status + 4) : 0);
+}
+
+uint32_t FileSystem::OpenSymbolicLink(Guest g, uint32_t handle_out, uint32_t attributes) {
+  if (!attributes) return kStatusInvalidParameter;
+  std::string name = PathOf(g, attributes);
+  for (char c : name) {
+    if (uint8_t(c) < 32 || uint8_t(c) >= 127) return kStatusObjectNameInvalid;
+  }
+  name = Lower(name);
+  if (name.rfind("\\??\\", 0) == 0) name = name.substr(4);
+  const auto it = links_.find(name);
+  if (it == links_.end()) return kStatusNoSuchFile;
+  const uint32_t object = Objects().AllocateObject(16, true);
+  if (!object) return 0xC0000017;
+  std::memset(g.host(object), 0, 16);
+  link_objects_[object] = it->second;
+  const uint32_t handle = Objects().OpenHandle(object);
+  if (handle_out) g.Store32(handle_out, handle);
+  return kStatusSuccess;
+}
+
+uint32_t FileSystem::QuerySymbolicLink(Guest g, uint32_t handle, uint32_t target) {
+  const auto it = link_objects_.find(Objects().Lookup(handle));
+  if (it == link_objects_.end()) return kStatusNoSuchFile;
+  const uint16_t length = uint16_t(std::min<size_t>(g.Load16(target + 2), it->second.size()));
+  if (length) std::memcpy(g.host(g.Load32(target + 4)), it->second.data(), length);
+  g.Store16(target, length);
+  return kStatusSuccess;
 }
 
 }  // namespace any360::sys

@@ -419,6 +419,16 @@ uint32_t Scheduler::Yield(Guest g, uint32_t pcr) {
   return kStatusSuccess;
 }
 
+void Scheduler::SetCurrentStackPointers(Guest g, uint32_t pcr, uint32_t kthread, uint32_t alloc_base, uint32_t base,
+                                        uint32_t limit) {
+  constexpr uint32_t kStackAllocBase = 0xD0;
+  g.Store32(kthread + kStackAllocBase, alloc_base);
+  g.Store32(kthread + kStackBase, base);
+  g.Store32(kthread + kStackLimit, limit);
+  g.Store32(pcr + kPcrStackBase, base);
+  g.Store32(pcr + kPcrStackEnd, limit);
+}
+
 uint32_t Scheduler::Resume(Guest g, uint32_t kthread, uint32_t* previous_count) {
   Thread* t = Find(kthread);
   if (!t) return kStatusInvalidHandle;

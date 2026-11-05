@@ -52,6 +52,10 @@ class Scheduler {
   uint32_t Delay(Guest g, uint32_t pcr, int64_t interval, bool alertable = false);
   uint32_t Yield(Guest g, uint32_t pcr);
 
+  // KeSetCurrentStackPointers: the thread's stack allocation base, base and limit, and the PCR's stack base and end,
+  // replaced (a title switching stacks); the caller sets r1.
+  void SetCurrentStackPointers(Guest g, uint32_t pcr, uint32_t kthread, uint32_t alloc_base, uint32_t base, uint32_t limit);
+
   // On a KTHREAD. Resume and Suspend return STATUS_SUCCESS and the previous suspend count.
   uint32_t Resume(Guest g, uint32_t kthread, uint32_t* previous_count);
   uint32_t Suspend(Guest g, uint32_t kthread, uint32_t* previous_count);

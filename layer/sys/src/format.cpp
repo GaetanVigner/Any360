@@ -399,4 +399,15 @@ uint32_t DbgPrint(Guest g, uint32_t format, ArgumentSource& args) {
 
 void SetDebugPrintSink(void (*sink)(const char*, size_t)) { g_debug_sink = sink; }
 
+void DebugOutput(Guest g, uint32_t string, bool wide) {
+  if (!string || !g_debug_sink) return;
+  std::string text;
+  if (wide) {
+    for (uint32_t at = string; uint16_t c = g.Load16(at); at += 2) text += c < 0x80 ? char(c) : '?';
+  } else {
+    text = reinterpret_cast<const char*>(g.host(string));
+  }
+  g_debug_sink(text.data(), text.size());
+}
+
 }  // namespace any360::sys

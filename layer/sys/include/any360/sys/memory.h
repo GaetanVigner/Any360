@@ -61,6 +61,12 @@ class MemoryManager {
   uint32_t XamFree(Guest g, uint32_t address);
 
   bool QueryRegion(uint32_t address, RegionInfo& info) const;
+  // MmIsAddressValid: whether the page is committed and accessible.
+  uint32_t IsAddressValid(uint32_t address) const;
+  // MmCreateKernelStack / MmDeleteKernelStack: committed read-write pages from the 4 KB heap; Create returns the stack's
+  // top (its base address plus the size), Delete takes the low end back (STATUS_UNSUCCESSFUL for anything else).
+  uint32_t CreateKernelStack(Guest g, uint32_t size);
+  uint32_t DeleteKernelStack(uint32_t stack_end);
   // Committed, zeroed read-write pages from the 4 KB heap (the kernel pool, strings the kernel allocates); 0 when full.
   uint32_t AllocatePages(Guest g, uint32_t size);
   void FreePages(uint32_t address);

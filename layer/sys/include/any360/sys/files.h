@@ -49,6 +49,10 @@ class FileSystem {
   // ObCreateSymbolicLink / ObDeleteSymbolicLink: ANSI_STRING pointers.
   uint32_t CreateSymbolicLink(Guest g, uint32_t link, uint32_t target);
   uint32_t DeleteSymbolicLink(Guest g, uint32_t link);
+  // NtOpenSymbolicLinkObject: a handle on a link by its name ("\??\D:" or "D:"); STATUS_NO_SUCH_FILE when there is
+  // none. NtQuerySymbolicLinkObject: its target into an ANSI_STRING, up to the buffer's maximum length.
+  uint32_t OpenSymbolicLink(Guest g, uint32_t handle_out, uint32_t attributes);
+  uint32_t QuerySymbolicLink(Guest g, uint32_t handle, uint32_t target);
 
   uint32_t CreateFile(Guest g, uint32_t handle_out, uint32_t access, uint32_t attributes, uint32_t io_status, uint32_t file_attributes,
                       uint32_t disposition, uint32_t options);
@@ -137,6 +141,7 @@ class FileSystem {
   std::vector<Mounted> mounts_;
   std::map<std::string, std::string> links_;  // lower-case DOS name -> device path
   std::map<uint32_t, Open> open_;             // object -> open file
+  std::map<uint32_t, std::string> link_objects_;  // object -> the target of the link it was opened on
 };
 
 FileSystem& Files();

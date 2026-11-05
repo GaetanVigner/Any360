@@ -3,6 +3,7 @@
 #include "any360/sys/memory.h"
 
 #include <algorithm>
+#include <bit>
 #include <cstring>
 
 namespace any360::sys {
@@ -276,5 +277,44 @@ uint32_t RtlUpcaseUnicodeChar(uint32_t c) {
 void RtlCaptureContext() {}
 void RtlUnwind() {}
 void __C_specific_handler() {}
+
+void RtlCopyString(Guest g, uint32_t destination, uint32_t source) {
+  if (!source) {
+    g.Store16(destination, 0);
+    return;
+  }
+  const uint16_t length = std::min(g.Load16(destination + 2), g.Load16(source));
+  if (length) std::memmove(g.host(g.Load32(destination + 4)), g.host(g.Load32(source + 4)), length);
+  g.Store16(destination, length);
+}
+
+void RtlCopyUnicodeString(Guest g, uint32_t destination, uint32_t source) {
+  if (!source) {
+    g.Store16(destination, 0);
+    return;
+  }
+  // As the reference: the lengths are taken as character counts and twice as many bytes copied.
+  const uint16_t length = std::min(g.Load16(destination + 2), g.Load16(source));
+  if (length) std::memmove(g.host(g.Load32(destination + 4)), g.host(g.Load32(source + 4)), size_t(length) * 2);
+  g.Store16(destination, length);
+}
+
+void RtlFreeUnicodeString(Guest g, uint32_t string) {
+  if (const uint32_t buffer = g.Load32(string + 4)) Memory().FreePages(buffer);
+  g.Store16(string, 0);
+  g.Store16(string + 2, 0);
+  g.Store32(string + 4, 0);
+}
+
+uint32_t RtlImageNtHeader(Guest g, uint32_t module) {
+  if (!module) return 0;
+  if (g.Load8(module) != 'M' || g.Load8(module + 1) != 'Z') return 0;
+  int32_t lfanew;
+  std::memcpy(&lfanew, g.host(module + 0x3C), 4);  // little-endian on the console too: a PE field
+  if constexpr (std::endian::native == std::endian::big) lfanew = int32_t(std::byteswap(uint32_t(lfanew)));
+  const uint32_t header = module + uint32_t(lfanew);
+  const uint8_t pe[4] = {'P', 'E', 0, 0};
+  return std::memcmp(g.host(header), pe, 4) == 0 ? header : 0;
+}
 
 }  // namespace any360::sys

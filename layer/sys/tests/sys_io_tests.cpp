@@ -76,6 +76,11 @@ REFERENCE(__C_specific_handler)
 REFERENCE(VdShutdownEngines)
 REFERENCE(VdSetSystemCommandBufferGpuIdentifierAddress)
 REFERENCE(XeCryptSha)
+REFERENCE(OutputDebugStringA)
+REFERENCE(OutputDebugStringW)
+REFERENCE(RtlOutputDebugString)
+REFERENCE(RtlDebugTrace)
+REFERENCE(NetDll_XNetSetSystemLinkPort)
 REFERENCE(XamUserGetMembershipTier)
 REFERENCE(XamUserContentRestrictionGetFlags)
 REFERENCE(XamUserContentRestrictionGetRating)
@@ -624,6 +629,23 @@ const Case kCases[] = {
       ctx.r5.u64 = rng() % 32;
     }),
     CASE(XeCryptBnDwLePkcs1Verify, nullptr),
+    CASE(OutputDebugStringA, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      s.Text(kString1, rng, rng() % 40);
+      ctx.r3.u64 = kString1;
+    }),
+    CASE(OutputDebugStringW, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      s.WideText(kWide, rng, rng() % 40);
+      ctx.r3.u64 = kWide;
+    }),
+    CASE(RtlOutputDebugString, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      s.Text(kString1, rng, rng() % 40);
+      ctx.r3.u64 = kString1;
+    }),
+    CASE(RtlDebugTrace, [](Scene& s, PPCContext& ctx, std::mt19937& rng) {
+      s.Text(kString1, rng, rng() % 40);
+      ctx.r3.u64 = kString1;
+    }),
+    CASE(NetDll_XNetSetSystemLinkPort, [](Scene&, PPCContext& ctx, std::mt19937& rng) { ctx.r4.u64 = rng() % 0x10000; }),
     // XAM's user answers that follow the reference (users 0 to 5, outputs in block B).
     CASE(XamUserGetMembershipTier, [](Scene&, PPCContext& ctx, std::mt19937& rng) { ctx.r3.u64 = rng() % 6; }),
     CASE(XamUserContentRestrictionGetFlags, [](Scene&, PPCContext& ctx, std::mt19937& rng) {
@@ -862,6 +884,7 @@ int main(int argc, char** argv) {
     }
     if (ok) std::printf("%s: %d trials equal\n", c.name, trials);
     else ++failures;
+    std::fflush(stdout);  // a case that crashes leaves the ones before it on screen
   }
   std::printf("sys_io_tests: %zu system calls, %d failing\n", sizeof(kCases) / sizeof(kCases[0]), failures);
   return failures ? 1 : 0;

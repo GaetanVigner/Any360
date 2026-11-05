@@ -941,6 +941,37 @@ ANY360_SYS_EXPORT(XamContentAggregateCreateEnumerator) {
   ctx.r3.u64 = XamState().ContentAggregateCreateEnumerator({base}, ctx.r4.u32, ctx.r5.u32, ctx.r7.u32);
 }
 
+// Batch 26: kernel odds and ends (sys_io_tests against the reference where comparable, sys_object_tests).
+ANY360_SYS_EXPORT(RtlCopyString) { RtlCopyString({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(RtlCopyUnicodeString) { RtlCopyUnicodeString({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(RtlFreeUnicodeString) { RtlFreeUnicodeString({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(RtlImageNtHeader) { ctx.r3.u64 = RtlImageNtHeader({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(OutputDebugStringA) { DebugOutput({base}, ctx.r3.u32, false); }
+ANY360_SYS_EXPORT(OutputDebugStringW) { DebugOutput({base}, ctx.r3.u32, true); }
+ANY360_SYS_EXPORT(RtlOutputDebugString) { DebugOutput({base}, ctx.r3.u32, false); }
+ANY360_SYS_EXPORT(RtlDebugTrace) { DebugOutput({base}, ctx.r3.u32, false); }
+ANY360_SYS_EXPORT(XamDbgPrint) {
+  // DbgPrint's arguments and answer.
+  RegisterArguments args(ctx, base, 1);
+  ctx.r3.u64 = DbgPrint({base}, ctx.r3.u32, args);
+}
+ANY360_SYS_EXPORT(MmIsAddressValid) { ctx.r3.u64 = Memory().IsAddressValid(ctx.r3.u32); }
+ANY360_SYS_EXPORT(MmCreateKernelStack) { ctx.r3.u64 = Memory().CreateKernelStack({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(MmDeleteKernelStack) { ctx.r3.u64 = Memory().DeleteKernelStack(ctx.r4.u32); }  // (stack base, stack end)
+ANY360_SYS_EXPORT(KeSuspendThread) {
+  uint32_t previous = 0;
+  Threads().Suspend({base}, ctx.r3.u32, &previous);
+  ctx.r3.u64 = previous;
+}
+ANY360_SYS_EXPORT(KeSetCurrentStackPointers) {
+  // (stack pointer, thread, allocation base, base, limit): the caller continues on the new stack.
+  Threads().SetCurrentStackPointers({base}, ctx.r13.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+  ctx.r1.u64 = ctx.r3.u32;
+}
+ANY360_SYS_EXPORT(NtOpenSymbolicLinkObject) { ctx.r3.u64 = Files().OpenSymbolicLink({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(NtQuerySymbolicLinkObject) { ctx.r3.u64 = Files().QuerySymbolicLink({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_XNetSetSystemLinkPort) { ctx.r3.u64 = 1; }  // as the reference: no system link offline anyway
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1324,6 +1355,23 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ExAllocatePool),
     ANY360_SYS_ENTRY(ExFreePool),
     ANY360_SYS_ENTRY(XeCryptSha),
+    ANY360_SYS_ENTRY(RtlCopyString),
+    ANY360_SYS_ENTRY(RtlCopyUnicodeString),
+    ANY360_SYS_ENTRY(RtlFreeUnicodeString),
+    ANY360_SYS_ENTRY(RtlImageNtHeader),
+    ANY360_SYS_ENTRY(OutputDebugStringA),
+    ANY360_SYS_ENTRY(OutputDebugStringW),
+    ANY360_SYS_ENTRY(RtlOutputDebugString),
+    ANY360_SYS_ENTRY(RtlDebugTrace),
+    ANY360_SYS_ENTRY(XamDbgPrint),
+    ANY360_SYS_ENTRY(MmIsAddressValid),
+    ANY360_SYS_ENTRY(MmCreateKernelStack),
+    ANY360_SYS_ENTRY(MmDeleteKernelStack),
+    ANY360_SYS_ENTRY(KeSuspendThread),
+    ANY360_SYS_ENTRY(KeSetCurrentStackPointers),
+    ANY360_SYS_ENTRY(NtOpenSymbolicLinkObject),
+    ANY360_SYS_ENTRY(NtQuerySymbolicLinkObject),
+    ANY360_SYS_ENTRY(NetDll_XNetSetSystemLinkPort),
     ANY360_SYS_ENTRY(XamContentCreate),
     ANY360_SYS_ENTRY(XamContentCreateInternal),
     ANY360_SYS_ENTRY(XamContentDeleteInternal),

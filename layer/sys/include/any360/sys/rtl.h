@@ -32,6 +32,13 @@ uint32_t RtlCompareString(Guest g, uint32_t string1, uint32_t string2, uint32_t 
 uint32_t RtlCompareStringN(Guest g, uint32_t string1, uint32_t length1, uint32_t string2, uint32_t length2,
                            uint32_t case_insensitive);
 void RtlInitAnsiString(Guest g, uint32_t destination, uint32_t source);
+// The source string's characters into the destination's buffer, up to its maximum length; a null source empties it.
+void RtlCopyString(Guest g, uint32_t destination, uint32_t source);
+void RtlCopyUnicodeString(Guest g, uint32_t destination, uint32_t source);
+// The buffer of a string the kernel allocated back to the pool; the string emptied.
+void RtlFreeUnicodeString(Guest g, uint32_t string);
+// The PE header of an image in memory (an "MZ" header whose e_lfanew, little-endian, leads to "PE\0\0"), else 0.
+uint32_t RtlImageNtHeader(Guest g, uint32_t module);
 void RtlInitUnicodeString(Guest g, uint32_t destination, uint32_t source);
 uint32_t RtlMultiByteToUnicodeN(Guest g, uint32_t destination, uint32_t destination_length, uint32_t written,
                                 uint32_t source, uint32_t source_length);
