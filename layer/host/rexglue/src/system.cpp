@@ -6,6 +6,7 @@
 #include <rex/system/function_dispatcher.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/user_module.h>
+#include <rex/system/xam/user_profile.h>
 #include <rex/system/xevent.h>
 #include <rex/system/xex_module.h>
 #include <rex/system/xmemory.h>
@@ -16,6 +17,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <unordered_set>
@@ -42,6 +44,10 @@ uint8_t* g_base = nullptr;
 std::function<void(const std::string&)> g_log;
 std::atomic<bool> g_trace{false};
 std::atomic<bool> g_trace_every{false};
+std::atomic<uint32_t> g_trace_groups{~0u};  // the groups every-call tracing reports (a bit per SysGroup)
+// Calls kept on the runtime though their group is switched (set once by StartSystem, before the title's calls).
+std::unordered_set<std::string> g_runtime_calls;
+std::atomic<bool> g_any_runtime_calls{false};
 std::mutex g_traced_mutex;
 std::unordered_set<const char*> g_traced;  // the names' literals, one each
 
@@ -76,9 +82,14 @@ bool SystemGroupEnabled(SysGroup group) { return group < SysGroup::kCount && g_e
 
 bool Enabled(SysGroup group) { return g_enabled[size_t(group)].load(std::memory_order_relaxed); }
 
+bool TraceEvery(SysGroup group) {
+  return g_trace_every.load(std::memory_order_relaxed) &&
+         (g_trace_groups.load(std::memory_order_relaxed) >> uint32_t(group) & 1);
+}
+
 void RunAny360(SysGroup group, const char* name, GuestFunction any360, PPCContext& ctx, uint8_t* base) {
   if (g_trace.load(std::memory_order_relaxed)) Trace(group, name);
-  if (!g_trace_every.load(std::memory_order_relaxed)) {
+  if (!TraceEvery(group)) {
     any360(ctx, base);
     return;
   }
@@ -118,7 +129,8 @@ void RunReference(const char* name, GuestFunction reference, PPCContext& ctx, ui
 
 void CallSystemExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, PPCContext& ctx,
                       uint8_t* base) {
-  if (!reference || (g_started.load(std::memory_order_relaxed) && g_enabled[size_t(group)].load(std::memory_order_relaxed))) {
+  const bool kept = reference && g_any_runtime_calls.load(std::memory_order_relaxed) && g_runtime_calls.count(name);
+  if (!reference || (!kept && g_started.load(std::memory_order_relaxed) && g_enabled[size_t(group)].load(std::memory_order_relaxed))) {
     RunAny360(group, name, any360, ctx, base);
   } else {
     RunReference(name, reference, ctx, base);
@@ -144,7 +156,7 @@ void CallPathExport(SysGroup group, const char* name, GuestFunction any360, Gues
                ? any360::sys::Files().KnowsAttributes(any360::sys::Guest{base}, path)
                : any360::sys::Files().Knows(reinterpret_cast<const char*>(any360::sys::Guest{base}.host(path)));
   }
-  if (ours && g_trace_every.load(std::memory_order_relaxed) && g_log && path) {
+  if (ours && TraceEvery(group) && g_log && path) {
     std::string text;
     if (kind == PathKind::kAttributes) {
       // OBJECT_ATTRIBUTES: root, then the name (an ANSI_STRING: length, maximum, buffer).
@@ -302,6 +314,11 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
   g_log = options.log;
   g_trace = options.trace_calls;
   g_trace_every = options.trace_every_call;
+  uint32_t traced = 0;
+  for (SysGroup group : options.trace_groups) traced |= 1u << uint32_t(group);
+  g_trace_groups = options.trace_groups.empty() ? ~0u : traced;
+  g_runtime_calls = std::unordered_set<std::string>(options.runtime_calls.begin(), options.runtime_calls.end());
+  g_any_runtime_calls = !g_runtime_calls.empty();
   const uint32_t heap = kernel->memory()->SystemHeapAlloc(options.kernel_heap_size, 0x10000);
   if (!heap) {
     error = "no room in the runtime's system heap for the kernel heap";
@@ -350,6 +367,22 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
     const std::string& path = module->path();
     const size_t slash = path.find_last_of("\\/:");
     title.module_name = slash == std::string::npos ? path : path.substr(slash + 1);
+    if (auto* profile = kernel->user_profile()) {
+      title.xuid = profile->xuid();
+      title.gamertag = profile->name();
+    }
+    if (!options.user_data_root.empty()) {
+      char xuid[17], title_id[9];
+      std::snprintf(xuid, sizeof xuid, "%016llX", static_cast<unsigned long long>(title.xuid));
+      std::snprintf(title_id, sizeof title_id, "%08X", title.title_id);
+      const std::filesystem::path root(options.user_data_root);
+      title.content_root = root / xuid / title_id;
+      title.profile_root = root / title_id / "profile" / title.gamertag;
+      if (g_log) {
+        g_log("XAM content at " + title.content_root.string() + ", profile settings at " + title.profile_root.string() +
+              ", profile " + title.gamertag);
+      }
+    }
   }
   return true;
 }

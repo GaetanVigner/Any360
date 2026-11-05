@@ -10,14 +10,18 @@
 
 namespace any360::sys {
 
+bool HostFileTimes(const std::filesystem::path& path, uint64_t& creation, uint64_t& access, uint64_t& write);  // host_times.cpp
+
 namespace {
 
 constexpr uint32_t kStatusSuccess = 0,
-                   kStatusAccessDenied = 0xC0000022;
+                   kStatusAccessDenied = 0xC0000022, kStatusPending = 0x103;
 constexpr uint32_t kGenericRead = 0x80000000, kGenericWrite = 0x40000000, kGenericAll = 0x10000000, kFileWriteData = 0x2,
                    kFileAppendData = 0x4, kDelete = 0x10000;
 constexpr uint32_t kRootDosDevices = 0xFFFFFFFD;
-constexpr uint64_t kCluster = 0x4000;
+// A file's allocation size: its size rounded up to the 512-byte sector, as the reference answers (a title may check a
+// save's allocation against its size: Crackdown calls a save rounded to 16 KB corrupt).
+constexpr uint64_t kCluster = 0x200;
 
 std::string Lower(std::string s) {
   for (char& c : s) c = char(c >= 'A' && c <= 'Z' ? c + 32 : c);
@@ -80,7 +84,9 @@ uint64_t FileTime(const std::filesystem::path& path) {
 }
 
 struct Stat {
-  uint64_t time = 0, size = 0, allocation = 0;
+  // Creation, last access, last write and change times (the change time is the last write's): titles may compare
+  // them (Crackdown calls a save corrupt when its last access is not the host's).
+  uint64_t times[4] = {}, size = 0, allocation = 0;
   uint32_t attributes = 0;
 };
 
@@ -88,7 +94,11 @@ Stat StatOf(const std::filesystem::path& path) {
   Stat s;
   std::error_code error;
   const bool directory = std::filesystem::is_directory(path, error);
-  s.time = FileTime(path);
+  uint64_t creation = 0, access = 0, write = 0;
+  if (!HostFileTimes(path, creation, access, write)) creation = access = write = FileTime(path);
+  s.times[0] = creation;
+  s.times[1] = access;
+  s.times[2] = s.times[3] = write;
   s.size = directory ? 0 : uint64_t(std::filesystem::file_size(path, error));
   if (error) s.size = 0;
   s.allocation = (s.size + kCluster - 1) / kCluster * kCluster;
@@ -98,7 +108,7 @@ Stat StatOf(const std::filesystem::path& path) {
 
 // The 56-byte FILE_NETWORK_OPEN_INFORMATION.
 void StoreNetworkOpen(Guest g, uint32_t info, const Stat& s) {
-  for (uint32_t i = 0; i < 4; ++i) g.Store64(info + 8 * i, s.time);
+  for (uint32_t i = 0; i < 4; ++i) g.Store64(info + 8 * i, s.times[i]);
   g.Store64(info + 32, s.allocation);
   g.Store64(info + 40, s.size);
   g.Store32(info + 48, s.attributes);
@@ -310,10 +320,16 @@ uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access
   file.mount = mount;
   file.directory = std::filesystem::is_directory(host, error);
   file.delete_on_close = (options & kFileDeleteOnClose) != 0;
+  file.asynchronous = (options & kFileSynchronousIo) == 0;
   open_[object] = file;
   handle_out = Objects().OpenHandle(object);
   action_out = action;
   return kStatusSuccess;
+}
+
+uint32_t FileSystem::Pending(uint32_t handle, uint32_t status) {
+  const Open* file = Find(handle);
+  return file && file->asynchronous && status == kStatusSuccess ? kStatusPending : status;
 }
 
 uint32_t FileSystem::Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length,
@@ -353,7 +369,7 @@ uint32_t FileSystem::Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t
 
 uint32_t FileSystem::ReadFile(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length,
                               uint32_t offset_ptr) {
-  return Transfer(g, handle, event, io_status, buffer, length, offset_ptr, false);
+  return Pending(handle, Transfer(g, handle, event, io_status, buffer, length, offset_ptr, false));
 }
 
 uint32_t FileSystem::ReadFileScatter(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t segments, uint32_t length,
@@ -410,7 +426,7 @@ uint32_t FileSystem::WriteFileGather(Guest g, uint32_t handle, uint32_t event, u
 
 uint32_t FileSystem::WriteFile(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length,
                                uint32_t offset_ptr) {
-  return Transfer(g, handle, event, io_status, buffer, length, offset_ptr, true);
+  return Pending(handle, Transfer(g, handle, event, io_status, buffer, length, offset_ptr, true));
 }
 
 uint32_t FileSystem::DeviceControl(Guest g, uint32_t code, uint32_t output, uint32_t output_length, uint32_t& written) {
@@ -467,7 +483,7 @@ uint32_t FileSystem::QueryInformation(Guest g, uint32_t handle, uint32_t io_stat
   const Stat s = StatOf(file->host);
   switch (info_class) {
     case kFileBasicInformation:
-      for (uint32_t i = 0; i < 4; ++i) g.Store64(info + 8 * i, s.time);
+      for (uint32_t i = 0; i < 4; ++i) g.Store64(info + 8 * i, s.times[i]);
       g.Store32(info + 32, s.attributes);
       break;
     case kFileStandardInformation:
@@ -616,7 +632,7 @@ uint32_t FileSystem::QueryDirectory(Guest g, uint32_t handle, uint32_t io_status
   std::memset(g.host(info), 0, 0x40);
   g.Store32(info + 0, 0);
   g.Store32(info + 4, uint32_t(file->next));
-  for (uint32_t i = 0; i < 4; ++i) g.Store64(info + 8 + 8 * i, s.time);
+  for (uint32_t i = 0; i < 4; ++i) g.Store64(info + 8 + 8 * i, s.times[i]);
   g.Store64(info + 0x28, s.size);
   g.Store64(info + 0x30, s.allocation);
   g.Store32(info + 0x38, s.attributes);
@@ -713,7 +729,7 @@ void StoreFileTime(Guest g, uint32_t at, uint64_t time) {
 // The attributes, three times and size of WIN32_FILE_ATTRIBUTE_DATA, the start of WIN32_FIND_DATA too (36 bytes).
 void StoreAttributeData(Guest g, uint32_t at, const Stat& s) {
   g.Store32(at, s.attributes);
-  for (uint32_t i = 0; i < 3; ++i) StoreFileTime(g, at + 4 + 8 * i, s.time);
+  for (uint32_t i = 0; i < 3; ++i) StoreFileTime(g, at + 4 + 8 * i, s.times[i]);
   g.Store32(at + 28, uint32_t(s.size >> 32));
   g.Store32(at + 32, uint32_t(s.size));
 }

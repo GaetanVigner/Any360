@@ -168,8 +168,9 @@ What the game found that the tests could not:
 
 ## Step 5: done (the memory in Crackdown)
 
-With `stateless,files,objects,threads,memory` Crackdown loads and plays (2026-11-05, ~230 FPS at 2,000-2,600 draws in a
-one-minute run; not yet compared on the same route against step 4). Its memory calls: `NtAllocateVirtualMemory`,
+With `stateless,files,objects,threads,memory` Crackdown loads and plays (2026-11-05). On the city route at 2,000-2,600
+draws, the same route driven twice: 259 FPS with the memory group, the level of steps 3 and 4 (the run without it, 215,
+shared the machine with a build): the shared allocator costs nothing measurable. Its memory calls: `NtAllocateVirtualMemory`,
 `NtFreeVirtualMemory`, `NtQueryVirtualMemory`, `MmAllocatePhysicalMemoryEx`, `MmFreePhysicalMemory`,
 `MmGetPhysicalAddress`, `Mm{Query,Set}AddressProtect`, `MmQueryStatistics`, `XamAlloc`, `XamFree`.
 
@@ -187,6 +188,34 @@ What the game found that the tests could not:
 - A thread with no handle left frees itself as it ends; since step 4 it runs on an `XHostThread`, not on the
   `std::thread` the scheduler keeps, so `OnFree` took it for another thread and joined the thread waiting for it,
   holding the objects' lock: the loading screen hung. The scheduler records the thread that really runs `Run`.
+
+## Step 6: done (XAM in Crackdown)
+
+With `stateless,files,objects,threads,memory,xam` Crackdown loads the save the runtime wrote, keeps its options and
+saves (2026-11-05). Its XAM calls: the messages and notifications, `XamTaskSchedule`, the network startup, the user
+(`XamUserGetSigninState`, `GetName`, `GetXUID`, `Read/WriteProfileSettings`, the achievement enumerator), the content
+(`XamShowDeviceSelectorUI`, `XamContentCreateEnumerator`, `XamEnumerate`, `XamContentCreateEx`, `XamContentClose`).
+
+Either side reads what the other wrote: `SystemOptions::user_data_root` (the runtime's user data folder) gives
+any360::sys's XAM the runtime's signed-in profile (its XUID and name) and its layout: content packages under
+`<root>/<XUID>/<title id>/<type>/<name>`, each with its XCONTENT_DATA in `Headers/<type>/<name>.header` (the display name
+the title gave), binary profile settings (a title's options) as `<root>/<title id>/profile/<profile>/<setting id>`.
+`XamEnumerate` now goes by handle (an enumerator the runtime made stays the runtime's).
+
+What the game found that the tests could not (the save was "corrupt" until the last):
+
+- A profile setting written shorter than its maximum reads back with the length written, not the maximum.
+- Through an overlapped structure with no disposition pointer, `XamContentCreateEx`'s disposition is the length.
+- A file's allocation size is its size rounded to a 512-byte sector (not 16 KB), and its four times are the host's
+  (creation, last access, last write).
+- The one that mattered: a file opened without `FILE_SYNCHRONOUS_IO_*` (kernel32's `FILE_FLAG_OVERLAPPED`) answers
+  `NtReadFile` / `NtWriteFile` with `STATUS_PENDING`, the transfer done and its I/O status block holding the success, as
+  the reference does. Answered `STATUS_SUCCESS`, kernel32's `ReadFile` returns TRUE, and Crackdown's save loader then
+  meets an overlapped structure whose length has been cleared: `GetOverlappedResult` reads 0 bytes, the save is
+  "corrupt". The completion APC and port packet carry the I/O status block's success.
+- Found by bisecting: `SystemOptions::runtime_calls` leaves named calls to the runtime though their group is on (the
+  calls sharing their state with them must go along), and `trace_groups` narrows `trace_every_call` to some groups so a
+  long run's log keeps the calls looked into.
 
 ## Who does what
 

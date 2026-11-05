@@ -24,7 +24,8 @@ constexpr uint32_t kStatusNoMoreFiles = 0x80000006, kStatusInvalidInfoClass = 0x
 // Creation dispositions, the action reported in the I/O status block, create options, attributes.
 enum Disposition : uint32_t { kSupersede = 0, kOpen = 1, kCreate = 2, kOpenIf = 3, kOverwrite = 4, kOverwriteIf = 5 };
 enum Action : uint32_t { kSuperseded = 0, kOpened = 1, kCreated = 2, kOverwritten = 3, kExists = 4, kDoesNotExist = 5 };
-constexpr uint32_t kFileDirectoryFile = 0x1, kFileNonDirectoryFile = 0x40, kFileDeleteOnClose = 0x1000;
+constexpr uint32_t kFileDirectoryFile = 0x1, kFileNonDirectoryFile = 0x40, kFileDeleteOnClose = 0x1000,
+                   kFileSynchronousIo = 0x30;  // FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT
 constexpr uint32_t kAttributeReadOnly = 0x1, kAttributeDirectory = 0x10, kAttributeNormal = 0x80;
 // Information classes.
 enum FileInfo : uint32_t {
@@ -125,6 +126,10 @@ class FileSystem {
     std::string guest;
     const Mounted* mount = nullptr;
     bool directory = false, delete_on_close = false;
+    // Opened without FILE_SYNCHRONOUS_IO_*: NtReadFile / NtWriteFile complete at once but answer STATUS_PENDING, as
+    // the reference does, so kernel32's overlapped ReadFile takes its pending path (Crackdown's save loader reads
+    // the length back through GetOverlappedResult only on that path).
+    bool asynchronous = false;
     uint32_t port = 0, key = 0;  // the completion port (referenced) and the key of its packets
     uint64_t position = 0;
     std::vector<std::string> listing;  // directory entries, sorted, for the current search
@@ -132,6 +137,8 @@ class FileSystem {
     size_t next = 0;
   };
   Open* Find(uint32_t handle);
+  // A transfer's answer to NtReadFile / NtWriteFile: STATUS_PENDING for a completed one on an asynchronous file.
+  uint32_t Pending(uint32_t handle, uint32_t status);
   const Mounted* MountOf(const std::string& device_path, std::string& rest) const;
   std::string Canonical(const std::string& guest_path) const;
   std::string PathOf(Guest g, uint32_t attributes) const;

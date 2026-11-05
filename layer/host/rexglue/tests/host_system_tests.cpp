@@ -159,7 +159,8 @@ void Entry(PPCContext& ctx, uint8_t* base) {
   call.r9.u64 = 4;
   call.r10.u64 = 0;
   __imp__NtReadFile(call, base);
-  CHECK(call.r3.u32 == 0 && Load32(base, io + 4) == 4 && std::memcmp(base + buffer, "1234", 4) == 0);
+  // The file is not synchronous (no FILE_SYNCHRONOUS_IO_*): done at once, answered STATUS_PENDING.
+  CHECK(call.r3.u32 == 0x103 && Load32(base, io) == 0 && Load32(base, io + 4) == 4 && std::memcmp(base + buffer, "1234", 4) == 0);
   auto runtime_event = REX_KERNEL_OBJECTS()->LookupObject<rex::system::XEvent>(event);
   uint64_t no_wait = 0;
   CHECK(runtime_event && runtime_event->Wait(0, 0, 0, &no_wait) == 0);  // signaled (not STATUS_TIMEOUT)
@@ -179,7 +180,7 @@ void Entry(PPCContext& ctx, uint8_t* base) {
   call.r9.u64 = 4;
   call.r10.u64 = at;
   __imp__NtReadFile(call, base);
-  CHECK(call.r3.u32 == 0 && std::memcmp(g_runtime->memory()->TranslateVirtual<uint8_t*>(physical), "1234", 4) == 0);
+  CHECK(call.r3.u32 == 0x103 && std::memcmp(g_runtime->memory()->TranslateVirtual<uint8_t*>(physical), "1234", 4) == 0);
   call.r3.u64 = file;
   __imp__CloseHandle(call, base);
   CHECK(call.r3.u32 == 1 && any360::sys::Objects().Lookup(file) == 0);

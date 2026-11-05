@@ -851,7 +851,8 @@ void CompletionPortTests() {
   std::memcpy(g.host(buf), "abcdef", 6);
   const uint32_t status = Files().WriteFile(g, file, 0, iosb, buf, 6, 0);
   Files().Completed(g, file, 0xABC, status, iosb);
-  CHECK(status == 0 && Objects().RemoveIoCompletion(g, port, out, out + 4, iosb, &zero) == 0 && g.Load32(out) == 0x77 &&
+  // An asynchronous file (no FILE_SYNCHRONOUS_IO_*) answers STATUS_PENDING, the transfer done.
+  CHECK(status == 0x103 && Objects().RemoveIoCompletion(g, port, out, out + 4, iosb, &zero) == 0 && g.Load32(out) == 0x77 &&
         g.Load32(out + 4) == 0xABC && g.Load32(iosb + 4) == 6);
   // The port lives on while the file holds it, after its own handle is closed.
   CHECK(Objects().Close(port) == 0);
@@ -949,7 +950,7 @@ void FileTests() {
   };
   const uint32_t kRead = 0x80000000, kWrite = 0x40000000;
   // Open through a link, case-insensitively; read sequentially, then at an offset, then past the end.
-  CHECK(Files().CreateFile(g, out, kRead, path("game:\\media\\data.bin"), iosb, 0, kOpen, kFileNonDirectoryFile) == 0);
+  CHECK(Files().CreateFile(g, out, kRead, path("game:\\media\\data.bin"), iosb, 0, kOpen, kFileNonDirectoryFile | kFileSynchronousIo) == 0);
   CHECK(g.Load32(iosb) == 0 && g.Load32(iosb + 4) == kOpened);
   const uint32_t f = g.Load32(out);
   CHECK(f >= kHandleBase);
@@ -959,6 +960,16 @@ void FileTests() {
   CHECK(Files().ReadFile(g, f, 0, iosb, buf, 100, out + 8) == 0 && g.Load32(iosb + 4) == 4 && std::memcmp(g.host(buf), "CDEF", 4) == 0);
   CHECK(Files().ReadFile(g, f, 0, iosb, buf, 4, 0) == kStatusEndOfFile && g.Load32(iosb) == kStatusEndOfFile && g.Load32(iosb + 4) == 0);
   CHECK(Files().ReadFile(g, f, 0, iosb, buf, 0, 0) == 0);  // zero length at the end succeeds
+  // Opened without FILE_SYNCHRONOUS_IO_* (kernel32's FILE_FLAG_OVERLAPPED), a read is done at once but answers
+  // STATUS_PENDING, its I/O status block holding the success, as the reference does.
+  CHECK(Files().CreateFile(g, out + 16, kRead, path("game:\\media\\data.bin"), iosb, 0, kOpen, 0) == 0);
+  g.Store64(out + 8, 4);
+  CHECK(Files().ReadFile(g, g.Load32(out + 16), 0, iosb, buf, 4, out + 8) == 0x103 && g.Load32(iosb) == 0 &&
+        g.Load32(iosb + 4) == 4 && std::memcmp(g.host(buf), "4567", 4) == 0);
+  CHECK(Files().ReadFile(g, g.Load32(out + 16), 0, iosb, buf, 4, out + 8) == 0x103);
+  g.Store64(out + 8, 100);
+  CHECK(Files().ReadFile(g, g.Load32(out + 16), 0, iosb, buf, 4, out + 8) == kStatusEndOfFile);  // a failure is not pending
+  CHECK(Objects().Close(g.Load32(out + 16)) == 0);
   // The read signals an event; an unknown event handle is refused.
   const uint32_t ev = out + 16;
   CHECK(Objects().CreateEvent(g, ev, 0, 0, 0) == 0);
@@ -968,6 +979,7 @@ void FileTests() {
   // Information classes.
   CHECK(Files().QueryInformation(g, f, iosb, info, 56, kFileNetworkOpenInformation) == 0 && g.Load64(info + 40) == 16 &&
         g.Load32(info + 48) == kAttributeNormal && g.Load64(info + 24) > 0);
+  CHECK(g.Load64(info + 32) == 0x200);  // the allocation: the size rounded up to a 512-byte sector
   CHECK(Files().QueryInformation(g, f, iosb, info, 8, kFilePositionInformation) == 0 && g.Load64(info) == 2);
   CHECK(Files().QueryInformation(g, f, iosb, info, 24, kFileStandardInformation) == 0 && g.Load64(info + 8) == 16 && g.Load8(info + 21) == 0);
   CHECK(Files().QueryInformation(g, f, iosb, info, 4, kFileNetworkOpenInformation) == kStatusInfoLengthMismatch);
@@ -993,7 +1005,7 @@ void FileTests() {
   CHECK(Files().QueryFullAttributes(g, path("game:\\media\\x.y"), info) == kStatusObjectNameNotFound);
   CHECK(Files().CreateFile(g, out, kRead, path("game:\\media\\levels"), iosb, 0, kOpen, kFileDirectoryFile) == 0);
   const uint32_t d = g.Load32(out);
-  CHECK(Files().CreateFile(g, out, kRead, path("one.lvl", d), iosb, 0, kOpen, 0) == 0);
+  CHECK(Files().CreateFile(g, out, kRead, path("one.lvl", d), iosb, 0, kOpen, kFileSynchronousIo) == 0);
   CHECK(Files().ReadFile(g, g.Load32(out), 0, iosb, buf, 8, 0) == 0 && g.Load32(iosb + 4) == 1 && g.Load8(buf) == '1');
   CHECK(Objects().Close(g.Load32(out)) == 0);
   // Directory enumeration: one entry per call, sorted, with a pattern; restart; the end.
@@ -1022,7 +1034,7 @@ void FileTests() {
   g.Store32(pat + 0x24, pat + 0x28);
   std::memcpy(g.host(pat + 0x28), "\\Device\\Harddisk0\\Partition1", 29);
   CHECK(Files().CreateSymbolicLink(g, pat, pat + 0x20) == 0);
-  CHECK(Files().CreateFile(g, out, kRead | kWrite, path("hdd:\\save.dat"), iosb, 0, kOpenIf, 0) == 0 && g.Load32(iosb + 4) == kCreated);
+  CHECK(Files().CreateFile(g, out, kRead | kWrite, path("hdd:\\save.dat"), iosb, 0, kOpenIf, kFileSynchronousIo) == 0 && g.Load32(iosb + 4) == kCreated);
   const uint32_t w = g.Load32(out);
   std::memcpy(g.host(buf), "hello world", 11);
   CHECK(Files().WriteFile(g, w, 0, iosb, buf, 11, 0) == 0 && g.Load32(iosb + 4) == 11);
@@ -1141,6 +1153,8 @@ void XamTests() {
   g.Store32(data, 1);
   g.Store32(data + 4, 1);  // saved game
   std::memcpy(g.host(data + 0x108), "slot0", 5);
+  g.Store16(data + 8, 'M');  // the display name, "My" (UTF-16BE)
+  g.Store16(data + 10, 'y');
   std::memcpy(g.host(str), "save", 5);
   CHECK(XamState().ContentCreate(g, 0, str, data, 3, out, out + 4, 0) == kErrorFileNotFound);  // open existing: none yet
   CHECK(XamState().ContentCreate(g, 0, str, data, 4, out, out + 4, 0) == 0 && g.Load32(out) == 1);  // open always: created
@@ -1156,13 +1170,20 @@ void XamTests() {
   CHECK(XamState().ContentClose(g, str, 0) == 0 && XamState().ContentClose(g, str, 0) == kErrorFileNotFound);
   CHECK(Files().CreateFile(g, out + 8, 0x80000000, attrs, 0, 0, kOpen, 0) == kStatusObjectPathNotFound);
   CHECK(XamState().ContentCreate(g, 0, str, data, 1, out, 0, 0) == kErrorAlreadyExists);  // create new: exists
+  // Through an overlapped structure with no disposition pointer, the disposition is the length (opened: 2).
+  CHECK(XamState().ContentCreate(g, 0, str, data, 3, 0, 0, ov) == kErrorIoPending && g.Load32(ov) == 0 && g.Load32(ov + 4) == 2);
+  CHECK(XamState().ContentClose(g, str, 0) == 0);
   CHECK(XamState().ContentCreateEnumerator(g, 0, 0, 1, 0, 1, out + 12, out + 16) == 0 && g.Load32(out + 12) == 0x134);
   CHECK(XamState().Enumerate(g, g.Load32(out + 16), 0, buf, 0x134, out + 20, 0) == 0 && g.Load32(out + 20) == 1 &&
         std::memcmp(g.host(buf + 0x108), "slot0", 5) == 0 && g.Load32(buf + 4) == 1);
+  // The display name the package was created with, kept in its header (as the runtime keeps it), not its file name.
+  CHECK(fs::exists(content / "Headers" / "00000001" / "slot0.header") && g.Load16(buf + 8) == 'M' && g.Load16(buf + 10) == 'y' &&
+        g.Load16(buf + 12) == 0);
   CHECK(XamState().Enumerate(g, g.Load32(out + 16), 0, buf, 0x134, out + 20, 0) == kErrorNoMoreFiles && g.Load32(out + 20) == 0);
   CHECK(XamState().Enumerate(g, g.Load32(out + 16), 0, buf, 0x10, out + 20, 0) == kErrorInsufficientBuffer);
   CHECK(XamState().GetPrivateEnumStructure(g, g.Load32(out + 16), out + 24) == 0 && g.Load32(out + 24) != 0);
-  CHECK(XamState().ContentDelete(g, 0, data, 0) == 0 && !fs::exists(content / "00000001" / "slot0"));
+  CHECK(XamState().ContentDelete(g, 0, data, 0) == 0 && !fs::exists(content / "00000001" / "slot0") &&
+        !fs::exists(content / "Headers" / "00000001" / "slot0.header"));
   CHECK(XamState().ContentGetDeviceState(g, 1, 0) == 0 && XamState().ContentGetDeviceState(g, 7, 0) == kErrorDeviceNotConnected);
   // Controllers: controller 0 by default, a state from the host, vibration to the host.
   CHECK(XamState().InputGetCapabilities(g, 0, 1, buf) == 0 && g.Load8(buf) == 1);
@@ -2053,7 +2074,39 @@ void ConcurrentDispatcher() {
   CHECK(all.size() == kThreads * 500 && std::adjacent_find(all.begin(), all.end()) == all.end());
 }
 
+// A binary profile setting (a title's options) kept on the host survives a new run, as the runtime keeps it.
+void ProfileSettingsKept() {
+  Fresh();
+  namespace fs = std::filesystem;
+  XamState().Reset();
+  const fs::path profile = fs::temp_directory_path() / "any360-sys-profile";
+  std::error_code ec;
+  fs::remove_all(profile, ec);
+  XamState().title().profile_root = profile;
+  const uint32_t setting = kScratch + 0x400, bytes = kScratch + 0x500, ids = kScratch + 0x600, size = kScratch + 0x610;
+  const uint32_t buffer = 0x10000;
+  std::memset(g.host(setting), 0, 40);
+  g.Store32(setting + 16, 0x63E83FFF);
+  g.Store8(setting + 24, 6);
+  g.Store32(setting + 32, 5);
+  g.Store32(setting + 36, bytes);
+  std::memcpy(g.host(bytes), "CRAK!", 5);
+  CHECK(XamState().UserWriteProfileSettings(g, 0, 0, 1, setting, 0) == 0);
+  CHECK(fs::file_size(profile / "63E83FFF", ec) == 5);
+  XamState().Reset();  // a new run
+  XamState().title().profile_root = profile;
+  g.Store32(ids, 0x63E83FFF);
+  g.Store32(size, 0x1000);
+  CHECK(XamState().UserReadProfileSettings(g, 0, 0, 0, 0, 1, ids, size, buffer, 0) == 0);
+  CHECK(g.Load32(buffer + 8) == 2 && g.Load32(buffer + 8 + 32) == 5);  // the length written, not the maximum
+  CHECK(std::memcmp(g.host(g.Load32(buffer + 8 + 36)), "CRAK!", 5) == 0);
+  g.Store32(ids, 0x63E83FFE);  // never written: the default
+  CHECK(XamState().UserReadProfileSettings(g, 0, 0, 0, 0, 1, ids, size, buffer, 0) == 0 && g.Load32(buffer + 8) == 1);
+  fs::remove_all(profile, ec);
+}
+
 int main() {
+  ProfileSettingsKept();
   ConcurrentDispatcher();
   SimpsonsTests();
   ContentAggregateTests();

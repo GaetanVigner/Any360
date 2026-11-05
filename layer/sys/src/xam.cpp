@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <random>
 
 #include "any360/sys/files.h"
@@ -287,7 +288,7 @@ uint32_t Xam::UserReadProfileSettings(Guest g, uint32_t, uint32_t user, uint32_t
   for (uint32_t c = 0; c < copies; ++c) {
     for (uint32_t i = 0; i < setting_count; ++i) {
       const uint32_t at = buffer + 8 + kXuserSize * (c * setting_count + i), id = g.Load32(setting_ids + 4 * i);
-      const auto stored = std::find_if(settings_.begin(), settings_.end(), [&](const Setting& s) { return s.id == id; });
+      const auto stored = FindSetting(id);
       g.Store32(at + 0, stored != settings_.end() ? 2 : 1);  // from: title-written or default
       if (xuid_count) g.Store64(at + 8, title_.xuid);
       else g.Store32(at + 8, user);
@@ -297,11 +298,15 @@ uint32_t Xam::UserReadProfileSettings(Guest g, uint32_t, uint32_t user, uint32_t
       if (stored != settings_.end()) std::memcpy(g.host(at + 24), stored->data.data(), 16);
       if (type == 4 || type == 6) {
         g.Store8(at + 24, uint8_t(type));
-        g.Store32(at + 32, bytes);
         g.Store32(at + 36, data);
-        if (stored != settings_.end() && stored->data.size() > 16) {
-          std::memcpy(g.host(data), stored->data.data() + 16, std::min<size_t>(bytes, stored->data.size() - 16));
+        // A written setting answers with the length written (a title's options blob is shorter than its maximum);
+        // one never written with its maximum, zeroed.
+        uint32_t length = bytes;
+        if (stored != settings_.end() && stored->data.size() >= 16) {
+          length = uint32_t(std::min<size_t>(bytes, stored->data.size() - 16));
+          std::memcpy(g.host(data), stored->data.data() + 16, length);
         }
+        g.Store32(at + 32, length);
         data += bytes;
       }
     }
@@ -321,11 +326,38 @@ uint32_t Xam::UserWriteProfileSettings(Guest g, uint32_t, uint32_t user, uint32_
       const uint32_t bytes = g.Load32(at + 32), pointer = g.Load32(at + 36);
       if (pointer) s.data.insert(s.data.end(), g.host(pointer), g.host(pointer) + bytes);
     }
+    if (type == 6 && !title_.profile_root.empty()) {
+      std::error_code error;
+      std::filesystem::create_directories(title_.profile_root, error);
+      char file[16];
+      std::snprintf(file, sizeof file, "%08X", id);
+      std::ofstream out(title_.profile_root / file, std::ios::binary | std::ios::trunc);
+      out.write(reinterpret_cast<const char*>(s.data.data() + 16), std::streamsize(s.data.size() - 16));
+    }
     auto it = std::find_if(settings_.begin(), settings_.end(), [&](const Setting& x) { return x.id == id; });
     if (it != settings_.end()) *it = std::move(s);
     else settings_.push_back(std::move(s));
   }
   return Finish(g, overlapped, kErrorSuccess);
+}
+
+std::vector<Xam::Setting>::const_iterator Xam::FindSetting(uint32_t id) {
+  auto it = std::find_if(settings_.begin(), settings_.end(), [&](const Setting& s) { return s.id == id; });
+  if (it != settings_.end() || id >> 28 != 6 || title_.profile_root.empty()) return it;
+  // A binary setting written in an earlier run: its bytes from the profile folder, behind the 16 bytes of
+  // X_USER_DATA a write keeps (the type, then the size at +8, big-endian).
+  char file[16];
+  std::snprintf(file, sizeof file, "%08X", id);
+  std::ifstream in(title_.profile_root / file, std::ios::binary);
+  if (!in) return settings_.end();
+  std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  Setting s{id, std::vector<uint8_t>(16, 0)};
+  s.data[0] = 6;
+  const uint32_t size = uint32_t(bytes.size());
+  for (int i = 0; i < 4; ++i) s.data[8 + i] = uint8_t(size >> (24 - 8 * i));
+  s.data.insert(s.data.end(), bytes.begin(), bytes.end());
+  settings_.push_back(std::move(s));
+  return settings_.end() - 1;
 }
 
 uint32_t Xam::SessionCreateHandle(Guest g, uint32_t handle_ptr) {
@@ -480,6 +512,12 @@ std::filesystem::path Xam::ContentPath(Guest g, uint32_t content_data) const {
   return title_.content_root / type / name;
 }
 
+// The package's XCONTENT_DATA as the title gave it (its display name above all), kept beside the packages as the
+// runtime keeps it: Headers/<type>/<file name>.header, an XCONTENT_AGGREGATE_DATA.
+std::filesystem::path Xam::ContentHeaderPath(const std::filesystem::path& package) const {
+  return title_.content_root / "Headers" / package.parent_path().filename() / (package.filename().string() + ".header");
+}
+
 uint32_t Xam::ContentCreate(Guest g, uint32_t user, uint32_t root_name, uint32_t content_data, uint32_t flags, uint32_t disposition_ptr,
                             uint32_t license_ptr, uint32_t overlapped) {
   (void)user;
@@ -494,6 +532,15 @@ uint32_t Xam::ContentCreate(Guest g, uint32_t user, uint32_t root_name, uint32_t
   else if ((mode == 3 || mode == 5) && !exists) result = kErrorFileNotFound;
   else {
     if (exists && (mode == 2 || mode == 5)) std::filesystem::remove_all(path, error);
+    if (!exists || mode == 2 || mode == 5) {
+      std::vector<uint8_t> header(kContentAggregateSize, 0);
+      std::memcpy(header.data(), g.host(content_data), kContentDataSize);
+      for (int i = 0; i < 4; ++i) header[0x140 + i] = uint8_t(title_.title_id >> (24 - 8 * i));
+      const std::filesystem::path header_path = ContentHeaderPath(path);
+      std::filesystem::create_directories(header_path.parent_path(), error);
+      std::ofstream(header_path, std::ios::binary | std::ios::trunc)
+          .write(reinterpret_cast<const char*>(header.data()), std::streamsize(header.size()));
+    }
     std::filesystem::create_directories(path, error);
     const std::string root = GuestString(g, root_name, 64);
     Files().Mount("\\Device\\Content\\" + root, path, false);
@@ -502,7 +549,9 @@ uint32_t Xam::ContentCreate(Guest g, uint32_t user, uint32_t root_name, uint32_t
   }
   if (disposition_ptr) g.Store32(disposition_ptr, result ? 0 : disposition);
   if (license_ptr) g.Store32(license_ptr, 0);
-  return Finish(g, overlapped, result);
+  // Through an overlapped structure the disposition is also its length (a title passing no disposition pointer reads
+  // it there: 0 means neither opened nor created).
+  return Finish(g, overlapped, result, result ? 0 : disposition);
 }
 
 uint32_t Xam::ContentClose(Guest g, uint32_t root_name, uint32_t overlapped) {
@@ -520,6 +569,7 @@ uint32_t Xam::ContentDelete(Guest g, uint32_t, uint32_t content_data, uint32_t o
   const std::filesystem::path path = ContentPath(g, content_data);
   if (!std::filesystem::exists(path, error)) return Finish(g, overlapped, kErrorFileNotFound);
   std::filesystem::remove_all(path, error);
+  std::filesystem::remove(ContentHeaderPath(path), error);
   return Finish(g, overlapped, kErrorSuccess);
 }
 
@@ -540,7 +590,12 @@ std::vector<std::vector<uint8_t>> Xam::ContentItems(uint32_t device_id, uint32_t
     const uint8_t be_type[4] = {uint8_t(content_type >> 24), uint8_t(content_type >> 16), uint8_t(content_type >> 8), uint8_t(content_type)};
     std::memcpy(item.data(), be_device, 4);
     std::memcpy(item.data() + 4, be_type, 4);
-    for (size_t i = 0; i < name.size() && i < 127; ++i) item[8 + 2 * i + 1] = uint8_t(name[i]);  // display name (UTF-16BE)
+    // The display name the title gave (its header), else the file name (UTF-16BE).
+    std::ifstream header(ContentHeaderPath(title_.content_root / type / name), std::ios::binary);
+    if (!header || !header.seekg(8).read(reinterpret_cast<char*>(item.data() + 8), kContentFileNameOffset - 8)) {
+      std::fill(item.begin() + 8, item.begin() + kContentFileNameOffset, uint8_t(0));
+      for (size_t i = 0; i < name.size() && i < 127; ++i) item[8 + 2 * i + 1] = uint8_t(name[i]);
+    }
     std::memcpy(item.data() + kContentFileNameOffset, name.data(), std::min<size_t>(name.size(), 41));
     items.push_back(std::move(item));
   }

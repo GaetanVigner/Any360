@@ -53,10 +53,20 @@ struct SystemOptions {
   // Every call that goes to any360::sys, reported with its first eight arguments and its result (r3), a path call with its path, for finding the
   // call whose answer a title did not expect. Slow: for a debugging run.
   bool trace_every_call = false;
+  // The groups `trace_every_call` reports (empty: all), to keep a long run's log on the calls looked into.
+  std::vector<SysGroup> trace_groups;
+  // Calls left to the runtime though their group is switched, for finding which call of a group a title disagrees
+  // with (the calls sharing its state must go with it). Calls routed by handle or path follow their handle or path.
+  std::vector<std::string> runtime_calls;
   // Where any360::sys's handles start: apart from the runtime's (0xF8000000 up), so a handle names its owner.
   uint32_t handle_base = 0xF8100000;
   // The devices the runtime mounted (the title's files, its cache partition...), mounted the same on any360::sys.
   std::vector<SystemMount> mounts;
+  // The runtime's user data folder: when set, any360::sys's XAM keeps the title's content packages (saves) and binary
+  // profile settings where the runtime keeps them (<root>/<XUID>/<title id>/<type>/<name> and
+  // <root>/<title id>/profile/<profile name>/<setting id>), so either side reads what the other wrote, and answers as
+  // the runtime's signed-in profile (its XUID, its name).
+  std::string user_data_root;
 };
 
 // Prepares any360::sys inside the running runtime: the guest memory, the kernel heap, the dispatcher its scheduler

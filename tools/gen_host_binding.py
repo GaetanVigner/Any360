@@ -54,7 +54,7 @@ HANDLE_ROUTES = {name: 'r3' for name in (
     'NtCancelTimer', 'NtSuspendThread', 'NtResumeThread', 'NtQueueApcThread', 'NtSetIoCompletion',
     'NtRemoveIoCompletion', 'NtSignalAndWaitForSingleObjectEx', 'NtQuerySymbolicLinkObject', 'ReadFile', 'WriteFile',
     'CloseHandle', 'SetFilePointer', 'SetFilePointerEx', 'GetFileSize', 'GetFileSizeEx', 'SetEndOfFile',
-    'FlushFileBuffers', 'FindNextFileA', 'SetFileTime')}
+    'FlushFileBuffers', 'FindNextFileA', 'SetFileTime', 'XamEnumerate')}
 # The same with the handle in memory: the first of an array.
 HANDLE_AT_ROUTES = {'NtWaitForMultipleObjectsEx': 'r4'}
 # Calls naming a path go to Any360 only when its file system knows the device (the others: content packages the

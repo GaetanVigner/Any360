@@ -44,6 +44,9 @@ struct TitleSettings {
   uint32_t xex_header = 0;     // guest address of the XEX2 header, for RtlImageXexHeaderField and friends
   std::string module_name = "default.xex";
   std::filesystem::path content_root;  // where content packages (saves, DLC) live on the host
+  // Where the binary profile settings a title writes (XPROFILE_TITLE_SPECIFIC1..3, its options) are kept on the host,
+  // one file per setting named by its id in hex holding its bytes; empty: kept in memory for the run only.
+  std::filesystem::path profile_root;
   uint64_t xuid = 0xE000000000000001ull;  // the local profile (an offline XUID)
   std::string gamertag = "Player";
   uint32_t license_mask = 0;                    // XContentGetLicenseMask: no content license granted, as the reference answers
@@ -133,6 +136,7 @@ class Xam {
   uint32_t GetPrivateEnumStructure(Guest g, uint32_t handle, uint32_t out);
 
   // Content packages: folders under content_root/<type>/<file name>, mounted as "<root name>:" while open.
+  // Each keeps the XCONTENT_DATA it was created with (its display name) in content_root/Headers/<type>/<file name>.header.
   uint32_t ContentCreate(Guest g, uint32_t user, uint32_t root_name, uint32_t content_data, uint32_t flags, uint32_t disposition_ptr,
                          uint32_t license_ptr, uint32_t overlapped);
   uint32_t ContentClose(Guest g, uint32_t root_name, uint32_t overlapped);
@@ -247,8 +251,11 @@ class Xam {
     std::vector<uint8_t> data;  // 16 bytes of X_USER_PROFILE_SETTING_DATA, plus the binary / string bytes
   };
   Listener* FindListener(uint32_t handle);
+  // A setting the title wrote: this run's, or a binary one kept in profile_root by an earlier run.
+  std::vector<Setting>::const_iterator FindSetting(uint32_t id);
   Enumerator* FindEnumerator(uint32_t handle);
   std::filesystem::path ContentPath(Guest g, uint32_t content_data) const;
+  std::filesystem::path ContentHeaderPath(const std::filesystem::path& package) const;
   uint32_t online_schema_ = 0;
   // The packages of a type as enumerator items of `item_size` bytes starting with their XCONTENT_DATA, sorted by name.
   std::vector<std::vector<uint8_t>> ContentItems(uint32_t device_id, uint32_t content_type, uint32_t item_size) const;

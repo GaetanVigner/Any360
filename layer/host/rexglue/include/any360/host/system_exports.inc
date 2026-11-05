@@ -433,7 +433,7 @@ ANY360_REXGLUE_BIND_SYSTEM(XamShowDeviceSelectorUI, kXam)
 ANY360_REXGLUE_BIND_SYSTEM(XamCreateEnumeratorHandle, kXam)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_XamEnumerate
-ANY360_REXGLUE_BIND_SYSTEM(XamEnumerate, kXam)
+ANY360_REXGLUE_BIND_HANDLE(XamEnumerate, kXam, r3)
 #endif
 #ifndef ANY360_REXGLUE_SKIP_XamGetPrivateEnumStructureFromHandle
 ANY360_REXGLUE_BIND_SYSTEM(XamGetPrivateEnumStructureFromHandle, kXam)

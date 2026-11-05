@@ -235,9 +235,12 @@ static uint32_t ThreadOf(PPCContext& ctx, uint8_t* base) { return Guest{base}.Lo
 // waiting; one that an APC ends runs it the same way.
 // The I/O calls' completion APC: routine in r5, context in r6, I/O status block in r7.
 // The file's completion port, if it has one, gets a packet too (file handle in r3).
+// A transfer answered STATUS_PENDING on an asynchronous file has completed all the same: its APC and packet carry the
+// status its I/O status block holds.
 static uint32_t IoApc(PPCContext& ctx, uint8_t* base, uint32_t status) {
-  Threads().QueueIoApc(ThreadOf(ctx, base), ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, status);
-  Files().Completed({base}, ctx.r3.u32, ctx.r6.u32, status, ctx.r7.u32);
+  const uint32_t completed = status == 0x103 && ctx.r7.u32 ? Guest{base}.Load32(ctx.r7.u32) : status;
+  Threads().QueueIoApc(ThreadOf(ctx, base), ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, completed);
+  Files().Completed({base}, ctx.r3.u32, ctx.r6.u32, completed, ctx.r7.u32);
   return status;
 }
 // Kernel-mode APCs run at every wait.
