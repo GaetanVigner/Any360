@@ -228,6 +228,41 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: primitive reset and index offset: %u of %u pixels\n", p.Count(color), kSize * kSize);
     CHECK(p.Count(color) == kSize * kSize);
   }
+  // Immediate indices (source select 1: the indices in the packet after the initiator, two 16-bit ones a dword, the
+  // first in the low half): DRAW_INDX_2 with 16-bit {1, 3, 2} draws the upper-right triangle; with 32-bit {0, 1, 3, 2}
+  // as a quad list, the whole quad; DRAW_INDX with the strip {0, 1, 2, reset, 1, 3, 2} and reset index 0x1234, the
+  // quad's two triangles.
+  {
+    const uint32_t color = Rgba(120, 30, 210, 255);
+    uint32_t lit[3] = {};
+    Pixels p = scenario("immediate indices 16-bit", nullptr, [&] {
+      s.Vertices(0);
+      s.Color(120, 30, 210, 255);
+      s.Put({Type3(pm4::DRAW_INDX_2, 3), 3u << 16 | 1u << 6 | kTriangleList, 3u << 16 | 1u, 2u});
+    });
+    lit[0] = p.Count(color);
+    // Read high half first, the indices would be {3, 1, 0}: the lower-right triangle, without pixel (4, 4).
+    CHECK(p.At(59, 4) == color && p.At(4, 4) == color && p.At(4, 59) == kBlack);
+    p = scenario("immediate indices 32-bit", nullptr, [&] {
+      s.Vertices(0);
+      s.Color(120, 30, 210, 255);
+      s.Put({Type3(pm4::DRAW_INDX_2, 5), 4u << 16 | 1u << 11 | 1u << 6 | 13u, 0u, 1u, 3u, 2u});
+    });
+    lit[1] = p.Count(color);
+    p = scenario("immediate indices with reset", nullptr, [&] {
+      s.Reg(kPaSuScModeCntl, 1u << 21);
+      s.Reg(0x2103, 0x1234);
+      s.Vertices(0);
+      s.Color(120, 30, 210, 255);
+      s.Put({Type3(pm4::DRAW_INDX, 6), 0, 7u << 16 | 1u << 6 | kTriangleStrip, 1u << 16 | 0u, 0x1234u << 16 | 2u,
+             3u << 16 | 1u, 2u});
+    });
+    lit[2] = p.Count(color);
+    std::printf("gfx_render_tests: immediate indices: 16-bit triangle %u, 32-bit quad %u, strip with reset %u pixels\n",
+                lit[0], lit[1], lit[2]);
+    CHECK(lit[0] > kSize * kSize / 2 - kSize && lit[0] < kSize * kSize / 2 + kSize && lit[1] == kSize * kSize &&
+          lit[2] == kSize * kSize);
+  }
   // A rectangle list (three corners; the vertex shader makes the fourth) and a quad list (corners in order around
   // the quad, drawn as two triangles), each auto-indexed over the full target.
   {

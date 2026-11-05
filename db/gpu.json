@@ -2230,7 +2230,7 @@
 "name":"immediate indices",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:shader constants (float)",

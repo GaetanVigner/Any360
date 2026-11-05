@@ -221,6 +221,13 @@ From the Crackdown runs (each one cost a debugging session there):
    picks them (guest MSAA, SQ_CONTEXT_MISC sc_sample_cntl, SQ_INTERPOLATOR_CNTL's pattern), part of the shader key.
    Guest samples being host pixels, it matters to the host's own MSAA (no extrapolation at partly covered edges);
    tested for the choice and for a 2x draw through it, not for the host MSAA image itself.
+   Immediate indices (2026-11-05): the indices a DRAW_INDX or DRAW_INDX_2 packet carries itself (source select 1),
+   which the renderer refused and the reference does not draw, are staged in the batch's index buffer and drawn as
+   DMA indices of host order: two 16-bit indices a dword, the first in the low half, as an R6xx-family VGT takes
+   them (Mesa's r600 driver copies little-endian user indices into its immediate draw packets); no Xenos source
+   confirms it, and no known title emits them. Rectangle and point lists (their vertex shader loads guest indices
+   from memory) still refuse them. Scenarios: a 16-bit triangle (its half order checked), a 32-bit quad list and a
+   strip with primitive reset.
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured

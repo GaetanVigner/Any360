@@ -978,8 +978,19 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     Fail("primitive type " + std::to_string(draw.primitive_type) + " needs expansion (not yet)");
     return;
   }
-  if (draw.source == DrawSource::kImmediate) {
-    Fail("immediate indices");
+  // Immediate indices (source 1: the packet's own dwords after the initiator) are drawn as DMA indices staged in the
+  // batch's index buffer: two 16-bit indices a dword, the first in its low half, as an R6xx-family VGT takes them
+  // (Mesa's r600 driver copies little-endian user indices straight into its DRAW_INDEX_IMMD packets). The reference
+  // does not draw them. Rectangle and point lists, whose vertex shader loads the guest indices from memory, refuse
+  // them.
+  const bool immediate = draw.source == DrawSource::kImmediate, indexed = immediate || draw.source == DrawSource::kDma;
+  const uint32_t index_bytes = immediate ? draw.index_count * (draw.index_32 ? 4 : 2) : draw.index_bytes;
+  if (immediate && (rectangle_list || point_list)) {
+    Fail("immediate indices for a rectangle or point list");
+    return;
+  }
+  if (immediate && size_t(index_bytes) > draw.immediate.size() * 4) {
+    Fail("immediate indices past the packet");
     return;
   }
   const bool polygonal = IsPolygonal(topology) && !point_list;
@@ -988,7 +999,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t reset_index = regs[kVgtMultiPrimIbResetIndx];
   const bool strip = topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP || topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP ||
                      topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
-  const bool restart = rectangle_list || point_list || (draw.source == DrawSource::kDma && strip && ((regs[kPaSuScModeCntl] >> 21) & 1) &&
+  const bool restart = rectangle_list || point_list || (indexed && strip && ((regs[kPaSuScModeCntl] >> 21) & 1) &&
                                           (draw.index_32 || reset_index <= UINT16_MAX));
 
   const bool wants_ps = edram_mode == 4 && draw.pixel_shader && !draw.pixel_shader->microcode.empty();
@@ -1341,11 +1352,12 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // Everything this draw takes from the batch, checked up front: a flush once its constants are written would let
   // later draws overwrite them.
   const uint32_t index_need = rectangle_list || quad_list || line_loop || point_list ? host_index_count * 4 + 4
-                              : draw.source == DrawSource::kDma ? draw.index_bytes + 4
-                                                                : 0;
+                              : indexed ? index_bytes + 4
+                                        : 0;
+  const uint32_t immediate_need = immediate ? index_bytes + 4 : 0;  // the packet's indices staged too
   const uint32_t images_need = uint32_t(stage_textures[0].views.size() + stage_textures[1].views.size());
   const uint32_t samplers_need = uint32_t(stage_textures[0].samplers.size() + stage_textures[1].samplers.size());
-  if (constant_head_ + most > batch().constants.size || index_head_ + index_need > batch().indices.size || draw_sets_ + 2 > kDrawSets ||
+  if (constant_head_ + most > batch().constants.size || index_head_ + index_need + immediate_need > batch().indices.size || draw_sets_ + 2 > kDrawSets ||
       (query_open_ && queries_used_ >= kQueriesPerBatch) ||
       draw_images_ + images_need > kDrawDescriptors || draw_samplers_ + samplers_need > kDrawDescriptors) {
     Flush();
@@ -1518,9 +1530,17 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   job.index_type = VK_INDEX_TYPE_NONE_KHR;
   job.host_index_count = host_index_count;
   job.index_buffer = batch().indices.buffer;
-  job.source = draw.source;
+  job.source = indexed ? DrawSource::kDma : draw.source;
   job.index_32 = draw.index_32;
-  job.endian = draw.index_endian;
+  job.endian = immediate ? Endian::kNone : draw.index_endian;
+  // The immediate indices staged where the batch keeps them until it completes (jobs may be recorded later).
+  const uint8_t* index_src = physical_ + draw.index_base;
+  if (immediate) {
+    uint8_t* staged = static_cast<uint8_t*>(batch().indices.mapped) + index_head_;
+    std::memcpy(staged, draw.immediate.data(), index_bytes);
+    index_src = staged;
+    index_head_ = AlignUp(index_head_ + index_bytes, 4);
+  }
   job.restart = restart;
   job.reset_index = reset_index;
   job.primitives = primitives;
@@ -1535,20 +1555,20 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     job.index_type = VK_INDEX_TYPE_UINT32;
     job.index_offset = index_head_;
     index_head_ = AlignUp(index_head_ + host_index_count * 4, 4);
-  } else if (draw.source == DrawSource::kDma) {
-    if (uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_ || draw.index_bytes > batch().indices.size) {
+  } else if (indexed) {
+    if ((!immediate && uint64_t(draw.index_base) + draw.index_bytes > mirror_bytes_) || index_bytes > batch().indices.size) {
       Fail("index buffer outside the mirrored memory");
       return;
     }
     job.indices = DrawJob::Indices::kDma;
     job.index_type = draw.index_32 ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16;
     job.index_offset = index_head_;
-    index_head_ = AlignUp(index_head_ + draw.index_bytes, 4);
+    index_head_ = AlignUp(index_head_ + index_bytes, 4);
   } else {
     job.indices = DrawJob::Indices::kNone;
   }
-  job.index_src = physical_ + draw.index_base;
-  job.index_bytes = draw.index_bytes;
+  job.index_src = index_src;
+  job.index_bytes = index_bytes;
   job.index_dst = static_cast<uint8_t*>(batch().indices.mapped) + job.index_offset;
   if (draw.source == DrawSource::kDma && !rectangle_list && !point_list && draw.index_endian != Endian::kNone) {
     CountSwapped(g_swapped.indices, draw.index_bytes);

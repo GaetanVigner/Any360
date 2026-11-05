@@ -789,7 +789,8 @@ void CommandProcessor::Draw(Reader& r, uint32_t opcode, uint32_t end) {
     draw.index_endian = Endian(size >> 30);
     draw.index_bytes = (size & 0x00FFFFFF) * (draw.index_32 ? 4 : 2);
   } else if (draw.source == DrawSource::kImmediate) {
-    // Indices inside the packet: no known title emits them (the reference does not draw them either).
+    // Indices inside the packet (no known title emits them; the reference does not draw them): the renderer stages
+    // them as DMA indices.
     while (r.offset < end) draw.immediate.push_back(Next(r));
   } else if (draw.source != DrawSource::kAuto) {
     return;
