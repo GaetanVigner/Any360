@@ -184,15 +184,17 @@ From the Crackdown runs (each one cost a debugging session there):
    strips and loops (a strip back to the first vertex, expanded like quad lists). The command processor now
    gathers an immediate shader load that wraps around the ring's end (it assumed it never would; the bench's
    ring did).
-   Texture formats (2026-11-05): 36 formats sampled from a 4x4 texture of one value as a title stores it (linear
-   rows 256-byte aligned, big-endian units the fetch constant's endian mode undoes): the 8-bit, 5:6:5, 1:5:5:5,
-   4:4:4:4, 8:8:8:8, 2:10:10:10, normalized 16-bit (signed too), half and 32-bit float, float24 depth and DXT1-5,
-   DXN, DXT5A ones, with their _A, _B, interlaced, MPEG and _AS_16_16_16_16 forms (the same bits). The texture
-   cache gained 1:5:5:5 (A1R5G5B5, red and blue exchanged), 4:4:4:4 (A4B4G4R4), the 16-bit normalized formats,
-   DXN (BC5), DXT5A (BC4), 10:11:11 and 11:11:10 (unpacked to 16-bit
-   normalized RGBA, as the reference) and those forms. 5-bit components reach the sampler through 8 bits (bit replication).
-   Still to do: the 1-bit, 6:5:5, YUV, EXPAND, 32-bit integer, _AS_8 views, 32_32_32_FLOAT, DXT3A, CTX1
-   and EDRAM formats.
+   Texture formats (2026-11-05): every format the reference's Vulkan texture cache loads but YUV, each sampled from
+   a 4x4 texture of one value as a title stores it (linear rows 256-byte aligned, big-endian units the fetch
+   constant's endian mode undoes): the 8-bit, 5:6:5, 6:5:5, 1:5:5:5, 4:4:4:4, 8:8:8:8, 2:10:10:10, 10:11:11,
+   11:11:10, normalized 16-bit (signed too), half and 32-bit float, EXPAND, float24 depth, DXT1-5, DXN, DXT5A,
+   DXT3A and CTX1 ones, with the _A and _AS_16_16_16_16 forms. The texture cache gained, converting as the
+   reference does: 1:5:5:5 (A1R5G5B5, red and blue exchanged), 4:4:4:4, 6:5:5 (rotated into 5:6:5, read back with a
+   red-blue-green swizzle), the 16-bit normalized and EXPAND formats, DXN (BC5), DXT5A (BC4), 10:11:11 and
+   11:11:10 (unpacked to 16-bit normalized RGBA), DXT3A (4-bit alpha to 8-bit texels) and CTX1 (decoded to 8:8
+   texels). 5-bit components reach the sampler through 8 bits (bit replication). Not handled, as by the reference:
+   the 1-bit, _B, 32-bit integer, _AS_8, MPEG, interlaced, 32_32_32_FLOAT and EDRAM formats; YUV (which the
+   reference reads through a 4:2:2 host format) stays to do.
    Render features (2026-11-05): back-face stencil, blend constants, the alpha test, wireframe fill, polygon offset,
    the window offset, MSAA 2x as samples, user clip planes, linear texture filtering, vertex shader textures and
    constants addressed by a0, each a scenario. Two were wrong: the alpha test compared with 0 (RB_ALPHA_REF never

@@ -79,6 +79,12 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
   static const TextureFormatInfo k4_4_4_4 = {VK_FORMAT_A4B4G4R4_UNORM_PACK16, 2, 1, kRGBA};
   // 10:11:11 (red 11 bits, green 11, blue 10, from the low bits) and 11:11:10 (10, 11, 11) as 16-bit normalized
   // RGBA, as the reference converts them.
+  // As the reference converts them: 6:5:5 (x 5 bits, y 5, z 6 from the low bits) into 5:6:5 with a red, blue,
+  // green swizzle; DXT3A (a DXT3 alpha block) to 8-bit texels; CTX1 (two 8:8 end points and 2-bit indices) to 8:8
+  // texels; the EXPAND formats' bits as half floats.
+  static const TextureFormatInfo k6_5_5 = {VK_FORMAT_R5G6B5_UNORM_PACK16, 2, 1, Swizzle(0, 2, 1, 1), TextureFormatInfo::kRotate655};
+  static const TextureFormatInfo kDxt3a = {VK_FORMAT_R8_UNORM, 8, 4, kRRRR, TextureFormatInfo::kDecodeDxt3a};
+  static const TextureFormatInfo kCtx1 = {VK_FORMAT_R8G8_UNORM, 8, 4, kRGGG, TextureFormatInfo::kDecodeCtx1};
   static const TextureFormatInfo k10_11_11 = {VK_FORMAT_R16G16B16A16_UNORM, 4, 1, kRGBA, TextureFormatInfo::kUnpack10_11_11};
   static const TextureFormatInfo k11_11_10 = {VK_FORMAT_R16G16B16A16_UNORM, 4, 1, kRGBA, TextureFormatInfo::kUnpack11_11_10};
   // 16-bit normalized components (textures read them as 0...1 or -1...1, unlike render targets' -32...32).
@@ -109,13 +115,14 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
   static const TextureFormatInfo k24_8 = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kDepthUnorm24};
   static const TextureFormatInfo k24_8Float = {VK_FORMAT_R32_SFLOAT, 4, 1, kRRRR, TextureFormatInfo::kDepthFloat24};
   switch (xenos_format) {
-    // The interlaced and MPEG forms and the _A / _B / _AS_16_16_16_16 ones read the same bits (the latter only ask
-    // for more filtering precision), as the reference maps them.
-    case 2: case 8: case 9: case 43: return &k8;  // k_8, k_8_A, k_8_B, k_8_INTERLACED
+    // The _A and _AS_16_16_16_16 forms read the same bits (the latter only ask for more filtering precision), as
+    // the reference maps them.
+    case 2: case 8: return &k8;  // k_8, k_8_A
     case 3: return &k1_5_5_5;
+    case 5: return &k6_5_5;
     case 10: return &k8_8;
     case 4: return &k5_6_5;
-    case 6: case 14: case 50: return &k8_8_8_8;  // k_8_8_8_8, _A, _AS_16_16_16_16
+    case 6: case 50: return &k8_8_8_8;  // k_8_8_8_8, _AS_16_16_16_16
     case 7: case 54: return &k2_10_10_10;
     case 15: return &k4_4_4_4;
     case 16: case 55: return &k10_11_11;  // and _AS_16_16_16_16
@@ -123,9 +130,14 @@ const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format) {
     case 18: case 51: return &kDxt1;
     case 19: case 52: return &kDxt3;
     case 20: case 53: return &kDxt5;
-    case 24: case 41: case 46: case 47: return &k16;  // k_16, _MPEG, _INTERLACED, _MPEG_INTERLACED
-    case 25: case 42: case 48: return &k16_16;        // k_16_16, _MPEG, _MPEG_INTERLACED
+    case 24: return &k16;
+    case 25: return &k16_16;
     case 26: return &k16_16_16_16;
+    case 27: return &k16Float;            // k_16_EXPAND
+    case 28: return &k16_16Float;         // k_16_16_EXPAND
+    case 29: return &k16_16_16_16Float;   // k_16_16_16_16_EXPAND
+    case 58: return &kDxt3a;
+    case 60: return &kCtx1;
     case 49: return &kDxn;
     case 59: return &kDxt5a;
     case 22: return &k24_8;
@@ -377,6 +389,52 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
         out[c] = uint16_t((((v >> shift) & max) * 65535u + max / 2) / max);
       }
       std::memcpy(&blocks[2 * i], out, 8);
+    }
+  } else if (info->convert == TextureFormatInfo::kRotate655) {
+    for (size_t i = 0; i + 2 <= blocks.size(); i += 2) {
+      uint16_t v;
+      std::memcpy(&v, &blocks[i], 2);
+      v = uint16_t((v << 11 & 0xF800) | (v >> 5 & 0x07FF));
+      std::memcpy(&blocks[i], &v, 2);
+    }
+  } else if (info->convert == TextureFormatInfo::kDecodeDxt3a || info->convert == TextureFormatInfo::kDecodeCtx1) {
+    // Blocks to texels, rows of the level's width, as the reference decodes them.
+    const bool ctx1 = info->convert == TextureFormatInfo::kDecodeCtx1;
+    const uint32_t texel_bytes = ctx1 ? 2 : 1;
+    const uint32_t w = std::max(t.width >> level, 1u), h = std::max(t.height >> level, 1u);
+    std::vector<uint8_t> packed;
+    packed.swap(blocks);
+    blocks.assign(size_t(w) * h * texel_bytes * slices, 0);
+    for (uint32_t s = 0; s < slices; ++s) {
+      for (uint32_t by = 0; by < bh; ++by) {
+        for (uint32_t bx = 0; bx < bw; ++bx) {
+          const uint8_t* block = &packed[s * slice_bytes + (size_t(by) * bw + bx) * 8];
+          uint8_t* out = &blocks[size_t(s) * w * h * texel_bytes];
+          if (ctx1) {
+            // g0, r0, g1, r1, then 2 bits a texel; the middle colours a third and two thirds of the way.
+            const uint8_t g0 = block[0], r0 = block[1], g1 = block[2], r1 = block[3];
+            uint32_t indices;
+            std::memcpy(&indices, block + 4, 4);
+            const uint8_t cr[4] = {r0, r1, uint8_t(2.f / 3.f * r0 + 1.f / 3.f * r1), uint8_t(1.f / 3.f * r0 + 2.f / 3.f * r1)};
+            const uint8_t cg[4] = {g0, g1, uint8_t(2.f / 3.f * g0 + 1.f / 3.f * g1), uint8_t(1.f / 3.f * g0 + 2.f / 3.f * g1)};
+            for (uint32_t oy = 0; oy < 4 && by * 4 + oy < h; ++oy) {
+              for (uint32_t ox = 0; ox < 4 && bx * 4 + ox < w; ++ox) {
+                const uint32_t index = (indices >> (2 * (ox + 4 * oy))) & 3;
+                uint8_t* texel = out + (size_t(by * 4 + oy) * w + bx * 4 + ox) * 2;
+                texel[0] = cr[index], texel[1] = cg[index];
+              }
+            }
+          } else {
+            uint64_t alpha;
+            std::memcpy(&alpha, block, 8);
+            for (uint32_t oy = 0; oy < 4 && by * 4 + oy < h; ++oy) {
+              for (uint32_t ox = 0; ox < 4 && bx * 4 + ox < w; ++ox) {
+                out[size_t(by * 4 + oy) * w + bx * 4 + ox] = uint8_t(((alpha >> (4 * (ox + 4 * oy))) & 0xF) * 17);
+              }
+            }
+          }
+        }
+      }
     }
   } else if (info->convert == TextureFormatInfo::kSwapRedBlue1555) {
     for (size_t i = 0; i + 2 <= blocks.size(); i += 2) {

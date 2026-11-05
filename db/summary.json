@@ -115,9 +115,9 @@
  "gpu": {
   "total": 323,
   "state": {
-   "native": 276,
+   "native": 274,
    "missing": 7,
-   "reference": 40
+   "reference": 42
   }
  }
 }

@@ -1369,7 +1369,7 @@
 "name":"k_6_5_5",
 "family":"texture formats",
 "value":5,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_8_8_8_8",
@@ -1397,7 +1397,7 @@
 "name":"k_8_B",
 "family":"texture formats",
 "value":9,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_8_8",
@@ -1432,7 +1432,7 @@
 "name":"k_8_8_8_8_A",
 "family":"texture formats",
 "value":14,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_4_4_4_4",
@@ -1523,21 +1523,21 @@
 "name":"k_16_EXPAND",
 "family":"texture formats",
 "value":27,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16_EXPAND",
 "name":"k_16_16_EXPAND",
 "family":"texture formats",
 "value":28,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_16_16_16_EXPAND",
 "name":"k_16_16_16_16_EXPAND",
 "family":"texture formats",
 "value":29,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_16_FLOAT",
@@ -1621,21 +1621,21 @@
 "name":"k_16_MPEG",
 "family":"texture formats",
 "value":41,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_16_16_MPEG",
 "name":"k_16_16_MPEG",
 "family":"texture formats",
 "value":42,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_8_INTERLACED",
 "name":"k_8_INTERLACED",
 "family":"texture formats",
 "value":43,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_32_AS_8_INTERLACED",
@@ -1656,21 +1656,21 @@
 "name":"k_16_INTERLACED",
 "family":"texture formats",
 "value":46,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_16_MPEG_INTERLACED",
 "name":"k_16_MPEG_INTERLACED",
 "family":"texture formats",
 "value":47,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_16_16_MPEG_INTERLACED",
 "name":"k_16_16_MPEG_INTERLACED",
 "family":"texture formats",
 "value":48,
-"state":"native"
+"state":"reference"
 },
 {
 "id":"texture formats:k_DXN",
@@ -1740,7 +1740,7 @@
 "name":"k_DXT3A",
 "family":"texture formats",
 "value":58,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_DXT5A",
@@ -1754,7 +1754,7 @@
 "name":"k_CTX1",
 "family":"texture formats",
 "value":60,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"texture formats:k_DXT3A_AS_1_1_1_1",
