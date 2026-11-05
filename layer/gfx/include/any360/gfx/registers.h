@@ -34,7 +34,7 @@ constexpr uint32_t NOP = 0x10, REG_RMW = 0x21, DRAW_INDX = 0x22, VIZ_QUERY = 0x2
                    SET_BIN_MASK = 0x50, SET_BIN_SELECT = 0x51, INTERRUPT = 0x54, CONTEXT_UPDATE = 0x5E, SET_CONSTANT2 = 0x55,
                    SET_SHADER_CONSTANTS = 0x56, EVENT_WRITE_SHD = 0x58, EVENT_WRITE_EXT = 0x5A, EVENT_WRITE_ZPD = 0x5B,
                    SET_BIN_MASK_LO = 0x60, SET_BIN_MASK_HI = 0x61, SET_BIN_SELECT_LO = 0x62, SET_BIN_SELECT_HI = 0x63,
-                   XE_SWAP = 0x64;
+                   WAIT_UNTIL_READ = 0x5C, WAIT_IB_PFD_COMPLETE = 0x5D, XE_SWAP = 0x64;
 
 constexpr uint32_t Type0(uint32_t first, uint32_t count, bool one_register = false) {
   return (count - 1) << 16 | (one_register ? 0x8000u : 0u) | first;

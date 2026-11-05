@@ -12,11 +12,15 @@
 #include <array>
 #include <atomic>
 #include <cstring>
+#include <mutex>
+#include <string>
+#include <unordered_set>
 
 #include "any360/sys/exports.h"
 #include "any360/sys/guest.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
+#include "any360/sys/xam.h"
 
 namespace any360::host::rexglue {
 
@@ -27,6 +31,19 @@ static_assert(std::size(kGroupNames) == size_t(SysGroup::kCount));
 
 std::array<std::atomic<bool>, size_t(SysGroup::kCount)> g_enabled{};
 uint8_t* g_base = nullptr;
+std::function<void(const std::string&)> g_log;
+std::atomic<bool> g_trace{false};
+std::mutex g_traced_mutex;
+std::unordered_set<const char*> g_traced;  // the names' literals, one each
+
+// The first call of `name` on any360::sys, reported once.
+void Trace(SysGroup group, const char* name) {
+  {
+    std::lock_guard lock(g_traced_mutex);
+    if (!g_traced.insert(name).second) return;
+  }
+  if (g_log) g_log(std::string("first call on any360::sys: ") + name + " (" + kGroupNames[size_t(group)] + ")");
+}
 
 }  // namespace
 
@@ -48,8 +65,10 @@ void EnableSystemGroup(SysGroup group, bool enabled) {
 
 bool SystemGroupEnabled(SysGroup group) { return group < SysGroup::kCount && g_enabled[size_t(group)]; }
 
-void CallSystemExport(SysGroup group, GuestFunction any360, GuestFunction reference, PPCContext& ctx, uint8_t* base) {
+void CallSystemExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, PPCContext& ctx,
+                      uint8_t* base) {
   if (!reference || g_enabled[size_t(group)].load(std::memory_order_relaxed)) {
+    if (g_trace.load(std::memory_order_relaxed)) Trace(group, name);
     any360(ctx, base);
   } else {
     reference(ctx, base);
@@ -73,6 +92,31 @@ uint64_t DispatchGuest(uint32_t address, uint32_t stack_top, uint32_t pcr, const
   return ctx.r3.u64;
 }
 
+bool VariableGroup(const char* name, SysGroup& group) {
+  static const struct {
+    const char* name;
+    SysGroup group;
+  } kGroups[] = {
+      {"XboxHardwareInfo", SysGroup::kStateless},       {"XboxKrnlVersion", SysGroup::kStateless},
+      {"ExConsoleGameRegion", SysGroup::kStateless},    {"KeDebugMonitorData", SysGroup::kStateless},
+      {"KeCertMonitorData", SysGroup::kStateless},      {"KeTimeStampBundle", SysGroup::kThreads},
+      {"ExThreadObjectType", SysGroup::kObjects},       {"ExEventObjectType", SysGroup::kObjects},
+      {"ExMutantObjectType", SysGroup::kObjects},       {"ExSemaphoreObjectType", SysGroup::kObjects},
+      {"ExTimerObjectType", SysGroup::kObjects},        {"IoCompletionObjectType", SysGroup::kObjects},
+      {"IoDeviceObjectType", SysGroup::kObjects},       {"IoFileObjectType", SysGroup::kObjects},
+      {"ObDirectoryObjectType", SysGroup::kObjects},    {"ObSymbolicLinkObjectType", SysGroup::kObjects},
+      {"XexExecutableModuleHandle", SysGroup::kXam},    {"ExLoadedImageName", SysGroup::kXam},
+      {"ExLoadedCommandLine", SysGroup::kXam},
+  };
+  for (const auto& entry : kGroups) {
+    if (!std::strcmp(entry.name, name)) {
+      group = entry.group;
+      return true;
+    }
+  }
+  return false;
+}
+
 uint32_t BindVariables() {
   auto* kernel = REX_KERNEL_STATE();
   if (!kernel || !g_base) return 0;
@@ -86,8 +130,15 @@ uint32_t BindVariables() {
       if (!import.value_address) continue;
       const rex::runtime::Export* entry = resolver->GetExportByOrdinal(library.name, uint16_t(import.ordinal));
       if (!entry || entry->type != rex::runtime::Export::Type::kVariable) continue;
+      SysGroup group;
+      if (!VariableGroup(entry->name, group) || !SystemGroupEnabled(group)) continue;
       if (const uint32_t address = any360::sys::VariableAddress(g_base, entry->name)) {
+        // The import table sits in the image, read-only once loaded: writable for the store, then as it was.
+        rex::memory::BaseHeap* heap = kernel->memory()->LookupHeap(import.value_address);
+        uint32_t protect = 0;
+        if (heap) heap->Protect(import.value_address, 4, rex::memory::kMemoryProtectRead | rex::memory::kMemoryProtectWrite, &protect);
         g.Store32(import.value_address, address);
+        if (heap) heap->Protect(import.value_address, 4, protect);
         ++bound;
       }
     }
@@ -102,6 +153,8 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
     return false;
   }
   g_base = kernel->memory()->virtual_membase();
+  g_log = options.log;
+  g_trace = options.trace_calls;
   const uint32_t heap = kernel->memory()->SystemHeapAlloc(options.kernel_heap_size, 0x10000);
   if (!heap) {
     error = "no room in the runtime's system heap for the kernel heap";
@@ -112,7 +165,17 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
   any360::sys::Objects().SetKernelHeap(heap, options.kernel_heap_size);
   any360::sys::Objects().Reset();
   any360::sys::Threads().SetDispatcher(&DispatchGuest, nullptr);
-  if (options.variables) BindVariables();
+  // The title as the runtime loaded it: XamGetCurrentTitleId, RtlImageXexHeaderField's callers and the variables
+  // (XexExecutableModuleHandle, ExLoadedImageName...) answer from these.
+  if (auto module = kernel->GetExecutableModule()) {
+    any360::sys::TitleSettings& title = any360::sys::XamState().title();
+    title.module_handle = module->hmodule_ptr();
+    title.xex_header = module->guest_xex_header();
+    title.title_id = module->title_id();
+    const std::string& path = module->path();
+    const size_t slash = path.find_last_of("\\/:");
+    title.module_name = slash == std::string::npos ? path : path.substr(slash + 1);
+  }
   return true;
 }
 

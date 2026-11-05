@@ -81,14 +81,14 @@
 "name":"WAIT_UNTIL_READ",
 "family":"command processor",
 "value":92,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:WAIT_IB_PFD_COMPLETE",
 "name":"WAIT_IB_PFD_COMPLETE",
 "family":"command processor",
 "value":93,
-"state":"missing"
+"state":"native"
 },
 {
 "id":"command processor:REG_RMW",
@@ -1089,7 +1089,7 @@
 "name":"kPointList",
 "family":"primitive types",
 "value":1,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"primitive types:kLineList",
@@ -2076,21 +2076,21 @@
 "name":"textures (3D)",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:cube textures",
 "name":"cube textures",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:texture arrays",
 "name":"texture arrays",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:texture filtering",
@@ -2104,7 +2104,7 @@
 "name":"anisotropic filtering",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:texture tiling (untile)",
@@ -2258,6 +2258,6 @@
 "name":"predication (bins)",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 }
 ]

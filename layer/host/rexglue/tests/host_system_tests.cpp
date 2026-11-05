@@ -58,9 +58,12 @@ bool AllFd(const uint8_t* bytes, size_t n) {
 
 void Entry(PPCContext& ctx, uint8_t* base) {
   std::string error;
-  CHECK(StartSystem({16 << 20, true}, error));
+  int traced = 0;
+  CHECK(StartSystem({16 << 20, [&](const std::string&) { ++traced; }, true}, error));
   SysGroup group;
   CHECK(ParseSysGroup("threads", group) && group == SysGroup::kThreads && !ParseSysGroup("gpu", group));
+  CHECK(VariableGroup("ExEventObjectType", group) && group == SysGroup::kObjects && !VariableGroup("NoSuchVariable", group));
+  CHECK(BindVariables() == 0);  // no executable module in this runtime
   const uint32_t buffer = g_runtime->memory()->SystemHeapAlloc(64);
   PPCContext call = ctx;
   // Left off: the runtime's exports.
@@ -80,6 +83,8 @@ void Entry(PPCContext& ctx, uint8_t* base) {
   CHECK(!AllFd(base + buffer, 32));
   __imp__XamUserIsOnlineEnabled(call, base);
   CHECK(call.r3.u32 == 0);
+  __imp__XamUserIsOnlineEnabled(call, base);
+  CHECK(traced == 2);  // XeCryptRandom and XamUserIsOnlineEnabled, once each
   EnableSystemGroup(SysGroup::kStateless, false);
   EnableSystemGroup(SysGroup::kXam, false);
   // Guest code through the dispatcher, eight arguments.

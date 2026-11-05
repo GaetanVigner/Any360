@@ -171,6 +171,27 @@ int32_t TiledOffset2D(int32_t x, int32_t y, uint32_t pitch, uint32_t bytes_per_b
          (offset & 0x3F);
 }
 
+int32_t TiledOffset3D(int32_t x, int32_t y, int32_t z, uint32_t pitch, uint32_t height, uint32_t bytes_per_block_log2) {
+  // As the reference computes it (texture_util::GetTiledOffset3D, from XGRAPHICS::TileVolume).
+  pitch = (pitch + 31) & ~31u;
+  height = (height + 31) & ~31u;
+  const int32_t macro_outer = ((y >> 4) + (z >> 2) * int32_t(height >> 4)) * int32_t(pitch >> 5);
+  const int32_t macro = ((((x >> 5) + macro_outer) << (bytes_per_block_log2 + 6)) & 0xFFFFFFF) << 1;
+  const int32_t micro = (((x & 7) + ((y & 6) << 2)) << (bytes_per_block_log2 + 6)) >> 6;
+  const int32_t offset_outer = ((y >> 3) + (z >> 2)) & 1;
+  const int32_t offset1 = offset_outer + ((((x >> 3) + (offset_outer << 1)) & 3) << 1);
+  const int32_t offset2 = ((macro + (micro & ~15)) << 1) + (micro & 15) + ((z & 3) << (bytes_per_block_log2 + 6)) + ((y & 1) << 4);
+  int32_t address = (offset1 & 1) << 3;
+  address += (offset2 >> 6) & 7;
+  address <<= 3;
+  address += offset1 & ~1;
+  address <<= 2;
+  address += offset2 & ~511;
+  address <<= 3;
+  address += offset2 & 63;
+  return address;
+}
+
 TextureFetch TextureFetch::Parse(const uint32_t d[6]) {
   TextureFetch f;
   f.type = d[0] & 3;
@@ -251,6 +272,9 @@ Placement Place(const TextureFetch& t, const TextureFormatInfo& info, uint32_t l
     const uint32_t stride_rows = ((rows + bs - 1) / bs + 31) & ~31u;
     p.slice_stride = (((p.pitch_blocks + 31) & ~31u) * bpb * stride_rows + 4095) & ~4095u;
     if (!t.tiled) p.slice_stride = std::max(p.slice_stride, (p.row_pitch * stride_rows + 4095) & ~4095u);
+    // A 3D texture's z slices are packed at the row pitch times the tile-aligned rows (the whole volume, its depth
+    // aligned to 4, is what aligns to 4 KB); stacked layers and cube faces each align.
+    if (t.dimension == 2) p.slice_stride = (t.tiled ? ((p.pitch_blocks + 31) & ~31u) * bpb : p.row_pitch) * stride_rows;
   };
   Placement p;
   if (level == 0) {
@@ -318,9 +342,15 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
   for (uint32_t s = 0; s < slices; ++s) {
     for (uint32_t y = 0; y < bh; ++y) {
       for (uint32_t x = 0; x < bw; ++x) {
-        const uint32_t offset = t.tiled ? uint32_t(TiledOffset2D(int32_t(x + p.x), int32_t(y + p.y), p.pitch_blocks, bpb_log2))
-                                        : (y + p.y) * p.row_pitch + (x + p.x) * bpb;
-        read(p.address + s * p.slice_stride + offset, &blocks[s * slice_bytes + (size_t(y) * bw + x) * bpb]);
+        uint32_t offset;
+        if (t.dimension == 2 && t.tiled) {
+          offset = uint32_t(TiledOffset3D(int32_t(x + p.x), int32_t(y + p.y), int32_t(s), p.pitch_blocks,
+                                          (t.height + bs - 1) / bs, bpb_log2));
+        } else {
+          offset = s * p.slice_stride + (t.tiled ? uint32_t(TiledOffset2D(int32_t(x + p.x), int32_t(y + p.y), p.pitch_blocks, bpb_log2))
+                                                 : (y + p.y) * p.row_pitch + (x + p.x) * bpb);
+        }
+        read(p.address + offset, &blocks[s * slice_bytes + (size_t(y) * bw + x) * bpb]);
       }
     }
   }
@@ -532,10 +562,10 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   // The data dimension (fetch constant word 5): 0 1D, 1 2D or stacked, 2 3D, 3 cube.
   const ViewType matching = t.dimension == 3 ? ViewType::kCube : t.dimension == 2 ? ViewType::k3D : ViewType::k2DArray;
   if (type != matching) return Empty(type, error);
-  if (t.dimension == 0 || t.dimension == 2) {
-    return error = std::string(t.dimension ? "3D" : "1D") + " textures (not yet)", VK_NULL_HANDLE;
-  }
-  const bool cube = t.dimension == 3;
+  if (t.dimension == 0) return error = "1D textures (not yet)", VK_NULL_HANDLE;
+  const bool cube = t.dimension == 3, volume = t.dimension == 2;
+  // The layers of the host image (stacked slices, cube faces) and its depth (a 3D texture's z slices).
+  const uint32_t layers = volume ? 1 : t.depth, image_depth = volume ? t.depth : 1;
   const TextureFormatInfo* info = GuestTextureFormat(t.format);
   if (!info) return error = "texture format " + std::to_string(t.format) + " not handled yet", VK_NULL_HANDLE;
   if (is_signed && info->signed_format == VK_FORMAT_UNDEFINED) {
@@ -547,6 +577,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   // The levels, and a hash of the guest memory each spans (a level's slices at its stride, the packed tail's tile).
   uint32_t first_level, last_level;
   t.Levels(first_level, last_level);
+  if (volume && last_level) return error = "3D texture mip levels (not yet)", VK_NULL_HANDLE;
   uint32_t span_begin = UINT32_MAX, span_end = 0;
   for (uint32_t level = first_level; level <= last_level; ++level) {
     const Placement p = Place(t, *info, level);
@@ -624,11 +655,11 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     slot = std::make_unique<Texture>();
     VkImageCreateInfo info_ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     info_ci.flags = (cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0) | (mutable_format ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0);
-    info_ci.imageType = VK_IMAGE_TYPE_2D;
+    info_ci.imageType = volume ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
     info_ci.format = info->format;
-    info_ci.extent = {t.width * scale, t.height * scale, 1};
+    info_ci.extent = {t.width * scale, t.height * scale, image_depth};
     info_ci.mipLevels = levels;
-    info_ci.arrayLayers = t.depth;  // stacked textures: one layer a slice; cubes: a face
+    info_ci.arrayLayers = layers;  // stacked textures: one layer a slice; cubes: a face
     info_ci.samples = VK_SAMPLE_COUNT_1_BIT;
     info_ci.tiling = VK_IMAGE_TILING_OPTIMAL;
     info_ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -654,7 +685,6 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   if (source) {
     if (slot->gpu_generation != source_generation) {
       Image& image = slot->image;
-      const uint32_t layers = t.depth;
       auto copy = [&](VkCommandBuffer cb) {
         VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
@@ -709,8 +739,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       if (!LoadLevel(t, *info, level, level_blocks, error)) return VK_NULL_HANDLE;
       VkBufferImageCopy region{};
       region.bufferOffset = blocks.size();
-      region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, t.depth};
-      region.imageExtent = {std::max(t.width >> level, 1u), std::max(t.height >> level, 1u), 1};
+      region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, layers};
+      region.imageExtent = {std::max(t.width >> level, 1u), std::max(t.height >> level, 1u), image_depth};
       regions.push_back(region);
       blocks.insert(blocks.end(), level_blocks.begin(), level_blocks.end());
       blocks.resize((blocks.size() + 15) & ~size_t(15));  // offsets aligned for any texel size
@@ -732,7 +762,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
       barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
       barrier.image = image.image;
-      barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, t.depth};
+      barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, layers};
       VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
       dependency.imageMemoryBarrierCount = 1;
       dependency.pImageMemoryBarriers = &barrier;
@@ -770,11 +800,13 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   if (!view) {
     VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     vi.image = slot->image.image;
-    vi.viewType = cube ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D_ARRAY;  // 2D textures are declared arrayed
+    vi.viewType = cube     ? VK_IMAGE_VIEW_TYPE_CUBE
+                  : volume ? VK_IMAGE_VIEW_TYPE_3D
+                           : VK_IMAGE_VIEW_TYPE_2D_ARRAY;  // 2D textures are declared arrayed
     vi.format = is_signed ? info->signed_format : info->format;
     vi.components = {Component(host_swizzle & 7), Component((host_swizzle >> 3) & 7), Component((host_swizzle >> 6) & 7),
                      Component((host_swizzle >> 9) & 7)};
-    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, t.depth};
+    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, layers};
     if (f.vkCreateImageView(device_.device(), &vi, nullptr, &view) != VK_SUCCESS) {
       view = VK_NULL_HANDLE;
       return error = "texture view", VK_NULL_HANDLE;
