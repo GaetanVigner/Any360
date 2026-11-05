@@ -250,6 +250,13 @@ From the Crackdown runs (each one cost a debugging session there):
    (fixed, see the translator's NOTICE.md). Not yet: immediate indices, vertex shader textures there. Scenarios: a
    vertex shader writing a 32_32_32_32_FLOAT element per point, drawn, without rasterization, and from DMA indices
    {2, 3} (elements 0 and 1 untouched); the video memory path (mirror and imported paths untested).
+   PM4 packets left (COND_EXEC, MEM_WRITE_CNTR, EVENT_WRITE_CFL, DRAW_INDX_2_BIN, SET_STATE, SET_BIN_BASE_OFFSET,
+   IM_STORE): no layout to implement them from. The reference names them only (xenos.h, one-line purposes);
+   Mesa's adreno_pm4.xml gives the same one-liners, and its CP_COND_EXEC layout (64-bit addresses: bool, timestamp,
+   active timestamp, dword count) is the later Adreno one; no a2xx or Xenos code emits or parses any of them. None
+   is in the Crackdown capture (its packets: SET_BIN_MASK/SELECT, DRAW_INDX, DRAW_INDX_2, SET_CONSTANT,
+   LOAD_ALU_CONSTANT, IM_LOAD, IM_LOAD_IMMEDIATE, EVENT_WRITE, _EXT, _ZPD, _SHD, WAIT_REG_MEM, INDIRECT_BUFFER,
+   INVALIDATE_STATE, INTERRUPT, XE_SWAP, REG_RMW). The command processor skips them by their length, as before.
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured
