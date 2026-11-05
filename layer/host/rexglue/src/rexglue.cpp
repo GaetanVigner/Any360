@@ -338,6 +338,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       very_slow_frames_ += interval > 1000.0 / 20.0;
     }
     last_frame_ = now;
+    if (show_fps_) Overlay(now);
     if (!log_) return;
     if (frames_ == 1) {
       since_ = now;
@@ -528,8 +529,46 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     worst_ms_ = 0, slow_frames_ = very_slow_frames_ = 0;
   }
 
+  // The counter's text, every half second: frames per second, average / slowest frame (ms), the GPU's time per frame
+  // (the batches' timestamps) and the command processor's idle share.
+  void Overlay(std::chrono::steady_clock::time_point now) {
+    if (!overlay_frames_++) {
+      overlay_since_ = now;
+      overlay_stats_ = stats();
+      overlay_busy_ = cp_ ? cp_->ns_busy() : 0;
+      overlay_worst_ = 0;
+      return;
+    }
+    if (overlay_frames_ > 2) {
+      overlay_worst_ = std::max(overlay_worst_, std::chrono::duration<double, std::milli>(now - overlay_last_).count());
+    }
+    overlay_last_ = now;
+    const double seconds = std::chrono::duration<double>(now - overlay_since_).count();
+    if (seconds < 0.5) return;
+    const double n = double(overlay_frames_ - 1);
+    const gfx::vk::RendererStats& s = stats();
+    const uint64_t busy = cp_ ? cp_->ns_busy() : 0;
+    char text[128];
+    std::snprintf(text, sizeof(text), "%.0f FPS %.1f ms (max %.1f) GPU %.1f ms CP idle %.0f%%", n / seconds,
+                  1e3 * seconds / n, overlay_worst_, (s.ns_gpu - overlay_stats_.ns_gpu) / 1e6 / n,
+                  cp_ ? 100.0 * std::max(0.0, 1.0 - double(busy - overlay_busy_) / 1e9 / seconds) : 0.0);
+    presenter_.SetOverlay(text);
+    overlay_frames_ = 1;
+    overlay_since_ = now;
+    overlay_stats_ = s;
+    overlay_busy_ = busy;
+    overlay_worst_ = 0;
+  }
+
   std::function<void(const std::string&)> log_;
   double stats_seconds_;
+ public:
+  bool show_fps_ = false;
+ private:
+  uint64_t overlay_frames_ = 0, overlay_busy_ = 0;
+  double overlay_worst_ = 0;
+  std::chrono::steady_clock::time_point overlay_since_, overlay_last_;
+  gfx::vk::RendererStats overlay_stats_;
  public:
   gfx::CommandProcessor* cp_ = nullptr;  // for the report: where the command processor's time goes
  private:
@@ -818,6 +857,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->renderer = std::make_unique<PresentingRenderer>(binding->device, physical, binding->window, binding->parent,
                                                           options.log, options.stats_seconds, options.resolution_scale);
   binding->renderer->SetPipelineCache(options.pipeline_cache_path);
+  binding->renderer->show_fps_ = options.show_fps;
   binding->renderer->SetAsyncPipelines(options.async_pipelines);
   binding->renderer->SetMsaa(options.msaa_samples);
   if (!binding->renderer->Initialize() || !binding->renderer->Resize()) {
@@ -925,6 +965,40 @@ GuestFunction ReferenceExport(const char* symbol) {
 #endif
 }
 
+namespace {
+std::function<void(const std::string&)> g_runtime_frames_log;
+double g_runtime_frames_seconds = 5.0;
+
+// The runtime's VdSwap calls: frames per second and the slowest frame, every g_runtime_frames_seconds.
+void CountRuntimeFrame() {
+  static uint64_t frames = 0;
+  static double worst_ms = 0;
+  static uint32_t slow = 0;
+  static std::chrono::steady_clock::time_point since, last;
+  const auto now = std::chrono::steady_clock::now();
+  if (frames++) {
+    const double ms = std::chrono::duration<double, std::milli>(now - last).count();
+    worst_ms = std::max(worst_ms, ms);
+    slow += ms > 1000.0 / 55.0;
+  } else {
+    since = now;
+  }
+  last = now;
+  const double seconds = std::chrono::duration<double>(now - since).count();
+  if (frames < 2 || seconds < g_runtime_frames_seconds) return;
+  char line[200];
+  std::snprintf(line, sizeof(line), "Any360: the runtime's GPU: %.1f FPS (VdSwap calls); slowest frame %.1f ms, %u over 18 ms",
+                double(frames - 1) / seconds, worst_ms, slow);
+  g_runtime_frames_log(line);
+  frames = 1, since = now, worst_ms = 0, slow = 0;
+}
+}  // namespace
+
+void ReportRuntimeFrames(std::function<void(const std::string&)> log, double seconds) {
+  g_runtime_frames_log = std::move(log);
+  g_runtime_frames_seconds = std::max(0.5, seconds);
+}
+
 void CallGraphicsExport(const char* symbol, GuestFunction any360, PPCContext& ctx, uint8_t* base) {
   if (g_bound) {
     any360(ctx, base);
@@ -948,6 +1022,7 @@ void CallGraphicsExport(const char* symbol, GuestFunction any360, PPCContext& ct
     std::fprintf(stderr, "any360: the runtime has no %s\n", symbol);
     std::abort();
   }
+  if (g_runtime_frames_log && std::strcmp(symbol, "__imp__VdSwap") == 0) CountRuntimeFrame();
   reference(ctx, base);
 }
 
