@@ -194,7 +194,10 @@ class CommandProcessor : public sys::GpuBackend {
   bool Test(uint32_t wait_info, uint32_t poll, uint32_t reference, uint32_t mask, bool coherent);
   void MakeCoherent();
   void Draw(Reader& r, uint32_t opcode, uint32_t end);
-  void LoadShader(uint32_t type, uint32_t address, uint32_t dwords);
+  // `words`: the guest (big-endian) microcode when it is not contiguous at `address` (an immediate load wrapping
+  // around the ring's end, gathered).
+  void LoadShader(uint32_t type, uint32_t address, uint32_t dwords, const uint32_t* words = nullptr);
+  std::vector<uint32_t> wrapped_shader_;  // an immediate load gathered across the ring's end
   void Interrupt(uint32_t source, uint32_t cpu);
 
   uint8_t* Host(uint32_t address) const { return physical_ + (address & 0x1FFFFFFF); }

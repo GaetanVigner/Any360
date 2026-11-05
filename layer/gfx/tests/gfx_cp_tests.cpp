@@ -220,6 +220,11 @@ void IndirectAndShaders() {
   CHECK(cp.shader(0).type == 0 && cp.shader(0).address == kData && cp.shader(0).microcode == std::vector<uint32_t>({0x5000, 0x5001, 0x5002}));
   CHECK(cp.shader(1).type == 1 && cp.shader(1).microcode == std::vector<uint32_t>({0x6000, 0x6001}) && recorder.last_hash == cp.shader(1).hash);
   CHECK(cp.shader(0).hash != cp.shader(1).hash && cp.shader(0).hash != 0);
+  // An immediate load whose microcode wraps around the ring's end (after type-2 no-ops up to it): gathered.
+  while (ring.write != cp.ring_dwords() - 4) ring.Put(0x80000000u);
+  ring.Put({Type3(pm4::IM_LOAD_IMMEDIATE, 6), 1, 4, 0x7000, 0x7001, 0x7002, 0x7003});
+  ring.Run();
+  CHECK(cp.shader(1).microcode == std::vector<uint32_t>({0x7000, 0x7001, 0x7002, 0x7003}));
   // Draws by EDRAM mode: colour+depth draws, copy resolves, ignore does nothing.
   const uint32_t dma_initiator = 6u << 16 | 0u << 6 | 4;            // 6 indices, DMA, 16-bit, triangle list
   const uint32_t auto_initiator = 4u << 16 | 2u << 6 | 1u << 11 | 8;  // 4 indices, auto, rect list

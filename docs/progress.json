@@ -80,24 +80,23 @@
  },
  "gpu": {
   "total": 323,
-  "native": 174,
-  "reference": 135,
+  "native": 214,
+  "reference": 95,
   "by_family": {
    "command processor": {
     "native": 36,
     "missing": 14
    },
    "primitive types": {
-    "reference": 16,
-    "native": 3
+    "reference": 9,
+    "native": 10
    },
    "render features": {
-    "native": 24,
-    "reference": 31
+    "native": 32,
+    "reference": 23
    },
    "render target formats": {
-    "native": 3,
-    "reference": 11
+    "native": 14
    },
    "shader ALU scalar": {
     "native": 50
@@ -113,12 +112,12 @@
     "reference": 1
    },
    "texture formats": {
-    "reference": 62,
-    "native": 2
+    "reference": 61,
+    "native": 3
    },
    "vertex formats": {
-    "reference": 14,
-    "native": 2
+    "reference": 1,
+    "native": 15
    }
   }
  },
