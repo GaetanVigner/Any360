@@ -1964,7 +1964,7 @@
 "name":"alpha to coverage",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:colour exponent bias",
@@ -2013,7 +2013,7 @@
 "name":"point sprites",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:primitive restart",
@@ -2160,14 +2160,14 @@
 "name":"occlusion queries",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:memexport",
 "name":"memexport",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:tessellation",
@@ -2188,7 +2188,7 @@
 "name":"centroid interpolation",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:swap / present",
@@ -2230,7 +2230,7 @@
 "name":"immediate indices",
 "family":"render features",
 "value":null,
-"state":"reference"
+"state":"native"
 },
 {
 "id":"render features:shader constants (float)",

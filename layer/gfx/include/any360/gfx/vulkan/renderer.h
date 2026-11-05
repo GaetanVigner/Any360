@@ -64,6 +64,7 @@ struct RendererStats {
   uint32_t draws = 0;
   uint32_t skipped = 0;     // draws with nothing to draw (EDRAM mode ignore, empty scissor, no target)
   uint32_t failed = 0;      // draws not drawn (see last_error)
+  uint32_t memexports = 0;  // draws whose shaders export to memory
   uint32_t translations = 0;
   uint32_t pipelines = 0;
   uint32_t sample_resolves = 0;        // host MSAA: surfaces' samples resolved for a read
@@ -116,6 +117,10 @@ struct BytesHash {
 
 // The host format of a Xenos colour render target format, as the reference maps it (VK_FORMAT_UNDEFINED: unknown).
 VkFormat ColorTargetFormat(uint32_t color_format);
+// The interpolators (of `interpolators`) a pixel shader samples at their centroid: RB_SURFACE_INFO's MSAA mode,
+// SQ_CONTEXT_MISC sc_sample_cntl and SQ_INTERPOLATOR_CNTL's sampling pattern, as the reference picks them.
+uint32_t CentroidInterpolators(uint32_t interpolators, uint32_t surface_info, uint32_t context_misc,
+                               uint32_t interpolator_cntl);
 
 class VulkanRenderer : public gfx::Renderer {
  public:
@@ -338,6 +343,14 @@ class VulkanRenderer : public gfx::Renderer {
   // Guest memory the shaders read (vertices) from video memory: each batch first copies the ranges its draws fetch
   // from the imported guest memory (one transfer over the bus, not a fetch per vertex attribute through it).
   Buffer vram_guest_;
+  // Memory exports (memexport): the guest ranges a draw's shaders wrote, each at an offset of the readback buffer
+  // (guest memory in video memory: copied there at the flush, then into guest memory once the batch is done).
+  struct MemExport {
+    uint32_t base, bytes, readback;
+  };
+  std::vector<MemExport> memexports_;
+  Buffer memexport_readback_;
+  void MemExported(std::vector<MemExport> exports);
   bool vram_guest_on_ = false;
   // Pages (4 KB) of guest memory whose copy in video memory is current (with a watch set; else none are kept).
   static constexpr uint32_t kGuestPageShift = 12;

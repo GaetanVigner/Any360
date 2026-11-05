@@ -3045,7 +3045,8 @@ void SpirvShaderTranslator::StartFragmentShaderBeforeMain() {
                               spv::BuiltInFragDepth);
       main_interface_.push_back(output_fragment_depth_);
     }
-    if (alpha_to_coverage_possible && features_.sample_rate_shading) {
+    // any360: no sample mask output when guest samples are pixels (alpha to coverage discards instead).
+    if (alpha_to_coverage_possible && features_.sample_rate_shading && !samples_as_pixels_) {
       output_fragment_sample_mask_ = builder_->createVariable(
           spv::NoPrecision, spv::StorageClassOutput,
           builder_->makeArrayType(type_int_, builder_->makeUintConstant(1), 0), "gl_SampleMask");

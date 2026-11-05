@@ -228,6 +228,41 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: primitive reset and index offset: %u of %u pixels\n", p.Count(color), kSize * kSize);
     CHECK(p.Count(color) == kSize * kSize);
   }
+  // Immediate indices (source select 1: the indices in the packet after the initiator, two 16-bit ones a dword, the
+  // first in the low half): DRAW_INDX_2 with 16-bit {1, 3, 2} draws the upper-right triangle; with 32-bit {0, 1, 3, 2}
+  // as a quad list, the whole quad; DRAW_INDX with the strip {0, 1, 2, reset, 1, 3, 2} and reset index 0x1234, the
+  // quad's two triangles.
+  {
+    const uint32_t color = Rgba(120, 30, 210, 255);
+    uint32_t lit[3] = {};
+    Pixels p = scenario("immediate indices 16-bit", nullptr, [&] {
+      s.Vertices(0);
+      s.Color(120, 30, 210, 255);
+      s.Put({Type3(pm4::DRAW_INDX_2, 3), 3u << 16 | 1u << 6 | kTriangleList, 3u << 16 | 1u, 2u});
+    });
+    lit[0] = p.Count(color);
+    // Read high half first, the indices would be {3, 1, 0}: the lower-right triangle, without pixel (4, 4).
+    CHECK(p.At(59, 4) == color && p.At(4, 4) == color && p.At(4, 59) == kBlack);
+    p = scenario("immediate indices 32-bit", nullptr, [&] {
+      s.Vertices(0);
+      s.Color(120, 30, 210, 255);
+      s.Put({Type3(pm4::DRAW_INDX_2, 5), 4u << 16 | 1u << 11 | 1u << 6 | 13u, 0u, 1u, 3u, 2u});
+    });
+    lit[1] = p.Count(color);
+    p = scenario("immediate indices with reset", nullptr, [&] {
+      s.Reg(kPaSuScModeCntl, 1u << 21);
+      s.Reg(0x2103, 0x1234);
+      s.Vertices(0);
+      s.Color(120, 30, 210, 255);
+      s.Put({Type3(pm4::DRAW_INDX, 6), 0, 7u << 16 | 1u << 6 | kTriangleStrip, 1u << 16 | 0u, 0x1234u << 16 | 2u,
+             3u << 16 | 1u, 2u});
+    });
+    lit[2] = p.Count(color);
+    std::printf("gfx_render_tests: immediate indices: 16-bit triangle %u, 32-bit quad %u, strip with reset %u pixels\n",
+                lit[0], lit[1], lit[2]);
+    CHECK(lit[0] > kSize * kSize / 2 - kSize && lit[0] < kSize * kSize / 2 + kSize && lit[1] == kSize * kSize &&
+          lit[2] == kSize * kSize);
+  }
   // A rectangle list (three corners; the vertex shader makes the fourth) and a quad list (corners in order around
   // the quad, drawn as two triangles), each auto-indexed over the full target.
   {
@@ -351,6 +386,135 @@ int main(int argc, char** argv) {
     });
     std::printf("gfx_render_tests: points: %u pixels\n", p.Count(color));
     CHECK(p.Count(color) == 4 * 64 && p.At(54, 9) == color && p.At(9, 54) == color && p.At(32, 32) == kBlack);
+    // Point sprite coordinates: pixel parameter generation (SQ_PROGRAM_CNTL param_gen, SQ_CONTEXT_MISC param_gen_pos
+    // 0) into r0, which the pixel shader exports: z and w (blue, alpha) are the point coordinates S and T, 0 to 1
+    // across each 8x8 square, S rightwards and T downwards as D3D's point sprites: a square's corner pixels 7/8 apart
+    // (223 of 255), the first near 1/16 (the square sits a tenth of a pixel off the pixel grid).
+    s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, true}));
+    p = scenario("point sprites", nullptr, [&] {
+      s.Reg(0x2280, 64u << 16 | 64u);
+      s.Reg(0x2180, 1u << 18);
+      s.Reg(0x2181, 0);
+      s.Vertices(9);
+      s.DrawAuto(1, 4);
+      s.Reg(0x2180, 0);
+    });
+    s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+    // The square of the upper-left point: its first lit pixel, then its corners' S and T.
+    uint32_t x0 = kSize, y0 = kSize;
+    for (uint32_t y = 0; y < kSize / 2 && x0 == kSize; ++y) {
+      for (uint32_t x = 0; x < kSize / 2; ++x) {
+        if (p.At(x, y) != kBlack) {
+          x0 = x, y0 = y;
+          break;
+        }
+      }
+    }
+    auto st = [&](uint32_t x, uint32_t y) { return std::pair<int, int>(p.At(x, y) >> 16 & 0xFF, p.At(x, y) >> 24); };
+    const auto tl = st(x0, y0), tr = st(x0 + 7, y0), bl = st(x0, y0 + 7), br = st(x0 + 7, y0 + 7);
+    std::printf("gfx_render_tests: point sprites: square at (%u, %u), S,T corners %d,%d %d,%d %d,%d %d,%d\n", x0, y0,
+                tl.first, tl.second, tr.first, tr.second, bl.first, bl.second, br.first, br.second);
+    auto near = [](int v, int expect) { return std::abs(v - expect) <= 2; };
+    CHECK(x0 < kSize && tl.first >= 8 && tl.first <= 24 && near(tl.second, tl.first) && near(tr.first - tl.first, 223) &&
+          near(tr.second, tl.second) && near(bl.first, tl.first) && near(bl.second - tl.second, 223) &&
+          near(br.first, tr.first) && near(br.second, bl.second));
+  }
+  // Memory export: a vertex shader writes, for each of four auto-indexed points (size 0: nothing drawn), the element
+  // (index, 10, 20, 30) of a 32_32_32_32_FLOAT stream (c1: base 0x1F8000, 4 elements, no swap) through
+  // `mad eA, r0.xxxx, c0 (0, 1, 0, 0), c1` and `mad eM0, r0.xxxx, c3 (1, 0, 0, 0), c4 (0, 10, 20, 30)`; the elements
+  // reach guest memory once the draw has run.
+  {
+    const uint32_t dest = 0x1F8000;
+    std::memset(g_memory + dest, 0xCD, 128);
+    std::vector<uint32_t> words;
+    t::VertexFetch position;
+    t::PushVertexFetch(words, position);
+    t::Alu out_position;
+    out_position.vector_mask = 0b1111, out_position.is_export = true;
+    out_position.dest = uint32_t(uc::ExportRegister::kVSPosition), out_position.src1 = out_position.src2 = {1, true};
+    t::PushAlu(words, out_position);
+    const uint32_t xxxx = 0 | 3u << 2 | 2u << 4 | 1u << 6;
+    t::Alu address, data;
+    address.vector = data.vector = uc::AluVectorOpcode::kMad;
+    address.vector_mask = data.vector_mask = 0b1111, address.is_export = data.is_export = true;
+    address.dest = uint32_t(uc::ExportRegister::kExportAddress), data.dest = uint32_t(uc::ExportRegister::kExportData0);
+    address.src1 = data.src1 = {0, true}, address.src1_swizzle = data.src1_swizzle = xxxx;
+    address.src2 = {0, false}, address.src3 = {1, false};
+    data.src2 = {3, false}, data.src3 = {4, false};
+    t::PushAlu(words, address);
+    t::PushAlu(words, data);
+    s.Shader(0, t::BuildCfShader({t::CfAlloc(uc::AllocType::kVsPosition, 0),
+                                  t::CfExec(uc::ControlFlowOpcode::kExec, 2, 2, 0b0001),
+                                  t::CfAlloc(uc::AllocType::kMemory, 0),
+                                  t::CfExec(uc::ControlFlowOpcode::kExecEnd, 4, 2, 0)},
+                                 words));
+    const uint32_t memexports_before = renderer.stats().memexports;
+    scenario("memexport", nullptr, [&] {
+      s.Put({Type3(pm4::SET_CONSTANT, 21), 0u << 16 | 0,
+             Bits(0), Bits(1), Bits(0), Bits(0),
+             1u << 30 | dest >> 2, 0x4B000000u, 0x4B0u << 20 | 7u << 16 | 38u << 8, 0x96u << 23 | 4u,
+             0, 0, 0, 0,
+             Bits(1), Bits(0), Bits(0), Bits(0),
+             Bits(0), Bits(10), Bits(20), Bits(30)});
+      s.Reg(0x2280, 0);
+      s.Vertices(9);
+      s.DrawAuto(1, 4);
+    });
+    s.Shader(0, t::BuildFetchPositionShader());
+    float elements[4][4];
+    std::memcpy(elements, g_memory + dest, sizeof(elements));
+    bool right = renderer.stats().memexports == memexports_before + 1;
+    for (uint32_t i = 0; i < 4; ++i) {
+      right = right && elements[i][0] == float(i) && elements[i][1] == 10 && elements[i][2] == 20 && elements[i][3] == 30;
+    }
+    std::printf("gfx_render_tests: memexport: %s (element 3: %g %g %g %g)\n", right ? "4 elements written" : "wrong",
+                elements[3][0], elements[3][1], elements[3][2], elements[3][3]);
+    CHECK(right && g_memory[dest + 64] == 0xCD);
+  }
+  // Centroid interpolation: which interpolators the pixel shader samples at their centroid (none at 1x or with
+  // centres only; all with centroids only; by SQ_INTERPOLATOR_CNTL's pattern, a set bit a centre, otherwise), and a
+  // draw at 2x MSAA, centroids only, whose pixel shader exports interpolator 0 (the vertex position).
+  {
+    using vk::CentroidInterpolators;
+    const uint32_t msaa2 = 1u << 16, msaa4 = 2u << 16;
+    CHECK(CentroidInterpolators(0xF, 0, 0, 0) == 0);                       // 1x
+    CHECK(CentroidInterpolators(0xF, msaa2, 1u << 2, 0) == 0);             // centres only (sc_sample_cntl, bit 2)
+    CHECK(CentroidInterpolators(0xF, msaa2, 0, 0) == 0xF);                 // centroids only
+    CHECK(CentroidInterpolators(0xF, msaa4, 2u << 2, 0x5u << 16) == 0xA);  // the pattern: 0 and 2 at centres
+    std::vector<uint32_t> words;
+    t::VertexFetch position;
+    t::PushVertexFetch(words, position);
+    t::Alu out_position, out_value;
+    out_position.vector_mask = out_value.vector_mask = 0b1111, out_position.is_export = out_value.is_export = true;
+    out_position.dest = uint32_t(uc::ExportRegister::kVSPosition), out_position.src1 = out_position.src2 = {1, true};
+    out_value.dest = uint32_t(uc::ExportRegister::kVSInterpolator0), out_value.src1 = out_value.src2 = {1, true};
+    t::PushAlu(words, out_position);
+    t::PushAlu(words, out_value);
+    s.Shader(0, t::BuildCfShader({t::CfAlloc(uc::AllocType::kVsPosition, 0),
+                                  t::CfExec(uc::ControlFlowOpcode::kExec, 2, 2, 0b0001),
+                                  t::CfAlloc(uc::AllocType::kVsInterpolators, 0),
+                                  t::CfExec(uc::ControlFlowOpcode::kExecEnd, 4, 1, 0)},
+                                 words));
+    s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, true}));
+    Pixels p = scenario("centroid", nullptr, [&] {
+      s.Reg(0x2000, 64u | 1u << 16);
+      s.Reg(0x2302, 1);
+      s.Put({Type0(0x210F, 6), Bits(32), Bits(32), Bits(-16), Bits(16), Bits(1), Bits(0)});
+      s.Put({Type0(0x200E, 2), 0, 32u << 16 | 64u});
+      s.Put({Type0(0x2080, 3), 0, 0, 32u << 16 | 64u});
+      s.Reg(0x2181, 0);  // sc_sample_cntl: centroids only
+      s.Vertices(0);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2302, 0);
+    });
+    s.Shader(0, t::BuildFetchPositionShader());
+    s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+    // Interpolator 0 is the quad's position: x from -1 to 1 (red 0 at the left edge, 251 at the right pixel's centre,
+    // 0.98), z 0.5 (blue), w 1 (alpha).
+    const uint32_t left = p.At(0, 32), right = p.At(63, 32), middle = p.At(48, 20);
+    std::printf("gfx_render_tests: centroid: %08X %08X %08X\n", left, right, middle);
+    CHECK((left & 0xFF) == 0 && (right & 0xFF) >= 0xF8 && std::abs(int(middle >> 16 & 0xFF) - 128) <= 1 &&
+          middle >> 24 == 0xFF && (middle & 0xFF) > 0x80);
   }
   // Render target formats: c0 written over the whole target of each format, read back as the host stores it.
   {
@@ -613,6 +777,81 @@ int main(int argc, char** argv) {
     });
     std::printf("gfx_render_tests: MSAA 2x as samples: %u of %u samples\n", p.Count(color), kSize * kSize);
     CHECK(p.Count(color) == kSize * kSize);
+  }
+  // Alpha to coverage (RB_COLORCONTROL alpha_to_mask_enable): a sample is kept when alpha reaches its threshold less
+  // the pixel's dither offset. 1x, alpha 0.5: offsets 3 at even x and y only (threshold 1 - 3/4) keep a quarter; 2x,
+  // alpha 0.6: the top samples (0.5) and not the bottom ones (1); 4x, alpha 0.6: BL (0.25) and TR (0.5), not TL
+  // (0.75) or BR (1).
+  {
+    const uint32_t half = Rgba(30, 160, 90, 128), more = Rgba(30, 160, 90, 153);
+    Pixels p = scenario("alpha to coverage 1x", nullptr, [&] {
+      s.Reg(0x2202, 1u << 4 | 3u << 24);
+      s.Vertices(0);
+      s.Color(30, 160, 90, 128);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2202, 0);
+    });
+    const uint32_t kept_1x = p.Count(half);
+    CHECK(kept_1x == kSize * kSize / 4 && p.At(0, 0) == half && p.At(1, 0) == kBlack && p.At(0, 1) == kBlack);
+    p = scenario("alpha to coverage 2x", nullptr, [&] {
+      s.Reg(0x2000, 64u | 1u << 16);
+      s.Reg(0x2302, 1);
+      s.Put({Type0(0x210F, 6), Bits(32), Bits(32), Bits(-16), Bits(16), Bits(1), Bits(0)});
+      s.Put({Type0(0x200E, 2), 0, 32u << 16 | 64u});
+      s.Put({Type0(0x2080, 3), 0, 0, 32u << 16 | 64u});
+      s.Reg(0x2202, 1u << 4);
+      s.Vertices(0);
+      s.Color(30, 160, 90, 153);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2202, 0);
+      s.Reg(0x2302, 0);
+    });
+    const uint32_t kept_2x = p.Count(more);
+    CHECK(kept_2x == kSize * kSize / 2 && p.At(5, 0) == more && p.At(5, 1) == kBlack);
+    p = scenario("alpha to coverage 4x", nullptr, [&] {
+      s.Reg(0x2000, 32u | 2u << 16);
+      s.Reg(0x2302, 1);
+      s.Put({Type0(0x210F, 6), Bits(16), Bits(16), Bits(-16), Bits(16), Bits(1), Bits(0)});
+      s.Put({Type0(0x200E, 2), 0, 32u << 16 | 32u});
+      s.Put({Type0(0x2080, 3), 0, 0, 32u << 16 | 32u});
+      s.Reg(0x2202, 1u << 4);
+      s.Vertices(0);
+      s.Color(30, 160, 90, 153);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2202, 0);
+      s.Reg(0x2302, 0);
+    });
+    const uint32_t kept_4x = p.Count(more);
+    std::printf("gfx_render_tests: alpha to coverage: 1x %u, 2x %u, 4x %u of %u samples\n", kept_1x, kept_2x, kept_4x,
+                kSize * kSize);
+    CHECK(kept_4x == kSize * kSize / 2 && p.At(0, 1) == more && p.At(1, 0) == more && p.At(0, 0) == kBlack &&
+          p.At(1, 1) == kBlack);
+  }
+  // Occlusion queries (EVENT_WRITE_ZPD): a begin block (no end markers), the draws, an end block (D3D's markers in
+  // its ZPass words): the renderer's count lands in the end block once the draws ran. A full-target quad passes every
+  // sample; one the alpha test (GREATER 0.5 on alpha 0.25) discards passes none.
+  if (renderer.CountsSamples()) {
+    const uint32_t begin = 0x1F0000, end = 0x1F0040;
+    uint32_t counts[2] = {};
+    for (uint32_t i = 0; i < 2; ++i) {
+      std::memset(g_memory + begin, 0, 0x80);
+      for (uint32_t word = 8; word < 24; word += 4) SetBig(end + word, 0xFFFFFEED);
+      scenario("occlusion query", nullptr, [&] {
+        s.Reg(0x2325, begin);
+        s.Put({Type3(pm4::EVENT_WRITE_ZPD, 1), 0x15});
+        if (i) s.Reg(0x210E, Bits(0.5f)), s.Reg(0x2202, 4u | 1u << 3);
+        s.Vertices(0);
+        s.Color(90, 40, 200, i ? 64 : 255);
+        s.DrawAuto(kTriangleStrip, 4);
+        s.Reg(0x2202, 0);
+        s.Reg(0x2325, end);
+        s.Put({Type3(pm4::EVENT_WRITE_ZPD, 1), 0x15});
+      });
+      renderer.WaitIdle();
+      std::memcpy(&counts[i], g_memory + end + 16, 4);  // ZPass_A, host order
+    }
+    std::printf("gfx_render_tests: occlusion queries: %u and %u samples passed\n", counts[0], counts[1]);
+    CHECK(counts[0] == kSize * kSize && counts[1] == 0);
   }
   // User clip plane 0 (PA_CL_CLIP_CNTL ucp_ena_0, PA_CL_UCP_0 = x >= 0 in clip space): the right half is kept.
   {

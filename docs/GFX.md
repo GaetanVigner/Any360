@@ -207,8 +207,42 @@ From the Crackdown runs (each one cost a debugging session there):
    Points (2026-11-05): point lists drawn as two-triangle strips, each the square of PA_SU_POINT_SIZE (or of the size
    the vertex shader writes, clamped by PA_SU_POINT_MINMAX), the vertex shader expanding them as the reference does
    without geometry shaders (the renderer drew sizeless host points). Point sprite coordinates (pixel parameter
-   generation on points) stay to do. Anisotropic filtering (a 4:1 fetch constant keeps the finer level of a
+   generation on points, which the renderer refused) now come from that expansion: S and T 0 to 1 across the
+   square, rightwards and downwards, as the reference passes them. Anisotropic filtering (a 4:1 fetch constant keeps the finer level of a
    texture read obliquely) and bin predication (gfx_cp_tests) are tested too.
+   Alpha to coverage and occlusion queries (2026-11-05): RB_COLORCONTROL's alpha_to_mask_enable and dither offsets
+   never reached the shader. Guest samples are host pixels here, so the translator (an any360 mode, as the reference
+   does it per host sample) finds a fragment's guest pixel and sample from its position and discards it when alpha
+   is below the sample's threshold (1x 1, 2x top 0.5 / bottom 1, 4x TL 0.75 / BL 0.25 / TR 0.5 / BR 1) less the
+   pixel's offset; gl_SampleMask is no longer declared, so the host's own MSAA keeps every sample of a kept fragment.
+   Scenarios at 1x, 2x and 4x. Occlusion queries, already counted by host queries, got their scenario: a full quad
+   reports every sample and one the alpha test discards none.
+   Centroid interpolation (2026-11-05): the pixel shader's interpolators are decorated Centroid as the reference
+   picks them (guest MSAA, SQ_CONTEXT_MISC sc_sample_cntl, SQ_INTERPOLATOR_CNTL's pattern), part of the shader key.
+   Guest samples being host pixels, it matters to the host's own MSAA (no extrapolation at partly covered edges);
+   tested for the choice and for a 2x draw through it, not for the host MSAA image itself.
+   Immediate indices (2026-11-05): the indices a DRAW_INDX or DRAW_INDX_2 packet carries itself (source select 1),
+   which the renderer refused and the reference does not draw, are staged in the batch's index buffer and drawn as
+   DMA indices of host order: two 16-bit indices a dword, the first in the low half, as an R6xx-family VGT takes
+   them (Mesa's r600 driver copies little-endian user indices into its immediate draw packets); no Xenos source
+   confirms it, and no known title emits them. Rectangle and point lists (their vertex shader loads guest indices
+   from memory) still refuse them. Scenarios: a 16-bit triangle (its half order checked), a 32-bit quad list and a
+   strip with primitive reset.
+   2D primitives (0x10-0x16: copy rect lists V0-V3, fill rect list, 2D line and triangle strips) stay refused, for
+   want of a source: the reference refuses them, Mesa's AMD and Adreno register files and RADV only name them, and
+   AMD's R6xx/R7xx 3D Register Reference (2009) lists them by name only (its VGT_GROUP_PRIM_TYPE grouper types
+   VGT_GRP_2D_COPY_RECT_V0-V3 / FILL_RECT / LINE / TRI likewise; PA_SC_LINE_CNTL's Bresenham control is "set for 2D
+   lines"). Their vertex counts, what V0-V3 differ in and whether they bypass clipping and the viewport transform
+   are not documented there; no known title draws them.
+   Memory export (2026-11-05): the translator already wrote memexport streams into the guest memory buffer, but
+   nothing brought them back. The renderer now gathers each draw's streams as the reference does (the stream
+   constants the shaders' `mad eA` read, checked by their marks; a range of count x element size each), submits the
+   batch with them and waits: guest memory in video memory (the default) copies the ranges into a readback buffer
+   and then into guest memory, a mirror copies them back, imported memory has them in place; the texture cache
+   forgets those ranges. Rare and synchronous by design (later draws and the title's code may read the results).
+   A vertex shader exporting with rasterization off (EDRAM mode other than 4 or 5; the reference draws it with
+   rasterizer discard) is reported as a failure, not dropped: not done yet. Scenario: a vertex shader writing a
+   32_32_32_32_FLOAT element per point (video memory path; the mirror and imported paths are untested).
 ### Speed (2026-11-01)
 
 Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex buffer and constants, a textured
