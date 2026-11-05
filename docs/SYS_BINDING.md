@@ -71,9 +71,22 @@ After step 6 every system call but audio is Any360's; after step 7 ReXGlue only 
   reach the runtime's exports, on reach any360::sys's (calls whose answers differ on the two sides); the dispatcher
   runs guest code with eight arguments.
 
-What step 1 needs from the title (the Crackdown session): include `system.h` and `system_exports.inc` with a skip for
-each `__imp__` it already hooks, call `StartSystem` once the title is loaded, and a setting naming the groups to
-switch (`any360_sys_groups = "stateless"`).
+## Step 1: done (the stateless calls in Crackdown)
+
+Crackdown's branch `any360-sys-test` (`src/any360_system.cpp`) takes every override, starts the system binding in
+`OnPostSetup` and switches the groups the `any360_sys_groups` setting names (`any360_sys_trace` logs the first call
+of each call that goes to any360::sys). With `stateless` and Any360's GPU it ran four minutes of play with no crash
+(2026-11-05); Crackdown makes 16 stateless calls (`RtlImageXexHeaderField`, `ExGetXConfigSetting`, the printf
+family, `XeCryptSha`, `XeKeysConsolePrivateKeySign`, the time and string conversions...).
+
+What the game found that the tests could not:
+
+- The import table is read-only once the image is loaded: `BindVariables` makes the page writable for the store.
+- The title's settings (module handle, XEX header, title id, module name) must come from the loaded module:
+  `StartSystem` fills them, or `XexExecutableModuleHandle` and `RtlImageXexHeaderField`'s callers read nothing.
+- A variable belongs to the group whose calls read it: bound with every variable, the object types no longer matched
+  the runtime's `ObReferenceObjectByHandle` and the title read through a null object. `BindVariables` (called after
+  `EnableSystemGroup`) now binds only the variables of the groups switched (`VariableGroup`).
 
 ## Who does what
 
