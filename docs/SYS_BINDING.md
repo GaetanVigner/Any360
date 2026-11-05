@@ -217,6 +217,32 @@ What the game found that the tests could not (the save was "corrupt" until the l
   calls sharing their state with them must go along), and `trace_groups` narrows `trace_every_call` to some groups so a
   long run's log keeps the calls looked into.
 
+## Step 7: done (audio in Crackdown)
+
+With every group on any360::sys (`stateless,files,objects,threads,memory,xam,audio`) Crackdown plays with its sound
+(2026-11-05): ReXGlue loads the image and answers nothing but the graphics and input the other bindings keep. Its audio
+calls: `XAudioRegisterRenderDriverClient`, `XAudioGetVoiceCategoryVolumeChangeMask`, `XAudioSubmitRenderDriverFrame`,
+`XMACreateContext`, `XMAReleaseContext`.
+
+- **The decoder is any360::sys's** (`any360_sys_xma`, `xma.h`): an `XmaBackend` running the XMA hardware's context
+  machinery (packets, frames spanning packets, loops, the output ring the title reads), ported from Xenia's XmaContext
+  (BSD), each frame decoded by FFmpeg's xmaframes decoder — the FFmpeg the ReXGlue SDK ships (its `libavcodec` /
+  `libavutil`, with the headers of its source: `ANY360_FFMPEG_INCLUDE`). A separate target, so the core needs no FFmpeg.
+  `xma_tests` checks the machinery; decoding itself is checked in game (no stream ships with the repository).
+- **The XMA registers are any360::sys's**: XAudio2 (linked into the title) drives the hardware directly at 0x7FEA0000,
+  not through the `XMA*` calls: the context array's address, the kick, lock and clear registers.
+  `AudioKernel::XmaReadRegister` / `XmaWriteRegister` model them; the ReXGlue binder points the runtime's MMIO range
+  there (`LookupVirtualMappedRange`). The contexts live in the 64 KB-page view, where a physical address is the virtual
+  one's low bits.
+- **The output**: `StartAudio` (the binder, `ANY360_REXGLUE_AUDIO`) gives the audio kernel an SDL3 sink (5.1 floats to
+  the default device, its queue pacing the clients) and pumps the clients' callbacks on a guest thread.
+
+What the game found that the tests could not:
+
+- A thread gets its hardware thread at creation, as the reference: the processor mask in the creation flags' top byte,
+  else the next of the six in turn, in its KTHREAD and PCR. any360::sys left every thread on processor 0: XAudio's two
+  mix workers, meeting by processor number, waited for each other for ever and no frame was ever mixed.
+
 ## Who does what
 
 - `layer/sys` (the calls, `SetHandleBase`, `AdoptCurrentThread`, the page map import): the sys session.

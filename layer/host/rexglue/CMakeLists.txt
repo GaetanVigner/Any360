@@ -6,6 +6,12 @@ target_include_directories(any360_host_rexglue PUBLIC include)
 # The renderer stays private: its vendored headers (fmt among them) must not reach the title's sources.
 target_link_libraries(any360_host_rexglue PUBLIC any360_sys_ppc PRIVATE any360_gfx_vulkan)
 target_compile_options(any360_host_rexglue PRIVATE -Wall -Wextra)
+# The audio group's decoder and output (StartAudio), when the XMA decoder is built (FFmpeg's headers found).
+if(TARGET any360_sys_xma)
+    target_sources(any360_host_rexglue PRIVATE src/audio.cpp)
+    target_link_libraries(any360_host_rexglue PUBLIC any360_sys_xma)
+    target_compile_definitions(any360_host_rexglue PUBLIC ANY360_REXGLUE_AUDIO)
+endif()
 
 # The binding inside a running reference runtime (tool mode), with a ring, interrupts and vertical blanks.
 if(WIN32)

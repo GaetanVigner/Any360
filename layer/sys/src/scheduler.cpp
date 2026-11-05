@@ -1,6 +1,7 @@
 #include "any360/sys/scheduler.h"
 
 #include <algorithm>
+#include <bit>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -98,6 +99,7 @@ void Scheduler::Shutdown() {
   }
   process_ = 0;
   next_thread_id_ = 1;
+  next_cpu_ = 0;
   ResetDpcs();           // the DPC thread runs guest code too
   Variables().Reset();   // and the clock thread writes guest memory
   std::lock_guard lock(apc_mutex_);
@@ -223,6 +225,18 @@ uint32_t Scheduler::CreateContext(Guest g, uint32_t stack_size, GuestContext& co
   g.Store32(pcr + kPcrStackEnd, stack_limit);
   g.Store32(pcr + kPrcbCurrentThread, kthread);
   g.Store32(pcr + kPcrPrcb, pcr + kPrcb);
+  // Its hardware thread, as the reference: the processor mask in the creation flags' top byte (the highest bit set),
+  // else the next of the six in turn. Titles read it from the PCR (XAudio's mix workers meet by it).
+  const uint8_t mask = uint8_t(creation_flags >> 24) & 0x3F;
+  uint8_t cpu = 0;
+  if (mask) {
+    cpu = uint8_t(31 - std::countl_zero(uint32_t(mask)));
+  } else {
+    next_cpu_ = uint8_t((next_cpu_ + 1) % 6);
+    cpu = next_cpu_;
+  }
+  g.Store8(kthread + kCurrentCpu, cpu);
+  g.Store8(pcr + kPrcbCurrentCpu, cpu);
   context = {kthread, pcr, stack_base - 0x40};
   return kStatusSuccess;
 }

@@ -55,6 +55,8 @@ struct SystemOptions {
   bool trace_every_call = false;
   // The groups `trace_every_call` reports (empty: all), to keep a long run's log on the calls looked into.
   std::vector<SysGroup> trace_groups;
+  // And, when not empty, only these calls.
+  std::vector<std::string> trace_names;
   // Calls left to the runtime though their group is switched, for finding which call of a group a title disagrees
   // with (the calls sharing its state must go with it). Calls routed by handle or path follow their handle or path.
   std::vector<std::string> runtime_calls;
@@ -73,6 +75,11 @@ struct SystemOptions {
 // runs guest code through, the title's settings (its module, XEX header, title id). False with `error` when the runtime is not set up or the heap cannot
 // be had: nothing is switched then.
 bool StartSystem(const SystemOptions& options, std::string& error);
+// The audio group's hardware on the host: any360::sys's XMA decoder (FFmpeg's xmaframes) and an SDL3 output, the
+// audio kernel's clients pumped on a guest thread. Called after StartSystem, before the title's first audio call, when
+// the audio group is switched; false with `error` (no decoder linked, no device) leaves audio silent. Defined only
+// when the binding is built with any360_sys_xma (ANY360_REXGLUE_AUDIO).
+bool StartAudio(std::string& error);
 // Switches a group to Any360 (or back). Meant once, before the title's first call of the group: calls of a group
 // share state, which does not move from one side to the other.
 void EnableSystemGroup(SysGroup group, bool enabled);

@@ -47,6 +47,7 @@ void AudioKernel::Reset() {
   xma_base_ = 0;
   xma_used_.clear();
   xma_enabled_.clear();
+  xma_registers_.clear();
 }
 
 uint32_t AudioKernel::RegisterClient(Guest g, uint32_t callback_ptr, uint32_t driver_ptr) {
@@ -113,15 +114,22 @@ void AudioKernel::Pump(Guest) {
 void AudioKernel::Start() {
   Stop();
   running_ = true;
+  // The clients' callbacks are guest code: the thread runs as the host's guest threads do (Scheduler's runner).
   worker_ = std::thread([this] {
-    const auto period = std::chrono::microseconds(5333);  // 256 samples at 48 kHz
-    auto next = std::chrono::steady_clock::now();
-    while (running_) {
-      next += period;
-      Pump(Objects().guest());
-      std::this_thread::sleep_until(next);
-    }
+    Threads().RunAsGuestThread([](void* self) { static_cast<AudioKernel*>(self)->Run(); }, this);
   });
+}
+
+void AudioKernel::Run() {
+  const auto period = std::chrono::microseconds(5333);  // 256 samples at 48 kHz; a sink that blocks paces it too
+  auto next = std::chrono::steady_clock::now();
+  while (running_) {
+    next += period;
+    Pump(Objects().guest());
+    const auto now = std::chrono::steady_clock::now();
+    if (next < now - period * 4) next = now;  // a sink that blocked: no burst to catch up
+    std::this_thread::sleep_until(next);
+  }
 }
 
 void AudioKernel::Stop() {
@@ -129,16 +137,24 @@ void AudioKernel::Stop() {
   if (worker_.joinable()) worker_.join();
 }
 
+bool AudioKernel::XmaArray(Guest g) {
+  if (xma_base_) return true;
+  // The decoder's contexts: one physically contiguous block, as the hardware reads them, in the 64 KB-page view
+  // (0xA0000000 up) where a context's physical address is its virtual one's low bits: XAudio2 finds a context's
+  // index from them, which the 4 KB-page view's 0x1000 shift would throw off.
+  xma_base_ = Memory().AllocatePhysical(g, 0, kXmaContextSize * kXmaContexts, 0x4 | kMemLargePages, 0, 0xFFFFFFFF, 256);
+  if (!xma_base_) xma_base_ = Memory().AllocatePhysical(g, 0, kXmaContextSize * kXmaContexts, 0x4, 0, 0xFFFFFFFF, 256);
+  if (!xma_base_) return false;
+  std::memset(g.host(xma_base_), 0, kXmaContextSize * kXmaContexts);
+  xma_used_.assign(kXmaContexts, false);
+  xma_enabled_.assign(kXmaContexts, false);
+  return true;
+}
+
 uint32_t AudioKernel::XmaCreateContext(Guest g, uint32_t context_out) {
-  if (!xma_base_) {
-    // The decoder's contexts: one physically contiguous block, as the hardware reads them.
-    xma_base_ = Memory().AllocatePhysical(g, 0, kXmaContextSize * kXmaContexts, 0x4, 0, 0xFFFFFFFF, 256);
-    if (!xma_base_) {
-      if (context_out) g.Store32(context_out, 0);
-      return kStatusNoMemory;
-    }
-    xma_used_.assign(kXmaContexts, false);
-    xma_enabled_.assign(kXmaContexts, false);
+  if (!XmaArray(g)) {
+    if (context_out) g.Store32(context_out, 0);
+    return kStatusNoMemory;
   }
   for (uint32_t i = 0; i < kXmaContexts; ++i) {
     if (xma_used_[i]) continue;
@@ -198,6 +214,7 @@ uint32_t AudioKernel::XmaInitializeContext(Guest g, uint32_t context, uint32_t i
   XmaSet(g, context, XmaField::kStereo, g.Load32(init + 0x24) >= 1);  // as the reference: a channel count of 1+
   XmaSet(g, context, XmaField::kSampleRate, g.Load32(init + 0x28));
   XmaSetLoopData(g, context, init + 0x2C);
+  if (xma_) xma_->ContextInitialized(g, context);
   return 0;
 }
 
@@ -233,6 +250,42 @@ uint32_t AudioKernel::XmaDisableContext(Guest g, uint32_t context) {
 bool AudioKernel::XmaEnabled(uint32_t context) const {
   const int i = XmaIndex(context);
   return i >= 0 && xma_enabled_[i];
+}
+
+uint32_t AudioKernel::XmaReadRegister(Guest g, uint32_t index) {
+  constexpr uint32_t kArrayAddress = 0x600, kCurrentIndex = 0x606, kNextIndex = 0x607;
+  if (xma_registers_.empty()) {
+    xma_registers_.assign(0x4000, 0);
+    xma_registers_[0x607] = 1;  // the next context index starts at 1, as the reference
+  }
+  index &= 0x3FFF;
+  if (index == kArrayAddress && XmaArray(g)) xma_registers_[index] = Memory().PhysicalAddress(xma_base_);
+  if (index == kCurrentIndex) {  // as the reference: each read moves on to the next context
+    xma_registers_[kCurrentIndex] = xma_registers_[kNextIndex];
+    xma_registers_[kNextIndex] = (xma_registers_[kNextIndex] + 1) % kXmaContexts;
+  }
+  return xma_registers_[index];
+}
+
+void AudioKernel::XmaWriteRegister(Guest g, uint32_t index, uint32_t value) {
+  constexpr uint32_t kKick = 0x650, kLock = 0x690, kClear = 0x6A0, kGroups = kXmaContexts / 32;
+  if (xma_registers_.empty()) {
+    xma_registers_.assign(0x4000, 0);
+    xma_registers_[0x607] = 1;  // the next context index starts at 1, as the reference
+  }
+  index &= 0x3FFF;
+  xma_registers_[index] = value;
+  const bool kick = index >= kKick && index < kKick + kGroups, lock = index >= kLock && index < kLock + kGroups,
+             clear = index >= kClear && index < kClear + kGroups;
+  if (!(kick || lock || clear) || !XmaArray(g)) return;
+  const uint32_t first = (index - (kick ? kKick : lock ? kLock : kClear)) * 32;
+  for (uint32_t bit = 0; bit < 32; ++bit) {
+    if (!(value >> bit & 1)) continue;
+    const uint32_t context = xma_base_ + (first + bit) * kXmaContextSize;
+    if (kick) XmaEnableContext(g, context);
+    else if (lock) XmaDisableContext(g, context);
+    else if (xma_) xma_->ContextInitialized(g, context);
+  }
 }
 
 uint32_t AudioKernel::XmaBlockWhileInUse(Guest g, uint32_t context) const {

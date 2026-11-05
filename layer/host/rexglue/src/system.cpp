@@ -47,6 +47,7 @@ std::atomic<bool> g_trace_every{false};
 std::atomic<uint32_t> g_trace_groups{~0u};  // the groups every-call tracing reports (a bit per SysGroup)
 // Calls kept on the runtime though their group is switched (set once by StartSystem, before the title's calls).
 std::unordered_set<std::string> g_runtime_calls;
+std::unordered_set<std::string> g_trace_names;  // when not empty, the only calls every-call tracing reports
 std::atomic<bool> g_any_runtime_calls{false};
 std::mutex g_traced_mutex;
 std::unordered_set<const char*> g_traced;  // the names' literals, one each
@@ -82,14 +83,15 @@ bool SystemGroupEnabled(SysGroup group) { return group < SysGroup::kCount && g_e
 
 bool Enabled(SysGroup group) { return g_enabled[size_t(group)].load(std::memory_order_relaxed); }
 
-bool TraceEvery(SysGroup group) {
+bool TraceEvery(SysGroup group, const char* name) {
   return g_trace_every.load(std::memory_order_relaxed) &&
-         (g_trace_groups.load(std::memory_order_relaxed) >> uint32_t(group) & 1);
+         (g_trace_groups.load(std::memory_order_relaxed) >> uint32_t(group) & 1) &&
+         (g_trace_names.empty() || g_trace_names.count(name));
 }
 
 void RunAny360(SysGroup group, const char* name, GuestFunction any360, PPCContext& ctx, uint8_t* base) {
   if (g_trace.load(std::memory_order_relaxed)) Trace(group, name);
-  if (!TraceEvery(group)) {
+  if (!TraceEvery(group, name)) {
     any360(ctx, base);
     return;
   }
@@ -156,7 +158,7 @@ void CallPathExport(SysGroup group, const char* name, GuestFunction any360, Gues
                ? any360::sys::Files().KnowsAttributes(any360::sys::Guest{base}, path)
                : any360::sys::Files().Knows(reinterpret_cast<const char*>(any360::sys::Guest{base}.host(path)));
   }
-  if (ours && TraceEvery(group) && g_log && path) {
+  if (ours && TraceEvery(group, name) && g_log && path) {
     std::string text;
     if (kind == PathKind::kAttributes) {
       // OBJECT_ATTRIBUTES: root, then the name (an ANSI_STRING: length, maximum, buffer).
@@ -319,6 +321,7 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
   g_trace_groups = options.trace_groups.empty() ? ~0u : traced;
   g_runtime_calls = std::unordered_set<std::string>(options.runtime_calls.begin(), options.runtime_calls.end());
   g_any_runtime_calls = !g_runtime_calls.empty();
+  g_trace_names = std::unordered_set<std::string>(options.trace_names.begin(), options.trace_names.end());
   const uint32_t heap = kernel->memory()->SystemHeapAlloc(options.kernel_heap_size, 0x10000);
   if (!heap) {
     error = "no room in the runtime's system heap for the kernel heap";

@@ -394,7 +394,15 @@ void SchedulerTests() {
   CHECK(Objects().WaitForObject(gm, kx, kMainThread, &second) == 0 && gm.Load32(kx + 0x140) == 99);
   // Affinity, priority, boost on a KTHREAD.
   CHECK(Threads().SetAffinity(gm, kx, 0, out + 12) == kStatusInvalidParameter);
-  CHECK(Threads().SetAffinity(gm, kx, 0x4, out + 12) == 0 && gm.Load32(out + 12) == 1 && gm.Load8(kx + 0xBF) == 2);
+  // A thread created with no processor mask gets the next hardware thread in turn (its KTHREAD and PCR say which).
+  const uint8_t first_cpu = gm.Load8(kx + 0xBF);
+  CHECK(first_cpu < 6);
+  {  // a processor mask in the creation flags' top byte: its highest bit, in the KTHREAD and the PCR
+    GuestContext masked{};
+    CHECK(Threads().CreateContext(gm, 0x4000, masked, 0x0C000000) == 0);
+    CHECK(gm.Load8(masked.kthread + 0xBF) == 3 && gm.Load8(masked.pcr + 0x10C) == 3);
+  }
+  CHECK(Threads().SetAffinity(gm, kx, 0x4, out + 12) == 0 && gm.Load32(out + 12) == (1u << first_cpu) && gm.Load8(kx + 0xBF) == 2);
   CHECK(Threads().SetAffinity(gm, kx, 0x2, out + 12) == 0 && gm.Load32(out + 12) == 4);
   CHECK(Threads().QueryBasePriority(gm, kx) == 8);
   CHECK(Threads().SetBasePriority(gm, kx, 12) == 8 && Threads().QueryBasePriority(gm, kx) == 12);

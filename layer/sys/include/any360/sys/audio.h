@@ -21,6 +21,7 @@ class AudioSink {
  public:
   virtual ~AudioSink() = default;
   // One frame: kAudioFrameSamples samples of kAudioChannels interleaved floats (front L, R, centre, LFE, rear L, R).
+  // It may block until the output has room: that paces the clients as the hardware's consumption does.
   virtual void Submit(uint32_t client, const float* interleaved) = 0;
 };
 
@@ -33,6 +34,8 @@ class XmaBackend {
   // XMAEnableContext / XMADisableContext: the decoder may start on the context, or must leave it before returning.
   virtual void ContextEnabled(Guest, uint32_t) {}
   virtual void ContextDisabled(Guest, uint32_t) {}
+  // XMAInitializeContext, its fields written: the hardware clears the context (decoding starts afresh).
+  virtual void ContextInitialized(Guest, uint32_t) {}
 };
 
 // The fields of an XMA context the XMA* calls read and write: big-endian words, bitfields from the low bit.
@@ -81,12 +84,21 @@ class AudioKernel {
   // XMABlockWhileInUse: returns once neither input buffer is valid or the decoder has no work buffer.
   uint32_t XmaBlockWhileInUse(Guest g, uint32_t context) const;
 
+  // The XMA hardware's registers (0x7FEA0000 up, a 4-byte register per index, host-endian values), which titles'
+  // XAudio2 drives directly: the context array's physical address (0x600), a round-robin context index (0x606), and
+  // per 32 contexts a kick (0x650 up: XMAEnableContext's), a lock (0x690 up: XMADisableContext's) and a clear (0x6A0
+  // up: the backend's ContextInitialized). Other registers hold what is written.
+  uint32_t XmaReadRegister(Guest g, uint32_t index);
+  void XmaWriteRegister(Guest g, uint32_t index, uint32_t value);
+
  private:
   struct Client {
     bool used = false;
     uint32_t callback = 0, argument = 0;
   };
-  int XmaIndex(uint32_t context) const;  // -1 for an address outside the decoder's contexts
+  int XmaIndex(uint32_t context) const;
+  bool XmaArray(Guest g);  // the contexts' block, allocated at first use
+  void Run();  // the pumping thread's loop  // -1 for an address outside the decoder's contexts
 
   AudioSink* sink_ = nullptr;
   XmaBackend* xma_ = nullptr;
@@ -96,6 +108,7 @@ class AudioKernel {
   std::thread worker_;
   uint32_t xma_base_ = 0;
   std::vector<bool> xma_used_, xma_enabled_;
+  std::vector<uint32_t> xma_registers_;
 };
 
 AudioKernel& Audio();

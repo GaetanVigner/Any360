@@ -32,6 +32,29 @@ if(ANY360_REFERENCE_SDK)
     target_include_directories(any360_sys_ppc SYSTEM PUBLIC "${ANY360_REFERENCE_SDK}/include")
     target_compile_definitions(any360_sys_ppc PUBLIC SPDLOG_COMPILED_LIB SPDLOG_FMT_EXTERNAL $<$<BOOL:${WIN32}>:NOMINMAX WIN32_LEAN_AND_MEAN>)
 
+    # The XMA decoder (an XmaBackend, src/xma.cpp): FFmpeg's xmaframes decoder from the SDK's libraries, with the
+    # headers of the FFmpeg they were built from (the SDK's thirdparty/FFmpeg; FFmpeg is LGPL, linked as the SDK ships it).
+    find_path(ANY360_FFMPEG_INCLUDE libavcodec/avcodec.h HINTS "${ANY360_REFERENCE_SDK}/include"
+              DOC "Headers of the FFmpeg the reference SDK's libavcodec was built from (with the xmaframes decoder)")
+    if(ANY360_FFMPEG_INCLUDE)
+        add_library(any360_sys_xma STATIC src/xma.cpp)
+        target_link_libraries(any360_sys_xma PUBLIC any360_sys)
+        target_include_directories(any360_sys_xma SYSTEM PRIVATE "${ANY360_FFMPEG_INCLUDE}")
+        target_compile_options(any360_sys_xma PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
+        if(WIN32)
+            set(_ffmpeg_suffix "$<IF:$<CONFIG:Debug>,d,$<IF:$<CONFIG:RelWithDebInfo>,rd,>>")
+            target_link_libraries(any360_sys_xma PUBLIC "${ANY360_REFERENCE_SDK}/lib/libavcodec${_ffmpeg_suffix}.lib"
+                                  "${ANY360_REFERENCE_SDK}/lib/libavutil${_ffmpeg_suffix}.lib" bcrypt)
+        else()
+            target_link_libraries(any360_sys_xma PUBLIC "${ANY360_REFERENCE_SDK}/lib/libavcodec.a"
+                                  "${ANY360_REFERENCE_SDK}/lib/libavutil.a")
+        endif()
+        add_executable(xma_tests tests/xma_tests.cpp)
+        target_link_libraries(xma_tests PRIVATE any360_sys_xma)
+        target_compile_options(xma_tests PRIVATE -Wall -Wextra)
+        add_test(NAME xma_tests COMMAND xma_tests)
+    endif()
+
     # The binding of a ReXGlue title to these layers (graphics first): built here to keep it compiling.
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../host/rexglue ${CMAKE_CURRENT_BINARY_DIR}/host/rexglue)
 

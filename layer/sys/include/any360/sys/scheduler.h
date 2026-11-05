@@ -131,6 +131,7 @@ class Scheduler {
   uint32_t process_ = 0;
   uint32_t default_stack_size_ = 0x10000;
   uint32_t next_thread_id_ = 1;
+  uint8_t next_cpu_ = 0;  // the hardware thread a new thread without a processor mask gets (round-robin)
   struct Apc {
     uint32_t kthread, routine, context, arg1, arg2;
     uint32_t kapc = 0;  // the guest KAPC, 0 for NtQueueApcThread and the kernel's own APCs
