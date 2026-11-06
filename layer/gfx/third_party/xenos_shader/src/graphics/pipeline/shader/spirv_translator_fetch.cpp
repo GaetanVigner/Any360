@@ -768,6 +768,12 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
     // 3D: X - width, Y - height, Z - depth.
     uint32_t size_needed_components = 0b000;
     bool data_is_3d_needed = false;
+    // any360: a point-sampled fetch of a resolution-scaled texture (a copy of a render target) in a pixel shader
+    // keeps to the texel the console fetches for the whole guest pixel (see below).
+    const bool snap_scaled_point = is_pixel_shader() && input_fragment_coordinates_ != spv::NoResult &&
+                                   instr.opcode == ucode::FetchOpcode::kTextureFetch &&
+                                   instr.dimension == xenos::FetchOpDimension::k2D &&
+                                   (draw_resolution_scale_x_ > 1 || draw_resolution_scale_y_ > 1);
     if (border_color_frac) {
       // any360: the size of every axis, the border being outside it.
       size_needed_components = border_color_frac_axes;
@@ -804,7 +810,7 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
           }
           break;
         case xenos::FetchOpDimension::k2D:
-          if (instr.attributes.unnormalized_coordinates) {
+          if (instr.attributes.unnormalized_coordinates || snap_scaled_point) {
             size_needed_components |= 0b0011;
           }
           break;
@@ -1193,6 +1199,80 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
             coordinate_ref = builder_->createNoContractionBinOp(
                 spv::OpFAdd, type_float_, coordinate_ref, component_offset_normalized);
           }
+        }
+      }
+      if (snap_scaled_point && texture_resolution_scaled != spv::NoResult) {
+        // any360: a guest pass reading a copy of a render target point by point often puts its coordinates on
+        // texel edges (the console's pixel centres, the fetch's rounding offset picking the texel). Scaled, the
+        // host pixels of a guest pixel sample either side of that edge, and some read the neighbouring texel: an
+        // edge detection then finds edges that are not there (black lines between polygons). So the host texel is
+        // kept within the guest texel the console fetches at the guest pixel's centre (found from the coordinate's
+        // screen derivatives and where the host pixel lies in its guest pixel).
+        id_vector_temp_.clear();
+        id_vector_temp_.push_back(const_int_0_);
+        id_vector_temp_.push_back(builder_->makeIntConstant(int((fetch_constant_word_0_index + 3) >> 2)));
+        id_vector_temp_.push_back(builder_->makeIntConstant(int((fetch_constant_word_0_index + 3) & 3)));
+        spv::Id word_3 = builder_->createLoad(
+            builder_->createAccessChain(spv::StorageClassUniform, uniform_fetch_constants_, id_vector_temp_),
+            spv::NoPrecision);
+        spv::Id mag_filter =
+            instr.attributes.mag_filter == xenos::TextureFilter::kUseFetchConst
+                ? builder_->createTriOp(spv::OpBitFieldUExtract, type_uint_, word_3, builder_->makeUintConstant(19),
+                                        builder_->makeUintConstant(2))
+                : builder_->makeUintConstant(uint32_t(instr.attributes.mag_filter));
+        spv::Id snap = builder_->createBinOp(
+            spv::OpLogicalAnd, type_bool_, texture_resolution_scaled,
+            builder_->createBinOp(spv::OpIEqual, type_bool_, mag_filter,
+                                  builder_->makeUintConstant(uint32_t(xenos::TextureFilter::kPoint))));
+        spv::Id sub[2];
+        for (uint32_t i = 0; i < 2; ++i) {
+          // Where the host pixel's centre lies from its guest pixel's centre, in host pixels.
+          const float axis_scale = float(i ? draw_resolution_scale_y_ : draw_resolution_scale_x_);
+          id_vector_temp_.clear();
+          id_vector_temp_.push_back(builder_->makeIntConstant(int(i)));
+          spv::Id frag = builder_->createLoad(
+              builder_->createAccessChain(spv::StorageClassInput, input_fragment_coordinates_, id_vector_temp_),
+              spv::NoPrecision);
+          spv::Id guest = builder_->createUnaryBuiltinCall(
+              type_float_, ext_inst_glsl_std_450_, GLSLstd450Floor,
+              builder_->createNoContractionBinOp(spv::OpFMul, type_float_, frag,
+                                                 builder_->makeFloatConstant(1.0f / axis_scale)));
+          spv::Id centre = builder_->createNoContractionBinOp(
+              spv::OpFAdd, type_float_,
+              builder_->createNoContractionBinOp(spv::OpFMul, type_float_, guest, builder_->makeFloatConstant(axis_scale)),
+              builder_->makeFloatConstant(0.5f * axis_scale));
+          sub[i] = builder_->createNoContractionBinOp(spv::OpFSub, type_float_, frag, centre);
+        }
+        for (uint32_t i = 0; i < 2; ++i) {
+          if (!(revert_resolution_scale_axes & (UINT32_C(1) << i)) || size[i] == spv::NoResult) continue;
+          spv::Id scale = const_texture_resolution_scale[i];
+          spv::Id t = builder_->createNoContractionBinOp(spv::OpFMul, type_float_, coordinates[i], size[i]);
+          spv::Id t_dx = builder_->createUnaryOp(spv::OpDPdxFine, type_float_, t);
+          spv::Id t_dy = builder_->createUnaryOp(spv::OpDPdyFine, type_float_, t);
+          spv::Id t_centre = builder_->createNoContractionBinOp(
+              spv::OpFSub, type_float_, t,
+              builder_->createNoContractionBinOp(
+                  spv::OpFAdd, type_float_, builder_->createNoContractionBinOp(spv::OpFMul, type_float_, sub[0], t_dx),
+                  builder_->createNoContractionBinOp(spv::OpFMul, type_float_, sub[1], t_dy)));
+          spv::Id first = builder_->createNoContractionBinOp(
+              spv::OpFMul, type_float_,
+              builder_->createUnaryBuiltinCall(type_float_, ext_inst_glsl_std_450_, GLSLstd450Floor, t_centre), scale);
+          spv::Id last = builder_->createNoContractionBinOp(
+              spv::OpFSub, type_float_, builder_->createNoContractionBinOp(spv::OpFAdd, type_float_, first, scale),
+              const_float_1_);
+          spv::Id host_texel = builder_->createUnaryBuiltinCall(
+              type_float_, ext_inst_glsl_std_450_, GLSLstd450Floor,
+              builder_->createNoContractionBinOp(spv::OpFMul, type_float_, t, scale));
+          id_vector_temp_.clear();
+          id_vector_temp_.push_back(host_texel);
+          id_vector_temp_.push_back(first);
+          id_vector_temp_.push_back(last);
+          host_texel = builder_->createBuiltinCall(type_float_, ext_inst_glsl_std_450_, GLSLstd450FClamp, id_vector_temp_);
+          spv::Id snapped = builder_->createNoContractionBinOp(
+              spv::OpFDiv, type_float_,
+              builder_->createNoContractionBinOp(spv::OpFAdd, type_float_, host_texel, builder_->makeFloatConstant(0.5f)),
+              builder_->createNoContractionBinOp(spv::OpFMul, type_float_, size[i], scale));
+          coordinates[i] = builder_->createTriOp(spv::OpSelect, type_float_, snap, snapped, coordinates[i]);
         }
       }
       if (instr.dimension == xenos::FetchOpDimension::k3DOrStacked) {

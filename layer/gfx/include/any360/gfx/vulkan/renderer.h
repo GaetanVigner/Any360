@@ -179,6 +179,10 @@ class VulkanRenderer : public gfx::Renderer {
     // reads it; `drawn`: the host pixels drawn since (left, top, right, bottom; empty: nothing to resolve).
     Image ms;
     VkImageLayout ms_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    // Views of `ms` and `image` as unsigned integers of the same size, for resolving one sample instead of the
+    // average (only integer formats may); null when the images cannot take them.
+    VkImageView ms_bits = VK_NULL_HANDLE, image_bits = VK_NULL_HANDLE;
+    bool bits_alias = false;  // `image` made to take its integer view
     int32_t drawn[4] = {INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN};
     bool paired = false;               // drawn with colour and depth targets together this frame
     bool unpaired_this_frame = false;  // a depth target drawn without colour targets this frame
@@ -315,7 +319,11 @@ class VulkanRenderer : public gfx::Renderer {
   VkSampleCountFlagBits samples_ = VK_SAMPLE_COUNT_1_BIT;  // host MSAA the device has
   // The samples drawn into a surface's multisampled image since its last resolve, within the host pixels x0-x1,
   // y0-y1 (what is about to be read), into its image (outside a pass).
-  void ResolveSamples(VkCommandBuffer cb, Surface& surface, int32_t x0, int32_t y0, int32_t x1, int32_t y1);
+  // `one_sample`: sample 0 of each pixel instead of the average, the samples kept to resolve again (a copy a title
+  // reads as data); averaged when the surface cannot.
+  void ResolveSamples(VkCommandBuffer cb, Surface& surface, int32_t x0, int32_t y0, int32_t x1, int32_t y1,
+                      bool one_sample = false);
+  bool SampleBitsViews(Surface& surface);
   // A surface back to one sample: its samples resolved, its multisampled image freed (nothing of it lost).
   void DropSamples(Surface& surface);
   // A surface's multisampled image (not yet drawn into).

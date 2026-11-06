@@ -389,9 +389,18 @@ void DestroyBuffer(const Device& d, Buffer& b) {
 }
 
 bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
-                   VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples) {
+                   VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples, VkFormat alias) {
   const Functions& f = d.fn();
   VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+  const VkFormat formats[2] = {format, alias};
+  VkImageFormatListCreateInfo format_list{VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO};
+  if (alias != VK_FORMAT_UNDEFINED) {
+    // Listed, so that the driver can keep the image compressed.
+    info.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+    format_list.viewFormatCount = 2;
+    format_list.pViewFormats = formats;
+    info.pNext = &format_list;
+  }
   info.imageType = VK_IMAGE_TYPE_2D;
   info.format = format;
   info.extent = {width, height, 1};

@@ -249,6 +249,8 @@ VulkanRenderer::~VulkanRenderer() {
   DestroyBuffer(device_, memexport_readback_);
   for (auto& [key, surface] : surfaces_) {
     if (surface->depth_view) f.vkDestroyImageView(d, surface->depth_view, nullptr);
+    if (surface->ms_bits) f.vkDestroyImageView(d, surface->ms_bits, nullptr);
+    if (surface->image_bits) f.vkDestroyImageView(d, surface->image_bits, nullptr);
     DestroyImage(device_, surface->image);
     DestroyImage(device_, surface->ms);
   }
@@ -529,6 +531,23 @@ VkFormat ColorTargetFormat(uint32_t color_format) {
 
 namespace {
 bool Is64bpp(uint32_t color_format) { return color_format == 5 || color_format == 7 || color_format == 15; }
+// The unsigned integer format of a colour target format's size (views of either alias the same texels).
+VkFormat BitsFormat(VkFormat format) {
+  switch (format) {
+    case VK_FORMAT_R8G8B8A8_UNORM:
+    case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+    case VK_FORMAT_R16G16_SNORM:
+    case VK_FORMAT_R16G16_SFLOAT:
+    case VK_FORMAT_R32_SFLOAT:
+      return VK_FORMAT_R32_UINT;
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+    case VK_FORMAT_R16G16B16A16_SNORM:
+    case VK_FORMAT_R32G32_SFLOAT:
+      return VK_FORMAT_R32G32_UINT;
+    default:
+      return VK_FORMAT_UNDEFINED;
+  }
+}
 }  // namespace
 
 VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& requested) {
@@ -556,10 +575,14 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& requested)
                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
   const VkImageAspectFlags aspect =
       key.depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-  if (!CreateImage2D(device_, key.pitch * scale_, height * scale_, format, usage, aspect, slot->image)) {
+  // With host MSAA, a colour surface also takes an integer view (resolves of one sample).
+  const VkFormat alias = !key.depth && samples_ > VK_SAMPLE_COUNT_1_BIT ? BitsFormat(format) : VK_FORMAT_UNDEFINED;
+  if (!CreateImage2D(device_, key.pitch * scale_, height * scale_, format, usage, aspect, slot->image,
+                     VK_SAMPLE_COUNT_1_BIT, alias)) {
     DestroyImage(device_, slot->image);
     return nullptr;
   }
+  slot->bits_alias = alias != VK_FORMAT_UNDEFINED;
   // Host MSAA: draws render into a multisampled image, resolved into this one when it is read.
   if (samples_ > VK_SAMPLE_COUNT_1_BIT && !CreateSamples(*slot)) {
     DestroyImage(device_, slot->image);
@@ -569,16 +592,45 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& requested)
   return slot.get();
 }
 
-void VulkanRenderer::ResolveSamples(VkCommandBuffer cb, Surface& s, int32_t x0, int32_t y0, int32_t x1, int32_t y1) {
+bool VulkanRenderer::SampleBitsViews(Surface& s) {
+  if (s.ms_bits && s.image_bits) return true;
+  const VkFormat bits = s.key.depth ? VK_FORMAT_UNDEFINED : BitsFormat(s.image.format);
+  if (bits == VK_FORMAT_UNDEFINED || !s.ms.image) return false;
+  const Functions& f = device_.fn();
+  for (Image* image : {&s.ms, &s.image}) {
+    VkImageView& view = image == &s.ms ? s.ms_bits : s.image_bits;
+    if (view) continue;
+    VkImageViewCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    info.image = image->image;
+    info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    info.format = bits;
+    info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    // Both images were made to take it (MUTABLE_FORMAT); a surface made before host MSAA was on was not.
+    VkImageViewUsageCreateInfo usage{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
+    usage.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    info.pNext = &usage;
+    if (f.vkCreateImageView(device_.device(), &info, nullptr, &view) != VK_SUCCESS) {
+      view = VK_NULL_HANDLE;
+      return false;
+    }
+  }
+  return true;
+}
+
+void VulkanRenderer::ResolveSamples(VkCommandBuffer cb, Surface& s, int32_t x0, int32_t y0, int32_t x1, int32_t y1,
+                                    bool one_sample) {
   // What was drawn within what is read (a draw's scissor usually spans the whole surface, far more than it covers).
   const int32_t left = std::max({s.drawn[0], x0, 0}), top = std::max({s.drawn[1], y0, 0});
   const int32_t right = std::min({s.drawn[2], x1, int32_t(s.image.width)});
   const int32_t bottom = std::min({s.drawn[3], y1, int32_t(s.image.height)});
   if (!s.ms.image || right <= left || bottom <= top) return;
+  one_sample = one_sample && s.key.depth == 0 && s.bits_alias && SampleBitsViews(s);
   // What stays to resolve: nothing once the read covers all that was drawn; less when it covers a band across it
   // (the rows or columns it spans); else all of it (resolved again when read).
   int32_t* d = s.drawn;
-  if (x0 <= d[0] && x1 >= d[2]) {
+  if (one_sample) {
+    // The samples stay to resolve: what reads the surface next (the presented frame) averages them.
+  } else if (x0 <= d[0] && x1 >= d[2]) {
     if (y0 <= d[1]) d[1] = std::max(d[1], y1);
     if (y1 >= d[3]) d[3] = std::min(d[3], y0);
   } else if (y0 <= d[1] && y1 >= d[3]) {
@@ -608,10 +660,11 @@ void VulkanRenderer::ResolveSamples(VkCommandBuffer cb, Surface& s, int32_t x0, 
   Transition(cb, s.image, s.layout, attachment, aspect);
   // An empty pass whose attachment resolves at its end: colour averaged, depth and stencil sample 0.
   VkRenderingAttachmentInfo a{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-  a.imageView = s.ms.view;
+  // One sample through the integer views (only integer formats resolve one sample of a colour).
+  a.imageView = one_sample ? s.ms_bits : s.ms.view;
   a.imageLayout = attachment;
-  a.resolveMode = depth ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT : VK_RESOLVE_MODE_AVERAGE_BIT;
-  a.resolveImageView = s.image.view;
+  a.resolveMode = depth || one_sample ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT : VK_RESOLVE_MODE_AVERAGE_BIT;
+  a.resolveImageView = one_sample ? s.image_bits : s.image.view;
   a.resolveImageLayout = attachment;
   a.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
   // The samples are read, never written: not stored back (STORE would write the whole area again, as much traffic
@@ -635,7 +688,8 @@ bool VulkanRenderer::CreateSamples(Surface& s) {
       VK_IMAGE_USAGE_TRANSFER_DST_BIT;
   const VkImageAspectFlags aspect =
       s.key.depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-  if (!CreateImage2D(device_, s.image.width, s.image.height, s.image.format, usage, aspect, s.ms, samples_)) {
+  const VkFormat alias = s.key.depth ? VK_FORMAT_UNDEFINED : BitsFormat(s.image.format);
+  if (!CreateImage2D(device_, s.image.width, s.image.height, s.image.format, usage, aspect, s.ms, samples_, alias)) {
     DestroyImage(device_, s.ms);
     return false;
   }
@@ -658,6 +712,12 @@ void VulkanRenderer::DropSamples(Surface& s) {
   EndRendering();
   ResolveSamples(Record(), s, INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX);
   batch().retired.push_back(s.ms);  // the batch may still draw into it: freed after it has run
+  if (s.ms_bits) {
+    Image view_only;
+    view_only.view = s.ms_bits;  // its integer view, freed with it
+    batch().retired.push_back(view_only);
+    s.ms_bits = VK_NULL_HANDLE;
+  }
   s.ms = Image{};
   s.ms_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   target_memo_.valid = false;  // its pipeline had the samples
@@ -3143,8 +3203,12 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   EndRendering();
   VkCommandBuffer cb = Record();
   GpuMark(batch(), cb, kGpuResolves);
+  // A copy of a surface the title draws with one sample: one sample of the host's MSAA too. Averaged, a buffer of
+  // data (the ids an outline pass compares) gets values no draw wrote, between those of the surfaces a pixel
+  // covers, and the pass finds edges that are not there (lines inside The Simpsons Game's characters).
   ResolveSamples(cb, surface, x0 * int32_t(sample_x) * s, y0 * int32_t(sample_y) * s,
-                 (x0 + int32_t(width)) * int32_t(sample_x) * s, (y0 + int32_t(height)) * int32_t(sample_y) * s);
+                 (x0 + int32_t(width)) * int32_t(sample_x) * s, (y0 + int32_t(height)) * int32_t(sample_y) * s,
+                 /*one_sample=*/sample_x * sample_y == 1);
   GpuMark(batch(), cb, kGpuResolves);
   Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);

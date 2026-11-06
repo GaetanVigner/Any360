@@ -108,8 +108,10 @@ struct Image {
   VkFormat format = VK_FORMAT_UNDEFINED;
   uint32_t width = 0, height = 0;
 };
+// `alias`: another format of the same size views of the image may take (VK_FORMAT_UNDEFINED: none).
 bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
-                   VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT);
+                   VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
+                   VkFormat alias = VK_FORMAT_UNDEFINED);
 void DestroyImage(const Device& d, Image& i);
 
 }  // namespace any360::gfx::vk

@@ -2969,8 +2969,10 @@ void SpirvShaderTranslator::StartFragmentShaderBeforeMain() {
   uint32_t memexport_scale_y = host_scale_quarters_y_ & 3 ? 1 : host_scale_quarters_y_ >> 2;
   bool memexport_resolution_scaled =
       current_shader().memexport_eM_written() && (memexport_scale_x > 1 || memexport_scale_y > 1);
+  // any360: resolution-scaled point fetches keep to the guest pixel's texel (spirv_translator_fetch.cpp).
+  const bool resolution_scaled = draw_resolution_scale_x_ > 1 || draw_resolution_scale_y_ > 1;
   if (edram_fragment_shader_interlock_ || param_gen_needed || memexport_resolution_scaled ||
-      float24_depth_from_fragment_coordinates || alpha_to_coverage_possible) {
+      float24_depth_from_fragment_coordinates || alpha_to_coverage_possible || resolution_scaled) {
     input_fragment_coordinates_ = builder_->createVariable(spv::NoPrecision, spv::StorageClassInput,
                                                            type_float4_, "gl_FragCoord");
     builder_->addDecoration(input_fragment_coordinates_, spv::DecorationBuiltIn,

@@ -10,14 +10,16 @@
 //     --trace     prints the frames' structure: runs of draws by render target (drawn, skipped, failed), each
 //                 resolve and each swap, in order
 //     --dump-resolves DIR  with --trace, writes each 32-bit resolve's destination as DIR/resolve_N.png (and depth
-//                 resolves' words as DIR/resolve_N.bin)
+//                 resolves' words as DIR/resolve_N.bin); other colour resolves' source surfaces as DIR/resolve_N_surface.png, at the
+//                 host's resolution
 //     --watch ADDR    with --trace, prints the texture fetch constants that read the 4 KB page at ADDR (hex)
 //     --scale N   renders at N x N host pixels a guest pixel (resolution scale); frames are averaged down to the
 //                 reference's size to be compared
 //     --msaa N    draws with N samples a host pixel (host MSAA: 2, 4, 8)
 //     --pipeline-cache FILE  keeps the pipelines in FILE across runs (the time spent creating them is printed)
-//     --pick X,Y  with --trace, prints each draw that changes colour target 0's pixel at (X, Y) in the capture's
-//                 first frames: its number, the new value, its shaders and vertex fetch constant 0 (slow)
+//     --pick X,Y  with --trace, prints each draw that changes colour target 0's pixel at (X, Y) (host pixels):
+//                 its number, the new value, its shaders and vertex fetch constant 0, each shader's microcode once and
+//                 the texture fetch constants set (slow)
 #include <algorithm>
 #include <atomic>
 #include <thread>
@@ -37,6 +39,8 @@
 #include "any360/gfx/capture.h"
 #include "any360/gfx/command_processor.h"
 #include "any360/gfx/vulkan/renderer.h"
+
+#include <rex/graphics/pipeline/shader/spirv.h>
 
 // After any360's headers: windows.h defines macros (Yield) that clash with their names.
 #ifdef _WIN32
@@ -196,7 +200,7 @@ class TracingRenderer : public Renderer {
     const vk::RendererStats before = r_.stats();
     r_.Draw(draw);
     ++draws_;
-    if (pick_x_ >= 0 && draws_ <= 2000 && (regs[0x2208] & 7) == 4 && (regs[0x2104] & 0xF)) {
+    if (pick_x_ >= 0 && (regs[0x2208] & 7) == 4 && (regs[0x2104] & 0xF)) {
       const uint32_t pitch = regs[0x2000] & 0x3FFF;
       const vk::SurfaceKey key{regs[0x2001] & 0xFFF, pitch, (regs[0x2001] >> 16) & 0xF, 0};
       std::vector<uint8_t> bytes;
@@ -215,6 +219,23 @@ class TracingRenderer : public Renderer {
                       draw.pixel_shader ? (unsigned long long)draw.pixel_shader->hash : 0ull, draw.primitive_type,
                       draw.index_count, vf[0], vf[1], regs[0x2201], regs[0x2200]);
           picked_[key64] = value;
+          // Each shader's microcode once, and the texture fetch constants its fetches name.
+          for (const Shader* shader : {draw.vertex_shader, draw.pixel_shader}) {
+            if (!shader || !disassembled_.insert(shader->hash).second) continue;
+            rex::graphics::SpirvShader parsed(shader->type ? rex::graphics::xenos::ShaderType::kPixel
+                                                           : rex::graphics::xenos::ShaderType::kVertex,
+                                              shader->hash, shader->microcode.data(), shader->microcode.size(),
+                                              std::endian::native);
+            rex::string::StringBuffer text;
+            parsed.AnalyzeUcode(text);
+            std::printf("    shader %016llX:\n%s\n", (unsigned long long)shader->hash, parsed.ucode_disassembly().c_str());
+          }
+          for (uint32_t fc = 0; fc < 32; ++fc) {
+            const uint32_t* d = regs + 0x4800 + 6 * fc;
+            if ((d[0] & 3) == 2 && d[1]) {
+              std::printf("      texture fetch %u: %08X %08X %08X %08X %08X %08X\n", fc, d[0], d[1], d[2], d[3], d[4], d[5]);
+            }
+          }
         }
       }
     }
@@ -275,9 +296,11 @@ class TracingRenderer : public Renderer {
       const vk::SurfaceKey key{color_info & 0xFFF, regs[0x2000] & 0x3FFF, (color_info >> 16) & 0xF, 0};
       std::vector<uint8_t> bytes;
       const VkFormat host = vk::ColorTargetFormat(key.format);
+      // The whole surface as the host holds it (resolution scaled).
+      const uint32_t surface_width = width * r_.resolution_scale(), surface_height = height * r_.resolution_scale();
       if ((host == VK_FORMAT_A8B8G8R8_UNORM_PACK32 || host == VK_FORMAT_A2B10G10R10_UNORM_PACK32) &&
-          r_.ReadBack(key, width, height, bytes)) {
-        std::vector<uint32_t> pixels(size_t(width) * height);
+          r_.ReadBack(key, surface_width, surface_height, bytes)) {
+        std::vector<uint32_t> pixels(size_t(surface_width) * surface_height);
         for (size_t i = 0; i < pixels.size(); ++i) {
           uint32_t v;
           std::memcpy(&v, bytes.data() + 4 * i, 4);
@@ -287,7 +310,7 @@ class TracingRenderer : public Renderer {
           pixels[i] = v | 0xFF000000u;
         }
         const std::string name = dump_ + "/resolve_" + std::to_string(resolves_++) + "_surface.png";
-        WritePng(name, width, height, pixels.data());
+        WritePng(name, surface_width, surface_height, pixels.data());
         std::printf("    source surface written to %s\n", name.c_str());
       }
     }
@@ -316,6 +339,7 @@ class TracingRenderer : public Renderer {
   uint32_t resolves_ = 0;
   uint32_t watch_ = 0;
   int32_t pick_x_ = -1, pick_y_ = -1;
+  std::set<uint64_t> disassembled_;
   uint32_t draws_ = 0;
   std::map<uint64_t, uint32_t> picked_;
   std::set<uint64_t> picked_seen_;
