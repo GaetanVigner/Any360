@@ -1479,18 +1479,25 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
         spv::Id const_uint_2 = builder_->makeUintConstant(2);
         spv::Id const_uint_sign_signed =
             builder_->makeUintConstant(uint32_t(xenos::TextureSign::kSigned));
+        // any360: with every texture of the draw unsigned, the signs are constants (dead code for the driver).
+        const bool textures_unsigned = is_pixel_shader() && GetSpirvShaderModification().pixel.textures_unsigned;
         {
           uint32_t result_remaining_components = used_result_nonzero_components;
           uint32_t result_component_index;
           while (rex::bit_scan_forward(result_remaining_components, &result_component_index)) {
             result_remaining_components &= ~(UINT32_C(1) << result_component_index);
-            spv::Id result_component_sign = builder_->createTriOp(
-                spv::OpBitFieldUExtract, type_uint_, swizzled_signs_word,
-                builder_->makeUintConstant(swizzled_signs_word_offset + 2 * result_component_index),
-                const_uint_2);
+            spv::Id result_component_sign =
+                textures_unsigned
+                    ? builder_->makeUintConstant(uint32_t(xenos::TextureSign::kUnsigned))
+                    : builder_->createTriOp(
+                          spv::OpBitFieldUExtract, type_uint_, swizzled_signs_word,
+                          builder_->makeUintConstant(swizzled_signs_word_offset + 2 * result_component_index),
+                          const_uint_2);
             swizzled_signs[result_component_index] = result_component_sign;
-            spv::Id is_component_signed = builder_->createBinOp(
-                spv::OpIEqual, type_bool_, result_component_sign, const_uint_sign_signed);
+            spv::Id is_component_signed =
+                textures_unsigned ? builder_->makeBoolConstant(false)
+                                  : builder_->createBinOp(spv::OpIEqual, type_bool_, result_component_sign,
+                                                          const_uint_sign_signed);
             result_is_signed[result_component_index] = is_component_signed;
             if (is_all_signed != spv::NoResult) {
               is_all_signed = builder_->createBinOp(spv::OpLogicalAnd, type_bool_, is_all_signed,

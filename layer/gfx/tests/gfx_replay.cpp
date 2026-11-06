@@ -593,6 +593,16 @@ int main(int argc, char** argv) {
                     (g.ns_gpu - last_gpu) / 1e6 / frames, (g.ns_gpu_upload - last_upload) / 1e6 / frames,
                     (g.guest_upload_bytes - last_bytes) / 1e6 / frames, 10);
         last_gpu = g.ns_gpu, last_upload = g.ns_gpu_upload, last_bytes = g.guest_upload_bytes;
+        // By kind of work (vk::GpuKind order).
+        static uint64_t last_kind[vk::kGpuKinds] = {};
+        static const char* const kKindNames[vk::kGpuKinds] = {"other", "draws", "resolves", "MSAA resolves",
+                                                              "depth resolves", "texture copies", "write-backs"};
+        std::printf("gfx_replay: pass %d: GPU ms a frame by kind:", pass);
+        for (int k = 0; k < vk::kGpuKinds; ++k) {
+          std::printf(" %s %.3f", kKindNames[k], (g.ns_gpu_kind[k] - last_kind[k]) / 1e6 / frames);
+          last_kind[k] = g.ns_gpu_kind[k];
+        }
+        std::printf("%c", 10);
       }
       if (async_renderer) {
         static uint64_t last_busy = 0, last_bytes = 0;
@@ -628,6 +638,24 @@ int main(int argc, char** argv) {
       std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - replay_start).count();
 
   std::printf("gfx_replay: %s\n", stats.info.empty() ? path.c_str() : stats.info.c_str());
+  {
+    // ANY360_DRAW_TIMING: the pixel shaders that took the GPU's time, all passes together.
+    const auto times = renderer.shader_times();
+    if (!times.empty()) {
+      std::vector<std::pair<uint64_t, uint64_t>> by_time;  // ns, pixel shader hash
+      uint64_t total = 0;
+      for (const auto& [hash, st] : times) by_time.push_back({st.ns, hash}), total += st.ns;
+      std::sort(by_time.rbegin(), by_time.rend());
+      std::printf("gfx_replay: draw time by pixel shader (%.2f ms in all, %zu shaders):\n", total / 1e6, times.size());
+      for (size_t i = 0; i < std::min<size_t>(25, by_time.size()); ++i) {
+        const auto& st = times.at(by_time[i].second);
+        std::printf("gfx_replay:   ps %016llX (vs %016llX) %6.2f%% %8.3f ms %6llu draws %7.2f us a draw\n",
+                    (unsigned long long)by_time[i].second, (unsigned long long)st.vertex_hash,
+                    100.0 * by_time[i].first / std::max<uint64_t>(1, total), by_time[i].first / 1e6,
+                    (unsigned long long)st.draws, st.draws ? by_time[i].first / 1e3 / st.draws : 0.0);
+      }
+    }
+  }
   std::printf("gfx_replay: %u kicks (%u stopped early), %u pages (%u outside), %u reference frames, %u compared, %llu presented\n",
               stats.kicks, stats.failed_kicks, stats.pages, stats.pages_outside, stats.frames, compared,
               (unsigned long long)renderer.frame().number);

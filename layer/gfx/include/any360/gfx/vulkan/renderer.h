@@ -231,6 +231,16 @@ class VulkanRenderer : public gfx::Renderer {
   void RecordFrameBlit(VkCommandBuffer cb, VkImage target, VkOffset3D dst0, VkOffset3D dst1);
 
   const RendererStats& stats() const { return stats_; }
+  // With ANY360_DRAW_TIMING set: the GPU's time by pixel shader (its hash; 0: draws without one), from a time stamp
+  // before each draw, nanoseconds and draws. A diagnostic: the time stamps cost a little and serialize nothing, so a
+  // draw's interval may hold some of its neighbours' work.
+  struct ShaderTime {
+    uint64_t ns = 0, draws = 0, vertex_hash = 0;
+  };
+  std::map<uint64_t, ShaderTime> shader_times() const {
+    std::lock_guard lock(shader_times_mutex_);
+    return shader_times_;
+  }
   const std::string& last_error() const { return last_error_; }
   // Every failure so far, by reason (last_error's text).
   const std::map<std::string, uint32_t>& failures() const { return failures_; }
@@ -432,6 +442,7 @@ class VulkanRenderer : public gfx::Renderer {
   struct Batch {
     VkCommandBuffer cb = VK_NULL_HANDLE;
     std::atomic<uint32_t> marks{0};          // GpuMark time stamps written (recording and submitting threads)
+    std::vector<std::pair<uint64_t, uint64_t>> timing_keys;  // ANY360_DRAW_TIMING: each draw's pixel / vertex hash
     std::array<uint8_t, kGpuMarks> mark_kinds{};
     VkCommandBuffer upload_cb = VK_NULL_HANDLE;  // guest memory the batch's shaders read, copied into video memory first
     // With recording threads, the batch is several primary command buffers run in order: pieces this thread records
@@ -530,6 +541,10 @@ class VulkanRenderer : public gfx::Renderer {
   void ReadsGuestMemory(uint32_t address, uint32_t bytes);
   VkQueryPool timestamps_ = VK_NULL_HANDLE;  // four a batch: start, end, its upload's start, end
   VkQueryPool gpu_marks_ = VK_NULL_HANDLE;   // kGpuMarks a batch (GpuMark)
+  static constexpr uint32_t kDrawTimings = 16384;  // a batch's draws timed (ANY360_DRAW_TIMING)
+  VkQueryPool draw_timing_ = VK_NULL_HANDLE;
+  mutable std::mutex shader_times_mutex_;
+  std::map<uint64_t, ShaderTime> shader_times_;
   std::array<std::chrono::steady_clock::time_point, 8> submitted_at_{};
   uint32_t constant_head_ = 0, index_head_ = 0;  // ring allocation of the batch's constants and indices
   // The last block of each constant buffer written in the open batch: a draw whose block is the same reuses it
@@ -625,6 +640,7 @@ class VulkanRenderer : public gfx::Renderer {
     const uint8_t* index_src;
     uint32_t index_bytes, primitives, reset_index, host_index_count;
     uint32_t query;  // the host occlusion query around the draw (UINT32_MAX: none)
+    uint32_t timing;  // its time stamp in draw_timing_ (ANY360_DRAW_TIMING; UINT32_MAX: none)
     // The texture sets a recording thread makes (sets[2 + stage] then), by layout: images, then samplers.
     static constexpr uint32_t kMaxBindings = 16;
     VkDescriptorSetLayout texture_layouts[2];
