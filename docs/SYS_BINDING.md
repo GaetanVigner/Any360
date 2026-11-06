@@ -243,6 +243,37 @@ What the game found that the tests could not:
   else the next of the six in turn, in its KTHREAD and PCR. any360::sys left every thread on processor 0: XAudio's two
   mix workers, meeting by processor number, waited for each other for ever and no frame was ever mixed.
 
+## After step 7: from one title to any title (the road to 100%)
+
+Steps 0-7 put Crackdown's system calls on any360::sys, with ReXGlue still hosting it. Crackdown is the test bench; the
+goal is that any title ported with ReXGlue's code generator runs on Any360 alone. Measured on 2026-11-06, that is far:
+
+- **Calls**: 602 of the 2,914 exports (xboxkrnl 922, xam 1,735, xbdm 255) are native, every one the four titles import
+  (374). 2,294 are stubs in the reference too (it never needed them) and 14 are missing there: a fifth title will meet
+  some of them.
+- **Proven in game**: one title, Crackdown, and only on the paths it takes (its XAudio2 drives the XMA registers, so the
+  `XMA*` decoding path is unproven; it reads saves through overlapped I/O, so other file patterns are unproven).
+- **The host is still ReXGlue's**: it loads the XEX, owns the address space and its heaps, creates the main thread and
+  the objects made before the switch, runs every guest thread inside an `XHostThread`, dispatches guest code, catches
+  MMIO accesses, mounts the devices Any360 does not, owns the window, the SDL event loop and the input drivers.
+
+The rest, in steps of the same size as 0-7, each ending with an in-game check on more than one title:
+
+| Step | What | Done when |
+|---|---|---|
+| 8 | **Input**: the `input` group on any360::sys with an input source the host fills (an SDL3 gamepad layer: state, capabilities, keystrokes, vibration, hot-plug, four users); keyboard and mouse for titles that map them | Crackdown plays on a gamepad with input on any360::sys |
+| 9 | **No runtime-made state**: any360::sys started before the title's entry point, the main thread adopted (`AdoptCurrentThread`), every handle and object made by any360::sys; the foreign-handle and foreign-memory routing then removed | Crackdown boots with no call reaching the runtime and no routing |
+| 10 | **A second title on the full binding**: The Simpsons Game, all groups, the bugs it finds fixed in any360::sys (none in the title) | The Simpsons plays through its first level on any360::sys |
+| 11 | **Third and fourth titles**: Test Drive Unlimited, Sonic 06 | both reach gameplay |
+| 12 | **Paths no title took yet**: the `XMA*` decoding path, content packages (STFS saves, DLC, title updates), several signed-in users, the guide and its UIs (keyboard, message box, device selector) answered as a console would, Live answered as offline everywhere, xbdm as a retail console; each with scenario tests | sys tests cover each; the 2,294 reference stubs sorted into "answered like retail", "implemented", "never seen" |
+| 13 | **Any360's own host** (`layer/host/native`): the XEX loader (sections, imports bound to any360::sys, TLS, entry), the guest address space reserved and owned by `MemoryManager`, threads on host threads without `XHostThread`, the guest-code dispatcher over the generated functions, MMIO through the platform's fault handler, the devices (disc image, extracted folder, STFS) | a title links no `rexruntime`: ReXGlue is only its code generator |
+| 14 | **The platform layer**: window, event loop, gamepad, audio output (SDL3) and the GPU presenter outside ReXGlue, on Windows and Linux (the Steam Deck) | Crackdown and one other title run from `layer/host/native` on both systems |
+| 15 | **Graphics on the same footing**: every title's GPU through `any360::gfx` (the GPU session's plan, docs/GFX.md), no `rexgpu-xenos` | the four titles render with any360::gfx only |
+| 16 | **Porting a new title**: `pipeline/any360.py` from a XEX to a running build with no title-specific code in Any360 (the title repository holds only its manifest, hooks and patches), tried on a fifth title never run before | a new title boots with nothing added to Any360 but fixes |
+
+Steps 8-9 are this binding's; 10-12 widen it; 13-15 replace the host; 16 is the measure of "any game". Stage 2 and 3
+(decompilation, the portable codebase, docs/DESIGN.md) come after.
+
 ## Who does what
 
 - `layer/sys` (the calls, `SetHandleBase`, `AdoptCurrentThread`, the page map import): the sys session.
