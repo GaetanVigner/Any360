@@ -421,6 +421,19 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
                     (s.guest_upload_bytes - last_.guest_upload_bytes) / 1e6 / n);
       log_(gpu);
     }
+    {
+      // The GPU's time by kind of work (time stamps at each piece's start).
+      auto kind = [&](int k) { return (s.ns_gpu_kind[k] - last_.ns_gpu_kind[k]) / ms; };
+      char kinds[256];
+      std::snprintf(kinds, sizeof(kinds),
+                    "Any360: GPU ms per frame by kind: draws %.2f, resolves %.2f, MSAA resolves %.2f, depth resolves %.2f, "
+                    "texture copies %.2f, write-backs %.2f, other %.2f",
+                    kind(gfx::vk::kGpuDraws), kind(gfx::vk::kGpuResolves),
+                    kind(gfx::vk::kGpuSampleResolves), kind(gfx::vk::kGpuDepthResolves),
+                    kind(gfx::vk::kGpuTextureCopies), kind(gfx::vk::kGpuWriteBacks),
+                    kind(gfx::vk::kGpuOther));
+      log_(kinds);
+    }
     if (cp_) {
       const uint64_t busy = cp_->ns_busy(), waiting = cp_->ns_waiting(), kicks = cp_->kicks();
       char line_cp[256];
@@ -712,6 +725,7 @@ struct Binding {
 };
 
 std::atomic<bool> g_bound{false};
+std::atomic<double> g_vblank_hz{60.0};  // the rate StartGraphics chose (SetVblankHz(0) goes back to it)
 Binding* g_binding = nullptr;
 
 // A CPU write to watched guest memory (the runtime's physical memory access callbacks): the textures over it are
@@ -925,12 +939,14 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->cp->SetWritesAfterDraws(options.writes_after_draws);
   binding->cp->SetFencesAfterDraws(options.fences_after_draws);
   binding->renderer->SetFencesWhenCaptured(options.fences_when_captured);
+  binding->renderer->SetLateResolveReads(options.late_resolve_reads);
   // What the command processor writes into guest memory itself (fences, query counts), the page watch does not see:
   // the vertices copied into video memory over it are stale (textures are not kept over such words).
   binding->cp->SetMemoryWrittenHook([renderer = binding->renderer.get()](uint32_t begin, uint32_t end) {
     renderer->GuestMemoryWritten(begin, end);
   });
   sys::Graphics().StartVblank(vblank_hz);
+  g_vblank_hz = vblank_hz;
   g_binding = binding.release();
   g_bound = true;
   return true;
@@ -951,6 +967,11 @@ void StopGraphics() {
 }
 
 bool GraphicsBound() { return g_bound; }
+
+void SetVblankHz(double hz) {
+  if (!g_bound) return;
+  sys::Graphics().SetVblankHz(hz > 0.0 ? hz : g_vblank_hz.load());
+}
 
 uint64_t GpuProgress() { return g_binding ? g_binding->cp->Progress() : 0; }
 

@@ -409,6 +409,9 @@ bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat fo
   alloc.memoryTypeIndex = d.MemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   if (alloc.memoryTypeIndex == UINT32_MAX || f.vkAllocateMemory(d.device(), &alloc, nullptr, &out.memory) != VK_SUCCESS) return false;
   f.vkBindImageMemory(d.device(), out.image, out.memory, 0);
+  out.format = format;
+  out.width = width;
+  out.height = height;
   // A view only for an image that can have one (a transfer-only image, a resolve's staging, has none).
   constexpr VkImageUsageFlags kViewUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
                                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
@@ -419,11 +422,7 @@ bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat fo
   view.viewType = VK_IMAGE_VIEW_TYPE_2D;
   view.format = format;
   view.subresourceRange = {aspect, 0, 1, 0, 1};
-  if (f.vkCreateImageView(d.device(), &view, nullptr, &out.view) != VK_SUCCESS) return false;
-  out.format = format;
-  out.width = width;
-  out.height = height;
-  return true;
+  return f.vkCreateImageView(d.device(), &view, nullptr, &out.view) == VK_SUCCESS;
 }
 
 void DestroyImage(const Device& d, Image& i) {
