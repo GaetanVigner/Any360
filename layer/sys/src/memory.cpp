@@ -269,17 +269,29 @@ uint32_t MemoryManager::AllocateVirtual(Guest g, uint32_t base_ptr, uint32_t siz
   const uint8_t state = (allocation_type & kMemCommit) ? kCommitted : kReserved;
   const uint32_t kept = Normalize(protect);
   uint32_t address = 0;
-  bool was_committed = false;
+  // The pages this call commits: only they read as zeros afterwards. A page already committed keeps its contents
+  // (a heap committing a range over its committed part must not lose its blocks).
+  std::vector<uint32_t> newly_committed;
   if (adjusted_base) {
-    RegionInfo previous;
-    was_committed = QueryRegion(adjusted_base, previous) && previous.state == kMemCommit;
+    if (allocation_type & kMemCommit) {
+      const uint32_t first = (adjusted_base - heap->spec.base) >> heap->shift, count = size >> heap->shift;
+      for (uint32_t p = first; p < first + count && p < heap->pages.size(); ++p) {
+        if (heap->pages[p].state != kCommitted) newly_committed.push_back(p);
+      }
+    }
     if (!AllocFixed(*heap, adjusted_base, size, state, kept)) return kStatusNoMemory;
     address = adjusted_base;
   } else if (!AllocRange(*heap, heap->spec.base, heap->spec.base + heap->spec.size - 1, size, page_size, state, kept,
                          (allocation_type & kMemTopDown) != 0, address)) {
     return kStatusNoMemory;
   }
-  if ((allocation_type & kMemCommit) && !(allocation_type & kMemNoZero) && !was_committed) std::memset(g.host(address), 0, size);
+  if ((allocation_type & kMemCommit) && !(allocation_type & kMemNoZero)) {
+    if (!adjusted_base) {
+      std::memset(g.host(address), 0, size);
+    } else {
+      for (uint32_t p : newly_committed) std::memset(g.host(heap->spec.base + (p << heap->shift)), 0, 1u << heap->shift);
+    }
+  }
   g.Store32(base_ptr, address);
   g.Store32(size_ptr, size);
   return kStatusSuccess;

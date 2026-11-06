@@ -36,7 +36,12 @@ if(ANY360_REFERENCE_SDK)
     # headers of the FFmpeg they were built from (the SDK's thirdparty/FFmpeg; FFmpeg is LGPL, linked as the SDK ships it).
     find_path(ANY360_FFMPEG_INCLUDE libavcodec/avcodec.h HINTS "${ANY360_REFERENCE_SDK}/include"
               DOC "Headers of the FFmpeg the reference SDK's libavcodec was built from (with the xmaframes decoder)")
-    if(ANY360_FFMPEG_INCLUDE)
+    if(TARGET libavcodec AND TARGET libavutil)
+        # An SDK built in the title's tree (REXSDK_DIR): its FFmpeg targets bring their headers.
+        add_library(any360_sys_xma STATIC src/xma.cpp)
+        target_link_libraries(any360_sys_xma PUBLIC any360_sys libavcodec libavutil)
+        target_compile_options(any360_sys_xma PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
+    elseif(ANY360_FFMPEG_INCLUDE)
         add_library(any360_sys_xma STATIC src/xma.cpp)
         target_link_libraries(any360_sys_xma PUBLIC any360_sys)
         target_include_directories(any360_sys_xma SYSTEM PRIVATE "${ANY360_FFMPEG_INCLUDE}")

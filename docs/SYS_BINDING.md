@@ -275,6 +275,30 @@ listed ~2,900 such calls, all files:
 What stays the runtime's: the host (it loads the image, runs the threads inside `XHostThread`s, owns the window),
 which step 13 replaces; the routing by handle owner stays as the fallback for a title that keeps runtime-made objects.
 
+## Step 10: done (The Simpsons Game on the full binding)
+
+The Simpsons Game runs with all eight groups on any360::sys (2026-11-06): menus at 30 FPS and levels at 60 as the
+reference (also upscaled 2x with MSAA 4x on any360::gfx), sound, gamepad, saves, levels played through, no call reaching
+the runtime, a clean exit. The second title needed no title-specific code in Any360; what it found was Any360's:
+
+- **The binding is Any360's to set up** (`any360/host/settings.h`): the any360_sys_* settings, the mounts a console
+  title expects, the audio hardware, a crash report for titles without their own, the stop at shutdown. A title's
+  whole system binding is one file including `system_exports.inc` and one call (`StartSystemFromSettings`), plus
+  `StopSystemFromSettings` when it exits through the runtime's shutdown. Crackdown moved onto it.
+- **A commit zeroed pages already committed**: `NtAllocateVirtualMemory(MEM_COMMIT)` over a range whose first page was
+  new cleared the whole range, wiping a heap's live blocks (the game's allocator then followed a null free-list link).
+  Only the pages a commit makes new are zeroed now.
+- **XMA decoding is synchronous with the kick**: Simpsons drives the `XMA*` calls and takes `XMAEnableContext`'s
+  return as its output being ready; a background decode could write into buffers it had reused. No thread decodes
+  behind the title any more.
+- **Shutdown**: the audio pump and the decoder stop first, then the title's threads park in their next system call
+  or wait (`BeginShutdown`) instead of touching the guest memory the runtime frees. The runtime then waits up to 10 s
+  for those threads before exiting (to improve).
+- The in-tree SDK's FFmpeg targets (`libavcodec`, `libavutil`) build the XMA decoder when the SDK is built with the title.
+
+Seen but not the binding's: above 60 FPS (`frame_rate=0`) short button presses can be missed, as without Any360 (the
+title's own frame pacing).
+
 ## After step 7: from one title to any title (the road to 100%)
 
 Steps 0-7 put Crackdown's system calls on any360::sys, with ReXGlue still hosting it. Crackdown is the test bench; the

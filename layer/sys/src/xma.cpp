@@ -569,21 +569,13 @@ bool XmaDecoder::Available() { return avcodec_find_decoder(AV_CODEC_ID_XMAFRAMES
 XmaDecoder::~XmaDecoder() { Stop(); }
 
 void XmaDecoder::Start(Guest g) {
+  // Decoding happens on the kick, on the thread that kicks, as titles expect of the hardware (their mixers take the
+  // output as ready once XMAEnableContext returns): no thread decodes behind them.
   Stop();
   guest_ = g;
-  running_ = true;
-  worker_ = std::thread([this] { Run(); });
 }
 
-void XmaDecoder::Stop() {
-  {
-    std::lock_guard guard(wake_mutex_);
-    running_ = false;
-    woken_ = true;
-  }
-  wake_.notify_all();
-  if (worker_.joinable()) worker_.join();
-}
+void XmaDecoder::Stop() {}
 
 XmaDecoder::Context* XmaDecoder::Find(uint32_t context) {
   std::lock_guard guard(contexts_mutex_);
@@ -614,11 +606,6 @@ void XmaDecoder::ContextEnabled(Guest, uint32_t context) {
     c->enabled = true;
     c->Work();
   }
-  {
-    std::lock_guard guard(wake_mutex_);
-    woken_ = true;
-  }
-  wake_.notify_one();
 }
 
 void XmaDecoder::ContextDisabled(Guest, uint32_t context) {
@@ -641,19 +628,6 @@ bool XmaDecoder::WorkOnce() {
   bool worked = false;
   for (Context* c : all) worked = c->Work() || worked;
   return worked;
-}
-
-void XmaDecoder::Run() {
-  while (true) {
-    {
-      std::unique_lock guard(wake_mutex_);
-      if (!running_) return;
-    }
-    if (WorkOnce()) continue;
-    std::unique_lock guard(wake_mutex_);
-    wake_.wait_for(guard, std::chrono::milliseconds(2), [this] { return woken_ || !running_; });
-    woken_ = false;
-  }
 }
 
 }  // namespace any360::sys

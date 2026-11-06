@@ -60,6 +60,19 @@ struct Scheduler::Thread {
   std::atomic<bool> done{false};
 };
 
+namespace {
+std::atomic<bool> g_shutting_down{false};
+}
+
+void BeginShutdown() { g_shutting_down.store(true, std::memory_order_release); }
+
+bool ShuttingDown() { return g_shutting_down.load(std::memory_order_acquire); }
+
+void ParkIfShuttingDown() {
+  if (!ShuttingDown()) return;
+  for (;;) std::this_thread::sleep_for(std::chrono::hours(1));
+}
+
 Scheduler& Threads() {
   static Scheduler scheduler;
   return scheduler;

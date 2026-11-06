@@ -587,6 +587,26 @@ void MemoryTests() {
   CHECK(Memory().FreeVirtual(gm, io, io + 4, kMemRelease, 0) == kStatusUnsuccessful);  // not a region start
   gm.Store32(io, 0);
   CHECK(Memory().FreeVirtual(gm, io, io + 4, kMemRelease, 0) == kStatusMemoryNotAllocated);
+  // A commit over a range part of which is committed: only the newly committed pages read as zeros (a heap growing
+  // its committed part over the pages it already uses keeps them).
+  {
+    gm.Store32(io, 0);
+    gm.Store32(io + 4, 0x4000);
+    CHECK(Memory().AllocateVirtual(gm, io, io + 4, kMemReserve, kPageReadWrite, 0) == 0);
+    const uint32_t region = gm.Load32(io);
+    gm.Store32(io, region + 0x2000);  // the third page committed and used
+    gm.Store32(io + 4, 0x1000);
+    CHECK(Memory().AllocateVirtual(gm, io, io + 4, kMemCommit, kPageReadWrite, 0) == 0);
+    gm.Store32(region + 0x2000, 0x12345678);
+    std::memset(memory.data() + region + 0x1000, 0xAA, 0x1000);  // garbage in the second, still reserved page
+    gm.Store32(io, region + 0x1000);  // then the second to the fourth: the first of them new
+    gm.Store32(io + 4, 0x3000);
+    CHECK(Memory().AllocateVirtual(gm, io, io + 4, kMemCommit, kPageReadWrite, 0) == 0);
+    CHECK(gm.Load32(region + 0x2000) == 0x12345678 && gm.Load32(region + 0x1000) == 0 && gm.Load32(region + 0x3FFC) == 0);
+    gm.Store32(io, region);
+    gm.Store32(io + 4, 0);
+    CHECK(Memory().FreeVirtual(gm, io, io + 4, kMemRelease, 0) == 0);
+  }
   // Parameter checks, exhaustion, top-down placement.
   gm.Store32(io, 0);
   gm.Store32(io + 4, 0);

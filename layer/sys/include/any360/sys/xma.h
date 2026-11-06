@@ -23,13 +23,14 @@ class XmaDecoder : public XmaBackend {
   XmaDecoder();
   ~XmaDecoder() override;
 
-  // The decoder thread, decoding the enabled contexts of the guest memory `g` until Stop.
+  // Ready to decode in the guest memory `g`. Decoding runs on each kick, on the kicking thread: a decode running behind
+  // a title that takes XMAEnableContext's return as the output being ready would write into buffers it has reused.
   void Start(Guest g);
   void Stop();
 
   void ContextAllocated(Guest g, uint32_t context) override;
   void ContextReleased(Guest g, uint32_t context) override;
-  // The hardware's kick: the context decodes as far as its input and output allow, now and on the thread.
+  // The hardware's kick: the context decodes as far as its input and output allow, before this returns.
   void ContextEnabled(Guest g, uint32_t context) override;
   // The hardware's lock: no decoding of the context once this returns.
   void ContextDisabled(Guest g, uint32_t context) override;
@@ -46,16 +47,10 @@ class XmaDecoder : public XmaBackend {
 
  private:
   Context* Find(uint32_t context);
-  void Run();
 
   Guest guest_{};
   std::mutex contexts_mutex_;
   std::map<uint32_t, std::unique_ptr<Context>> contexts_;
-  std::mutex wake_mutex_;
-  std::condition_variable wake_;
-  bool woken_ = false;
-  bool running_ = false;
-  std::thread worker_;
 };
 
 }  // namespace any360::sys

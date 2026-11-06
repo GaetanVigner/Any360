@@ -106,6 +106,7 @@ bool TraceEvery(SysGroup group, const char* name) {
 }
 
 void RunAny360(SysGroup group, const char* name, GuestFunction any360, PPCContext& ctx, uint8_t* base) {
+  any360::sys::ParkIfShuttingDown();
   if (g_trace.load(std::memory_order_relaxed)) Trace(group, name);
   if (!TraceEvery(group, name)) {
     any360(ctx, base);
@@ -124,6 +125,7 @@ void RunAny360(SysGroup group, const char* name, GuestFunction any360, PPCContex
 // The runtime's export, reported like RunAny360's calls (marked "runtime") with every-call tracing when an argument is
 // one of any360::sys's handles: the runtime cannot use those.
 void RunReference(const char* name, GuestFunction reference, PPCContext& ctx, uint8_t* base) {
+  any360::sys::ParkIfShuttingDown();
   if (!g_trace_every.load(std::memory_order_relaxed)) {
     reference(ctx, base);
     return;

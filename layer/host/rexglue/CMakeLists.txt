@@ -6,11 +6,19 @@ target_include_directories(any360_host_rexglue PUBLIC include)
 # The renderer stays private: its vendored headers (fmt among them) must not reach the title's sources.
 target_link_libraries(any360_host_rexglue PUBLIC any360_sys_ppc PRIVATE any360_gfx_vulkan)
 target_compile_options(any360_host_rexglue PRIVATE -Wall -Wextra)
+# The settings glue logs through the runtime's spdlog: kept apart from the renderer's vendored fmt (its namespace
+# renamed) so it compiles against the runtime's fmt. Titles get it with the binding.
+add_library(any360_host_rexglue_settings STATIC src/settings.cpp src/crash_report.cpp)
+target_include_directories(any360_host_rexglue_settings PUBLIC include)
+target_link_libraries(any360_host_rexglue_settings PUBLIC any360_sys_ppc)
+target_compile_options(any360_host_rexglue_settings PRIVATE -Wall -Wextra)
+target_link_libraries(any360_host_rexglue PUBLIC any360_host_rexglue_settings)
 # The audio group's decoder and output (StartAudio), when the XMA decoder is built (FFmpeg's headers found).
 if(TARGET any360_sys_xma)
     target_sources(any360_host_rexglue PRIVATE src/audio.cpp)
     target_link_libraries(any360_host_rexglue PUBLIC any360_sys_xma)
     target_compile_definitions(any360_host_rexglue PUBLIC ANY360_REXGLUE_AUDIO)
+    target_compile_definitions(any360_host_rexglue_settings PRIVATE ANY360_REXGLUE_AUDIO)
 endif()
 
 # The binding inside a running reference runtime (tool mode), with a ring, interrupts and vertical blanks.

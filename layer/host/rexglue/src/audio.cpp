@@ -100,4 +100,10 @@ bool StartAudio(std::string& error) {
   return true;
 }
 
+void StopAudio() {
+  if (!g_sink) return;
+  sys::Audio().Stop();  // no client callback runs after this
+  if (g_xma) g_xma->Stop();
+}
+
 }  // namespace any360::host::rexglue

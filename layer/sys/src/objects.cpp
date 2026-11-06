@@ -640,7 +640,13 @@ class ObjectManager::WaitRegistration {
       }
     }
   }
-  void Sleep(std::unique_lock<std::recursive_mutex>& lock) const { waiter_.ready.wait_for(lock, std::chrono::milliseconds(1)); }
+  void Sleep(std::unique_lock<std::recursive_mutex>& lock) const {
+    waiter_.ready.wait_for(lock, std::chrono::milliseconds(1));
+    if (ShuttingDown()) {  // the title is ending: the wait never comes back to its objects
+      lock.unlock();
+      ParkIfShuttingDown();
+    }
+  }
 
  private:
   ObjectManager& manager_;

@@ -35,6 +35,13 @@ struct GuestContext {
 // answers calls only on its own threads runs it inside one of those. Unset, body runs on the calling host thread.
 using ThreadRunner = void (*)(void (*body)(void*), void* arg, void* user);
 
+// The title is ending (its host shuts the guest memory down): from then on a guest thread entering a system call or
+// waking in a wait parks for good instead of touching guest memory again, as the console stops a title's threads.
+void BeginShutdown();
+bool ShuttingDown();
+// Parks the calling thread for good when the title is ending; returns at once otherwise.
+void ParkIfShuttingDown();
+
 class Scheduler {
  public:
   void SetDispatcher(Dispatcher dispatcher, void* user);

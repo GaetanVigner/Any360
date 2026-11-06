@@ -80,6 +80,9 @@ bool StartSystem(const SystemOptions& options, std::string& error);
 // the audio group is switched; false with `error` (no decoder linked, no device) leaves audio silent. Defined only
 // when the binding is built with any360_sys_xma (ANY360_REXGLUE_AUDIO).
 bool StartAudio(std::string& error);
+// Stops what StartAudio started (the clients' pump, the decoder's thread): before the runtime frees the guest memory
+// and its threads at shutdown. Nothing when audio was not started.
+void StopAudio();
 // Switches a group to Any360 (or back). Meant once, before the title's first call of the group: calls of a group
 // share state, which does not move from one side to the other.
 void EnableSystemGroup(SysGroup group, bool enabled);
