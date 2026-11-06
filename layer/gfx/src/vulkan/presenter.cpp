@@ -277,6 +277,17 @@ bool Presenter::PresentWith(const uint32_t* rgba, const BlitFn* blit_source, uin
   const VkClearColorValue black{{0, 0, 0, 1}};
   const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
   f.vkCmdClearColorImage(cb, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+  {
+    // The frame written over the cleared image after the clear (two transfer writes to one image).
+    VkMemoryBarrier2 after_clear{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    after_clear.srcStageMask = after_clear.dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+    after_clear.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    after_clear.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependency.memoryBarrierCount = 1;
+    dependency.pMemoryBarriers = &after_clear;
+    f.vkCmdPipelineBarrier2(cb, &dependency);
+  }
   // Fit the frame in the window with its aspect ratio (black bars on the long side).
   const float scale = std::min(float(extent_.width) / width, float(extent_.height) / height);
   const int32_t w = std::max(1, int32_t(width * scale)), h = std::max(1, int32_t(height * scale));
