@@ -144,6 +144,13 @@ void FileSystem::Mount(const std::string& device, const std::filesystem::path& h
   std::sort(mounts_.begin(), mounts_.end(), [](const Mounted& a, const Mounted& b) { return a.device.size() > b.device.size(); });
 }
 
+void FileSystem::MountNull(const std::string& device) {
+  Mount(device, {}, false);
+  for (Mounted& m : mounts_) {
+    if (m.device == Lower(device)) m.null = true;
+  }
+}
+
 void FileSystem::Link(const std::string& link, const std::string& target) {
   std::string name = Lower(link);
   if (name.rfind("\\??\\", 0) == 0) name = name.substr(4);
@@ -285,6 +292,20 @@ uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access
   };
   std::string rest;
   const Mounted* mount = MountOf(Canonical(guest), rest);
+  if (mount && mount->null) {  // the device itself, nothing under it
+    if (!rest.empty() && rest != "\\") return fail(kStatusObjectPathNotFound, kDoesNotExist);
+    const uint32_t object = Objects().AllocateObject(16, true);
+    if (!object) return fail(0xC0000017, kDoesNotExist);
+    std::memset(g.host(object), 0, 16);
+    Open file;
+    file.guest = guest;
+    file.mount = mount;
+    file.asynchronous = (options & kFileSynchronousIo) == 0;
+    open_[object] = file;
+    handle_out = Objects().OpenHandle(object);
+    action_out = kOpened;
+    return kStatusSuccess;
+  }
   bool parent = false;
   const std::filesystem::path host = Resolve(guest, &parent);
   if (!mount || !parent) return fail(kStatusObjectPathNotFound, kDoesNotExist);
@@ -338,6 +359,11 @@ uint32_t FileSystem::Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t
   Open* file = Find(handle);
   if (!file) return kStatusInvalidHandle;
   if (file->directory) return kStatusInvalidParameter;
+  if (file->mount && file->mount->null) {  // done, nothing moved
+    StoreStatus(g, io_status, kStatusSuccess, 0);
+    if (event) Objects().NtSetEvent(g, event, 0);
+    return kStatusSuccess;
+  }
   uint64_t offset = at ? *at : offset_ptr ? g.Load64(offset_ptr) : ~0ull;
   if (!at && offset >= 0xFFFFFFFFFFFFFFFEull) offset = file->position;  // FILE_USE_FILE_POINTER_POSITION
   uint32_t done = 0, status = kStatusSuccess;

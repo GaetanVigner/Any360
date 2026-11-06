@@ -255,6 +255,26 @@ input calls: `XamInputGetState`, `XamInputGetCapabilities`, `XamInputGetKeystrok
   system, so every driver it has (SDL, XInput, a title's own keyboard and mouse driver) still feeds the title. Any360's
   own platform layer replaces it at step 14.
 
+## Step 9: done (no call reaches the runtime in Crackdown)
+
+With all eight groups on, Crackdown makes no system call the runtime answers (2026-11-06: loading a save, playing,
+saving, sound, gamepad and vibration). `trace_calls` now also reports the first time each call goes to the runtime and
+why (its group off, a handle the runtime made, a path any360::sys did not answer); the run that started this step
+listed ~2,900 such calls, all files:
+
+- **Every path is any360::sys's** once the files group is on: it mounts what the runtime mounts and answers a device
+  nobody mounted (Crackdown's Lua probes its search path with relative names; the cache code tries a `cache:` link
+  before creating it) as the console would, with NT's statuses. Only a path relative to a directory the runtime
+  opened would still be the runtime's; symbolic links are made on any360::sys's side alone.
+- **The raw hard drive devices** (`\Device\Harddisk0\Partition0`, `Cache0`, `Cache1`), which titles' cache code
+  opens, queries and formats: `FileSystem::MountNull` answers them as the reference does (opens, reads and writes
+  succeed and move nothing); the ReXGlue binder mounts them.
+- **Profile defaults**: the integer settings a new profile holds (vibration on, voice volume, auto aim, the gamer
+  card's) answer the console's default until a title writes them. Without them Crackdown read vibration as off.
+
+What stays the runtime's: the host (it loads the image, runs the threads inside `XHostThread`s, owns the window),
+which step 13 replaces; the routing by handle owner stays as the fallback for a title that keeps runtime-made objects.
+
 ## After step 7: from one title to any title (the road to 100%)
 
 Steps 0-7 put Crackdown's system calls on any360::sys, with ReXGlue still hosting it. Crackdown is the test bench; the
@@ -274,7 +294,7 @@ The rest, in steps of the same size as 0-7, each ending with an in-game check on
 | Step | What | Done when |
 |---|---|---|
 | 8 | **Input**: the `input` group on any360::sys with an input source the host fills (an SDL3 gamepad layer: state, capabilities, keystrokes, vibration, hot-plug, four users); keyboard and mouse for titles that map them | Crackdown plays on a gamepad with input on any360::sys |
-| 9 | **No runtime-made state**: any360::sys started before the title's entry point, the main thread adopted (`AdoptCurrentThread`), every handle and object made by any360::sys; the foreign-handle and foreign-memory routing then removed | Crackdown boots with no call reaching the runtime and no routing |
+| 9 | **No call reaching the runtime**: every path answered by any360::sys, the raw hard drive devices, the profile defaults (done, see Step 9; the main thread and the host threads stay the runtime's until step 13) | Crackdown boots and plays with no call reaching the runtime |
 | 10 | **A second title on the full binding**: The Simpsons Game, all groups, the bugs it finds fixed in any360::sys (none in the title) | The Simpsons plays through its first level on any360::sys |
 | 11 | **Third and fourth titles**: Test Drive Unlimited, Sonic 06 | both reach gameplay |
 | 12 | **Paths no title took yet**: the `XMA*` decoding path, content packages (STFS saves, DLC, title updates), several signed-in users, the guide and its UIs (keyboard, message box, device selector) answered as a console would, Live answered as offline everywhere, xbdm as a retail console; each with scenario tests | sys tests cover each; the 2,294 reference stubs sorted into "answered like retail", "implemented", "never seen" |

@@ -66,6 +66,17 @@ void Trace(SysGroup group, const char* name) {
   if (g_log) g_log(std::string("first call on any360::sys: ") + name + " (" + kGroupNames[size_t(group)] + ")");
 }
 
+// With trace_calls, the first time a call goes to the runtime after StartSystem, and why (what keeps it there).
+std::unordered_set<std::string> g_traced_runtime;
+void TraceRuntime(const char* name, const std::string& why) {
+  if (!g_trace.load(std::memory_order_relaxed) || !g_started.load(std::memory_order_relaxed)) return;
+  {
+    std::lock_guard lock(g_traced_mutex);
+    if (!g_traced_runtime.insert(std::string(name) + "|" + why).second) return;
+  }
+  if (g_log) g_log(std::string("first call on the runtime: ") + name + " (" + why + ")");
+}
+
 }  // namespace
 
 const char* SysGroupName(SysGroup group) { return group < SysGroup::kCount ? kGroupNames[size_t(group)] : "?"; }
@@ -140,6 +151,7 @@ void CallSystemExport(SysGroup group, const char* name, GuestFunction any360, Gu
   if (!reference || (!kept && g_started.load(std::memory_order_relaxed) && g_enabled[size_t(group)].load(std::memory_order_relaxed))) {
     RunAny360(group, name, any360, ctx, base);
   } else {
+    TraceRuntime(name, kept ? "kept on the runtime" : std::string("group ") + kGroupNames[size_t(group)] + " off");
     RunReference(name, reference, ctx, base);
   }
 }
@@ -151,17 +163,27 @@ void CallHandleExport(SysGroup group, const char* name, GuestFunction any360, Gu
   else if (!g_started.load(std::memory_order_relaxed)) ours = false;
   else if (handle >= 0xFFFFFFF0) ours = Enabled(group);  // the current thread or process
   else ours = any360::sys::Objects().OwnsHandle(handle);
-  if (ours) RunAny360(group, name, any360, ctx, base);
-  else RunReference(name, reference, ctx, base);
+  if (ours) {
+    RunAny360(group, name, any360, ctx, base);
+  } else {
+    char why[48];
+    std::snprintf(why, sizeof why, "the runtime's handle %08X", handle);
+    TraceRuntime(name, handle >= 0xFFFFFFF0 ? std::string("group ") + kGroupNames[size_t(group)] + " off" : why);
+    RunReference(name, reference, ctx, base);
+  }
 }
 
 void CallPathExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, PathKind kind,
                     uint32_t path, PPCContext& ctx, uint8_t* base) {
+  // With the files group on, any360::sys answers every path (it mounts what the runtime does, and answers a device
+  // nobody mounted as the console would); only a path relative to a directory the runtime opened stays the runtime's.
   bool ours = !reference;
-  if (!ours && g_started.load(std::memory_order_relaxed) && Enabled(group) && path) {
-    ours = kind == PathKind::kAttributes
-               ? any360::sys::Files().KnowsAttributes(any360::sys::Guest{base}, path)
-               : any360::sys::Files().Knows(reinterpret_cast<const char*>(any360::sys::Guest{base}.host(path)));
+  if (!ours && g_started.load(std::memory_order_relaxed) && Enabled(group)) {
+    ours = true;
+    if (kind == PathKind::kAttributes && path) {
+      const uint32_t root = any360::sys::Guest{base}.Load32(path);
+      if (root && root != 0xFFFFFFFD && !any360::sys::Objects().OwnsHandle(root)) ours = false;
+    }
   }
   if (ours && TraceEvery(group, name) && g_log && path) {
     std::string text;
@@ -175,19 +197,35 @@ void CallPathExport(SysGroup group, const char* name, GuestFunction any360, Gues
     }
     g_log(std::string(name) + " path " + text);
   }
-  if (ours) RunAny360(group, name, any360, ctx, base);
-  else RunReference(name, reference, ctx, base);
+  if (ours) {
+    RunAny360(group, name, any360, ctx, base);
+    return;
+  }
+  if (g_trace.load(std::memory_order_relaxed) && path && Enabled(group)) {
+    std::string text;
+    const any360::sys::Guest g{base};
+    if (kind == PathKind::kAttributes) {
+      const uint32_t string = g.Load32(path + 4);
+      if (string) text.assign(reinterpret_cast<const char*>(g.host(g.Load32(string + 4))), g.Load16(string));
+    } else {
+      text = reinterpret_cast<const char*>(g.host(path));
+    }
+    TraceRuntime(name, "a path any360::sys does not know: " + text);
+  } else {
+    TraceRuntime(name, std::string("group ") + kGroupNames[size_t(group)] + " off");
+  }
+  RunReference(name, reference, ctx, base);
 }
 
 void CallBothExport(SysGroup group, const char* name, GuestFunction any360, GuestFunction reference, PPCContext& ctx,
                     uint8_t* base) {
   if (reference && !(g_started.load(std::memory_order_relaxed) && Enabled(group))) {
+    TraceRuntime(name, std::string("group ") + kGroupNames[size_t(group)] + " off");
     RunReference(name, reference, ctx, base);
     return;
   }
-  PPCContext copy = ctx;
+  // Every path being any360::sys's, its symbolic links are too.
   RunAny360(group, name, any360, ctx, base);
-  if (reference) RunReference(name, reference, copy, base);
 }
 
 // The heaps any360::sys's memory manager keeps (MemoryManager::Reset's layout).
@@ -384,6 +422,10 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
        }});
   any360::sys::Objects().Reset();
   any360::sys::Files().Reset();
+  // The raw hard drive devices the runtime answers as null devices (titles' cache code probes and formats them).
+  for (const char* device : {"\\Device\\Harddisk0\\Partition0", "\\Device\\Harddisk0\\Cache0", "\\Device\\Harddisk0\\Cache1"}) {
+    any360::sys::Files().MountNull(device);
+  }
   for (const SystemMount& mount : options.mounts) {
     any360::sys::Files().Mount(mount.device, mount.host, mount.read_only);
     for (const std::string& link : mount.links) any360::sys::Files().Link(link, mount.device);

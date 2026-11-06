@@ -265,6 +265,23 @@ uint32_t Xam::UserCheckPrivilege(Guest g, uint32_t user, uint32_t, uint32_t out)
   return kErrorSuccess;
 }
 
+namespace {
+// The integer profile settings a new profile holds, as a console answers them before a title writes any: those
+// that are not 0 (vibration on, a default voice volume, the gamer card's defaults, auto aim on).
+uint32_t DefaultProfileInt(uint32_t id) {
+  switch (id) {
+    case 0x10040003: return 3;           // XPROFILE_OPTION_CONTROLLER_VIBRATION: on
+    case 0x10040006: return 0xFA;        // XPROFILE_GAMERCARD_CRED
+    case 0x1004000E: return 0x64;        // XPROFILE_OPTION_VOICE_VOLUME
+    case 0x10040012: return 1;           // XPROFILE_GAMERCARD_TITLES_PLAYED
+    case 0x1004001D: return 0xFFFF0000;  // preferred color 1
+    case 0x1004001E: return 0xFF00FF00;  // preferred color 2
+    case 0x10040022: return 1;           // XPROFILE_GAMER_ACTION_AUTO_AIM
+    default: return 0;
+  }
+}
+}  // namespace
+
 uint32_t Xam::UserReadProfileSettings(Guest g, uint32_t, uint32_t user, uint32_t xuid_count, uint32_t, uint32_t setting_count,
                                       uint32_t setting_ids, uint32_t size_ptr, uint32_t buffer, uint32_t overlapped) {
   // The setting id carries its type (bits 28-31) and the size of its data (bits 16-27).
@@ -299,6 +316,7 @@ uint32_t Xam::UserReadProfileSettings(Guest g, uint32_t, uint32_t user, uint32_t
       g.Store8(at + 24, uint8_t(id >> 28));  // data type
       const uint32_t type = id >> 28, bytes = (id >> 16) & 0xFFF;
       if (stored != settings_.end()) std::memcpy(g.host(at + 24), stored->data.data(), 16);
+      else if (type == 1) g.Store32(at + 32, DefaultProfileInt(id));  // never written: the console's default
       if (type == 4 || type == 6) {
         g.Store8(at + 24, uint8_t(type));
         g.Store32(at + 36, data);

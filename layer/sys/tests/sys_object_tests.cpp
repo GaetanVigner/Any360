@@ -1004,6 +1004,13 @@ void FileTests() {
         g.Load32(iosb + 4) == kDoesNotExist && g.Load32(out) == 0xFFFFFFFF);
   CHECK(Files().CreateFile(g, out, kRead, path("game:\\nope\\data.bin"), iosb, 0, kOpen, 0) == kStatusObjectPathNotFound);
   CHECK(Files().CreateFile(g, out, kRead, path("nodevice:\\data.bin"), iosb, 0, kOpen, 0) == kStatusObjectPathNotFound);
+  // A null device (the hard drive's raw partitions): it opens; reads and writes succeed and move nothing.
+  Files().MountNull("\\Device\\Harddisk0\\Cache0");
+  CHECK(Files().CreateFile(g, out, kRead | kWrite, path("\\Device\\Harddisk0\\Cache0"), iosb, 0, kOpen, kFileSynchronousIo) == 0);
+  CHECK(Files().ReadFile(g, g.Load32(out), 0, iosb, buf, 512, 0) == 0 && g.Load32(iosb + 4) == 0);
+  CHECK(Files().WriteFile(g, g.Load32(out), 0, iosb, buf, 512, 0) == 0);
+  CHECK(Objects().Close(g.Load32(out)) == 0);
+  CHECK(Files().CreateFile(g, out, kRead, path("\\Device\\Harddisk0\\Cache0\\file"), iosb, 0, kOpen, 0) == kStatusObjectPathNotFound);
   CHECK(Files().CreateFile(g, out, kRead, path("game:\\media"), iosb, 0, kOpen, kFileNonDirectoryFile) == kStatusFileIsADirectory);
   CHECK(Files().CreateFile(g, out, kRead, path("game:\\media\\data.bin"), iosb, 0, kOpen, kFileDirectoryFile) == kStatusNotADirectory);
   CHECK(Files().CreateFile(g, out, kRead, path("game:\\..\\x"), iosb, 0, kOpen, 0) == kStatusObjectPathNotFound);
@@ -2121,6 +2128,9 @@ void ProfileSettingsKept() {
   CHECK(XamState().UserReadProfileSettings(g, 0, 0, 0, 0, 1, ids, size, buffer, 0) == 0);
   CHECK(g.Load32(buffer + 8) == 2 && g.Load32(buffer + 8 + 32) == 5);  // the length written, not the maximum
   CHECK(std::memcmp(g.host(g.Load32(buffer + 8 + 36)), "CRAK!", 5) == 0);
+  g.Store32(ids, 0x10040003);  // vibration, never written: on (3), as a new console profile
+  CHECK(XamState().UserReadProfileSettings(g, 0, 0, 0, 0, 1, ids, size, buffer, 0) == 0 && g.Load32(buffer + 8) == 1 &&
+        g.Load32(buffer + 8 + 32) == 3);
   g.Store32(ids, 0x63E83FFE);  // never written: the default
   CHECK(XamState().UserReadProfileSettings(g, 0, 0, 0, 0, 1, ids, size, buffer, 0) == 0 && g.Load32(buffer + 8) == 1);
   fs::remove_all(profile, ec);

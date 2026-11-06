@@ -78,7 +78,11 @@ void Entry(PPCContext& ctx, uint8_t* base) {
   { std::ofstream(files / "data.bin", std::ios::binary) << "1234"; }
   SystemOptions options;
   options.kernel_heap_size = 16 << 20;
-  options.log = [&](const std::string&) { ++traced; };
+  int traced_runtime = 0;
+  options.log = [&](const std::string& line) {
+    if (line.rfind("first call on any360::sys", 0) == 0) ++traced;
+    if (line.rfind("first call on the runtime", 0) == 0) ++traced_runtime;
+  };
   options.trace_calls = true;
   options.mounts.push_back({"\\Device\\Harddisk0\\Partition1", files.string(), true, {"game:"}});
   CHECK(StartSystem(options, error));
@@ -107,6 +111,7 @@ void Entry(PPCContext& ctx, uint8_t* base) {
   CHECK(call.r3.u32 == 0);
   __imp__XamUserIsOnlineEnabled(call, base);
   CHECK(traced == 2);  // XeCryptRandom and XamUserIsOnlineEnabled, once each
+  CHECK(traced_runtime == 2);  // the same two while their groups were off, with why
   EnableSystemGroup(SysGroup::kStateless, false);
   EnableSystemGroup(SysGroup::kXam, false);
   // Handles go back to the side that made them: an event made by any360::sys (its range starts at 0xF8100000) is closed

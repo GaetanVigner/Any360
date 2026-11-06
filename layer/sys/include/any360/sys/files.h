@@ -42,6 +42,9 @@ class FileSystem {
   void Reset();
   // `device` is a guest device path ("\Device\Cdrom0", "\Device\Harddisk0\Partition1").
   void Mount(const std::string& device, const std::filesystem::path& host, bool read_only);
+  // A raw device titles probe and format but need not keep (the hard drive's Partition0, Cache0, Cache1, as the
+  // reference answers them): the device opens, reads and writes succeed and transfer nothing.
+  void MountNull(const std::string& device);
   // A symbolic link from a DOS name ("game:", "\??\D:") to a device path.
   void Link(const std::string& link, const std::string& target);
   void Unmount(const std::string& device);
@@ -120,6 +123,7 @@ class FileSystem {
     std::string device;  // lower case
     std::filesystem::path host;
     bool read_only;
+    bool null = false;  // a raw device whose opens, reads and writes succeed and move nothing (MountNull)
   };
   struct Open {
     std::filesystem::path host;

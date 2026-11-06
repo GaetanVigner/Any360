@@ -127,8 +127,8 @@ details in [docs/SYS_BINDING.md](docs/SYS_BINDING.md). Crackdown is the test ben
 | 5 | memory: virtual and physical allocation, one address space shared with the runtime | done (Crackdown) |
 | 6 | XAM: profile, saves, notifications, enumerators, offline network | done (Crackdown) |
 | 7 | audio: XAudio clients, the XMA registers, a native XMA decoder, SDL3 output | done (Crackdown) |
-| 8 | input: gamepads through `any360::sys` (packets, keystrokes, vibration), the host's drivers as the source | done (Crackdown, gamepad; keyboard and mouse not checked) |
-| 9 | no runtime-made state: `any360::sys` up before the entry point, the main thread adopted, no foreign handles | not started |
+| 8 | input: gamepads through `any360::sys` (packets, keystrokes, vibration), the host's drivers as the source | done (Crackdown, gamepad and vibration; keyboard and mouse not checked) |
+| 9 | no call reaching the runtime: every path, the raw hard drive devices, the profile defaults on `any360::sys` | done (Crackdown; the host stays ReXGlue's until step 13) |
 | 10 | a second title (The Simpsons Game) on the full system binding | not started |
 | 11 | third and fourth titles (Test Drive Unlimited, Sonic 06) | not started |
 | 12 | paths no title took yet: `XMA*` decoding, STFS packages, several users, guide UIs, Live offline, xbdm | partial: 602 of 2,914 exports native with scenario tests, none of the 2,294 reference stubs sorted |
