@@ -1254,15 +1254,24 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
               builder_->createNoContractionBinOp(
                   spv::OpFAdd, type_float_, builder_->createNoContractionBinOp(spv::OpFMul, type_float_, sub[0], t_dx),
                   builder_->createNoContractionBinOp(spv::OpFMul, type_float_, sub[1], t_dy)));
-          spv::Id first = builder_->createNoContractionBinOp(
-              spv::OpFMul, type_float_,
-              builder_->createUnaryBuiltinCall(type_float_, ext_inst_glsl_std_450_, GLSLstd450Floor, t_centre), scale);
+          spv::Id guest_texel =
+              builder_->createUnaryBuiltinCall(type_float_, ext_inst_glsl_std_450_, GLSLstd450Floor, t_centre);
+          spv::Id first = builder_->createNoContractionBinOp(spv::OpFMul, type_float_, guest_texel, scale);
           spv::Id last = builder_->createNoContractionBinOp(
               spv::OpFSub, type_float_, builder_->createNoContractionBinOp(spv::OpFAdd, type_float_, first, scale),
               const_float_1_);
+          // Within that texel, the host pixel's own place: its centre plus how far the host pixel lies from its guest
+          // pixel's centre (a pass copying 1:1 reads each host texel; the host resolution is kept).
           spv::Id host_texel = builder_->createUnaryBuiltinCall(
               type_float_, ext_inst_glsl_std_450_, GLSLstd450Floor,
-              builder_->createNoContractionBinOp(spv::OpFMul, type_float_, t, scale));
+              builder_->createNoContractionBinOp(
+                  spv::OpFMul, type_float_,
+                  builder_->createNoContractionBinOp(
+                      spv::OpFAdd, type_float_,
+                      builder_->createNoContractionBinOp(spv::OpFAdd, type_float_, guest_texel,
+                                                         builder_->makeFloatConstant(0.5f)),
+                      builder_->createNoContractionBinOp(spv::OpFSub, type_float_, t, t_centre)),
+                  scale));
           id_vector_temp_.clear();
           id_vector_temp_.push_back(host_texel);
           id_vector_temp_.push_back(first);
