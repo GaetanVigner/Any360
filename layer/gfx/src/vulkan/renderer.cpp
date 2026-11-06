@@ -203,6 +203,7 @@ VulkanRenderer::~VulkanRenderer() {
     if (timestamps_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, timestamps_, nullptr);
     if (query_pool_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, query_pool_, nullptr);
     if (gpu_marks_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, gpu_marks_, nullptr);
+    if (draw_timing_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, draw_timing_, nullptr);
     if (b.draw_pool) f.vkDestroyDescriptorPool(d, b.draw_pool, nullptr);
     if (b.depth_pool) f.vkDestroyDescriptorPool(d, b.depth_pool, nullptr);
     DestroyBuffer(device_, b.constants);
@@ -393,6 +394,10 @@ bool VulkanRenderer::Initialize() {
   if (f.vkCreateQueryPool(d, &queries, nullptr, &timestamps_) != VK_SUCCESS) timestamps_ = VK_NULL_HANDLE;
   queries.queryCount = kGpuMarks * kBatches;
   if (f.vkCreateQueryPool(d, &queries, nullptr, &gpu_marks_) != VK_SUCCESS) gpu_marks_ = VK_NULL_HANDLE;
+  if (std::getenv("ANY360_DRAW_TIMING")) {
+    queries.queryCount = kDrawTimings * kBatches;
+    if (f.vkCreateQueryPool(d, &queries, nullptr, &draw_timing_) != VK_SUCCESS) draw_timing_ = VK_NULL_HANDLE;
+  }
   VkQueryPoolCreateInfo occlusion{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
   occlusion.queryType = VK_QUERY_TYPE_OCCLUSION;
   occlusion.queryCount = kQueriesPerBatch * kBatches;
@@ -809,6 +814,13 @@ VkShaderModule VulkanRenderer::GetModule(TranslatedShader& shader, uint64_t modi
   rg::Shader::Translation& translation = *shader.shader->GetOrCreateTranslation(modification);
   if (!translator_->TranslateAnalyzedShader(translation) || !translation.is_valid()) return module = VK_NULL_HANDLE;
   const std::vector<uint8_t>& binary = translation.translated_binary();
+  // ANY360_DUMP_SHADERS=<dir>: each translation's SPIR-V as <dir>/<hash>_<modification>.spv (for spirv-dis).
+  if (const char* dir = std::getenv("ANY360_DUMP_SHADERS")) {
+    char name[512];
+    std::snprintf(name, sizeof(name), "%s/%016llX_%016llX.spv", dir, (unsigned long long)shader.shader->ucode_data_hash(),
+                  (unsigned long long)modification);
+    if (std::FILE* f = std::fopen(name, "wb")) std::fwrite(binary.data(), 1, binary.size(), f), std::fclose(f);
+  }
   VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
   info.codeSize = binary.size();
   info.pCode = reinterpret_cast<const uint32_t*>(binary.data());
@@ -1101,12 +1113,33 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t clip_planes = (clip_cntl >> 16) & 1 ? 0 : clip_cntl & 0x3F, clip_cull = (clip_cntl >> 17) & 1;
   // The guest MSAA mode and SQ_INTERPOLATOR_CNTL's sampling pattern choose the centroid interpolators.
   const uint32_t guest_msaa = (regs[kRbSurfaceInfo] >> 16) & 3;
+  // Alpha test and alpha to coverage (RB_COLORCONTROL): their code only in the pixel shaders of draws that have them
+  // (a shader that may discard loses the early depth test).
+  const bool alpha_tested = (regs[kRbColorControl] & (1u << 3)) && (regs[kRbColorControl] & 7) != 7;
+  const bool alpha_to_coverage = (regs[kRbColorControl] >> 4) & 1;
+  // Every texture the pixel shader fetches unsigned (fetch constant signs, bits 2-9 of word 0, all 0): its variant
+  // without the per-component sign handling.
+  bool textures_unsigned = wants_ps && draw.pixel_shader;
+  if (textures_unsigned) {
+    TranslatedShader* ps_shader = shader_memo_.valid && shader_memo_.ps && shader_memo_.key[1] == draw.pixel_shader->hash
+                                      ? shader_memo_.ps
+                                      : GetShader(*draw.pixel_shader);
+    if (!ps_shader || !ps_shader->shader->is_ucode_analyzed()) {
+      textures_unsigned = false;
+    } else {
+      for (const auto& binding : ps_shader->shader->texture_bindings()) {
+        if ((regs[reg::kFetchConstants + 6 * binding.fetch_constant] >> 2) & 0xFF) textures_unsigned = false;
+      }
+    }
+  }
   const uint64_t shader_key[4] = {draw.vertex_shader->hash, wants_ps ? draw.pixel_shader->hash : 0,
                                   uint64_t(regs[kSqProgramCntl]) << 32 | regs[kSqContextMisc],
                                   uint64_t(wants_ps) | uint64_t(rectangle_list) << 1 |
                                       uint64_t(point_list) << 2 |
                                       uint64_t(clip_planes) << 3 | uint64_t(clip_cull) << 9 |
-                                      uint64_t(guest_msaa) << 10 | uint64_t(regs[kSqInterpolatorCntl] >> 16) << 12};
+                                      uint64_t(guest_msaa) << 10 | uint64_t(regs[kSqInterpolatorCntl] >> 16) << 12 |
+                                      uint64_t(alpha_tested) << 28 | uint64_t(alpha_to_coverage) << 29 |
+                                      uint64_t(textures_unsigned) << 30};
   const bool shaders_known = shader_memo_.valid && std::memcmp(shader_memo_.key, shader_key, sizeof(shader_key)) == 0;
   TranslatedShader* vs = shaders_known ? shader_memo_.vs : GetShader(*draw.vertex_shader);
   TranslatedShader* ps = shaders_known ? shader_memo_.ps : wants_ps ? GetShader(*draw.pixel_shader) : nullptr;
@@ -1159,6 +1192,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     SpirvShaderTranslator::Modification ps_modification(
         translator_->GetDefaultPixelShaderModification(ps->shader->GetDynamicAddressableRegisterCount(program_cntl.ps_num_reg)));
     ps_modification.pixel.interpolator_mask = interpolators;
+    ps_modification.pixel.no_alpha_test = !alpha_tested;
+    ps_modification.pixel.no_alpha_to_coverage = !alpha_to_coverage;
+    ps_modification.pixel.textures_unsigned = textures_unsigned;
     ps_modification.pixel.interpolators_centroid =
         CentroidInterpolators(interpolators, regs[kRbSurfaceInfo], regs[kSqContextMisc], regs[kSqInterpolatorCntl]);
     if (param_gen < 16) {
@@ -1622,6 +1658,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // is recorded.
   DrawJob job{};
   job.query = UINT32_MAX;
+  job.timing = UINT32_MAX;
+  if (draw_timing_ && batch().timing_keys.size() < kDrawTimings) {
+    job.timing = kDrawTimings * current_ + uint32_t(batch().timing_keys.size());
+    batch().timing_keys.push_back({draw.pixel_shader ? draw.pixel_shader->hash : 0, draw.vertex_shader->hash});
+  }
   job.index_type = VK_INDEX_TYPE_NONE_KHR;
   job.host_index_count = host_index_count;
   job.index_buffer = batch().indices.buffer;
@@ -2155,6 +2196,7 @@ void VulkanRenderer::RecordJob(VkCommandBuffer cb, const DrawJob& job, RecordedS
   std::memcpy(rs.blend, job.blend, sizeof(rs.blend));
   rs.stencil[0] = job.stencil[0], rs.stencil[1] = job.stencil[1];
   rs.valid = true;
+  if (job.timing != UINT32_MAX) f.vkCmdWriteTimestamp2(cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, draw_timing_, job.timing);
   if (job.query != UINT32_MAX) {
     f.vkCmdBeginQuery(cb, query_pool_, job.query, device_.occlusion_query_precise() ? VK_QUERY_CONTROL_PRECISE_BIT : 0);
   }
@@ -2317,6 +2359,10 @@ VkCommandBuffer VulkanRenderer::Record() {
       f.vkCmdResetQueryPool(b.cb, gpu_marks_, kGpuMarks * uint32_t(&b - batches_.data()), kGpuMarks);
       b.marks = 0;
       GpuMark(b, b.cb, kGpuOther);
+    }
+    if (draw_timing_) {
+      f.vkCmdResetQueryPool(b.cb, draw_timing_, kDrawTimings * uint32_t(&b - batches_.data()), kDrawTimings);
+      b.timing_keys.clear();
     }
     recorded_.valid = false;  // a new command buffer has no state
     batch_open_ = true;
@@ -2903,6 +2949,30 @@ void VulkanRenderer::FinishBatch(Batch& b) {
         for (uint32_t i = 0; i < marks; ++i) {
           const uint64_t end = i + 1 < marks ? order[i + 1].first : stamps[1];
           if (end > order[i].first) stats_.ns_gpu_kind[order[i].second] += uint64_t(double(end - order[i].first) * period);
+        }
+        // ANY360_DRAW_TIMING: each draw's interval, to the next time stamp of any kind, by its pixel shader.
+        const uint32_t draws = uint32_t(b.timing_keys.size());
+        std::vector<uint64_t> draw_stamps(draws);
+        if (draw_timing_ && draws &&
+            device_.fn().vkGetQueryPoolResults(device_.device(), draw_timing_, kDrawTimings * index, draws, draws * 8,
+                                               draw_stamps.data(), 8, VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
+          // (time, draw index or UINT32_MAX for a mark of other work)
+          std::vector<std::pair<uint64_t, uint32_t>> line;
+          line.reserve(draws + marks);
+          for (uint32_t i = 0; i < draws; ++i) line.push_back({draw_stamps[i], i});
+          for (uint32_t i = 0; i < marks; ++i) {
+            if (order[i].second != kGpuDraws) line.push_back({order[i].first, UINT32_MAX});
+          }
+          std::sort(line.begin(), line.end());
+          std::lock_guard lock(shader_times_mutex_);
+          for (size_t i = 0; i < line.size(); ++i) {
+            if (line[i].second == UINT32_MAX) continue;
+            const uint64_t end = i + 1 < line.size() ? line[i + 1].first : stamps[1];
+            ShaderTime& st = shader_times_[b.timing_keys[line[i].second].first];
+            st.vertex_hash = b.timing_keys[line[i].second].second;
+            ++st.draws;
+            if (end > line[i].first) st.ns += uint64_t(double(end - line[i].first) * period);
+          }
         }
       }
     }

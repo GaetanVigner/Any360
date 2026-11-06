@@ -34,7 +34,7 @@ class SpirvShaderTranslator : public ShaderTranslator {
     // TODO(Triang3l): Change to 0xYYYYMMDD once it's out of the rapid
     // prototyping stage (easier to do small granular updates with an
     // incremental counter).
-    static constexpr uint32_t kVersion = 12;
+    static constexpr uint32_t kVersion = 14;
 
     enum class DepthStencilMode : uint32_t {
       kNoModifiers,
@@ -89,6 +89,14 @@ class SpirvShaderTranslator : public ShaderTranslator {
       uint32_t param_gen_point : 1;
       // For host render targets - depth / stencil output mode.
       DepthStencilMode depth_stencil_mode : 3;
+      // any360: the draw has no alpha test (RB_COLORCONTROL: disabled or "always") / no alpha to coverage: their code
+      // left out. A shader that may discard (OpKill, even never taken) makes the driver test depth after shading, so
+      // every hidden pixel is shaded; with neither, early depth tests apply.
+      uint32_t no_alpha_test : 1;
+      uint32_t no_alpha_to_coverage : 1;
+      // any360: every texture the draw's pixel shader fetches has unsigned components only (fetch constant signs 0):
+      // the signs are constants, so the driver drops the signed samples and the per-component sign switches.
+      uint32_t textures_unsigned : 1;
     } pixel;
     uint64_t value = 0;
 
