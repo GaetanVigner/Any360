@@ -113,10 +113,31 @@ and commit the reports.
 
 ## State
 
-Milestone L1: skeleton, design, coverage of both titles, progress page. Crackdown is at stage 1 for one render pass
-(the shadow atlas, drawn natively and validated) and at stage 2 for 103 functions; everything else is stage 0. The
-layer's code still lives in the Crackdown repository; [layer/status.json](layer/status.json) lists each piece and
-[docs/DESIGN.md](docs/DESIGN.md#7-first-milestones) the order it moves in.
+The system binding's road to 100%: every system call of any title on `any360::sys`, then Any360 hosting titles without
+ReXGlue's runtime, then porting a new title with no title-specific code in Any360. Each step ends with an in-game check;
+details in [docs/SYS_BINDING.md](docs/SYS_BINDING.md). Crackdown is the test bench, not the goal.
+
+| Step | What | State |
+|---|---|---|
+| 0 | the binder: a title's imports overridden by `any360::sys`, group by group, the runtime as fallback | done |
+| 1 | stateless calls: strings, time, crypto, console information | done (Crackdown) |
+| 2 | files: `Nt*File`, Win32 files, symbolic links, the runtime's mounts | done (Crackdown) |
+| 3 | objects and waits: events, semaphores, mutants, timers, completion ports | done (Crackdown) |
+| 4 | threads: creation, TLS, APCs, DPCs, critical sections, hardware threads | done (Crackdown) |
+| 5 | memory: virtual and physical allocation, one address space shared with the runtime | done (Crackdown) |
+| 6 | XAM: profile, saves, notifications, enumerators, offline network | done (Crackdown) |
+| 7 | audio: XAudio clients, the XMA registers, a native XMA decoder, SDL3 output | done (Crackdown) |
+| 8 | input: gamepads through `any360::sys` (packets, keystrokes, vibration), the host's drivers as the source | done (Crackdown, gamepad; keyboard and mouse not checked) |
+| 9 | no runtime-made state: `any360::sys` up before the entry point, the main thread adopted, no foreign handles | not started |
+| 10 | a second title (The Simpsons Game) on the full system binding | not started |
+| 11 | third and fourth titles (Test Drive Unlimited, Sonic 06) | not started |
+| 12 | paths no title took yet: `XMA*` decoding, STFS packages, several users, guide UIs, Live offline, xbdm | partial: 602 of 2,914 exports native with scenario tests, none of the 2,294 reference stubs sorted |
+| 13 | Any360's own host: XEX loader, address space, threads, guest dispatch, MMIO, devices | not started |
+| 14 | the platform layer: window, input, audio, presenter on Windows and Linux (Steam Deck) | partial: SDL3 audio output only |
+| 15 | graphics through `any360::gfx` only, no `rexgpu-xenos` | partial: three titles draw through `any360::gfx`, the GPU session's plan in [docs/GFX.md](docs/GFX.md) |
+| 16 | porting a new title: a converter served from GitHub (as AnyPS5) and built into the cross-platform launcher, from a XEX to a running build with no title-specific code in Any360 | not started |
+
+Stages 2 and 3 (decompilation, the portable codebase) follow; Crackdown has 103 functions decompiled.
 
 ## License
 

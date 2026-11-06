@@ -3,6 +3,7 @@
 
 #include <rex/ppc.h>
 #include <rex/runtime.h>
+#include <rex/input/input_system.h>
 #include <rex/system/function_dispatcher.h>
 #include <rex/system/kernel_state.h>
 #include <rex/system/user_module.h>
@@ -11,6 +12,10 @@
 #include <rex/system/xex_module.h>
 #include <rex/system/xmemory.h>
 #include <rex/system/xthread.h>
+// The input headers bring windows.h, whose Yield macro would rename Scheduler::Yield.
+#ifdef Yield
+#undef Yield
+#endif
 
 #include <algorithm>
 #include <array>
@@ -306,6 +311,39 @@ uint32_t BindVariables() {
   return bound;
 }
 
+namespace {
+// The input group's source: the host's gamepads as the runtime's input drivers read them (SDL, XInput, a title's own
+// keyboard and mouse driver), any360::sys answering the title (packets, keystrokes, users).
+rex::input::InputSystem* HostInput() {
+  auto* kernel = REX_KERNEL_STATE();
+  return kernel && kernel->emulator() ? static_cast<rex::input::InputSystem*>(kernel->emulator()->input_system()) : nullptr;
+}
+bool HostControllerConnected(uint32_t user) {
+  rex::input::X_INPUT_STATE state{};
+  rex::input::InputSystem* input = HostInput();
+  return input && input->GetState(user, &state) == 0;
+}
+bool HostControllerState(uint32_t user, any360::sys::GamepadState& pad) {
+  rex::input::X_INPUT_STATE state{};
+  rex::input::InputSystem* input = HostInput();
+  if (!input || input->GetState(user, &state) != 0) return false;
+  pad.buttons = state.gamepad.buttons;
+  pad.left_trigger = state.gamepad.left_trigger;
+  pad.right_trigger = state.gamepad.right_trigger;
+  pad.thumb_lx = state.gamepad.thumb_lx;
+  pad.thumb_ly = state.gamepad.thumb_ly;
+  pad.thumb_rx = state.gamepad.thumb_rx;
+  pad.thumb_ry = state.gamepad.thumb_ry;
+  return true;
+}
+void HostVibrate(uint32_t user, uint16_t left, uint16_t right) {
+  rex::input::X_INPUT_VIBRATION vibration{};
+  vibration.left_motor_speed = left;
+  vibration.right_motor_speed = right;
+  if (rex::input::InputSystem* input = HostInput()) input->SetState(user, &vibration);
+}
+}  // namespace
+
 bool StartSystem(const SystemOptions& options, std::string& error) {
   auto* kernel = REX_KERNEL_STATE();
   if (!kernel || !kernel->memory()) {
@@ -370,6 +408,10 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
     const std::string& path = module->path();
     const size_t slash = path.find_last_of("\\/:");
     title.module_name = slash == std::string::npos ? path : path.substr(slash + 1);
+    any360::sys::XamHost& host = any360::sys::XamState().host();
+    host.controller_connected = &HostControllerConnected;
+    host.controller_state = &HostControllerState;
+    host.vibrate = &HostVibrate;
     if (auto* profile = kernel->user_profile()) {
       title.xuid = profile->xuid();
       title.gamertag = profile->name();

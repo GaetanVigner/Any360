@@ -5,8 +5,12 @@
 // The answers are those of a retail console with one local profile signed in and no Xbox Live.
 #pragma once
 
+#include <array>
+#include <chrono>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -160,7 +164,9 @@ class Xam {
   uint32_t ContentCreateDeviceEnumerator(Guest g, uint32_t per_call, uint32_t size_ptr, uint32_t handle_out);
   uint32_t ContentGetDeviceName(Guest g, uint32_t device_id, uint32_t buffer, uint32_t capacity);
 
-  // Controllers.
+  // Controllers. The state's packet number moves on when the state changes (and at the first read); keystrokes are
+  // the console's: made from the state's transitions (buttons, triggers past 30, sticks past half way in eight
+  // directions), a held one repeating after 400 ms every 100 ms; user 0xFF takes the first user with one.
   uint32_t InputGetCapabilities(Guest g, uint32_t user, uint32_t flags, uint32_t caps);
   uint32_t InputGetState(Guest g, uint32_t user, uint32_t flags, uint32_t state);
   uint32_t InputSetState(Guest g, uint32_t user, uint32_t vibration);
@@ -272,7 +278,21 @@ class Xam {
   std::vector<Setting> settings_;
   std::vector<uint32_t> terminate_notifications_;
   std::vector<std::string> open_content_;
-  uint32_t packet_number_ = 0;
+  struct Pad {
+    bool seen = false;
+    GamepadState last{};
+    uint32_t packet = 0;
+    // Keystrokes: the keys down at the last poll, the queue (virtual key, flags, user), the key repeating and when.
+    std::array<bool, 64> down{};
+    std::deque<std::array<uint16_t, 3>> queue;
+    uint16_t repeat_key = 0;
+    std::chrono::steady_clock::time_point repeat_at{};
+  };
+  std::array<Pad, 4> pads_{};
+  std::mutex pads_mutex_;
+  bool Connected(uint32_t user) const;
+  GamepadState Poll(uint32_t user);
+  void Keystrokes(uint32_t user);
   std::vector<uint8_t> launch_data_;
   bool launch_data_present_ = false;
   uint32_t cache_elements_ = 0;

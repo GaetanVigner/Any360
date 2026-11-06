@@ -66,7 +66,10 @@ void Xam::Reset() {
   settings_.clear();
   terminate_notifications_.clear();
   open_content_.clear();
-  packet_number_ = 0;
+  {
+    std::lock_guard lock(pads_mutex_);
+    pads_ = {};
+  }
   launch_data_.clear();
   launch_data_present_ = false;
   cache_elements_ = 0;
@@ -705,12 +708,73 @@ uint32_t ActualUser(uint32_t user, uint32_t flags) { return ((user & 0xFF) == 0x
 
 }  // namespace
 
+bool Xam::Connected(uint32_t user) const {
+  if (user > 3) return false;
+  return host_.controller_connected ? host_.controller_connected(user) : user == 0;
+}
+
+GamepadState Xam::Poll(uint32_t user) {
+  GamepadState pad;
+  if (host_.controller_state) host_.controller_state(user, pad);
+  return pad;
+}
+
+namespace {
+// VK_PAD_* for the button bits, in bit order (0 where the bit has no key).
+constexpr uint16_t kButtonKeys[16] = {0x5810, 0x5811, 0x5812, 0x5813, 0x5814, 0x5815, 0x5816, 0x5817,
+                                      0x5805, 0x5804, 0,      0,      0x5800, 0x5801, 0x5802, 0x5803};
+constexpr uint16_t kKeyDown = 1, kKeyUp = 2, kKeyRepeat = 4;
+// A stick's direction as VK_PAD_xTHUMB_* (up, down, right, left, up-left, up-right, down-right, down-left), or 0.
+uint16_t StickKey(uint16_t base, int16_t x, int16_t y) {
+  constexpr int kThreshold = 0x4000;
+  const bool up = y > kThreshold, down = y < -kThreshold, right = x > kThreshold, left = x < -kThreshold;
+  if (up && left) return uint16_t(base + 4);
+  if (up && right) return uint16_t(base + 5);
+  if (down && right) return uint16_t(base + 6);
+  if (down && left) return uint16_t(base + 7);
+  if (up) return base;
+  if (down) return uint16_t(base + 1);
+  if (right) return uint16_t(base + 2);
+  if (left) return uint16_t(base + 3);
+  return 0;
+}
+}  // namespace
+
+void Xam::Keystrokes(uint32_t user) {
+  Pad& p = pads_[user];
+  const GamepadState pad = Poll(user);
+  // A key's slot is its low six bits: buttons 0x00-0x17, sticks 0x20-0x27 and 0x30-0x37.
+  std::array<bool, 64> now{};
+  for (uint32_t bit = 0; bit < 16; ++bit) {
+    if (kButtonKeys[bit] && (pad.buttons >> bit & 1)) now[kButtonKeys[bit] & 0x3F] = true;
+  }
+  if (pad.left_trigger > 30) now[0x06] = true;
+  if (pad.right_trigger > 30) now[0x07] = true;
+  if (const uint16_t k = StickKey(0x5820, pad.thumb_lx, pad.thumb_ly)) now[k & 0x3F] = true;
+  if (const uint16_t k = StickKey(0x5830, pad.thumb_rx, pad.thumb_ry)) now[k & 0x3F] = true;
+  const auto at = std::chrono::steady_clock::now();
+  for (uint16_t i = 0; i < 64; ++i) {
+    if (now[i] == p.down[i]) continue;
+    const uint16_t key = uint16_t(0x5800 | i);
+    p.queue.push_back({key, now[i] ? kKeyDown : kKeyUp, uint16_t(user)});
+    if (now[i]) {
+      p.repeat_key = key;
+      p.repeat_at = at + std::chrono::milliseconds(400);
+    } else if (p.repeat_key == key) {
+      p.repeat_key = 0;
+    }
+  }
+  p.down = now;
+  if (p.repeat_key && at >= p.repeat_at) {
+    p.queue.push_back({p.repeat_key, uint16_t(kKeyDown | kKeyRepeat), uint16_t(user)});
+    p.repeat_at = at + std::chrono::milliseconds(100);
+  }
+}
+
 uint32_t Xam::InputGetCapabilities(Guest g, uint32_t user, uint32_t flags, uint32_t caps) {
   if (!caps) return kErrorBadArguments;
   if ((flags & 0xFF) && !(flags & kInputFlagGamepad)) return kErrorDeviceNotConnected;
-  const uint32_t u = ActualUser(user, flags);
-  const bool connected = host_.controller_connected ? host_.controller_connected(u) : u == 0;
-  if (!connected) return kErrorDeviceNotConnected;
+  if (!Connected(ActualUser(user, flags))) return kErrorDeviceNotConnected;
   // XINPUT_CAPABILITIES: a gamepad with every button, both triggers and sticks at full range, both motors.
   std::memset(g.host(caps), 0, 20);
   g.Store8(caps + 0, 1);
@@ -727,12 +791,22 @@ uint32_t Xam::InputGetCapabilities(Guest g, uint32_t user, uint32_t flags, uint3
 uint32_t Xam::InputGetState(Guest g, uint32_t user, uint32_t flags, uint32_t state) {
   if ((flags & 0xFF) && !(flags & kInputFlagGamepad)) return kErrorDeviceNotConnected;
   const uint32_t u = ActualUser(user, flags);
-  const bool connected = host_.controller_connected ? host_.controller_connected(u) : u == 0;
-  if (!connected) return kErrorDeviceNotConnected;
+  if (!Connected(u)) return kErrorDeviceNotConnected;
   if (!state) return kErrorSuccess;  // a query
-  GamepadState pad;
-  if (host_.controller_state) host_.controller_state(u, pad);
-  g.Store32(state, ++packet_number_);
+  const GamepadState pad = Poll(u);
+  uint32_t packet;
+  {
+    std::lock_guard lock(pads_mutex_);
+    Pad& p = pads_[u];
+    const bool changed = !p.seen || p.last.buttons != pad.buttons || p.last.left_trigger != pad.left_trigger ||
+                         p.last.right_trigger != pad.right_trigger || p.last.thumb_lx != pad.thumb_lx ||
+                         p.last.thumb_ly != pad.thumb_ly || p.last.thumb_rx != pad.thumb_rx || p.last.thumb_ry != pad.thumb_ry;
+    if (changed) ++p.packet;
+    p.seen = true;
+    p.last = pad;
+    packet = p.packet;
+  }
+  g.Store32(state, packet);
   g.Store16(state + 4, pad.buttons);
   g.Store8(state + 6, pad.left_trigger);
   g.Store8(state + 7, pad.right_trigger);
@@ -746,8 +820,7 @@ uint32_t Xam::InputGetState(Guest g, uint32_t user, uint32_t flags, uint32_t sta
 uint32_t Xam::InputSetState(Guest g, uint32_t user, uint32_t vibration) {
   if (!vibration) return kErrorBadArguments;
   const uint32_t u = (user & 0xFF) == 0xFF ? 0 : user;
-  const bool connected = host_.controller_connected ? host_.controller_connected(u) : u == 0;
-  if (!connected) return kErrorDeviceNotConnected;
+  if (!Connected(u)) return kErrorDeviceNotConnected;
   if (host_.vibrate) host_.vibrate(u, g.Load16(vibration), g.Load16(vibration + 2));
   return kErrorSuccess;
 }
@@ -755,11 +828,25 @@ uint32_t Xam::InputSetState(Guest g, uint32_t user, uint32_t vibration) {
 uint32_t Xam::InputGetKeystroke(Guest g, uint32_t user, uint32_t flags, uint32_t keystroke) {
   if (!keystroke) return kErrorBadArguments;
   if ((flags & 0xFF) && !(flags & kInputFlagGamepad)) return kErrorDeviceNotConnected;
-  const uint32_t u = ActualUser(user, flags);
-  const bool connected = host_.controller_connected ? host_.controller_connected(u) : u == 0;
-  if (!connected) return kErrorDeviceNotConnected;
   std::memset(g.host(keystroke), 0, 8);
-  return kErrorEmpty;  // keystrokes come from button transitions, which the input source does not report yet
+  // XINPUT_KEYSTROKE: virtual key, unicode, flags, user, HID code.
+  const bool any = (user & 0xFF) == 0xFF;
+  bool connected = false;
+  std::lock_guard lock(pads_mutex_);
+  for (uint32_t u = any ? 0 : user; u < (any ? 4u : user + 1); ++u) {
+    if (!Connected(u)) continue;
+    connected = true;
+    Keystrokes(u);
+    Pad& p = pads_[u];
+    if (p.queue.empty()) continue;
+    const auto event = p.queue.front();
+    p.queue.pop_front();
+    g.Store16(keystroke, event[0]);
+    g.Store16(keystroke + 4, event[1]);
+    g.Store8(keystroke + 6, uint8_t(event[2]));
+    return kErrorSuccess;
+  }
+  return connected ? kErrorEmpty : kErrorDeviceNotConnected;
 }
 
 // --- the title module ---------------------------------------------------------------------------------------------

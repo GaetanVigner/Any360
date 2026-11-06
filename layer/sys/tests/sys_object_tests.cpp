@@ -1203,12 +1203,25 @@ void XamTests() {
     return true;
   };
   CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load32(buf) == 2 && g.Load16(buf + 4) == 0x1000 && int16_t(g.Load16(buf + 8)) == -5);
+  // The packet number moves only when the state changes.
+  CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load32(buf) == 2);
   static uint32_t vibrated = 0;
   XamState().host().vibrate = [](uint32_t, uint16_t left, uint16_t right) { vibrated = uint32_t(left) << 16 | right; };
   g.Store16(buf, 0x1234);
   g.Store16(buf + 2, 0x5678);
   CHECK(XamState().InputSetState(g, 0, buf) == 0 && vibrated == 0x12345678);
+  // Keystrokes from the state's transitions: A held (VK_PAD_A down), then nothing until it repeats or is released.
+  CHECK(XamState().InputGetKeystroke(g, 0, 0, buf) == 0 && g.Load16(buf) == 0x5800 && g.Load16(buf + 4) == 1 && g.Load8(buf + 6) == 0);
   CHECK(XamState().InputGetKeystroke(g, 0, 0, buf) == kErrorEmpty);
+  XamState().host().controller_state = [](uint32_t, GamepadState& s) {
+    s.thumb_ly = 0x7000;  // A released, the left stick up
+    return true;
+  };
+  CHECK(XamState().InputGetKeystroke(g, 0xFF, 0, buf) == 0 && g.Load16(buf) == 0x5800 && g.Load16(buf + 4) == 2);
+  CHECK(XamState().InputGetKeystroke(g, 0xFF, 0, buf) == 0 && g.Load16(buf) == 0x5820 && g.Load16(buf + 4) == 1);
+  std::this_thread::sleep_for(std::chrono::milliseconds(450));
+  CHECK(XamState().InputGetKeystroke(g, 0, 0, buf) == 0 && g.Load16(buf) == 0x5820 && g.Load16(buf + 4) == 5);  // repeat
+  CHECK(XamState().InputGetKeystroke(g, 1, 0, buf) == kErrorDeviceNotConnected);
   // The title module from a synthetic XEX header: inline, pointer and offset fields; privileges; the execution id.
   const uint32_t xex = kScratch + 0xE00;
   std::memset(g.host(xex), 0, 0x100);

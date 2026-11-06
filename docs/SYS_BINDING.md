@@ -243,6 +243,18 @@ What the game found that the tests could not:
   else the next of the six in turn, in its KTHREAD and PCR. any360::sys left every thread on processor 0: XAudio's two
   mix workers, meeting by processor number, waited for each other for ever and no frame was ever mixed.
 
+## Step 8: done (input in Crackdown)
+
+With all eight groups on any360::sys Crackdown plays on a gamepad (2026-11-06; keyboard and mouse not checked). Its
+input calls: `XamInputGetState`, `XamInputGetCapabilities`, `XamInputGetKeystrokeEx`, `XamInputSetState`.
+
+- any360::sys answers as XInput does: a state's packet number moves only when the state changes; keystrokes are made
+  from the state's transitions (buttons, triggers, the sticks' eight directions) with the console's repeat, user 0xFF
+  taking the first user with one. `sys_object_tests` checks both.
+- The source is the host's: the ReXGlue binder fills `XamHost` (connected, state, vibration) from the runtime's input
+  system, so every driver it has (SDL, XInput, a title's own keyboard and mouse driver) still feeds the title. Any360's
+  own platform layer replaces it at step 14.
+
 ## After step 7: from one title to any title (the road to 100%)
 
 Steps 0-7 put Crackdown's system calls on any360::sys, with ReXGlue still hosting it. Crackdown is the test bench; the
@@ -269,7 +281,7 @@ The rest, in steps of the same size as 0-7, each ending with an in-game check on
 | 13 | **Any360's own host** (`layer/host/native`): the XEX loader (sections, imports bound to any360::sys, TLS, entry), the guest address space reserved and owned by `MemoryManager`, threads on host threads without `XHostThread`, the guest-code dispatcher over the generated functions, MMIO through the platform's fault handler, the devices (disc image, extracted folder, STFS) | a title links no `rexruntime`: ReXGlue is only its code generator |
 | 14 | **The platform layer**: window, event loop, gamepad, audio output (SDL3) and the GPU presenter outside ReXGlue, on Windows and Linux (the Steam Deck) | Crackdown and one other title run from `layer/host/native` on both systems |
 | 15 | **Graphics on the same footing**: every title's GPU through `any360::gfx` (the GPU session's plan, docs/GFX.md), no `rexgpu-xenos` | the four titles render with any360::gfx only |
-| 16 | **Porting a new title**: `pipeline/any360.py` from a XEX to a running build with no title-specific code in Any360 (the title repository holds only its manifest, hooks and patches), tried on a fifth title never run before | a new title boots with nothing added to Any360 but fixes |
+| 16 | **Porting a new title**: a converter served from GitHub (as AnyPS5's) and built into the cross-platform launcher being written alongside, taking the player's XEX to a running build with no title-specific code in Any360 (`pipeline/any360.py` underneath; a title repository holds only its manifest, hooks and patches), tried on a fifth title never run before | a new title boots from the converter with nothing added to Any360 but fixes |
 
 Steps 8-9 are this binding's; 10-12 widen it; 13-15 replace the host; 16 is the measure of "any game". Stage 2 and 3
 (decompilation, the portable codebase, docs/DESIGN.md) come after.
