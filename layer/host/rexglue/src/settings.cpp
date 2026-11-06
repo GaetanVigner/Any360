@@ -3,10 +3,13 @@
 #include <rex/cvar.h>
 #include <rex/logging.h>
 
+#include <algorithm>
+#include <chrono>
 #include <sstream>
 
 #include "any360/sys/files.h"
 #include "any360/sys/scheduler.h"
+#include "any360/sys/xam.h"
 
 REXCVAR_DEFINE_STRING(any360_sys_groups, "", "Kernel",
                       "Any360: system call groups run on any360::sys, comma-separated (stateless, files, objects, threads, "
@@ -21,6 +24,12 @@ REXCVAR_DEFINE_STRING(any360_sys_trace_names, "", "Kernel",
                       "Any360: the calls any360_sys_trace_all reports, comma-separated; empty: all");
 REXCVAR_DEFINE_STRING(any360_sys_runtime_calls, "", "Kernel",
                       "Any360: system calls left to the runtime though their group is on, comma-separated (debugging)");
+REXCVAR_DEFINE_INT32(any360_input_sample_us, 1000, "Kernel",
+                     "Any360 input group: the controllers sampled on their own thread every this many microseconds, every "
+                     "change queued for the title's polls; 0: sampled at each poll");
+REXCVAR_DEFINE_INT32(any360_input_step_us, 16683, "Kernel",
+                     "Any360 input group: polls step through the queued changes at most this often (one console frame), so "
+                     "each stays visible for a frame; 0: every poll steps");
 
 namespace any360::host::rexglue {
 
@@ -90,6 +99,12 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
 #endif
     }
     EnableSystemGroup(group, true);
+    if (group == SysGroup::kInput) {
+      any360::sys::XamState().SetInputStep(std::chrono::microseconds(std::max(0, REXCVAR_GET(any360_input_step_us))));
+      if (REXCVAR_GET(any360_input_sample_us) > 0) {
+        any360::sys::XamState().StartInputSampling(std::chrono::microseconds(REXCVAR_GET(any360_input_sample_us)));
+      }
+    }
     switched += (switched.empty() ? "" : ", ") + name;
   }
   const uint32_t variables = BindVariables();
@@ -103,6 +118,7 @@ void StopSystemFromSettings() {
 #ifdef ANY360_REXGLUE_AUDIO
   StopAudio();
 #endif
+  any360::sys::XamState().StopInputSampling();
   // The title's threads park in their next system call or wait: the runtime frees the guest memory next.
   any360::sys::BeginShutdown();
 }

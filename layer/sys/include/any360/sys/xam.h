@@ -6,15 +6,18 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "guest.h"
+#include "input.h"
 
 namespace any360::sys {
 
@@ -25,12 +28,6 @@ constexpr uint32_t kErrorSuccess = 0, kErrorNoMoreFiles = 0x12, kErrorInvalidPar
                    kErrorAccessDenied = 0x5, kErrorFunctionFailed = 0x65B;
 // Notification ids.
 constexpr uint32_t kNotifySigninChanged = 0x0000000A, kNotifySystemUi = 0x00000009;
-
-struct GamepadState {
-  uint16_t buttons = 0;
-  uint8_t left_trigger = 0, right_trigger = 0;
-  int16_t thumb_lx = 0, thumb_ly = 0, thumb_rx = 0, thumb_ry = 0;
-};
 
 // What the host provides: controllers, and what happens when the title stops.
 struct XamHost {
@@ -61,6 +58,7 @@ struct TitleSettings {
 class Xam {
  public:
   Xam();
+  ~Xam();
   void Reset();
   XamHost& host() { return host_; }
   TitleSettings& title() { return title_; }
@@ -164,9 +162,15 @@ class Xam {
   uint32_t ContentCreateDeviceEnumerator(Guest g, uint32_t per_call, uint32_t size_ptr, uint32_t handle_out);
   uint32_t ContentGetDeviceName(Guest g, uint32_t device_id, uint32_t buffer, uint32_t capacity);
 
-  // Controllers. The state's packet number moves on when the state changes (and at the first read); keystrokes are
-  // the console's: made from the state's transitions (buttons, triggers past 30, sticks past half way in eight
+  // Controllers, each read through an InputQueue (input.h): no change is lost however fast or slow the title polls.
+  // The state's packet number moves on when the presented state changes (and at the first read); keystrokes are the
+  // console's: made from the sampled transitions (buttons, triggers past 30, sticks past half way in eight
   // directions), a held one repeating after 400 ms every 100 ms; user 0xFF takes the first user with one.
+  // The controllers sampled on a thread of their own every `period` until StopInputSampling (without it, each poll
+  // samples), and how far apart a poll's steps through the queued changes are (one console frame; 0: every poll).
+  void StartInputSampling(std::chrono::microseconds period = std::chrono::microseconds(1000));
+  void StopInputSampling();
+  void SetInputStep(std::chrono::steady_clock::duration step) { input_step_ = step; }
   uint32_t InputGetCapabilities(Guest g, uint32_t user, uint32_t flags, uint32_t caps);
   uint32_t InputGetState(Guest g, uint32_t user, uint32_t flags, uint32_t state);
   uint32_t InputSetState(Guest g, uint32_t user, uint32_t vibration);
@@ -282,17 +286,17 @@ class Xam {
     bool seen = false;
     GamepadState last{};
     uint32_t packet = 0;
-    // Keystrokes: the keys down at the last poll, the queue (virtual key, flags, user), the key repeating and when.
-    std::array<bool, 64> down{};
-    std::deque<std::array<uint16_t, 3>> queue;
-    uint16_t repeat_key = 0;
-    std::chrono::steady_clock::time_point repeat_at{};
+    InputQueue input;
   };
   std::array<Pad, 4> pads_{};
   std::mutex pads_mutex_;
+  std::chrono::steady_clock::duration input_step_ = InputQueue::kConsoleFrame;
+  std::thread sampler_;
+  std::atomic<bool> sampling_{false};
   bool Connected(uint32_t user) const;
-  GamepadState Poll(uint32_t user);
-  void Keystrokes(uint32_t user);
+  // Samples the controller into its queue (pads_mutex_ held) unless the sampling thread does.
+  void SampleIfPolled(uint32_t user, std::chrono::steady_clock::time_point at);
+  void Sample(uint32_t user, std::chrono::steady_clock::time_point at);
   std::vector<uint8_t> launch_data_;
   bool launch_data_present_ = false;
   uint32_t cache_elements_ = 0;

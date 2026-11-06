@@ -66,6 +66,8 @@ void Xam::Reset() {
   settings_.clear();
   terminate_notifications_.clear();
   open_content_.clear();
+  StopInputSampling();
+  input_step_ = InputQueue::kConsoleFrame;
   {
     std::lock_guard lock(pads_mutex_);
     pads_ = {};
@@ -731,63 +733,42 @@ bool Xam::Connected(uint32_t user) const {
   return host_.controller_connected ? host_.controller_connected(user) : user == 0;
 }
 
-GamepadState Xam::Poll(uint32_t user) {
+void Xam::Sample(uint32_t user, std::chrono::steady_clock::time_point at) {
   GamepadState pad;
   if (host_.controller_state) host_.controller_state(user, pad);
-  return pad;
+  pads_[user].input.Sample(pad, at);
 }
 
-namespace {
-// VK_PAD_* for the button bits, in bit order (0 where the bit has no key).
-constexpr uint16_t kButtonKeys[16] = {0x5810, 0x5811, 0x5812, 0x5813, 0x5814, 0x5815, 0x5816, 0x5817,
-                                      0x5805, 0x5804, 0,      0,      0x5800, 0x5801, 0x5802, 0x5803};
-constexpr uint16_t kKeyDown = 1, kKeyUp = 2, kKeyRepeat = 4;
-// A stick's direction as VK_PAD_xTHUMB_* (up, down, right, left, up-left, up-right, down-right, down-left), or 0.
-uint16_t StickKey(uint16_t base, int16_t x, int16_t y) {
-  constexpr int kThreshold = 0x4000;
-  const bool up = y > kThreshold, down = y < -kThreshold, right = x > kThreshold, left = x < -kThreshold;
-  if (up && left) return uint16_t(base + 4);
-  if (up && right) return uint16_t(base + 5);
-  if (down && right) return uint16_t(base + 6);
-  if (down && left) return uint16_t(base + 7);
-  if (up) return base;
-  if (down) return uint16_t(base + 1);
-  if (right) return uint16_t(base + 2);
-  if (left) return uint16_t(base + 3);
-  return 0;
+void Xam::SampleIfPolled(uint32_t user, std::chrono::steady_clock::time_point at) {
+  if (!sampling_.load(std::memory_order_relaxed)) Sample(user, at);
 }
-}  // namespace
 
-void Xam::Keystrokes(uint32_t user) {
-  Pad& p = pads_[user];
-  const GamepadState pad = Poll(user);
-  // A key's slot is its low six bits: buttons 0x00-0x17, sticks 0x20-0x27 and 0x30-0x37.
-  std::array<bool, 64> now{};
-  for (uint32_t bit = 0; bit < 16; ++bit) {
-    if (kButtonKeys[bit] && (pad.buttons >> bit & 1)) now[kButtonKeys[bit] & 0x3F] = true;
-  }
-  if (pad.left_trigger > 30) now[0x06] = true;
-  if (pad.right_trigger > 30) now[0x07] = true;
-  if (const uint16_t k = StickKey(0x5820, pad.thumb_lx, pad.thumb_ly)) now[k & 0x3F] = true;
-  if (const uint16_t k = StickKey(0x5830, pad.thumb_rx, pad.thumb_ry)) now[k & 0x3F] = true;
-  const auto at = std::chrono::steady_clock::now();
-  for (uint16_t i = 0; i < 64; ++i) {
-    if (now[i] == p.down[i]) continue;
-    const uint16_t key = uint16_t(0x5800 | i);
-    p.queue.push_back({key, now[i] ? kKeyDown : kKeyUp, uint16_t(user)});
-    if (now[i]) {
-      p.repeat_key = key;
-      p.repeat_at = at + std::chrono::milliseconds(400);
-    } else if (p.repeat_key == key) {
-      p.repeat_key = 0;
+void Xam::StartInputSampling(std::chrono::microseconds period) {
+  if (sampling_.exchange(true)) return;
+  sampler_ = std::thread([this, period] {
+    auto next = std::chrono::steady_clock::now();
+    while (sampling_.load()) {
+      {
+        std::lock_guard lock(pads_mutex_);
+        const auto at = std::chrono::steady_clock::now();
+        for (uint32_t u = 0; u < 4; ++u) {
+          if (Connected(u)) Sample(u, at);
+        }
+      }
+      next += period;
+      const auto now = std::chrono::steady_clock::now();
+      if (next < now) next = now;
+      std::this_thread::sleep_until(next);
     }
-  }
-  p.down = now;
-  if (p.repeat_key && at >= p.repeat_at) {
-    p.queue.push_back({p.repeat_key, uint16_t(kKeyDown | kKeyRepeat), uint16_t(user)});
-    p.repeat_at = at + std::chrono::milliseconds(100);
-  }
+  });
 }
+
+void Xam::StopInputSampling() {
+  sampling_.store(false);
+  if (sampler_.joinable()) sampler_.join();
+}
+
+Xam::~Xam() { StopInputSampling(); }
 
 uint32_t Xam::InputGetCapabilities(Guest g, uint32_t user, uint32_t flags, uint32_t caps) {
   if (!caps) return kErrorBadArguments;
@@ -811,15 +792,15 @@ uint32_t Xam::InputGetState(Guest g, uint32_t user, uint32_t flags, uint32_t sta
   const uint32_t u = ActualUser(user, flags);
   if (!Connected(u)) return kErrorDeviceNotConnected;
   if (!state) return kErrorSuccess;  // a query
-  const GamepadState pad = Poll(u);
+  GamepadState pad;
   uint32_t packet;
   {
     std::lock_guard lock(pads_mutex_);
+    const auto at = std::chrono::steady_clock::now();
+    SampleIfPolled(u, at);
     Pad& p = pads_[u];
-    const bool changed = !p.seen || p.last.buttons != pad.buttons || p.last.left_trigger != pad.left_trigger ||
-                         p.last.right_trigger != pad.right_trigger || p.last.thumb_lx != pad.thumb_lx ||
-                         p.last.thumb_ly != pad.thumb_ly || p.last.thumb_rx != pad.thumb_rx || p.last.thumb_ry != pad.thumb_ry;
-    if (changed) ++p.packet;
+    pad = p.input.Present(at, input_step_);
+    if (!p.seen || !(p.last == pad)) ++p.packet;
     p.seen = true;
     p.last = pad;
     packet = p.packet;
@@ -854,14 +835,13 @@ uint32_t Xam::InputGetKeystroke(Guest g, uint32_t user, uint32_t flags, uint32_t
   for (uint32_t u = any ? 0 : user; u < (any ? 4u : user + 1); ++u) {
     if (!Connected(u)) continue;
     connected = true;
-    Keystrokes(u);
-    Pad& p = pads_[u];
-    if (p.queue.empty()) continue;
-    const auto event = p.queue.front();
-    p.queue.pop_front();
-    g.Store16(keystroke, event[0]);
-    g.Store16(keystroke + 4, event[1]);
-    g.Store8(keystroke + 6, uint8_t(event[2]));
+    const auto at = std::chrono::steady_clock::now();
+    SampleIfPolled(u, at);
+    uint16_t key, key_flags;
+    if (!pads_[u].input.NextKeystroke(at, key, key_flags)) continue;
+    g.Store16(keystroke, key);
+    g.Store16(keystroke + 4, key_flags);
+    g.Store8(keystroke + 6, uint8_t(u));
     return kErrorSuccess;
   }
   return connected ? kErrorEmpty : kErrorDeviceNotConnected;

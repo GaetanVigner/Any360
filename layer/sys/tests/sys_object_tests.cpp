@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include "any360/sys/info.h"
+#include "any360/sys/input.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
 #include "any360/sys/threading.h"
@@ -2156,7 +2157,99 @@ void ProfileSettingsKept() {
   fs::remove_all(profile, ec);
 }
 
+// The input queue: changes sampled faster than polls arrive, none lost; a step takes changes of different inputs
+// together, a second change of the same input waits for the next step; the sticks queue nothing and are live.
+void InputQueueTests() {
+  using namespace std::chrono_literals;
+  const InputQueue::Clock::time_point t0{};
+  constexpr uint16_t kX = 0x4000, kY = 0x8000, kRb = 0x0200;
+  auto state = [](uint16_t buttons, int16_t lx = 0, int16_t rx = 0) {
+    GamepadState s;
+    s.buttons = buttons;
+    s.thumb_lx = lx;
+    s.thumb_rx = rx;
+    return s;
+  };
+  {
+    // Within one console frame: RB, X, Y, RB released and pressed again, X released, X again (a double tap).
+    InputQueue q;
+    q.Sample(state(kRb), t0 + 1ms);
+    q.Sample(state(kRb | kX), t0 + 2ms);
+    q.Sample(state(kRb | kX | kY), t0 + 3ms);
+    q.Sample(state(kX | kY), t0 + 4ms);
+    q.Sample(state(kRb | kX | kY), t0 + 5ms);
+    q.Sample(state(kRb | kY), t0 + 6ms);
+    q.Sample(state(kRb | kX | kY), t0 + 7ms);
+    CHECK(q.pending() == 7);
+    // Step 1: RB, X and Y together; RB's release waits (it changed already).
+    GamepadState s = q.Present(t0 + 8ms);
+    CHECK(s.buttons == (kRb | kX | kY) && q.pending() == 4);
+    // Polls inside the same console frame present the same state.
+    CHECK(q.Present(t0 + 12ms) == s);
+    // Step 2: RB released; pressed again waits.
+    CHECK(q.Present(t0 + 25ms).buttons == (kX | kY) && q.pending() == 3);
+    // Step 3: RB again and X released together.
+    CHECK(q.Present(t0 + 42ms).buttons == (kRb | kY) && q.pending() == 1);
+    // Step 4: X pressed again (the double tap counted twice); then the live state.
+    CHECK(q.Present(t0 + 59ms).buttons == (kRb | kX | kY) && q.pending() == 0);
+    // A press and release between two polls far apart: down at one poll, up at the next.
+    q.Sample(state(kY), t0 + 100ms);
+    q.Sample(state(kX | kY), t0 + 101ms);
+    CHECK(q.Present(t0 + 200ms).buttons == kY);
+    CHECK(q.Present(t0 + 201ms).buttons == kY && q.pending() == 1);  // inside the frame: held
+    CHECK(q.Present(t0 + 217ms).buttons == (kX | kY));
+  }
+  {
+    // The sticks queue nothing and are live, even while buttons wait: a camera stick follows, a released stick stops.
+    InputQueue q;
+    for (int i = 0; i < 1000; ++i) {
+      q.Sample(state(0, 0x7000, int16_t((i % 2) ? 0x7000 : -0x7000)), t0 + std::chrono::microseconds(i * 100));
+    }
+    CHECK(q.pending() == 0);
+    q.Sample(state(kX, 0x7000), t0 + 101ms);
+    q.Sample(state(0, 0x7000), t0 + 102ms);
+    CHECK(q.Present(t0 + 103ms).buttons == kX && q.pending() == 1);
+    q.Sample(state(0, 0, 0x1234), t0 + 104ms);  // the left stick released, the right one moved
+    GamepadState s = q.Present(t0 + 105ms);
+    CHECK(s.buttons == kX && s.thumb_lx == 0 && s.thumb_rx == 0x1234);
+    // A trigger shows the step's value while its change waits, the live value otherwise.
+    GamepadState t = state(0);
+    t.right_trigger = 200;
+    q.Sample(t, t0 + 130ms);
+    t.right_trigger = 0;
+    q.Sample(t, t0 + 131ms);
+    s = q.Present(t0 + 132ms);  // steps: X released and the trigger pressed together
+    CHECK(s.buttons == 0 && s.right_trigger == 200 && q.pending() == 1);
+    t.left_trigger = 10;  // under its threshold: live
+    q.Sample(t, t0 + 133ms);
+    CHECK(q.Present(t0 + 134ms).left_trigger == 10);
+    // With a step of 0 every poll steps.
+    q.Sample(state(kX), t0 + 230ms);
+    q.Sample(state(0), t0 + 231ms);
+    s = q.Present(t0 + 232ms, {});  // the trigger released and X pressed
+    CHECK(s.right_trigger == 0 && s.buttons == kX);
+    CHECK(q.Present(t0 + 232ms, {}).buttons == 0 && q.pending() == 0);
+  }
+  {
+    // Keystrokes come from the samples, every one of them, the sticks' directions included, whatever the polls.
+    InputQueue q;
+    q.Sample(state(0x1000), t0 + 1ms);  // A
+    q.Sample(state(0), t0 + 2ms);
+    q.Sample(state(0x1000), t0 + 3ms);
+    q.Sample(state(0x1000, 0x7000), t0 + 3ms);  // the left stick right
+    uint16_t key = 0, flags = 0;
+    int downs = 0, ups = 0, right = 0;
+    while (q.NextKeystroke(t0 + 4ms, key, flags)) {
+      if (key == 0x5800) (flags == 1 ? downs : ups) += 1;
+      right += key == 0x5822 && flags == 1;
+    }
+    CHECK(downs == 2 && ups == 1 && right == 1);
+    CHECK(q.NextKeystroke(t0 + 404ms, key, flags) && key == 0x5822 && flags == 5);
+  }
+}
+
 int main() {
+  InputQueueTests();
   ProfileSettingsKept();
   ConcurrentDispatcher();
   SimpsonsTests();

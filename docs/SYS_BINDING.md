@@ -251,6 +251,7 @@ input calls: `XamInputGetState`, `XamInputGetCapabilities`, `XamInputGetKeystrok
 - any360::sys answers as XInput does: a state's packet number moves only when the state changes; keystrokes are made
   from the state's transitions (buttons, triggers, the sticks' eight directions) with the console's repeat, user 0xFF
   taking the first user with one. `sys_object_tests` checks both.
+- Every change reaches the title, at any frame rate: an input queue sampled on its own thread (step 10).
 - The source is the host's: the ReXGlue binder fills `XamHost` (connected, state, vibration) from the runtime's input
   system, so every driver it has (SDL, XInput, a title's own keyboard and mouse driver) still feeds the title. Any360's
   own platform layer replaces it at step 14.
@@ -296,8 +297,22 @@ the runtime, a clean exit. The second title needed no title-specific code in Any
   for those threads before exiting (to improve).
 - The in-tree SDK's FFmpeg targets (`libavcodec`, `libavutil`) build the XMA decoder when the SDK is built with the title.
 
-Seen but not the binding's: above 60 FPS (`frame_rate=0`) short button presses can be missed, as without Any360 (the
-title's own frame pacing).
+Seen above 60 FPS (`frame_rate=0`): short button presses could be missed, as without Any360. A console title polls
+its pad at most once per vertical blank; unlocked, it may poll faster than its logic steps (Simpsons steps its physics
+at 60 Hz), and a change only one poll saw fell between two steps. Any360 answers it for every title behind the
+console's own calls, with nothing for a title to call or hook (`any360/sys/input.h`, `InputQueue`):
+
+- The controllers are sampled on a thread of their own (1 kHz, `any360_input_sample_us`). Every change of a button,
+  and of a trigger past its threshold (with hysteresis), is queued. The sticks queue nothing and are always presented
+  live: queued as directions they filled the queue while a camera moved, and held buttons and released sticks back
+  behind it (seen in Simpsons).
+- `XamInputGetState` takes the queue one step at a time, steps at least one console frame apart
+  (`any360_input_step_us`, 16683): a step takes the queued changes in order as long as no input changes twice, so
+  inputs pressed together arrive together and a double tap arrives as two presses, one console frame each. Every
+  change stays visible for at least one console frame, as on the console, whatever the title's frame rate.
+- Keystrokes (`XamInputGetKeystroke*`) are made from every sampled change, not from the polls.
+- `sys_object_tests` plays a burst of changes in one frame (RB, X, Y, RB released and pressed again, a double tap on
+  X) through the steps, and the sticks staying live while buttons wait.
 
 ## After step 7: from one title to any title (the road to 100%)
 
