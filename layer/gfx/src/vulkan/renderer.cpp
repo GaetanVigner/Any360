@@ -663,10 +663,48 @@ void VulkanRenderer::Transition(VkCommandBuffer cb, Image& image, VkImageLayout&
                                 VkImageAspectFlags aspect) {
   if (layout == to) return;
   VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-  barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-  barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
-  barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-  barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+  // The stages and accesses an image in `layout` is used by: waited for (their writes made available), and those of
+  // `to` made to wait. Not every stage of the GPU: a resolve, a copy or a write-back between two render passes no
+  // longer drains all the work before it. GENERAL and anything else stays a full barrier.
+  const auto scope = [](VkImageLayout l, VkPipelineStageFlags2& stages, VkAccessFlags2& reads, VkAccessFlags2& writes) {
+    switch (l) {
+      case VK_IMAGE_LAYOUT_UNDEFINED:
+        stages = VK_PIPELINE_STAGE_2_NONE, reads = writes = VK_ACCESS_2_NONE;
+        return;
+      case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+        stages = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        reads = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT, writes = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        return;
+      case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+        // Depth and stencil resolves (a pass's resolve attachment) run at the colour output stage, as colour writes.
+        stages = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT |
+                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        reads = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
+        writes = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        return;
+      case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+        stages = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, reads = VK_ACCESS_2_TRANSFER_READ_BIT, writes = VK_ACCESS_2_NONE;
+        return;
+      case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+        stages = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, reads = VK_ACCESS_2_NONE, writes = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        return;
+      case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+        stages = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        reads = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, writes = VK_ACCESS_2_NONE;
+        return;
+      default:
+        stages = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        reads = VK_ACCESS_2_MEMORY_READ_BIT, writes = VK_ACCESS_2_MEMORY_WRITE_BIT;
+        return;
+    }
+  };
+  VkAccessFlags2 old_reads, old_writes, new_reads, new_writes;
+  scope(layout, barrier.srcStageMask, old_reads, old_writes);
+  scope(to, barrier.dstStageMask, new_reads, new_writes);
+  barrier.srcAccessMask = old_writes;  // reads before need only the execution dependency
+  barrier.dstAccessMask = new_reads | new_writes;
+  if (barrier.dstStageMask == VK_PIPELINE_STAGE_2_NONE) barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
   barrier.oldLayout = layout;
   barrier.newLayout = to;
   barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
