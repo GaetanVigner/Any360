@@ -532,6 +532,11 @@ std::filesystem::path Xam::ContentPath(Guest g, uint32_t content_data) const {
   for (char& c : name) {
     if (c == '/' || c == '\\' || c == ':') c = '_';
   }
+  // A package is a folder of its own under its type's folder. A name that is empty, or only dots and spaces, would
+  // name the type's folder itself or its parent: creating "always" or deleting such a package would then remove
+  // every package of the type (it happened: a title asked for a package with an empty name and all its saved games
+  // went). No such package exists: an empty path, which every caller refuses.
+  if (name.find_first_not_of(". ") == std::string::npos) return {};
   return title_.content_root / type / name;
 }
 
@@ -546,6 +551,7 @@ uint32_t Xam::ContentCreate(Guest g, uint32_t user, uint32_t root_name, uint32_t
   (void)user;
   if (!content_data || !root_name || title_.content_root.empty()) return Finish(g, overlapped, kErrorInvalidParameter);
   const std::filesystem::path path = ContentPath(g, content_data);
+  if (path.empty()) return Finish(g, overlapped, kErrorInvalidParameter);
   std::error_code error;
   const bool exists = std::filesystem::exists(path, error);
   // XCONTENTFLAG creation modes: create new, create always, open existing, open always, truncate existing.
@@ -590,7 +596,7 @@ uint32_t Xam::ContentClose(Guest g, uint32_t root_name, uint32_t overlapped) {
 uint32_t Xam::ContentDelete(Guest g, uint32_t, uint32_t content_data, uint32_t overlapped) {
   std::error_code error;
   const std::filesystem::path path = ContentPath(g, content_data);
-  if (!std::filesystem::exists(path, error)) return Finish(g, overlapped, kErrorFileNotFound);
+  if (path.empty() || !std::filesystem::exists(path, error)) return Finish(g, overlapped, kErrorFileNotFound);
   std::filesystem::remove_all(path, error);
   std::filesystem::remove(ContentHeaderPath(path), error);
   return Finish(g, overlapped, kErrorSuccess);
@@ -654,7 +660,7 @@ uint32_t Xam::ContentSetThumbnail(Guest g, uint32_t content_data, uint32_t buffe
   if (!content_data || title_.content_root.empty()) return Finish(g, overlapped, kErrorInvalidParameter);
   const std::filesystem::path path = ContentPath(g, content_data);
   std::error_code error;
-  if (!std::filesystem::is_directory(path, error)) return Finish(g, overlapped, kErrorFileNotFound);
+  if (path.empty() || !std::filesystem::is_directory(path, error)) return Finish(g, overlapped, kErrorFileNotFound);
   std::ofstream stream(path.parent_path() / (path.filename().string() + ".png"), std::ios::binary | std::ios::trunc);
   if (size) stream.write(reinterpret_cast<const char*>(g.host(buffer)), size);
   return Finish(g, overlapped, stream ? kErrorSuccess : kErrorAccessDenied);
@@ -664,7 +670,7 @@ uint32_t Xam::ContentGetThumbnail(Guest g, uint32_t content_data, uint32_t buffe
   if (!content_data || !size_ptr || title_.content_root.empty()) return Finish(g, overlapped, kErrorInvalidParameter);
   const std::filesystem::path path = ContentPath(g, content_data);
   std::error_code error;
-  if (!std::filesystem::is_directory(path, error)) return Finish(g, overlapped, kErrorFileNotFound);
+  if (path.empty() || !std::filesystem::is_directory(path, error)) return Finish(g, overlapped, kErrorFileNotFound);
   std::ifstream stream(path.parent_path() / (path.filename().string() + ".png"), std::ios::binary);
   if (!stream) return Finish(g, overlapped, kErrorFileNotFound);
   const std::vector<char> bytes((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
@@ -680,7 +686,7 @@ uint32_t Xam::ContentResolve(Guest g, uint32_t content_data, uint32_t buffer, ui
   if (!content_data || !buffer || title_.content_root.empty()) return kErrorInvalidParameter;
   const std::filesystem::path path = ContentPath(g, content_data);
   std::error_code error;
-  if (!std::filesystem::is_directory(path, error)) return kErrorFileNotFound;
+  if (path.empty() || !std::filesystem::is_directory(path, error)) return kErrorFileNotFound;
   const std::string device = "\\Device\\Content\\" + path.parent_path().filename().string() + "\\" + path.filename().string();
   if (size < device.size() + 1) return kErrorInsufficientBuffer;
   Files().Mount(device, path, false);
@@ -1016,7 +1022,8 @@ uint32_t Xam::ContentGetDeviceData(Guest g, uint32_t device_id, uint32_t data) {
 
 uint32_t Xam::ContentGetCreator(Guest g, uint32_t, uint32_t content_data, uint32_t is_creator_ptr, uint32_t xuid_ptr, uint32_t overlapped) {
   std::error_code error;
-  if (!std::filesystem::exists(ContentPath(g, content_data), error)) return Finish(g, overlapped, kErrorFileNotFound);
+  const std::filesystem::path package = ContentPath(g, content_data);
+  if (package.empty() || !std::filesystem::exists(package, error)) return Finish(g, overlapped, kErrorFileNotFound);
   // The local profile made its saved games; other content (DLC) has no creator.
   const bool saved_game = g.Load32(content_data + 4) == 1;
   if (is_creator_ptr) g.Store32(is_creator_ptr, saved_game ? 1 : 0);

@@ -1228,6 +1228,25 @@ void XamTests() {
   g.Store16(data + 10, 'y');
   std::memcpy(g.host(str), "save", 5);
   CHECK(XamState().ContentCreate(g, 0, str, data, 3, out, out + 4, 0) == kErrorFileNotFound);  // open existing: none yet
+  // A package whose name is empty (or only dots) would be its type's folder itself: refused by every call, and the
+  // packages already there are left alone (a title asked for one, "create always", and lost its saved games).
+  {
+    fs::create_directories(content / "00000001" / "kept");
+    { std::ofstream(content / "00000001" / "kept" / "data.bin", std::ios::binary) << "saved"; }
+    const uint32_t nameless = kScratch + 0xE00;
+    std::memset(g.host(nameless), 0, 0x134);
+    g.Store32(nameless, 1);
+    g.Store32(nameless + 4, 1);
+    for (const char* name : {"", ".", "..", " . "}) {
+      std::memset(g.host(nameless + 0x108), 0, 42);
+      std::memcpy(g.host(nameless + 0x108), name, std::strlen(name));
+      for (uint32_t mode : {1u, 2u, 3u, 4u, 5u}) CHECK(XamState().ContentCreate(g, 0, str, nameless, mode, out, out + 4, 0) != 0);
+      CHECK(XamState().ContentDelete(g, 0, nameless, 0) == kErrorFileNotFound);
+      CHECK(fs::exists(content / "00000001" / "kept" / "data.bin"));
+    }
+    CHECK(!fs::exists(content / "Headers" / "00000001" / ".header"));
+    fs::remove_all(content / "00000001" / "kept");
+  }
   CHECK(XamState().ContentCreate(g, 0, str, data, 4, out, out + 4, 0) == 0 && g.Load32(out) == 1);  // open always: created
   const uint32_t attrs = kScratch + 0xC00;
   g.Store32(attrs, 0);
