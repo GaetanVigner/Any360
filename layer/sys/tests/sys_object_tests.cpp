@@ -998,6 +998,41 @@ void FileTests() {
   CHECK(Files().ReadFile(g, g.Load32(out + 16), 0, iosb, buf, 4, out + 8) == 0x103);
   g.Store64(out + 8, 100);
   CHECK(Files().ReadFile(g, g.Load32(out + 16), 0, iosb, buf, 4, out + 8) == kStatusEndOfFile);  // a failure is not pending
+  // A handle keeps its host file between reads: a file read a byte at a time, its size asked before every byte, as
+  // titles do (Crackdown: 22,000 bytes before its title screen). What the handle keeps never hides a change: a write
+  // through another handle shows at once in its size and its bytes, a change the host makes outside the file layer
+  // shows at once in the bytes and a moment later in the size, and the file can still be renamed and removed.
+  {
+    const char* bytes = "\\Device\\Harddisk0\\Partition1\\bytes.bin";
+    CHECK(Files().CreateFile(g, out + 24, kRead | kWrite, path(bytes), iosb, 0, kOverwriteIf, kFileNonDirectoryFile | kFileSynchronousIo) == 0);
+    const uint32_t w = g.Load32(out + 24);
+    std::memcpy(g.host(buf), "ABCDEFGH", 8);
+    CHECK(Files().WriteFile(g, w, 0, iosb, buf, 8, 0) == 0 && g.Load32(iosb + 4) == 8);
+    CHECK(Files().CreateFile(g, out + 28, kRead, path(bytes), iosb, 0, kOpen, kFileNonDirectoryFile | kFileSynchronousIo) == 0);
+    const uint32_t r = g.Load32(out + 28);
+    std::string seen;
+    bool sizes = true;
+    for (int i = 0; i < 8; ++i) {
+      sizes = sizes && Files().QueryInformation(g, r, iosb, info, 56, kFileNetworkOpenInformation) == 0 && g.Load64(info + 40) == 8;
+      if (Files().ReadFile(g, r, 0, iosb, buf, 1, 0) == 0 && g.Load32(iosb + 4) == 1) seen += char(g.Load8(buf));
+    }
+    CHECK(sizes && seen == "ABCDEFGH");
+    CHECK(Files().ReadFile(g, r, 0, iosb, buf, 1, 0) == kStatusEndOfFile);
+    std::memcpy(g.host(buf), "IJKL", 4);
+    CHECK(Files().WriteFile(g, w, 0, iosb, buf, 4, 0) == 0);
+    CHECK(Files().QueryInformation(g, r, iosb, info, 56, kFileNetworkOpenInformation) == 0 && g.Load64(info + 40) == 12);
+    CHECK(Files().ReadFile(g, r, 0, iosb, buf, 8, 0) == 0 && g.Load32(iosb + 4) == 4 && std::memcmp(g.host(buf), "IJKL", 4) == 0);
+    { std::ofstream(root / "hdd" / "bytes.bin", std::ios::binary | std::ios::app) << "MN"; }
+    CHECK(Files().ReadFile(g, r, 0, iosb, buf, 8, 0) == 0 && g.Load32(iosb + 4) == 2 && std::memcmp(g.host(buf), "MN", 2) == 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    CHECK(Files().QueryInformation(g, r, iosb, info, 56, kFileNetworkOpenInformation) == 0 && g.Load64(info + 40) == 14);
+    const char* moved = "\\Device\\Harddisk0\\Partition1\\moved.bin";
+    std::memcpy(g.host(pat), bytes, std::strlen(bytes) + 1);
+    std::memcpy(g.host(pat + 0x80), moved, std::strlen(moved) + 1);
+    CHECK(Files().Win32MoveFile(g, pat, pat + 0x80) == 1 && fs::exists(root / "hdd" / "moved.bin") && !fs::exists(root / "hdd" / "bytes.bin"));
+    CHECK(Objects().Close(r) == 0 && Objects().Close(w) == 0);
+    CHECK(Files().Win32DeleteFile(g, pat + 0x80) == 1 && !fs::exists(root / "hdd" / "moved.bin"));
+  }
   CHECK(Objects().Close(g.Load32(out + 16)) == 0);
   // The read signals an event; an unknown event handle is refused.
   const uint32_t ev = out + 16;

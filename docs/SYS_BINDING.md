@@ -1,7 +1,7 @@
 # Running a title on any360::sys: the full switch
 
-The goal (decided 2026-11-02, confirmed 2026-11-05): a recompiled title runs its whole kernel on any360::sys —
-threads, objects, memory, files, XAM, audio — with ReXGlue left as the oracle and as the loader. Today only the graphics
+The goal (decided 2026-11-02, confirmed 2026-11-05): a recompiled title runs its whole kernel on any360::sys â€”
+threads, objects, memory, files, XAM, audio â€” with ReXGlue left as the oracle and as the loader. Today only the graphics
 calls are bound (`layer/host/rexglue`, `ANY360_REXGLUE_GRAPHICS_EXPORTS`). This is the plan to get the rest there,
 first on Crackdown (`crackdown-any360-test`), one subsystem at a time, each tested in game before the next.
 
@@ -34,7 +34,7 @@ first on Crackdown (`crackdown-any360-test`), one subsystem at a time, each test
 4. **Files the runtime mounted.** The binder mounts the same host directories on Any360's file system (`game:` on the
    title's files, the cache partition, the content root for saves) before the first file call.
 5. **XMA decoding.** any360::sys keeps the XMA contexts; decoding them is an `XmaBackend`'s job, which does not exist
-   yet. Until one does, audio stays on ReXGlue (`XAudio*`, `XMA*` keep the runtime's exports) — the one group the
+   yet. Until one does, audio stays on ReXGlue (`XAudio*`, `XMA*` keep the runtime's exports) â€” the one group the
    switch leaves behind on purpose.
 
 ## Steps
@@ -118,6 +118,17 @@ What the game found that the tests could not:
   takes from the runtime's 0xE0000000 heap.
 - Finding those took a trace of every call: `SystemOptions::trace_every_call` (Crackdown: `any360_sys_trace_all`)
   logs each call that goes to any360::sys with eight arguments, its result and, for a path call, the path.
+- Crackdown reads a file one byte at a time before its title screen, 22,300 bytes, and asks for the file's size
+  before each (2026-11-10, found with the same trace). The file layer opened the host file for every read and asked
+  the host for the file's times and size at every query: 25 seconds of the title's start (32 seconds to its title
+  screen, 6 with the runtime's files). A handle now keeps one unbuffered stream for its reads and the host's last
+  answer about the file for 50 ms (`FileSystem::HostFile`), both dropped when the file layer itself changes the
+  file: 3 seconds to the title screen.
+- The Simpsons Game opens a file on one thread, opens it again on a second and reads it on a third within the same
+  millisecond of its start (same trace). The table of open files had no lock: a look-up could walk it while another
+  thread inserted. It has one now (`open_mutex_`: look-ups, insertions, removals, walks; never held across a call
+  into the object manager). One start of that title in eight stayed black before the lock and none of the 28 after
+  it; that the lock is what cured it is likely, not proven.
 
 Still the runtime's while only the files are switched: an I/O APC (queued on any360::sys's scheduler, which runs no
 runtime thread) and a completion port the runtime made; Crackdown uses neither.
@@ -226,7 +237,7 @@ calls: `XAudioRegisterRenderDriverClient`, `XAudioGetVoiceCategoryVolumeChangeMa
 
 - **The decoder is any360::sys's** (`any360_sys_xma`, `xma.h`): an `XmaBackend` running the XMA hardware's context
   machinery (packets, frames spanning packets, loops, the output ring the title reads), ported from Xenia's XmaContext
-  (BSD), each frame decoded by FFmpeg's xmaframes decoder — the FFmpeg the ReXGlue SDK ships (its `libavcodec` /
+  (BSD), each frame decoded by FFmpeg's xmaframes decoder â€” the FFmpeg the ReXGlue SDK ships (its `libavcodec` /
   `libavutil`, with the headers of its source: `ANY360_FFMPEG_INCLUDE`). A separate target, so the core needs no FFmpeg.
   `xma_tests` checks the machinery; decoding itself is checked in game (no stream ships with the repository).
 - **The XMA registers are any360::sys's**: XAudio2 (linked into the title) drives the hardware directly at 0x7FEA0000,

@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -125,9 +127,12 @@ class FileSystem {
     bool read_only;
     bool null = false;  // a raw device whose opens, reads and writes succeed and move nothing (MountNull)
   };
+  // What an open handle keeps of its host file between calls (files.cpp).
+  struct HostFile;
   struct Open {
     std::filesystem::path host;
     std::string guest;
+    std::shared_ptr<HostFile> host_file;  // none for a raw device
     const Mounted* mount = nullptr;
     bool directory = false, delete_on_close = false;
     // Opened without FILE_SYNCHRONOUS_IO_*: NtReadFile / NtWriteFile complete at once but answer STATUS_PENDING, as
@@ -147,6 +152,11 @@ class FileSystem {
   std::string Canonical(const std::string& guest_path) const;
   std::string PathOf(Guest g, uint32_t attributes) const;
   uint32_t DeviceControl(Guest g, uint32_t code, uint32_t output, uint32_t output_length, uint32_t& written);
+  // The file layer is about to change host files, or has (a write, a resize, a rename, a removal, a creation): what
+  // the open handles keep of them is dropped. With `host`, a write to that file only: the handles on it forget its
+  // size and times and keep their streams; without, every handle lets go of its host file, which the host needs
+  // before it renames or removes one.
+  void HostChanged(const std::filesystem::path* host = nullptr);
   // `at`, when given, is the offset to use instead of `offset_ptr` or the file position.
   uint32_t Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length, uint32_t offset_ptr,
                     bool write, const uint64_t* at = nullptr);
@@ -157,6 +167,10 @@ class FileSystem {
   std::vector<Mounted> mounts_;
   std::map<std::string, std::string> links_;  // lower-case DOS name -> device path
   std::map<uint32_t, Open> open_;             // object -> open file
+  // The table itself (a look-up, an insertion, a removal, a walk): titles open and close files on several threads
+  // at once. An entry is its handle's, used without the lock by the calls on that handle. Never held across a call
+  // into the object manager, which calls OnClose under its own lock.
+  mutable std::mutex open_mutex_;
   std::map<uint32_t, std::string> link_objects_;  // object -> the target of the link it was opened on
 };
 

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 #include <system_error>
 
 #include "any360/sys/objects.h"
@@ -115,6 +116,11 @@ void StoreNetworkOpen(Guest g, uint32_t info, const Stat& s) {
   g.Store32(info + 52, 0);
 }
 
+// How long an answer of the host about a file (size, times, attributes) serves the queries on a handle. The file
+// layer's own changes drop it at once (HostChanged); only a change made outside it, by the host's own code, can be
+// seen this much later.
+constexpr auto kStatAge = std::chrono::milliseconds(50);
+
 void StoreStatus(Guest g, uint32_t io_status, uint32_t status, uint32_t information) {
   if (!io_status) return;
   g.Store32(io_status, status);
@@ -134,7 +140,10 @@ void FileSystem::Reset() {
   mounts_.clear();
   links_.clear();
   link_objects_.clear();
-  open_.clear();
+  {
+    std::lock_guard lock(open_mutex_);
+    open_.clear();
+  }
   Objects().AddCloseHook([](uint32_t object) { Files().OnClose(object); });
 }
 
@@ -244,7 +253,9 @@ std::string FileSystem::PathOf(Guest g, uint32_t attributes) const {
   std::string path = AnsiString(g, g.Load32(attributes + 4));
   const uint32_t root = g.Load32(attributes);
   if (root && root != kRootDosDevices) {
-    auto it = open_.find(Objects().Lookup(root));
+    const uint32_t object = Objects().Lookup(root);
+    std::lock_guard lock(open_mutex_);
+    auto it = open_.find(object);
     if (it == open_.end()) return {};
     path = it->second.guest + "\\" + path;
   }
@@ -260,13 +271,19 @@ bool FileSystem::Knows(const std::string& guest_path) const {
 bool FileSystem::KnowsAttributes(Guest g, uint32_t attributes) const {
   if (!attributes) return false;
   const uint32_t root = g.Load32(attributes);
-  if (root && root != kRootDosDevices) return open_.count(Objects().Lookup(root)) != 0;
+  if (root && root != kRootDosDevices) {
+    const uint32_t object = Objects().Lookup(root);
+    std::lock_guard lock(open_mutex_);
+    return open_.count(object) != 0;
+  }
   return Knows(AnsiString(g, g.Load32(attributes + 4)));
 }
 
 FileSystem::Open* FileSystem::Find(uint32_t handle) {
-  auto it = open_.find(Objects().Lookup(handle));
-  return it == open_.end() ? nullptr : &it->second;
+  const uint32_t object = Objects().Lookup(handle);
+  std::lock_guard lock(open_mutex_);
+  auto it = open_.find(object);
+  return it == open_.end() ? nullptr : &it->second;  // an entry stays where it is until its own removal
 }
 
 uint32_t FileSystem::CreateFile(Guest g, uint32_t handle_out, uint32_t access, uint32_t attributes, uint32_t io_status, uint32_t,
@@ -301,7 +318,10 @@ uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access
     file.guest = guest;
     file.mount = mount;
     file.asynchronous = (options & kFileSynchronousIo) == 0;
-    open_[object] = file;
+    {
+      std::lock_guard lock(open_mutex_);
+      open_[object] = file;
+    }
     handle_out = Objects().OpenHandle(object);
     action_out = kOpened;
     return kStatusSuccess;
@@ -323,6 +343,7 @@ uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access
     return fail(kStatusAccessDenied, exists ? kExists : kDoesNotExist);
   }
   uint32_t action = kOpened;
+  if (!exists || (!directory && disposition != kOpen && disposition != kOpenIf)) HostChanged();
   if (!exists) {
     if (options & kFileDirectoryFile) std::filesystem::create_directory(host, error);
     else std::ofstream(host, std::ios::binary).close();
@@ -339,10 +360,14 @@ uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access
   file.host = host;
   file.guest = guest;
   file.mount = mount;
+  file.host_file = std::make_shared<HostFile>();
   file.directory = std::filesystem::is_directory(host, error);
   file.delete_on_close = (options & kFileDeleteOnClose) != 0;
   file.asynchronous = (options & kFileSynchronousIo) == 0;
-  open_[object] = file;
+  {
+    std::lock_guard lock(open_mutex_);
+    open_[object] = file;
+  }
   handle_out = Objects().OpenHandle(object);
   action_out = action;
   return kStatusSuccess;
@@ -351,6 +376,58 @@ uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access
 uint32_t FileSystem::Pending(uint32_t handle, uint32_t status) {
   const Open* file = Find(handle);
   return file && file->asynchronous && status == kStatusSuccess ? kStatusPending : status;
+}
+
+// What an open handle keeps of its host file between calls. Titles read files a byte at a time and ask for the
+// file's size before every byte (Crackdown reads 22,000 bytes that way before its title screen); opening the host
+// file for each read and asking the host for its times and size at each query made that 25 seconds of its start.
+// So a handle keeps one stream for its reads, unbuffered (every read is the file as it is on the host, whoever wrote
+// it), and the host's last answer about the file for kStatAge.
+struct FileSystem::HostFile {
+  std::mutex mutex;  // a handle may be read on several threads
+  std::ifstream stream;
+  Stat stat;
+  std::chrono::steady_clock::time_point stat_at;
+  bool stat_known = false;
+
+  // Up to `length` bytes from `offset`; `usable` is false when the host file cannot be opened.
+  uint32_t Read(const std::filesystem::path& host, uint64_t offset, uint8_t* to, uint32_t length, bool& usable) {
+    std::lock_guard lock(mutex);
+    if (!stream.is_open()) {
+      // Unbuffered: asked before the open (where the library takes it then) and after (where it takes it then).
+      stream.rdbuf()->pubsetbuf(nullptr, 0);
+      stream.open(host, std::ios::binary);
+      if (stream.is_open()) stream.rdbuf()->pubsetbuf(nullptr, 0);
+    }
+    usable = stream.is_open();
+    if (!usable) return 0;
+    stream.clear();
+    stream.seekg(std::streamoff(offset));
+    stream.read(reinterpret_cast<char*>(to), length);
+    return uint32_t(stream.gcount());
+  }
+  Stat Query(const std::filesystem::path& host) {
+    std::lock_guard lock(mutex);
+    const auto now = std::chrono::steady_clock::now();
+    if (!stat_known || now - stat_at >= kStatAge) {
+      stat = StatOf(host);
+      stat_at = now;
+      stat_known = true;
+    }
+    return stat;
+  }
+  void Forget(bool release) {
+    std::lock_guard lock(mutex);
+    stat_known = false;
+    if (release && stream.is_open()) stream.close();
+  }
+};
+
+void FileSystem::HostChanged(const std::filesystem::path* host) {
+  std::lock_guard lock(open_mutex_);
+  for (auto& [object, file] : open_) {
+    if (file.host_file && (!host || file.host == *host)) file.host_file->Forget(host == nullptr);
+  }
 }
 
 uint32_t FileSystem::Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length,
@@ -369,23 +446,19 @@ uint32_t FileSystem::Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t
   uint32_t done = 0, status = kStatusSuccess;
   if (write) {
     if (file->mount->read_only) return kStatusAccessDenied;
-    std::fstream stream(file->host, std::ios::binary | std::ios::in | std::ios::out);
-    stream.seekp(std::streamoff(offset));
-    stream.write(reinterpret_cast<const char*>(g.host(buffer)), length);
-    done = stream ? length : 0;
-    if (!stream) status = kStatusAccessDenied;
-  } else {
-    std::error_code error;
-    const uint64_t size = std::filesystem::file_size(file->host, error);
-    if (length && offset >= size) {
-      status = kStatusEndOfFile;
-    } else if (length) {
-      std::ifstream stream(file->host, std::ios::binary);
-      stream.seekg(std::streamoff(offset));
-      const uint32_t n = uint32_t(std::min<uint64_t>(length, size - offset));
-      stream.read(reinterpret_cast<char*>(g.host(buffer)), n);
-      done = uint32_t(stream.gcount());
+    {
+      std::fstream stream(file->host, std::ios::binary | std::ios::in | std::ios::out);
+      stream.seekp(std::streamoff(offset));
+      stream.write(reinterpret_cast<const char*>(g.host(buffer)), length);
+      done = stream ? length : 0;
+      if (!stream) status = kStatusAccessDenied;
     }
+    HostChanged(&file->host);
+  } else if (length) {
+    // Nothing read from a file that opens is its end; from one that does not open, nothing and no error.
+    bool usable = false;
+    done = file->host_file ? file->host_file->Read(file->host, offset, g.host(buffer), length, usable) : 0;
+    if (!done && usable) status = kStatusEndOfFile;
   }
   file->position = offset + done;
   StoreStatus(g, io_status, status, done);
@@ -405,21 +478,15 @@ uint32_t FileSystem::ReadFileScatter(Guest g, uint32_t handle, uint32_t event, u
   if (!file) return kStatusInvalidHandle;
   uint64_t offset = offset_ptr ? g.Load64(offset_ptr) : ~0ull;
   if (offset >= 0xFFFFFFFFFFFFFFFEull) offset = file->position;
-  std::error_code error;
-  const uint64_t size = std::filesystem::file_size(file->host, error);
   uint32_t done = 0, status = kStatusSuccess;
-  if (length && offset >= size) {
-    status = kStatusEndOfFile;
-  } else {
-    std::ifstream stream(file->host, std::ios::binary);
-    stream.seekg(std::streamoff(offset));
-    for (uint32_t page = 0; done < length && offset + done < size; ++page) {
-      const uint32_t n = uint32_t(std::min<uint64_t>({0x1000, length - done, size - offset - done}));
-      stream.read(reinterpret_cast<char*>(g.host(g.Load32(segments + 4 * page))), n);
-      done += uint32_t(stream.gcount());
-      if (stream.gcount() != std::streamsize(n)) break;
-    }
+  bool usable = false;
+  for (uint32_t page = 0; file->host_file && done < length; ++page) {
+    const uint32_t n = std::min<uint32_t>(0x1000, length - done);
+    const uint32_t got = file->host_file->Read(file->host, offset + done, g.host(g.Load32(segments + 4 * page)), n, usable);
+    done += got;
+    if (got != n) break;
   }
+  if (length && !done && usable) status = kStatusEndOfFile;
   file->position = offset + done;
   StoreStatus(g, io_status, status, done);
   if (event) Objects().NtSetEvent(g, event, 0);
@@ -435,14 +502,17 @@ uint32_t FileSystem::WriteFileGather(Guest g, uint32_t handle, uint32_t event, u
   if (file->mount->read_only) return kStatusAccessDenied;
   uint64_t offset = offset_ptr ? g.Load64(offset_ptr) : ~0ull;
   if (offset >= 0xFFFFFFFFFFFFFFFEull) offset = file->position;
-  std::fstream stream(file->host, std::ios::binary | std::ios::in | std::ios::out);
-  stream.seekp(std::streamoff(offset));
   uint32_t done = 0;
-  for (uint32_t page = 0; done < length && stream; ++page) {
-    const uint32_t n = std::min<uint32_t>(0x1000, length - done);
-    stream.write(reinterpret_cast<const char*>(g.host(g.Load32(segments + 4 * page))), n);
-    if (stream) done += n;
+  {
+    std::fstream stream(file->host, std::ios::binary | std::ios::in | std::ios::out);
+    stream.seekp(std::streamoff(offset));
+    for (uint32_t page = 0; done < length && stream; ++page) {
+      const uint32_t n = std::min<uint32_t>(0x1000, length - done);
+      stream.write(reinterpret_cast<const char*>(g.host(g.Load32(segments + 4 * page))), n);
+      if (stream) done += n;
+    }
   }
+  HostChanged(&file->host);
   const uint32_t status = done == length ? kStatusSuccess : kStatusAccessDenied;
   file->position = offset + done;
   StoreStatus(g, io_status, status, done);
@@ -506,7 +576,11 @@ uint32_t FileSystem::QueryInformation(Guest g, uint32_t handle, uint32_t io_stat
   Open* file = Find(handle);
   if (!file) return kStatusInvalidHandle;
   std::memset(g.host(info), 0, length);
-  const Stat s = StatOf(file->host);
+  Stat s;
+  if (info_class == kFileBasicInformation || info_class == kFileStandardInformation ||
+      info_class == kFileNetworkOpenInformation) {
+    s = file->host_file ? file->host_file->Query(file->host) : StatOf(file->host);
+  }
   switch (info_class) {
     case kFileBasicInformation:
       for (uint32_t i = 0; i < 4; ++i) g.Store64(info + 8 * i, s.times[i]);
@@ -565,6 +639,7 @@ uint32_t FileSystem::SetInformation(Guest g, uint32_t handle, uint32_t io_status
       if (file->mount->read_only) {
         status = kStatusAccessDenied;
       } else {
+        HostChanged();
         std::filesystem::resize_file(file->host, g.Load64(info), error);
         if (error) status = kStatusAccessDenied;
       }
@@ -582,6 +657,7 @@ uint32_t FileSystem::SetInformation(Guest g, uint32_t handle, uint32_t io_status
       } else if (std::filesystem::exists(to, error) && !g.Load32(info)) {
         status = kStatusObjectNameCollision;
       } else {
+        HostChanged();
         std::filesystem::rename(file->host, to, error);
         if (error) status = kStatusAccessDenied;
         else {
@@ -725,14 +801,23 @@ uint32_t FileSystem::Flush(Guest g, uint32_t handle, uint32_t io_status) {
 
 void FileSystem::OnClose(uint32_t object) {
   link_objects_.erase(object);
-  auto it = open_.find(object);
-  if (it == open_.end()) return;
-  if (it->second.delete_on_close) {
-    std::error_code error;
-    std::filesystem::remove(it->second.host, error);
+  bool remove = false;
+  std::filesystem::path host;
+  uint32_t port = 0;
+  {
+    std::lock_guard lock(open_mutex_);
+    auto it = open_.find(object);
+    if (it == open_.end()) return;
+    remove = it->second.delete_on_close;
+    host = it->second.host;
+    port = it->second.port;
+    open_.erase(it);
   }
-  const uint32_t port = it->second.port;
-  open_.erase(it);
+  if (remove) {
+    HostChanged();
+    std::error_code error;
+    std::filesystem::remove(host, error);
+  }
   if (port) Objects().DereferenceObject(Objects().guest(), port);
 }
 
@@ -855,6 +940,7 @@ uint32_t FileSystem::Win32SetEndOfFile(uint32_t handle) {
   Open* file = Find(handle);
   if (!file || file->directory || file->mount->read_only) return 0;
   std::error_code error;
+  HostChanged();
   std::filesystem::resize_file(file->host, file->position, error);
   return error ? 0 : 1;
 }
@@ -868,6 +954,7 @@ uint32_t FileSystem::Win32DeleteFile(Guest g, uint32_t name) {
   const std::filesystem::path host = Resolve(guest);
   std::error_code error;
   if (!mount || mount->read_only || host.empty() || !std::filesystem::is_regular_file(host, error)) return 0;
+  HostChanged();
   return std::filesystem::remove(host, error) ? 1 : 0;
 }
 
@@ -893,6 +980,7 @@ uint32_t FileSystem::Win32MoveFile(Guest g, uint32_t from, uint32_t to) {
       !std::filesystem::exists(from_host, error) || !parent || std::filesystem::exists(to_host, error)) {
     return 0;  // MoveFile never replaces an existing file
   }
+  HostChanged();
   std::filesystem::rename(from_host, to_host, error);
   return error ? 0 : 1;
 }
@@ -906,6 +994,7 @@ uint32_t FileSystem::Win32CopyFile(Guest g, uint32_t from, uint32_t to, uint32_t
   std::error_code error;
   if (from_host.empty() || !std::filesystem::is_regular_file(from_host, error) || !mount || mount->read_only || !parent) return 0;
   const auto options = fail_if_exists ? std::filesystem::copy_options::none : std::filesystem::copy_options::overwrite_existing;
+  HostChanged();
   return std::filesystem::copy_file(from_host, to_host, options, error) ? 1 : 0;
 }
 
