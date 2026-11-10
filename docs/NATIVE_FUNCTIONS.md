@@ -93,6 +93,26 @@ Five functions, the same code in the three titles at hand. Unit tests: `xdk_crt_
 | `memmove` | CRT | `CrtMemmove` | what `memcpy` declines on `memcpy`'s side, ranges that are not plain memory on the other | bound | bound (both guests) | bound |
 | the vector copy (`XMemCpy`) | XAPI | `XMemCpy` | ranges that overlap, ranges that are not plain memory, sizes below 16 bytes when the title's byte step is not given or not 1 | bound | bound (base guest) | bound |
 
+### The string functions (2026-11-11)
+
+Four functions of the C runtime that are the same instructions in the three titles, found by comparing every
+function of the three (602 are identical), most call sites first. Each has its model and unit tests
+(`xdk_crt_tests`, 1,237,593 checks with them) and a table in `xdk_crt_bench`.
+
+| Function | Handler | Declines | Bound | Check in game |
+|---|---|---|---|---|
+| `strchr` | `CrtStrchr` | a string that reaches the GPU's register window | The Simpsons Game | 1,650 calls, 0 different |
+| `strncmp` | `CrtStrncmp` | the same | The Simpsons Game | 16 calls, 0 different |
+| `strncpy` | `CrtStrncpy` | ranges of `count` bytes that are not plain memory | The Simpsons Game | 83 calls, 0 different |
+| `wcslen` | `CrtWcslen` | a string that reaches the GPU's register window | nowhere | not called in two minutes of The Simpsons Game: not bound until a run calls it |
+
+They are not bound in Test Drive Unlimited and Crackdown yet: those two could not be built that day (the folder
+with the FFmpeg headers their XMA decoder needs was gone from the machine), and a function is not bound in a title
+before its check there. These functions are called little (The Simpsons Game: a few hundred to a few thousand
+calls in two minutes, against 65 M of `memcpy`) and the hand-written ones are no faster than their models for
+`strchr` and `strncmp` (each element costs a test of the register window): they are here to take the library off
+the recompiled code, not for speed, and are not tuned.
+
 `memmove` and the forward copy are the same instructions in the three titles; the vector copy is three builds of
 the same steps (other registers, the same tests), read in each. Its name is not in the titles: it is the function
 next to XAPI that copies 16-byte vectors, asks for the source's cache lines ahead and zeroes the destination's

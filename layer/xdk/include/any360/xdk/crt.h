@@ -221,4 +221,73 @@ inline bool CrtMemmove(const Memory& memory, uint64_t dest_register, uint32_t so
   return true;
 }
 
+// The C runtime's string functions (the same instructions in the three titles read). They take guest memory an
+// element at a time in their code's own order, so ranges that overlap come out as the code leaves them. Those that
+// only read give the value the function leaves in r3, all 64 bits of it, and decline (nothing is written, by
+// nature) a string that reaches the GPU's register window.
+inline bool IsRegisterWindow(uint32_t address) { return address - 0x7F000000u < 0x01000000u; }
+
+// wcslen: the 16-bit elements before the first zero one.
+inline bool CrtWcslen(const Memory& memory, uint32_t string, uint64_t& r3) {
+  uint32_t at = string;
+  for (;; at += 2) {
+    if (IsRegisterWindow(at)) return false;
+    const uint8_t* p = memory.Host(at);
+    if (!(p[0] | p[1])) break;
+  }
+  // Its code counts the bytes to past the zero, halves them as a signed 32-bit value and takes one off.
+  r3 = uint64_t(int64_t(int32_t(at + 2 - string) >> 1) - 1);
+  return true;
+}
+
+// strchr: the address of the first byte equal to `character` (the 32 bits of r4, compared with the byte as a whole:
+// a value above 255 is never found), of the terminator when `character` is 0, or 0. `string_register` is r3 whole:
+// the address found keeps its high half.
+inline bool CrtStrchr(const Memory& memory, uint64_t string_register, uint32_t character, uint64_t& r3) {
+  for (uint32_t at = uint32_t(string_register);; ++at) {
+    if (IsRegisterWindow(at)) return false;
+    const uint8_t byte = *memory.Host(at);
+    if (character ? byte == character : byte == 0) {
+      r3 = (string_register & 0xFFFFFFFF00000000ull) | at;
+      return true;
+    }
+    if (!byte) {
+      r3 = 0;
+      return true;
+    }
+  }
+}
+
+// strncmp: the difference of the first two bytes that differ within `count` bytes (a signed 32-bit count: none
+// when it is not positive), 0 when there is none or the strings end together first.
+inline bool CrtStrncmp(const Memory& memory, uint32_t left, uint32_t right, uint32_t count, uint64_t& r3) {
+  r3 = 0;
+  if (int32_t(count) <= 0) return true;
+  for (uint32_t i = 0;; ++i) {
+    if (IsRegisterWindow(left + i) || IsRegisterWindow(right + i)) return false;
+    const uint8_t a = *memory.Host(left + i), b = *memory.Host(right + i);
+    r3 = uint64_t(int64_t(a) - int64_t(b));
+    if (i + 1 == count || !a || a != b) return true;
+  }
+}
+
+// strncpy: the source's bytes up to its terminator, `count` at most, then zeros up to `count` bytes; a byte at a
+// time from the first, as its code does. Declines ranges of `count` bytes that are not plain memory.
+inline bool CrtStrncpyAccepts(uint32_t dest, uint32_t source, uint32_t count) {
+  return IsPlainMemory(dest, count) && IsPlainMemory(source, count);
+}
+inline bool CrtStrncpy(const Memory& memory, uint32_t dest, uint32_t source, uint32_t count) {
+  if (!CrtStrncpyAccepts(dest, source, count)) return false;
+  uint8_t* to = memory.Host(dest);
+  const uint8_t* from = memory.Host(source);
+  uint32_t i = 0;
+  while (i < count) {
+    const uint8_t byte = from[i];
+    to[i++] = byte;
+    if (!byte) break;
+  }
+  for (; i < count; ++i) to[i] = 0;
+  return true;
+}
+
 }  // namespace any360::xdk

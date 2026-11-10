@@ -28,7 +28,9 @@
 
 namespace any360::host::rexglue::xdk {
 
-enum class Function : uint32_t { kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kCount };
+enum class Function : uint32_t {
+  kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy, kCount
+};
 
 // How bound functions run: resolved from the settings at the first call.
 enum class Mode : uint32_t { kUnresolved, kNative, kOriginal, kVerify, kBench };
@@ -97,6 +99,56 @@ inline void XMemCpy(PPCContext& ctx, uint8_t* base, GuestFunction original, uint
     return;
   }
   RunSlow(Function::kXMemCpy, ctx, base, original, byte_step_address);
+}
+
+// The C runtime's string functions. Those that only read leave their value in r3.
+// wcslen: r3 string; returns its length in 16-bit elements.
+inline void CrtWcslen(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t r3;
+    if (any360::xdk::CrtWcslen(g_memory, ctx.r3.u32, r3)) [[likely]] {
+      ctx.r3.u64 = r3;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kWcslen, ctx, base, original);
+}
+// strchr: r3 string, r4 character; returns the address of its first occurrence or 0.
+inline void CrtStrchr(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t r3;
+    if (any360::xdk::CrtStrchr(g_memory, ctx.r3.u64, ctx.r4.u32, r3)) [[likely]] {
+      ctx.r3.u64 = r3;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kStrchr, ctx, base, original);
+}
+// strncmp: r3 and r4 strings, r5 count; returns the difference of the first bytes that differ.
+inline void CrtStrncmp(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t r3;
+    if (any360::xdk::CrtStrncmp(g_memory, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, r3)) [[likely]] {
+      ctx.r3.u64 = r3;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kStrncmp, ctx, base, original);
+}
+// strncpy: r3 destination, r4 source, r5 count; returns the destination.
+inline void CrtStrncpy(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    if (any360::xdk::CrtStrncpy(g_memory, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32)) [[likely]] return;
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kStrncpy, ctx, base, original);
 }
 
 // Calls verified against the functions' own code and found different, since the start (any360_xdk_verify).

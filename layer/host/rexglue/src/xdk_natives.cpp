@@ -39,7 +39,8 @@ any360::xdk::Memory g_memory;
 namespace {
 
 constexpr uint32_t kFunctions = uint32_t(Function::kCount);
-constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", "memmove", "XMemCpy"};
+constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset",  "memmove", "XMemCpy",
+                                            "wcslen", "strchr",       "strncmp", "strncpy"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -117,6 +118,7 @@ bool Accepts(Function function, const Call& c) {
     case Function::kCopyForward: return any360::xdk::CrtMemcpyAccepts(c.dest, c.second, c.size);
     case Function::kMemset: return any360::xdk::CrtMemsetAccepts(c.dest, c.size);
     case Function::kMemmove: return any360::xdk::CrtMemmoveAccepts(c.dest, c.second, c.size);
+    case Function::kStrncpy: return any360::xdk::CrtStrncpyAccepts(c.dest, c.second, c.size);
     default: return any360::xdk::XMemCpyAccepts(c.dest, c.second, c.size, c.size >= 16 || ByteStepIsOne(c.value));
   }
 }
@@ -127,7 +129,29 @@ bool Native(Function function, const Call& c) {
     case Function::kCopyForward: return any360::xdk::CrtCopyForward(g_memory, c.dest, c.second, c.size);
     case Function::kMemset: return any360::xdk::CrtMemset(g_memory, c.dest, c.second, c.size);
     case Function::kMemmove: return any360::xdk::CrtMemmove(g_memory, c.dest_register, c.second, c.size, c.stack_pointer);
+    case Function::kStrncpy: return any360::xdk::CrtStrncpy(g_memory, c.dest, c.second, c.size);
     default: return any360::xdk::XMemCpy(g_memory, c.dest, c.second, c.size, c.size >= 16 || ByteStepIsOne(c.value));
+  }
+}
+
+// The functions that only read: their replacement gives the value they leave in r3.
+bool IsPure(Function function) {
+  return function == Function::kWcslen || function == Function::kStrchr || function == Function::kStrncmp;
+}
+bool Pure(Function function, const Call& c, uint64_t& r3) {
+  switch (function) {
+    case Function::kWcslen: return any360::xdk::CrtWcslen(g_memory, c.dest, r3);
+    case Function::kStrchr: return any360::xdk::CrtStrchr(g_memory, c.dest_register, c.second, r3);
+    default: return any360::xdk::CrtStrncmp(g_memory, c.dest, c.second, c.size, r3);
+  }
+}
+// How much such a call had to read, for the timings by size: the length found, the distance to the character, the
+// count asked.
+uint32_t PureWork(Function function, const Call& c, uint64_t r3) {
+  switch (function) {
+    case Function::kWcslen: return uint32_t(r3);
+    case Function::kStrchr: return r3 ? uint32_t(r3) - c.dest : 0;
+    default: return std::min<uint32_t>(c.size, 1u << 20);
   }
 }
 
@@ -224,10 +248,74 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
   const uint64_t dest_register = call.dest_register;
   const uint32_t dest = call.dest, second = call.second, size = call.size, stack_pointer = call.stack_pointer;
   if (mode == Mode::kNative) {
-    if (!Native(function, call)) original(ctx, base);
+    if (IsPure(function)) {
+      uint64_t r3 = 0;
+      if (Pure(function, call, r3)) ctx.r3.u64 = r3;
+      else original(ctx, base);
+    } else if (!Native(function, call)) {
+      original(ctx, base);
+    }
     return;
   }
   const uint32_t f = uint32_t(function);
+  if (IsPure(function)) {
+    // Nothing is written: the function's own code runs on a copy of the registers and its r3 stands; the
+    // replacement's r3 is compared with it, or the two are timed.
+    uint64_t r3 = 0;
+    if (mode == Mode::kOriginal) {
+      original(ctx, base);
+      return;
+    }
+    PPCContext reference = ctx;
+    if (mode == Mode::kVerify) {
+      original(reference, base);
+      const bool taken = Pure(function, call, r3);
+      ctx.r3.u64 = reference.r3.u64;
+      if (!taken) {
+        g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
+        return;
+      }
+      g_verified_by[f].fetch_add(1, std::memory_order_relaxed);
+      g_verified.fetch_add(1, std::memory_order_relaxed);
+      if (r3 != reference.r3.u64 && g_different.fetch_add(1, std::memory_order_relaxed) < 20) {
+        REXLOG_ERROR("Any360 xdk: {} differs from the function's own code: r3 {:016X} r4 {:08X} r5 {:08X}: {:016X}, its "
+                     "own code {:016X}",
+                     kNames[f], dest_register, second, size, r3, reference.r3.u64);
+      }
+      return;
+    }
+    const uint64_t timed_call = g_timed_calls.fetch_add(1, std::memory_order_relaxed) + 1;
+    uint64_t original_ticks, native_ticks;
+    bool taken;
+    if (timed_call & 1) {
+      const uint64_t a = Ticks();
+      original(reference, base);
+      const uint64_t b = Ticks();
+      taken = Pure(function, call, r3);
+      const uint64_t c = Ticks();
+      original_ticks = b - a, native_ticks = c - b;
+    } else {
+      const uint64_t a = Ticks();
+      taken = Pure(function, call, r3);
+      const uint64_t b = Ticks();
+      original(reference, base);
+      const uint64_t c = Ticks();
+      native_ticks = b - a, original_ticks = c - b;
+    }
+    ctx.r3.u64 = reference.r3.u64;
+    if (!taken) {
+      g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
+      return;
+    }
+    const uint32_t work = PureWork(function, call, reference.r3.u64);
+    Timed& timed = g_timed[f][std::bit_width(work)];
+    timed.calls.fetch_add(1, std::memory_order_relaxed);
+    timed.original.fetch_add(original_ticks, std::memory_order_relaxed);
+    timed.native.fetch_add(native_ticks, std::memory_order_relaxed);
+    if (work < kExactSizes) g_exact[f][work].fetch_add(1, std::memory_order_relaxed);
+    if (timed_call == 200000 || timed_call % 2000000 == 0) ReportTimes();
+    return;
+  }
   // Verifying and timing run both sides on the same input: only the calls the replacement accepts, known before
   // anything runs.
   if (mode == Mode::kOriginal || !Accepts(function, call) || size > kMostChecked) {

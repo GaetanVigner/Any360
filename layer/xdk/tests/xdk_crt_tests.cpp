@@ -239,6 +239,107 @@ void PhysicalView() {
   CHECK(std::memcmp(&low[0x7000 - 8], slot, 8) == 0);
 }
 
+// A string of `length` bytes that are never zero (nor `avoid`), then a terminator, at `address` of both memories.
+void PutString(Pair& p, uint32_t address, uint32_t length, std::mt19937& rng, uint8_t avoid = 0) {
+  for (uint32_t i = 0; i <= length; ++i) {
+    uint8_t byte = i == length ? 0 : uint8_t(1 + rng() % 255);
+    if (i != length && byte == avoid) byte = uint8_t(avoid == 1 ? 2 : 1);
+    p.native[address + i] = p.model[address + i] = byte;
+  }
+}
+
+// wcslen, strchr and strncmp only read: the value each leaves in r3 against the model's, nothing written.
+void StringReads() {
+  Pair p(51);
+  std::mt19937 rng(52);
+  uint64_t r3 = 0;
+  // wcslen: every length up to 300 at even and odd addresses.
+  for (uint32_t length = 0; length <= 300; ++length) {
+    for (uint32_t offset = 0; offset < 4; ++offset) {
+      const uint32_t at = 0x1000 + offset;
+      for (uint32_t i = 0; i < length; ++i) {
+        const uint16_t unit = uint16_t(1 + rng() % 0xFFFF);
+        p.native[at + 2 * i] = p.model[at + 2 * i] = uint8_t(unit >> 8);
+        p.native[at + 2 * i + 1] = p.model[at + 2 * i + 1] = uint8_t(unit);
+      }
+      p.native[at + 2 * length] = p.model[at + 2 * length] = 0;
+      p.native[at + 2 * length + 1] = p.model[at + 2 * length + 1] = 0;
+      CHECK(xdk::CrtWcslen(p.a, at, r3) && r3 == length && r3 == xdk::reference::Wcslen(p.b, at));
+    }
+  }
+  // strchr: a byte that is there at every position, one that is not, the terminator, values no byte equals; the
+  // register's high half kept in the address found.
+  for (uint32_t length = 0; length <= 200; ++length) {
+    const uint32_t at = 0x4000 + (length & 7);
+    PutString(p, at, length, rng, 0x41);
+    const uint64_t reg = 0xABCD000000000000ull | at;
+    CHECK(xdk::CrtStrchr(p.a, reg, 0x41, r3) && r3 == 0 && xdk::reference::Strchr(p.b, reg, 0x41) == 0);
+    CHECK(xdk::CrtStrchr(p.a, reg, 0, r3) && r3 == reg + length && r3 == xdk::reference::Strchr(p.b, reg, 0));
+    for (uint32_t character : {0x141u, 0xFFFFFF41u, 0x80000000u}) {
+      CHECK(xdk::CrtStrchr(p.a, reg, character, r3) && r3 == 0 && xdk::reference::Strchr(p.b, reg, character) == 0);
+    }
+    for (uint32_t where = 0; where < length; where += 1 + length / 16) {
+      p.native[at + where] = p.model[at + where] = 0x41;
+      CHECK(xdk::CrtStrchr(p.a, reg, 0x41, r3) && r3 == reg + where && r3 == xdk::reference::Strchr(p.b, reg, 0x41));
+      p.native[at + where] = p.model[at + where] = 0x42;
+    }
+  }
+  // strncmp: equal strings, a difference at every position (both signs), every count around it, counts that are
+  // not positive, strings that end before the count.
+  for (uint32_t length = 0; length <= 120; ++length) {
+    const uint32_t left = 0x8000 + (length & 3), right = 0xA000 + (length & 5);
+    PutString(p, left, length, rng);
+    std::memcpy(&p.native[right], &p.native[left], length + 1);
+    std::memcpy(&p.model[right], &p.model[left], length + 1);
+    for (uint32_t count : {0u, 1u, length, length + 1, length + 50, 0x80000000u, 0xFFFFFFFFu}) {
+      CHECK(xdk::CrtStrncmp(p.a, left, right, count, r3) && r3 == 0 && xdk::reference::Strncmp(p.b, left, right, count) == 0);
+    }
+    for (uint32_t where = 0; where < length; where += 1 + length / 12) {
+      const uint8_t was = p.native[right + where];
+      for (uint8_t other : {uint8_t(was == 255 ? 254 : was + 1), uint8_t(was == 1 ? 2 : was - 1), uint8_t(0)}) {
+        p.native[right + where] = p.model[right + where] = other;
+        for (uint32_t count : {where, where + 1, length + 5}) {
+          CHECK(xdk::CrtStrncmp(p.a, left, right, count, r3) && r3 == xdk::reference::Strncmp(p.b, left, right, count));
+          CHECK(count <= where ? r3 == 0 : r3 == uint64_t(int64_t(was) - int64_t(other)));
+        }
+      }
+      p.native[right + where] = p.model[right + where] = was;
+    }
+  }
+  CHECK(p.SameEverywhere());
+  // A string in the GPU's register window: declined.
+  const Memory nowhere{};
+  CHECK(!xdk::CrtWcslen(nowhere, 0x7FC80000, r3) && !xdk::CrtStrchr(nowhere, 0x7F000000, 0x41, r3));
+  CHECK(!xdk::CrtStrncmp(nowhere, 0x7FC80000, 0x1000, 4, r3) && xdk::CrtStrncmp(nowhere, 0x7FC80000, 0x1000, 0, r3));
+}
+
+// strncpy: every source length against every count around it, apart and with the destination inside the source
+// (a byte at a time from the first, as its code: the bytes it has just written are the ones it reads next).
+void StringCopies() {
+  Pair p(61);
+  std::mt19937 rng(62);
+  for (uint32_t length = 0; length <= 80; ++length) {
+    for (uint32_t count : {0u, 1u, length / 2, length, length + 1, length + 2, length + 40}) {
+      const uint32_t source = 0x2000 + (length & 7), dest = 0x6000 + (count & 3);
+      PutString(p, source, length, rng);
+      CHECK(xdk::CrtStrncpy(p.a, dest, source, count));
+      xdk::reference::Strncpy(p.b, dest, source, count);
+      CHECK(p.Same(dest, dest + count));
+      for (int32_t distance : {-9, -1, 1, 2, 7, 33}) {
+        const uint32_t inside = uint32_t(int32_t(source) + distance);
+        PutString(p, source, length, rng);
+        CHECK(xdk::CrtStrncpy(p.a, inside, source, count));
+        xdk::reference::Strncpy(p.b, inside, source, count);
+        CHECK(p.Same(source < inside ? source : inside, (source < inside ? inside : source) + count + length + 1));
+      }
+    }
+    CHECK(p.SameEverywhere());
+  }
+  const Memory nowhere{};
+  CHECK(!xdk::CrtStrncpy(nowhere, 0x7F000000, 0x1000, 8) && !xdk::CrtStrncpy(nowhere, 0x1000, 0x7EFFFFFC, 8));
+  CHECK(xdk::CrtStrncpyAccepts(0x1000, 0x2000, 64) && !xdk::CrtStrncpyAccepts(0xDFFFFFF0, 0x2000, 64));
+}
+
 }  // namespace
 
 int main() {
@@ -249,6 +350,8 @@ int main() {
   }
   Fills();
   Moves();
+  StringReads();
+  StringCopies();
   SavedRegister();
   for (uint32_t seed = 1; seed <= 4; ++seed) Random(seed, 100000);
   PhysicalView();

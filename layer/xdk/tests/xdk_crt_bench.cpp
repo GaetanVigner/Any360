@@ -198,6 +198,35 @@ int main(int argc, char** argv) {
     std::printf("%9u | %9.2f %9.2f %9.2f %6.2fx\n", size, slow, a, b, a / b);
   }
 
+  // The string functions, by length of the strings: the model against the function as it is (their first
+  // version). No title's mix yet: any360_xdk_bench gives it once they have run in game.
+  std::printf("string functions, ns a call (model -> now):\n%9s | %19s | %19s | %19s | %19s\n", "length", "wcslen", "strchr",
+              "strncmp", "strncpy");
+  for (uint32_t length : {4u, 16u, 64u, 256u, 2048u}) {
+    std::vector<Call> calls = CallsOfSize(2 * length + 2, 70 + length);
+    for (const Call& c : calls) {
+      // At dest: a 16-bit string of `length` elements; at source: the same bytes, so the two compare equal.
+      for (uint32_t i = 0; i < 2 * length; ++i) arena[c.dest + i] = arena[c.source + i] = uint8_t(1 + (i * 7 + c.dest) % 250);
+      arena[c.dest + 2 * length] = arena[c.dest + 2 * length + 1] = 0;
+      arena[c.source + 2 * length] = arena[c.source + 2 * length + 1] = 0;
+    }
+    const uint32_t scratch = kStack - (1u << 20);
+    const auto pair = [&](auto&& model, auto&& now) {
+      const double slow = Fastest(calls, std::min(repeats, 3u), model), fast = Fastest(calls, repeats, now);
+      std::printf(" %8.2f -> %7.2f |", slow, fast);
+    };
+    std::printf("%9u |", length);
+    pair([&](const Call& c) { return uint32_t(xdk::reference::Wcslen(m, c.dest)); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtWcslen(m, c.dest, r3); return uint32_t(r3); });
+    pair([&](const Call& c) { return uint32_t(xdk::reference::Strchr(m, c.dest, 0)); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtStrchr(m, c.dest, 0, r3); return uint32_t(r3); });
+    pair([&](const Call& c) { return uint32_t(xdk::reference::Strncmp(m, c.dest, c.source, 2 * length)); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtStrncmp(m, c.dest, c.source, 2 * length, r3); return uint32_t(r3); });
+    pair([&](const Call& c) { xdk::reference::Strncpy(m, scratch + (c.dest & 0xFFFF), c.source, 2 * length + 16); return 1u; },
+         [&](const Call& c) { return uint32_t(xdk::CrtStrncpy(m, scratch + (c.dest & 0xFFFF), c.source, 2 * length + 16)); });
+    std::printf("\n");
+  }
+
   // Each title's mix, three different draws of it; then all of them together (what a change is judged on).
   std::printf("the titles' mixes, sizes in random order (ns a call):\n");
   double all[2][3] = {};
