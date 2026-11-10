@@ -9,14 +9,14 @@
  "sys": {
   "groups": ["stateless", "files", "objects", "threads", "memory", "xam", "input", "audio"],
   "default": false,
-  "where": "all eight groups, opt-in: branch `any360-sys-test`, `--any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio`; no call reaches ReXGlue's kernel then"
+  "where": "all eight groups, opt-in on `main`: `--any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio`; no call reaches ReXGlue's kernel then"
  },
  "gfx": {
   "bound": true,
   "default": false,
-  "where": "opt-in: branches `any360-graphics-test` and `any360-sys-test`, `--any360_gpu=true` (resolution scale, host MSAA, pipeline cache); 160-220 FPS at 1440p with 4x MSAA in the city on an RTX 5070 Ti",
+  "where": "opt-in on `main`: `--any360_gpu=true` (resolution scale, host MSAA, pipeline cache); 160-220 FPS at 1440p with 4x MSAA in the city on an RTX 5070 Ti",
   "todo": [
-   "Merge the two Any360 branches into `main`: they need an Any360 checkout next to the repository, so `main` builds without them today.",
+   "`main` needs an Any360 checkout next to the repository to build (`CRACKDOWN_ANY360_DIR`, by default `../any360`): make it optional, as in The Simpsons Game, or fetched by the build.",
    "The game-side draw records (HLE renderer, milestones H1-H4 below) feed a renderer that knows the game's passes instead of translating Xenos commands; they move onto `any360::gfx` once the emulated path is the fallback only."
   ]
  },

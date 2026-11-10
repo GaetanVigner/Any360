@@ -8,14 +8,13 @@
  "sys": {
   "groups": ["stateless", "files", "objects", "threads", "memory", "xam", "input", "audio"],
   "default": false,
-  "where": "all eight groups, opt-in: branch `any360-sys-test`, `--any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio`; levels, saves, sound and gamepad checked in game"
+  "where": "all eight groups, opt-in on `main` (built with `SIMPSONS_ANY360_DIR`): `--any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio`; levels, saves, sound and gamepad checked in game"
  },
  "gfx": {
   "bound": true,
   "default": false,
-  "where": "opt-in: branches `any360-graphics-test` and `any360-sys-test`, `--any360_gpu=true`; 60 FPS in gameplay and 30 on menus and loading screens (the game's own pacing), as with the runtime's GPU",
+  "where": "opt-in on `main` (built with `SIMPSONS_ANY360_DIR`): `--any360_gpu=true`; 60 FPS in gameplay and 30 on menus and loading screens (the game's own pacing), as with the runtime's GPU",
   "todo": [
-   "Merge the Any360 branches into `main`.",
    "Anti-aliasing: host MSAA smooths the game's data buffers along with its colours (false outlines), so the title runs without it (`--any360_gpu_msaa=1`); it needs MSAA that tells data from colour, or supersampling."
   ]
  },
