@@ -3,10 +3,11 @@
 //   first    the replacement as first written (the host's memmove / memset behind the same checks), kept here as
 //            the fixed point later versions are measured against;
 //   now      the library as it is.
-// Size by size first (every call of a case the same size: the branches of a version all predicted), then a title's
-// mix: calls whose sizes follow, in random order, the sizes the title really passes (Test Drive Unlimited, measured
-// in game with any360_xdk_bench), which is the figure a change to crt.h is judged on. A change is an improvement
-// when `now` gets faster on the mix with xdk_crt_tests still passing; docs/NATIVE_FUNCTIONS.md is the rule.
+// Size by size first (every call of a case the same size: the branches of a version all predicted), then the
+// titles' mixes: for each title measured in game with any360_xdk_bench, calls whose sizes follow, in random order,
+// the sizes that title really passes. The functions are every title's, so a change to crt.h is judged on all the
+// mixes (kTitles): it is an improvement when `now` gets faster on them, none getting slower, with xdk_crt_tests
+// still passing. docs/NATIVE_FUNCTIONS.md is the rule. A title measured adds its mix here.
 //
 //   xdk_crt_bench [repeats]     (the fastest of `repeats` runs of each case, default 9)
 #include <algorithm>
@@ -86,15 +87,16 @@ std::vector<Call> CallsOfSize(uint32_t size, uint32_t seed) {
 }
 
 // A title's calls by size: sizes `low` to `high` (one size when equal, any of them otherwise) and how many calls
-// of each function had them. Test Drive Unlimited over its first 100 seconds (a gamepad connected: boot, title
-// screen and the scenes after it), measured with any360_xdk_bench: every size with 0.5% of a function's calls or more on its own, the others by power of two
-// (sizes above 64 KB left out: under 0.01% of the calls). Half of its copies are 16 bytes and a third 64 bytes;
-// two fills in three are 120 bytes.
+// of each function had them, as any360_xdk_bench logs them: every size with 0.5% of a function's calls or more on
+// its own, the others by power of two (sizes above 64 KB left out: under 0.01% of the calls).
 struct Share {
   uint32_t low, high;
   uint32_t memcpy_calls, memset_calls;
 };
-const Share kMix[] = {
+
+// Test Drive Unlimited over its first 100 seconds (a gamepad connected: boot, title screen and the scenes after
+// it). Half of its copies are 16 bytes and a third 64 bytes; two fills in three are 120 bytes.
+const Share kTestDriveUnlimited[] = {
     {0, 0, 8642, 4}, {1, 1, 788, 2}, {2, 3, 4658, 6}, {4, 7, 22779, 15}, {8, 8, 184830, 0}, {8, 15, 1110, 339},
     {12, 12, 81485, 0}, {16, 16, 6578412, 24408}, {16, 31, 7153, 259}, {32, 32, 97333, 12582}, {32, 63, 89696, 899},
     {44, 44, 0, 18216}, {48, 48, 1230079, 0}, {60, 60, 157905, 0}, {64, 64, 4270977, 83756}, {64, 127, 42010, 620},
@@ -104,16 +106,26 @@ const Share kMix[] = {
     {32768, 65535, 5374, 27},
 };
 
-// `count` calls whose sizes follow the mix, in random order, inside a region of a few megabytes.
-std::vector<Call> CallsOfMix(bool memset, uint32_t count, uint32_t seed) {
+// The titles measured so far. One title is one sample: what is tuned on it is measured again on the next.
+struct Title {
+  const char* name;
+  const Share* shares;
+  size_t count;
+};
+const Title kTitles[] = {
+    {"Test Drive Unlimited", kTestDriveUnlimited, sizeof(kTestDriveUnlimited) / sizeof(kTestDriveUnlimited[0])},
+};
+
+// `count` calls whose sizes follow a title's mix, in random order, inside a region of a few megabytes.
+std::vector<Call> CallsOfMix(const Title& title, bool memset, uint32_t count, uint32_t seed) {
   uint64_t total = 0;
-  for (const Share& s : kMix) total += memset ? s.memset_calls : s.memcpy_calls;
+  for (size_t i = 0; i < title.count; ++i) total += memset ? title.shares[i].memset_calls : title.shares[i].memcpy_calls;
   std::vector<Call> calls(count);
   Random random(seed);
   constexpr uint32_t kSpan = 4u << 20;
   for (Call& c : calls) {
     uint64_t pick = (uint64_t(random.Next()) << 16 ^ random.Next()) % total;
-    const Share* share = kMix;
+    const Share* share = title.shares;
     for (;; ++share) {
       const uint64_t n = memset ? share->memset_calls : share->memcpy_calls;
       if (pick < n) break;
@@ -204,20 +216,30 @@ int main(int argc, char** argv) {
                 copy_a / copy_b, set_slow, set_a, set_b, set_a / set_b);
   }
 
-  // The title's mix, three different draws of it.
-  std::printf("a title's mix (Test Drive Unlimited, its first 100 seconds), sizes in random order:\n");
-  double sum[2][3] = {};
-  for (uint32_t draw = 0; draw < 3; ++draw) {
-    const std::vector<Call> copies = CallsOfMix(false, 16384, 100 + draw), fills = CallsOfMix(true, 16384, 200 + draw);
-    const double copy_slow = Fastest(copies, 2, copy_model), set_slow = Fastest(fills, 2, set_model);
-    const auto [copy_a, copy_b] = FastestOfBoth(copies, repeats, copy_first, copy_now);
-    const auto [set_a, set_b] = FastestOfBoth(fills, repeats, set_first, set_now);
-    sum[0][0] += copy_slow, sum[0][1] += copy_a, sum[0][2] += copy_b;
-    sum[1][0] += set_slow, sum[1][1] += set_a, sum[1][2] += set_b;
+  // Each title's mix, three different draws of it; then all of them together (what a change is judged on).
+  std::printf("the titles' mixes, sizes in random order (ns a call):\n");
+  double all[2][3] = {};
+  for (const Title& title : kTitles) {
+    double sum[2][3] = {};
+    for (uint32_t draw = 0; draw < 3; ++draw) {
+      const std::vector<Call> copies = CallsOfMix(title, false, 16384, 100 + draw);
+      const std::vector<Call> fills = CallsOfMix(title, true, 16384, 200 + draw);
+      const double copy_slow = Fastest(copies, 2, copy_model), set_slow = Fastest(fills, 2, set_model);
+      const auto [copy_a, copy_b] = FastestOfBoth(copies, repeats, copy_first, copy_now);
+      const auto [set_a, set_b] = FastestOfBoth(fills, repeats, set_first, set_now);
+      sum[0][0] += copy_slow / 3, sum[0][1] += copy_a / 3, sum[0][2] += copy_b / 3;
+      sum[1][0] += set_slow / 3, sum[1][1] += set_a / 3, sum[1][2] += set_b / 3;
+    }
+    for (int f = 0; f < 2; ++f) {
+      std::printf("  %-22s %s: model %.2f, first %.2f, now %.2f (%.2fx the first, %.1fx the model)\n", title.name,
+                  f ? "memset" : "memcpy", sum[f][0], sum[f][1], sum[f][2], sum[f][1] / sum[f][2], sum[f][0] / sum[f][2]);
+      for (int v = 0; v < 3; ++v) all[f][v] += sum[f][v];
+    }
   }
-  std::printf("  memcpy: model %.2f, first %.2f, now %.2f ns a call (%.2fx the first, %.1fx the model)\n", sum[0][0] / 3,
-              sum[0][1] / 3, sum[0][2] / 3, sum[0][1] / sum[0][2], sum[0][0] / sum[0][2]);
-  std::printf("  memset: model %.2f, first %.2f, now %.2f ns a call (%.2fx the first, %.1fx the model)\n", sum[1][0] / 3,
-              sum[1][1] / 3, sum[1][2] / 3, sum[1][1] / sum[1][2], sum[1][0] / sum[1][2]);
+  const size_t titles = sizeof(kTitles) / sizeof(kTitles[0]);
+  for (int f = 0; f < 2; ++f) {
+    std::printf("  all %zu title%s measured,  %s: first %.2f, now %.2f (%.2fx the first)\n", titles, titles == 1 ? "" : "s",
+                f ? "memset" : "memcpy", all[f][1] / double(titles), all[f][2] / double(titles), all[f][1] / all[f][2]);
+  }
   return int(g_sink & 0);
 }

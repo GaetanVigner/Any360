@@ -107,8 +107,8 @@ powershell -File layer/sys/test.ps1
 
 Before every commit: `python tools/build_db.py` then `python tools/progress_page.py`.
 
-Native replacements of a title's library functions (`layer/xdk`, the C runtime's `memcpy` and `memset` first) follow
-one rule, [docs/NATIVE_FUNCTIONS.md](docs/NATIVE_FUNCTIONS.md): a reference model, unit tests against it, a
+Native replacements of the library functions titles link (`layer/xdk`, the C runtime's `memcpy` and `memset` first)
+are Any360's, shared by every title; the titles are where they are checked and measured. They follow one rule, [docs/NATIVE_FUNCTIONS.md](docs/NATIVE_FUNCTIONS.md): a reference model, unit tests against it, a
 benchmark, then the check and the measure in game (`--any360_xdk_verify=true`, `--any360_xdk_bench=true`) before a
 function is bound, and optimization only with the tests passing and the benchmark confirming it.
 

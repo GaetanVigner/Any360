@@ -1,7 +1,8 @@
-// any360::xdk: native replacements of the functions a title links statically from the XDK's libraries, the C runtime
-// first. The same work as the recompiled function, done by the host: portable C++ with no dependency, so each one is
-// unit-tested (tests/xdk_crt_tests.cpp, against the reference models of crt_reference.h) and benchmarked
-// (tests/xdk_crt_bench.cpp) here, outside any title. docs/NATIVE_FUNCTIONS.md is the rule they follow.
+// any360::xdk: native replacements of the functions titles link statically from the XDK's libraries, the C runtime
+// first. The same work as the recompiled function, done by the host: portable C++ with no dependency and nothing of
+// any one title (a title only binds its address of the function), so each one is unit-tested
+// (tests/xdk_crt_tests.cpp, against the reference models of crt_reference.h) and benchmarked
+// (tests/xdk_crt_bench.cpp) here, outside the titles. docs/NATIVE_FUNCTIONS.md is the rule they follow.
 //
 // A replacement handles the common case and declines the rest (returns false): the caller then runs the function's
 // own code. Nothing has been written when it declines.
@@ -63,7 +64,7 @@ inline void Store256(uint8_t* p, const Bytes32& v) { std::memcpy(p, &v, 32); }
 
 // memmove for the sizes the titles copy most (up to 64 bytes: the two ends of the range, overlapping in the
 // middle, every load before any store, so overlap is as memmove's), the host's memmove above. What the benchmark
-// kept (xdk_crt_bench, on a title's mix of sizes): this is 1.15x the plain memmove; the same path carried on to 128
+// kept (xdk_crt_bench, on the one title's mix of sizes measured so far): this is 1.15x the plain memmove; the same path carried on to 128
 // bytes gained nothing, and one path without a branch on the size for 16 to 64 bytes was slower.
 inline void Move(uint8_t* d, const uint8_t* s, uint32_t n) {
   if (n <= 32) {
@@ -98,8 +99,8 @@ inline void Move(uint8_t* d, const uint8_t* s, uint32_t n) {
   std::memmove(d, s, n);
 }
 
-// memset, the sizes up to 128 bytes as overlapping stores of the repeated byte (1.35x the plain memset on a
-// title's mix of sizes, two fills in three of which are 120 bytes), the host's memset above.
+// memset, the sizes up to 128 bytes as overlapping stores of the repeated byte (1.35x the plain memset on the
+// one title's mix of sizes measured so far), the host's memset above.
 inline void Fill(uint8_t* d, uint8_t value, uint32_t n) {
   const uint64_t pattern = 0x0101010101010101ull * value;
   if (n <= 32) {
