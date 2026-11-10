@@ -107,6 +107,13 @@ powershell -File layer/sys/test.ps1
 
 Before every commit: `python tools/build_db.py` then `python tools/progress_page.py`.
 
+Each title's own repository carries its progress report (a picture, the tables, a roadmap of what is missing and the
+state of every function), generated from here and described by `titles/<title>/progress.json`:
+
+```bash
+python tools/title_progress.py crackdown     # writes <title repo>/docs/progress and refreshes its README block
+```
+
 `--generated` is the ReXGlue codegen output (`*_init.cpp` for the import table, `*_recomp.*.cpp` for the instruction
 comments); `--sdk` an SDK source tree. Generated code is never committed here: run the tools against your local tree
 and commit the reports.

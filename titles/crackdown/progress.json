@@ -1,0 +1,33 @@
+{
+ "_comment": "Where tools/title_progress.py finds Crackdown and what cannot be read from its sources: the groups its system binding switches on, where the graphics binding lives, known problems and title-specific work. Paths are this machine's checkouts; nothing of the title is in this repository.",
+ "name": "Crackdown",
+ "github": "GaetanVigner/CrackdownRewrite",
+ "out": "F:/Crackdown/crackdown-xbox360-recompiled/docs/progress",
+ "generated": "F:/Crackdown/crackdown-xbox360-recompiled/generated/default",
+ "port_src": ["F:/Crackdown/crackdown-xbox360-recompiled/src"],
+ "golden": "F:/Crackdown/crackdown-xbox360-recompiled/tests/golden",
+ "sys": {
+  "groups": ["stateless", "files", "objects", "threads", "memory", "xam", "input", "audio"],
+  "default": false,
+  "where": "all eight groups, opt-in: branch `any360-sys-test`, `--any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio`; no call reaches ReXGlue's kernel then"
+ },
+ "gfx": {
+  "bound": true,
+  "default": false,
+  "where": "opt-in: branches `any360-graphics-test` and `any360-sys-test`, `--any360_gpu=true` (resolution scale, host MSAA, pipeline cache); 160-220 FPS at 1440p with 4x MSAA in the city on an RTX 5070 Ti",
+  "todo": [
+   "Merge the two Any360 branches into `main`: they need an Any360 checkout next to the repository, so `main` builds without them today.",
+   "The game-side draw records (HLE renderer, milestones H1-H4 below) feed a renderer that knows the game's passes instead of translating Xenos commands; they move onto `any360::gfx` once the emulated path is the fallback only."
+  ]
+ },
+ "next": [
+  "Native renderer from the game's own draw records: H2 switch the scene one render pass at a time (depth prepass first), H3 every pass native, H4 draws recorded on several threads and per-object motion vectors.",
+  "FSR upscaling on the Steam Deck, which needs those motion vectors.",
+  "Steam Deck as the primary target: the same Vulkan renderer on Linux, CPU-bound today.",
+  "Follow upstream releases (merged up to v0.6.2)."
+ ],
+ "open": [
+  "Single-tile scene (experimental): a shadow ghost is left at some spots.",
+  "Keyboard and mouse through `any360::sys` input are not checked (gamepad and vibration are)."
+ ]
+}

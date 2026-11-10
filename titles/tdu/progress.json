@@ -1,0 +1,31 @@
+{
+ "_comment": "Where tools/title_progress.py finds Test Drive Unlimited and what cannot be read from its sources. Paths are this machine's checkouts; nothing of the title is in this repository.",
+ "name": "Test Drive Unlimited",
+ "github": "GaetanVigner/TDURewrite",
+ "out": "F:/TDU/TDURewrite/docs/progress",
+ "generated": "F:/TDU/TDURewrite/generated/default",
+ "port_src": ["F:/TDU/TDURewrite/src"],
+ "sys": {
+  "groups": [],
+  "where": "not switched on yet (Any360 step 11); only the video calls go through Any360, with the graphics binding"
+ },
+ "gfx": {
+  "bound": true,
+  "default": false,
+  "where": "opt-in on `master`: `--any360_gpu=true` (`--any360_gpu_scale=2 --any360_gpu_msaa=4`, `--any360_gpu_vblank_hz=240` for up to 120 FPS); 83-115 FPS driving at 2x with 4x MSAA on an RTX 5070 Ti, against 54-85 for the runtime's GPU at 2x",
+  "todo": [
+   "A rare resolve into a format the renderer refuses (host format 37 to guest format 4).",
+   "`any360_gpu_fences_after_draws=false` is faster but breaks this title's display: find what it waits on."
+  ]
+ },
+ "next": [
+  "Switch the system binding on, group by group, with an in-game check after each (stateless, files, objects, threads, memory, XAM, audio, input), as Crackdown and The Simpsons Game did.",
+  "Name the library ranges of the executable (D3D runtime, CRT, Bink, audio middleware) in Any360's titles/tdu/modules.json.",
+  "A golden test target (guest sandbox) so rewritten functions can be verified."
+ ],
+ "open": [
+  "A game thread spins at 90% of a core (`sub_826737B8`).",
+  "Frame captures only trigger with `--any360_gpu_vblank_hz=1000` (the command processor is never idle at a kick otherwise).",
+  "The intro videos once ran too fast above 60 Hz; not seen again since the video pacing fix."
+ ]
+}

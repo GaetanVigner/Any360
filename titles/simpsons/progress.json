@@ -1,0 +1,30 @@
+{
+ "_comment": "Where tools/title_progress.py finds The Simpsons Game and what cannot be read from its sources. Paths are this machine's checkouts; nothing of the title is in this repository.",
+ "name": "The Simpsons Game",
+ "github": "GaetanVigner/TheSimpsonsGameRewrite",
+ "out": "F:/The simpsons/recomp/docs/progress",
+ "generated": "F:/The simpsons/recomp/simpsons/generated/default",
+ "port_src": ["F:/The simpsons/recomp/simpsons/src"],
+ "sys": {
+  "groups": ["stateless", "files", "objects", "threads", "memory", "xam", "input", "audio"],
+  "default": false,
+  "where": "all eight groups, opt-in: branch `any360-sys-test`, `--any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio`; levels, saves, sound and gamepad checked in game"
+ },
+ "gfx": {
+  "bound": true,
+  "default": false,
+  "where": "opt-in: branches `any360-graphics-test` and `any360-sys-test`, `--any360_gpu=true`; 60 FPS in gameplay and 30 on menus and loading screens (the game's own pacing), as with the runtime's GPU",
+  "todo": [
+   "Merge the Any360 branches into `main`.",
+   "Anti-aliasing: host MSAA smooths the game's data buffers along with its colours (false outlines), so the title runs without it (`--any360_gpu_msaa=1`); it needs MSAA that tells data from colour, or supersampling."
+  ]
+ },
+ "next": [
+  "Frame rates above 60: the game clock, physics and menus keep their speed; the camera does not yet (see known problems).",
+  "Upstream's own roadmap stays valid on top: widescreen, controller prompts, restored content, mod support, Android."
+ ],
+ "open": [
+  "Above 60 FPS the camera (right stick) barely turns: the title's camera logic, not the input path (every other input is right).",
+  "Loading screens and the heaviest scenes drop to 21-25 FPS: bound by the game's own CPU thread, not by the renderer (1-3 ms a frame)."
+ ]
+}
