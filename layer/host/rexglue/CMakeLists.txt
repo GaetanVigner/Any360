@@ -11,7 +11,7 @@ target_compile_options(any360_host_rexglue PRIVATE -Wall -Wextra)
 # of library functions (xdk_natives.h), which log and read settings the same way.
 add_library(any360_host_rexglue_settings STATIC src/settings.cpp src/crash_report.cpp src/xdk_natives.cpp)
 target_include_directories(any360_host_rexglue_settings PUBLIC include)
-target_link_libraries(any360_host_rexglue_settings PUBLIC any360_sys_ppc)
+target_link_libraries(any360_host_rexglue_settings PUBLIC any360_sys_ppc any360_xdk)
 target_compile_options(any360_host_rexglue_settings PRIVATE -Wall -Wextra)
 target_link_libraries(any360_host_rexglue PUBLIC any360_host_rexglue_settings)
 # The audio group's decoder and output (StartAudio), when the XMA decoder is built (FFmpeg's headers found).

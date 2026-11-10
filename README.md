@@ -107,6 +107,16 @@ powershell -File layer/sys/test.ps1
 
 Before every commit: `python tools/build_db.py` then `python tools/progress_page.py`.
 
+Native replacements of a title's library functions (`layer/xdk`, the C runtime's `memcpy` and `memset` first) follow
+one rule, [docs/NATIVE_FUNCTIONS.md](docs/NATIVE_FUNCTIONS.md): a reference model, unit tests against it, a
+benchmark, then the check and the measure in game (`--any360_xdk_verify=true`, `--any360_xdk_bench=true`) before a
+function is bound, and optimization only with the tests passing and the benchmark confirming it.
+
+```bash
+out/sys/xdk/xdk_crt_tests      # run by layer/sys/test.ps1
+out/sys/xdk/xdk_crt_bench      # nanoseconds a call, size by size and on a title's measured mix
+```
+
 Each title's own repository carries its progress report (a picture, the tables, a roadmap of what is missing and the
 state of every function), generated from here and described by `titles/<title>/progress.json`:
 
