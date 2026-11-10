@@ -21,7 +21,7 @@
  },
  "next": [
   "Check the system binding in game past the title screen: a save loaded, driving, sound, the gamepad and its rumble, a long session; `--any360_sys_trace=true` logs any call that still reaches the runtime.",
-  "Name the library ranges of the executable (D3D runtime, CRT, Bink, audio middleware) in Any360's titles/tdu/modules.json.",
+  "Name what is left of the executable's library code: the ranges listed as not named in Any360's titles/tdu/modules.json (code shared with the other titles of unknown purpose, an XML parser, zlib, a JPEG path), then the game's own modules (Eden's ed* libraries carry their names in their strings).",
   "A golden test target (guest sandbox) so rewritten functions can be verified."
  ],
  "open": [

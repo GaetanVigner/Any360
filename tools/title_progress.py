@@ -54,10 +54,11 @@ CALL_STATES = [
 FUNCTION_STATES = [
     ('native', '#2da44e', 'rewritten: bound to C++'),
     ('verified', '#1f6feb', 'checked against the original in the sandbox'),
-    ('library', '#8957e5', 'SDK or middleware code, replaced as a unit'),
+    ('library', '#8957e5', 'SDK code, replaced as a unit by Any360'),
+    ('middleware', '#1b7c83', 'third-party engine code (physics, video): kept or relinked, not rewritten'),
     ('recompiled', '#30363d', 'recompiled PowerPC, still to rewrite'),
 ]
-STATUS_NAME = {'N': 'native', 'V': 'verified', 'L': 'library', 'R': 'recompiled'}
+STATUS_NAME = {'N': 'native', 'V': 'verified', 'L': 'library', 'M': 'middleware', 'R': 'recompiled'}
 
 
 def read(path):  # newlines as they are on disk
@@ -110,7 +111,8 @@ def functions(cfg, title):
     rows = []
     for address in sorted(sizes):
         module, kind = inventory.module_of(address, modules)
-        status = 'N' if address in bound else 'V' if address in verified else 'L' if kind == 'library' else 'R'
+        status = ('N' if address in bound else 'V' if address in verified else 'L' if kind == 'library'
+                  else 'M' if kind == 'middleware' else 'R')
         b = bound.get(address, {})
         rows.append({'address': f'{address:08X}', 'module': module, 'kind': kind, 'instructions': sizes[address],
                      'state': STATUS_NAME[status], 'handler': b.get('handler', ''),
@@ -254,7 +256,8 @@ def main():
         instructions[r['state']] += r['instructions']
     total_instructions = sum(instructions.values())
     gpu_native = sum(1 for u in gpu if u['state'] == 'native')
-    game_rows = [r for r in rows if r['kind'] != 'library']
+    game_rows = [r for r in rows if r['kind'] == 'game']
+    middleware_rows = [r for r in rows if r['kind'] == 'middleware']
     game_total = len(game_rows)
     game_native = sum(1 for r in game_rows if r['state'] == 'native')
     game_verified = sum(1 for r in game_rows if r['state'] == 'verified')
@@ -262,7 +265,7 @@ def main():
     library_native = sum(1 for r in library_rows if r['state'] == 'native')
 
     modules = defaultdict(lambda: {'kind': 'game', 'functions': 0, 'instructions': 0, 'native': 0, 'verified': 0,
-                                   'library': 0, 'recompiled': 0})
+                                   'library': 0, 'middleware': 0, 'recompiled': 0})
     for r in rows:
         m = modules[r['module']]
         m['kind'] = r['kind']
@@ -353,6 +356,8 @@ def main():
           f'{game_verified:,} more verified against the original in the sandbox |',
           f'| Library functions (SDK, middleware) replaced | {library_native:,} | {len(library_rows):,} | '
           f'{percent(library_native, len(library_rows))} | replaced as units, not decompiled |',
+          f'| Middleware functions (third-party physics, video) | - | {len(middleware_rows):,} | - | kept recompiled or '
+          'relinked from the vendor\'s library, not rewritten |',
           f'| Instructions of rewritten functions | {instructions["native"]:,} | {total_instructions:,} | '
           f'{percent(instructions["native"], total_instructions)} | PowerPC instructions of the original |', '']
     md += ['## System calls', '',
@@ -384,7 +389,7 @@ def main():
            '|---|---|---|---|---|---|---|---|']
     for m, v in sorted(modules.items(), key=lambda kv: -kv[1]['instructions']):
         md.append(f'| {m} | {v["kind"]} | {v["functions"]:,} | {v["instructions"]:,} | {v["native"]:,} | '
-                  f'{v["verified"]:,} | {v["recompiled"] + v["library"]:,} | {percent(v["native"], v["functions"])} |')
+                  f'{v["verified"]:,} | {v["recompiled"] + v["library"] + v["middleware"]:,} | {percent(v["native"], v["functions"])} |')
     native_rows = [r for r in rows if r['state'] == 'native']
     md += ['', f'<details><summary>The {len(native_rows):,} rewritten functions</summary>', '',
            '| Address | Module | Instructions | Handler | File |', '|---|---|---|---|---|']
@@ -448,10 +453,10 @@ def main():
              '| Any360 step | What | State |', '|---|---|---|']
     road += [f'| {n} | {what} | {state} |' for n, what, state in steps if n >= 11 and not state.startswith('done')]
     road.append('')
-    road += ['## 4. Library code replaced as a unit', '']
+    road += ['## 4. Library and middleware code', '']
     libraries = [(m, v) for m, v in modules.items() if v['kind'] == 'library']
     if libraries:
-        road += ['SDK and middleware code linked into the executable is not decompiled: Any360 provides the same '
+        road += ['SDK code linked into the executable is not decompiled: Any360 provides the same '
                  'service natively and the whole range goes.', '',
                  '| Library range | Functions | Instructions | Replaced | Verified in the sandbox | Left |',
                  '|---|---|---|---|---|---|']
@@ -463,6 +468,16 @@ def main():
                  'the first step is recognising the SDK code (D3D runtime, CRT, audio and video middleware) so it '
                  'is not decompiled as game code.']
     road.append('')
+    middleware = [(m, v) for m, v in modules.items() if v['kind'] == 'middleware']
+    if middleware:
+        road += ['Third-party middleware the game links (physics, video) is neither the game\'s own code nor something '
+                 'Any360 provides. It is not rewritten function by function: it stays recompiled, or is replaced by '
+                 'the vendor\'s library for the target platform (or an open implementation) once the game\'s code '
+                 'around it is portable.', '',
+                 '| Middleware | Functions | Instructions |', '|---|---|---|']
+        for m, v in sorted(middleware, key=lambda kv: -kv[1]['instructions']):
+            road.append(f'| {m} | {v["functions"]:,} | {v["instructions"]:,} |')
+        road.append('')
     left_game = game_total - game_native
     road += ['## 5. Game code as portable C++', '',
              f'{left_game:,} of {game_total:,} game functions are still recompiled PowerPC'
@@ -472,7 +487,7 @@ def main():
              'first:', '',
              '| Module | Functions left | Instructions left | Rewritten | Verified |', '|---|---|---|---|---|']
     for m, v in sorted(modules.items(), key=lambda kv: -(kv[1]['recompiled'] + kv[1]['verified'])):
-        if v['kind'] == 'library':
+        if v['kind'] != 'game':
             continue
         left_instructions = sum(r['instructions'] for r in rows if r['module'] == m and r['state'] != 'native')
         road.append(f'| {m} | {v["recompiled"] + v["verified"]:,} | {left_instructions:,} | {v["native"]:,} | '

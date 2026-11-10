@@ -5,7 +5,7 @@ From a recomp's generated code (one DEFINE_REX_FUNC per function, one `// mnemon
 port's sources (the functions it binds to native C++: REX_HOOK / REX_HOOK_RAW / REX_FUNC / <GAME>_BIND*), writes:
 - docs/data/functions-<title>.json: one compact row per function [address, instructions, status, handler, file],
   status R recompiled / N native (bound to C++) / V verified (golden test) / L library (an SDK or middleware range
-  the title links, replaced as a unit rather than decompiled);
+  the title links, replaced as a unit or kept rather than decompiled: kinds library and middleware of modules.json);
 - docs/coverage/inventory-<title>.json: totals per module (titles/<title>/modules.json: named address ranges, the
   rest grouped by 1 MB area), the translated functions with their handler names and purposes, the imports with
   their state (from docs/coverage/<title>.json when present).
@@ -152,7 +152,7 @@ def main():
             status = 'N'
         elif address in verified:
             status = 'V'
-        elif kind == 'library':
+        elif kind in ('library', 'middleware'):
             status = 'L'
         else:
             status = 'R'
