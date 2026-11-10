@@ -137,7 +137,7 @@ details in [docs/SYS_BINDING.md](docs/SYS_BINDING.md). Crackdown is the test ben
 | 8 | input: gamepads through `any360::sys` (packets, keystrokes, vibration), the host's drivers as the source, every change queued for the title at any frame rate | done (Crackdown, gamepad and vibration; keyboard and mouse not checked) |
 | 9 | no call reaching the runtime: every path, the raw hard drive devices, the profile defaults on `any360::sys` | done (Crackdown; the host stays ReXGlue's until step 13) |
 | 10 | a second title (The Simpsons Game) on the full system binding | done (all groups, levels, saves, sound, gamepad) |
-| 11 | third and fourth titles (Test Drive Unlimited, Sonic 06) | not started |
+| 11 | third and fourth titles (Test Drive Unlimited, Sonic 06) | partial: Test Drive Unlimited boots to its title screen with all eight groups on `any360::sys` and no call reaching the runtime; gameplay, saves and sound not checked yet; Sonic 06 not started |
 | 12 | paths no title took yet: `XMA*` decoding, STFS packages, several users, guide UIs, Live offline, xbdm | partial: 602 of 2,914 exports native with scenario tests, none of the 2,294 reference stubs sorted |
 | 13 | Any360's own host: XEX loader, address space, threads, guest dispatch, MMIO, devices | not started |
 | 14 | the platform layer: window, input, audio, presenter on Windows and Linux (Steam Deck) | partial: SDL3 audio output only |

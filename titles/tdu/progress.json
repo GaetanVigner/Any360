@@ -6,8 +6,9 @@
  "generated": "F:/TDU/TDURewrite/generated/default",
  "port_src": ["F:/TDU/TDURewrite/src"],
  "sys": {
-  "groups": [],
-  "where": "not switched on yet (Any360 step 11); only the video calls go through Any360, with the graphics binding"
+  "groups": ["stateless", "files", "objects", "threads", "memory", "xam", "input", "audio"],
+  "default": false,
+  "where": "all eight groups, opt-in on `master`: `--any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio`; checked from boot through the intro videos to the title screen (no call reaches ReXGlue's kernel there); driving, saves and sound still to check in game"
  },
  "gfx": {
   "bound": true,
@@ -19,7 +20,7 @@
   ]
  },
  "next": [
-  "Switch the system binding on, group by group, with an in-game check after each (stateless, files, objects, threads, memory, XAM, audio, input), as Crackdown and The Simpsons Game did.",
+  "Check the system binding in game past the title screen: a save loaded, driving, sound, the gamepad and its rumble, a long session; `--any360_sys_trace=true` logs any call that still reaches the runtime.",
   "Name the library ranges of the executable (D3D runtime, CRT, Bink, audio middleware) in Any360's titles/tdu/modules.json.",
   "A golden test target (guest sandbox) so rewritten functions can be verified."
  ],
