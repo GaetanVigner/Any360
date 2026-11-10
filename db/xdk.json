@@ -44,6 +44,50 @@
   "note": "Any360: xdk::CrtMemset, the one function the three titles bind (docs/NATIVE_FUNCTIONS.md)"
  },
  {
+  "name": "strchr",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82AB9380",
+   "simpsons": "0x82A3FE90",
+   "tdu": "0x82641450"
+  },
+  "note": "the same instructions in the three titles. Any360: xdk::CrtStrchr, bound in The Simpsons Game"
+ },
+ {
+  "name": "strncmp",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82AB9440",
+   "simpsons": "0x82A3EF20",
+   "tdu": "0x8263FF40"
+  },
+  "note": "the same instructions in the three titles. Any360: xdk::CrtStrncmp, bound in The Simpsons Game"
+ },
+ {
+  "name": "strncpy",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82AB6918",
+   "simpsons": "0x82A3D280",
+   "tdu": "0x826401C8"
+  },
+  "note": "the same instructions in the three titles. Any360: xdk::CrtStrncpy, bound in The Simpsons Game"
+ },
+ {
+  "name": "wcslen",
+  "library": "CRT",
+  "any360": "todo",
+  "titles": {
+   "crackdown": "0x82AB61B8",
+   "simpsons": "0x82A3FED0",
+   "tdu": "0x826431B0"
+  },
+  "note": "the same instructions in the three titles. Any360: xdk::CrtWcslen (model and unit tests); not bound yet: no run of a title has called it with both sides compared"
+ },
+ {
   "name": "D3DDevice_BeginTiling",
   "library": "D3D",
   "any360": "todo",

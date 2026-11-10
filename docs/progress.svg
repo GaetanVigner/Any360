@@ -5020,55 +5020,58 @@
 <text x="170" y="555" font-size="11" fill="#8b949e">reference (recompiler)</text>
 <rect x="318" y="546" width="10" height="10" rx="2" fill="#f85149"/>
 <text x="332" y="555" font-size="11" fill="#8b949e">missing</text>
-<text x="0" y="577" font-size="16" fill="#c9d1d9" font-weight="600">XDK library functions native: 13.9% (5/36) <tspan font-size="12" font-weight="400" fill="#8b949e">· named by signature so far · one square per function</tspan></text>
+<text x="0" y="577" font-size="16" fill="#c9d1d9" font-weight="600">XDK library functions native: 20.0% (8/40) <tspan font-size="12" font-weight="400" fill="#8b949e">· named by signature so far · one square per function</tspan></text>
 <rect x="0" y="586" width="1000" height="140" fill="#0d1117"/>
 <a href="https://gaetanvigner.github.io/Any360/progress.html#xdk"><g class="blk"><title>D3D: 31 (0% native/ported; 31 todo)</title>
-<rect x="0.00" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="61.51" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="123.02" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="184.52" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="246.03" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="307.54" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="369.05" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="430.56" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="492.06" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="553.57" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="615.08" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="676.59" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="738.10" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="799.60" y="586.00" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="0.00" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="61.51" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="123.02" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="184.52" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="246.03" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="307.54" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="369.05" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="430.56" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="492.06" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="553.57" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="615.08" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="676.59" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="738.10" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="799.60" y="632.67" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="0.00" y="679.33" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="61.51" y="679.33" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="123.02" y="679.33" width="61.01" height="46.17" fill="#f85149"/>
-<rect x="0.0" y="586.0" width="861.1" height="140.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
+<rect x="0.00" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="59.62" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="119.23" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="178.85" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="238.46" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="298.08" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="357.69" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="417.31" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="476.92" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="536.54" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="596.15" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="655.77" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="715.38" y="586.00" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="0.00" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="59.62" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="119.23" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="178.85" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="238.46" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="298.08" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="357.69" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="417.31" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="476.92" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="536.54" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="596.15" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="655.77" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="715.38" y="632.67" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="0.00" y="679.33" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="59.62" y="679.33" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="119.23" y="679.33" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="178.85" y="679.33" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="238.46" y="679.33" width="59.12" height="46.17" fill="#f85149"/>
+<rect x="0.0" y="586.0" width="775.0" height="140.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="4.0" y="599.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">D3D</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#xdk"><g class="blk"><title>CRT: 4 (100% native/ported; 4 native)</title>
-<rect x="861.11" y="586.00" width="68.94" height="55.50" fill="#2ea043"/>
-<rect x="930.56" y="586.00" width="68.94" height="55.50" fill="#2ea043"/>
-<rect x="861.11" y="642.00" width="68.94" height="55.50" fill="#2ea043"/>
-<rect x="930.56" y="642.00" width="68.94" height="55.50" fill="#2ea043"/>
-<rect x="861.1" y="586.0" width="138.9" height="112.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
-<text x="865.1" y="599.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">CRT</text>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#xdk"><g class="blk"><title>CRT: 8 (88% native/ported; 7 native, 1 todo)</title>
+<rect x="775.00" y="586.00" width="66.17" height="46.17" fill="#2ea043"/>
+<rect x="841.67" y="586.00" width="66.17" height="46.17" fill="#2ea043"/>
+<rect x="908.33" y="586.00" width="66.17" height="46.17" fill="#2ea043"/>
+<rect x="775.00" y="632.67" width="66.17" height="46.17" fill="#2ea043"/>
+<rect x="841.67" y="632.67" width="66.17" height="46.17" fill="#2ea043"/>
+<rect x="908.33" y="632.67" width="66.17" height="46.17" fill="#2ea043"/>
+<rect x="775.00" y="679.33" width="66.17" height="46.17" fill="#2ea043"/>
+<rect x="841.67" y="679.33" width="66.17" height="46.17" fill="#f85149"/>
+<rect x="775.0" y="586.0" width="200.0" height="140.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
+<text x="779.0" y="599.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">CRT</text>
 </g></a>
 <a href="https://gaetanvigner.github.io/Any360/progress.html#xdk"><g class="blk"><title>XAPI: 1 (100% native/ported; 1 native)</title>
-<rect x="861.11" y="698.00" width="68.94" height="27.50" fill="#2ea043"/>
-<rect x="861.1" y="698.0" width="138.9" height="28.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
-<text x="865.1" y="711.0" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">XAPI</text>
+<rect x="975.00" y="586.00" width="24.50" height="139.50" fill="#2ea043"/>
+<rect x="975.0" y="586.0" width="25.0" height="140.0" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 </g></a>
 <rect x="0" y="732" width="10" height="10" rx="2" fill="#2ea043"/>
 <text x="14" y="741" font-size="11" fill="#8b949e">native (Any360)</text>

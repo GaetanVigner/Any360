@@ -1,8 +1,8 @@
 {
- "date": "2026-11-10",
+ "date": "2026-11-11",
  "reference": {
   "sdk": "ReXGlue",
-  "version": "0.10.0"
+  "version": "0.8.0"
  },
  "titles": {
   "crackdown": {
@@ -70,8 +70,8 @@
    "todo": 2312
   },
   "reference": {
-   "implemented": 493,
-   "stub": 2406,
+   "implemented": 489,
+   "stub": 2410,
    "missing": 15
   },
   "libraries": {
@@ -93,10 +93,10 @@
   }
  },
  "xdk": {
-  "total": 36,
+  "total": 40,
   "any360": {
-   "native": 5,
-   "todo": 31
+   "native": 8,
+   "todo": 32
   },
   "unnamed_by_title": {
    "crackdown": {
