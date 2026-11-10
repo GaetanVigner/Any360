@@ -2,9 +2,9 @@
  "_comment": "Where tools/title_progress.py finds The Simpsons Game and what cannot be read from its sources. Paths are this machine's checkouts; nothing of the title is in this repository.",
  "name": "The Simpsons Game",
  "github": "GaetanVigner/TheSimpsonsGameRewrite",
- "out": "F:/The simpsons/recomp/docs/progress",
- "generated": "F:/The simpsons/recomp/simpsons/generated/default",
- "port_src": ["F:/The simpsons/recomp/simpsons/src"],
+ "out": "F:/The simpsons/recomp-sys/docs/progress",
+ "generated": "F:/The simpsons/recomp-sys/simpsons/generated/default",
+ "port_src": ["F:/The simpsons/recomp-sys/simpsons/src"],
  "sys": {
   "groups": ["stateless", "files", "objects", "threads", "memory", "xam", "input", "audio"],
   "default": false,

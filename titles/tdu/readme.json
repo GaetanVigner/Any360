@@ -1,0 +1,43 @@
+{
+ "_comment": "The texts of Test Drive Unlimited's README that are its own (tools/title_readme.py has the common ones).",
+ "readme": "F:/TDU/TDURewrite/README.md",
+ "game": "Test Drive Unlimited (Xbox 360, 2006)",
+ "screens": [
+  {"src": "docs/intro.jpg", "alt": "Test Drive Unlimited's airport intro, running recompiled on PC"},
+  {"src": "docs/title-any360.jpg", "alt": "The title screen, drawn by Any360's Vulkan renderer"}
+ ],
+ "pitch": "It continues the TDU rewrite project as a recompilation of the Xbox 360 version with ReXGlue v0.10.0, then moves it off the emulation layers.",
+ "own_copy": "You need your own copy of the game (European disc, title 494707D4); the recompiled C++ is generated on your machine from your disc's `default.xex`.",
+ "state": {
+  "recompiled": "`default.xex` fully translated (45,102 functions; 53 the analyzer misses are declared in [config/](config/)); boots to the title, plays its intro videos and drives on the island, with sound and gamepad",
+  "library": "five memory functions (`memcpy`, its forward copy, `memmove`, `memset`, the vector copy), compared with the game's own code on every call in game (14 M calls past the title screen for the first three)",
+  "game": "not started (the count is in the table above)"
+ },
+ "run": [
+  "Both bindings are opt-in:",
+  "",
+  "```",
+  "tdu.exe --any360_gpu=true --any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio",
+  "```",
+  "",
+  "`--any360_gpu=true` draws the whole game through `any360::gfx` (`--any360_gpu_scale=2 --any360_gpu_msaa=4`; `--any360_gpu_vblank_hz=240` for frame rates above 60); `--any360_sys_groups` puts the Xbox system calls on `any360::sys` (checked to the title screen; driving, saves and sound still to check). The library functions run on `any360::xdk` by default (`--any360_xdk_natives=false` runs the game's own; `--any360_xdk_verify=true` runs both on every call and compares them)."
+ ],
+ "build": [
+  "Windows, Visual Studio 2022 with the C++ and Clang tools, an install of the ReXGlue SDK v0.10.0 (`-Sdk`, the folder with `bin\\rexglue.exe`, `include\\` and `lib\\`) and an [Any360](https://github.com/GaetanVigner/Any360) checkout (`-Any360`).",
+  "",
+  "1. Extract your disc into `game\\` (for example with [extract-xiso](https://github.com/XboxDev/extract-xiso)), so that `game\\default.xex` exists.",
+  "2. `powershell -File codegen.ps1 -Sdk <sdk>` generates the C++ into `generated\\default\\`.",
+  "3. `powershell -File build.ps1 -Sdk <sdk> -Any360 <any360>` builds `out\\build\\tdu.exe`.",
+  "4. Run `out\\build\\tdu.exe`. It finds `game\\` next to itself or in the repository; logs are written to `out\\build\\logs\\`.",
+  "",
+  "Code reached only through vtables or data pointers is invisible to the codegen: [tools/find-missing-functions.py](tools/find-missing-functions.py) scans the decrypted image for such targets and writes them to [config/discovered-functions.toml](config/discovered-functions.toml). The project's first page, with why it was started, is kept in [docs/LEGACY_README.md](docs/LEGACY_README.md)."
+ ],
+ "credits": [
+  "Test Drive Unlimited by Eden Games, published by Atari (2006).",
+  "The TDU rewrite project's earlier authors (Grien25, CRACKbomber, testdriveupgrade) and [XenonRecompUnlimited](https://github.com/testdriveupgrade/XenonRecompUnlimited).",
+  "[ReXGlue SDK](https://github.com/rexglue/rexglue-sdk), the recompiler and runtime (BSD 3-Clause)."
+ ],
+ "legal": [
+  "An unofficial fan project, not affiliated with or endorsed by Atari or Eden Games. It is not a replacement for the game: you still need to own a copy, and nothing of the game is in this repository."
+ ]
+}

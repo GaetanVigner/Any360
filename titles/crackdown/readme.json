@@ -1,0 +1,43 @@
+{
+ "_comment": "The texts of Crackdown's README that are its own (tools/title_readme.py has the common ones).",
+ "readme": "F:/Crackdown/crackdown-any360-sys/README.md",
+ "game": "Crackdown (Xbox 360, 2007)",
+ "screens": [
+  {"src": "docs/city-any360.jpg", "alt": "Pacific City, drawn by Any360's Vulkan renderer"}
+ ],
+ "pitch": "It follows [saulob's PC port](https://github.com/saulob/crackdown-xbox360-recompiled) (currently v0.6.2: launcher, offline achievements, 4K and ultrawide, keyboard and mouse) and works on one goal: the game on its own code, with nothing of the console left under it, the Steam Deck as the first target and Windows running the same code.",
+ "own_copy": "Bring your own Crackdown disc.",
+ "state": {
+  "recompiled": "the whole game plays, as upstream's port does",
+  "library": "five memory functions (`memcpy`, its forward copy, `memmove`, `memset`, the vector copy), compared with the game's own code on every call in game (21 M calls in the city for the first three)",
+  "game": "the first functions rewritten and verified in a sandbox (the count is in the table above)"
+ },
+ "run": [
+  "Both bindings are opt-in until they become the default:",
+  "",
+  "```",
+  "crackdown.exe --any360_gpu=true --any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio",
+  "```",
+  "",
+  "`--any360_gpu=true` draws the game through `any360::gfx` (160-220 FPS at 1440p with 4x MSAA in the city on an RTX 5070 Ti); `--any360_sys_groups` puts the 248 system calls the game imports on `any360::sys`. The library functions run on `any360::xdk` by default (`--any360_xdk_natives=false` runs the game's own; `--any360_xdk_verify=true` runs both on every call and compares them). Left without a frame limit the title screen runs above 1,500 frames a second and does not take the Start button: `--crackdown_frame_rate=60` until that is fixed."
+ ],
+ "build": [
+  "Windows, Visual Studio 2022 with the C++ and Clang tools: `tools\\build.ps1` builds `build\\crackdown.exe`, as upstream's port does ([docs/LEGACY_README.md](docs/LEGACY_README.md) has upstream's page: installing, the launcher, hotkeys, features, known issues). The build needs an [Any360](https://github.com/GaetanVigner/Any360) checkout next to this repository (`../any360`, or `-DCRACKDOWN_ANY360_DIR=<path>`)."
+ ],
+ "fork": [
+  "Besides Any360 under the game, this repository works on **a renderer that knows the game**: once the game's draws reach a renderer that understands them as passes and objects instead of Xbox 360 command packets, the same draw records feed FSR upscaling (motion vectors need per-object draw identity) and, later and optionally, ray-traced lighting. On the Steam Deck's four cores the emulation of the console's GPU, not the GPU itself, is the limit.",
+  "",
+  "[![Native renderer progress](docs/progress/renderer/progress.svg)](docs/progress/renderer/PROGRESS.md)"
+ ],
+ "credits": [
+  "Crackdown by Realtime Worlds, published by Microsoft Game Studios (2007).",
+  "[saulob/crackdown-xbox360-recompiled](https://github.com/saulob/crackdown-xbox360-recompiled), the PC port this repository follows.",
+  "[ReXGlue SDK](https://github.com/rexglue/rexglue-sdk), the recompiler and runtime (BSD 3-Clause).",
+  "[TRG Launcher](https://github.com/TekRantGaming/trg-launcher), the launcher interface (MIT)."
+ ],
+ "legal": [
+  "An unofficial fan project, not affiliated with or endorsed by Microsoft or Realtime Worlds; it contains none of their files, and Crackdown and its assets are not covered by this project's licence.",
+  "",
+  "Original code in this project is under the GNU General Public License v2.0 only ([LICENSE](LICENSE)). Third-party components keep their licences: [packaging/licenses/ReXGlue-LICENSE.txt](packaging/licenses/ReXGlue-LICENSE.txt), [packaging/licenses/THIRD-PARTY-LICENSES.txt](packaging/licenses/THIRD-PARTY-LICENSES.txt)."
+ ]
+}

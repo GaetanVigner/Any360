@@ -1,0 +1,38 @@
+{
+ "_comment": "The texts of The Simpsons Game's README that are its own (tools/title_readme.py has the common ones).",
+ "readme": "F:/The simpsons/recomp-sys/README.md",
+ "game": "The Simpsons Game (Xbox 360, 2007)",
+ "screens": [
+  {"src": "docs/coop-any360.jpg", "alt": "Bart and Homer in split-screen co-op, drawn by Any360's Vulkan renderer"}
+ ],
+ "pitch": "It follows [YesterMester's port](https://github.com/YesterMester/TheSimpsonsGameRecomp) (v0.0.6.5, for Linux, Steam Deck and Windows) and takes it one step further: off the Xbox 360 emulation layers, until nothing of the console or of the ReXGlue runtime is left under the game.",
+ "own_copy": "You need your own copy of the Xbox 360 game; the game runs only with data installed from an ISO of your own disc.",
+ "state": {
+  "recompiled": "the whole game plays, as upstream's port does",
+  "library": "five memory functions (`memcpy`, its forward copy, `memmove`, `memset`, the vector copy), compared with the game's own code on 83 M calls in a level; the vector copy alone is called 170,000 times a second",
+  "game": "the first functions replaced by host code (the count is in the table above)"
+ },
+ "run": [
+  "Any360 is optional here: without it the build is upstream's. Build with an Any360 checkout, then launch with both bindings:",
+  "",
+  "```",
+  "cmake --preset win-amd64-relwithdebinfo -DSIMPSONS_ANY360_DIR=<an Any360 checkout>",
+  "simpsons.exe --any360_gpu=true --any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio",
+  "```",
+  "",
+  "The whole game plays this way: levels, saves, sound, gamepad, split-screen co-op. The library functions run on `any360::xdk` by default in such a build (`--any360_xdk_natives=false` runs the game's own; `--any360_xdk_verify=true` runs both on every call and compares them)."
+ ],
+ "build": [
+  "As upstream's port, on Linux and Windows: [docs/LEGACY_README.md](docs/LEGACY_README.md) has upstream's page (requirements, installation from your ISO, configuration, building from source, known issues)."
+ ],
+ "credits": [
+  "*The Simpsons Game* by EA Redwood Shores, published by Electronic Arts (2007).",
+  "[YesterMester/TheSimpsonsGameRecomp](https://github.com/YesterMester/TheSimpsonsGameRecomp), the port this repository follows, and its contributors (tronuo, frankyfife, Gabry179, awemancba, anasalialamgir; their work is listed in [docs/LEGACY_README.md](docs/LEGACY_README.md)).",
+  "[Xenia](https://xenia.jp), the Xbox 360 emulator research project the runtime is built on; the ReXGlue SDK by Tom Clay; [XenonRecomp](https://github.com/hedge-dev/XenonRecomp) by hedge-dev and contributors."
+ ],
+ "legal": [
+  "*The Simpsons Game* is © 2007 Electronic Arts Inc. *The Simpsons* and all related characters and trademarks belong to their respective owners. An unofficial, non-commercial fan project, not affiliated with, endorsed by or sponsored by Electronic Arts, Fox, Microsoft or any other rights holder. The repository contains no game assets; the code in `simpsons/generated` is produced by recompiling the game's executable code and does not contain the game's data.",
+  "",
+  "The project's own code is under the [GNU General Public License v3.0](LICENSE). The ReXGlue SDK in `tools/rexglue-sdk` is under the BSD 3-Clause License, as is the Xenia code it derives from; XenonRecomp in `tools/XenonRecomp` is under the MIT License."
+ ]
+}
