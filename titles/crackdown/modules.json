@@ -1,8 +1,22 @@
 {
- "_comment": "Named address ranges of the Crackdown (v1.0, default.xex) image for the inventory. kind: library = statically linked SDK / middleware, replaced as a unit by Any360 (not decompiled); game = the title's own code (decompiled at stage 2). Evidence: HLE_RENDERER_PLAN.md (D3D runtime range, entry points), src/crt_native.cpp and the __savegprlr helpers at 0x82ABDxxx, the import thunks in generated crackdown_init.cpp (0x82B67xxx). Ranges outside the list are reported by 1 MB area until symbol recovery (stage 2) names them.",
+ "_comment": "Named address ranges of the Crackdown (v1.0, default.xex) image for the inventory. kind: library = statically linked SDK code, replaced as a unit by Any360 (not decompiled); middleware = third-party engine code the title links (physics, AI, vegetation, scripting, video): neither the title's own code nor something Any360 provides, so it stays recompiled or is replaced by the vendor's library for the target, never decompiled function by function; game = the title's own code. Evidence (tools/library_scan.py), three kinds read together: functions with the same sequence of instruction mnemonics (14 instructions or more) as a function of another title, clustered; the strings a range refers to (lis/addi pairs into the decrypted image); the system calls it makes. Each range runs from its first to its last function carrying such evidence, so it may be a little short, not long. What names each: the D3D runtime shares its functions with Test Drive Unlimited's and The Simpsons Game's and holds 'ERR[D3D]: Unanticipated CPU_INTERRUPT' (it starts at 0x826ACC90: the code from 0x826A0000, once counted with it, refers to the game's own sources, zonemanager and RWStudio\\game_framework); SpeedTree by its source paths ('\\Libraries\\Middleware\\SpeedTree\\Source\\...'); D3DX and XGraphics by 'D3DX: (WARN) ...', the HLSL compiler's messages and 'd:\\xenon\\oct06\\core\\private\\xtl\\graphics\\xgraphics\\ucode\\...' (the game compiles shaders at run time), nearly all of it also in The Simpsons Game; Havok by its source paths and messages ('.\\collide\\mopp\\machine\\hkMoppAabbCastVirtualMachine.cpp', '** Havok libs built with version [') and by Test Drive Unlimited's Havok; Kynapse by 'Kynogon Spatial graph', 'CPathFinder::FindNextMove::...'; Massive by 'ALLOCATION Failed for CMassiveZoneManager', 'No MASSIVE SG's were returned'; Lua by the messages of Lua 5.0 ('attempt to yield across metamethod/C-call boundary'); Bink by 'Not a Bink file.'; the XDK audio, Xbox Live, CRT and XAPI ranges by the functions they share with the other two titles and their system calls (XAudio* / XMA*, XMsg* / XamVoice*, KeTls* / KeBugCheck, Nt*File). The CRT range holds the register save / restore helpers (0x82ABD000). The import thunks are the addresses generated crackdown_init.cpp binds. Not named for want of evidence: 0x82A6E938-0x82A88750 (zlib, libpng and XeCrypt users), 0x829FFC20-0x82A06D00 (between Havok and Kynapse). Ranges outside the list are reported by 1 MB area until symbol recovery names them.",
  "modules": [
-  {"start": "0x826A0000", "end": "0x826D0000", "name": "XDK D3D runtime", "kind": "library"},
-  {"start": "0x82ABD000", "end": "0x82ABE000", "name": "CRT register save/restore helpers", "kind": "library"},
-  {"start": "0x82B67000", "end": "0x82B68000", "name": "kernel import thunks", "kind": "library"}
+  {"start": "0x826ACC90", "end": "0x826CF4B0", "name": "XDK D3D runtime", "kind": "library"},
+  {"start": "0x82718888", "end": "0x82742098", "name": "SpeedTree", "kind": "middleware"},
+  {"start": "0x82742480", "end": "0x8274A6A8", "name": "XAPI (Win32 layer over the kernel and XAM)", "kind": "library"},
+  {"start": "0x8274A788", "end": "0x829292F8", "name": "XDK D3DX and XGraphics (shader compiler)", "kind": "library"},
+  {"start": "0x829292F8", "end": "0x8292D2B0", "name": "XDK Xbox Live and voice (XOnline, XHV)", "kind": "library"},
+  {"start": "0x8294E038", "end": "0x829FFC20", "name": "Havok Physics", "kind": "middleware"},
+  {"start": "0x82A06D00", "end": "0x82A3DEC0", "name": "Kynapse (AI)", "kind": "middleware"},
+  {"start": "0x82A495F8", "end": "0x82A5E988", "name": "XDK audio (XAudio, XMA)", "kind": "library"},
+  {"start": "0x82A67628", "end": "0x82A6E938", "name": "XDK audio (XAudio, XMA)", "kind": "library"},
+  {"start": "0x82A88750", "end": "0x82A991D8", "name": "XDK Xbox Live and voice (XOnline, XHV)", "kind": "library"},
+  {"start": "0x82A991D8", "end": "0x82AA9270", "name": "Massive (in-game advertising)", "kind": "middleware"},
+  {"start": "0x82AAA988", "end": "0x82AB4340", "name": "Havok Physics", "kind": "middleware"},
+  {"start": "0x82AB5268", "end": "0x82AD6708", "name": "C runtime (CRT)", "kind": "library"},
+  {"start": "0x82AD6708", "end": "0x82AD77A0", "name": "XAPI (Win32 layer over the kernel and XAM)", "kind": "library"},
+  {"start": "0x82AD8150", "end": "0x82AF7B88", "name": "Lua", "kind": "middleware"},
+  {"start": "0x82B67000", "end": "0x82B68000", "name": "kernel import thunks", "kind": "library"},
+  {"start": "0x82B68460", "end": "0x82B785F4", "name": "Bink video", "kind": "middleware"}
  ]
 }

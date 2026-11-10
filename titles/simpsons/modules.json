@@ -1,8 +1,17 @@
 {
- "_comment": "Named address ranges of The Simpsons Game (USA, default.xex) image for the inventory. kind: library = statically linked SDK / middleware, replaced as a unit by Any360; game = the title's own code. Evidence: the port's re/d3d_method_table.md (D3D command-writer handlers sub_82461500..), its crt_native.cpp bindings (0x82A3Cxxx), the import thunks in generated simpsons_init.cpp (0x82CC2xxx). Ranges outside the list are reported by 1 MB area until symbol recovery (stage 2) names them.",
+ "_comment": "Named address ranges of The Simpsons Game (USA, default.xex) image for the inventory. kind: library = statically linked SDK code, replaced as a unit by Any360 (not decompiled); middleware = third-party engine code the title links (physics, AI, vegetation, scripting, video): neither the title's own code nor something Any360 provides, so it stays recompiled or is replaced by the vendor's library for the target, never decompiled function by function; game = the title's own code. Evidence (tools/library_scan.py), three kinds read together: functions with the same sequence of instruction mnemonics (14 instructions or more) as a function of another title, clustered; the strings a range refers to (lis/addi pairs into the decrypted image); the system calls it makes. Each range runs from its first to its last function carrying such evidence, so it may be a little short, not long. What names each: the D3D runtime shares its functions with Crackdown's and Test Drive Unlimited's (the port's re/d3d_method_table.md places its command writers at 0x82461500, inside it); D3DX and XGraphics share theirs with Crackdown's (the HLSL compiler, 'D3DXValidIndices', the X file loader's 'xof 0303txt' templates, the image loaders); Havok by its strings ('** Havok libs built with version [', '.\\collide\\mopp\\machine\\...', 'hkClassEnumItem') and the functions it shares with the other two titles' Havok (fewer: another build, with thread-local memory); Lua by the messages of Lua 5.0 and Crackdown's Lua; the CRT by 'Visual C++ CRT: Not enough memory', KeTls* / KeBugCheck and the port's crt_native.cpp bindings (0x82A3Cxxx); XDK audio, Xbox Live and XAPI by the functions they share with the other two titles and their system calls. The import thunks are the addresses generated simpsons_init.cpp binds. Not named for want of evidence: 0x82B8D518-0x82BBD388 (between two parts of D3DX), 0x82A65F38-0x82A8B5A0 (a path rasterizer: 'curveto %f %f ...'). Ranges outside the list are reported by 1 MB area until symbol recovery names them.",
  "modules": [
-  {"start": "0x82461500", "end": "0x82470000", "name": "XDK D3D command writers", "kind": "library"},
-  {"start": "0x82A3C000", "end": "0x82A3E000", "name": "CRT (string / memory)", "kind": "library"},
+  {"start": "0x824315E0", "end": "0x82439488", "name": "XAPI (Win32 layer over the kernel and XAM)", "kind": "library"},
+  {"start": "0x82439558", "end": "0x8246E6E0", "name": "XDK D3D runtime", "kind": "library"},
+  {"start": "0x8246EA00", "end": "0x8266F500", "name": "XDK D3DX and XGraphics (shader compiler)", "kind": "library"},
+  {"start": "0x8266F720", "end": "0x8268DA70", "name": "XDK Xbox Live and voice (XOnline, XHV)", "kind": "library"},
+  {"start": "0x828371C8", "end": "0x82855D80", "name": "Lua", "kind": "middleware"},
+  {"start": "0x82A3C0D8", "end": "0x82A65F38", "name": "C runtime (CRT)", "kind": "library"},
+  {"start": "0x82A8B5A0", "end": "0x82B72C60", "name": "Havok Physics", "kind": "middleware"},
+  {"start": "0x82B74670", "end": "0x82B78028", "name": "XAPI (Win32 layer over the kernel and XAM)", "kind": "library"},
+  {"start": "0x82B79670", "end": "0x82B8D518", "name": "XDK D3DX and XGraphics (shader compiler)", "kind": "library"},
+  {"start": "0x82BBD388", "end": "0x82C3C598", "name": "XDK D3DX and XGraphics (shader compiler)", "kind": "library"},
+  {"start": "0x82C3C5C0", "end": "0x82C71CB8", "name": "XDK audio (XAudio, XMA)", "kind": "library"},
   {"start": "0x82CC2000", "end": "0x82CC3000", "name": "kernel import thunks", "kind": "library"}
  ]
 }

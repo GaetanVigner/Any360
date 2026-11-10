@@ -55,7 +55,7 @@ FUNCTION_STATES = [
     ('native', '#2da44e', 'rewritten: bound to C++'),
     ('verified', '#1f6feb', 'checked against the original in the sandbox'),
     ('library', '#8957e5', 'SDK code, replaced as a unit by Any360'),
-    ('middleware', '#1b7c83', 'third-party engine code (physics, video): kept or relinked, not rewritten'),
+    ('middleware', '#1b7c83', 'third-party engine code (physics, AI, video ...): kept or relinked, not rewritten'),
     ('recompiled', '#30363d', 'recompiled PowerPC, still to rewrite'),
 ]
 STATUS_NAME = {'N': 'native', 'V': 'verified', 'L': 'library', 'M': 'middleware', 'R': 'recompiled'}
@@ -356,7 +356,7 @@ def main():
           f'{game_verified:,} more verified against the original in the sandbox |',
           f'| Library functions (SDK, middleware) replaced | {library_native:,} | {len(library_rows):,} | '
           f'{percent(library_native, len(library_rows))} | replaced as units, not decompiled |',
-          f'| Middleware functions (third-party physics, video) | - | {len(middleware_rows):,} | - | kept recompiled or '
+          f'| Middleware functions (third-party physics, AI, scripting, video) | - | {len(middleware_rows):,} | - | kept recompiled or '
           'relinked from the vendor\'s library, not rewritten |',
           f'| Instructions of rewritten functions | {instructions["native"]:,} | {total_instructions:,} | '
           f'{percent(instructions["native"], total_instructions)} | PowerPC instructions of the original |', '']
@@ -470,7 +470,7 @@ def main():
     road.append('')
     middleware = [(m, v) for m, v in modules.items() if v['kind'] == 'middleware']
     if middleware:
-        road += ['Third-party middleware the game links (physics, video) is neither the game\'s own code nor something '
+        road += ['Third-party middleware the game links (physics, AI, scripting, video and the like) is neither the game\'s own code nor something '
                  'Any360 provides. It is not rewritten function by function: it stays recompiled, or is replaced by '
                  'the vendor\'s library for the target platform (or an open implementation) once the game\'s code '
                  'around it is portable.', '',

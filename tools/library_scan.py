@@ -19,6 +19,7 @@ out/library_scan. Addresses, counts, public API names and the strings quoted as 
   python tools/library_scan.py tdu --functions --start 0x82663000 --end 0x82664800    (function by function)
 """
 import argparse
+import bisect
 import hashlib
 import json
 import pickle
@@ -55,9 +56,8 @@ def scan(name, generated):
     return functions
 
 
-def referenced_strings(image, start, end, bucket):
-    """bucket -> Counter of the printable strings its code refers to."""
-    found = defaultdict(Counter)
+def string_references(image, start, end):
+    """(address of the reference, string) for every printable string the code in [start, end) refers to."""
     for address in range(start & ~3, min(end, BASE + len(image) - 28), 4):
         word = struct.unpack_from('>I', image, address - BASE)[0]
         if word >> 26 != 15 or (word >> 16) & 31 != 0:  # lis rX,hi
@@ -71,8 +71,15 @@ def referenced_strings(image, start, end, bucket):
                 if BASE <= target < BASE + len(image):
                     m = re.match(rb'[\x20-\x7e]{6,80}', image[target - BASE:target - BASE + 81])
                     if m:
-                        found[address // bucket * bucket][m.group().decode('ascii')] += 1
+                        yield address, m.group().decode('ascii')
                 break
+
+
+def referenced_strings(image, start, end, bucket):
+    """bucket -> Counter of the printable strings its code refers to."""
+    found = defaultdict(Counter)
+    for address, text in string_references(image, start, end):
+        found[address // bucket * bucket][text] += 1
     return found
 
 
@@ -100,11 +107,19 @@ def main():
     inside = [a for a in sorted(target) if args.start <= a < args.end]
 
     if args.functions:
+        texts = defaultdict(list)
+        if args.image and inside:
+            starts = sorted(target)
+            for at, text in string_references(args.image.read_bytes(), args.start, inside[-1] + 4 * target[inside[-1]][0]):
+                texts[starts[bisect.bisect_right(starts, at) - 1]].append(text)
         for address in inside:
             count, digest, imports = target[address]
             marks = [f'{name} {others[name][digest][0]:08X}' for name in others
                      if count >= MIN and digest in others[name]]
-            print(f'{address:08X} {count:5d}  {"; ".join(marks)}{"  calls " + " ".join(imports) if imports else ""}')
+            line = f'{address:08X} {count:5d}  {"; ".join(marks)}{"  calls " + " ".join(imports) if imports else ""}'
+            if texts[address]:
+                line += '  "' + max(texts[address], key=len)[:70] + '"'
+            print(line)
         return
 
     strings = referenced_strings(args.image.read_bytes(), args.start, min(args.end, inside[-1] + 0x1000),

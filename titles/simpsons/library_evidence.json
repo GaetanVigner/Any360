@@ -1,0 +1,86 @@
+[
+ {
+  "name": "XAPI (Win32 layer over the kernel and XAM)",
+  "kind": "library",
+  "from": "82431000",
+  "to": "82439558",
+  "proof": "tdu 8269|crackdown 8274[2-9A]"
+ },
+ {
+  "name": "XDK D3D runtime",
+  "kind": "library",
+  "from": "82439558",
+  "to": "8246EA00",
+  "proof": "tdu 826[6-9]|crackdown 826[A-C]|D3D"
+ },
+ {
+  "name": "XDK D3DX and XGraphics (shader compiler)",
+  "kind": "library",
+  "from": "8246EA00",
+  "to": "8266F720",
+  "proof": "crackdown 82(74[A-F]|7[5-9A-F]|8|9[0-2])|D3DX|xgraphics"
+ },
+ {
+  "name": "XDK Xbox Live and voice (XOnline, XHV)",
+  "kind": "library",
+  "from": "8266F720",
+  "to": "8268E000",
+  "proof": "tdu 82(63[89A-F]|7[5-8])|crackdown 82(929|92[A-D]|A[89])|XamVoice|XMsg"
+ },
+ {
+  "name": "Lua",
+  "kind": "middleware",
+  "from": "82836000",
+  "to": "82857000",
+  "proof": "crackdown 82A[D-F]|lua_|Lua 5|`%s'"
+ },
+ {
+  "name": "C runtime (CRT)",
+  "kind": "library",
+  "from": "82A3C000",
+  "to": "82A66000",
+  "proof": "tdu 826[3-6]|crackdown 82A[B-D]|KeTls|CRT|`template"
+ },
+ {
+  "name": "Havok Physics",
+  "kind": "middleware",
+  "from": "82A70000",
+  "to": "82B74670",
+  "proof": "hk[A-Z]|Havok|\\.\\\\collide|Tt[A-Z]|St[A-Z]|crackdown 829[4-9A-F]|tdu 82(5[4-9A-F]|7[0-5])"
+ },
+ {
+  "name": "XAPI (Win32 layer over the kernel and XAM)",
+  "kind": "library",
+  "from": "82B74670",
+  "to": "82B79000",
+  "proof": "tdu 8269|crackdown 8274[2-9A]|crackdown 82AD[67]"
+ },
+ {
+  "name": "XDK D3DX and XGraphics (shader compiler)",
+  "kind": "library",
+  "from": "82B79670",
+  "to": "82B90000",
+  "proof": "crackdown 82(74[A-F]|7[5-9A-F]|8|9[0-2])|D3DX|xof 0303"
+ },
+ {
+  "name": "XDK D3DX and XGraphics (shader compiler)",
+  "kind": "library",
+  "from": "82BA8000",
+  "to": "82C3C5C0",
+  "proof": "crackdown 82(74[A-F]|7[5-9A-F]|8|9[0-2])|D3DX|xof 0303"
+ },
+ {
+  "name": "XDK audio (XAudio, XMA)",
+  "kind": "library",
+  "from": "82C3C5C0",
+  "to": "82C72000",
+  "proof": "tdu 826[A-D]|crackdown 82A[4-6]|XAudio|XMA"
+ },
+ {
+  "name": "kernel import thunks",
+  "kind": "library",
+  "from": "82CC2000",
+  "to": "82CC3000",
+  "exact": true
+ }
+]
