@@ -1,5 +1,5 @@
 {
- "_comment": "Statically linked XDK library functions known by name, with the address each known title has them at (hex, image addresses only: no code). library: D3D (the Xbox 360 Direct3D runtime), CRT, XAudio, XACT, XMA, XGraphics, XInput, XUI. Sources: The Simpsons Game port's re/native_renderer_plan.md (xdk_sigs matches against the Conan-era signature set), the Crackdown port's HLE renderer plan (the D3D runtime range 0x826A0000-0x826D0000 is not named per function yet). Grows with signature matching (milestone L4); tools/build_db.py reads it into db/xdk.json.",
+ "_comment": "Statically linked XDK library functions known by name, with the address each known title has them at (hex, image addresses only: no code). library: D3D (the Xbox 360 Direct3D runtime), CRT, XAudio, XACT, XMA, XGraphics, XInput, XUI. Sources: The Simpsons Game port's re/native_renderer_plan.md (xdk_sigs matches against the Conan-era signature set), the Crackdown port's HLE renderer plan (the D3D runtime range 0x826A0000-0x826D0000 is not named per function yet). The CRT entries come from the ports' own native replacements and from tools/library_scan.py (the same function found in another title). Grows with signature matching (milestone L4); tools/build_db.py reads it into db/xdk.json.",
  "functions": [
   {"name": "D3DDevice_DrawVertices", "library": "D3D", "titles": {"simpsons": "0x8244CF78"}},
   {"name": "D3DDevice_DrawIndexedVertices", "library": "D3D", "titles": {"simpsons": "0x8244D360"}},
@@ -31,6 +31,10 @@
   {"name": "D3D_LoadShaderLiterals", "library": "D3D", "titles": {"simpsons": "0x8245F810"}},
   {"name": "D3DDevice_GpuBeginShaderConstantF4", "library": "D3D", "titles": {"simpsons": "0x82444BD8"}},
   {"name": "D3D_BeginVizQuery", "library": "D3D", "titles": {"simpsons": "0x8244EEA8"}},
-  {"name": "D3D_EndVizQuery", "library": "D3D", "titles": {"simpsons": "0x8244EF78"}}
+  {"name": "D3D_EndVizQuery", "library": "D3D", "titles": {"simpsons": "0x8244EF78"}},
+  {"name": "memcpy", "library": "CRT", "titles": {"crackdown": "0x82ABDF90", "simpsons": "0x82A3CD80", "tdu": "0x82645BF0"}, "note": "the long forward copy; leaves its destination at r1 - 8. Any360: xdk::CrtMemcpy, bound in Test Drive Unlimited; Crackdown and The Simpsons Game still bind their own"},
+  {"name": "memcpy (plain forward copy)", "library": "CRT", "titles": {"simpsons": "0x82A3D1D8", "tdu": "0x82646010"}, "note": "bytes to alignment, then words. Any360: xdk::CrtCopyForward, bound in Test Drive Unlimited"},
+  {"name": "memset", "library": "CRT", "titles": {"crackdown": "0x82ABDE40", "simpsons": "0x82A3C440", "tdu": "0x826460C0"}, "note": "Any360: xdk::CrtMemset, bound in Test Drive Unlimited; Crackdown and The Simpsons Game still bind their own"},
+  {"name": "memmove", "library": "CRT", "titles": {"crackdown": "0x82AB5F10"}, "note": "replaced in Crackdown's own sources only; not found yet in the other titles"}
  ]
 }

@@ -1,5 +1,46 @@
 [
  {
+  "name": "memcpy",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82ABDF90",
+   "simpsons": "0x82A3CD80",
+   "tdu": "0x82645BF0"
+  },
+  "note": "the long forward copy; leaves its destination at r1 - 8. Any360: xdk::CrtMemcpy, bound in Test Drive Unlimited; Crackdown and The Simpsons Game still bind their own"
+ },
+ {
+  "name": "memcpy (plain forward copy)",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "simpsons": "0x82A3D1D8",
+   "tdu": "0x82646010"
+  },
+  "note": "bytes to alignment, then words. Any360: xdk::CrtCopyForward, bound in Test Drive Unlimited"
+ },
+ {
+  "name": "memmove",
+  "library": "CRT",
+  "any360": "todo",
+  "titles": {
+   "crackdown": "0x82AB5F10"
+  },
+  "note": "replaced in Crackdown's own sources only; not found yet in the other titles"
+ },
+ {
+  "name": "memset",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82ABDE40",
+   "simpsons": "0x82A3C440",
+   "tdu": "0x826460C0"
+  },
+  "note": "Any360: xdk::CrtMemset, bound in Test Drive Unlimited; Crackdown and The Simpsons Game still bind their own"
+ },
+ {
   "name": "D3DDevice_BeginTiling",
   "library": "D3D",
   "any360": "todo",
