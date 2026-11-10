@@ -358,14 +358,21 @@ rex::input::InputSystem* HostInput() {
   auto* kernel = REX_KERNEL_STATE();
   return kernel && kernel->emulator() ? static_cast<rex::input::InputSystem*>(kernel->emulator()->input_system()) : nullptr;
 }
+// One call into the runtime's input system at a time: each of its calls refreshes its device list (a vector it
+// clears and refills) without a lock, and any360::sys reaches it from its sampling thread and from the title's threads
+// (Test Drive Unlimited drives the rumble from another thread than the one reading the pads: two refreshes at once
+// crashed inside the runtime).
+std::mutex g_host_input;
 bool HostControllerConnected(uint32_t user) {
   rex::input::X_INPUT_STATE state{};
   rex::input::InputSystem* input = HostInput();
+  std::lock_guard lock(g_host_input);
   return input && input->GetState(user, &state) == 0;
 }
 bool HostControllerState(uint32_t user, any360::sys::GamepadState& pad) {
   rex::input::X_INPUT_STATE state{};
   rex::input::InputSystem* input = HostInput();
+  std::lock_guard lock(g_host_input);
   if (!input || input->GetState(user, &state) != 0) return false;
   pad.buttons = state.gamepad.buttons;
   pad.left_trigger = state.gamepad.left_trigger;
@@ -380,6 +387,7 @@ void HostVibrate(uint32_t user, uint16_t left, uint16_t right) {
   rex::input::X_INPUT_VIBRATION vibration{};
   vibration.left_motor_speed = left;
   vibration.right_motor_speed = right;
+  std::lock_guard lock(g_host_input);
   if (rex::input::InputSystem* input = HostInput()) input->SetState(user, &vibration);
 }
 }  // namespace
