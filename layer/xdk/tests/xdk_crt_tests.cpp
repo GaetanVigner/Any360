@@ -11,49 +11,16 @@
 
 #include "any360/xdk/crt.h"
 #include "any360/xdk/crt_reference.h"
+#include "xdk_test.h"
 
 namespace {
 
 using any360::xdk::Memory;
+using xdk_test::kStack;
+using xdk_test::Pair;
 namespace xdk = any360::xdk;
 
-int g_failures = 0;
-uint64_t g_checks = 0;
-#define CHECK(condition)                                                        \
-  do {                                                                          \
-    ++g_checks;                                                                 \
-    if (!(condition)) {                                                         \
-      if (++g_failures <= 20) std::printf("%s:%d: %s\n", __FILE__, __LINE__, #condition); \
-    }                                                                           \
-  } while (0)
-
-// Two copies of the same guest memory: the replacement works on one, the model on the other.
-constexpr uint32_t kArena = 1u << 20;       // guest addresses [0, kArena)
-constexpr uint32_t kStack = kArena - 256;   // the stack pointer of the calls: its slot sits at kStack - 8
-struct Pair {
-  std::vector<uint8_t> native, model;
-  Memory a, b;
-  explicit Pair(uint32_t seed) : native(kArena), model(kArena) {
-    std::mt19937 rng(seed);
-    for (uint32_t i = 0; i < kArena; i += 4) {
-      const uint32_t v = rng();
-      std::memcpy(&native[i], &v, 4);
-    }
-    model = native;
-    a.base = native.data();
-    b.base = model.data();
-  }
-  // The two memories agree over [begin, end) and at the stack slot.
-  bool Same(uint32_t begin, uint32_t end) const {
-    begin = begin > 64 ? begin - 64 : 0;
-    end = end + 64 < kArena ? end + 64 : kArena;
-    return std::memcmp(&native[begin], &model[begin], end - begin) == 0 &&
-           std::memcmp(&native[kStack - 16], &model[kStack - 16], 32) == 0;
-  }
-  bool SameEverywhere() const { return native == model; }
-};
-
-enum Function { kMemcpy, kCopyForward, kMemset };
+enum Function { kMemcpy, kCopyForward, kMemset, kMemmove };
 
 // One call on both memories. Returns whether the replacement accepted it. `upper` is the high half of the
 // destination's register (memcpy saves the whole register).
@@ -71,6 +38,10 @@ bool Call(Pair& p, Function f, uint32_t dest, uint32_t source_or_value, uint32_t
     case kMemset:
       accepted = xdk::CrtMemset(p.a, dest, source_or_value, size);
       if (accepted) xdk::reference::Memset(p.b, dest, source_or_value, size);
+      break;
+    case kMemmove:
+      accepted = xdk::CrtMemmove(p.a, uint64_t(upper) << 32 | dest, source_or_value, size, kStack);
+      if (accepted) xdk::reference::Memmove(p.b, uint64_t(upper) << 32 | dest, source_or_value, size, kStack);
       break;
   }
   return accepted;
@@ -102,6 +73,43 @@ void Predicates() {
   CHECK(!xdk::IsPlainForwardCopy(101, 100, 50));
   CHECK(xdk::IsPlainForwardCopy(101, 100, 1));
   CHECK(xdk::IsPlainForwardCopy(101, 100, 0));
+  // The functions' own tests are those. memmove compares its two addresses as signed: a destination from
+  // 0x80000000 is "below" a source under it, and takes memcpy's side.
+  CHECK(xdk::CrtMemcpyAccepts(100, 200, 50) && !xdk::CrtMemcpyAccepts(120, 100, 50) && !xdk::CrtMemcpyAccepts(0x7F000000, 100, 4));
+  CHECK(xdk::CrtMemsetAccepts(100, 50) && !xdk::CrtMemsetAccepts(0x7FC80000, 4));
+  CHECK(xdk::CrtMemmoveAccepts(100, 100, 50) && xdk::CrtMemmoveAccepts(0x7F000000, 0x7F000000, 4));
+  CHECK(xdk::CrtMemmoveAccepts(120, 100, 50) && xdk::CrtMemmoveAccepts(100, 120, 50));
+  CHECK(xdk::CrtMemmoveAccepts(0x80001000, 0x1000, 64) && xdk::CrtMemmoveAccepts(0x1000, 0x80001000, 64));
+  CHECK(!xdk::CrtMemmoveAccepts(0x7F000000, 100, 4) && !xdk::CrtMemmoveAccepts(100, 0x7F000000, 4));
+  CHECK(!xdk::CrtMemmoveAccepts(0x7EFFFFF0, 0x80000000, 0x20) && !xdk::CrtMemmoveAccepts(0x80000000, 0x7EFFFFF0, 0x20));
+}
+
+// memmove: every size up to 160 with the source every distance below and above the destination. All accepted; the
+// stack slot is written exactly when the destination is below the source (memcpy's side), as the model does.
+void Moves() {
+  Pair p(41);
+  for (uint32_t size = 0; size <= 160; ++size) {
+    for (int32_t distance = -170; distance <= 170; ++distance) {
+      const uint32_t dest = 0x8000 + (size & 15), source = uint32_t(int32_t(dest) + distance);
+      CHECK(Call(p, kMemmove, dest, source, size, size & 1 ? 0x12345678u : 0));
+      CHECK(p.Same(dest < source ? dest : source, (dest < source ? source : dest) + size));
+    }
+    CHECK(p.SameEverywhere());
+  }
+  // Long ones, the two ranges overlapping by a little and by most of their length.
+  for (uint32_t size : {1000u, 4096u, 65537u}) {
+    for (int32_t distance : {-1, 1, -7, 7, -129, 129, -int32_t(size) + 1, int32_t(size) - 1, -int32_t(size), int32_t(size)}) {
+      const uint32_t dest = 0x40000, source = uint32_t(int32_t(dest) + distance);
+      CHECK(Call(p, kMemmove, dest, source, size));
+    }
+    CHECK(p.SameEverywhere());
+  }
+  // Not plain memory: declined on both sides, nothing touched.
+  const Memory nowhere{};
+  for (uint32_t address : {0x7F000000u, 0x7FC80000u, 0x7EFFFFF8u}) {
+    CHECK(!xdk::CrtMemmove(nowhere, address, 0x1000, 64, kStack));
+    CHECK(!xdk::CrtMemmove(nowhere, 0x1000, address, 64, kStack));
+  }
 }
 
 // Every size up to 160 at every pair of alignments, apart and overlapping from below: accepted, and as the model.
@@ -180,11 +188,11 @@ void Random(uint32_t seed, uint32_t count) {
       const int64_t near = int64_t(dest) + delta;
       if (near >= 64 && near < limit) source = uint32_t(near);
     }
-    const Function f = Function(rng() % 3);
+    const Function f = Function(rng() % 4);
     const uint32_t second = f == kMemset ? rng() : source;
     // One call in four with a destination register whose high half is not zero.
     const bool accepted = Call(p, f, dest, second, size, rng() % 4 ? 0 : rng());
-    CHECK(accepted == (f == kMemset || xdk::IsPlainForwardCopy(dest, source, size)));
+    CHECK(accepted == (f == kMemset || f == kMemmove || xdk::IsPlainForwardCopy(dest, source, size)));
     CHECK(p.Same(dest, dest + size));
     if (i % 4096 == 0) CHECK(p.SameEverywhere());
   }
@@ -240,9 +248,9 @@ int main() {
     DeclinedCopies(f);
   }
   Fills();
+  Moves();
   SavedRegister();
   for (uint32_t seed = 1; seed <= 4; ++seed) Random(seed, 100000);
   PhysicalView();
-  std::printf("xdk_crt_tests: %llu checks, %d failing\n", static_cast<unsigned long long>(g_checks), g_failures);
-  return g_failures ? 1 : 0;
+  return xdk_test::Finish("xdk_crt_tests");
 }

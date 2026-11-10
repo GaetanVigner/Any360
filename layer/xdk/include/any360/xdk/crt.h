@@ -64,10 +64,12 @@ inline void Store256(uint8_t* p, const Bytes32& v) { std::memcpy(p, &v, 32); }
 
 // memmove for the sizes the titles copy most (up to 128 bytes: the two ends of the range, overlapping in the
 // middle, every load before any store, so overlap is as memmove's), the host's memmove above. What the benchmark
-// kept (xdk_crt_bench, on the three titles' mixes of sizes): this is 1.2x the plain memmove over the three, 1.3x on
-// the title a third of whose copies are 65 to 128 bytes, and slower on none. On the first title measured alone the
-// part above 64 bytes gained nothing and had been taken out: one title's sizes are not the titles' sizes. One
-// path without a branch on the size for 16 to 64 bytes was slower and stays out.
+// kept (xdk_crt_bench, memcpy on the three titles' mixes of sizes): memcpy is 1.2x its first version over the
+// three. Most of that is the one test of plain memory (ArePlain: 1.13x with the host's memmove alone behind it);
+// these paths add the rest on the title a third of whose copies are 65 to 128 bytes (1.3x against 1.1x) and
+// nothing on the two others. On the first title measured alone the part above 64 bytes had been taken out: one
+// title's sizes are not the titles' sizes. One path without a branch on the size for 16 to 64 bytes was slower
+// and stays out.
 inline void Move(uint8_t* d, const uint8_t* s, uint32_t n) {
   if (n <= 32) {
     if (n >= 16) {
@@ -162,6 +164,20 @@ inline bool ArePlain(uint32_t dest, uint32_t source, uint32_t size) {
 
 }  // namespace detail
 
+// The calls each function takes, as one test: what the function declines is exactly what its test refuses, and a
+// host that runs both the function and the title's own code (to compare or to time them) asks the same test.
+inline bool CrtMemcpyAccepts(uint32_t dest, uint32_t source, uint32_t size) {
+  return IsPlainForwardCopy(dest, source, size) && detail::ArePlain(dest, source, size);
+}
+inline bool CrtMemsetAccepts(uint32_t dest, uint32_t size) { return IsPlainMemory(dest, size); }
+inline bool CrtMemmoveAccepts(uint32_t dest, uint32_t source, uint32_t size) {
+  if (dest == source) return true;
+  if (int32_t(dest) < int32_t(source)) return CrtMemcpyAccepts(dest, source, size);
+  // The backward copy is memmove's unless the destination is below an overlapping source, where the signed compare
+  // can only send it across 0x80000000 (not plain memory anyway).
+  return detail::ArePlain(dest, source, size) && !(dest < source && source - dest < size);
+}
+
 // memcpy as the XDK's CRT builds it for long copies: copies `size` bytes forward from `source` to the destination
 // and leaves the destination's register, all 64 bits of it as a big-endian value, in the 8 bytes below the stack
 // pointer (its own save of r3: std r3,-8(r1)). `dest_register` is that register: its low half is the address, its
@@ -170,7 +186,7 @@ inline bool ArePlain(uint32_t dest, uint32_t source, uint32_t size) {
 inline bool CrtMemcpy(const Memory& memory, uint64_t dest_register, uint32_t source, uint32_t size,
                       uint32_t stack_pointer) {
   const uint32_t dest = uint32_t(dest_register);
-  if (!IsPlainForwardCopy(dest, source, size) || !detail::ArePlain(dest, source, size)) return false;
+  if (!CrtMemcpyAccepts(dest, source, size)) return false;
   detail::Store64(memory.Host(stack_pointer - 8), detail::ByteSwap64(dest_register));
   detail::Move(memory.Host(dest), memory.Host(source), size);
   return true;
@@ -178,15 +194,30 @@ inline bool CrtMemcpy(const Memory& memory, uint64_t dest_register, uint32_t sou
 
 // The CRT's plain forward copy (bytes to alignment, then words). Declines as CrtMemcpy.
 inline bool CrtCopyForward(const Memory& memory, uint32_t dest, uint32_t source, uint32_t size) {
-  if (!IsPlainForwardCopy(dest, source, size) || !detail::ArePlain(dest, source, size)) return false;
+  if (!CrtMemcpyAccepts(dest, source, size)) return false;
   detail::Move(memory.Host(dest), memory.Host(source), size);
   return true;
 }
 
 // memset: `size` bytes of the low byte of `value` from `dest`. Declines ranges that are not plain memory.
 inline bool CrtMemset(const Memory& memory, uint32_t dest, uint32_t value, uint32_t size) {
-  if (!IsPlainMemory(dest, size)) return false;
+  if (!CrtMemsetAccepts(dest, size)) return false;
   detail::Fill(memory.Host(dest), uint8_t(value), size);
+  return true;
+}
+
+// memmove of the XDK's CRT (the same instructions in the three titles read): nothing when the destination is the
+// source; when the destination is below the source (a signed compare of the two addresses), memcpy itself, which it
+// jumps to (so memcpy's save of the destination's register below the stack pointer is made); otherwise a copy from
+// the last byte back to the first, with nothing left on the stack. Declines what memcpy declines on memcpy's side
+// and ranges that are not plain memory on the other.
+inline bool CrtMemmove(const Memory& memory, uint64_t dest_register, uint32_t source, uint32_t size,
+                       uint32_t stack_pointer) {
+  const uint32_t dest = uint32_t(dest_register);
+  if (!CrtMemmoveAccepts(dest, source, size)) return false;
+  if (dest == source) return true;
+  if (int32_t(dest) < int32_t(source)) return CrtMemcpy(memory, dest_register, source, size, stack_pointer);
+  detail::Move(memory.Host(dest), memory.Host(source), size);
   return true;
 }
 

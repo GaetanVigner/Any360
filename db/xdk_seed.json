@@ -33,8 +33,9 @@
   {"name": "D3D_BeginVizQuery", "library": "D3D", "titles": {"simpsons": "0x8244EEA8"}},
   {"name": "D3D_EndVizQuery", "library": "D3D", "titles": {"simpsons": "0x8244EF78"}},
   {"name": "memcpy", "library": "CRT", "titles": {"crackdown": "0x82ABDF90", "simpsons": "0x82A3CD80", "tdu": "0x82645BF0"}, "note": "the long forward copy; leaves its destination register (64 bits) at r1 - 8. Any360: xdk::CrtMemcpy, the one function the three titles bind (docs/NATIVE_FUNCTIONS.md)"},
-  {"name": "memcpy (plain forward copy)", "library": "CRT", "titles": {"simpsons": "0x82A3D1D8", "tdu": "0x82646010"}, "note": "bytes to alignment, then words. Any360: xdk::CrtCopyForward, bound in Test Drive Unlimited and The Simpsons Game (not found in Crackdown yet)"},
+  {"name": "memcpy (plain forward copy)", "library": "CRT", "titles": {"crackdown": "0x82ABE3B0", "simpsons": "0x82A3D1D8", "tdu": "0x82646010"}, "note": "bytes to alignment, then words; the same instructions in the three titles. Any360: xdk::CrtCopyForward, bound in the three"},
   {"name": "memset", "library": "CRT", "titles": {"crackdown": "0x82ABDE40", "simpsons": "0x82A3C440", "tdu": "0x826460C0"}, "note": "Any360: xdk::CrtMemset, the one function the three titles bind (docs/NATIVE_FUNCTIONS.md)"},
-  {"name": "memmove", "library": "CRT", "titles": {"crackdown": "0x82AB5F10"}, "note": "replaced in Crackdown's own sources only; not found yet in the other titles"}
+  {"name": "memmove", "library": "CRT", "titles": {"crackdown": "0x82AB5F10", "simpsons": "0x82A3E2B0", "tdu": "0x82644930"}, "note": "the same instructions in the three titles: memcpy below the source (signed compare), a backward copy above it. Any360: xdk::CrtMemmove, bound in the three"},
+  {"name": "XMemCpy", "library": "XAPI", "titles": {"crackdown": "0x827427F0", "simpsons": "0x82B74110", "tdu": "0x82696950"}, "note": "the XDK's vector copy next to XAPI: 16-byte vectors, dcbt ahead of the source, dcbz128 ahead of the destination; named after what it does (its name is not in the titles). Three builds of the same steps. Any360: xdk::XMemCpy for ranges that do not overlap, bound in the three"}
  ]
 }

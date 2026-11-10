@@ -39,12 +39,19 @@ any360::xdk::Memory g_memory;
 namespace {
 
 constexpr uint32_t kFunctions = uint32_t(Function::kCount);
-constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset"};
+constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", "memmove", "XMemCpy"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
+// The bytes compared on each side of a destination, to see a write outside it.
+constexpr uint32_t kMargin = 256;
 
-std::atomic<uint64_t> g_verified{0}, g_different{0}, g_declined{0};
-std::atomic<uint64_t> g_verified_by[kFunctions] = {};
+std::atomic<uint64_t> g_verified{0}, g_different{0};
+std::atomic<uint64_t> g_verified_by[kFunctions] = {}, g_declined_by[kFunctions] = {};
+// Calls during which bytes next to the destination changed, while the function's own code ran and while the
+// replacement ran. A function that writes outside its destination does it at every such call and only on its own
+// side; a few calls on either side are another thread writing its own data there at that moment.
+std::atomic<uint64_t> g_around_own[kFunctions] = {}, g_around_native[kFunctions] = {};
+std::atomic<uint64_t> g_around_logged{0};
 
 // Timed calls by function and size class (class c: sizes with bit_width c, so 0, 1, 2-3, 4-7, ...).
 struct Timed {
@@ -52,7 +59,7 @@ struct Timed {
 };
 Timed g_timed[kFunctions][33];
 // Calls by exact size below kExactSizes: which sizes a title really passes (the benchmark's mix is made of them).
-constexpr uint32_t kExactSizes = 256;
+constexpr uint32_t kExactSizes = 4096;
 std::atomic<uint32_t> g_exact[kFunctions][kExactSizes] = {};
 std::atomic<uint64_t> g_timed_calls{0};
 uint64_t g_ticks_start = 0, g_timer_overhead = 0;
@@ -96,13 +103,76 @@ Mode Resolve(uint8_t* base) {
   return mode;
 }
 
-// `dest_register`: r3 whole (memcpy saves all of it).
-bool Native(Function function, uint64_t dest_register, uint32_t second, uint32_t size, uint32_t stack_pointer) {
+// One call's arguments: r3 whole (memcpy saves all of it), r4, r5, the stack pointer and the function's parameter
+// of the title.
+struct Call {
+  uint64_t dest_register;
+  uint32_t dest, second, size, stack_pointer, value;
+};
+
+// Whether the replacement takes the call, known before anything runs: the test the replacement itself makes.
+bool Accepts(Function function, const Call& c) {
   switch (function) {
-    case Function::kMemcpy: return any360::xdk::CrtMemcpy(g_memory, dest_register, second, size, stack_pointer);
-    case Function::kCopyForward: return any360::xdk::CrtCopyForward(g_memory, uint32_t(dest_register), second, size);
-    default: return any360::xdk::CrtMemset(g_memory, uint32_t(dest_register), second, size);
+    case Function::kMemcpy:
+    case Function::kCopyForward: return any360::xdk::CrtMemcpyAccepts(c.dest, c.second, c.size);
+    case Function::kMemset: return any360::xdk::CrtMemsetAccepts(c.dest, c.size);
+    case Function::kMemmove: return any360::xdk::CrtMemmoveAccepts(c.dest, c.second, c.size);
+    default: return any360::xdk::XMemCpyAccepts(c.dest, c.second, c.size, c.size >= 16 || ByteStepIsOne(c.value));
   }
+}
+
+bool Native(Function function, const Call& c) {
+  switch (function) {
+    case Function::kMemcpy: return any360::xdk::CrtMemcpy(g_memory, c.dest_register, c.second, c.size, c.stack_pointer);
+    case Function::kCopyForward: return any360::xdk::CrtCopyForward(g_memory, c.dest, c.second, c.size);
+    case Function::kMemset: return any360::xdk::CrtMemset(g_memory, c.dest, c.second, c.size);
+    case Function::kMemmove: return any360::xdk::CrtMemmove(g_memory, c.dest_register, c.second, c.size, c.stack_pointer);
+    default: return any360::xdk::XMemCpy(g_memory, c.dest, c.second, c.size, c.size >= 16 || ByteStepIsOne(c.value));
+  }
+}
+
+// The 8 bytes below the stack pointer are compared for the functions that are leaves (memcpy leaves its
+// destination there; the others leave it alone). XMemCpy builds a frame there, which no caller can see.
+bool ComparesStackSlot(Function function) { return function != Function::kXMemCpy; }
+
+// The bytes just before and just after a destination that are safe to read: on the same 4 KB pages as its first
+// and last bytes, plain memory, and away from the stack the function itself uses (below the stack pointer).
+struct Margins {
+  uint32_t before = 0, after = 0;  // guest addresses of the margins' starts
+  uint32_t before_size = 0, after_size = 0;
+};
+Margins MarginsOf(const Call& c) {
+  Margins m;
+  if (!c.size) return m;
+  const auto usable = [&](uint32_t address, uint32_t size) {
+    if (!size || !any360::xdk::IsPlainMemory(address, size)) return false;
+    const uint64_t stack_low = uint64_t(c.stack_pointer) - 2048, stack_high = c.stack_pointer;
+    return uint64_t(address) + size <= stack_low || address >= stack_high;
+  };
+  const uint32_t page = c.dest & ~0xFFFu;
+  m.before_size = std::min(kMargin, c.dest - page);
+  m.before = c.dest - m.before_size;
+  if (!usable(m.before, m.before_size)) m.before_size = 0;
+  const uint32_t end = c.dest + c.size;  // plain memory: no wrap
+  const uint64_t page_end = (uint64_t(end - 1) | 0xFFF) + 1;
+  m.after_size = uint32_t(std::min<uint64_t>(kMargin, page_end - end));
+  m.after = end;
+  if (!usable(m.after, m.after_size)) m.after_size = 0;
+  return m;
+}
+std::vector<uint8_t> ReadMargins(const Margins& m) {
+  std::vector<uint8_t> bytes(m.before_size + m.after_size);
+  if (m.before_size) std::memcpy(bytes.data(), g_memory.Host(m.before), m.before_size);
+  if (m.after_size) std::memcpy(bytes.data() + m.before_size, g_memory.Host(m.after), m.after_size);
+  return bytes;
+}
+
+std::string CountsByFunction(const std::atomic<uint64_t>* counts) {
+  std::string text;
+  for (uint32_t f = 0; f < kFunctions; ++f) {
+    if (const uint64_t n = counts[f].load()) text += (text.empty() ? "" : ", ") + std::string(kNames[f]) + " " + std::to_string(n);
+  }
+  return text.empty() ? "none" : text;
 }
 
 // The timed calls so far, a line a function: for each size class its calls and the nanoseconds a call of the
@@ -142,58 +212,71 @@ void ReportTimes() {
     }
     REXLOG_INFO("Any360 xdk bench: {}: most frequent sizes (size x calls):{}", kNames[f], sizes);
   }
+  REXLOG_INFO("Any360 xdk bench: calls left to the functions' own code (not timed): {}", CountsByFunction(g_declined_by));
 }
 
 }  // namespace
 
-void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original) {
+void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t value) {
   Mode mode = g_mode;
   if (mode == Mode::kUnresolved) mode = Resolve(base);
-  const uint64_t dest_register = ctx.r3.u64;
-  const uint32_t dest = ctx.r3.u32, second = ctx.r4.u32, size = ctx.r5.u32, stack_pointer = ctx.r1.u32;
+  const Call call{ctx.r3.u64, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r1.u32, value};
+  const uint64_t dest_register = call.dest_register;
+  const uint32_t dest = call.dest, second = call.second, size = call.size, stack_pointer = call.stack_pointer;
   if (mode == Mode::kNative) {
-    if (!Native(function, dest_register, second, size, stack_pointer)) original(ctx, base);
+    if (!Native(function, call)) original(ctx, base);
     return;
   }
+  const uint32_t f = uint32_t(function);
   // Verifying and timing run both sides on the same input: only the calls the replacement accepts, known before
   // anything runs.
-  const bool accepts = function == Function::kMemset
-                           ? any360::xdk::IsPlainMemory(dest, size)
-                           : any360::xdk::IsPlainForwardCopy(dest, second, size) &&
-                                 any360::xdk::IsPlainMemory(dest, size) && any360::xdk::IsPlainMemory(second, size);
-  if (mode == Mode::kOriginal || !accepts || size > kMostChecked) {
+  if (mode == Mode::kOriginal || !Accepts(function, call) || size > kMostChecked) {
     original(ctx, base);
-    if (mode != Mode::kOriginal) g_declined.fetch_add(1, std::memory_order_relaxed);
+    if (mode != Mode::kOriginal) g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
     return;
   }
   uint8_t* const target = g_memory.Host(dest);
   uint8_t* const slot = g_memory.Host(stack_pointer - 8);
+  const bool with_slot = ComparesStackSlot(function);
   const std::vector<uint8_t> before(target, target + size);
   uint8_t slot_before[8];
   std::memcpy(slot_before, slot, 8);
-  const uint32_t f = uint32_t(function);
 
   if (mode == Mode::kVerify) {
     // The function's own code on a copy of the registers; what it wrote in [dest, dest + size) and in the 8 bytes
-    // below the stack pointer, and the r3 it returned, against the replacement's.
+    // below the stack pointer, and the r3 it returned, against the replacement's. And the bytes around the
+    // destination, which neither should change.
+    const Margins margins = MarginsOf(call);
+    const std::vector<uint8_t> around_before = ReadMargins(margins);
     PPCContext reference = ctx;
     original(reference, base);
     const std::vector<uint8_t> expected(target, target + size);
+    const std::vector<uint8_t> around_expected = ReadMargins(margins);
     uint8_t slot_expected[8];
     std::memcpy(slot_expected, slot, 8);
     std::memcpy(target, before.data(), size);
-    std::memcpy(slot, slot_before, 8);
-    Native(function, dest_register, second, size, stack_pointer);
+    if (with_slot) std::memcpy(slot, slot_before, 8);
+    Native(function, call);
+    const bool own_code_outside = around_expected != around_before;
+    const bool native_outside = ReadMargins(margins) != around_expected;
     g_verified_by[f].fetch_add(1, std::memory_order_relaxed);
     const uint64_t verified = g_verified.fetch_add(1, std::memory_order_relaxed) + 1;
     if (verified == 1000 || verified % 1000000 == 0) {
-      REXLOG_INFO("Any360 xdk: {} calls verified against the functions' own code ({} {}, {} {}, {} {}), {} different; "
-                  "{} left to it",
-                  verified, kNames[0], g_verified_by[0].load(), kNames[1], g_verified_by[1].load(), kNames[2],
-                  g_verified_by[2].load(), g_different.load(), g_declined.load());
+      REXLOG_INFO("Any360 xdk: {} calls verified against the functions' own code ({}), {} different; bytes next to a "
+                  "destination changed during its own code: {}; during the replacement: {}; left to its own code: {}",
+                  verified, CountsByFunction(g_verified_by), g_different.load(), CountsByFunction(g_around_own),
+                  CountsByFunction(g_around_native), CountsByFunction(g_declined_by));
+    }
+    if (own_code_outside || native_outside) {
+      if (own_code_outside) g_around_own[f].fetch_add(1, std::memory_order_relaxed);
+      if (native_outside) g_around_native[f].fetch_add(1, std::memory_order_relaxed);
+      if (g_around_logged.fetch_add(1, std::memory_order_relaxed) < 8) {
+        REXLOG_WARN("Any360 xdk: {} r3 {:016X} source/fill {:08X} size {}: bytes next to the destination changed during {}",
+                    kNames[f], dest_register, second, size, own_code_outside ? "the function's own code" : "the replacement");
+      }
     }
     const bool same_bytes = std::memcmp(target, expected.data(), size) == 0;
-    const bool same_slot = std::memcmp(slot, slot_expected, 8) == 0;
+    const bool same_slot = !with_slot || std::memcmp(slot, slot_expected, 8) == 0;
     if (same_bytes && same_slot && ctx.r3.u32 == reference.r3.u32) return;
     if (g_different.fetch_add(1, std::memory_order_relaxed) < 20) {
       uint64_t slot_now, slot_wanted;
@@ -213,25 +296,25 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
   }
 
   // Bench: both sides timed on the same input, in alternating order (the second finds the memory in the cache).
-  const uint64_t call = g_timed_calls.fetch_add(1, std::memory_order_relaxed) + 1;
+  const uint64_t timed_call = g_timed_calls.fetch_add(1, std::memory_order_relaxed) + 1;
   uint64_t original_ticks, native_ticks;
   PPCContext copy = ctx;
-  if (call & 1) {
+  if (timed_call & 1) {
     const uint64_t a = Ticks();
     original(copy, base);
     const uint64_t b = Ticks();
     std::memcpy(target, before.data(), size);
-    std::memcpy(slot, slot_before, 8);
+    if (with_slot) std::memcpy(slot, slot_before, 8);
     const uint64_t c = Ticks();
-    Native(function, dest_register, second, size, stack_pointer);
+    Native(function, call);
     const uint64_t d = Ticks();
     original_ticks = b - a, native_ticks = d - c;
   } else {
     const uint64_t a = Ticks();
-    Native(function, dest_register, second, size, stack_pointer);
+    Native(function, call);
     const uint64_t b = Ticks();
     std::memcpy(target, before.data(), size);
-    std::memcpy(slot, slot_before, 8);
+    if (with_slot) std::memcpy(slot, slot_before, 8);
     const uint64_t c = Ticks();
     original(copy, base);
     const uint64_t d = Ticks();
@@ -242,7 +325,7 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
   timed.original.fetch_add(original_ticks, std::memory_order_relaxed);
   timed.native.fetch_add(native_ticks, std::memory_order_relaxed);
   if (size < kExactSizes) g_exact[f][size].fetch_add(1, std::memory_order_relaxed);
-  if (call == 200000 || call % 2000000 == 0) ReportTimes();
+  if (timed_call == 200000 || timed_call % 2000000 == 0) ReportTimes();
 }
 
 Counters GetCounters() { return {g_verified.load(), g_different.load()}; }

@@ -15,19 +15,22 @@
   "library": "CRT",
   "any360": "native",
   "titles": {
+   "crackdown": "0x82ABE3B0",
    "simpsons": "0x82A3D1D8",
    "tdu": "0x82646010"
   },
-  "note": "bytes to alignment, then words. Any360: xdk::CrtCopyForward, bound in Test Drive Unlimited and The Simpsons Game (not found in Crackdown yet)"
+  "note": "bytes to alignment, then words; the same instructions in the three titles. Any360: xdk::CrtCopyForward, bound in the three"
  },
  {
   "name": "memmove",
   "library": "CRT",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
-   "crackdown": "0x82AB5F10"
+   "crackdown": "0x82AB5F10",
+   "simpsons": "0x82A3E2B0",
+   "tdu": "0x82644930"
   },
-  "note": "replaced in Crackdown's own sources only; not found yet in the other titles"
+  "note": "the same instructions in the three titles: memcpy below the source (signed compare), a backward copy above it. Any360: xdk::CrtMemmove, bound in the three"
  },
  {
   "name": "memset",
@@ -318,5 +321,16 @@
    "simpsons": "0x82457CC8"
   },
   "note": ""
+ },
+ {
+  "name": "XMemCpy",
+  "library": "XAPI",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x827427F0",
+   "simpsons": "0x82B74110",
+   "tdu": "0x82696950"
+  },
+  "note": "the XDK's vector copy next to XAPI: 16-byte vectors, dcbt ahead of the source, dcbz128 ahead of the destination; named after what it does (its name is not in the titles). Three builds of the same steps. Any360: xdk::XMemCpy for ranges that do not overlap, bound in the three"
  }
 ]

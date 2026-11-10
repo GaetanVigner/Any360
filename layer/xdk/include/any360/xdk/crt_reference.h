@@ -23,6 +23,20 @@ inline void Memcpy(const Memory& memory, uint64_t dest_register, uint32_t source
   CopyForward(memory, uint32_t(dest_register), source, size);
 }
 
+// memmove of the XDK's CRT, as its code does it: nothing for a destination that is the source; memcpy (above) for a
+// destination below the source, the two addresses compared as signed; otherwise the bytes from the last to the
+// first.
+inline void Memmove(const Memory& memory, uint64_t dest_register, uint32_t source, uint32_t size,
+                    uint32_t stack_pointer) {
+  const uint32_t dest = uint32_t(dest_register);
+  if (dest == source) return;
+  if (int32_t(dest) < int32_t(source)) {
+    Memcpy(memory, dest_register, source, size, stack_pointer);
+    return;
+  }
+  for (uint32_t i = size; i-- > 0;) *memory.Host(dest + i) = *memory.Host(source + i);
+}
+
 // memset: the low byte of `value`, `size` times.
 inline void Memset(const Memory& memory, uint32_t dest, uint32_t value, uint32_t size) {
   for (uint32_t i = 0; i < size; ++i) *memory.Host(dest + i) = uint8_t(value);

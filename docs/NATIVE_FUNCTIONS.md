@@ -12,8 +12,9 @@ native function is checked and measured; none of them is what it is written for.
   the function's own code has it in every build read so far;
 - a function is chosen because titles in general link it and call it often (`db/xdk_seed.json` lists them with
   their address in each title), not because one title needs it;
-- a title's own copy of a native function (Crackdown and The Simpsons Game still carry theirs for `memcpy` and
-  `memset`, see State) is replaced by the shared one, never kept beside it;
+- a title's own copy of a native function is replaced by the shared one, never kept beside it; and a function
+  that is the title's own code, in no library and in no other title (The Simpsons Game's copy of whole 64-byte
+  blocks), is not a native function of Any360: it stays in the title;
 - an optimization is judged on every title measured, and one that gains on a title and loses on another is not
   kept.
 
@@ -26,7 +27,7 @@ not bound in any title.
 | 1 | a reference model | `layer/xdk/include/any360/xdk/<library>_reference.h` | it is the function's work written the plainest way, read from the function's own code (what it writes, what it returns, what it leaves on the stack) |
 | 2 | unit tests against the model | `layer/xdk/tests/xdk_<library>_tests.cpp`, run by `layer/sys/test.ps1` | every accepted call leaves memory exactly as the model does, every declined call leaves it untouched, and a call is declined only for the reasons the header gives |
 | 3 | a benchmark | `layer/xdk/tests/xdk_<library>_bench.cpp` | it prints nanoseconds a call, size by size, for the model, the version first written (kept in the benchmark as the fixed point) and the current one, then one figure for each measured title's mix |
-| 4 | the check in game | `--any360_xdk_verify=true` | each title that binds it runs with every call done both ways and compared, and its log reports 0 different |
+| 4 | the check in game | `--any360_xdk_verify=true` | each title that binds it runs with every call done both ways and compared (the bytes written, the value returned, the stack slot of a leaf function, and the bytes next to the destination, which neither side should change), and its log reports 0 different |
 | 5 | the measure in game | `--any360_xdk_bench=true` | the log gives, size class by size class, the calls and the nanoseconds of the function's own code and of the native one, and the sizes the title passes most |
 
 Then, and only then, optimization:
@@ -40,6 +41,9 @@ Then, and only then, optimization:
   hand. One title's mix is one sample: while a single title has been measured, what was tuned on it is to be
   measured again on the next title before it counts as settled.
 - The benchmark's `first` version is never edited: it is what later versions are measured against.
+- The benchmark's `first` version and the current one must differ by one thing at a time when a gain is given a
+  cause: `memcpy`'s gain was first put down to its hand-written short copies, and measuring the host's `memmove`
+  behind the same test of plain memory showed that test alone to be most of it.
 - A difference the check in game finds is first written as a unit test that fails (the model was wrong, or the
   tests did not reach the case), then fixed. The model is only as good as the reading of the function's code: the
   check in game is what ties it to the title.
@@ -78,48 +82,69 @@ per title, the native function is shared, and the check in game is run again for
 
 ## State
 
-Three functions of the C runtime, the same code in the three titles at hand. Unit tests: `xdk_crt_tests`,
-1,090,912 checks.
+Five functions, the same code in the three titles at hand. Unit tests: `xdk_crt_tests` (1,200,921 checks) and
+`xdk_xapi_tests` (1,772,293 checks).
 
-| Function | Handler | Declines | Test Drive Unlimited | Crackdown | The Simpsons Game |
-|---|---|---|---|---|---|
-| `memcpy` | `CrtMemcpy` | destination inside the source, ranges that are not plain memory | bound | bound (both of its guests) | bound |
-| `memcpy`'s plain forward copy | `CrtCopyForward` | the same | bound | not found in its code yet | bound |
-| `memset` | `CrtMemset` | ranges that are not plain memory | bound | bound (both of its guests) | bound |
+| Function | Library | Handler | Declines | Test Drive Unlimited | Crackdown | The Simpsons Game |
+|---|---|---|---|---|---|---|
+| `memcpy` | CRT | `CrtMemcpy` | destination inside the source, ranges that are not plain memory | bound | bound (both of its guests) | bound |
+| `memcpy`'s plain forward copy | CRT | `CrtCopyForward` | the same | bound | bound (base guest) | bound |
+| `memset` | CRT | `CrtMemset` | ranges that are not plain memory | bound | bound (both guests) | bound |
+| `memmove` | CRT | `CrtMemmove` | what `memcpy` declines on `memcpy`'s side, ranges that are not plain memory on the other | bound | bound (both guests) | bound |
+| the vector copy (`XMemCpy`) | XAPI | `XMemCpy` | ranges that overlap, ranges that are not plain memory, sizes below 16 bytes when the title's byte step is not given or not 1 | bound | bound (base guest) | bound |
 
-Crackdown and The Simpsons Game had their own copies of these; they are gone from Crackdown, and The Simpsons Game
-keeps its own only for a build without Any360 (it can still be built without). The Simpsons Game's copy of `memcpy`
-saved the destination's address and not its whole register, the mistake the check in game found here.
+`memmove` and the forward copy are the same instructions in the three titles; the vector copy is three builds of
+the same steps (other registers, the same tests), read in each. Its name is not in the titles: it is the function
+next to XAPI that copies 16-byte vectors, asks for the source's cache lines ahead and zeroes the destination's
+128-byte cache lines ahead of writing them, which is what the XDK's `XMemCpy` does. Its model
+(`xapi_reference.h`) follows those steps, zeroing included: the unit tests show that for two ranges apart it
+writes the destination's bytes and nothing else, and that for ranges that overlap it leaves what neither `memmove`
+nor a forward copy leaves (the zeroed line held source bytes not read yet), which is why those calls stay its own
+code's.
 
-What those titles' own code still replaces and Any360 does not have yet, the next functions under this rule:
-`memmove` (Crackdown), a copy of whole 64-byte blocks and the XDK's copy for write-combined memory (The Simpsons
-Game).
+Crackdown and The Simpsons Game had their own copies of these functions; Crackdown's are gone, and The Simpsons
+Game keeps its own only for a build without Any360. Two of those copies were wrong where the shared function is
+right: The Simpsons Game's `memcpy` saved the destination's address and not its whole register, and its vector
+copy took ranges that overlap from below as a plain copy. The Simpsons Game's copy of whole 64-byte blocks is in
+no library and in neither of the other titles: the title's own code, it stays there. Not bound: the forward copy
+and the vector copy in Crackdown's Title Update 6 guest (its code is not on this machine).
 
 ### The check in game
 
-The code as it is, every call done both ways and compared (`--any360_xdk_verify=true`), a gamepad connected and the
-title played past its menus, 2026-11-10:
+The code as it is, every call done both ways and compared (`--any360_xdk_verify=true`), 2026-11-10:
 
-| Title | Calls compared | `memcpy` | forward copy | `memset` | Different | Reached |
-|---|---|---|---|---|---|---|
-| Test Drive Unlimited | 14 M | 12.7 M | 72 k | 1.25 M | 0 | past the title screen, scenes of 6,000 draws a frame |
-| Crackdown | 21 M | 8.9 M | not bound | 12.1 M | 0 | the city |
-| The Simpsons Game | 53 M | 44.1 M | 1.5 M | 7.3 M | 0 | a level |
+| Title | Calls compared | `memcpy` | forward copy | `memset` | `memmove` | vector copy | Different | Reached |
+|---|---|---|---|---|---|---|---|---|
+| Test Drive Unlimited | 3.0 M | 1.86 M | 2 | 1.14 M | 7 | 24 | 0 | its title screen |
+| Crackdown | 2.0 M | 1.16 M | 2 | 778 k | 2.5 k | 61 k | 0 | its title screen |
+| The Simpsons Game | 83 M | 49.1 M | 211 k | 11.3 M | 1.3 k | 22.4 M | 0 | a level |
 
-What it found that the unit tests had not: `memcpy` saves the 64 bits of its destination register below the stack
-pointer, and Test Drive Unlimited calls it with a register whose high half is not zero (13,856 calls in 13.7 M).
-The model had the high half as zero, so the tests passed on a wrong model. The model, the function and a unit test
-(`SavedRegister`) now have it.
+Start was not pressed in the first two on that last run. The three functions bound first were checked earlier the
+same day with those titles played: Test Drive Unlimited past its title screen (14 M calls), Crackdown in the city
+(21 M), 0 different; their code has not changed since.
+
+`memmove` and the vector copy are called little outside The Simpsons Game: their check in the two other titles
+rests on few calls, and on the unit tests.
+
+What the check found that the unit tests had not: `memcpy` saves the 64 bits of its destination register below the
+stack pointer, and Test Drive Unlimited calls it with a register whose high half is not zero (13,856 calls in
+13.7 M). The model had the high half as zero, so the tests passed on a wrong model. The model, the function and a
+unit test (`SavedRegister`) now have it.
+
+The bytes next to a destination changed during a few calls (Test Drive Unlimited: 254 in 3 M while `memcpy`'s own
+code ran and 139 while the native one ran, all to one 256-byte buffer; The Simpsons Game: 80 and 56 in 83 M):
+another thread writing its own data there. A function that wrote outside its destination would show at
+every such call, on its own side only.
 
 ### The measure in game
 
 The function's own recompiled code against the native one, on every call (`--any360_xdk_bench=true`):
 
-| Title | `memcpy` | forward copy | `memset` |
-|---|---|---|---|
-| Test Drive Unlimited | 70.0 -> 13.1 ns a call (5.3x), 13.2 M calls | 686 -> 32.7 ns (21x), 73 k calls | 59.2 -> 21.3 ns (2.8x), 713 k calls |
-| Crackdown | 41.5 -> 14.7 ns (2.8x), 29.7 M calls | | 30.4 -> 13.9 ns (2.2x), 38.3 M calls |
-| The Simpsons Game | 22.7 -> 9.8 ns (2.3x), 43.2 M calls | 79.3 -> 14.7 ns (5.4x), 2.05 M calls | 55.9 -> 11.3 ns (4.9x), 8.7 M calls |
+| Title | `memcpy` | forward copy | `memset` | `memmove` | vector copy |
+|---|---|---|---|---|---|
+| Test Drive Unlimited | 70.0 -> 13.1 ns a call (5.3x), 13.2 M calls | 686 -> 32.7 ns (21x), 73 k calls | 59.2 -> 21.3 ns (2.8x), 713 k calls | 7 calls | 24 calls |
+| Crackdown | 41.5 -> 14.7 ns (2.8x), 29.7 M calls | | 30.4 -> 13.9 ns (2.2x), 38.3 M calls | 123 -> 43 ns (2.8x), 2.5 k calls (title screen) | 171 -> 40 ns (4.3x), 61 k calls (title screen) |
+| The Simpsons Game | 22.7 -> 9.8 ns (2.3x), 43.2 M calls | 79.3 -> 14.7 ns (5.4x), 2.05 M calls | 55.9 -> 11.3 ns (4.9x), 8.7 M calls | 74 -> 10 ns (7.1x), 1.3 k calls | 88.2 -> 15.2 ns (5.8x), 22.1 M calls |
 
 What these figures say and do not say:
 
@@ -127,35 +152,41 @@ What these figures say and do not say:
   22 ns): they compare the function's own code with the native one, and cannot tell two native versions apart. The
   benchmark does that.
 - Over 100 to 150 seconds of play, the natives save about 0.8 second of processor time in Test Drive Unlimited,
-  1.4 in Crackdown and 1.1 in The Simpsons Game: around 1% of one thread. No gain in frames was measured.
+  1.4 in Crackdown and 2.7 in The Simpsons Game (1.6 of it the vector copy, which that title calls 170,000 times
+  a second for 1 to 2 KB): 1 to 2% of one thread. No gain in frames was measured.
 - For Crackdown and The Simpsons Game the comparison is with the recompiled code, not with what they ran before:
   their own copies already used the host's `memmove` and `memset`. What they gain is the tested, shared function
   and the paths for small sizes.
 
 ### The titles' sizes and what optimization kept
 
-| Title | Copies | Fills |
-|---|---|---|
-| Test Drive Unlimited | 16 bytes: 50%, 64: 32%, 48: 9% | 120 bytes: 65%, 64: 12%, 128: 5% |
-| Crackdown | 104 bytes: 28%, 12: 14%, 64: 10%, 40: 7%; a third between 65 and 128 | 16 bytes: 43%, 48: 35% |
-| The Simpsons Game | 64 bytes: 50%, 12: 39%, 192: 3% | 64 bytes: 59%, 1 to 2 KB: 18%, 48: 8% |
+| Title | Copies (`memcpy`) | Fills (`memset`) | Vector copies |
+|---|---|---|---|
+| Test Drive Unlimited | 16 bytes: 50%, 64: 32%, 48: 9% | 120 bytes: 65%, 64: 12%, 128: 5% | too few |
+| Crackdown | 104 bytes: 28%, 12: 14%, 64: 10%, 40: 7%; a third between 65 and 128 | 16 bytes: 43%, 48: 35% | a third each of 16 bytes, 64 bytes and 4 to 8 KB (title screen) |
+| The Simpsons Game | 64 bytes: 50%, 12: 39%, 192: 3% | 64 bytes: 59%, 1 to 2 KB: 18%, 48: 8% | 1 to 2 KB: 97% |
 
 `xdk_crt_bench`, each title's mix with its sizes in random order, the version first written (the host's `memmove`
-and `memset` behind the same checks) against the code as it is:
+and `memset` behind the first tests of plain memory) against the code as it is:
 
 | | Test Drive Unlimited | Crackdown | The Simpsons Game | The three |
 |---|---|---|---|---|
-| `memcpy` | 6.5 -> 5.8 ns a call (1.12x) | 9.6 -> 7.5 ns (1.27x) | 6.5 -> 5.6 ns (1.16x) | 1.2x |
-| `memset` | 10.2 -> 7.6 ns (1.34x) | 6.6 -> 4.3 ns (1.53x) | 7.9 -> 6.8 ns (1.17x) | 1.3x |
+| `memcpy` | 1.12x | 1.33x | 1.15x | 1.2x |
+| `memcpy` with the host's `memmove` alone behind the current test | 1.14x | 1.10x | 1.15x | 1.13x |
+| `memset` | 1.34x | 1.56x | 1.18x | 1.3x |
 
-- Kept: for `memcpy`, sizes up to 128 bytes as overlapping loads and stores; for `memset`, sizes up to 128 bytes
-  as overlapping stores. No title is slower than with the first version.
+- Kept: the one test of plain memory for both ranges of a copy (most of `memcpy`'s gain); for `memcpy`, sizes up
+  to 128 bytes as overlapping loads and stores (they add Crackdown's gain and nothing elsewhere); for `memset`,
+  sizes up to 128 bytes as overlapping stores. No title is slower than with the first version.
 - Taken out: one path with no branch on the size for 16 to 64 bytes (0.99x for `memcpy` on Test Drive Unlimited's
-  mix, no better than the branches for `memset`).
+  mix, no better than the branches for `memset`); and, for the vector copy, the hand-written short copies
+  (`xdk_xapi_bench`: 0.97x on the titles' mixes, whose copies are long): it is the host's `memmove` alone.
 - What one title would have got wrong: on Test Drive Unlimited's mix alone, the part of the `memcpy` path from 65
-  to 128 bytes gained nothing (1.13x with it, 1.15x without) and was taken out. Crackdown, a third of whose copies
-  are that size, gains from it (1.31x with it, 1.23x without) and neither of the others loses: it is back. An
-  optimization is settled only when every title at hand has been measured.
+  to 128 bytes gained nothing and was taken out. Crackdown, a third of whose copies are that size, gains from it
+  and neither of the others loses: it is back. An optimization is settled only when every title at hand has been
+  measured.
+- `memmove`'s own side (the backward copy) is called a few thousand times in two minutes at most: measured by size
+  in `xdk_crt_bench` (the same copy as `memcpy`'s), not tuned.
 
 ### Found on the way
 
@@ -165,3 +196,5 @@ and `memset` behind the same checks) against the code as it is:
   around such a call; the overlay takes it.
 - Crackdown's title screen, left without a frame limit (more than 1,500 frames a second), does not take the Start
   button; at 60 frames a second it does. Not looked into: it is the title's port, not a native function.
+- Crackdown's start took 32 seconds with the files on `any360::sys` (a file read one byte at a time, the host file
+  opened for each byte): docs/SYS_BINDING.md, step 2.

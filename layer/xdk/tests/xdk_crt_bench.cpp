@@ -21,18 +21,14 @@
 
 #include "any360/xdk/crt.h"
 #include "any360/xdk/crt_reference.h"
+#include "xdk_bench.h"
 
 namespace {
 
+using namespace xdk_bench;
+
 using any360::xdk::Memory;
 namespace xdk = any360::xdk;
-
-// Each version is measured as a function of its own, as a title's binding makes it (one function a bound address).
-#if defined(__clang__) || defined(__GNUC__)
-#define NOINLINE __attribute__((noinline))
-#else
-#define NOINLINE __declspec(noinline)
-#endif
 
 // The replacements as first written (timing only: the register's high half is not saved here).
 NOINLINE bool FirstMemcpy(const Memory& m, uint32_t dest, uint32_t source, uint32_t size, uint32_t stack_pointer) {
@@ -56,34 +52,15 @@ NOINLINE bool NowMemcpy(const Memory& m, uint32_t dest, uint32_t source, uint32_
 NOINLINE bool NowMemset(const Memory& m, uint32_t dest, uint32_t value, uint32_t size) {
   return xdk::CrtMemset(m, dest, value, size);
 }
-
-constexpr uint32_t kArena = 64u << 20, kStack = kArena - 4096;
-
-struct Call {
-  uint32_t dest, source, size;
-};
-
-struct Random {
-  uint32_t state;
-  explicit Random(uint32_t seed) : state(seed * 2654435761u + 1) {}
-  uint32_t Next() {
-    state ^= state << 13, state ^= state >> 17, state ^= state << 5;
-    return state;
-  }
-};
-
-// Calls of one size at varied alignments: small sizes inside a region that stays in the cache (as a game's hot
-// copies are), large ones spread over the arena.
-std::vector<Call> CallsOfSize(uint32_t size, uint32_t seed) {
-  std::vector<Call> calls(1024);
-  Random random(seed);
-  const uint32_t span = size <= 4096 ? (256u << 10) : kStack - 2 * size - 4096;
-  for (Call& c : calls) {
-    c.size = size;
-    c.dest = 4096 + random.Next() % (span / 2 - size);
-    c.source = 4096 + span / 2 + size + random.Next() % (span / 2 - size);
-  }
-  return calls;
+NOINLINE bool FirstMemmove(const Memory& m, uint32_t dest, uint32_t source, uint32_t size, uint32_t stack_pointer) {
+  if (dest == source) return true;
+  if (int32_t(dest) < int32_t(source)) return FirstMemcpy(m, dest, source, size, stack_pointer);
+  if (!xdk::IsPlainMemory(dest, size) || !xdk::IsPlainMemory(source, size)) return false;
+  std::memmove(m.Host(dest), m.Host(source), size);
+  return true;
+}
+NOINLINE bool NowMemmove(const Memory& m, uint32_t dest, uint32_t source, uint32_t size, uint32_t stack_pointer) {
+  return xdk::CrtMemmove(m, dest, source, size, stack_pointer);
 }
 
 // A title's calls by size: sizes `low` to `high` (one size when equal, any of them otherwise) and how many calls
@@ -167,47 +144,6 @@ std::vector<Call> CallsOfMix(const Title& title, bool memset, uint32_t count, ui
   return calls;
 }
 
-volatile uint32_t g_sink = 0;
-
-// One run over the calls, `rounds` times: nanoseconds a call.
-template <typename F>
-double Run(const std::vector<Call>& calls, uint32_t rounds, F&& f) {
-  uint32_t done = 0;
-  const auto start = std::chrono::steady_clock::now();
-  for (uint32_t round = 0; round < rounds; ++round) {
-    for (const Call& c : calls) done += f(c);
-  }
-  const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count();
-  g_sink = g_sink + done;
-  return ns / (double(rounds) * double(calls.size()));
-}
-
-uint32_t Rounds(const std::vector<Call>& calls) {
-  uint64_t bytes = 0;
-  for (const Call& c : calls) bytes += c.size + 32;
-  return uint32_t(std::clamp<uint64_t>((64ull << 20) / bytes, 1, 4000));
-}
-
-template <typename F>
-double Fastest(const std::vector<Call>& calls, uint32_t repeats, F&& f) {
-  const uint32_t rounds = Rounds(calls);
-  double best = 1e30;
-  for (uint32_t r = 0; r < repeats; ++r) best = std::min(best, Run(calls, rounds, f));
-  return best;
-}
-
-// Two versions on the same calls, their runs alternating (so that neither has the machine's better moments).
-template <typename F, typename G>
-std::pair<double, double> FastestOfBoth(const std::vector<Call>& calls, uint32_t repeats, F&& f, G&& g) {
-  const uint32_t rounds = Rounds(calls);
-  double best_f = 1e30, best_g = 1e30;
-  for (uint32_t r = 0; r < repeats; ++r) {
-    best_f = std::min(best_f, Run(calls, rounds, f));
-    best_g = std::min(best_g, Run(calls, rounds, g));
-  }
-  return {best_f, best_g};
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -243,6 +179,23 @@ int main(int argc, char** argv) {
     const auto [set_a, set_b] = FastestOfBoth(calls, repeats, set_first, set_now);
     std::printf("%9u | %9.2f %9.2f %9.2f %6.2fx | %9.2f %9.2f %9.2f %6.2fx\n", size, copy_slow, copy_a, copy_b,
                 copy_a / copy_b, set_slow, set_a, set_b, set_a / set_b);
+  }
+
+  // memmove's own side: the destination above the source it overlaps, copied from the end (its other side is
+  // memcpy, above).
+  std::printf("memmove, the destination 8 bytes above its source:\n%9s | %9s %9s %9s %7s\n", "size", "model", "first",
+              "now", "gain");
+  for (uint32_t size : {8u, 16u, 32u, 64u, 128u, 256u, 1024u, 4096u, 65536u}) {
+    std::vector<Call> calls = CallsOfSize(size, 50 + size);
+    for (Call& c : calls) c.source = c.dest - 8;
+    const double slow = Fastest(calls, std::min(repeats, 3u), [&](const Call& c) {
+      xdk::reference::Memmove(m, c.dest, c.source, c.size, kStack);
+      return 1u;
+    });
+    const auto [a, b] = FastestOfBoth(
+        calls, repeats, [&](const Call& c) { return uint32_t(FirstMemmove(m, c.dest, c.source, c.size, kStack)); },
+        [&](const Call& c) { return uint32_t(NowMemmove(m, c.dest, c.source, c.size, kStack)); });
+    std::printf("%9u | %9.2f %9.2f %9.2f %6.2fx\n", size, slow, a, b, a / b);
   }
 
   // Each title's mix, three different draws of it; then all of them together (what a change is judged on).

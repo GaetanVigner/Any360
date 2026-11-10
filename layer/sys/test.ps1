@@ -48,6 +48,8 @@ try {
     if ($LASTEXITCODE) { throw "sys_object_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'xdk/xdk_crt_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "xdk_crt_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'xdk/xdk_xapi_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "xdk_xapi_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_cp_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "gfx_cp_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_shader_tests.exe') | Out-Host

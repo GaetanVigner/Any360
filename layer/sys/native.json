@@ -5,6 +5,8 @@
  "xdk": [
   "memcpy",
   "memcpy (plain forward copy)",
-  "memset"
+  "memset",
+  "memmove",
+  "XMemCpy"
  ]
 }
