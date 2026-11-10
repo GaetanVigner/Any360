@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -116,6 +117,12 @@ uint64_t DispatchGuest(uint32_t address, uint32_t stack_top, uint32_t pcr, const
 uint32_t BindVariables();
 // The group a variable belongs to; false for a name the binding does not provide.
 bool VariableGroup(const char* name, SysGroup& group);
+
+// The runtime's input system takes one caller at a time (each of its calls refreshes its device list, a vector it
+// clears and refills, without a lock), and any360::sys calls it from its sampling thread while the input group is
+// on it. A title's host code that calls the runtime's input system itself (an overlay asking which device is in
+// use) holds this lock around its call; without it the two refreshes crash inside the runtime.
+std::unique_lock<std::mutex> LockHostInput();
 
 }  // namespace any360::host::rexglue
 

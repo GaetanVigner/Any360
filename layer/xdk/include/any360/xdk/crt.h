@@ -62,10 +62,12 @@ inline Bytes32 Load256(const uint8_t* p) {
 }
 inline void Store256(uint8_t* p, const Bytes32& v) { std::memcpy(p, &v, 32); }
 
-// memmove for the sizes the titles copy most (up to 64 bytes: the two ends of the range, overlapping in the
+// memmove for the sizes the titles copy most (up to 128 bytes: the two ends of the range, overlapping in the
 // middle, every load before any store, so overlap is as memmove's), the host's memmove above. What the benchmark
-// kept (xdk_crt_bench, on the one title's mix of sizes measured so far): this is 1.15x the plain memmove; the same path carried on to 128
-// bytes gained nothing, and one path without a branch on the size for 16 to 64 bytes was slower.
+// kept (xdk_crt_bench, on the three titles' mixes of sizes): this is 1.2x the plain memmove over the three, 1.3x on
+// the title a third of whose copies are 65 to 128 bytes, and slower on none. On the first title measured alone the
+// part above 64 bytes gained nothing and had been taken out: one title's sizes are not the titles' sizes. One
+// path without a branch on the size for 16 to 64 bytes was slower and stays out.
 inline void Move(uint8_t* d, const uint8_t* s, uint32_t n) {
   if (n <= 32) {
     if (n >= 16) {
@@ -96,11 +98,19 @@ inline void Move(uint8_t* d, const uint8_t* s, uint32_t n) {
     Store256(d + n - 32, b);
     return;
   }
+  if (n <= 128) {
+    const Bytes32 a = Load256(s), b = Load256(s + 32), c = Load256(s + n - 64), e = Load256(s + n - 32);
+    Store256(d, a);
+    Store256(d + 32, b);
+    Store256(d + n - 64, c);
+    Store256(d + n - 32, e);
+    return;
+  }
   std::memmove(d, s, n);
 }
 
-// memset, the sizes up to 128 bytes as overlapping stores of the repeated byte (1.35x the plain memset on the
-// one title's mix of sizes measured so far), the host's memset above.
+// memset, the sizes up to 128 bytes as overlapping stores of the repeated byte (1.35x the plain memset over the
+// three titles' mixes of sizes, between 1.2x and 1.5x on each), the host's memset above.
 inline void Fill(uint8_t* d, uint8_t value, uint32_t n) {
   const uint64_t pattern = 0x0101010101010101ull * value;
   if (n <= 32) {

@@ -392,6 +392,8 @@ void HostVibrate(uint32_t user, uint16_t left, uint16_t right) {
 }
 }  // namespace
 
+std::unique_lock<std::mutex> LockHostInput() { return std::unique_lock<std::mutex>(g_host_input); }
+
 bool StartSystem(const SystemOptions& options, std::string& error) {
   auto* kernel = REX_KERNEL_STATE();
   if (!kernel || !kernel->memory()) {

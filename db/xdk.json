@@ -8,7 +8,7 @@
    "simpsons": "0x82A3CD80",
    "tdu": "0x82645BF0"
   },
-  "note": "the long forward copy; leaves its destination at r1 - 8. Any360: xdk::CrtMemcpy, bound in Test Drive Unlimited; Crackdown and The Simpsons Game still bind their own"
+  "note": "the long forward copy; leaves its destination register (64 bits) at r1 - 8. Any360: xdk::CrtMemcpy, the one function the three titles bind (docs/NATIVE_FUNCTIONS.md)"
  },
  {
   "name": "memcpy (plain forward copy)",
@@ -18,7 +18,7 @@
    "simpsons": "0x82A3D1D8",
    "tdu": "0x82646010"
   },
-  "note": "bytes to alignment, then words. Any360: xdk::CrtCopyForward, bound in Test Drive Unlimited"
+  "note": "bytes to alignment, then words. Any360: xdk::CrtCopyForward, bound in Test Drive Unlimited and The Simpsons Game (not found in Crackdown yet)"
  },
  {
   "name": "memmove",
@@ -38,7 +38,7 @@
    "simpsons": "0x82A3C440",
    "tdu": "0x826460C0"
   },
-  "note": "Any360: xdk::CrtMemset, bound in Test Drive Unlimited; Crackdown and The Simpsons Game still bind their own"
+  "note": "Any360: xdk::CrtMemset, the one function the three titles bind (docs/NATIVE_FUNCTIONS.md)"
  },
  {
   "name": "D3DDevice_BeginTiling",

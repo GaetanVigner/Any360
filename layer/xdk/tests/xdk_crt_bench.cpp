@@ -106,7 +106,34 @@ const Share kTestDriveUnlimited[] = {
     {32768, 65535, 5374, 27},
 };
 
-// The titles measured so far. One title is one sample: what is tuned on it is measured again on the next.
+// Crackdown over its first 150 seconds (a gamepad connected: boot, title screen, then play in the city). More
+// than a quarter of its copies are 104 bytes, a seventh 12 and a tenth 64; two fills in five are 16 bytes and a
+// third 48.
+const Share kCrackdown[] = {
+    {0, 0, 213965, 55}, {1, 1, 98671, 207}, {2, 3, 50683, 631}, {4, 4, 952766, 256808}, {4, 7, 64993, 1717},
+    {8, 8, 228358, 391181}, {8, 15, 153057, 23143}, {12, 12, 4267724, 260740}, {14, 14, 1221733, 0},
+    {16, 16, 1536250, 16551984}, {16, 31, 291689, 216078}, {28, 28, 213116, 0}, {30, 30, 277288, 0},
+    {32, 32, 158963, 1057132}, {32, 63, 245394, 174225}, {36, 36, 259266, 0}, {40, 40, 2084225, 378175},
+    {44, 44, 332412, 358642}, {48, 48, 374771, 13441119}, {56, 56, 183096, 0}, {58, 58, 0, 969879},
+    {60, 60, 797279, 0}, {64, 64, 2949918, 0}, {64, 127, 219073, 631369}, {74, 74, 0, 342985}, {80, 80, 0, 229344},
+    {96, 96, 1450769, 0}, {104, 104, 8430032, 0}, {108, 108, 242262, 0}, {128, 128, 0, 378265},
+    {128, 255, 176346, 253245}, {168, 168, 918299, 0}, {256, 511, 512051, 144567}, {512, 1023, 770788, 88553},
+    {1024, 2047, 7748, 1813427}, {2048, 4095, 13796, 212818}, {4096, 8191, 6791, 83540}, {8192, 16383, 4421, 25477},
+    {16384, 32767, 802, 701}, {32768, 65535, 1348, 689},
+};
+
+// The Simpsons Game over its first 130 seconds (a gamepad connected: boot, menus and a level). Half of its copies
+// are 64 bytes and two in five 12 bytes; three fills in five are 64 bytes and one in five between 1 and 2 KB.
+const Share kTheSimpsonsGame[] = {
+    {0, 0, 9214, 20}, {1, 1, 10331, 104}, {2, 3, 6076, 47}, {4, 7, 141607, 7382}, {8, 15, 110846, 11987},
+    {12, 12, 16868618, 0}, {16, 16, 0, 168195}, {16, 31, 175393, 14424}, {24, 24, 0, 665233},
+    {32, 63, 484068, 120675}, {48, 48, 0, 703531}, {64, 64, 21506284, 5172732}, {64, 127, 173965, 49013},
+    {84, 84, 962440, 0}, {112, 112, 449323, 0}, {128, 255, 83459, 43253}, {192, 192, 1462674, 0},
+    {256, 511, 43456, 42900}, {512, 1023, 581187, 79163}, {1024, 2047, 141557, 1591318}, {2048, 4095, 8753, 27797},
+    {4096, 8191, 1834, 25482}, {8192, 16383, 2917, 352}, {16384, 32767, 540, 171}, {32768, 65535, 460, 29},
+};
+
+// The titles measured so far: a change is judged on all of them.
 struct Title {
   const char* name;
   const Share* shares;
@@ -114,6 +141,8 @@ struct Title {
 };
 const Title kTitles[] = {
     {"Test Drive Unlimited", kTestDriveUnlimited, sizeof(kTestDriveUnlimited) / sizeof(kTestDriveUnlimited[0])},
+    {"Crackdown", kCrackdown, sizeof(kCrackdown) / sizeof(kCrackdown[0])},
+    {"The Simpsons Game", kTheSimpsonsGame, sizeof(kTheSimpsonsGame) / sizeof(kTheSimpsonsGame[0])},
 };
 
 // `count` calls whose sizes follow a title's mix, in random order, inside a region of a few megabytes.
