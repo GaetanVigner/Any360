@@ -204,6 +204,11 @@ bool Device::Create(const DeviceOptions& options) {
   enabled.features.imageCubeArray = supported.features.imageCubeArray;
   enabled.features.shaderStorageImageWriteWithoutFormat = supported.features.shaderStorageImageWriteWithoutFormat;
   enabled.features.sampleRateShading = supported.features.sampleRateShading;
+  // Diagnostics: ANY360_GPU_ROBUST=1 makes out-of-bounds buffer accesses defined (a lost device that this cures was
+  // a shader reading or writing past a buffer).
+  if (const char* robust = std::getenv("ANY360_GPU_ROBUST"); robust && *robust == '1') {
+    enabled.features.robustBufferAccess = supported.features.robustBufferAccess;
+  }
   // A lost device's fault (address, vendor data) when the driver reports it (VK_EXT_device_fault).
   VkPhysicalDeviceFaultFeaturesEXT fault{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT};
   VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, &enabled};

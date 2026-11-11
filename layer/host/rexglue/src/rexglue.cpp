@@ -976,6 +976,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
     renderer->GuestMemoryWritten(begin, end);
     renderer->AuditWrite("command processor", begin, end);
   });
+  if (options.log) binding->renderer->SetStallLog(options.log);
   // Diagnostics: ANY360_GPU_AUDIT_WRITES=1 notes GPU-side writes that land on compressed textures (frame report).
   if (const char* audit = std::getenv("ANY360_GPU_AUDIT_WRITES"); audit && *audit == '1') {
     binding->renderer->SetAuditWrites(true);

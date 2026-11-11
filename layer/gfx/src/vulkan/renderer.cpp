@@ -881,6 +881,17 @@ VulkanRenderer::TranslatedShader* VulkanRenderer::GetShader(const gfx::Shader& s
                                                    std::endian::native);
   rex::string::StringBuffer disassembly;
   slot->shader->AnalyzeUcode(disassembly);
+  // Diagnostics: ANY360_DUMP_SHADERS=<directory> writes each shader's microcode disassembly there (<hash>.txt).
+  static const char* const dump = std::getenv("ANY360_DUMP_SHADERS");
+  if (dump && *dump) {
+    char name[64];
+    std::snprintf(name, sizeof name, "/%016llX.txt", (unsigned long long)source.hash);
+    if (std::FILE* file = std::fopen((std::string(dump) + name).c_str(), "wb")) {
+      const std::string& text = slot->shader->ucode_disassembly();
+      std::fwrite(text.data(), 1, text.size(), file);
+      std::fclose(file);
+    }
+  }
   return last_shader_[stage] = slot.get();
 }
 
@@ -1737,6 +1748,12 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   DrawJob job{};
   job.query = UINT32_MAX;
   job.timing = UINT32_MAX;
+  {
+    // For the stall report: the shaders the batch draws with, once each.
+    const std::pair<uint64_t, uint64_t> pair{draw.vertex_shader->hash, draw.pixel_shader ? draw.pixel_shader->hash : 0};
+    auto& shaders = batch().shader_pairs;
+    if (shaders.size() < 256 && std::find(shaders.begin(), shaders.end(), pair) == shaders.end()) shaders.push_back(pair);
+  }
   if (draw_timing_ && batch().timing_keys.size() < kDrawTimings) {
     job.timing = kDrawTimings * current_ + uint32_t(batch().timing_keys.size());
     batch().timing_keys.push_back({draw.pixel_shader ? draw.pixel_shader->hash : 0, draw.vertex_shader->hash});
@@ -2089,6 +2106,12 @@ bool VulkanRenderer::MemExportWithoutRasterization(const DrawCall& draw) {
   const uint32_t width = SpirvShaderTranslator::kMemExportComputeDispatchX;
   f.vkCmdDispatch(cb, std::min(draw.index_count, width), (draw.index_count + width - 1) / width, 1);
   ++memexport_dispatches_;
+  ++batch().memexport_dispatches;
+  {
+    const std::pair<uint64_t, uint64_t> pair{draw.vertex_shader->hash, 0};
+    auto& shaders = batch().shader_pairs;
+    if (shaders.size() < 256 && std::find(shaders.begin(), shaders.end(), pair) == shaders.end()) shaders.push_back(pair);
+  }
   MemExported(std::move(exports));
   return true;
 }
@@ -2122,29 +2145,32 @@ void VulkanRenderer::MemExported(std::vector<MemExport> exports) {
     }
   }
   memexports_ = exports;
-  if (batch_open_) batch().memexport = true;  // its actions (this copy) wait for the GPU, never released early
-  WhenDone([this, exports = std::move(exports), given = std::move(given)] {
-    WritingGuestMemoryScope writing;
-    for (size_t i = 0; i < exports.size(); ++i) {
-      const MemExport& e = exports[i];
-      const uint8_t* after = vram_guest_on_ ? static_cast<const uint8_t*>(memexport_readback_.mapped) + e.readback
-                             : !shared_memory_imported_ ? static_cast<const uint8_t*>(shared_memory_.mapped) + e.base
-                                                        : nullptr;
-      if (!after) continue;  // imported: written in place
-      // The words the shaders changed, from what they were given; the rest is left as the title has it now.
-      const uint8_t* before = given[i].data();
-      uint32_t first = UINT32_MAX, last = 0;
-      for (uint32_t at = 0; at + 4 <= e.bytes; at += 4) {
-        if (std::memcmp(after + at, before + at, 4) == 0) continue;
-        std::memcpy(physical_ + e.base + at, after + at, 4);
-        first = std::min(first, at), last = at + 4;
-      }
-      if (first == UINT32_MAX) continue;
-      AuditWrite("memexport", e.base + first, e.base + last);
-      if (textures_) textures_->MemoryChanged(e.base + first, e.base + last);
-    }
-  });
+  // The batch submitted and run, then the copy, here on the renderer's thread: what the command processor does after
+  // this draw (the fences the title waits on to reuse the memory) comes after it. Attached to the batch as an action
+  // instead, it ran when the batch was released at submission (fences_when_captured), before the GPU had filled the
+  // readback buffer: it copied an earlier export's data, and Call of Duty: Black Ops's textures, which it copies into
+  // place with memexport, turned to noise.
+  Flush();  // the batch with the draw and the ranges' upload, submitted
   WaitIdle();
+  WritingGuestMemoryScope writing;
+  for (size_t i = 0; i < exports.size(); ++i) {
+    const MemExport& e = exports[i];
+    const uint8_t* after = vram_guest_on_ ? static_cast<const uint8_t*>(memexport_readback_.mapped) + e.readback
+                           : !shared_memory_imported_ ? static_cast<const uint8_t*>(shared_memory_.mapped) + e.base
+                                                      : nullptr;
+    if (!after) continue;  // imported: written in place
+    // The words the shaders changed, from what they were given; the rest is left as the title has it now.
+    const uint8_t* before = given[i].data();
+    uint32_t first = UINT32_MAX, last = 0;
+    for (uint32_t at = 0; at + 4 <= e.bytes; at += 4) {
+      if (std::memcmp(after + at, before + at, 4) == 0) continue;
+      std::memcpy(physical_ + e.base + at, after + at, 4);
+      first = std::min(first, at), last = at + 4;
+    }
+    if (first == UINT32_MAX) continue;
+    AuditWrite("memexport", e.base + first, e.base + last);
+    if (textures_) textures_->MemoryChanged(e.base + first, e.base + last);
+  }
 }
 
 void VulkanRenderer::RecordJob(VkCommandBuffer cb, const DrawJob& job, RecordedState& rs, std::vector<uint16_t>& scratch) const {
@@ -2453,6 +2479,8 @@ VkCommandBuffer VulkanRenderer::Record() {
       f.vkCmdResetQueryPool(b.cb, timestamps_, 4 * index, 2);
       f.vkCmdWriteTimestamp2(b.cb, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, timestamps_, 4 * index);
     }
+    b.shader_pairs.clear();
+    b.memexport_dispatches = 0;
     if (gpu_marks_) {
       f.vkCmdResetQueryPool(b.cb, gpu_marks_, kGpuMarks * uint32_t(&b - batches_.data()), kGpuMarks);
       b.marks = 0;
@@ -2463,7 +2491,6 @@ VkCommandBuffer VulkanRenderer::Record() {
       b.timing_keys.clear();
     }
     recorded_.valid = false;  // a new command buffer has no state
-    b.memexport = false;
     batch_open_ = true;
     b.pieces_used = 0;
     order_.clear();
@@ -2550,6 +2577,7 @@ void VulkanRenderer::SubmitLoop() {
   for (;;) {
     uint32_t index;
     {
+      submit_phase_ = 1;
       std::unique_lock lock(submit_mutex_);
       submit_cv_.wait(lock, [&] { return submit_stopping_ || !to_submit_.empty(); });
       if (to_submit_.empty()) return;
@@ -2558,7 +2586,10 @@ void VulkanRenderer::SubmitLoop() {
       submitting_ = true;
       submitting_index_ = index;
     }
+    submit_batch_ = index;
+    submit_phase_ = 2;
     Submit(index);
+    submit_phase_ = 0;
     {
       std::lock_guard lock(submit_mutex_);
       submitting_ = false;
@@ -2637,6 +2668,7 @@ void VulkanRenderer::Submit(uint32_t index) {
   VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
   submit.commandBufferCount = uint32_t(s.cbs.size());
   submit.pCommandBuffers = s.cbs.data();
+  if (submit_phase_ == 2) submit_phase_ = 3;
   if (const VkResult result = f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence); result != VK_SUCCESS) {
     // The first failure with its result (and the driver's fault description when the device is lost).
     static bool told = false;
@@ -2666,7 +2698,7 @@ void VulkanRenderer::TakeReleased(std::vector<std::function<void()>>& actions) {
     if (b.done || b.released) return true;
     // Colour resolves it reads back into guest memory do not hold it (they land when the batch has run; the runtime
     // never writes them back at all). Depth resolves do: a title reading depth on the CPU must see this frame's.
-    if (!b.submitted || !b.captured || b.memexport) return false;
+    if (!b.submitted || !b.captured) return false;
     for (const PendingWriteBack& w : b.write_backs) {
       if (w.depth) return false;
     }
@@ -2926,7 +2958,27 @@ void VulkanRenderer::WhenDone(std::function<void()> action) {
 
 void VulkanRenderer::WaitBatch(uint32_t index) {
   std::unique_lock lock(done_mutex_);
-  done_cv_.wait(lock, [&] { return batches_[index].done; });
+  // A wait of more than 5 s is a stall: where the renderer's threads are is reported once (StallLog).
+  bool reported = false;
+  while (!done_cv_.wait_for(lock, std::chrono::seconds(5), [&] { return batches_[index].done; })) {
+    if (reported || !stall_log_) continue;
+    reported = true;
+    std::string in_flight;
+    for (uint32_t i : in_flight_) {
+      const Batch& b = batches_[i];
+      in_flight += " " + std::to_string(i) + (b.submitted ? "s" : "") + (b.released ? "r" : "") + (b.done ? "d" : "") +
+                   "(" + std::to_string(b.actions.size()) + " actions)";
+    }
+    static const char* const kCompletePhases[] = {"idle", "waiting for work", "waiting for the submitter",
+                                                  "waiting for the fence", "finishing the batch", "running actions",
+                                                  "running released actions"};
+    static const char* const kSubmitPhases[] = {"idle", "waiting for work", "waiting for recording threads", "submitting"};
+    const uint32_t cp = complete_phase_.load(), sp = submit_phase_.load();
+    stall_log_("Any360: renderer stalled 5 s waiting for batch " + std::to_string(index) + "; in flight:" + in_flight +
+               "; completion thread " + (cp < 7 ? kCompletePhases[cp] : "?") + " (batch " +
+               std::to_string(complete_batch_.load()) + "); submitter " + (sp < 4 ? kSubmitPhases[sp] : "?") + " (batch " +
+               std::to_string(submit_batch_.load()) + ")");
+  }
 }
 
 void VulkanRenderer::WaitIdle() {
@@ -2937,22 +2989,41 @@ void VulkanRenderer::Complete() {
   for (;;) {
     uint32_t index;
     {
+      complete_phase_ = 1;
       std::unique_lock lock(done_mutex_);
       work_cv_.wait(lock, [&] { return stopping_ || !in_flight_.empty(); });
       if (in_flight_.empty()) return;
       index = in_flight_.front();
     }
+    complete_batch_ = index;
     Batch& b = batches_[index];
     // Not before the submitter thread has submitted it: a fence must not be waited on while vkQueueSubmit uses it.
     if (submitter_.joinable()) {
+      complete_phase_ = 2;
       std::unique_lock lock(submit_mutex_);
       submitted_cv_.wait(lock, [&] {
         return !(submitting_ && submitting_index_ == index) &&
                std::find(to_submit_.begin(), to_submit_.end(), index) == to_submit_.end();
       });
     }
-    device_.fn().vkWaitForFences(device_.device(), 1, &b.fence, VK_TRUE, UINT64_MAX);
+    complete_phase_ = 3;
+    // A batch the GPU has not finished after a second (the driver resets the GPU at two): its shaders are reported.
+    if (device_.fn().vkWaitForFences(device_.device(), 1, &b.fence, VK_TRUE, 1000000000ull) == VK_TIMEOUT) {
+      if (stall_log_) {
+        std::string shaders;
+        for (const auto& [vs, ps] : b.shader_pairs) {
+          char pair[48];
+          std::snprintf(pair, sizeof pair, " %016llX/%016llX", (unsigned long long)vs, (unsigned long long)ps);
+          shaders += pair;
+        }
+        stall_log_("Any360: batch " + std::to_string(index) + " not finished by the GPU after 1 s; " +
+                   std::to_string(b.memexport_dispatches) + " memexport dispatches; its shaders (vertex/pixel):" + shaders);
+      }
+      device_.fn().vkWaitForFences(device_.device(), 1, &b.fence, VK_TRUE, UINT64_MAX);
+    }
+    complete_phase_ = 4;
     FinishBatch(b);
+    complete_phase_ = 5;
     // Actions WhenDone attached while these ran, until none is left: then the batch is done.
     for (;;) {
       std::vector<std::function<void()>>& late = finished_actions_;
@@ -2969,8 +3040,10 @@ void VulkanRenderer::Complete() {
       for (auto& action : late) action();
       late.clear();
     }
+    complete_phase_ = 6;
     for (auto& action : finished_actions_) action();  // the batches released after it
     finished_actions_.clear();
+    complete_phase_ = 0;
     done_cv_.notify_all();
   }
 }

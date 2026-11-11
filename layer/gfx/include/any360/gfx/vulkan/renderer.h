@@ -273,6 +273,8 @@ class VulkanRenderer : public gfx::Renderer {
   // lands on a compressed texture (DXT, DXN, 5:6:5: never a render target's copy) is noted with where it came from
   // (TakeAuditLog, any thread). `what`: the writing path.
   void SetAuditWrites(bool on) { audit_writes_ = on; }
+  // Diagnostics: told where the renderer's threads are when a wait for a batch lasts more than 5 s (once a wait).
+  void SetStallLog(std::function<void(const std::string&)> log) { stall_log_ = std::move(log); }
   void AuditWrite(const char* what, uint32_t begin, uint32_t end);
   std::vector<std::string> TakeAuditLog();
   uint32_t ResolveFormatAt(uint32_t base) const {
@@ -473,6 +475,8 @@ class VulkanRenderer : public gfx::Renderer {
     VkCommandBuffer cb = VK_NULL_HANDLE;
     std::atomic<uint32_t> marks{0};          // GpuMark time stamps written (recording and submitting threads)
     std::vector<std::pair<uint64_t, uint64_t>> timing_keys;  // ANY360_DRAW_TIMING: each draw's pixel / vertex hash
+    std::vector<std::pair<uint64_t, uint64_t>> shader_pairs;  // the vertex / pixel shaders it draws with (stall report)
+    uint32_t memexport_dispatches = 0;                        // compute dispatches for memexport it records
     std::array<uint8_t, kGpuMarks> mark_kinds{};
     VkCommandBuffer upload_cb = VK_NULL_HANDLE;  // guest memory the batch's shaders read, copied into video memory first
     // With recording threads, the batch is several primary command buffers run in order: pieces this thread records
@@ -499,10 +503,6 @@ class VulkanRenderer : public gfx::Renderer {
     // it (fences) needs not wait for the GPU to run it (resolves written back land later, as the CPU rarely reads them).
     bool captured = false;
     bool submitted = false, released = false;  // on the queue; what follows it done then (guarded by done_mutex_)
-    // Its draws export to memory (memexport): what follows it waits for the GPU, never released at submission (the
-    // exports' copy into guest memory is one of its actions; run early, it copied what an earlier export left in the
-    // readback buffer, and Call of Duty: Black Ops's textures, copied into place by memexport, turned to noise).
-    bool memexport = false;
     Buffer guest_staging;  // the guest memory its draws fetch, copied at the flush
     bool uploaded = false;  // its upload command buffer ran too (time stamped)
   };
@@ -534,6 +534,9 @@ class VulkanRenderer : public gfx::Renderer {
   std::atomic<bool> any_cpu_writes_{false};
   void ApplyCpuWrites();
   bool audit_writes_ = false;
+  std::function<void(const std::string&)> stall_log_;
+  // Where the completion and submitter threads are (WaitBatch's stall report): phase codes and the batch.
+  std::atomic<uint32_t> complete_phase_{0}, complete_batch_{0}, submit_phase_{0}, submit_batch_{0};
   std::mutex audit_mutex_;
   struct AuditedWrite {
     const char* what;
