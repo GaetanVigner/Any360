@@ -172,9 +172,9 @@
  {
   "date": "2026-11-11",
   "system_calls": {
-   "native": 602,
+   "native": 606,
    "ported": 0,
-   "runnable": 606,
+   "runnable": 610,
    "total": 2914
   },
   "instructions": {
@@ -183,9 +183,9 @@
    "total": 1842
   },
   "xdk": {
-   "native": 8,
+   "native": 15,
    "ported": 0,
-   "total": 40
+   "total": 46
   },
   "gpu": {
    "native": 283,

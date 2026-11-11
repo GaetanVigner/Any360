@@ -32,6 +32,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":22631,
 "crackdown":28492,
 "simpsons":36630
 }
@@ -42,7 +43,9 @@
 "family":"integer",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":22
+}
 },
 {
 "id":"PPC_INST_ADDCO",
@@ -58,7 +61,9 @@
 "family":"integer",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":42
+}
 },
 {
 "id":"PPC_INST_ADDE64",
@@ -91,6 +96,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":130730,
 "crackdown":313453,
 "simpsons":290987
 }
@@ -102,6 +108,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2228,
 "crackdown":3642,
 "simpsons":5059
 }
@@ -113,6 +120,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2991,
 "crackdown":684,
 "simpsons":798
 }
@@ -123,7 +131,9 @@
 "family":"integer",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":117
+}
 },
 {
 "id":"PPC_INST_ADDME64",
@@ -164,6 +174,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":612,
 "crackdown":541,
 "simpsons":493
 }
@@ -239,6 +250,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2235,
 "crackdown":1823,
 "simpsons":2881
 }
@@ -250,6 +262,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":343,
 "crackdown":645,
 "simpsons":1313
 }
@@ -261,6 +274,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":100,
 "crackdown":785,
 "simpsons":810
 }
@@ -280,6 +294,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1,
 "crackdown":19,
 "simpsons":32
 }
@@ -331,6 +346,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":32156,
 "crackdown":67456,
 "simpsons":81476
 }
@@ -622,6 +638,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":272,
 "crackdown":1319,
 "simpsons":2342
 }
@@ -633,6 +650,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1979,
 "crackdown":18348,
 "simpsons":21186
 }
@@ -676,6 +694,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1705,
 "crackdown":1360,
 "simpsons":1147
 }
@@ -695,6 +714,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":13,
 "crackdown":6,
 "simpsons":6
 }
@@ -778,6 +798,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2,
 "crackdown":2,
 "simpsons":2
 }
@@ -829,6 +850,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":411,
 "crackdown":2,
 "simpsons":2
 }
@@ -847,7 +869,9 @@
 "family":"branch / trap",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":409
+}
 },
 {
 "id":"PPC_INST_BDZFA",
@@ -912,6 +936,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2,
 "crackdown":2,
 "simpsons":2
 }
@@ -1011,6 +1036,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":38195,
 "crackdown":87833,
 "simpsons":103559
 }
@@ -1062,6 +1088,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":595,
 "crackdown":1443,
 "simpsons":3593
 }
@@ -1161,6 +1188,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":6494,
 "crackdown":12525,
 "simpsons":12423
 }
@@ -1212,6 +1240,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":105,
 "crackdown":109,
 "simpsons":416
 }
@@ -1247,6 +1276,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":3331,
 "crackdown":4982,
 "simpsons":6971
 }
@@ -1298,6 +1328,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":67,
 "crackdown":56,
 "simpsons":172
 }
@@ -1333,6 +1364,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":90408,
 "crackdown":153104,
 "simpsons":173381
 }
@@ -1352,6 +1384,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":7233,
 "crackdown":10948,
 "simpsons":14276
 }
@@ -1403,6 +1436,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":135,
 "crackdown":120,
 "simpsons":511
 }
@@ -1438,6 +1472,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":13025,
 "crackdown":27662,
 "simpsons":60553
 }
@@ -1449,6 +1484,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1,
 "crackdown":1,
 "simpsons":1
 }
@@ -1460,6 +1496,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":10556,
 "crackdown":20024,
 "simpsons":22471
 }
@@ -1511,6 +1548,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":82,
 "crackdown":86,
 "simpsons":229
 }
@@ -1546,6 +1584,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":27336,
 "crackdown":55179,
 "simpsons":66766
 }
@@ -1565,6 +1604,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1,
 "crackdown":1,
 "simpsons":1
 }
@@ -1600,6 +1640,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":200,
 "crackdown":445,
 "simpsons":1358
 }
@@ -2255,6 +2296,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":422,
 "crackdown":1545,
 "simpsons":1770
 }
@@ -2266,6 +2308,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":11550,
 "crackdown":30710,
 "simpsons":36752
 }
@@ -2293,6 +2336,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":123,
 "crackdown":103,
 "simpsons":206
 }
@@ -2304,6 +2348,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":82,
 "crackdown":103,
 "simpsons":186
 }
@@ -2331,6 +2376,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":180,
 "crackdown":173,
 "simpsons":151
 }
@@ -2342,6 +2388,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":338,
 "crackdown":290,
 "simpsons":545
 }
@@ -2361,6 +2408,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":6061,
 "crackdown":25308,
 "simpsons":33254
 }
@@ -2372,6 +2420,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":34976,
 "crackdown":97712,
 "simpsons":107626
 }
@@ -2383,6 +2432,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":7417,
 "crackdown":6456,
 "simpsons":9132
 }
@@ -2394,6 +2444,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":31992,
 "crackdown":32974,
 "simpsons":46345
 }
@@ -2413,6 +2464,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":14,
 "crackdown":23,
 "simpsons":190
 }
@@ -2424,6 +2476,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":795,
 "crackdown":12492,
 "simpsons":3895
 }
@@ -2563,6 +2616,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":3,
 "simpsons":5
 }
 },
@@ -2669,6 +2723,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":4,
 "crackdown":65,
 "simpsons":48
 }
@@ -2736,6 +2791,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2,
 "crackdown":2,
 "simpsons":4
 }
@@ -2755,6 +2811,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":34,
 "crackdown":19,
 "simpsons":63
 }
@@ -2958,6 +3015,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":35,
 "crackdown":26,
 "simpsons":29
 }
@@ -2977,6 +3035,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":39,
 "crackdown":33,
 "simpsons":43
 }
@@ -3020,6 +3079,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":697,
 "crackdown":284,
 "simpsons":760
 }
@@ -3039,6 +3099,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":327,
 "crackdown":577,
 "simpsons":1219
 }
@@ -3818,6 +3879,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2,
 "crackdown":1,
 "simpsons":5
 }
@@ -3829,6 +3891,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":68,
 "crackdown":2,
 "simpsons":14
 }
@@ -5440,6 +5503,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":878,
 "crackdown":2357,
 "simpsons":3189
 }
@@ -5451,6 +5515,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2571,
 "crackdown":1505,
 "simpsons":1763
 }
@@ -5462,6 +5527,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2313,
 "crackdown":1682,
 "simpsons":1954
 }
@@ -5481,6 +5547,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":598,
 "crackdown":658,
 "simpsons":864
 }
@@ -5492,6 +5559,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":77,
 "crackdown":2985,
 "simpsons":140
 }
@@ -5503,6 +5571,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":7237,
 "crackdown":4544,
 "simpsons":5842
 }
@@ -5514,6 +5583,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2959,
 "crackdown":5078,
 "simpsons":3523
 }
@@ -5549,6 +5619,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":7536,
 "crackdown":8759,
 "simpsons":10489
 }
@@ -5568,6 +5639,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":10,
 "crackdown":9,
 "simpsons":12
 }
@@ -5579,6 +5651,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":155,
 "crackdown":792,
 "simpsons":527
 }
@@ -5598,6 +5671,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1131,
 "crackdown":923,
 "simpsons":1193
 }
@@ -5617,6 +5691,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":71,
 "crackdown":105,
 "simpsons":127
 }
@@ -5628,6 +5703,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2107,
 "crackdown":2310,
 "simpsons":2146
 }
@@ -5655,6 +5731,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":101,
 "crackdown":105,
 "simpsons":148
 }
@@ -5666,6 +5743,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":9645,
 "crackdown":3348,
 "simpsons":5870
 }
@@ -5677,6 +5755,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":12947,
 "crackdown":8251,
 "simpsons":8706
 }
@@ -5696,6 +5775,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":23,
 "crackdown":39,
 "simpsons":37
 }
@@ -5707,6 +5787,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":875,
 "crackdown":518,
 "simpsons":747
 }
@@ -5718,6 +5799,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":286,
 "crackdown":517,
 "simpsons":722
 }
@@ -5729,6 +5811,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":16459,
 "crackdown":10279,
 "simpsons":13587
 }
@@ -5740,6 +5823,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":22,
 "crackdown":2,
 "simpsons":1
 }
@@ -5751,6 +5835,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1730,
 "crackdown":1294,
 "simpsons":1108
 }
@@ -5778,6 +5863,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":47,
 "crackdown":10,
 "simpsons":19
 }
@@ -5797,6 +5883,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":19,
 "crackdown":24,
 "simpsons":33
 }
@@ -5808,6 +5895,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":589,
 "crackdown":337,
 "simpsons":694
 }
@@ -5826,7 +5914,9 @@
 "family":"floating point",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":15
+}
 },
 {
 "id":"PPC_INST_FRIM",
@@ -5867,6 +5957,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":4046,
 "crackdown":5178,
 "simpsons":4212
 }
@@ -5878,6 +5969,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":23,
 "crackdown":2
 }
 },
@@ -5904,6 +5996,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1769,
 "crackdown":553,
 "simpsons":549
 }
@@ -5915,6 +6008,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":6,
 "crackdown":14,
 "simpsons":15
 }
@@ -5926,6 +6020,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":869,
 "crackdown":955,
 "simpsons":688
 }
@@ -5937,6 +6032,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":61,
 "crackdown":108,
 "simpsons":109
 }
@@ -5948,6 +6044,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":9041,
 "crackdown":5706,
 "simpsons":7648
 }
@@ -6119,6 +6216,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":14734,
 "crackdown":25602,
 "simpsons":23679
 }
@@ -6146,6 +6244,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":288,
 "crackdown":23,
 "simpsons":22
 }
@@ -6164,7 +6263,9 @@
 "family":"load / store / cache",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":10
+}
 },
 {
 "id":"PPC_INST_LBZUXE",
@@ -6181,6 +6282,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1332,
 "crackdown":1180,
 "simpsons":2094
 }
@@ -6200,6 +6302,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":12677,
 "crackdown":28398,
 "simpsons":34723
 }
@@ -6211,6 +6314,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":47,
 "crackdown":2,
 "simpsons":2
 }
@@ -6246,6 +6350,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":82,
 "crackdown":5,
 "simpsons":5
 }
@@ -6264,7 +6369,9 @@
 "family":"load / store / cache",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":2
+}
 },
 {
 "id":"PPC_INST_LDUXE",
@@ -6281,6 +6388,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":280,
 "crackdown":137,
 "simpsons":385
 }
@@ -6300,6 +6408,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":7344,
 "crackdown":12591,
 "simpsons":12740
 }
@@ -6334,7 +6443,9 @@
 "family":"floating point",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":2
+}
 },
 {
 "id":"PPC_INST_LFDUE",
@@ -6367,6 +6478,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":28,
 "crackdown":86,
 "simpsons":209
 }
@@ -6426,6 +6538,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":60778,
 "crackdown":63157,
 "simpsons":59339
 }
@@ -6444,7 +6557,9 @@
 "family":"floating point",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":246
+}
 },
 {
 "id":"PPC_INST_LFSUE",
@@ -6460,7 +6575,9 @@
 "family":"floating point",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":15
+}
 },
 {
 "id":"PPC_INST_LFSUXE",
@@ -6477,6 +6594,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1683,
 "crackdown":1343,
 "simpsons":1694
 }
@@ -6496,6 +6614,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":12,
 "crackdown":199,
 "simpsons":415
 }
@@ -6514,7 +6633,9 @@
 "family":"load / store / cache",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":3
+}
 },
 {
 "id":"PPC_INST_LHAUE",
@@ -6584,6 +6705,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":9835,
 "crackdown":8333,
 "simpsons":11226
 }
@@ -6610,7 +6732,9 @@
 "family":"load / store / cache",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":137
+}
 },
 {
 "id":"PPC_INST_LHZUE",
@@ -6626,7 +6750,9 @@
 "family":"load / store / cache",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":29
+}
 },
 {
 "id":"PPC_INST_LHZUXE",
@@ -6643,6 +6769,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1034,
 "crackdown":384,
 "simpsons":929
 }
@@ -6662,6 +6789,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":83773,
 "crackdown":161944,
 "simpsons":171276
 }
@@ -6681,6 +6809,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":64182,
 "crackdown":104794,
 "simpsons":95197
 }
@@ -6787,7 +6916,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":4
+}
 },
 {
 "id":"PPC_INST_LVEWX",
@@ -6814,6 +6945,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1,
 "crackdown":4303,
 "simpsons":2532
 }
@@ -6825,6 +6957,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":639,
 "crackdown":36,
 "simpsons":4
 }
@@ -6863,6 +6996,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":399,
 "crackdown":4,
 "simpsons":4
 }
@@ -6890,6 +7024,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":26,
 "crackdown":61,
 "simpsons":274
 }
@@ -6928,6 +7063,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":180,
 "crackdown":180,
 "simpsons":180
 }
@@ -6939,6 +7075,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":4669,
 "crackdown":22025,
 "simpsons":21258
 }
@@ -6966,6 +7103,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":12,
 "crackdown":142,
 "simpsons":197
 }
@@ -6977,6 +7115,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":643,
 "crackdown":96,
 "simpsons":146
 }
@@ -7004,6 +7143,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2,
 "crackdown":8,
 "simpsons":10
 }
@@ -7015,6 +7155,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":69,
 "crackdown":66,
 "simpsons":71
 }
@@ -7033,7 +7174,9 @@
 "family":"load / store / cache",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":20
+}
 },
 {
 "id":"PPC_INST_LWZ",
@@ -7042,6 +7185,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":99046,
 "crackdown":287667,
 "simpsons":342649
 }
@@ -7069,6 +7213,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":497,
 "crackdown":10,
 "simpsons":24
 }
@@ -7104,6 +7249,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":9254,
 "crackdown":13892,
 "simpsons":13450
 }
@@ -7603,6 +7749,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1,
 "crackdown":1
 }
 },
@@ -8045,6 +8192,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":5,
 "crackdown":5,
 "simpsons":5
 }
@@ -8376,6 +8524,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":13869,
 "crackdown":27283,
 "simpsons":33865
 }
@@ -8579,6 +8728,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":690,
 "crackdown":98,
 "simpsons":148
 }
@@ -8929,6 +9079,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":26,
 "crackdown":576,
 "simpsons":667
 }
@@ -9124,6 +9275,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":101105,
 "crackdown":215295,
 "simpsons":267095
 }
@@ -9359,6 +9511,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2,
 "crackdown":2,
 "simpsons":2
 }
@@ -9394,6 +9547,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":4177,
 "crackdown":21018,
 "simpsons":24670
 }
@@ -9789,6 +9943,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":5,
 "crackdown":5,
 "simpsons":5
 }
@@ -10096,6 +10251,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":7824,
 "crackdown":16508,
 "simpsons":22860
 }
@@ -10163,6 +10319,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1520,
 "crackdown":213,
 "simpsons":323
 }
@@ -10654,6 +10811,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1,
 "crackdown":1,
 "simpsons":1
 }
@@ -10697,6 +10855,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2,
 "crackdown":4
 }
 },
@@ -10715,6 +10874,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":143,
 "crackdown":1195,
 "simpsons":150
 }
@@ -10726,6 +10886,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":69,
 "crackdown":129,
 "simpsons":48
 }
@@ -10745,6 +10906,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":92,
 "crackdown":41,
 "simpsons":75
 }
@@ -10780,6 +10942,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":6368,
 "crackdown":3536,
 "simpsons":4742
 }
@@ -10791,6 +10954,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2351,
 "crackdown":2274,
 "simpsons":3282
 }
@@ -10869,6 +11033,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":367,
 "crackdown":247,
 "simpsons":369
 }
@@ -10992,6 +11157,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":7,
 "crackdown":8,
 "simpsons":14
 }
@@ -11003,6 +11169,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":276,
 "crackdown":468,
 "simpsons":686
 }
@@ -11014,6 +11181,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2234,
 "crackdown":6894,
 "simpsons":5460
 }
@@ -11025,6 +11193,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":14,
 "crackdown":18,
 "simpsons":20
 }
@@ -11036,6 +11205,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":9751,
 "crackdown":10809,
 "simpsons":16724
 }
@@ -11055,6 +11225,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":510,
 "crackdown":1756,
 "simpsons":2119
 }
@@ -11178,6 +11349,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":355,
 "crackdown":799,
 "simpsons":110
 }
@@ -11189,6 +11361,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":747,
 "crackdown":999,
 "simpsons":1124
 }
@@ -11200,6 +11373,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":59,
 "crackdown":55,
 "simpsons":76
 }
@@ -11243,6 +11417,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":925,
 "crackdown":10027,
 "simpsons":5677
 }
@@ -11254,6 +11429,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":26148,
 "crackdown":68777,
 "simpsons":73032
 }
@@ -11281,6 +11457,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":8,
 "crackdown":5,
 "simpsons":4
 }
@@ -11292,6 +11469,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":15,
 "crackdown":7,
 "simpsons":4
 }
@@ -11303,6 +11481,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2988,
 "crackdown":3676,
 "simpsons":5582
 }
@@ -11458,6 +11637,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":34,
 "crackdown":129,
 "simpsons":403
 }
@@ -11525,6 +11705,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":967,
 "crackdown":1953,
 "simpsons":2640
 }
@@ -11552,6 +11733,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":6,
 "crackdown":152,
 "simpsons":223
 }
@@ -11563,6 +11745,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":28,
 "crackdown":68,
 "simpsons":96
 }
@@ -11598,6 +11781,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":150,
 "crackdown":92,
 "simpsons":193
 }
@@ -11609,6 +11793,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2209,
 "crackdown":5890,
 "simpsons":4002
 }
@@ -11620,6 +11805,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":54,
 "crackdown":374,
 "simpsons":764
 }
@@ -11687,6 +11873,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":602,
 "crackdown":1225,
 "simpsons":1317
 }
@@ -11706,6 +11893,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":8458,
 "crackdown":23634,
 "simpsons":15835
 }
@@ -11741,6 +11929,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":349,
 "crackdown":8,
 "simpsons":9
 }
@@ -11759,7 +11948,9 @@
 "family":"load / store / cache",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":6
+}
 },
 {
 "id":"PPC_INST_STBUXE",
@@ -11776,6 +11967,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1255,
 "crackdown":1132,
 "simpsons":1043
 }
@@ -11795,6 +11987,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":14216,
 "crackdown":31753,
 "simpsons":34538
 }
@@ -11822,6 +12015,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":89,
 "crackdown":4,
 "simpsons":4
 }
@@ -11849,6 +12043,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":106,
 "crackdown":3,
 "simpsons":3
 }
@@ -11884,6 +12079,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":451,
 "crackdown":109,
 "simpsons":224
 }
@@ -11903,6 +12099,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":4356,
 "crackdown":6920,
 "simpsons":4026
 }
@@ -11937,7 +12134,9 @@
 "family":"floating point",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":4
+}
 },
 {
 "id":"PPC_INST_STFDUE",
@@ -11970,6 +12169,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":19,
 "crackdown":43,
 "simpsons":100
 }
@@ -11989,6 +12189,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":110,
 "crackdown":1368,
 "simpsons":1498
 }
@@ -12040,6 +12241,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":34307,
 "crackdown":67128,
 "simpsons":42502
 }
@@ -12059,6 +12261,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":424,
 "simpsons":8
 }
 },
@@ -12076,7 +12279,9 @@
 "family":"floating point",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":1
+}
 },
 {
 "id":"PPC_INST_STFSUXE",
@@ -12093,6 +12298,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1091,
 "crackdown":1044,
 "simpsons":929
 }
@@ -12112,6 +12318,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":3985,
 "crackdown":10457,
 "simpsons":9385
 }
@@ -12157,7 +12364,9 @@
 "family":"load / store / cache",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":183
+}
 },
 {
 "id":"PPC_INST_STHUE",
@@ -12173,7 +12382,9 @@
 "family":"load / store / cache",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":2
+}
 },
 {
 "id":"PPC_INST_STHUXE",
@@ -12190,6 +12401,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":441,
 "crackdown":274,
 "simpsons":410
 }
@@ -12311,6 +12523,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":283,
 "crackdown":3
 }
 },
@@ -12321,6 +12534,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":3,
 "crackdown":127,
 "simpsons":82
 }
@@ -12332,6 +12546,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":416,
 "crackdown":1,
 "simpsons":292
 }
@@ -12359,6 +12574,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":3,
 "crackdown":135,
 "simpsons":82
 }
@@ -12370,6 +12586,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":60,
 "crackdown":1
 }
 },
@@ -12396,6 +12613,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":179,
 "crackdown":14546,
 "simpsons":179
 }
@@ -12407,6 +12625,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":4069,
 "crackdown":3396,
 "simpsons":13729
 }
@@ -12434,6 +12653,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":53308,
 "crackdown":168614,
 "simpsons":192095
 }
@@ -12445,6 +12665,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":7,
 "crackdown":5,
 "simpsons":10
 }
@@ -12472,6 +12693,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":741,
 "crackdown":111,
 "simpsons":171
 }
@@ -12499,6 +12721,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":15663,
 "crackdown":28199,
 "simpsons":35057
 }
@@ -12518,6 +12741,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":26,
 "crackdown":22,
 "simpsons":26
 }
@@ -12537,6 +12761,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":3546,
 "crackdown":4486,
 "simpsons":5051
 }
@@ -12588,6 +12813,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":7267,
 "crackdown":17805,
 "simpsons":13791
 }
@@ -12599,6 +12825,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":331,
 "crackdown":983,
 "simpsons":311
 }
@@ -12618,6 +12845,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1304,
 "crackdown":1357,
 "simpsons":742
 }
@@ -12653,6 +12881,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":956,
 "crackdown":1256,
 "simpsons":1387
 }
@@ -12703,7 +12932,9 @@
 "family":"integer",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":23
+}
 },
 {
 "id":"PPC_INST_SUBFZE64",
@@ -12800,6 +13031,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1,
 "crackdown":3,
 "simpsons":1
 }
@@ -12907,6 +13139,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":8,
 "crackdown":5,
 "simpsons":3
 }
@@ -12942,6 +13175,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":21,
 "crackdown":20,
 "simpsons":32
 }
@@ -13497,6 +13731,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":12,
 "crackdown":16,
 "simpsons":491
 }
@@ -13532,6 +13767,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":18,
 "crackdown":170,
 "simpsons":170
 }
@@ -13567,6 +13803,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":128,
 "crackdown":646,
 "simpsons":1082
 }
@@ -13698,6 +13935,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":8,
 "crackdown":1412,
 "simpsons":1896
 }
@@ -13709,6 +13947,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":238,
 "crackdown":377,
 "simpsons":106
 }
@@ -13738,6 +13977,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2,
 "simpsons":193
 }
 },
@@ -13788,6 +14028,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":40,
 "crackdown":196,
 "simpsons":196
 }
@@ -13799,6 +14040,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":36,
 "crackdown":1,
 "simpsons":1
 }
@@ -13821,6 +14063,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":433,
 "crackdown":2,
 "simpsons":3
 }
@@ -13843,6 +14086,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":30,
 "crackdown":1,
 "simpsons":4
 }
@@ -13907,7 +14151,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":115
+}
 },
 {
 "id":"PPC_INST_VCFPUXWS128",
@@ -13915,7 +14161,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":5
+}
 },
 {
 "id":"PPC_INST_VCFSX",
@@ -13968,6 +14216,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":3,
 "crackdown":539,
 "simpsons":279
 }
@@ -13979,6 +14228,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":14,
 "crackdown":120,
 "simpsons":43
 }
@@ -14038,7 +14288,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":43
+}
 },
 {
 "id":"PPC_INST_VCMPGTFP",
@@ -14058,6 +14310,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":93,
 "crackdown":14,
 "simpsons":73
 }
@@ -14122,6 +14375,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":711,
 "crackdown":77,
 "simpsons":23
 }
@@ -14133,6 +14387,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2,
 "crackdown":84,
 "simpsons":416
 }
@@ -14155,6 +14410,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":48,
 "crackdown":16,
 "simpsons":27
 }
@@ -14176,7 +14432,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":2
+}
 },
 {
 "id":"PPC_INST_VLOGEFP",
@@ -14195,7 +14453,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":1
+}
 },
 {
 "id":"PPC_INST_VMADDCFP128",
@@ -14204,6 +14464,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":34,
 "crackdown":204,
 "simpsons":183
 }
@@ -14215,6 +14476,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":485,
 "crackdown":3701,
 "simpsons":4140
 }
@@ -14226,6 +14488,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":18,
 "crackdown":148,
 "simpsons":261
 }
@@ -14248,6 +14511,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":70,
 "crackdown":12,
 "simpsons":17
 }
@@ -14337,6 +14601,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":29,
 "crackdown":11,
 "simpsons":17
 }
@@ -14404,6 +14669,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":12,
 "crackdown":1,
 "simpsons":2
 }
@@ -14415,6 +14681,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":24,
 "crackdown":1,
 "simpsons":2
 }
@@ -14437,6 +14704,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":332,
 "crackdown":71,
 "simpsons":89
 }
@@ -14481,6 +14749,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":134,
 "crackdown":22,
 "simpsons":64
 }
@@ -14492,6 +14761,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":20,
 "crackdown":2808,
 "simpsons":2140
 }
@@ -14503,6 +14773,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":469,
 "crackdown":1953,
 "simpsons":1408
 }
@@ -14594,6 +14865,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":343,
 "crackdown":6065,
 "simpsons":7559
 }
@@ -14637,6 +14909,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":25,
 "crackdown":985,
 "simpsons":847
 }
@@ -14675,6 +14948,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":30,
 "crackdown":2216,
 "simpsons":2418
 }
@@ -14686,6 +14960,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":696,
 "crackdown":607,
 "simpsons":3414
 }
@@ -14697,6 +14972,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":14,
 "crackdown":483,
 "simpsons":1305
 }
@@ -14708,6 +14984,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":462,
 "crackdown":21,
 "simpsons":154
 }
@@ -14719,6 +14996,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":127,
 "crackdown":2431,
 "simpsons":2482
 }
@@ -14730,6 +15008,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":89,
 "crackdown":178,
 "simpsons":12
 }
@@ -14793,7 +15072,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":57
+}
 },
 {
 "id":"PPC_INST_VPKSWUS",
@@ -14884,6 +15165,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1,
 "crackdown":141,
 "simpsons":215
 }
@@ -14895,6 +15177,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":9,
 "crackdown":22,
 "simpsons":3
 }
@@ -14916,7 +15199,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":4
+}
 },
 {
 "id":"PPC_INST_VRFIN",
@@ -14935,7 +15220,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":4
+}
 },
 {
 "id":"PPC_INST_VRFIP",
@@ -14970,7 +15257,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":4
+}
 },
 {
 "id":"PPC_INST_VRLB",
@@ -14995,6 +15284,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":72,
 "crackdown":1692,
 "simpsons":1053
 }
@@ -15022,6 +15312,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":4,
 "crackdown":586,
 "simpsons":77
 }
@@ -15033,6 +15324,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":33,
 "crackdown":13,
 "simpsons":4
 }
@@ -15044,6 +15336,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":103,
 "crackdown":716,
 "simpsons":728
 }
@@ -15055,6 +15348,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":3,
 "crackdown":38,
 "simpsons":157
 }
@@ -15074,6 +15368,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2,
 "crackdown":51,
 "simpsons":74
 }
@@ -15085,6 +15380,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":8,
 "crackdown":770,
 "simpsons":1178
 }
@@ -15096,6 +15392,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":101,
 "crackdown":19,
 "simpsons":5
 }
@@ -15144,6 +15441,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":54,
 "crackdown":13,
 "simpsons":19
 }
@@ -15155,6 +15453,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":3,
 "crackdown":2,
 "simpsons":2
 }
@@ -15166,6 +15465,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2,
 "crackdown":120,
 "simpsons":7
 }
@@ -15177,6 +15477,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":2,
 "crackdown":134,
 "simpsons":160
 }
@@ -15196,6 +15497,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":12,
 "crackdown":888,
 "simpsons":645
 }
@@ -15207,6 +15509,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":237,
 "crackdown":100,
 "simpsons":29
 }
@@ -15218,6 +15521,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":26,
 "crackdown":6028,
 "simpsons":5471
 }
@@ -15229,6 +15533,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":692,
 "crackdown":231,
 "simpsons":774
 }
@@ -15329,6 +15634,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":31,
 "crackdown":4,
 "simpsons":2
 }
@@ -15348,6 +15654,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1,
 "crackdown":2286,
 "simpsons":2865
 }
@@ -15359,6 +15666,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":274,
 "crackdown":338,
 "simpsons":476
 }
@@ -15377,7 +15685,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":9
+}
 },
 {
 "id":"PPC_INST_VSUBSWS",
@@ -15438,7 +15748,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":18
+}
 },
 {
 "id":"PPC_INST_VSUM2SWS",
@@ -15487,6 +15799,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":49,
 "crackdown":320,
 "simpsons":276
 }
@@ -15516,7 +15829,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":359
+}
 },
 {
 "id":"PPC_INST_VUPKHSH",
@@ -15525,6 +15840,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1,
 "crackdown":182,
 "simpsons":451
 }
@@ -15554,7 +15870,9 @@
 "family":"VMX / VMX128",
 "reference":"handled",
 "any360":"todo",
-"titles":{}
+"titles":{
+"codbo":353
+}
 },
 {
 "id":"PPC_INST_VUPKLSH",
@@ -15563,6 +15881,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1,
 "crackdown":98,
 "simpsons":244
 }
@@ -15585,6 +15904,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":56,
 "crackdown":45,
 "simpsons":85
 }
@@ -15612,6 +15932,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":1245,
 "crackdown":671,
 "simpsons":731
 }
@@ -15623,6 +15944,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":174,
 "crackdown":3651,
 "simpsons":1597
 }
@@ -15642,6 +15964,7 @@
 "reference":"handled",
 "any360":"todo",
 "titles":{
+"codbo":26,
 "crackdown":19,
 "simpsons":34
 }

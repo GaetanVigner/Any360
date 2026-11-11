@@ -1,0 +1,78 @@
+{
+ "name": "codbo",
+ "date": "2026-11-11",
+ "functions": 18886,
+ "instructions": 1306353,
+ "native": 0,
+ "verified": 0,
+ "library": 0,
+ "modules": {
+  "code 825xxxxx": {
+   "kind": "game",
+   "functions": 3941,
+   "instructions": 268275,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 822xxxxx": {
+   "kind": "game",
+   "functions": 3791,
+   "instructions": 259811,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 823xxxxx": {
+   "kind": "game",
+   "functions": 4015,
+   "instructions": 258891,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 824xxxxx": {
+   "kind": "game",
+   "functions": 3917,
+   "instructions": 258803,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 821xxxxx": {
+   "kind": "game",
+   "functions": 2609,
+   "instructions": 226785,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 826xxxxx": {
+   "kind": "game",
+   "functions": 613,
+   "instructions": 33788,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  }
+ },
+ "translated": [],
+ "translated_by_file": {},
+ "imports": {
+  "total": 255,
+  "by_state": {
+   "implemented": 228,
+   "stub": 27
+  },
+  "by_library": {
+   "xam": {
+    "implemented": 80,
+    "stub": 17
+   },
+   "xboxkrnl": {
+    "implemented": 148,
+    "stub": 10
+   }
+  }
+ }
+}

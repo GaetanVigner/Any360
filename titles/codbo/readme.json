@@ -1,0 +1,39 @@
+{
+ "_comment": "The texts of Call of Duty: Black Ops's README that are its own (tools/title_readme.py has the common ones).",
+ "readme": "F:/COD BO/CoDBoRewrite/README.md",
+ "game": "Call of Duty: Black Ops (Xbox 360, 2010)",
+ "screens": [],
+ "pitch": "It starts from a recompilation of the campaign and Zombies executable with ReXGlue v0.10.0, built directly on Any360 from its first day: the fifth title the toolkit runs, and the first ported with nothing written for it in Any360 but the system calls no title before it used.",
+ "own_copy": "You need your own copy of the game (the USA/Europe disc, title 41560855); the recompiled C++ is generated on your machine from your disc's `default.xex`.",
+ "state": {
+  "recompiled": "`default.xex` (the campaign and Zombies) fully translated (18,886 functions; the ones reached only through pointers are declared in [config/](config/)); `default_mp.xex`, the multiplayer, is not recompiled yet",
+  "library": "not started: the C runtime and XDK functions Any360 already has for the other titles are to be found in this executable and checked in game before they are bound",
+  "game": "not started (the count is in the table above)"
+ },
+ "run": [
+  "Both bindings are opt-in:",
+  "",
+  "```",
+  "codbo.exe --any360_gpu=true --any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio",
+  "```",
+  "",
+  "`--any360_gpu=true` draws the game through `any360::gfx`; `--any360_sys_groups` puts the Xbox system calls on `any360::sys`. Without them the game runs on ReXGlue's runtime, as recompiled."
+ ],
+ "build": [
+  "Windows, Visual Studio 2022 with the C++ and Clang tools, an install of the ReXGlue SDK v0.10.0 (`-Sdk`, the folder with `bin\\rexglue.exe`, `include\\` and `lib\\`) and an [Any360](https://github.com/GaetanVigner/Any360) checkout (`-Any360`).",
+  "",
+  "1. Extract your disc into `game\\` (for example with [extract-xiso](https://github.com/XboxDev/extract-xiso)), so that `game\\default.xex` exists.",
+  "2. `powershell -File codegen.ps1 -Sdk <sdk>` generates the C++ into `generated\\default\\`.",
+  "3. `powershell -File build.ps1 -Sdk <sdk> -Any360 <any360>` builds `out\\build\\codbo.exe`.",
+  "4. Run `out\\build\\codbo.exe`. It finds `game\\` next to itself or in the repository; logs are written to `out\\build\\logs\\`.",
+  "",
+  "Code reached only through vtables or data pointers is invisible to the codegen: [tools/find-missing-functions.py](tools/find-missing-functions.py) scans the decrypted image (`out\\image\\default_image.bin`) for such targets and writes them to [config/discovered-functions.toml](config/discovered-functions.toml); the ones only a run of the game reveals are in [config/overrides.toml](config/overrides.toml)."
+ ],
+ "credits": [
+  "Call of Duty: Black Ops by Treyarch, published by Activision (2010).",
+  "[ReXGlue SDK](https://github.com/rexglue/rexglue-sdk), the recompiler and runtime (BSD 3-Clause)."
+ ],
+ "legal": [
+  "An unofficial fan project, not affiliated with or endorsed by Activision or Treyarch. It is not a replacement for the game: you still need to own a copy, and nothing of the game is in this repository."
+ ]
+}

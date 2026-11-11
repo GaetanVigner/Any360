@@ -5,6 +5,22 @@
   "version": "0.8.0"
  },
  "titles": {
+  "codbo": {
+   "imports": 255,
+   "imports_native": 255,
+   "mvp_total": 233,
+   "mvp_native": 233,
+   "mnemonics": 322,
+   "instructions": 1306353,
+   "sdk": "0.8.0",
+   "unnamed_library_functions": 0,
+   "source": "",
+   "description": "",
+   "sites": 1171,
+   "sites_native": 1171,
+   "mvp_sites": 1141,
+   "mvp_sites_native": 1141
+  },
   "crackdown": {
    "imports": 248,
    "imports_native": 248,
@@ -64,10 +80,10 @@
  },
  "system_calls": {
   "total": 2914,
-  "used": 374,
+  "used": 379,
   "any360": {
-   "native": 602,
-   "todo": 2312
+   "native": 606,
+   "todo": 2308
   },
   "reference": {
    "implemented": 489,
@@ -83,7 +99,7 @@
  },
  "instructions": {
   "total": 1842,
-  "used": 313,
+  "used": 347,
   "any360": {
    "todo": 1842
   },
@@ -99,6 +115,7 @@
    "todo": 31
   },
   "unnamed_by_title": {
+   "codbo": {},
    "crackdown": {
     "XDK D3D runtime": 742,
     "CRT register save/restore helpers": 22,

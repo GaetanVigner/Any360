@@ -6,13 +6,13 @@
  },
  "system_calls": {
   "total": 2914,
-  "used_by_titles": 374,
-  "native": 602,
+  "used_by_titles": 379,
+  "native": 606,
   "ported": 0,
-  "runnable": 606,
+  "runnable": 610,
   "by_state": {
-   "native": 602,
-   "stub": 2294,
+   "native": 606,
+   "stub": 2290,
    "missing": 14,
    "reference": 4
   },
@@ -25,7 +25,7 @@
  },
  "instructions": {
   "total": 1842,
-  "used_by_titles": 313,
+  "used_by_titles": 347,
   "native": 0,
   "reference": 497,
   "by_family": {
@@ -60,10 +60,11 @@
   }
  },
  "xdk": {
-  "total": 40,
-  "native": 8,
+  "total": 46,
+  "native": 15,
   "ported": 0,
   "unnamed_by_title": {
+   "codbo": {},
    "crackdown": {
     "XDK D3D runtime": 742,
     "CRT register save/restore helpers": 22,
@@ -121,6 +122,22 @@
   }
  },
  "titles": {
+  "codbo": {
+   "imports": 255,
+   "imports_native": 255,
+   "mvp_total": 233,
+   "mvp_native": 233,
+   "mnemonics": 322,
+   "instructions": 1306353,
+   "sdk": "0.8.0",
+   "unnamed_library_functions": 0,
+   "source": "",
+   "description": "",
+   "sites": 1171,
+   "sites_native": 1171,
+   "mvp_sites": 1141,
+   "mvp_sites_native": 1141
+  },
   "crackdown": {
    "imports": 248,
    "imports_native": 248,

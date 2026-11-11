@@ -24,6 +24,10 @@ game to open its repository.
 | [![Crackdown on Any360](docs/showcase/crackdown.jpg)](https://github.com/GaetanVigner/CrackdownRewrite) | [![The Simpsons Game on Any360](docs/showcase/simpsons.jpg)](https://github.com/GaetanVigner/TheSimpsonsGameRewrite) | [![Test Drive Unlimited on Any360](docs/showcase/tdu.jpg)](https://github.com/GaetanVigner/TDURewrite) |
 | Pacific City, in game | Split-screen co-op | Title screen |
 
+Started on 2026-11-11: [Call of Duty: Black Ops](https://github.com/GaetanVigner/CoDBoRewrite), the fifth title, recompiled and
+drawing its first scenes through `any360::gfx`; its system calls are not all on `any360::sys` yet (it needs a network
+layer, below).
+
 **No game data, no game binaries.** Any360 holds the toolkit, the system layer, the renderer and reports made of counts,
 hashes, addresses and public API names. A title's reconstructed source lives in that title's own repository. Bring
 your own copy of the game.

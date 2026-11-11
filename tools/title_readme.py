@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ANY360 = 'https://github.com/GaetanVigner/Any360'
 TITLES = [('crackdown', 'Crackdown', 'GaetanVigner/CrackdownRewrite'),
           ('simpsons', 'The Simpsons Game', 'GaetanVigner/TheSimpsonsGameRewrite'),
-          ('tdu', 'Test Drive Unlimited', 'GaetanVigner/TDURewrite')]
+          ('tdu', 'Test Drive Unlimited', 'GaetanVigner/TDURewrite'),
+          ('codbo', 'Call of Duty: Black Ops', 'GaetanVigner/CoDBoRewrite')]
 
 
 def load(path):
@@ -51,11 +52,12 @@ def main():
 
     add(f'# {name} Rewrite', '')
     screens = cfg['screens']
-    width = {1: 720, 2: '49%', 3: '32%'}.get(len(screens), '32%')
-    add('<p align="center">')
-    for screen in screens:
-        add(f'<img src="{screen["src"]}" width="{width}" alt="{screen["alt"]}"/>')
-    add('</p>', '')
+    if screens:  # a title just started may have none yet
+        width = {1: 720, 2: '49%', 3: '32%'}.get(len(screens), '32%')
+        add('<p align="center">')
+        for screen in screens:
+            add(f'<img src="{screen["src"]}" width="{width}" alt="{screen["alt"]}"/>')
+        add('</p>', '')
     add(f"**{cfg['game']}, statically recompiled to native PC code and rewritten, step by step, onto "
         f"[Any360]({ANY360}).** {cfg['pitch']}", '')
     add('**No game data and no game binaries are here.** ' + cfg['own_copy'], '')
