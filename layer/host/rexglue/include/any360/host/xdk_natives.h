@@ -29,6 +29,7 @@
 
 #include "any360/xdk/crt.h"
 #include "any360/xdk/d3d.h"
+#include "any360/xdk/xaudio.h"
 #include "any360/xdk/xapi.h"
 #include "rexglue.h"
 
@@ -37,7 +38,7 @@ namespace any360::host::rexglue::xdk {
 enum class Function : uint32_t {
   kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy,
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
-  kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kCount
+  kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -49,6 +50,10 @@ extern any360::xdk::Memory g_memory;
 // Every mode but the plain native one: resolves the mode, runs the function's own code, verifies or times.
 // `value` is the function's parameter of the title, if it has one (XMemCpy: the address of its byte step).
 void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t value = 0);
+// The same for XAudio's mix (its own registers and memory: XAudioMixRamp below).
+void RunMixSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
+// And for the D3D runtime's upload of the dirty shader constants (D3dDirtyConstants below).
+void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t cursor_offset);
 
 // r3 destination, r4 source, r5 size; returns the destination (r3 as it came).
 inline void CrtMemcpy(PPCContext& ctx, uint8_t* base, GuestFunction original) {
@@ -355,6 +360,85 @@ ANY360_XDK_DOUBLE_TO_R3(CrtGetExp, kGetExp)
 ANY360_XDK_DOUBLE_TO_F1(CrtSetExp, kSetExp)
 ANY360_XDK_DOUBLE_TO_F1(CrtAddExp, kAddExp)
 #undef ANY360_XDK_DOUBLE_TO_F1
+
+// XAudio's mix with a volume ramp (any360/xdk/xaudio.h): r3 destination, r4 source, r5 and r6 the gains and their
+// step, r7 samples. The title's registers to and from the replacement's: vectors in the guest's element order
+// there, host lane 3 - i holding element i here. Only the registers the function writes are given back.
+inline void ToVmx(const PPCContext& ctx, any360::xdk::VmxRegisters& x) {
+  const uint64_t r[] = {0,         ctx.r1.u64, 0,          ctx.r3.u64, ctx.r4.u64,  ctx.r5.u64,
+                        ctx.r6.u64, ctx.r7.u64, ctx.r8.u64, ctx.r9.u64, ctx.r10.u64, ctx.r11.u64};
+  std::memcpy(x.gpr, r, sizeof r);
+  x.gpr[31] = ctx.r31.u64;
+}
+inline void VectorTo(decltype(PPCContext::v0)& v, const uint32_t (&e)[4]) {
+  for (int i = 0; i < 4; ++i) v.u32[3 - i] = e[i];
+}
+inline void FromVmx(const any360::xdk::VmxRegisters& x, PPCContext& ctx) {
+  ctx.r3.u64 = x.gpr[3];
+  ctx.r4.u64 = x.gpr[4];
+  ctx.r5.u64 = x.gpr[5];
+  ctx.r6.u64 = x.gpr[6];
+  ctx.r7.u64 = x.gpr[7];
+  ctx.r8.u64 = x.gpr[8];
+  ctx.r9.u64 = x.gpr[9];
+  ctx.r10.u64 = x.gpr[10];
+  ctx.r11.u64 = x.gpr[11];
+  VectorTo(ctx.v0, x.vr[0]);
+  VectorTo(ctx.v10, x.vr[10]);
+  VectorTo(ctx.v11, x.vr[11]);
+  VectorTo(ctx.v12, x.vr[12]);
+  VectorTo(ctx.v13, x.vr[13]);
+}
+// The vectors a mix of at least one group writes besides v0 and v10-v13.
+inline void GroupVectorsFromVmx(const any360::xdk::VmxRegisters& x, PPCContext& ctx) {
+  VectorTo(ctx.v1, x.vr[1]);
+  VectorTo(ctx.v2, x.vr[2]);
+  VectorTo(ctx.v3, x.vr[3]);
+  VectorTo(ctx.v4, x.vr[4]);
+  VectorTo(ctx.v5, x.vr[5]);
+  VectorTo(ctx.v6, x.vr[6]);
+  VectorTo(ctx.v7, x.vr[7]);
+  VectorTo(ctx.v8, x.vr[8]);
+  VectorTo(ctx.v9, x.vr[9]);
+  VectorTo(ctx.v29, x.vr[29]);
+  VectorTo(ctx.v30, x.vr[30]);
+  VectorTo(ctx.v31, x.vr[31]);
+}
+inline void XAudioMixRamp(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    any360::xdk::VmxRegisters x;
+    ToVmx(ctx, x);
+    const bool groups = any360::xdk::detail::MixRampGroups(uint32_t(x.gpr[7])) != 0;
+    ctx.fpscr.enableFlushMode();  // as the function's first vector instruction does
+    if (any360::xdk::XAudioMixRamp(g_memory, x)) [[likely]] {
+      FromVmx(x, ctx);
+      if (groups) GroupVectorsFromVmx(x, ctx);
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunMixSlow(ctx, base, original);
+}
+
+// The D3D runtime's upload of the shader constants a mask marks as changed (any360/xdk/d3d.h): r3 the device,
+// r4 the mask, r5 the first bit's register index, r6 the constants; `cursor_offset` is where the runtime's device
+// keeps its command buffer's write pointer (the buffer's end next to it). Leaves r4 and r5 as the function does;
+// a run without room in the buffer is the function's own code (it calls the runtime to make room).
+inline void D3dDirtyConstants(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t cursor_offset) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t index = ctx.r5.u64, cursor = 0;
+    if (any360::xdk::D3dDirtyConstants(g_memory, ctx.r3.u32, cursor_offset, ctx.r4.u64, index, ctx.r6.u32, cursor))
+        [[likely]] {
+      ctx.r4.u64 = cursor;
+      ctx.r5.u64 = index;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunConstantsSlow(ctx, base, original, cursor_offset);
+}
 
 // The D3D runtime's GPU wait step (any360/xdk/d3d.h): r3 the wait's state; returns nonzero while the wait goes on.
 // Its own code runs; then, while the graphics are bound to Any360 and any360_d3d_wait_sleep is on, the thread sleeps

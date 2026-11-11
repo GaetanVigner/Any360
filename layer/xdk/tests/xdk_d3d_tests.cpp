@@ -11,8 +11,10 @@
 #include <mutex>
 #include <random>
 #include <thread>
+#include <vector>
 
 #include "any360/xdk/d3d.h"
+#include "any360/xdk/d3d_reference.h"
 #include "xdk_test.h"
 
 namespace {
@@ -159,6 +161,76 @@ void TwoWaiters() {
   CHECK(timed_out == 0);
 }
 
+// The upload of the dirty shader constants against its model: masks of every shape (one bit, runs, all 64, the
+// first and last bits), the buffer's pointer at every alignment, sources aligned or not, both runtimes' offsets.
+// Every accepted call leaves memory, r4 and r5 as the model does; a call without room for a run is declined and
+// leaves everything as it was.
+struct ConstantsCase {
+  uint32_t device, cursor, end, source;
+  uint64_t mask, index;
+};
+
+bool Constants(xdk_test::Pair& p, uint32_t offset, const ConstantsCase& c) {
+  namespace xdk = any360::xdk;
+  const auto put32 = [&](uint32_t a, uint32_t v) {
+    for (int b = 0; b < 4; ++b) p.native[a + b] = p.model[a + b] = uint8_t(v >> (8 * (3 - b)));
+  };
+  put32(c.device + offset, c.cursor);
+  put32(c.device + offset + 4, c.end);
+  uint64_t index = c.index, cursor = 0;
+  any360::xdk::Range write;
+  const bool planned = xdk::D3dDirtyConstantsAccepts(p.a, c.device, offset, c.mask, c.index, c.source, write);
+  const bool accepted = xdk::D3dDirtyConstants(p.a, c.device, offset, c.mask, index, c.source, cursor);
+  CHECK(planned == accepted);
+  if (!accepted) {
+    CHECK(p.SameEverywhere());
+    return false;
+  }
+  uint64_t r4 = c.mask, r5 = c.index;
+  xdk::reference::D3dDirtyConstants(p.b, offset, c.device, r4, r5, c.source);
+  CHECK(p.SameEverywhere());
+  CHECK(r4 == cursor && r5 == index);
+  CHECK(write.at == c.cursor + 4 && write.at + write.size == uint32_t(cursor) + 4);
+  return true;
+}
+
+void DirtyConstants() {
+  xdk_test::Pair p(13);
+  std::mt19937_64 rng(17);
+  std::vector<uint64_t> masks = {1, 3, 0x8000000000000000ull, 0xC000000000000001ull, ~0ull, 0xFFull << 20,
+                                 0x5555555555555555ull, 0xAAAAAAAAAAAAAAAAull, 0x00000000FFFFFFFFull,
+                                 0xFFFFFFFF00000000ull, 0x8000000000000001ull, 0x0F0F0F0F0F0F0F0Full};
+  for (int i = 0; i < 400; ++i) masks.push_back(rng() & rng());
+  uint64_t accepted = 0;
+  for (uint32_t offset : {48u, 40u}) {
+    for (uint64_t mask : masks) {
+      for (uint32_t align : {0u, 4u, 8u, 12u}) {
+        for (uint32_t source : {0x40000u, 0x40004u, 0x4000Cu}) {
+          const uint32_t cursor = 0x10000 + align + 4 * uint32_t(rng() % 64) * 4;
+          const uint64_t index = (rng() % 4 == 0) ? (rng() << 32) | (rng() & 0x3FF) : rng() % 1024;
+          accepted += Constants(p, offset, {0x80000, cursor, 0x30000, source, mask, index});
+        }
+      }
+    }
+  }
+  CHECK(accepted == 2 * masks.size() * 4 * 3);
+  // No room for a run: declined (the runtime's own function makes room), the whole call.
+  CHECK(!Constants(p, 48, {0x80000, 0x10000, 0x10000 + 4 * (16 + 3), 0x40000, 3, 0}));
+  CHECK(Constants(p, 48, {0x80000, 0x10000, 0x10000 + 4 * (32 + 3) + 1, 0x40000, 3, 0}));
+  CHECK(!Constants(p, 48, {0x80000, 0x10000, 0x10000 + 4 * (32 + 3), 0x40000, 3, 0}));
+  // The first run fits (to 0x1004C), the second does not: the whole call is declined.
+  CHECK(!Constants(p, 48, {0x80000, 0x10000, 0x10080, 0x40000, 0x8000000000000001ull, 0}));
+  CHECK(Constants(p, 48, {0x80000, 0x10000, 0x10099, 0x40000, 0x8000000000000001ull, 0}));
+  // A mask of 0 (the function would loop for ever), a pointer not on 4 bytes, the source over the buffer, the
+  // device's words in what is written, memory that is not plain: declined.
+  CHECK(!Constants(p, 48, {0x80000, 0x10000, 0x30000, 0x40000, 0, 0}));
+  CHECK(!Constants(p, 48, {0x80000, 0x10002, 0x30000, 0x40000, 1, 0}));
+  CHECK(!Constants(p, 48, {0x80000, 0x10000, 0x30000, 0x10040, 0x8000000000000000ull, 0}));
+  CHECK(!Constants(p, 48, {0x80000, 0x10000, 0x30000, 0x10040 - 63 * 64, 1, 0}));
+  CHECK(!Constants(p, 48, {0x10010, 0x10000, 0x30000, 0x40000, 1, 0}));
+  CHECK(!Constants(p, 48, {0x80000, 0x10000, 0x30000, 0x7F000000u, 1, 0}));
+}
+
 }  // namespace
 
 int main() {
@@ -166,5 +238,6 @@ int main() {
   Raced(20000, false);
   Raced(20000, true);
   TwoWaiters();
+  DirtyConstants();
   return xdk_test::Finish("xdk_d3d_tests");
 }

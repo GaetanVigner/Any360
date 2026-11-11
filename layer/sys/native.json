@@ -9,6 +9,8 @@
   "memmove",
   "XMemCpy",
   "D3D GPU wait step",
+  "D3D dirty constants",
+  "XAudio mix ramp",
   "strchr",
   "strncmp",
   "strncpy",

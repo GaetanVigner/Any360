@@ -481,6 +481,63 @@ Crackdown's port has its own hook on the step (`gpu_fence_wait.cpp`): it blocks 
 for the three waits that wait for one, and keeps the others spinning; left as it is. Black Ops does not bind it
 yet.
 
+### Past the C runtime: XAudio's mix and D3D's constants (2026-11-11)
+
+The C runtime is under half a percent of the titles' cycles; the profiles' library functions above it are in the
+audio library and the D3D runtime. The two taken here:
+
+- **XAudio's mix with a volume ramp** (`xdk::XAudioMixRamp`, `layer/xdk/include/any360/xdk/xaudio.h`): Crackdown
+  `sub_82A4B6A0` (2.4% of its cycles in the city profile, the audio threads' hottest function), the same
+  instructions in Test Drive Unlimited (`sub_826B50B8`). destination += source x gain, four vectors of four samples
+  at a time, the gain advancing by a step a vector in four running sums. A vector kernel: the replacement takes
+  and gives back the registers the function writes (`VmxRegisters`: r3-r11, v0-v13, v29-v31, r31's save at r1 - 8),
+  and its model (`xaudio_reference.h`) does the 64 instructions one element at a time. vmaddfp is fused, one
+  rounding, as the console and Crackdown's recompiled code do it (the host's FMA3, the same instruction and operand
+  order, under the vector unit's flush mode); a host without FMA3 declines every call. Test Drive Unlimited's
+  build of the SDK compiles vmaddfp as a multiply then an add (two roundings): the replacement would differ from
+  its recompiled code in the last bit, and the game barely calls it: not bound there.
+- **D3D's upload of the dirty shader constants** (`xdk::D3dDirtyConstants`, `d3d.h`): Crackdown `sub_826C5EA0`,
+  Test Drive Unlimited `sub_8268DEF0`, the same steps in another order with the command buffer's pointer at
+  device + 48 and + 40 (the binding's parameter). For each run of set bits in a 64-bit mask: type-2 pads to 16
+  bytes, a header ((words - 1) << 16 | index), the run's 64-byte constants. A run without room goes to the
+  runtime's function that makes room: the replacement plans the whole call first and declines it then. The Simpsons
+  Game's runtime has a different function for this.
+
+Checks: `xdk_xaudio_tests` (12,952: every count of samples to 200 and long ones, unaligned addresses, 64-bit
+registers, denormals, infinities, NaNs, overlapping buffers, declines) and `xdk_d3d_tests` (39,605 with the GPU
+wait: 412 masks, every alignment of the buffer's pointer, sources unaligned, both offsets, a run without room,
+overlaps). In game with `--any360_xdk_verify`: Crackdown 237,124 mixes and 207,223 uploads, Test Drive Unlimited
+156,818 uploads, none different (registers included for the mix).
+
+In game with `--any360_xdk_bench` (menus, the calls' own mix of sizes):
+
+| | own code | replacement | |
+|---|---|---|---|
+| Crackdown, the mix (256 samples, 1.9 million calls) | 144-183 ns | 81-91 ns | 1.8-2.0x |
+| Test Drive Unlimited, the upload (113,583 calls) | 94 ns | 45 ns | 2.1x |
+| of which one constant (68%) | 42 ns | 26 ns | 1.6x |
+| of which 64 constants | 336 ns | 88 ns | 3.8x |
+| Crackdown, the upload of 64 constants | 397 ns | 97 ns | 4.1x |
+| Crackdown, the upload of 63 constants | 3,231-3,891 ns | 3,338-4,111 ns | 1.0x |
+
+What they are worth: Crackdown's menus mix about 4,700 times a second, 0.3 ms a second saved; the city, with more
+voices, was not measured (the profile's 2.4% would make it about 1% of the process's cycles). The uploads are once
+or twice a draw: Test Drive Unlimited saves about 0.05 ms a frame.
+
+Found on the way:
+
+- **The benchmark's order was biased.** Which side runs first alternated call by call of a function. Crackdown
+  uploads constants twice a frame (the vertex shader's, then the pixel shader's), so the second call was always on
+  the same side: the replacement always ran first, and it alone paid a fault the frame's first write to that page of
+  the command buffer takes (below). It measured 0.1x (7.6 microseconds against 0.5) where the two sides are equal.
+  The order is now the count times the golden ratio's fraction: half and half with no period. A call ten times
+  slower than the function's own code is logged with its arguments and run again at once (the second run shows
+  whether the time was the replacement's or the memory's).
+- **A page fault a frame in Crackdown's command buffer**: the first CPU write to the page the pixel shader's
+  constants go to takes 40,000-80,000 ticks (about 10-20 microseconds), whoever writes it: the renderer watches
+  pages of physical memory it copies to the GPU (`EnablePhysicalMemoryAccessCallbacks`), and command-buffer pages
+  are among them. Any360's renderer's cost, not the function's; not looked into here.
+
 ### Found on the way
 
 - Crackdown crashed after 40 to 55 seconds with a gamepad connected and the input group on `any360::sys`: its

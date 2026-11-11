@@ -8,6 +8,7 @@
 #include <atomic>
 #include <bit>
 #include <chrono>
+#include <functional>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -32,7 +33,7 @@ REXCVAR_DEFINE_STRING(any360_xdk_skip, "", "Kernel",
                       "by name, comma-separated (memcpy, forward copy, memset, memmove, XMemCpy, wcslen, strchr, "
                       "strncmp, strncpy, strrchr, tolower, toupper, wcsncpy, wcscpy, strncat, wcscmp, strlen, strcmp, "
                       "mbtowc, GetLastError, SetLastError, _stricmp, strstr, _finite, _isnan, _sptype, _get_exp, "
-                      "_set_exp, _add_exp)");
+                      "_set_exp, _add_exp, XAudio mix ramp, D3D dirty constants)");
 REXCVAR_DEFINE_BOOL(any360_xdk_bench, false, "Kernel",
                     "Any360: every call of a bound library function is timed both ways, its own code and the host "
                     "routine; the log gets the calls and nanoseconds of each by size (slow)");
@@ -57,7 +58,7 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "tolower", "toupper",     "wcsncpy", "wcscpy",  "strncat",
                                             "wcscmp",  "strlen",      "strcmp",  "mbtowc",  "GetLastError",
                                             "SetLastError", "_stricmp", "strstr", "_finite", "_isnan", "_sptype",
-                                            "_get_exp", "_set_exp", "_add_exp"};
+                                            "_get_exp", "_set_exp", "_add_exp", "XAudio mix ramp", "D3D dirty constants"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -87,10 +88,18 @@ Timed g_timed[kFunctions][33];
 constexpr uint32_t kExactSizes = 4096;
 std::atomic<uint32_t> g_exact[kFunctions][kExactSizes] = {};
 std::atomic<uint64_t> g_timed_calls{0};
-// Which side runs first alternates call by call of each function (the second finds the memory in the cache). By
-// function: with one count for all, two functions a title always calls one after the other could each keep the
-// same place (GetLastError after SetLastError), and the figures of both would lean one way.
+// Which side runs first, call by call of each function (the second finds the memory in the cache, and the first
+// pays a fault on a page the renderer watches). By function: with one count for all, two functions a title always
+// calls one after the other could each keep the same place (GetLastError after SetLastError). Not plain
+// alternation either: a title that calls a function twice a frame (D3D's constants: the vertex shader's, then
+// the pixel shader's) put the second call on the same side every time, and only the replacement ever paid the
+// fault of the frame's first write to a watched page of the command buffer (0.1x where it was 1.4x). The count
+// times the golden ratio's fraction: half and half, with no period.
 std::atomic<uint32_t> g_order[kFunctions] = {};
+bool OriginalFirst(uint32_t f) {
+  const uint64_t n = g_order[f].fetch_add(1, std::memory_order_relaxed);
+  return (n * 0x9E3779B97F4A7C15ull) >> 63;
+}
 uint64_t g_ticks_start = 0, g_timer_overhead = 0;
 std::chrono::steady_clock::time_point g_clock_start;
 
@@ -427,7 +436,7 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
     const uint64_t timed_call = g_timed_calls.fetch_add(1, std::memory_order_relaxed) + 1;
     uint64_t original_ticks, native_ticks;
     bool taken;
-    if (g_order[f].fetch_add(1, std::memory_order_relaxed) & 1) {
+    if (OriginalFirst(f)) {
       const uint64_t a = Ticks();
       original(reference, base);
       const uint64_t b = Ticks();
@@ -577,7 +586,7 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
   const uint64_t timed_call = g_timed_calls.fetch_add(1, std::memory_order_relaxed) + 1;
   uint64_t original_ticks, native_ticks;
   PPCContext copy = ctx;
-  if (g_order[f].fetch_add(1, std::memory_order_relaxed) & 1) {
+  if (OriginalFirst(f)) {
     const uint64_t a = Ticks();
     original(copy, base);
     const uint64_t b = Ticks();
@@ -604,6 +613,247 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
   timed.native.fetch_add(native_ticks, std::memory_order_relaxed);
   if (size < kExactSizes) g_exact[f][size].fetch_add(1, std::memory_order_relaxed);
   if (timed_call == 200000 || timed_call % 2000000 == 0) ReportTimes();
+}
+
+namespace {
+
+// The registers XAudio's mix writes, named, for the comparison of its two sides: the first that differs, or null.
+const char* FirstDifferentRegister(const PPCContext& a, const PPCContext& b, bool groups) {
+  const struct {
+    const char* name;
+    const PPCRegister& x;
+    const PPCRegister& y;
+  } gprs[] = {{"r3", a.r3, b.r3}, {"r4", a.r4, b.r4}, {"r5", a.r5, b.r5}, {"r6", a.r6, b.r6}, {"r7", a.r7, b.r7},
+              {"r8", a.r8, b.r8}, {"r9", a.r9, b.r9}, {"r10", a.r10, b.r10}, {"r11", a.r11, b.r11}, {"r31", a.r31, b.r31}};
+  for (const auto& g : gprs) {
+    if (g.x.u64 != g.y.u64) return g.name;
+  }
+  using V = decltype(PPCContext::v0);
+  const struct {
+    const char* name;
+    const V& x;
+    const V& y;
+    bool always;
+  } vrs[] = {{"v0", a.v0, b.v0, true},     {"v1", a.v1, b.v1, false},    {"v2", a.v2, b.v2, false},
+             {"v3", a.v3, b.v3, false},    {"v4", a.v4, b.v4, false},    {"v5", a.v5, b.v5, false},
+             {"v6", a.v6, b.v6, false},    {"v7", a.v7, b.v7, false},    {"v8", a.v8, b.v8, false},
+             {"v9", a.v9, b.v9, false},    {"v10", a.v10, b.v10, true},  {"v11", a.v11, b.v11, true},
+             {"v12", a.v12, b.v12, true},  {"v13", a.v13, b.v13, true},  {"v29", a.v29, b.v29, false},
+             {"v30", a.v30, b.v30, false}, {"v31", a.v31, b.v31, false}};
+  for (const auto& v : vrs) {
+    if ((v.always || groups) && std::memcmp(v.x.u32, v.y.u32, 16) != 0) return v.name;
+  }
+  return nullptr;
+}
+
+// The replacement on a copy of the title's registers, as the plain native path gives them back.
+bool MixNative(PPCContext& ctx, any360::xdk::VmxRegisters x, bool groups) {
+  if (!any360::xdk::XAudioMixRamp(g_memory, x)) return false;
+  FromVmx(x, ctx);
+  if (groups) GroupVectorsFromVmx(x, ctx);
+  return true;
+}
+
+}  // namespace
+
+namespace {
+
+// A function whose replacement takes and gives back registers of its own (not the r3-r5 calls of RunSlow): what
+// both sides write (put back between them: these functions read what they write), the replacement on a copy of
+// the registers, and the first register the two sides leave different.
+struct Sides {
+  uint32_t f;
+  std::vector<any360::xdk::Range> writes;
+  uint32_t work;  // for the timings by size
+  std::function<void(PPCContext&)> native;
+  std::function<const char*(const PPCContext&, const PPCContext&)> differs;
+  std::string call;  // the call's arguments, for a difference logged
+};
+
+void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const uint32_t f = s.f;
+  std::vector<std::vector<uint8_t>> before;
+  for (const any360::xdk::Range& w : s.writes) before.emplace_back(g_memory.Host(w.at), g_memory.Host(w.at) + w.size);
+  const auto put_back = [&] {
+    for (size_t i = 0; i < s.writes.size(); ++i) std::memcpy(g_memory.Host(s.writes[i].at), before[i].data(), s.writes[i].size);
+  };
+  const auto same_as = [&](const std::vector<std::vector<uint8_t>>& bytes, size_t& range, uint32_t& at) {
+    for (range = 0; range < s.writes.size(); ++range) {
+      const uint8_t* now = g_memory.Host(s.writes[range].at);
+      for (at = 0; at < s.writes[range].size; ++at) {
+        if (now[at] != bytes[range][at]) return false;
+      }
+    }
+    return true;
+  };
+
+  if (mode == Mode::kVerify) {
+    PPCContext reference = ctx, mine = ctx;
+    std::vector<std::vector<uint8_t>> first(s.writes.size());
+    bool same_bytes = false;
+    const char* register_differs = nullptr;
+    size_t range = 0;
+    uint32_t at = 0;
+    int tries = 0;
+    for (; tries < kTries; ++tries) {
+      if (tries) put_back();
+      reference = ctx;
+      original(reference, base);
+      for (size_t i = 0; i < s.writes.size(); ++i) {
+        first[i].assign(g_memory.Host(s.writes[i].at), g_memory.Host(s.writes[i].at) + s.writes[i].size);
+      }
+      put_back();
+      mine = ctx;
+      s.native(mine);
+      same_bytes = same_as(first, range, at);
+      register_differs = s.differs(mine, reference);
+      if (same_bytes && !register_differs) break;
+    }
+    if (tries && tries < kTries) g_settled[f].fetch_add(1, std::memory_order_relaxed);
+    g_verified_by[f].fetch_add(1, std::memory_order_relaxed);
+    const uint64_t verified = g_verified.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (verified == 1000 || verified % 1000000 == 0) {
+      REXLOG_INFO("Any360 xdk: {} calls verified against the functions' own code ({}), {} different; left to its own "
+                  "code: {}; different at first and the same when run again: {}",
+                  verified, CountsByFunction(g_verified_by), g_different.load(), CountsByFunction(g_declined_by),
+                  CountsByFunction(g_settled));
+    }
+    if (!(same_bytes && !register_differs) && g_different.fetch_add(1, std::memory_order_relaxed) < 20) {
+      REXLOG_ERROR("Any360 xdk: {} differs from the function's own code: {}: {}{}{} (first byte different: range {} "
+                   "at +{})",
+                   kNames[f], s.call, same_bytes ? "" : "bytes written ", register_differs ? "register " : "",
+                   register_differs ? register_differs : "", range, at);
+    }
+    // The function's own result stands.
+    for (size_t i = 0; i < s.writes.size(); ++i) std::memcpy(g_memory.Host(s.writes[i].at), first[i].data(), s.writes[i].size);
+    ctx = reference;
+    return;
+  }
+
+  // Bench: both sides timed on the same input, in alternating order; the side that ran last stands.
+  const uint64_t timed_call = g_timed_calls.fetch_add(1, std::memory_order_relaxed) + 1;
+  uint64_t original_ticks, native_ticks;
+  PPCContext own = ctx, mine = ctx;
+  if (OriginalFirst(f)) {
+    const uint64_t a = Ticks();
+    original(own, base);
+    const uint64_t b = Ticks();
+    put_back();
+    const uint64_t c = Ticks();
+    s.native(mine);
+    const uint64_t d = Ticks();
+    original_ticks = b - a, native_ticks = d - c;
+    ctx = mine;
+  } else {
+    const uint64_t a = Ticks();
+    s.native(mine);
+    const uint64_t b = Ticks();
+    put_back();
+    const uint64_t c = Ticks();
+    original(own, base);
+    const uint64_t d = Ticks();
+    native_ticks = b - a, original_ticks = d - c;
+    ctx = own;
+  }
+  // A replacement call ten times slower than the function's own code is a fault or a wait, not its work: the first
+  // few are logged with their arguments (a page the renderer watches, memory that is not where it seems).
+  static std::atomic<uint32_t> slow_logged{0};
+  if (native_ticks > 10 * original_ticks + 2000 && slow_logged.fetch_add(1, std::memory_order_relaxed) < 6) {
+    // Once more on the same input, right away: a second run as slow is the replacement's own work; a fast one, the
+    // first touch of the memory (a page fault, a watched page).
+    put_back();
+    PPCContext again = ctx;
+    const uint64_t a = Ticks();
+    s.native(again);
+    const uint64_t again_ticks = Ticks() - a;
+    REXLOG_WARN("Any360 xdk bench: {} took {} ticks, its own code {}, again {}: {}", kNames[f], native_ticks,
+                original_ticks, again_ticks, s.call);
+  }
+  Timed& timed = g_timed[f][std::bit_width(s.work)];
+  timed.calls.fetch_add(1, std::memory_order_relaxed);
+  timed.original.fetch_add(original_ticks, std::memory_order_relaxed);
+  timed.native.fetch_add(native_ticks, std::memory_order_relaxed);
+  if (s.work < kExactSizes) g_exact[f][s.work].fetch_add(1, std::memory_order_relaxed);
+  if (timed_call == 200000 || timed_call % 2000000 == 0) ReportTimes();
+}
+
+// The mode, resolved; kSelect turned into the native or the original one for function `f`.
+Mode SlowMode(uint32_t f, uint8_t* base) {
+  Mode mode = g_mode;
+  if (mode == Mode::kUnresolved) mode = Resolve(base);
+  if (mode == Mode::kSelect) mode = g_skipped[f] ? Mode::kOriginal : Mode::kNative;
+  return mode;
+}
+
+}  // namespace
+
+void RunMixSlow(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  constexpr uint32_t f = uint32_t(Function::kMixRamp);
+  const Mode mode = SlowMode(f, base);
+  any360::xdk::VmxRegisters x;
+  ToVmx(ctx, x);
+  const uint32_t samples = uint32_t(x.gpr[7]);
+  const bool groups = any360::xdk::detail::MixRampGroups(samples) != 0;
+  ctx.fpscr.enableFlushMode();  // as the function's first vector instruction does: both sides start so
+  if (mode == Mode::kNative) {
+    if (!MixNative(ctx, x, groups)) original(ctx, base);
+    return;
+  }
+  if (mode == Mode::kOriginal || !any360::xdk::XAudioMixRampAccepts(x)) {
+    original(ctx, base);
+    if (mode != Mode::kOriginal) g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  // The buffers are the mixing thread's own.
+  Sides s;
+  s.f = f;
+  s.writes = {any360::xdk::XAudioMixRampWrite(x), {uint32_t(x.gpr[1]) - 8, 8}};
+  s.work = samples;
+  s.native = [&](PPCContext& c) { MixNative(c, x, groups); };
+  s.differs = [&](const PPCContext& a, const PPCContext& b) { return FirstDifferentRegister(a, b, groups); };
+  s.call = fmt::format("r3 {:016X} r4 {:016X} r5 {:08X} r6 {:08X} samples {}", x.gpr[3], x.gpr[4], uint32_t(x.gpr[5]),
+                       uint32_t(x.gpr[6]), samples);
+  RunSides(mode, s, ctx, base, original);
+}
+
+void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t cursor_offset) {
+  constexpr uint32_t f = uint32_t(Function::kDirtyConstants);
+  const Mode mode = SlowMode(f, base);
+  const uint32_t device = ctx.r3.u32, source = ctx.r6.u32;
+  const uint64_t mask = ctx.r4.u64, index = ctx.r5.u64;
+  const auto native = [=](PPCContext& c) {
+    uint64_t i = index, cursor = 0;
+    if (!any360::xdk::D3dDirtyConstants(g_memory, device, cursor_offset, mask, i, source, cursor)) return false;
+    c.r4.u64 = cursor;
+    c.r5.u64 = i;
+    return true;
+  };
+  if (mode == Mode::kNative) {
+    if (!native(ctx)) original(ctx, base);
+    return;
+  }
+  any360::xdk::Range buffer;
+  if (mode == Mode::kOriginal ||
+      !any360::xdk::D3dDirtyConstantsAccepts(g_memory, device, cursor_offset, mask, index, source, buffer)) {
+    original(ctx, base);
+    if (mode != Mode::kOriginal) g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  // The command buffer is the rendering thread's own until it is kicked.
+  Sides s;
+  s.f = f;
+  s.writes = {buffer, {device + cursor_offset, 4}};
+  s.work = uint32_t(std::popcount(mask)) * 64;
+  s.native = [&](PPCContext& c) { native(c); };
+  s.differs = [](const PPCContext& a, const PPCContext& b) -> const char* {
+    if (a.r3.u64 != b.r3.u64) return "r3";
+    if (a.r4.u64 != b.r4.u64) return "r4";
+    if (a.r5.u64 != b.r5.u64) return "r5";
+    return nullptr;
+  };
+  s.call = fmt::format("device {:08X} mask {:016X} index {:X} constants {:08X} buffer {:08X}", device, mask, index,
+                       source, buffer.at);
+  RunSides(mode, s, ctx, base, original);
 }
 
 Counters GetCounters() { return {g_verified.load(), g_different.load()}; }
