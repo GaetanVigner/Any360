@@ -168,8 +168,16 @@ class CommandProcessor : public sys::GpuBackend {
   uint32_t ring_dwords() const { return ring_dwords_; }
   const Shader& shader(uint32_t type) const { return shaders_[type & 1]; }
 
-  // Frame captures (capture.h): each kick of the ring is recorded into `writer` before it runs (null: none).
-  void SetCapture(capture::Writer* writer) { capture_ = writer; }
+  // Frame captures (capture.h): each kick of the ring is recorded into `writer` before it runs (null: none). With
+  // `kicks`, the command processor lets go of the writer itself once that many kicks have run (CaptureDone()), so the
+  // producer can close it without waiting for the command processor to be idle at a kick, which a title that always
+  // has a wait queued never is (Call of Duty: Black Ops, Test Drive Unlimited).
+  void SetCapture(capture::Writer* writer, uint32_t kicks = 0) {
+    capture_done_ = false;
+    capture_kicks_left_ = kicks;
+    capture_ = writer;
+  }
+  bool CaptureDone() const { return capture_done_; }
   // Replay of a capture: the register file and the shaders as it starts, then each kick it recorded. A wait that is
   // not met when reached (on the CPU, absent from a replay) passes, counted in replay_skipped_waits().
   void Restore(const uint32_t* registers, uint32_t count);
@@ -273,6 +281,8 @@ class CommandProcessor : public sys::GpuBackend {
   uint64_t bin_mask_ = ~0ull, bin_select_ = ~0ull;
   Shader shaders_[2];
   capture::Writer* capture_ = nullptr;
+  uint32_t capture_kicks_left_ = 0;
+  std::atomic<bool> capture_done_{false};
   bool replaying_ = false;
   uint32_t replay_skipped_waits_ = 0;
   std::array<uint64_t, 128> opcode_counts_{};

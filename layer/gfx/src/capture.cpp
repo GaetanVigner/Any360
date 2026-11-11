@@ -7,11 +7,35 @@
 
 #include "any360/gfx/command_processor.h"
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 namespace any360::gfx::capture {
 
 namespace {
 constexpr char kMagic[8] = {'A', '3', '6', '0', 'C', 'A', 'P', '\0'};
+
+// Whether the host can read the memory at `at`, and up to where the answer holds. A title's physical memory is not
+// all mapped: Call of Duty: Black Ops reserves large blocks it commits a part of, and a capture that read the rest
+// crashed the title.
+bool Readable(const uint8_t* at, const uint8_t*& until) {
+#ifdef _WIN32
+  MEMORY_BASIC_INFORMATION info{};
+  if (!VirtualQuery(at, &info, sizeof info)) {
+    until = at + kPageBytes;
+    return false;
+  }
+  until = static_cast<const uint8_t*>(info.BaseAddress) + info.RegionSize;
+  return info.State == MEM_COMMIT && !(info.Protect & (PAGE_NOACCESS | PAGE_GUARD));
+#else
+  until = at + (size_t(1) << 40);  // the runtime maps the whole range on POSIX hosts
+  return true;
+#endif
 }
+}  // namespace
 
 uint64_t PageHash(const uint8_t* page) {
   // Multiply-xorshift over 8-byte words: about the speed of a memory read.
@@ -63,9 +87,14 @@ void Writer::WriteChangedPages() {
   const uint32_t pages = uint32_t(page_hashes_.size());
   const uint32_t workers = pages < 4096 ? 1 : std::clamp(std::thread::hardware_concurrency(), 1u, 16u);
   std::vector<std::vector<uint32_t>> found(workers);
+  static const uint8_t zero[kPageBytes] = {};
   auto scan = [&](uint32_t w) {
+    const uint8_t* region_end = nullptr;
+    bool readable = false;
     for (uint32_t p = pages * uint64_t(w) / workers, end = pages * uint64_t(w + 1) / workers; p < end; ++p) {
-      const uint64_t h = PageHash(physical_ + size_t(p) * kPageBytes);
+      const uint8_t* page = physical_ + size_t(p) * kPageBytes;
+      if (page >= region_end) readable = Readable(page, region_end);
+      const uint64_t h = PageHash(readable ? page : zero);  // a page the host does not hold reads as zero
       if (h != page_hashes_[p]) {
         page_hashes_[p] = h;
         found[w].push_back(p);
@@ -90,7 +119,9 @@ void Writer::WriteChangedPages() {
   std::fwrite(&count, 4, 1, file_);
   for (uint32_t p : changed) {
     std::fwrite(&p, 4, 1, file_);
-    std::fwrite(physical_ + size_t(p) * kPageBytes, 1, kPageBytes, file_);
+    const uint8_t* page = physical_ + size_t(p) * kPageBytes;
+    const uint8_t* until = nullptr;
+    std::fwrite(Readable(page, until) ? page : zero, 1, kPageBytes, file_);
   }
   written_ += 16 + payload;
 }

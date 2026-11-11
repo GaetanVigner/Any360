@@ -5,10 +5,12 @@
 // thread, which creates it).
 #include "any360/host/rexglue.h"
 
+#include "any360/gfx/png.h"
 #include "any360/gfx/async_renderer.h"
 #include "any360/gfx/capture.h"
 #include "any360/gfx/registers.h"
 
+#include <filesystem>
 #include <rex/cvar.h>
 #include <rex/runtime.h>
 #include <rex/system/function_dispatcher.h>
@@ -302,8 +304,11 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
 #endif
       visible_ = true;
     }
+    Screenshot();
     Report();
   }
+
+  void SetScreenshotPath(std::string path) { screenshot_path_ = std::move(path); }
 
  private:
   std::pair<uint32_t, uint32_t> Size() const {
@@ -324,6 +329,23 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
 #else
     return {0, 0};
 #endif
+  }
+
+  // The presented frame as a PNG when the trigger file appears (looked for every 15 frames).
+  void Screenshot() {
+    if (screenshot_path_.empty() || ++screenshot_poll_ % 15) return;
+    std::error_code error;
+    const std::filesystem::path trigger = screenshot_path_ + ".go";
+    if (!std::filesystem::exists(trigger, error)) return;
+    std::filesystem::remove(trigger, error);
+    std::vector<uint32_t> pixels;
+    const bool ok = ReadFrame(pixels) && pixels.size() == size_t(frame().width) * frame().height &&
+                    gfx::WritePng(screenshot_path_, frame().width, frame().height, pixels.data());
+    if (log_) {
+      log_(ok ? "Any360: screenshot written to " + screenshot_path_ + " (" + std::to_string(frame().width) + "x" +
+                    std::to_string(frame().height) + ")"
+              : "Any360: no screenshot (the frame could not be read back)");
+    }
   }
 
   // Frames per second and the renderer's cost per frame since the last report.
@@ -576,6 +598,8 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   std::function<void(const std::string&)> log_;
   double stats_seconds_;
  public:
+  std::string screenshot_path_;
+  uint32_t screenshot_poll_ = 0;
   bool show_fps_ = false;
  private:
   uint64_t overlay_frames_ = 0, overlay_busy_ = 0;
@@ -718,7 +742,7 @@ struct Binding {
   // command processor is idle (it records each kick from its own thread), so the writer never changes under it.
   uint8_t* physical = nullptr;
   std::string capture_path;
-  uint32_t capture_kicks = 0, kicks_left = 0;
+  uint32_t capture_kicks = 0;
   std::unique_ptr<gfx::capture::Writer> writer;
   std::chrono::steady_clock::time_point next_trigger_check{};
   std::function<void(const std::string&)> log;
@@ -743,14 +767,13 @@ std::pair<uint32_t, uint32_t> MemoryWritten(void* context, uint32_t start, uint3
 
 uint32_t ReadGpuRegister(void*, void*, uint32_t address) { return sys::Graphics().ReadRegister(sys::GpuRegisterIndex(address)); }
 
-// At a kick (the title's write of CP_RB_WPTR, before the command processor sees it): starts a requested capture, or
-// ends one whose kicks are done, while the command processor is idle.
+// At a kick (the title's write of CP_RB_WPTR, before the command processor sees it): starts a requested capture
+// while the command processor is idle, or closes one whose kicks the command processor has run (it lets go of the
+// writer itself: a title may never leave it idle at a kick).
 void CaptureAtKick(Binding& b) {
   if (b.capture_path.empty()) return;
   if (b.writer) {
-    if (b.kicks_left > 0) --b.kicks_left;
-    if (b.kicks_left == 0 && b.cp->Idle()) {
-      b.cp->SetCapture(nullptr);
+    if (b.cp->CaptureDone()) {
       const uint64_t bytes = b.writer->bytes_written();
       b.writer.reset();
       if (b.log) b.log("Any360: capture written to " + b.capture_path + " (" + std::to_string(bytes >> 20) + " MB)");
@@ -775,9 +798,8 @@ void CaptureAtKick(Binding& b) {
     return;
   }
   writer->Shaders(b.cp->shader(0).microcode, b.cp->shader(1).microcode);
-  b.kicks_left = b.capture_kicks;
   b.writer = std::move(writer);
-  b.cp->SetCapture(b.writer.get());
+  b.cp->SetCapture(b.writer.get(), b.capture_kicks);
   if (b.log) b.log("Any360: capturing " + std::to_string(b.capture_kicks) + " kicks into " + b.capture_path);
 }
 
@@ -871,6 +893,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->renderer = std::make_unique<PresentingRenderer>(binding->device, physical, binding->window, binding->parent,
                                                           options.log, options.stats_seconds, options.resolution_scale);
   binding->renderer->SetPipelineCache(options.pipeline_cache_path);
+  binding->renderer->SetScreenshotPath(options.screenshot_path);
   binding->renderer->show_fps_ = options.show_fps;
   binding->renderer->SetAsyncPipelines(options.async_pipelines);
   binding->renderer->SetMsaa(options.msaa_samples);

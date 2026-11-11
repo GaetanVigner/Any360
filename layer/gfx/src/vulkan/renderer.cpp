@@ -554,7 +554,10 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& requested)
   // The AS_ formats are the same EDRAM data as their base format (the reference's GetBaseColorFormat):
   // k_2_10_10_10_AS_10_10_10_10 is k_2_10_10_10, k_2_10_10_10_FLOAT_AS_16_16_16_16 is k_2_10_10_10_FLOAT. One
   // surface for both, or what a title draws as one is not there when it resolves or draws as the other.
+  // k_8_8_8_8_GAMMA is k_8_8_8_8's bytes too (the shader applies the gamma): Call of Duty: Black Ops draws its scene
+  // as one and resolves it as the other, which read an empty surface (a black screen).
   SurfaceKey key = requested;
+  if (!key.depth && key.format == 1) key.format = 0;
   if (!key.depth && key.format == 10) key.format = 2;
   if (!key.depth && key.format == 12) key.format = 3;
   auto& slot = surfaces_[key];
@@ -783,7 +786,8 @@ void VulkanRenderer::Transition(VkCommandBuffer cb, Image& image, VkImageLayout&
 }
 
 bool VulkanRenderer::ClearColor(const SurfaceKey& key, const float rgba[4]) {
-  Flush();  // what was drawn before comes first
+  Flush();     // what was drawn before comes first
+  WaitIdle();  // and the submitter thread is done with the queue the one-time submit below uses
   Surface* s = GetSurface(key);
   if (!s || key.depth) return false;
   const Functions& f = device_.fn();
@@ -802,7 +806,8 @@ bool VulkanRenderer::ClearColor(const SurfaceKey& key, const float rgba[4]) {
 }
 
 bool VulkanRenderer::ClearDepthStencil(const SurfaceKey& key, float depth, uint32_t stencil) {
-  Flush();  // what was drawn before comes first
+  Flush();     // what was drawn before comes first
+  WaitIdle();  // and the submitter thread is done with the queue the one-time submit below uses
   Surface* s = GetSurface(key);
   if (!s || !key.depth) return false;
   const Functions& f = device_.fn();
@@ -3228,6 +3233,9 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
     rx0 = std::min(rx0, r.x), ry0 = std::min(ry0, r.y);
     rx1 = std::max(rx1, r.x + r.width), ry1 = std::max(ry1, r.y + r.height);
   }
+  // Never beyond the image (a copy out of it loses the device).
+  rx1 = std::min(rx1, r.image.width / uint32_t(s)), ry1 = std::min(ry1, r.image.height / uint32_t(s));
+  rx0 = std::min(rx0, rx1), ry0 = std::min(ry0, ry1);
   r.pitch = pitch, r.endian = dest_endian, r.x = rx0, r.y = ry0, r.width = rx1 - rx0, r.height = ry1 - ry0;
   r.stale = true;
   r.scale = scale_;
@@ -3458,7 +3466,11 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     // Its write into guest memory recorded in the batch, done when the batch has run (no wait here).
     QueueWriteBack(dest_base, resolved_[dest_base]);
   } else if (read_back) {
-    Flush();  // the draws before the resolve must be in the surface
+    // The draws before the resolve must be in the surface, and the submitter thread done with the queue: the copy
+    // below is a one-time submit that waits for the queue to be idle, and a queue used from two threads at once is
+    // undefined (Call of Duty: Black Ops's first resolve on this path hung the renderer there for good).
+    Flush();
+    WaitIdle();
   }
   if (!on_gpu && textures_) textures_->DropGpuSources(dest_base, dest_base + 1);
   if (on_gpu) {
@@ -3471,7 +3483,13 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   } else {
     const VkFormat host = surface->image.format;
     uint32_t dest_bytes = 0, source_bytes = 0;
-    if (dest_format == 6 && host == VK_FORMAT_R8G8B8A8_UNORM) {
+    // k_16_16_16_16 targets are held at a 32nd of their -32...32 range (snorm -1...1, as the reference does); their
+    // 16-bit words are the guest's, which a resolve to a k_16_16_16_16 texture writes multiplied by 2^bias, clamped
+    // (Call of Duty: Black Ops's HDR chain, 256x152 and 128x80 with a bias: without it, the screen went black).
+    const bool fixed16 = dest_format == 26 && host == VK_FORMAT_R16G16B16A16_SNORM;
+    if (fixed16) {
+      dest_bytes = 8, source_bytes = 8;
+    } else if (dest_format == 6 && host == VK_FORMAT_R8G8B8A8_UNORM) {
       dest_bytes = 4, source_bytes = 4;  // k_8_8_8_8 from an 8_8_8_8 target
     } else if (dest_format == 32 && host == VK_FORMAT_R16G16B16A16_SFLOAT) {
       dest_bytes = 8, source_bytes = 8;  // k_16_16_16_16_FLOAT from a 16_16_16_16_FLOAT target
@@ -3516,6 +3534,17 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
               uint32_t sum = 0;
               for (uint32_t s = 0; s < sample_count; ++s) sum += taken[s][c];
               out[c] = uint8_t((sum + sample_count / 2) / sample_count);
+            }
+          } else if (fixed16) {
+            for (uint32_t c = 0; c < 4; ++c) {
+              int32_t sum = 0;
+              for (uint32_t s = 0; s < sample_count; ++s) {
+                int16_t word;
+                std::memcpy(&word, taken[s] + 2 * c, 2);
+                sum += word;
+              }
+              const int16_t word = int16_t(std::lround(float(sum) / float(sample_count)));
+              std::memcpy(out + 2 * c, &word, 2);
             }
           } else {
             for (uint32_t c = 0; c < 4; ++c) {
@@ -3572,7 +3601,9 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
           } else {
             uint16_t c[4];
             std::memcpy(c, texel, 8);
-            if (dest_bias) {
+            if (fixed16 && dest_bias) {
+              for (uint16_t& w : c) w = uint16_t(int16_t(std::clamp(std::lround(float(int16_t(w)) * scale), -32767L, 32767L)));
+            } else if (dest_bias) {
               for (uint16_t& h : c) h = FloatToHalf(HalfToFloat(h) * scale);
             }
             if (dest_swap) std::swap(c[0], c[2]);
@@ -3738,7 +3769,12 @@ bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t p
                                         VkImageUsageFlags usage) {
   if (r.image.image && r.image.format == format && r.image.width >= pitch && r.image.height >= rows) return true;
   if (r.image.image && r.image.format != format) {
-    // Another format: the spare if it is this one and large enough, the current one kept as the spare.
+    // Another format: the spare if it is this one and large enough, the current one kept as the spare. The rectangle
+    // left to write back was the other image's: it does not describe this one (Call of Duty: Black Ops resolves
+    // 1024 rows in one format, then 608 in another, to the same address; the union of the two, copied out of the
+    // 608-row image, lost the Vulkan device).
+    r.stale = false;
+    r.x = r.y = r.width = r.height = 0;
     if (r.spare.image && r.spare.format == format && r.spare_scale == r.scale && r.spare.width >= pitch && r.spare.height >= rows) {
       std::swap(r.image, r.spare);
       std::swap(r.layout, r.spare_layout);

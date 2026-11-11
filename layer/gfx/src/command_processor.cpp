@@ -424,6 +424,10 @@ bool CommandProcessor::Execute() {
     ok = ExecutePacket(r, 0);
     if (stopping_) break;
   }
+  if (capture_ && capture_kicks_left_ && --capture_kicks_left_ == 0) {
+    capture_ = nullptr;  // the producer closes the writer once it sees this
+    capture_done_ = true;
+  }
   const bool stopped = stopping_;
   if (!stopped) {
     read_index_ = write;

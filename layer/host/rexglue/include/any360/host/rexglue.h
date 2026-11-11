@@ -92,6 +92,10 @@ struct GraphicsOptions {
   // hold the title's data: they stay on the machine. Empty: none.
   std::string capture_path;
   uint32_t capture_kicks = 60;
+  // Screenshots: when a file named `screenshot_path` + ".go" appears, the next presented frame is written to
+  // `screenshot_path` as a PNG (the trigger file is removed; a second one writes it again). The frame as the
+  // renderer holds it, before the window's scaling. Empty: none.
+  std::string screenshot_path;
 };
 // GraphicsOptions has capture_path and capture_kicks.
 #define ANY360_REXGLUE_CAPTURE 1

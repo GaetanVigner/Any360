@@ -614,6 +614,78 @@ int main(int argc, char** argv) {
                   (long long)got[2], (long long)got[3], ok ? "" : " (wrong)");
       CHECK(ok);
     }
+    // A k_16_16_16_16 target resolved to a k_16_16_16_16 texture with an exponent bias of -1: the guest's 16-bit
+    // words (8 -> 8192), halved, in guest memory (tiled, 8 bytes a texel, 8-in-16). Call of Duty: Black Ops's HDR
+    // chain; not resolved at all before, the screen black.
+    {
+      const uint32_t rect = kVertices + 0x800, resolved = 0xA0000;
+      const float rv[3][2] = {{0, 0}, {float(kSize), 0}, {float(kSize), float(kSize)}};
+      for (uint32_t i = 0; i < 3; ++i) {
+        SetBig(rect + 8 * i, Bits(rv[i][0]));
+        SetBig(rect + 8 * i + 4, Bits(rv[i][1]));
+      }
+      std::memset(g_memory + resolved, 0xCD, kSize * kSize * 8);
+      const vk::SurfaceKey key{1536, kSize, 5, 0};
+      const float zero[4] = {};
+      CHECK(renderer.ClearColor(key, zero));
+      scenario("k_16_16_16_16 resolve", nullptr, [&] {
+        s.Reg(0x2001, 5u << 16 | 1536);
+        s.Vertices(0);
+        s.Put({Type3(pm4::SET_CONSTANT, 5), 0u << 16 | 1024, Bits(8), Bits(-16), Bits(16), Bits(-8)});
+        s.DrawAuto(kTriangleStrip, 4);
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});  // vf0: the copy rectangle
+        // Control (colour 0), base, pitch | height, info: endian 8-in-16, k_16_16_16_16, exponent bias -1.
+        s.Put({Type0(0x2318, 4), 0u, resolved, kSize | kSize << 16, 1u | 26u << 7 | 0x3Fu << 16});
+        s.Reg(0x2208, 6);
+        s.DrawAuto(8, 3);
+        s.Reg(0x2208, 4);
+      });
+      const int16_t expect[4] = {4096, -8192, 8192, -4096};
+      uint32_t wrong = 0;
+      for (uint32_t y = 0; y < kSize; y += 7) {
+        for (uint32_t x = 0; x < kSize; x += 7) {
+          const uint8_t* texel = g_memory + resolved + vk::TiledOffset2D(int32_t(x), int32_t(y), kSize, 3);
+          for (uint32_t c = 0; c < 4; ++c) {
+            const int16_t word = int16_t(uint16_t(texel[2 * c]) << 8 | texel[2 * c + 1]);
+            wrong += std::abs(word - expect[c]) > 1;
+          }
+        }
+      }
+      std::printf("gfx_render_tests: k_16_16_16_16 resolve, bias -1: %u wrong words\n", wrong);
+      CHECK(wrong == 0);
+    }
+    // Drawn into a k_8_8_8_8_GAMMA target, resolved with the target's format set to k_8_8_8_8: the same EDRAM
+    // bytes. Call of Duty: Black Ops resolves its scene this way; read from an empty surface before, it was black.
+    {
+      const uint32_t rect = kVertices + 0x800, resolved = 0xC0000;
+      std::memset(g_memory + resolved, 0xCD, kSize * kSize * 4);
+      const vk::SurfaceKey key{1536, kSize, 1, 0};
+      const float zero[4] = {};
+      CHECK(renderer.ClearColor(key, zero));
+      scenario("k_8_8_8_8_GAMMA resolved as k_8_8_8_8", nullptr, [&] {
+        s.Reg(0x2001, 1u << 16 | 1536);
+        s.Vertices(0);
+        s.Put({Type3(pm4::SET_CONSTANT, 5), 0u << 16 | 1024, Bits(1.0f), Bits(0.0f), Bits(1.0f), Bits(0.0f)});
+        s.DrawAuto(kTriangleStrip, 4);
+        s.Reg(0x2001, 0u << 16 | 1536);
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});  // vf0: the copy rectangle
+        // Control (colour 0), base, pitch | height, info: no byte swap, k_8_8_8_8.
+        s.Put({Type0(0x2318, 4), 0u, resolved, kSize | kSize << 16, 6u << 7});
+        s.Reg(0x2208, 6);
+        s.DrawAuto(8, 3);
+        s.Reg(0x2208, 4);
+      });
+      const uint8_t expect[4] = {255, 0, 255, 0};
+      uint32_t wrong = 0;
+      for (uint32_t y = 0; y < kSize; y += 7) {
+        for (uint32_t x = 0; x < kSize; x += 7) {
+          const uint8_t* texel = g_memory + resolved + vk::TiledOffset2D(int32_t(x), int32_t(y), kSize, 2);
+          for (uint32_t c = 0; c < 4; ++c) wrong += texel[c] != expect[c];
+        }
+      }
+      std::printf("gfx_render_tests: k_8_8_8_8_GAMMA resolved as k_8_8_8_8: %u wrong bytes\n", wrong);
+      CHECK(wrong == 0);
+    }
   }
   // Blending: ONE + ONE over a grey clear: (51, 51, 51) + (51, 102, 0) = (102, 153, 51).
   {
@@ -1278,9 +1350,11 @@ int main(int argc, char** argv) {
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
               stats.translations, stats.pipelines, stats.render_targets);
   // Render targets: colour 0, depth, colour 1, the 16_16_16_16_FLOAT target, the float24 depth surface and the nine
-  // render target formats, of which the two AS_ ones share their base format's surface (12, not 14).
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 12 && stats.texture_uploads == 6 && stats.resolves == 1);
-  // (The resolved texture is copied from the resolve on the GPU, not uploaded: 6 uploads, not 7.)
+  // render target formats, of which the two AS_ ones share their base format's surface (12, not 14), as k_8_8_8_8
+  // shares k_8_8_8_8_GAMMA's.
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 12 && stats.texture_uploads == 6 && stats.resolves == 3);
+  // (The resolved texture is copied from the resolve on the GPU, not uploaded: 6 uploads, not 7. Two resolves: that one and
+  // the k_16_16_16_16 one.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.
   // The float24 conversions round-trip first.
