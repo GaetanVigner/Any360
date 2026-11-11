@@ -31,7 +31,8 @@ REXCVAR_DEFINE_STRING(any360_xdk_skip, "", "Kernel",
                       "Any360: bound library functions that run their own code while the others run as host routines, "
                       "by name, comma-separated (memcpy, forward copy, memset, memmove, XMemCpy, wcslen, strchr, "
                       "strncmp, strncpy, strrchr, tolower, toupper, wcsncpy, wcscpy, strncat, wcscmp, strlen, strcmp, "
-                      "mbtowc, GetLastError, SetLastError, _stricmp, strstr)");
+                      "mbtowc, GetLastError, SetLastError, _stricmp, strstr, _finite, _isnan, _sptype, _get_exp, "
+                      "_set_exp, _add_exp)");
 REXCVAR_DEFINE_BOOL(any360_xdk_bench, false, "Kernel",
                     "Any360: every call of a bound library function is timed both ways, its own code and the host "
                     "routine; the log gets the calls and nanoseconds of each by size (slow)");
@@ -48,7 +49,8 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "wcslen", "strchr",       "strncmp", "strncpy", "strrchr",
                                             "tolower", "toupper",     "wcsncpy", "wcscpy",  "strncat",
                                             "wcscmp",  "strlen",      "strcmp",  "mbtowc",  "GetLastError",
-                                            "SetLastError", "_stricmp", "strstr"};
+                                            "SetLastError", "_stricmp", "strstr", "_finite", "_isnan", "_sptype",
+                                            "_get_exp", "_set_exp", "_add_exp"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -141,6 +143,8 @@ struct Call {
   uint32_t pcr;
   // What the call leaves in r3, for the functions that write and return a value (ReturnsValue).
   uint64_t result;
+  // The bits of f1 as the call came, and what the call leaves there for the functions that return a double.
+  uint64_t f1, f1_result;
   // The bytes the call is about to write: [dest, dest + size) for most, found by Accepts for the string functions
   // that write to where a string ends or as far as one goes.
   any360::xdk::Range write;
@@ -155,6 +159,12 @@ bool Accepts(Function function, Call& c) {
     case Function::kWcscpy: return any360::xdk::CrtWcscpyPlan(g_memory, c.dest, c.second, c.write);
     case Function::kStrncat: return any360::xdk::CrtStrncatPlan(g_memory, c.dest, c.second, c.size, c.write);
     case Function::kMbtowc: return any360::xdk::CrtMbtowcPlan(c.dest, c.second, c.size, c.write);
+    case Function::kFinite:
+    case Function::kIsnan:
+    case Function::kSptype:
+    case Function::kGetExp:
+    case Function::kSetExp:
+    case Function::kAddExp: return any360::xdk::CrtDoublePlan(c.stack_pointer, c.write);
     case Function::kSetLastError: return any360::xdk::XapiSetLastErrorPlan(g_memory, c.pcr, c.write);
     case Function::kMemcpy:
     case Function::kCopyForward: return any360::xdk::CrtMemcpyAccepts(c.dest, c.second, c.size);
@@ -168,6 +178,12 @@ bool Accepts(Function function, Call& c) {
 bool Native(Function function, Call& c) {
   switch (function) {
     case Function::kMbtowc: return any360::xdk::CrtMbtowc(g_memory, c.dest, c.second, c.size, c.result);
+    case Function::kFinite: return any360::xdk::CrtFinite(g_memory, c.stack_pointer, c.f1, c.result);
+    case Function::kIsnan: return any360::xdk::CrtIsnan(g_memory, c.stack_pointer, c.f1, c.result);
+    case Function::kSptype: return any360::xdk::CrtSptype(g_memory, c.stack_pointer, c.f1, c.result);
+    case Function::kGetExp: return any360::xdk::CrtGetExp(g_memory, c.stack_pointer, c.f1, c.result);
+    case Function::kSetExp: return any360::xdk::CrtSetExp(g_memory, c.stack_pointer, c.f1, c.second, c.f1_result);
+    case Function::kAddExp: return any360::xdk::CrtAddExp(g_memory, c.stack_pointer, c.f1, c.second, c.f1_result);
     case Function::kSetLastError: return any360::xdk::XapiSetLastError(g_memory, c.pcr, c.dest);
     case Function::kMemcpy: return any360::xdk::CrtMemcpy(g_memory, c.dest_register, c.second, c.size, c.stack_pointer);
     case Function::kCopyForward: return any360::xdk::CrtCopyForward(g_memory, c.dest, c.second, c.size);
@@ -189,7 +205,14 @@ bool IsPure(Function function) {
          function == Function::kGetLastError || function == Function::kStricmp || function == Function::kStrstr;
 }
 // The functions that write and leave a value of their own in r3 (the others that write return r3 as it came).
-bool ReturnsValue(Function function) { return function == Function::kMbtowc; }
+bool ReturnsValue(Function function) {
+  return function == Function::kMbtowc || function == Function::kFinite || function == Function::kIsnan ||
+         function == Function::kSptype || function == Function::kGetExp;
+}
+// The functions that leave a double in f1.
+bool ReturnsDouble(Function function) { return function == Function::kSetExp || function == Function::kAddExp; }
+// The functions whose first instruction stores a double: the host's flush-to-zero mode is off from there on.
+bool TakesDouble(Function function) { return function >= Function::kFinite && function <= Function::kAddExp; }
 bool Pure(Function function, const Call& c, uint64_t& r3) {
   switch (function) {
     case Function::kWcslen: return any360::xdk::CrtWcslen(g_memory, c.dest, r3);
@@ -233,6 +256,12 @@ bool RunsTwiceInPlace(Function function, const Call& c) {
     case Function::kMemset:
     case Function::kXMemCpy:
     case Function::kWcscpy:
+    case Function::kFinite:
+    case Function::kIsnan:
+    case Function::kSptype:
+    case Function::kGetExp:
+    case Function::kSetExp:
+    case Function::kAddExp:
     case Function::kSetLastError: return true;
     case Function::kMemcpy:
     case Function::kCopyForward:
@@ -333,7 +362,10 @@ void ReportTimes() {
 void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t value) {
   Mode mode = g_mode;
   if (mode == Mode::kUnresolved) mode = Resolve(base);
-  Call call{ctx.r3.u64, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r1.u32, value, ctx.r13.u32, ctx.r3.u64, {}};
+  // Both sides start as the function's own code does: with a store of a double, which turns the host's
+  // flush-to-zero mode off. Done on the title's registers, so that the copies the sides run on agree with them.
+  if (TakesDouble(function)) ctx.fpscr.disableFlushMode();
+  Call call{ctx.r3.u64, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r1.u32, value, ctx.r13.u32, ctx.r3.u64, ctx.f1.u64, ctx.f1.u64, {}};
   const uint64_t dest_register = call.dest_register;
   const uint32_t second = call.second, stack_pointer = call.stack_pointer;
   uint32_t dest = call.dest, size = call.size;
@@ -353,6 +385,8 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
       original(ctx, base);
     } else if (ReturnsValue(function)) {
       ctx.r3.u64 = call.result;
+    } else if (ReturnsDouble(function)) {
+      ctx.f1.u64 = call.f1_result;
     }
     return;
   }
@@ -487,6 +521,7 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
       same_bytes = std::memcmp(target, first.data(), size) == 0;
       same_slot = !with_slot || std::memcmp(slot, slot_first, 8) == 0;
       same_r3 = ReturnsValue(function) ? call.result == reference.r3.u64 : ctx.r3.u32 == reference.r3.u32;
+      if (ReturnsDouble(function)) same_r3 = same_r3 && call.f1_result == reference.f1.u64;
       if (same_bytes && same_slot && same_r3) break;
     }
     if (tries && tries < kTries) g_settled[f].fetch_add(1, std::memory_order_relaxed);
@@ -507,6 +542,7 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
                     kNames[f], dest_register, second, size, own_code_outside ? "the function's own code" : "the replacement");
       }
     }
+    if (ReturnsDouble(function)) ctx.f1.u64 = reference.f1.u64;  // the function's own double, whatever follows
     if (same_bytes && same_slot && same_r3) {
       if (ReturnsValue(function)) ctx.r3.u64 = reference.r3.u64;
       return;
@@ -518,7 +554,7 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
       REXLOG_ERROR("Any360 xdk: {} differs from the function's own code: r3 {:016X} source/fill {:08X} size {}: {}{}{}"
                    "(stack slot {:016X} and {:016X})",
                    kNames[f], dest_register, second, size, same_bytes ? "" : "bytes written ",
-                   same_slot ? "" : "stack slot ", same_r3 ? "" : "r3 ",
+                   same_slot ? "" : "stack slot ", same_r3 ? "" : (ReturnsDouble(function) ? "f1 " : "r3 "),
                    any360::xdk::detail::ByteSwap64(slot_now), any360::xdk::detail::ByteSwap64(slot_other));
     }
     // The function's own result stands: it ran last in place; otherwise what it wrote is put there again.
@@ -554,6 +590,7 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
     native_ticks = b - a, original_ticks = d - c;
   }
   if (ReturnsValue(function)) ctx.r3.u64 = call.result;
+  if (ReturnsDouble(function)) ctx.f1.u64 = call.f1_result;
   Timed& timed = g_timed[f][std::bit_width(size)];
   timed.calls.fetch_add(1, std::memory_order_relaxed);
   timed.original.fetch_add(original_ticks, std::memory_order_relaxed);

@@ -86,8 +86,8 @@ per title, the native function is shared, and the check in game is run again for
 
 ## State
 
-Five functions that copy and fill, the same code in the three titles at hand, then eighteen more of the C runtime
-and XAPI (below). Unit tests: `xdk_crt_tests` (1,521,223 checks) and `xdk_xapi_tests` (1,780,296 checks).
+Five functions that copy and fill, the same code in the three titles at hand, then twenty-four more of the C
+runtime and XAPI (below). Unit tests: `xdk_crt_tests` (2,486,548 checks) and `xdk_xapi_tests` (1,780,296 checks).
 
 | Function | Library | Handler | Declines | Test Drive Unlimited | Crackdown | The Simpsons Game |
 |---|---|---|---|---|---|---|
@@ -193,6 +193,46 @@ times (2,048 bytes, the needle absent). In game (`--any360_xdk_bench=true`, titl
 19.7 ns (1.3x, 56 k) in The Simpsons Game; `strstr` 100 -> 22 ns (4.6x, 41 k) in Crackdown, 466 -> 320 ns (1.5x,
 8 calls) in The Simpsons Game, and 2 calls in Test Drive Unlimited, where the first one pays the host routine's
 first use (360 -> 1,510 ns): too few to say anything.
+
+### The helpers on a double's bits (2026-11-11)
+
+Six functions of the C runtime that take a double apart by its bits, with no arithmetic: `_finite`, `_isnan`,
+`_sptype` (which infinity or NaN), `_get_exp`, `_set_exp` and `_add_exp` (the names of the C runtime's own
+sources; the math functions call them). The same instructions in the three titles, all in their C runtime ranges.
+They take their argument in f1, which the host's part did not pass before: a call now carries the bits of f1,
+and the two that return a double leave it in f1.
+
+Each stores the double in the caller's home area at r1 + 16 first (`stfd f1,16(r1)`), which is what the check in
+game compares as the bytes written; `_set_exp` and `_add_exp` build their result in the 16 bytes below the stack
+pointer, and `_add_exp` leaves the double at r1 - 8, the slot the check compares for every leaf function. The
+functions do the same stores. Their first instruction being a store of a double, the function's own code turns the
+host's flush-to-zero mode off there: the handlers do too.
+
+| Function | Handler | Test Drive Unlimited | Crackdown | The Simpsons Game |
+|---|---|---|---|---|
+| `_finite` | `CrtFinite` | not called: not bound | not called: not bound | bound: 704 calls |
+| `_isnan` | `CrtIsnan` | not called: not bound | bound: 92 | not called: not bound |
+| `_sptype` | `CrtSptype` | not called: not bound | not called: not bound | not called: not bound |
+| `_get_exp` | `CrtGetExp` | bound: 18,103 | bound: 1,134,237 | bound: 16,462 |
+| `_set_exp` | `CrtSetExp` | bound: 18,103 | bound: 1,134,237 | bound: 16,462 |
+| `_add_exp` | `CrtAddExp` | not called: not bound | not called: not bound | not called: not bound |
+
+The figures are the calls compared in game, 0 different (Test Drive Unlimited 6.0 M calls of all the bound
+functions, Crackdown 51 M in its city, The Simpsons Game 89 M with a level). Unit tests: 60,000 doubles (the
+infinities, both kinds of NaN, zeros, denormals, the largest and smallest normal ones, then any 64 bits) against
+the models and against what the host's own functions say of the same double (`isfinite`, `isnan`, `ilogb`,
+`frexp`, `ldexp`). Crackdown had `_add_exp` written by hand among its own functions, giving the same bits: it
+keeps it, the shared one not being bound in a title that has not called it.
+
+They gain nothing as host routines and lose nothing: 6 to 17 instructions each. `xdk_crt_bench`: 1.1 to 1.7 ns
+a call. In game (`--any360_xdk_bench=true`): `_get_exp` 8.8 -> 9.0 ns (1.0x), 16.8 -> 15.3 (1.1x), 8.0 -> 7.8
+(1.0x) in the three titles in that order, `_set_exp` 10.8 -> 9.7 (1.1x), 15.6 -> 13.2 (1.2x), 8.0 -> 8.2 (1.0x),
+`_finite` 13.8 -> 9.9 (1.4x, 296 calls) in The Simpsons Game: about what a call costs to time. Like `tolower`,
+they are bound where they were checked, to take the library off the recompiled code.
+
+Left of the C runtime's leaf functions that are the same in the three titles: the ones that read and write the
+floating-point status register (`mffs` / `mtfsf`: the control word's functions), which need the runtime's model of
+that register and are not written.
 
 ### The measure in game, the string functions and these (2026-11-11)
 

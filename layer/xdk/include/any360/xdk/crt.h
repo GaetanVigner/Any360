@@ -521,4 +521,81 @@ inline bool CrtStrstr(const Memory& memory, uint64_t string_register, uint32_t n
   return true;
 }
 
+// The C runtime's helpers that take a double apart by its bits, no arithmetic: _finite, _isnan, _sptype (which
+// infinity or NaN), _get_exp, _set_exp and _add_exp (the names of the C runtime's own sources). `f1` is the bits of
+// the double in f1. Each first stores it in the caller's home area at r1 + 16 (stfd f1,16(r1)), which is what a
+// caller could see of it; those that make a double build it in the 16 bytes below the stack pointer, which are
+// theirs alone, and return its bits for f1. They decline a stack that is not plain memory.
+namespace detail {
+inline void StoreBig64(uint8_t* p, uint64_t v) {
+  for (int i = 0; i < 8; ++i) p[i] = uint8_t(v >> (56 - 8 * i));
+}
+}  // namespace detail
+inline bool CrtDoublePlan(uint32_t stack_pointer, Range& write) {
+  write = {stack_pointer + 16, 8};
+  return stack_pointer >= 16 && IsPlainMemory(stack_pointer - 16, 40);
+}
+// _finite: 1 unless the exponent is all ones.
+inline bool CrtFinite(const Memory& memory, uint32_t stack_pointer, uint64_t f1, uint64_t& r3) {
+  Range write;
+  if (!CrtDoublePlan(stack_pointer, write)) return false;
+  detail::StoreBig64(memory.Host(write.at), f1);
+  r3 = (f1 >> 48 & 0x7FF0) != 0x7FF0;
+  return true;
+}
+// _isnan: 1 for an exponent of all ones with any bit below it set.
+inline bool CrtIsnan(const Memory& memory, uint32_t stack_pointer, uint64_t f1, uint64_t& r3) {
+  Range write;
+  if (!CrtDoublePlan(stack_pointer, write)) return false;
+  detail::StoreBig64(memory.Host(write.at), f1);
+  const uint32_t top = uint32_t(f1 >> 48) & 0x7FF8;
+  r3 = top == 0x7FF8 || (top == 0x7FF0 && (f1 & 0x0007FFFFFFFFFFFFull) != 0);
+  return true;
+}
+// _sptype: 1 for plus infinity, 2 for minus infinity, 3 for a quiet NaN, 4 for a signalling one, 0 otherwise.
+inline bool CrtSptype(const Memory& memory, uint32_t stack_pointer, uint64_t f1, uint64_t& r3) {
+  Range write;
+  if (!CrtDoublePlan(stack_pointer, write)) return false;
+  detail::StoreBig64(memory.Host(write.at), f1);
+  const uint32_t top = uint32_t(f1 >> 48) & 0x7FF8;
+  if (f1 == 0x7FF0000000000000ull) r3 = 1;
+  else if (f1 == 0xFFF0000000000000ull) r3 = 2;
+  else if (top == 0x7FF8) r3 = 3;
+  else if (top == 0x7FF0 && (f1 & 0x0007FFFFFFFFFFFFull) != 0) r3 = 4;
+  else r3 = 0;
+  return true;
+}
+// _get_exp: the exponent field less 1022 (the exponent of the value as a fraction between 0.5 and 1), sign-extended.
+inline bool CrtGetExp(const Memory& memory, uint32_t stack_pointer, uint64_t f1, uint64_t& r3) {
+  Range write;
+  if (!CrtDoublePlan(stack_pointer, write)) return false;
+  detail::StoreBig64(memory.Host(write.at), f1);
+  r3 = uint64_t(int64_t(int16_t(uint16_t((f1 >> 52 & 0x7FF) - 1022))));
+  return true;
+}
+// _set_exp: the double with its exponent field made r4 + 1022; _add_exp: with r4 added to it. The field is
+// shifted into the top 16 bits and stored as 16 bits over them, the sign and the 4 top bits of the fraction kept:
+// a value too large for the field's 11 bits runs into the sign, as its code lets it.
+inline uint64_t WithExponentField(uint64_t f1, uint32_t field) {
+  const uint16_t top = uint16_t(uint16_t(field << 4) | (uint16_t(f1 >> 48) & 0x800F));
+  return (f1 & 0x0000FFFFFFFFFFFFull) | uint64_t(top) << 48;
+}
+inline bool CrtSetExp(const Memory& memory, uint32_t stack_pointer, uint64_t f1, uint32_t r4, uint64_t& f1_out) {
+  Range write;
+  if (!CrtDoublePlan(stack_pointer, write)) return false;
+  detail::StoreBig64(memory.Host(write.at), f1);
+  f1_out = WithExponentField(f1, r4 + 1022);
+  detail::StoreBig64(memory.Host(stack_pointer - 16), f1_out);
+  return true;
+}
+inline bool CrtAddExp(const Memory& memory, uint32_t stack_pointer, uint64_t f1, uint32_t r4, uint64_t& f1_out) {
+  Range write;
+  if (!CrtDoublePlan(stack_pointer, write)) return false;
+  detail::StoreBig64(memory.Host(stack_pointer - 8), f1);
+  detail::StoreBig64(memory.Host(write.at), f1);
+  f1_out = WithExponentField(f1, uint32_t(f1 >> 52 & 0x7FF) + r4);
+  detail::StoreBig64(memory.Host(stack_pointer - 16), f1_out);
+  return true;
+}
+
 }  // namespace any360::xdk

@@ -255,4 +255,81 @@ inline uint64_t Strstr(const Memory& memory, uint64_t r3, uint32_t r4) {
   }
 }
 
+// The helpers on a double's bits, each after its instructions: the double stored at r1 + 16, then read back in
+// halfwords and words.
+namespace doubles {
+inline void Store(const Memory& memory, uint32_t at, uint64_t v) {
+  for (uint32_t i = 0; i < 8; ++i) *memory.Host(at + i) = uint8_t(v >> (56 - 8 * i));
+}
+inline uint32_t Half(const Memory& memory, uint32_t at) { return uint32_t(*memory.Host(at)) << 8 | *memory.Host(at + 1); }
+inline uint32_t Word(const Memory& memory, uint32_t at) { return Half(memory, at) << 16 | Half(memory, at + 2); }
+inline uint64_t Load(const Memory& memory, uint32_t at) { return uint64_t(Word(memory, at)) << 32 | Word(memory, at + 4); }
+}  // namespace doubles
+// _finite: r11 = (the top halfword & 0x7FF0) - 0x7FF0; r3 = 1 unless that is zero.
+inline uint64_t Finite(const Memory& memory, uint32_t r1, uint64_t f1) {
+  doubles::Store(memory, r1 + 16, f1);
+  const uint32_t r11 = (doubles::Half(memory, r1 + 16) & 0x7FF0) - 32752;
+  return r11 == 0 ? 0 : 1;
+}
+// _isnan: with r11 = the top halfword & 0x7FF8: 0x7FF0 and a bit set in the low 19 of the top word or in the low
+// word, 1; otherwise 1 when r11 is 0x7FF8, else 0.
+inline uint64_t Isnan(const Memory& memory, uint32_t r1, uint64_t f1) {
+  doubles::Store(memory, r1 + 16, f1);
+  const uint32_t r11 = doubles::Half(memory, r1 + 16) & 0x7FF8;
+  if (r11 == 32752) {
+    if ((doubles::Word(memory, r1 + 16) & 0x7FFFF) != 0) return 1;
+    if (doubles::Word(memory, r1 + 20) != 0) return 1;
+  }
+  return r11 == 32760 ? 1 : 0;
+}
+// _sptype: the top word 0x7FF00000 and the low one 0, 1; 0xFFF00000 and 0, 2; then as _isnan's two cases, 3 for
+// 0x7FF8 and 4 for 0x7FF0 with a bit set; 0 otherwise.
+inline uint64_t Sptype(const Memory& memory, uint32_t r1, uint64_t f1) {
+  doubles::Store(memory, r1 + 16, f1);
+  const uint32_t r10 = doubles::Word(memory, r1 + 16), r9 = doubles::Word(memory, r1 + 20);
+  if (r10 == 0x7FF00000u) {
+    if (r9 == 0) return 1;
+  } else if (r10 == 0xFFF00000u && r9 == 0) {
+    return 2;
+  }
+  const uint32_t r11 = doubles::Half(memory, r1 + 16) & 0x7FF8;
+  if (r11 == 32760) return 3;
+  if (r11 == 32752 && ((r10 & 0x7FFFF) != 0 || r9 != 0)) return 4;
+  return 0;
+}
+// _get_exp: r11 = ((the top halfword >> 4) & 0x7FF) - 1022; r3 = its low 16 bits sign-extended.
+inline uint64_t GetExp(const Memory& memory, uint32_t r1, uint64_t f1) {
+  doubles::Store(memory, r1 + 16, f1);
+  const uint32_t r11 = ((doubles::Half(memory, r1 + 16) >> 4) & 0x7FF) - 1022;
+  return uint64_t(int64_t(int16_t(uint16_t(r11))));
+}
+// _set_exp: the double at r1 + 16 and at r1 - 16; r11 = (r4 + 1022) << 4, or'd with the top halfword & 0x800F, its
+// low 16 bits stored over the top of the copy at r1 - 16, which is the double returned.
+inline uint64_t SetExp(const Memory& memory, uint32_t r1, uint64_t f1, uint32_t r4) {
+  doubles::Store(memory, r1 + 16, f1);
+  uint32_t r11 = r4 + 1022;
+  doubles::Store(memory, r1 - 16, f1);
+  r11 = r11 << 4;
+  const uint32_t r10 = doubles::Half(memory, r1 + 16) & 32783;
+  r11 |= r10;
+  *memory.Host(r1 - 16) = uint8_t(r11 >> 8);
+  *memory.Host(r1 - 15) = uint8_t(r11);
+  return doubles::Load(memory, r1 - 16);
+}
+// _add_exp: the double at r1 - 8, r1 + 16 and r1 - 16; r11 = (((the top halfword >> 4) & 0x7FF) + r4) << 4, then
+// as _set_exp.
+inline uint64_t AddExp(const Memory& memory, uint32_t r1, uint64_t f1, uint32_t r4) {
+  doubles::Store(memory, r1 - 8, f1);
+  doubles::Store(memory, r1 + 16, f1);
+  const uint32_t r10 = doubles::Half(memory, r1 - 8);
+  uint32_t r11 = doubles::Half(memory, r1 + 16);
+  doubles::Store(memory, r1 - 16, f1);
+  r11 = (r11 >> 4) & 0x7FF;
+  r11 = (r11 + r4) << 4;
+  r11 |= r10 & 32783;
+  *memory.Host(r1 - 16) = uint8_t(r11 >> 8);
+  *memory.Host(r1 - 15) = uint8_t(r11);
+  return doubles::Load(memory, r1 - 16);
+}
+
 }  // namespace any360::xdk::reference

@@ -4,6 +4,7 @@
 // alignments exhaustively where they are small, then at random; the ranges that are not plain memory; the physical
 // view's host offset.
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -596,6 +597,57 @@ void Searches() {
   }
 }
 
+// The helpers on a double's bits: against their models (value and memory) and against what the host's own
+// functions say of the same double.
+void Doubles() {
+  Pair p(111);
+  std::mt19937_64 rng(112);
+  const uint64_t special[] = {0, 0x8000000000000000ull, 0x7FF0000000000000ull, 0xFFF0000000000000ull, 0x7FF8000000000000ull,
+                              0xFFF8000000000000ull, 0x7FF0000000000001ull, 0xFFF0000000000001ull, 0x7FF4000000000000ull,
+                              0x7FF0000080000000ull, 0x7FFFFFFFFFFFFFFFull, 0x0000000000000001ull, 0x000FFFFFFFFFFFFFull,
+                              0x0010000000000000ull, 0x7FEFFFFFFFFFFFFFull, 0x3FF0000000000000ull, 0xBFE0000000000000ull};
+  for (uint32_t round = 0; round < 60000; ++round) {
+    uint64_t bits = round < sizeof special / sizeof special[0] ? special[round] : rng();
+    if (round % 7 == 3) bits |= 0x7FF0000000000000ull;        // more infinities and NaNs
+    if (round % 11 == 5) bits &= 0x800FFFFFFFFFFFFFull;       // more zeros and denormals
+    double d;
+    std::memcpy(&d, &bits, 8);
+    const uint32_t stack = kStack - 64 - (round & 7) * 8;
+    uint64_t r3 = 0, out = 0;
+    CHECK(xdk::CrtFinite(p.a, stack, bits, r3) && r3 == xdk::reference::Finite(p.b, stack, bits) && r3 == (std::isfinite(d) ? 1u : 0u));
+    CHECK(xdk::CrtIsnan(p.a, stack, bits, r3) && r3 == xdk::reference::Isnan(p.b, stack, bits) && r3 == (std::isnan(d) ? 1u : 0u));
+    CHECK(xdk::CrtSptype(p.a, stack, bits, r3) && r3 == xdk::reference::Sptype(p.b, stack, bits));
+    CHECK(r3 == (std::isinf(d) ? (d > 0 ? 1u : 2u) : std::isnan(d) ? (bits & 0x0008000000000000ull ? 3u : 4u) : 0u));
+    CHECK(xdk::CrtGetExp(p.a, stack, bits, r3) && r3 == xdk::reference::GetExp(p.b, stack, bits));
+    if (std::isnormal(d)) CHECK(int64_t(r3) == int64_t(std::ilogb(d)) + 1);
+    CHECK(p.Same(stack - 16, stack + 24));
+    // _set_exp and _add_exp: exponents that keep the field in range, then any 32 bits.
+    for (uint32_t r4 : {uint32_t(int32_t(rng() % 2046) - 1021), uint32_t(rng())}) {
+      CHECK(xdk::CrtSetExp(p.a, stack, bits, r4, out) && out == xdk::reference::SetExp(p.b, stack, bits, r4));
+      if (std::isnormal(d) && int32_t(r4) >= -1021 && int32_t(r4) <= 1024) {
+        int exponent = 0;
+        const double fraction = std::frexp(d, &exponent), wanted = std::ldexp(fraction, int32_t(r4));
+        CHECK(std::memcmp(&out, &wanted, 8) == 0);
+      }
+      CHECK(p.Same(stack - 16, stack + 24));
+      CHECK(xdk::CrtAddExp(p.a, stack, bits, r4, out) && out == xdk::reference::AddExp(p.b, stack, bits, r4));
+      if (std::isnormal(d) && int32_t(r4) > -900 && int32_t(r4) < 900) {
+        const double wanted = std::ldexp(d, int32_t(r4));
+        if (std::isnormal(wanted)) CHECK(std::memcmp(&out, &wanted, 8) == 0);
+      }
+      CHECK(p.Same(stack - 16, stack + 24));
+    }
+  }
+  CHECK(p.SameEverywhere());
+  // A stack that is not plain memory, or with no room below it: declined, nothing written.
+  const Memory nowhere{};
+  uint64_t r3 = 0, out = 0;
+  xdk::Range write;
+  CHECK(xdk::CrtDoublePlan(0x1000, write) && write.at == 0x1010 && write.size == 8);
+  CHECK(!xdk::CrtFinite(nowhere, 0x7F000008, 1, r3) && !xdk::CrtIsnan(nowhere, 8, 1, r3) && !xdk::CrtSptype(nowhere, 0x7EFFFFF0, 1, r3));
+  CHECK(!xdk::CrtGetExp(nowhere, 0xDFFFFFF8, 1, r3) && !xdk::CrtSetExp(nowhere, 0x7F000010, 1, 2, out) && !xdk::CrtAddExp(nowhere, 0, 1, 2, out));
+}
+
 }  // namespace
 
 int main() {
@@ -611,6 +663,7 @@ int main() {
   MoreStrings();
   Comparisons();
   Searches();
+  Doubles();
   SavedRegister();
   for (uint32_t seed = 1; seed <= 4; ++seed) Random(seed, 100000);
   PhysicalView();

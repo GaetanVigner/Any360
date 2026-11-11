@@ -267,6 +267,30 @@ int main(int argc, char** argv) {
     std::printf("\n");
   }
 
+  // The helpers on a double's bits take the same time whatever the double: one line.
+  {
+    std::vector<Call> calls = CallsOfSize(64, 977);
+    const auto pair = [&](const char* name, auto&& model, auto&& now) {
+      const double slow = Fastest(calls, std::min(repeats, 3u), model), fast = Fastest(calls, repeats, now);
+      std::printf(" %s %.2f -> %.2f |", name, slow, fast);
+    };
+    std::printf("the helpers on a double's bits, ns a call (model -> now):\n");
+    const auto bits = [](const Call& c) { return 0x3FF0000000000000ull + uint64_t(c.dest) * 0x9E3779B97F4A7C15ull; };
+    pair("_finite", [&](const Call& c) { return uint32_t(xdk::reference::Finite(m, kStack - 64, bits(c))); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtFinite(m, kStack - 64, bits(c), r3); return uint32_t(r3); });
+    pair("_isnan", [&](const Call& c) { return uint32_t(xdk::reference::Isnan(m, kStack - 64, bits(c))); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtIsnan(m, kStack - 64, bits(c), r3); return uint32_t(r3); });
+    pair("_sptype", [&](const Call& c) { return uint32_t(xdk::reference::Sptype(m, kStack - 64, bits(c))); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtSptype(m, kStack - 64, bits(c), r3); return uint32_t(r3); });
+    pair("_get_exp", [&](const Call& c) { return uint32_t(xdk::reference::GetExp(m, kStack - 64, bits(c))); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtGetExp(m, kStack - 64, bits(c), r3); return uint32_t(r3); });
+    pair("_set_exp", [&](const Call& c) { return uint32_t(xdk::reference::SetExp(m, kStack - 64, bits(c), c.size)); },
+         [&](const Call& c) { uint64_t out = 0; xdk::CrtSetExp(m, kStack - 64, bits(c), c.size, out); return uint32_t(out); });
+    pair("_add_exp", [&](const Call& c) { return uint32_t(xdk::reference::AddExp(m, kStack - 64, bits(c), c.size)); },
+         [&](const Call& c) { uint64_t out = 0; xdk::CrtAddExp(m, kStack - 64, bits(c), c.size, out); return uint32_t(out); });
+    std::printf("\n");
+  }
+
   // Each title's mix, three different draws of it; then all of them together (what a change is judged on).
   std::printf("the titles' mixes, sizes in random order (ns a call):\n");
   double all[2][3] = {};

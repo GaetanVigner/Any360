@@ -35,7 +35,7 @@ namespace any360::host::rexglue::xdk {
 enum class Function : uint32_t {
   kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy,
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
-  kGetLastError, kSetLastError, kStricmp, kStrstr, kCount
+  kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -313,6 +313,46 @@ inline void XapiSetLastError(PPCContext& ctx, uint8_t* base, GuestFunction origi
   }
   RunSlow(Function::kSetLastError, ctx, base, original);
 }
+
+// The C runtime's helpers on a double's bits: f1 the double (r4 an exponent for the last two). The first four
+// return a value in r3, the last two a double in f1. Each stores f1 at r1 + 16 as its code does. The host's
+// flush-to-zero mode is left off as the function's first instruction (a store of a double) leaves it.
+#define ANY360_XDK_DOUBLE_TO_R3(Name, function)                                                    \
+  inline void Name(PPCContext& ctx, uint8_t* base, GuestFunction original) {                        \
+    if (g_mode == Mode::kNative) [[likely]] {                                                       \
+      uint64_t r3;                                                                                  \
+      if (any360::xdk::Name(g_memory, ctx.r1.u32, ctx.f1.u64, r3)) [[likely]] {                     \
+        ctx.fpscr.disableFlushMode();                                                               \
+        ctx.r3.u64 = r3;                                                                            \
+        return;                                                                                     \
+      }                                                                                             \
+      original(ctx, base);                                                                          \
+      return;                                                                                       \
+    }                                                                                               \
+    RunSlow(Function::function, ctx, base, original);                                               \
+  }
+ANY360_XDK_DOUBLE_TO_R3(CrtFinite, kFinite)
+ANY360_XDK_DOUBLE_TO_R3(CrtIsnan, kIsnan)
+ANY360_XDK_DOUBLE_TO_R3(CrtSptype, kSptype)
+ANY360_XDK_DOUBLE_TO_R3(CrtGetExp, kGetExp)
+#undef ANY360_XDK_DOUBLE_TO_R3
+#define ANY360_XDK_DOUBLE_TO_F1(Name, function)                                                    \
+  inline void Name(PPCContext& ctx, uint8_t* base, GuestFunction original) {                        \
+    if (g_mode == Mode::kNative) [[likely]] {                                                       \
+      uint64_t f1;                                                                                  \
+      if (any360::xdk::Name(g_memory, ctx.r1.u32, ctx.f1.u64, ctx.r4.u32, f1)) [[likely]] {         \
+        ctx.fpscr.disableFlushMode();                                                               \
+        ctx.f1.u64 = f1;                                                                            \
+        return;                                                                                     \
+      }                                                                                             \
+      original(ctx, base);                                                                          \
+      return;                                                                                       \
+    }                                                                                               \
+    RunSlow(Function::function, ctx, base, original);                                               \
+  }
+ANY360_XDK_DOUBLE_TO_F1(CrtSetExp, kSetExp)
+ANY360_XDK_DOUBLE_TO_F1(CrtAddExp, kAddExp)
+#undef ANY360_XDK_DOUBLE_TO_F1
 
 // Calls verified against the functions' own code and found different, since the start (any360_xdk_verify).
 struct Counters {

@@ -23,6 +23,12 @@
   "GetLastError",
   "SetLastError",
   "_stricmp",
-  "strstr"
+  "strstr",
+  "_finite",
+  "_isnan",
+  "_sptype",
+  "_get_exp",
+  "_set_exp",
+  "_add_exp"
  ]
 }
