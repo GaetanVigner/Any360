@@ -613,6 +613,20 @@ bool TextureCache::DecodeRGBA8(const uint32_t fetch[6], uint32_t level, uint32_t
   };
   if (f == VK_FORMAT_R8G8B8A8_UNORM && info->block_bytes == 4) {
     for (size_t i = 0; i < pixels.size() && 4 * i + 4 <= blocks.size(); ++i) std::memcpy(&pixels[i], &blocks[i * 4], 4);
+  } else if (f == VK_FORMAT_R5G6B5_UNORM_PACK16) {
+    // As the host image holds it (red in the high bits, after the load's conversion).
+    for (size_t i = 0; i < pixels.size() && 2 * i + 2 <= blocks.size(); ++i) {
+      uint16_t v;
+      std::memcpy(&v, &blocks[i * 2], 2);
+      const uint32_t r = (v >> 11) * 255 / 31, g = ((v >> 5) & 63) * 255 / 63, b = (v & 31) * 255 / 31;
+      pixels[i] = r | g << 8 | b << 16 | 0xFF000000u;
+    }
+  } else if (f == VK_FORMAT_R16G16_UNORM) {
+    for (size_t i = 0; i < pixels.size() && 4 * i + 4 <= blocks.size(); ++i) {
+      uint16_t v[2];
+      std::memcpy(v, &blocks[i * 4], 4);
+      pixels[i] = uint32_t(v[0] >> 8) | uint32_t(v[1] >> 8) << 8 | 0xFF000000u;
+    }
   } else if (f == VK_FORMAT_BC1_RGBA_UNORM_BLOCK || f == VK_FORMAT_BC2_UNORM_BLOCK || f == VK_FORMAT_BC3_UNORM_BLOCK ||
              f == VK_FORMAT_BC4_UNORM_BLOCK || f == VK_FORMAT_BC5_UNORM_BLOCK) {
     for (uint32_t s = 0; s < slices; ++s)

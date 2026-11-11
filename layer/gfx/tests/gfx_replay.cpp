@@ -175,6 +175,13 @@ class TracingRenderer : public Renderer {
             parsed.AnalyzeUcode(text);
             std::printf("    shader %016llX:\n%s\n", (unsigned long long)shader->hash, parsed.ucode_disassembly().c_str());
           }
+          // The pixel shader's float constants (c0-c255 of its half, registers 0x4400 on), those not all zero.
+          for (uint32_t c = 0; c < 256; ++c) {
+            const uint32_t* v = regs + 0x4400 + 4 * c;
+            if (!(v[0] | v[1] | v[2] | v[3])) continue;
+            std::printf("      ps c%u: %g %g %g %g\n", c, std::bit_cast<float>(v[0]), std::bit_cast<float>(v[1]),
+                        std::bit_cast<float>(v[2]), std::bit_cast<float>(v[3]));
+          }
           for (uint32_t fc = 0; fc < 32; ++fc) {
             const uint32_t* d = regs + 0x4800 + 6 * fc;
             if ((d[0] & 3) == 2 && d[1]) {
