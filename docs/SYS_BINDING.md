@@ -343,6 +343,33 @@ console's own calls, with nothing for a title to call or hook (`any360/sys/input
 - `sys_object_tests` plays a burst of changes in one frame (RB, X, Y, RB released and pressed again, a double tap on
   X) through the steps, and the sticks staying live while buttons wait.
 
+## Call of Duty: Black Ops on the full binding (2026-11-11)
+
+The fifth title, the first ported on Any360 from its first day (GaetanVigner/CoDBoRewrite), runs with all eight
+groups on any360::sys and its draws on any360::gfx, no call reaching the runtime: its first minute and a half, 1,700
+to 1,800 draws a frame at 60 FPS. Nothing in Any360 is written for it; what it needed and found is Any360's:
+
+- **Four calls only it imports** (all stubs in the reference): `XCustomSetAction`, `XCustomGetLastActionPress`,
+  `XamShowMarketplaceDownloadItemsUI` (the game waits for its overlapped), `NetDll_XnpLogonGetStatus`.
+- **Title threads are of the title process, type 1** (they were 2, the system's): the game asks
+  `KeGetCurrentProcessType` which D3D device to use, and the system's was never created.
+- **An audio callback gets the address of a word holding its argument**, as the reference passes it; the game's
+  callback loads its object from there.
+- **XamEnumerate, XamContentCreate and XamUserAreUsersFriends write the extended error as an HRESULT**
+  (0x80070012, not 0x12): the game read an empty content enumeration's raw code as content that had changed.
+- **A network**: Call of Duty runs a local server over sockets even in solo play, and stopped on "Unable to find an
+  XNADDR" with the console offline. `any360::sys` now has the console's sockets on the host's (`Network`, net.h;
+  `host_sockets.cpp` holds the platform's API): `loopback` by default, the console alone at 127.0.0.1 (a socket bound
+  to any address is bound there, a broadcast comes back to it, nothing leaves the machine and no firewall asks), or
+  `off` (`any360_sys_network=off`: no connection, as before). `sys_net_tests` runs UDP, VDP, broadcast, TCP, `select`,
+  the options and the Winsock errors over real loopback sockets.
+
+How the game's own messages were read: the port logs its fatal errors (`src/error_log.cpp` wraps the routine every
+fatal error goes through), and each group was tried alone first. Single groups mislead here: a group alone needs the
+others' objects (an event the runtime made, an APC on a thread it does not run), so a file read never completes and
+a callback waits on the wrong object; the full binding, network on the runtime first, then on Any360, is what found
+the problems above.
+
 ## After step 7: from one title to any title (the road to 100%)
 
 Steps 0-7 put Crackdown's system calls on any360::sys, with ReXGlue still hosting it. Crackdown is the test bench; the

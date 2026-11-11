@@ -301,6 +301,14 @@ to the reference, or, where the reference is not faithful, when the scenario tes
     every wait or delay, which the reference never does.
 - **Offline networking**: `NetDll_inet_addr` (the Winsock parser), `NetDll___WSAFDIsSet`, `NetDll_XNetInAddrToString`,
   the XNet address conversions.
+- **The network** (2026-11-11, for Call of Duty: Black Ops; `sys_net_tests` over real loopback sockets): the
+  console's sockets on the host's (`Network` in net.h, `host_sockets.cpp`), IPv4 TCP and UDP (VDP as UDP), every Xbox
+  constant mapped explicitly (address family, types, protocols, `SOL_SOCKET` and `TCP_NODELAY` options, `FIONBIO`,
+  `FIONREAD`, Winsock error codes on every host). Two modes, `any360_sys_network`: `loopback` (the default: the
+  console alone at 127.0.0.1, its XNADDR static at that address, binds to any address and broadcasts kept there,
+  `XNetConnect` connected, `XNetQosLookup` complete with no contact) and `off` (the console without a connection
+  described above, which `sys_io_tests` keeps as the reference's answers). Not implemented: overlapped Winsock
+  (`WSASend`, `WSARecv`, `WSAEventSelect`), which fails as before, and any network beyond the machine.
 
 The display and console settings are `VideoSettings` / `ConsoleSettings` (defaults: 1280x720 at 60 Hz, English,
 country 103); `SetDebugPrintSink` receives `DbgPrint` text.

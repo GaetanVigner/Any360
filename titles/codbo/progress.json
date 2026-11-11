@@ -5,28 +5,37 @@
  "readme": "F:/COD BO/CoDBoRewrite/README.md",
  "out": "F:/COD BO/CoDBoRewrite/docs/progress",
  "generated": "F:/COD BO/CoDBoRewrite/generated/default",
- "port_src": ["F:/COD BO/CoDBoRewrite/src"],
+ "port_src": [
+  "F:/COD BO/CoDBoRewrite/src"
+ ],
  "sys": {
-  "groups": [],
+  "groups": [
+   "stateless",
+   "files",
+   "objects",
+   "threads",
+   "memory",
+   "xam",
+   "input",
+   "audio"
+  ],
   "default": false,
-  "where": "every call the game imports exists in `any360::sys` (the four only this game uses were added for it), but the game does not run on the full binding yet: it stops after its first network calls (see known problems). Opt-in: `--any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio`"
+  "where": "all eight groups, opt-in: `--any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio`; no call reaches ReXGlue's kernel in its first minute and a half, its local server's sockets on Any360's network (loopback: nothing leaves the machine)"
  },
  "gfx": {
   "bound": true,
   "default": false,
-  "where": "opt-in: `--any360_gpu=true`; the game draws its first scenes through `any360::gfx` at 60 FPS (1,400 to 1,700 draws a frame), on ReXGlue's kernel",
+  "where": "opt-in: `--any360_gpu=true`; the game draws its first scenes through `any360::gfx` at 60 FPS (1,700 to 1,800 draws a frame with every system call on `any360::sys`)",
   "todo": [
    "Check what is drawn against ReXGlue's GPU, scene by scene, beyond the first minute."
   ]
  },
  "next": [
-  "A network layer in `any360::sys`: the game runs a local server over loopback sockets even in solo play, and Any360 answers today as a console with no network (every socket call fails, no XNADDR). Until then the game's network calls stay on ReXGlue's runtime (`--any360_sys_runtime_calls=NetDll_...`), and mixing the two kernels stops it.",
-  "Then every system group on `any360::sys` through the campaign and Zombies: saves, sound, the gamepad.",
+  "Play it on the full binding past its first minute and a half: the menus, a campaign level, Zombies, saves, sound, the gamepad.",
   "Recompile `default_mp.xex`, the multiplayer executable.",
   "Find the XDK and C runtime functions Any360 already has (`memcpy`, `memset`, the string functions) in this executable and bind them after a check in game."
  ],
  "open": [
-  "With every system group on `any360::sys` and the network on ReXGlue's runtime, the game stops a few seconds in, reading through a null pointer right after `XNetQosLookup` (answered by the runtime).",
-  "With only some groups switched, the game can report a missing asset (`couldn't find shell shock 'flashbang'`) or stop drawing: each group alone needs the others' objects (events, APCs, completion ports), so those runs say little; the full binding is what counts."
+  "With only some system groups switched, the game can report a missing asset (`couldn't find shell shock 'flashbang'`) or stop drawing: each group alone needs the others' objects (events, APCs, completion ports), so those runs say little; the full binding is what counts."
  ]
 }

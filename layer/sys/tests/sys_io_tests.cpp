@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "any360/sys/net.h"
 #include "any360/sys/exports.h"
 #include "guest_memory.h"
 
@@ -874,6 +875,8 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     if (!std::strcmp(argv[i], "--trials") && i + 1 < argc) trials = std::atoi(argv[++i]);
   }
+  // The reference answers the XNet conversions as a console with no network: Any360's network off is that console.
+  any360::sys::Net().SetMode(any360::sys::Network::Mode::kOff);
   int failures = 0;
   for (const Case& c : kCases) {
     bool ok = true;

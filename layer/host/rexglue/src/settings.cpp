@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "any360/sys/files.h"
+#include "any360/sys/net.h"
 #include "any360/sys/scheduler.h"
 #include "any360/sys/xam.h"
 
@@ -30,6 +31,9 @@ REXCVAR_DEFINE_INT32(any360_input_sample_us, 1000, "Kernel",
 REXCVAR_DEFINE_BOOL(any360_sys_keep_files, true, "Kernel",
                     "Any360: an open file keeps its host file open between its reads; off: every read opens it "
                     "(to tell whether a title's trouble comes from that)");
+REXCVAR_DEFINE_STRING(any360_sys_network, "loopback", "Kernel",
+                      "Any360: the console's network with the xam group: loopback (the console alone at 127.0.0.1, its "
+                      "sockets the host's, nothing leaves the machine) or off (no connection: every socket call fails)");
 REXCVAR_DEFINE_BOOL(any360_sys_log_files, false, "Kernel",
                     "Any360: every file the title opens and closes and every read that gives fewer bytes than asked, by "
                     "guest path, in the log");
@@ -109,6 +113,11 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
       any360::sys::Files().SetKeepHostFiles(REXCVAR_GET(any360_sys_keep_files));
       any360::sys::Files().SetLog([](const std::string& line) { REXLOG_INFO("Any360 system: {}", line); },
                                   REXCVAR_GET(any360_sys_log_files));
+    }
+    if (group == SysGroup::kXam) {
+      const std::string network = REXCVAR_GET(any360_sys_network);
+      any360::sys::Net().SetMode(network == "off" ? any360::sys::Network::Mode::kOff : any360::sys::Network::Mode::kLoopback);
+      if (network != "off" && network != "loopback") REXLOG_WARN("Any360 system: no network mode '{}': loopback", network);
     }
     if (group == SysGroup::kInput) {
       any360::sys::XamState().SetInputStep(std::chrono::microseconds(std::max(0, REXCVAR_GET(any360_input_step_us))));

@@ -136,8 +136,8 @@ ANY360_SYS_EXPORT(AniSetLogo) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
 ANY360_SYS_EXPORT(AniStartBootAnimation) { ctx.r3.u64 = VdDisplayHardwareRequest(); }
 ANY360_SYS_EXPORT(NetDll_inet_addr) { ctx.r3.u64 = NetDll_inet_addr({base}, ctx.r3.u32); }
 ANY360_SYS_EXPORT(NetDll_XNetInAddrToString) { NetDll_XNetInAddrToString({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
-ANY360_SYS_EXPORT(NetDll_XNetXnAddrToInAddr) { ctx.r3.u64 = NetDll_XNetXnAddrToInAddr(); }
-ANY360_SYS_EXPORT(NetDll_XNetInAddrToXnAddr) { ctx.r3.u64 = NetDll_XNetInAddrToXnAddr(); }
+ANY360_SYS_EXPORT(NetDll_XNetXnAddrToInAddr) { ctx.r3.u64 = Net().XNetXnAddrToInAddr({base}, ctx.r4.u32, ctx.r6.u32); }  // (caller, XNADDR, XNKID, IN_ADDR out)
+ANY360_SYS_EXPORT(NetDll_XNetInAddrToXnAddr) { ctx.r3.u64 = Net().XNetInAddrToXnAddr({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }  // (caller, IN_ADDR, XNADDR out, XNKID out)
 ANY360_SYS_EXPORT(NetDll___WSAFDIsSet) { ctx.r3.u64 = NetDll___WSAFDIsSet({base}, ctx.r3.u32, ctx.r4.u32); }
 
 // The variadic arguments of a call: r3..r10 from `first`, then the caller's stack slots.
@@ -484,27 +484,32 @@ ANY360_SYS_EXPORT(KeRemoveQueueApc) { ctx.r3.u64 = Threads().KeRemoveQueueApc({b
 ANY360_SYS_EXPORT(NetDll_WSAStartup) { ctx.r3.u64 = XamState().WsaStartup({base}, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(NetDll_WSACleanup) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(NetDll_XNetStartup) { ctx.r3.u64 = XamState().XNetStartup({base}, ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_XNetGetTitleXnAddr) { ctx.r3.u64 = XamState().XNetGetTitleXnAddr({base}, ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_XNetGetTitleXnAddr) { ctx.r3.u64 = Net().XNetGetTitleXnAddr({base}, ctx.r4.u32); }
 ANY360_SYS_EXPORT(NetDll_WSAGetLastError) { ctx.r3.u64 = XamState().WsaGetLastError(); }
-ANY360_SYS_EXPORT(NetDll_socket) { ctx.r3.u64 = XamState().Socket(); }
-ANY360_SYS_EXPORT(NetDll_closesocket) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_shutdown) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_setsockopt) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_getsockopt) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_bind) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_connect) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_listen) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_accept) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_select) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_recv) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_recvfrom) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_send) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_sendto) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_ioctlsocket) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+// The sockets (caller first, then the Winsock arguments): any360::sys's network (net.h).
+ANY360_SYS_EXPORT(NetDll_socket) { ctx.r3.u64 = Net().Socket(ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(NetDll_closesocket) { ctx.r3.u64 = Net().CloseSocket(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_shutdown) { ctx.r3.u64 = Net().Shutdown(ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(NetDll_setsockopt) { ctx.r3.u64 = Net().SetSockOpt({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32); }
+ANY360_SYS_EXPORT(NetDll_getsockopt) { ctx.r3.u64 = Net().GetSockOpt({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32); }
+ANY360_SYS_EXPORT(NetDll_bind) { ctx.r3.u64 = Net().Bind({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(NetDll_connect) { ctx.r3.u64 = Net().Connect({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(NetDll_listen) { ctx.r3.u64 = Net().Listen(ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(NetDll_accept) { ctx.r3.u64 = Net().Accept({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(NetDll_select) { ctx.r3.u64 = Net().Select({base}, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32); }  // (caller, nfds, ...)
+ANY360_SYS_EXPORT(NetDll_recv) { ctx.r3.u64 = Net().Recv({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32); }
+ANY360_SYS_EXPORT(NetDll_recvfrom) {
+  ctx.r3.u64 = Net().RecvFrom({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32);
+}
+ANY360_SYS_EXPORT(NetDll_send) { ctx.r3.u64 = Net().Send({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32); }
+ANY360_SYS_EXPORT(NetDll_sendto) {
+  ctx.r3.u64 = Net().SendTo({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32);
+}
+ANY360_SYS_EXPORT(NetDll_ioctlsocket) { ctx.r3.u64 = Net().IoctlSocket({base}, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
 
 // Batch 13: the rest of the offline network Crackdown, The Simpsons Game and TDU import (sys_object_tests).
-ANY360_SYS_EXPORT(NetDll_getsockname) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
-ANY360_SYS_EXPORT(NetDll_getpeername) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
+ANY360_SYS_EXPORT(NetDll_getsockname) { ctx.r3.u64 = Net().Name({base}, ctx.r4.u32, false, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(NetDll_getpeername) { ctx.r3.u64 = Net().Name({base}, ctx.r4.u32, true, ctx.r5.u32, ctx.r6.u32); }
 ANY360_SYS_EXPORT(NetDll_WSAEventSelect) { ctx.r3.u64 = XamState().SocketFailure(ctx.r4.u32); }
 ANY360_SYS_EXPORT(NetDll_WSACreateEvent) { ctx.r3.u64 = XamState().WsaCreateEvent(); }
 ANY360_SYS_EXPORT(NetDll_WSACloseEvent) { ctx.r3.u64 = XamState().WsaCloseEvent(ctx.r3.u32); }
@@ -517,10 +522,14 @@ ANY360_SYS_EXPORT(NetDll_XNetCreateKey) { ctx.r3.u64 = XamState().XNetCreateKey(
 ANY360_SYS_EXPORT(NetDll_XNetRegisterKey) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(NetDll_XNetUnregisterKey) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(NetDll_XNetServerToInAddr) { ctx.r3.u64 = 10050; }  // WSAENETDOWN
-ANY360_SYS_EXPORT(NetDll_XNetConnect) { ctx.r3.u64 = 10050; }
-ANY360_SYS_EXPORT(NetDll_XNetGetConnectStatus) { ctx.r3.u64 = 3; }  // XNET_CONNECT_STATUS_LOST
+ANY360_SYS_EXPORT(NetDll_XNetConnect) { ctx.r3.u64 = Net().XNetConnect(); }
+ANY360_SYS_EXPORT(NetDll_XNetGetConnectStatus) { ctx.r3.u64 = Net().XNetGetConnectStatus(); }
 ANY360_SYS_EXPORT(NetDll_XNetQosListen) { ctx.r3.u64 = 0x65B; }  // ERROR_FUNCTION_FAILED, as the reference
-ANY360_SYS_EXPORT(NetDll_XNetQosLookup) { ctx.r3.u64 = 10050; }
+// (caller, address count, XNADDRs, XNKIDs, XNKEYs, IN_ADDR count, IN_ADDRs, service ids, probes, bits a second, flags,
+// event, XNQOS out)
+ANY360_SYS_EXPORT(NetDll_XNetQosLookup) {
+  ctx.r3.u64 = Net().XNetQosLookup({base}, ctx.r4.u32, ctx.r8.u32, StackArgument(ctx, base, 11), StackArgument(ctx, base, 12));
+}
 ANY360_SYS_EXPORT(NetDll_XNetQosRelease) { ctx.r3.u64 = XamState().XNetQosRelease(ctx.r4.u32); }
 ANY360_SYS_EXPORT(XNetLogonGetTitleID) { ctx.r3.u64 = XamState().TitleId({base}); }
 

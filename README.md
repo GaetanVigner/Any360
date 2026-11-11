@@ -25,8 +25,8 @@ game to open its repository.
 | Pacific City, in game | Split-screen co-op | Title screen |
 
 Started on 2026-11-11: [Call of Duty: Black Ops](https://github.com/GaetanVigner/CoDBoRewrite), the fifth title, recompiled and
-drawing its first scenes through `any360::gfx`; its system calls are not all on `any360::sys` yet (it needs a network
-layer, below).
+running its first minute and a half on `any360::sys` and `any360::gfx` alone, with the network it needed (its local
+server's sockets, kept on the machine).
 
 **No game data, no game binaries.** Any360 holds the toolkit, the system layer, the renderer and reports made of counts,
 hashes, addresses and public API names. A title's reconstructed source lives in that title's own repository. Bring
@@ -147,7 +147,7 @@ details in [docs/SYS_BINDING.md](docs/SYS_BINDING.md). Crackdown is the test ben
 | 3 | objects and waits: events, semaphores, mutants, timers, completion ports | done (Crackdown) |
 | 4 | threads: creation, TLS, APCs, DPCs, critical sections, hardware threads | done (Crackdown) |
 | 5 | memory: virtual and physical allocation, one address space shared with the runtime | done (Crackdown) |
-| 6 | XAM: profile, saves, notifications, enumerators, offline network | done (Crackdown) |
+| 6 | XAM: profile, saves, notifications, enumerators, the network (loopback sockets) | done (Crackdown; the network for Call of Duty: Black Ops) |
 | 7 | audio: XAudio clients, the XMA registers, a native XMA decoder, SDL3 output | done (Crackdown) |
 | 8 | input: gamepads through `any360::sys` (packets, keystrokes, vibration), the host's drivers as the source, every change queued for the title at any frame rate | done (Crackdown, gamepad and vibration; keyboard and mouse not checked) |
 | 9 | no call reaching the runtime: every path, the raw hard drive devices, the profile defaults on `any360::sys` | done (Crackdown; the host stays ReXGlue's until step 13) |

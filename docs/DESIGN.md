@@ -68,7 +68,7 @@ implements them once, portably, in Any360:
 | input (`XamInput*`, `XInputGetKeystroke`) | ~8 | SDL3 gamepads, keyboard and mouse mapping |
 | video (`Vd*`) | ~15 | the renderer's ring: swaps, fences, `WAIT_REG_MEM` honoured by `any360::gfx` |
 | user, profile, achievements, UI (`XamUser*`, `XamShow*UI`, `XamEnumerate`) | ~45 | local profile store, offline achievements, host dialogs |
-| Xbox Live, voice (`NetDll_*`, `XNet*`, `XamVoice*`) | ~45 | offline answers that make the title take its offline path (never implemented as network) |
+| Xbox Live, voice (`NetDll_*`, `XNet*`, `XamVoice*`) | ~45 | the console's sockets on the host's, kept on the machine by default (a title reaches itself: Call of Duty runs a local server even in solo play); Xbox Live, voice and the rest of the network answered as offline |
 | CRT and strings (`sprintf`, `Rtl*String`, `XeCrypt*`) | ~25 | the host CRT, SHA/HMAC from a small crypto library |
 
 The coverage reports list each import with its state; stage 1 is done for a title when its import table resolves
