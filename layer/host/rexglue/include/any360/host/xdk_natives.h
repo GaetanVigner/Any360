@@ -35,7 +35,7 @@ namespace any360::host::rexglue::xdk {
 enum class Function : uint32_t {
   kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy,
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
-  kGetLastError, kSetLastError, kCount
+  kGetLastError, kSetLastError, kStricmp, kStrstr, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -251,6 +251,32 @@ inline void CrtStrcmp(PPCContext& ctx, uint8_t* base, GuestFunction original) {
     return;
   }
   RunSlow(Function::kStrcmp, ctx, base, original);
+}
+// _stricmp: r3 and r4 strings; returns the difference of the first bytes that differ, letters lowered.
+inline void CrtStricmp(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t r3;
+    if (any360::xdk::CrtStricmp(g_memory, ctx.r3.u32, ctx.r4.u32, r3)) [[likely]] {
+      ctx.r3.u64 = r3;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kStricmp, ctx, base, original);
+}
+// strstr: r3 string, r4 the string looked for; returns the address of its first occurrence or 0.
+inline void CrtStrstr(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t r3;
+    if (any360::xdk::CrtStrstr(g_memory, ctx.r3.u64, ctx.r4.u32, r3)) [[likely]] {
+      ctx.r3.u64 = r3;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kStrstr, ctx, base, original);
 }
 // mbtowc: r3 destination (or 0), r4 source, r5 count; returns 1 for a character, 0 for none or the terminator.
 inline void CrtMbtowc(PPCContext& ctx, uint8_t* base, GuestFunction original) {

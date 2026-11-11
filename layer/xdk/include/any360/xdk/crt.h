@@ -477,4 +477,48 @@ inline bool CrtMbtowc(const Memory& memory, uint32_t dest, uint32_t source, uint
   return true;
 }
 
+// _stricmp: the difference of the first two bytes that differ once the upper-case ASCII letters of both are
+// lowered, in the whole register, 0 when the strings end together. Its code leaves at the second string's end
+// before it lowers anything: the value is then the first string's byte as it is ("B" against "" gives 66).
+inline bool CrtStricmp(const Memory& memory, uint32_t left, uint32_t right, uint64_t& r3) {
+  const uint32_t left_span = PlainSpan(left), right_span = PlainSpan(right);
+  const uint32_t span = left_span < right_span ? left_span : right_span;
+  const uint8_t* first = memory.Host(left);
+  const uint8_t* second = memory.Host(right);
+  for (uint32_t i = 0; i < span; ++i) {
+    uint32_t a = first[i], b = second[i];
+    if (!b) {
+      r3 = a;
+      return true;
+    }
+    if (a == b) continue;
+    if (b - 65u <= 25u) b |= 32;
+    if (a - 65u <= 25u) a |= 32;
+    if (a != b) {
+      r3 = uint64_t(int64_t(a) - int64_t(b));
+      return true;
+    }
+  }
+  return false;
+}
+
+// strstr: the address of the first place in the string where `needle` is, in the whole register (r3 as it came
+// when `needle` is empty), or 0. Both strings must end in plain memory; the search is the host's.
+inline bool CrtStrstr(const Memory& memory, uint64_t string_register, uint32_t needle, uint64_t& r3) {
+  const uint32_t needle_span = PlainSpan(needle);
+  if (!needle_span) return false;
+  const uint8_t* wanted = memory.Host(needle);
+  if (!wanted[0]) {
+    r3 = string_register;
+    return true;
+  }
+  const uint32_t string = uint32_t(string_register), span = PlainSpan(string);
+  if (!span) return false;
+  const uint8_t* bytes = memory.Host(string);
+  if (!std::memchr(wanted, 0, needle_span) || !std::memchr(bytes, 0, span)) return false;
+  const char* found = std::strstr(reinterpret_cast<const char*>(bytes), reinterpret_cast<const char*>(wanted));
+  r3 = found ? string_register + uint64_t(found - reinterpret_cast<const char*>(bytes)) : 0;
+  return true;
+}
+
 }  // namespace any360::xdk

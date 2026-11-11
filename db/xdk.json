@@ -1,5 +1,16 @@
 [
  {
+  "name": "_stricmp",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82ABD120",
+   "simpsons": "0x82A419A0",
+   "tdu": "0x827834F0"
+  },
+  "note": "the same instructions in the three titles: the difference of the first bytes that differ, A to Z lowered; at the second string's end the first's byte as it is. Any360: xdk::CrtStricmp, bound in the three"
+ },
+ {
   "name": "mbtowc",
   "library": "CRT",
   "any360": "native",
@@ -108,6 +119,17 @@
    "tdu": "0x82640DE0"
   },
   "note": "the same instructions in the three titles. Any360: xdk::CrtStrrchr, bound in the three"
+ },
+ {
+  "name": "strstr",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82AB93C0",
+   "simpsons": "0x82A3EFB0",
+   "tdu": "0x82644078"
+  },
+  "note": "the same instructions in the three titles. Any360: xdk::CrtStrstr (the host's search once both strings end in plain memory), bound in the three"
  },
  {
   "name": "tolower",

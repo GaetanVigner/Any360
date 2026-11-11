@@ -31,7 +31,7 @@ REXCVAR_DEFINE_STRING(any360_xdk_skip, "", "Kernel",
                       "Any360: bound library functions that run their own code while the others run as host routines, "
                       "by name, comma-separated (memcpy, forward copy, memset, memmove, XMemCpy, wcslen, strchr, "
                       "strncmp, strncpy, strrchr, tolower, toupper, wcsncpy, wcscpy, strncat, wcscmp, strlen, strcmp, "
-                      "mbtowc, GetLastError, SetLastError)");
+                      "mbtowc, GetLastError, SetLastError, _stricmp, strstr)");
 REXCVAR_DEFINE_BOOL(any360_xdk_bench, false, "Kernel",
                     "Any360: every call of a bound library function is timed both ways, its own code and the host "
                     "routine; the log gets the calls and nanoseconds of each by size (slow)");
@@ -48,7 +48,7 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "wcslen", "strchr",       "strncmp", "strncpy", "strrchr",
                                             "tolower", "toupper",     "wcsncpy", "wcscpy",  "strncat",
                                             "wcscmp",  "strlen",      "strcmp",  "mbtowc",  "GetLastError",
-                                            "SetLastError"};
+                                            "SetLastError", "_stricmp", "strstr"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -186,7 +186,7 @@ bool IsPure(Function function) {
   return function == Function::kWcslen || function == Function::kStrchr || function == Function::kStrncmp ||
          function == Function::kStrrchr || function == Function::kTolower || function == Function::kToupper ||
          function == Function::kWcscmp || function == Function::kStrlen || function == Function::kStrcmp ||
-         function == Function::kGetLastError;
+         function == Function::kGetLastError || function == Function::kStricmp || function == Function::kStrstr;
 }
 // The functions that write and leave a value of their own in r3 (the others that write return r3 as it came).
 bool ReturnsValue(Function function) { return function == Function::kMbtowc; }
@@ -201,6 +201,8 @@ bool Pure(Function function, const Call& c, uint64_t& r3) {
     case Function::kStrlen: return any360::xdk::CrtStrlen(g_memory, c.dest, r3);
     case Function::kStrcmp: return any360::xdk::CrtStrcmp(g_memory, c.dest, c.second, r3);
     case Function::kGetLastError: return any360::xdk::XapiGetLastError(g_memory, c.pcr, r3);
+    case Function::kStricmp: return any360::xdk::CrtStricmp(g_memory, c.dest, c.second, r3);
+    case Function::kStrstr: return any360::xdk::CrtStrstr(g_memory, c.dest_register, c.second, r3);
     default: return any360::xdk::CrtStrncmp(g_memory, c.dest, c.second, c.size, r3);
   }
 }
@@ -212,7 +214,9 @@ uint32_t PureWork(Function function, const Call& c, uint64_t r3) {
     case Function::kStrlen: return uint32_t(r3);
     case Function::kWcscmp:
     case Function::kStrcmp:
+    case Function::kStricmp:
     case Function::kGetLastError: return 0;
+    case Function::kStrstr:
     case Function::kStrchr:
     case Function::kStrrchr: return r3 ? uint32_t(r3) - c.dest : 0;
     case Function::kTolower:

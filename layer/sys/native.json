@@ -21,6 +21,8 @@
   "wcscmp",
   "mbtowc",
   "GetLastError",
-  "SetLastError"
+  "SetLastError",
+  "_stricmp",
+  "strstr"
  ]
 }

@@ -217,4 +217,42 @@ inline uint64_t Mbtowc(const Memory& memory, uint32_t r3, uint32_t r4, uint32_t 
   return 1;
 }
 
+// _stricmp: r6 and r5 the next bytes of the second and the first string; r3 = r5 - r6; out at the second's end;
+// equal, the next two; otherwise each lowered when it is 'A' to 'Z', r3 = r5 - r6 again, and out unless that is 0.
+inline uint64_t Stricmp(const Memory& memory, uint32_t r3, uint32_t r4) {
+  uint32_t r9 = r3 - 1;
+  r4 = r4 - 1;
+  for (;;) {
+    int64_t r6 = *memory.Host(++r4), r5 = *memory.Host(++r9);
+    int64_t difference = r5 - r6;
+    if (r6 == 0) return uint64_t(difference);
+    if (difference == 0) continue;
+    if (r6 >= 65 && r6 <= 90) r6 |= 32;
+    if (r5 >= 65 && r5 <= 90) r5 |= 32;
+    difference = r5 - r6;
+    if (difference != 0) return uint64_t(difference);
+  }
+}
+
+// strstr: r3 as it came for an empty needle; 0 for an empty string; from each place of the string, the needle's
+// bytes against the string's until one differs or either ends; found when the needle has ended.
+inline uint64_t Strstr(const Memory& memory, uint64_t r3, uint32_t r4) {
+  if (*memory.Host(r4) == 0) return r3;
+  if (*memory.Host(uint32_t(r3)) == 0) return 0;
+  for (;;) {
+    uint32_t r11 = r4;
+    const uint32_t r9 = uint32_t(r3) - r4;
+    for (;;) {
+      const uint8_t r10 = *memory.Host(r11);
+      if (r10 == 0) break;
+      if (*memory.Host(r9 + r11) != r10) break;
+      ++r11;
+      if (*memory.Host(r9 + r11) == 0) break;
+    }
+    if (*memory.Host(r11) == 0) return r3;
+    ++r3;
+    if (*memory.Host(uint32_t(r3)) == 0) return 0;
+  }
+}
+
 }  // namespace any360::xdk::reference

@@ -228,8 +228,8 @@ int main(int argc, char** argv) {
   }
   // The string functions bound after those, the same way (tolower, toupper and mbtowc take no time that a length
   // changes).
-  std::printf("more string functions, ns a call (model -> now):\n%9s | %19s | %19s | %19s | %19s | %19s | %19s | %19s\n",
-              "length", "strrchr", "strlen", "strcmp", "wcscmp", "wcscpy", "wcsncpy", "strncat");
+  std::printf("more string functions, ns a call (model -> now):\n%9s | %19s | %19s | %19s | %19s | %19s | %19s | %19s | %19s | %19s\n",
+              "length", "strrchr", "strlen", "strcmp", "wcscmp", "wcscpy", "wcsncpy", "strncat", "_stricmp", "strstr");
   for (uint32_t length : {4u, 16u, 64u, 256u, 2048u}) {
     std::vector<Call> calls = CallsOfSize(2 * length + 2, 90 + length);
     for (const Call& c : calls) {
@@ -257,6 +257,13 @@ int main(int argc, char** argv) {
          [&](const Call& c) { return uint32_t(xdk::CrtWcsncpy(m, scratch + (c.dest & 0xFFFE), c.source, length + 8)); });
     pair([&](const Call& c) { arena[scratch + (c.dest & 0xFFFF)] = 0; xdk::reference::Strncat(m, scratch + (c.dest & 0xFFFF), c.source, 2 * length); return 1u; },
          [&](const Call& c) { arena[scratch + (c.dest & 0xFFFF)] = 0; return uint32_t(xdk::CrtStrncat(m, scratch + (c.dest & 0xFFFF), c.source, 2 * length)); });
+    // _stricmp of two equal strings (the whole length compared); strstr of two bytes that are not in the string
+    // (every place tried).
+    pair([&](const Call& c) { return uint32_t(xdk::reference::Stricmp(m, c.dest, c.source)); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtStricmp(m, c.dest, c.source, r3); return uint32_t(r3); });
+    arena[scratch] = 1, arena[scratch + 1] = 0xFE, arena[scratch + 2] = 0;
+    pair([&](const Call& c) { return uint32_t(xdk::reference::Strstr(m, c.dest, scratch)); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtStrstr(m, c.dest, scratch, r3); return uint32_t(r3); });
     std::printf("\n");
   }
 

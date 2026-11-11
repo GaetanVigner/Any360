@@ -3,6 +3,7 @@
 // a call is declined only for the reasons the header gives (so a replacement cannot pass by declining). Sizes and
 // alignments exhaustively where they are small, then at random; the ranges that are not plain memory; the physical
 // view's host offset.
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -532,6 +533,69 @@ void Comparisons() {
   }
 }
 
+// _stricmp and strstr against their models and against what they must give.
+void Searches() {
+  Pair p(101);
+  std::mt19937 rng(102);
+  uint64_t r3 = 0;
+  const auto put = [&](uint32_t address, const std::vector<uint8_t>& bytes) {
+    for (size_t i = 0; i < bytes.size(); ++i) p.native[address + i] = p.model[address + i] = bytes[i];
+    p.native[address + bytes.size()] = p.model[address + bytes.size()] = 0;
+  };
+  const auto lower = [](int c) { return c >= 65 && c <= 90 ? c + 32 : c; };
+  // _stricmp: strings over a few bytes that fold onto each other (A a B b), the bytes next to the letters'
+  // range (@ [ ` {) and two above 127, so that most pairs are equal for a while.
+  const uint8_t alphabet[] = {'A', 'a', 'B', 'b', 'Z', 'z', '@', '[', '`', '{', 0x80, 0xC1, '1'};
+  for (uint32_t round = 0; round < 60000; ++round) {
+    std::vector<uint8_t> a(rng() % 12), b;
+    for (uint8_t& c : a) c = alphabet[rng() % sizeof alphabet];
+    b = a;
+    if (rng() % 3) {  // the same text in another case, then perhaps a change
+      for (uint8_t& c : b) c = uint8_t(rng() % 2 && c >= 'A' && c <= 'Z' ? c + 32 : rng() % 2 && c >= 'a' && c <= 'z' ? c - 32 : c);
+      if (rng() % 2 && !b.empty()) b[rng() % b.size()] = alphabet[rng() % sizeof alphabet];
+      if (rng() % 4 == 0) b.resize(rng() % (b.size() + 1));
+      if (rng() % 4 == 0) b.push_back(alphabet[rng() % sizeof alphabet]);
+    }
+    const uint32_t left = 0x2000 + (round & 7), right = 0x4000 + (round & 3);
+    put(left, a);
+    put(right, b);
+    CHECK(xdk::CrtStricmp(p.a, left, right, r3) && r3 == xdk::reference::Stricmp(p.b, left, right));
+    // What it must give: the first place where the lowered bytes differ, or where the second string ends.
+    size_t i = 0;
+    while (i < b.size() && i < a.size() && lower(a[i]) == lower(b[i])) ++i;
+    const int64_t first = i < a.size() ? a[i] : 0, second = i < b.size() ? b[i] : 0;
+    CHECK(r3 == uint64_t(second == 0 ? first : int64_t(lower(int(first))) - int64_t(lower(int(second)))));
+  }
+  CHECK(xdk::CrtStricmp(p.a, 0x2000, 0x2000, r3) && r3 == 0);
+  // strstr: strings and needles over three bytes, so that needles are found, found late, and not found.
+  for (uint32_t round = 0; round < 60000; ++round) {
+    std::vector<uint8_t> hay(rng() % 40), needle(rng() % 6);
+    for (uint8_t& c : hay) c = uint8_t("ab\xE9"[rng() % 3]);
+    for (uint8_t& c : needle) c = uint8_t("ab\xE9"[rng() % 3]);
+    const uint32_t at = 0x8000 + (round & 7), wanted = 0xA000 + (round & 3);
+    put(at, hay);
+    put(wanted, needle);
+    const uint64_t reg = 0x5A5A000000000000ull | at;
+    CHECK(xdk::CrtStrstr(p.a, reg, wanted, r3) && r3 == xdk::reference::Strstr(p.b, reg, wanted));
+    const auto found = std::search(hay.begin(), hay.end(), needle.begin(), needle.end());
+    CHECK(r3 == (needle.empty() ? reg : found == hay.end() ? 0 : reg + uint64_t(found - hay.begin())));
+  }
+  CHECK(p.SameEverywhere());
+  // Strings that reach the register window, or do not end before it: declined.
+  const Memory nowhere{};
+  CHECK(!xdk::CrtStricmp(nowhere, 0x7F000000, 0x1000, r3) && !xdk::CrtStrstr(nowhere, 0x1000, 0x7FC80000, r3));
+  {
+    std::vector<uint8_t> edge(64, 0x41);
+    Memory at_edge{};
+    at_edge.base = edge.data() + 64 - 0x7F000000ull;
+    CHECK(!xdk::CrtStricmp(at_edge, 0x7F000000 - 64, 0x7F000000 - 32, r3));
+    CHECK(!xdk::CrtStrstr(at_edge, 0x7F000000 - 64, 0x7F000000 - 8, r3));
+    edge[63] = 0;
+    CHECK(xdk::CrtStrstr(at_edge, 0x7F000000 - 64, 0x7F000000 - 4, r3) && r3 == 0x7F000000 - 64);
+    CHECK(xdk::CrtStricmp(at_edge, 0x7F000000 - 8, 0x7F000000 - 8, r3) && r3 == 0);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -546,6 +610,7 @@ int main() {
   StringCopies();
   MoreStrings();
   Comparisons();
+  Searches();
   SavedRegister();
   for (uint32_t seed = 1; seed <= 4; ++seed) Random(seed, 100000);
   PhysicalView();

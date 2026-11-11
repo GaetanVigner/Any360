@@ -65,7 +65,8 @@ Then, and only then, optimization:
 
 ## Adding one
 
-1. Find the function in the titles (`tools/library_scan.py`, the call counts of a trace) and look its address up
+1. Find the function in the titles (`tools/shared_functions.py tdu crackdown simpsons --leaf` for the ones that
+   are the same instructions in all, `tools/library_scan.py`, the call counts of a trace) and look its address up
    in each title's `titles/<title>/modules.json`: it must sit in a range of kind `library`. The same instructions
    in every title is not enough: Havok is in all three, and its own `strlen` and `strcmp` were bound for a few
    hours as if they were a library's (State, below). Then read its generated
@@ -85,8 +86,8 @@ per title, the native function is shared, and the check in game is run again for
 
 ## State
 
-Five functions that copy and fill, the same code in the three titles at hand, then sixteen more of the C runtime
-and XAPI (below). Unit tests: `xdk_crt_tests` (1,281,216 checks) and `xdk_xapi_tests` (1,780,296 checks).
+Five functions that copy and fill, the same code in the three titles at hand, then eighteen more of the C runtime
+and XAPI (below). Unit tests: `xdk_crt_tests` (1,521,223 checks) and `xdk_xapi_tests` (1,780,296 checks).
 
 | Function | Library | Handler | Declines | Test Drive Unlimited | Crackdown | The Simpsons Game |
 |---|---|---|---|---|---|---|
@@ -166,6 +167,32 @@ looked up in the title's module map before it is picked: `kind` must be `library
 as host routines (below): the call through the binding costs what the loads cost. They are in `xapi.h` with their
 models and tests and bound in no title. `mbtowc`, `tolower` and `toupper` gain nothing either (1.0x) and lose
 nothing: they stay bound where they were checked.
+
+### `_stricmp` and `strstr` (2026-11-11)
+
+The two string functions of the C runtime with the most call sites that were left (Crackdown: 308 and 63; The
+Simpsons Game: 171 and 52; Test Drive Unlimited: 68 and 31). They are the same instructions in the three titles;
+the comparison of whole functions had missed them because the generated code of some builds carries padding after
+a function's last return (`tools/shared_functions.py`, the comparison kept from then on, stops there and
+says which module each function sits in). All four addresses that have a module are in the C
+runtime; Test Drive Unlimited's `_stricmp` sits in the same unnamed tail as its `wcscmp`.
+
+| Function | Handler | Declines | Test Drive Unlimited | Crackdown | The Simpsons Game |
+|---|---|---|---|---|---|
+| `_stricmp` | `CrtStricmp` | a string that does not end in plain memory | bound: 9,943 calls | bound: 651,270 | bound: 103,203 |
+| `strstr` | `CrtStrstr` | the same | bound: 2 | bound: 152,901 | bound: 557 |
+
+The figures are the calls compared in game, 0 different (Test Drive Unlimited 3.0 M calls of all the bound
+functions, Crackdown 50 M in its city, The Simpsons Game 168 M in its menus and loads). `_stricmp` leaves at the
+second string's end before it lowers anything, so "B" against "" is 66 and not 98: the model and the function
+have it, a unit test checks it. `strstr` is the host's search once both strings are known to end in plain memory.
+
+`xdk_crt_bench`, against their models: `_stricmp` 1.4 to 2.3 times faster, `strstr` 1.5 times (4 bytes) to 17
+times (2,048 bytes, the needle absent). In game (`--any360_xdk_bench=true`, title screens and menus): `_stricmp`
+38.4 -> 23.9 ns (1.6x, 217 calls) in Test Drive Unlimited, 10.8 -> 8.2 ns (1.3x, 477 k) in Crackdown, 26.5 ->
+19.7 ns (1.3x, 56 k) in The Simpsons Game; `strstr` 100 -> 22 ns (4.6x, 41 k) in Crackdown, 466 -> 320 ns (1.5x,
+8 calls) in The Simpsons Game, and 2 calls in Test Drive Unlimited, where the first one pays the host routine's
+first use (360 -> 1,510 ns): too few to say anything.
 
 ### The measure in game, the string functions and these (2026-11-11)
 
