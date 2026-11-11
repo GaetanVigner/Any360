@@ -1524,3 +1524,15 @@ ANY360_REXGLUE_BIND_SYSTEM(NtAllocateEncryptedMemory, kMemory)
 #ifndef ANY360_REXGLUE_SKIP_NtFreeEncryptedMemory
 ANY360_REXGLUE_BIND_SYSTEM(NtFreeEncryptedMemory, kMemory)
 #endif
+#ifndef ANY360_REXGLUE_SKIP_XCustomSetAction
+ANY360_REXGLUE_BIND_SYSTEM(XCustomSetAction, kXam)
+#endif
+#ifndef ANY360_REXGLUE_SKIP_XCustomGetLastActionPress
+ANY360_REXGLUE_BIND_SYSTEM(XCustomGetLastActionPress, kXam)
+#endif
+#ifndef ANY360_REXGLUE_SKIP_XamShowMarketplaceDownloadItemsUI
+ANY360_REXGLUE_BIND_SYSTEM(XamShowMarketplaceDownloadItemsUI, kXam)
+#endif
+#ifndef ANY360_REXGLUE_SKIP_NetDll_XnpLogonGetStatus
+ANY360_REXGLUE_BIND_SYSTEM(NetDll_XnpLogonGetStatus, kXam)
+#endif

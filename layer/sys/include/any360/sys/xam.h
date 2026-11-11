@@ -63,10 +63,13 @@ class Xam {
   XamHost& host() { return host_; }
   TitleSettings& title() { return title_; }
 
-  // Overlapped completion as the kernel does it: result, length and extended error written, the event set.
-  void Complete(Guest g, uint32_t overlapped, uint32_t result, uint32_t length = 0);
+  // Overlapped completion as the kernel does it: result, length and extended error written, the event set. The
+  // extended error is the result itself, or with `hresult` the result as an HRESULT (HRESULT_FROM_WIN32: 0x8007xxxx,
+  // 0 for success), as XamEnumerate, XamContentCreate and XamUserAreUsersFriends write it: Call of Duty: Black Ops
+  // takes any other extended error of an empty content enumeration for content that changed, and stops.
+  void Complete(Guest g, uint32_t overlapped, uint32_t result, uint32_t length = 0, bool hresult = false);
   // A result returned directly, or through the overlapped structure (then ERROR_IO_PENDING).
-  uint32_t Finish(Guest g, uint32_t overlapped, uint32_t result, uint32_t length = 0);
+  uint32_t Finish(Guest g, uint32_t overlapped, uint32_t result, uint32_t length = 0, bool hresult = false);
   void Notify(uint32_t id, uint32_t param);
 
   // Messages and notifications.
@@ -116,6 +119,10 @@ class Xam {
   uint32_t ShowKeyboardUI(Guest g, uint32_t default_text, uint32_t buffer, uint32_t length, uint32_t overlapped);
   // Guide screens that need Xbox Live (friends, gamer cards, marketplace): the guide opens and closes at once.
   uint32_t ShowLiveUI();
+  // XamShowMarketplaceDownloadItemsUI (user, entry point, offer ids, offer count, 0, HRESULT out, overlapped, 0): the
+  // marketplace's download screen for the given offers, which needs Xbox Live: the guide opens and closes at once,
+  // S_OK in the HRESULT, the request completed (a title waits for its overlapped). A user index above 3 is refused.
+  uint32_t ShowMarketplaceDownloadItemsUI(Guest g, uint32_t user, uint32_t result_ptr, uint32_t overlapped);
   // The local profile has no Live friends; other users are not signed in.
   uint32_t UserAreUsersFriends(Guest g, uint32_t user, uint32_t out, uint32_t overlapped);
   // An enumerator of the title's achievements as the local profile holds them: none known (the enumeration ends at

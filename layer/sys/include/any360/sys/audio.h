@@ -94,7 +94,9 @@ class AudioKernel {
  private:
   struct Client {
     bool used = false;
-    uint32_t callback = 0, argument = 0;
+    // The callback gets the address of `cell`, a word of guest memory that holds the argument the title registered
+    // (as the reference: its callbacks start by loading their argument from it).
+    uint32_t callback = 0, argument = 0, cell = 0;
   };
   int XmaIndex(uint32_t context) const;
   bool XmaArray(Guest g);  // the contexts' block, allocated at first use

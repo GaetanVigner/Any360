@@ -371,7 +371,7 @@ void SchedulerTests() {
   CHECK(Objects().WaitForHandle(gm, h, kMainThread, &second) == 0);
   CHECK(Objects().WaitForObject(gm, ev, kMainThread, &zero) == 0);
   CHECK(gm.Load32(kthread + 0x140) == 7 && gm.Load8(kthread + 0xBE) == 1 && gm.Load32(kthread + 0x14C) == 1);
-  CHECK(gm.Load32(kthread + 0x84) == Threads().process() && gm.Load8(kthread + 0x73) == 2);
+  CHECK(gm.Load32(kthread + 0x84) == Threads().process() && gm.Load8(kthread + 0x73) == 1);
   CHECK(Threads().NtSuspendThread(gm, h, out + 8) == kStatusThreadIsTerminating);
   // Created suspended: nothing runs until resumed; the previous count comes back.
   Objects().ResetEvent(gm, ev);
@@ -411,6 +411,8 @@ void SchedulerTests() {
     GuestContext masked{};
     CHECK(Threads().CreateContext(gm, 0x4000, masked, 0x0C000000) == 0);
     CHECK(gm.Load8(masked.kthread + 0xBF) == 3 && gm.Load8(masked.pcr + 0x10C) == 3);
+    // A title thread is of the title (user) process: type 1, in both of the thread's fields.
+    CHECK(gm.Load8(masked.kthread + 0x73) == 1 && gm.Load8(masked.kthread + 0x72) == 1);
   }
   CHECK(Threads().SetAffinity(gm, kx, 0x4, out + 12) == 0 && gm.Load32(out + 12) == (1u << first_cpu) && gm.Load8(kx + 0xBF) == 2);
   CHECK(Threads().SetAffinity(gm, kx, 0x2, out + 12) == 0 && gm.Load32(out + 12) == 4);
@@ -1278,6 +1280,8 @@ void XamTests() {
   // Sessions, message boxes, device selection.
   CHECK(XamState().SessionCreateHandle(g, out) == 0 && XamState().SessionRefObjByHandle(g, g.Load32(out), out + 4) == 0 && g.Load32(out + 4) != 0);
   CHECK(XamState().ShowMessageBoxUI(g, out + 8, ov) == kErrorIoPending && g.Load32(out + 8) == 0);
+  g.Store32(out + 8, 0xAAAA);
+  CHECK(XamState().ShowMarketplaceDownloadItemsUI(g, 0, out + 8, ov) == kErrorIoPending && g.Load32(out + 8) == 0);
   CHECK(XamState().ShowDeviceSelectorUI(g, out + 8, 0) == 0 && g.Load32(out + 8) == 1);
   // Content: create a save, write through its root, close, enumerate, delete.
   const uint32_t data = kScratch + 0xA00;
@@ -1322,7 +1326,8 @@ void XamTests() {
   CHECK(Files().CreateFile(g, out + 8, 0x80000000, attrs, 0, 0, kOpen, 0) == kStatusObjectPathNotFound);
   CHECK(XamState().ContentCreate(g, 0, str, data, 1, out, 0, 0) == kErrorAlreadyExists);  // create new: exists
   // Through an overlapped structure with no disposition pointer, the disposition is the length (opened: 2).
-  CHECK(XamState().ContentCreate(g, 0, str, data, 3, 0, 0, ov) == kErrorIoPending && g.Load32(ov) == 0 && g.Load32(ov + 4) == 2);
+  CHECK(XamState().ContentCreate(g, 0, str, data, 3, 0, 0, ov) == kErrorIoPending && g.Load32(ov) == 0 && g.Load32(ov + 4) == 2 &&
+        g.Load32(ov + 0x18) == 0);
   CHECK(XamState().ContentClose(g, str, 0) == 0);
   CHECK(XamState().ContentCreateEnumerator(g, 0, 0, 1, 0, 1, out + 12, out + 16) == 0 && g.Load32(out + 12) == 0x134);
   CHECK(XamState().Enumerate(g, g.Load32(out + 16), 0, buf, 0x134, out + 20, 0) == 0 && g.Load32(out + 20) == 1 &&
@@ -1445,8 +1450,19 @@ void XamTests() {
   CHECK(XamState().UserAreUsersFriends(g, 4, buf, 0) == kErrorInvalidParameter);
   CHECK(XamState().UserCreateAchievementEnumerator(g, 0, 0, 8, out, out + 4) == 0 && g.Load32(out) == 8 * 0x24);
   CHECK(XamState().Enumerate(g, g.Load32(out + 4), 0, buf, 8 * 0x24, out + 8, 0) == kErrorNoMoreFiles);
+  // Through an overlapped: the extended error is the result as an HRESULT, as the reference writes it for
+  // XamEnumerate (Call of Duty: Black Ops reads anything else from an empty enumeration as content that changed).
+  CHECK(XamState().UserCreateAchievementEnumerator(g, 0, 0, 8, out, out + 4) == 0);
+  CHECK(XamState().Enumerate(g, g.Load32(out + 4), 0, buf, 8 * 0x24, 0, ov) == kErrorIoPending &&
+        g.Load32(ov) == kErrorNoMoreFiles && g.Load32(ov + 4) == 0 && g.Load32(ov + 0x18) == 0x80070012);
+  CHECK(XamState().UserAreUsersFriends(g, 1, 0, ov) == kErrorIoPending && g.Load32(ov) == kErrorFunctionFailed &&
+        g.Load32(ov + 0x18) == (0x80070000u | kErrorNoSuchUser));
   CHECK(XamState().UserCreateAchievementEnumerator(g, 0, 0, 0, out, out + 4) == kErrorInvalidParameter);
   CHECK(XamState().ShowLiveUI() == 0);
+  // The marketplace's download screen: S_OK, the overlapped completed (the title waits on it); user 4 refused.
+  g.Store32(out, 0xAAAA);
+  CHECK(XamState().ShowMarketplaceDownloadItemsUI(g, 0, out, 0) == 0 && g.Load32(out) == 0);
+  CHECK(XamState().ShowMarketplaceDownloadItemsUI(g, 4, out, 0) == kErrorInvalidParameter);
   CHECK(XamState().ParseGamerTileKey(g, buf, out, out + 4, out + 8) == 0 && g.Load32(out) == 0xC0DE0001);
   CHECK(XamState().ReadTileToTexture(g, 0, buf, 16, 4, 0) == kErrorInvalidParameter);
   CHECK(XamState().ReadTileToTexture(g, 0xC0DE0002, buf, 16, 4, 0) == 0 && g.Load32(buf + 60) == 0xFFFFFFFF);
@@ -1737,7 +1753,8 @@ void GraphicsAudioTests() {
   CHECK(Audio().RegisterClient(gm, callback, driver) == 0 && gm.Load32(driver) == 0x41550000);
   CHECK(Audio().RegisterClient(gm, callback, driver2) == 0 && gm.Load32(driver2) == 0x41550001);
   Audio().Pump(gm);
-  CHECK(mixes == 2 && argument == 0xABCD);
+  // The callback gets the address of a word holding the registered argument, not the argument.
+  CHECK(mixes == 2 && argument != 0xABCD && gm.Load32(uint32_t(argument)) == 0xABCD);
   CHECK(Audio().UnregisterClient(0x41550001) == 0);
   CHECK(Audio().UnregisterClient(0x12340001) == 0x80070057);
   Audio().Pump(gm);

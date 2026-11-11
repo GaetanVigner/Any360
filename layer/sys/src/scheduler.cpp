@@ -177,7 +177,10 @@ uint32_t Scheduler::EnsureProcess(Guest g) {
     process_ = Objects().AllocateObject(kProcessSize);
     if (!process_) return kStatusNoMemory;
     std::memset(g.host(process_), 0, kProcessSize);
-    g.Store8(process_ + kProcessTypeField, 2);  // the title process
+    // The title process: type 1 (user; 0 is the idle process, 2 the system's), as the console and the reference.
+    // Call of Duty: Black Ops asks it (KeGetCurrentProcessType) to choose between two D3D devices, the title's and
+    // the system's: with 2 it took the system's, never created, and read through a null pointer.
+    g.Store8(process_ + kProcessTypeField, 1);
     for (uint32_t i = 0; i < 8; ++i) g.Store32(process_ + kProcessTlsBitmap + 4 * i, 0xFFFFFFFF);
   }
   return kStatusSuccess;

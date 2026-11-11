@@ -56,7 +56,12 @@ uint32_t AudioKernel::RegisterClient(Guest g, uint32_t callback_ptr, uint32_t dr
   if (!callback) return kEInvalidArg;
   for (uint32_t i = 0; i < kAudioMaxClients; ++i) {
     if (clients_[i].used) continue;
-    clients_[i] = {true, callback, argument};
+    // The callback is given the address of a word that holds its argument, not the argument: Call of Duty: Black
+    // Ops's callback loads its object from it (lwz r3,0(r3)), and read through a float when given the object.
+    const uint32_t cell = Objects().AllocateObject(4, true);
+    if (!cell) return kEInvalidArg;
+    g.Store32(cell, argument);
+    clients_[i] = {true, callback, argument, cell};
     if (!context_.pcr) Threads().CreateContext(g, 0x10000, context_);
     if (driver_ptr) g.Store32(driver_ptr, kDriverTag | i);
     return kErrorSuccess;
@@ -67,6 +72,7 @@ uint32_t AudioKernel::RegisterClient(Guest g, uint32_t callback_ptr, uint32_t dr
 uint32_t AudioKernel::UnregisterClient(uint32_t driver) {
   const uint32_t i = driver & 0xFFFF;
   if ((driver & 0xFFFF0000) != kDriverTag || i >= kAudioMaxClients) return kEInvalidArg;
+  if (clients_[i].cell) Objects().FreeObject(clients_[i].cell);
   clients_[i] = {};
   return kErrorSuccess;
 }
@@ -107,7 +113,7 @@ uint32_t AudioKernel::GetVoiceCategoryVolume(Guest g, uint32_t out) {
 
 void AudioKernel::Pump(Guest) {
   for (const Client& c : clients_) {
-    if (c.used) Threads().Dispatch(c.callback, context_, {c.argument, 0});
+    if (c.used) Threads().Dispatch(c.callback, context_, {c.cell, 0});
   }
 }
 

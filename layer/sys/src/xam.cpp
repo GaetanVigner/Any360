@@ -80,18 +80,18 @@ void Xam::Reset() {
 
 // --- overlapped ------------------------------------------------------------------------------------------------
 
-void Xam::Complete(Guest g, uint32_t overlapped, uint32_t result, uint32_t length) {
+void Xam::Complete(Guest g, uint32_t overlapped, uint32_t result, uint32_t length, bool hresult) {
   // XOVERLAPPED: result, length, context, event, completion routine and context, extended error.
   g.Store32(overlapped + 0x00, result);
   g.Store32(overlapped + 0x04, length);
-  g.Store32(overlapped + 0x18, result);
+  g.Store32(overlapped + 0x18, hresult && result ? 0x80070000u | (result & 0xFFFF) : result);
   const uint32_t event = g.Load32(overlapped + 0x0C);
   if (event) Objects().NtSetEvent(g, event, 0);
 }
 
-uint32_t Xam::Finish(Guest g, uint32_t overlapped, uint32_t result, uint32_t length) {
+uint32_t Xam::Finish(Guest g, uint32_t overlapped, uint32_t result, uint32_t length, bool hresult) {
   if (!overlapped) return result;
-  Complete(g, overlapped, result, length);
+  Complete(g, overlapped, result, length, hresult);
   return kErrorIoPending;
 }
 
@@ -417,7 +417,11 @@ uint32_t Xam::UserAreUsersFriends(Guest g, uint32_t user, uint32_t out, uint32_t
     g.Store32(out, 0);
     return result;
   }
-  return Finish(g, overlapped, result == kErrorSuccess ? kErrorSuccess : kErrorFunctionFailed);
+  // The overlapped result says only success or failure; the extended error says why, as an HRESULT.
+  if (!overlapped) return result;
+  Complete(g, overlapped, result == kErrorSuccess ? kErrorSuccess : kErrorFunctionFailed, 0);
+  g.Store32(overlapped + 0x18, result ? 0x80070000u | result : 0);
+  return kErrorIoPending;
 }
 
 uint32_t Xam::UserCreateAchievementEnumerator(Guest g, uint32_t user, uint32_t flags, uint32_t count, uint32_t size_ptr,
@@ -459,6 +463,13 @@ uint32_t Xam::VoiceCreate(Guest g, uint32_t voice_ptr) {
 
 uint32_t Xam::ShowMessageBoxUI(Guest g, uint32_t result_ptr, uint32_t overlapped) {
   if (result_ptr) g.Store32(result_ptr, 0);  // the first button
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::ShowMarketplaceDownloadItemsUI(Guest g, uint32_t user, uint32_t result_ptr, uint32_t overlapped) {
+  if (user >= 4) return kErrorInvalidParameter;
+  ShowLiveUI();
+  if (result_ptr) g.Store32(result_ptr, 0);
   return Finish(g, overlapped, kErrorSuccess);
 }
 
@@ -505,7 +516,7 @@ uint32_t Xam::Enumerate(Guest g, uint32_t handle, uint32_t, uint32_t buffer, uin
   Enumerator* e = FindEnumerator(handle);
   if (!e) return kErrorInvalidParameter;
   if (items_ptr) g.Store32(items_ptr, 0);
-  if (length < e->item_size) return Finish(g, overlapped, kErrorInsufficientBuffer);
+  if (length < e->item_size) return Finish(g, overlapped, kErrorInsufficientBuffer, 0, true);
   uint32_t n = 0;
   while (e->next < e->items.size() && n < e->per_call && (n + 1) * e->item_size <= length) {
     std::memcpy(g.host(buffer + n * e->item_size), e->items[e->next].data(), std::min<size_t>(e->item_size, e->items[e->next].size()));
@@ -513,7 +524,7 @@ uint32_t Xam::Enumerate(Guest g, uint32_t handle, uint32_t, uint32_t buffer, uin
     ++n;
   }
   if (items_ptr) g.Store32(items_ptr, n);
-  return Finish(g, overlapped, n ? kErrorSuccess : kErrorNoMoreFiles, n);
+  return Finish(g, overlapped, n ? kErrorSuccess : kErrorNoMoreFiles, n, true);
 }
 
 uint32_t Xam::GetPrivateEnumStructure(Guest g, uint32_t handle, uint32_t out) {
@@ -549,9 +560,9 @@ std::filesystem::path Xam::ContentHeaderPath(const std::filesystem::path& packag
 uint32_t Xam::ContentCreate(Guest g, uint32_t user, uint32_t root_name, uint32_t content_data, uint32_t flags, uint32_t disposition_ptr,
                             uint32_t license_ptr, uint32_t overlapped) {
   (void)user;
-  if (!content_data || !root_name || title_.content_root.empty()) return Finish(g, overlapped, kErrorInvalidParameter);
+  if (!content_data || !root_name || title_.content_root.empty()) return Finish(g, overlapped, kErrorInvalidParameter, 0, true);
   const std::filesystem::path path = ContentPath(g, content_data);
-  if (path.empty()) return Finish(g, overlapped, kErrorInvalidParameter);
+  if (path.empty()) return Finish(g, overlapped, kErrorInvalidParameter, 0, true);
   std::error_code error;
   const bool exists = std::filesystem::exists(path, error);
   // XCONTENTFLAG creation modes: create new, create always, open existing, open always, truncate existing.
@@ -580,7 +591,7 @@ uint32_t Xam::ContentCreate(Guest g, uint32_t user, uint32_t root_name, uint32_t
   if (license_ptr) g.Store32(license_ptr, 0);
   // Through an overlapped structure the disposition is also its length (a title passing no disposition pointer reads
   // it there: 0 means neither opened nor created).
-  return Finish(g, overlapped, result, result ? 0 : disposition);
+  return Finish(g, overlapped, result, result ? 0 : disposition, true);
 }
 
 uint32_t Xam::ContentClose(Guest g, uint32_t root_name, uint32_t overlapped) {

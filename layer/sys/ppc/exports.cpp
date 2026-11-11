@@ -1018,6 +1018,29 @@ ANY360_SYS_EXPORT(KeGetImagePageTableEntry) { ctx.r3.u64 = MemoryManager::ImageP
 ANY360_SYS_EXPORT(NtAllocateEncryptedMemory) { ctx.r3.u64 = Memory().AllocateEncrypted({base}, ctx.r4.u32, ctx.r5.u32); }  // (?, size, base out)
 ANY360_SYS_EXPORT(NtFreeEncryptedMemory) { ctx.r3.u64 = Memory().FreeEncrypted({base}, ctx.r4.u32); }  // (region type, base pointer)
 
+// Batch 32: the calls Call of Duty: Black Ops imports that no title before it did (the reference stubs them all:
+// it answers with r3 as it came, its first argument).
+// The guide shows no custom action: setting one is accepted and has no effect (r3 as it came, as the reference).
+ANY360_SYS_EXPORT(XCustomSetAction) {}
+// (user index out, action index out, XUID out): FALSE, no custom action was pressed (the guide shows none, and
+// XN_CUSTOM_ACTIONPRESSED is never sent); the outputs untouched. The reference returns its first argument, a pointer:
+// TRUE, an action pressed.
+ANY360_SYS_EXPORT(XCustomGetLastActionPress) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamShowMarketplaceDownloadItemsUI) {
+  ctx.r3.u64 = XamState().ShowMarketplaceDownloadItemsUI({base}, ctx.r3.u32, ctx.r8.u32, ctx.r9.u32);
+}
+// (caller, status block, 0): the Xbox network platform's logon state of an offline console: never logged on. The
+// title reads a 32-bit state at +4 and a 64-bit value at +8 of the block, little-endian; both are written 0 (the
+// rest of the block's layout is not known). Success.
+ANY360_SYS_EXPORT(NetDll_XnpLogonGetStatus) {
+  if (const uint32_t status = ctx.r4.u32) {
+    const Guest g{base};
+    g.Store32(status + 4, 0);
+    g.Store64(status + 8, 0);
+  }
+  ctx.r3.u64 = 0;
+}
+
 #define ANY360_SYS_ENTRY(name) {#name, &any360_##name}
 const Export kExports[] = {
     ANY360_SYS_ENTRY(RtlCompareMemoryUlong), ANY360_SYS_ENTRY(RtlFillMemoryUlong),     ANY360_SYS_ENTRY(RtlUpperChar),
@@ -1453,6 +1476,10 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XamPartyGetUserList),
     ANY360_SYS_ENTRY(XamPartySendGameInvites),
     ANY360_SYS_ENTRY(XamPartySetCustomData),
+    ANY360_SYS_ENTRY(XCustomSetAction),
+    ANY360_SYS_ENTRY(XCustomGetLastActionPress),
+    ANY360_SYS_ENTRY(XamShowMarketplaceDownloadItemsUI),
+    ANY360_SYS_ENTRY(NetDll_XnpLogonGetStatus),
     ANY360_SYS_ENTRY(XamPartyGetBandwidth),
     ANY360_SYS_ENTRY(XamShowPartyUI),
     ANY360_SYS_ENTRY(XamShowCommunitySessionsUI),
