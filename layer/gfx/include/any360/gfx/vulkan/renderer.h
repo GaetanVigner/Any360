@@ -83,6 +83,7 @@ struct RendererStats {
   uint32_t texture_gpu_copies = 0;  // textures copied from a resolve kept on the GPU
   uint32_t resolves = 0;
   uint32_t resolves_on_gpu = 0, resolves_read_back = 0, resolves_depth = 0;  // kinds of resolves among them
+  uint32_t resolves_superseded = 0;  // resolves kept on the GPU the CPU wrote over before they were written back
   uint32_t resolve_write_backs = 0;  // GPU resolves written into guest memory later (read by a texture otherwise)
   uint64_t ns_texture_hash = 0, ns_texture_load = 0;  // within textures: hashing, loading levels for uploads
   uint32_t flushes = 0;
@@ -262,6 +263,12 @@ class VulkanRenderer : public gfx::Renderer {
   // [begin, end) of guest memory was written (by the CPU, a resolve's write-back, a replay): its copy in video memory
   // is stale. Any thread.
   void GuestMemoryWritten(uint32_t begin, uint32_t end);
+  // The CPU wrote [begin, end) of guest memory (a watched write; any thread): a resolve kept on the GPU over it is
+  // superseded, never written back over what the title put there since (a title reuses a resolve's memory for
+  // streamed textures and vertices; written back late, the old copy turned them to noise). Writes the renderer makes
+  // itself (WritingGuestMemory on the writing thread) are not the CPU's.
+  void CpuWrote(uint32_t begin, uint32_t end);
+  static bool WritingGuestMemory();
   uint32_t ResolveFormatAt(uint32_t base) const {
     const auto it = resolve_formats_.find(base);
     return it == resolve_formats_.end() ? UINT32_MAX : it->second;
@@ -511,6 +518,11 @@ class VulkanRenderer : public gfx::Renderer {
   void TakeReleased(std::vector<std::function<void()>>& actions);
   bool fences_when_captured_ = true;
   bool late_resolve_reads_ = false;
+  // CpuWrote's ranges, applied on the renderer's thread before resolves are written back or read (ApplyCpuWrites).
+  std::mutex cpu_writes_mutex_;
+  std::vector<std::pair<uint32_t, uint32_t>> cpu_writes_;
+  std::atomic<bool> any_cpu_writes_{false};
+  void ApplyCpuWrites();
   int32_t submitted_unlisted_ = -1;  // the batch handed to the submission thread before Flush listed it in flight
   std::vector<std::function<void()>> released_actions_;  // the submission thread's
   void WaitBatch(uint32_t index);

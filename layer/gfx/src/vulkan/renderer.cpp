@@ -295,6 +295,7 @@ bool VulkanRenderer::Initialize() {
   if (f.vkCreateDescriptorSetLayout(d, &info, nullptr, &shared_layout_) != VK_SUCCESS) return Fail("shared set layout");
   textures_ = std::make_unique<TextureCache>(device_, physical_, mirror_bytes_);
   textures_->SetBeforeMemoryRead([this](uint32_t begin, uint32_t end) {
+    ApplyCpuWrites();  // a resolve the title has since written over is not written back
     for (auto& [base, r] : resolved_) {
       if (!r.stale && !r.pending) continue;
       const uint32_t element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
@@ -514,6 +515,16 @@ bool VulkanRenderer::ImportGuestMemory() {
   shared_memory_.size = mirror_bytes_;
   return true;
 }
+
+namespace {
+thread_local bool t_writing_guest_memory = false;
+// Marks the calling thread as the renderer writing guest memory for its lifetime (its watched writes are not the CPU's).
+struct WritingGuestMemoryScope {
+  bool was = t_writing_guest_memory;
+  WritingGuestMemoryScope() { t_writing_guest_memory = true; }
+  ~WritingGuestMemoryScope() { t_writing_guest_memory = was; }
+};
+}  // namespace
 
 VkFormat ColorTargetFormat(uint32_t color_format) {
   switch (color_format) {
@@ -3241,6 +3252,12 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   r.pitch = pitch, r.endian = dest_endian, r.x = rx0, r.y = ry0, r.width = rx1 - rx0, r.height = ry1 - ry0;
   r.stale = true;
   r.scale = scale_;
+  // Watched: a CPU write into the destination from now on supersedes it (CpuWrote).
+  if (guest_watch_) {
+    const uint32_t element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+    const uint64_t end = uint64_t(dest_base) + uint64_t(pitch) * ((ry1 + 31) & ~31u) * element;
+    guest_watch_(dest_base, uint32_t(std::min<uint64_t>(end, mirror_bytes_)));
+  }
   if (textures_) {
     textures_->SetGpuSource({r.image.image, r.image.format, dest_base, pitch, dest_endian, r.image.width, r.image.height,
                              ++resolve_generation_, false, scale_});
@@ -3250,6 +3267,8 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
 
 void VulkanRenderer::Copy(const uint32_t* regs) {
   Timer resolve_timer(stats_.ns_resolves);
+  ApplyCpuWrites();  // before a new resolve joins an earlier one's rectangle
+  WritingGuestMemoryScope writing;  // what a resolve writes into guest memory is not the CPU's
   const Functions& f = device_.fn();
   const uint32_t copy_control = regs[kRbCopyControl];
   const uint32_t source = copy_control & 7, copy_command = (copy_control >> 20) & 3;
@@ -3774,6 +3793,40 @@ void VulkanRenderer::GuestMemoryWritten(uint32_t begin, uint32_t end) {
   }
 }
 
+bool VulkanRenderer::WritingGuestMemory() { return t_writing_guest_memory; }
+
+void VulkanRenderer::CpuWrote(uint32_t begin, uint32_t end) {
+  if (t_writing_guest_memory || begin >= end) return;
+  std::lock_guard lock(cpu_writes_mutex_);
+  cpu_writes_.emplace_back(begin, end);
+  any_cpu_writes_.store(true, std::memory_order_release);
+}
+
+void VulkanRenderer::ApplyCpuWrites() {
+  if (!any_cpu_writes_.load(std::memory_order_acquire)) return;
+  std::vector<std::pair<uint32_t, uint32_t>> writes;
+  {
+    std::lock_guard lock(cpu_writes_mutex_);
+    writes.swap(cpu_writes_);
+    any_cpu_writes_.store(false, std::memory_order_relaxed);
+  }
+  for (auto& [base, r] : resolved_) {
+    if (!r.stale) continue;
+    const uint32_t element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+    const uint64_t end = uint64_t(base) + uint64_t(r.pitch) * ((r.y + r.height + 31) & ~31u) * element;
+    for (const auto& [b, e] : writes) {
+      if (b >= end || base >= e) continue;
+      // The title's own data is there now: the copy kept on the GPU is not written back, nor read in its place.
+      r.stale = false;
+      r.x = r.y = r.width = r.height = 0;
+      r.landed.store(0, std::memory_order_relaxed);
+      if (textures_) textures_->DropGpuSources(base, base + 1);
+      ++stats_.resolves_superseded;
+      break;
+    }
+  }
+}
+
 void VulkanRenderer::Invalidate(uint32_t base, uint32_t size) {
   // A coherency request (hundreds a frame): with the CPU's writes watched, the textures already know.
   if (textures_ && !textures_->watching()) textures_->MemoryChanged(base & 0x1FFFFFFF, uint32_t(std::min<uint64_t>(uint64_t(base & 0x1FFFFFFF) + size, mirror_bytes_)));
@@ -3944,6 +3997,7 @@ void VulkanRenderer::ReleaseReadback(Buffer& buffer) {
 }
 
 void VulkanRenderer::FinishWriteBacks(Batch& b) {
+  WritingGuestMemoryScope writing;  // the renderer's own writes, not the CPU's
   // Byte orders as 16-byte shuffles: none, 8 in 16, 8 in 32, 16 in 32 (each 32-bit word), 8 in 64 (8-byte elements).
   alignas(16) static constexpr uint8_t kShuffles[5][16] = {
       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}, {1, 0, 3, 2, 5, 4, 7, 6, 9, 8, 11, 10, 13, 12, 15, 14},
@@ -4261,6 +4315,10 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   r.stale = true;
   r.float24 = surface.key.format == 1;
   r.scale = s;
+  if (guest_watch_) {  // a CPU write into the destination supersedes it (CpuWrote)
+    const uint64_t end = uint64_t(dest_base) + uint64_t(pitch) * ((uint32_t(y0) + height + 31) & ~31u) * 4;
+    guest_watch_(dest_base, uint32_t(std::min<uint64_t>(end, mirror_bytes_)));
+  }
   if (textures_) {
     textures_->SetGpuSource({r.image.image, VK_FORMAT_R32_SFLOAT, dest_base, pitch, dest_endian, r.image.width,
                              r.image.height, ++resolve_generation_, true, s});

@@ -126,6 +126,13 @@ void SetVblankHz(double hz);
 // VdSwap; null `log`: nothing reported.
 #define ANY360_REXGLUE_REPORT_RUNTIME_FRAMES 1
 void ReportRuntimeFrames(std::function<void(const std::string&)> log, double seconds = 5.0);
+
+// The runtime's own GPU as the reference for gfx_replay: once `<trace_path>.go` appears, its draw trace
+// (gpu_draw_trace) and Any360 capture (gpu_any360_capture) record the next `frames` frames, the capture in
+// `<trace_path>.a360cap` with the frames that GPU presented, which gfx_replay compares its own with. Holds game data:
+// kept on the machine.
+#define ANY360_REXGLUE_REFERENCE_CAPTURE 1
+void WatchReferenceCapture(const std::string& trace_path, uint32_t frames, std::function<void(const std::string&)> log);
 // Stops the threads (call before the runtime goes away).
 void StopGraphics();
 // Whether the Vd* overrides go to Any360 (fixed by the first StartGraphics, before the title's first Vd* call).

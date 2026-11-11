@@ -175,6 +175,28 @@ class TracingRenderer : public Renderer {
             parsed.AnalyzeUcode(text);
             std::printf("    shader %016llX:\n%s\n", (unsigned long long)shader->hash, parsed.ucode_disassembly().c_str());
           }
+          std::printf("      SQ_PROGRAM_CNTL %08X SQ_CONTEXT_MISC %08X SQ_INTERPOLATOR_CNTL %08X VGT_INDX_OFFSET %08X\n",
+                      regs[0x2180], regs[0x2181], regs[0x2182], regs[0x2102]);
+          // The first words of each vertex stream the vertex shader reads, as floats in the stream's byte order.
+          rex::graphics::SpirvShader vs_parsed(rex::graphics::xenos::ShaderType::kVertex, draw.vertex_shader->hash,
+                                               draw.vertex_shader->microcode.data(), draw.vertex_shader->microcode.size(),
+                                               std::endian::native);
+          rex::string::StringBuffer vs_text;
+          vs_parsed.AnalyzeUcode(vs_text);
+          for (const auto& binding : vs_parsed.vertex_bindings()) {
+            const uint32_t vf = binding.fetch_constant;
+            const uint32_t* f = regs + 0x4800 + 2 * vf;
+            const uint32_t base = f[0] & 0x1FFFFFFC, endian = f[1] & 3;
+            std::printf("      vertex fetch %u (stride %u words) at %08X (%u words, endian %u):", vf, binding.stride_words, base,
+                        (f[1] >> 2) & 0xFFFFFF, endian);
+            for (uint32_t w = 0; w < 2 * binding.stride_words && w < 32; ++w) {
+              uint32_t v;
+              std::memcpy(&v, physical_ + base + 4 * w, 4);
+              v = endian == 2 ? std::byteswap(v) : endian == 1 ? ((v << 8) & 0xFF00FF00) | ((v >> 8) & 0x00FF00FF) : v;
+              std::printf(" %g", std::bit_cast<float>(v));
+            }
+            std::printf("\n");
+          }
           // The pixel shader's float constants (c0-c255 of its half, registers 0x4400 on), those not all zero.
           for (uint32_t c = 0; c < 256; ++c) {
             const uint32_t* v = regs + 0x4400 + 4 * c;

@@ -507,11 +507,12 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     }
     char detail[512];
     std::snprintf(detail, sizeof(detail),
-                  "Any360: per frame: resolves %.1f on the GPU, %.1f read back, %.1f depth, %.1f written back later; "
-                  "textures ms: hashing %.2f, "
+                  "Any360: per frame: resolves %.1f on the GPU, %.1f read back, %.1f depth, %.1f written back later, "
+                  "%.2f superseded by the CPU; textures ms: hashing %.2f, "
                   "loading for uploads %.2f",
                   (s.resolves_on_gpu - last_.resolves_on_gpu) / n, (s.resolves_read_back - last_.resolves_read_back) / n,
                   (s.resolves_depth - last_.resolves_depth) / n, (s.resolve_write_backs - last_.resolve_write_backs) / n,
+                  (s.resolves_superseded - last_.resolves_superseded) / n,
                   (s.ns_texture_hash - last_.ns_texture_hash) / ms,
                   (s.ns_texture_load - last_.ns_texture_load) / ms);
     log_(detail);
@@ -762,6 +763,7 @@ std::pair<uint32_t, uint32_t> MemoryWritten(void* context, uint32_t start, uint3
   auto* renderer = static_cast<gfx::vk::VulkanRenderer*>(context);
   if (auto* textures = renderer->texture_cache()) textures->QueueMemoryChanged(start, start + length);
   renderer->GuestMemoryWritten(start, start + length);  // the vertices copied into video memory
+  renderer->CpuWrote(start, start + length);  // resolves kept on the GPU there are superseded
   return {start, length};
 }
 
@@ -1043,6 +1045,70 @@ void CountRuntimeFrame() {
   frames = 1, since = now, worst_ms = 0, slow = 0;
 }
 }  // namespace
+
+void WatchReferenceCapture(const std::string& trace_path, uint32_t frames, std::function<void(const std::string&)> log) {
+  if (trace_path.empty()) return;
+  std::thread([trace_path, frames, log = std::move(log)] {
+    const std::filesystem::path trigger = trace_path + ".go";
+    for (;;) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+      std::error_code error;
+      if (!std::filesystem::exists(trigger, error)) continue;
+      std::filesystem::remove(trigger, error);
+#ifdef _WIN32
+      // The runtime's capture reads every page of physical memory, and a page only reserved on the host (a title
+      // reserves more than it commits) made it crash: those are committed first (they read as zero). Committed
+      // pages are left as they are, with their protection (the runtime's write watches).
+      if (rex::Runtime* runtime = rex::Runtime::instance(); runtime && runtime->memory()) {
+        uint8_t* at = runtime->memory()->TranslatePhysical<uint8_t*>(0);
+        uint8_t* const end = at + (size_t(512) << 20);
+        uint64_t committed = 0;
+        while (at < end) {
+          MEMORY_BASIC_INFORMATION info{};
+          if (!VirtualQuery(at, &info, sizeof info)) break;
+          uint8_t* const region_end = std::min(end, static_cast<uint8_t*>(info.BaseAddress) + info.RegionSize);
+          if (info.State == MEM_RESERVE && VirtualAlloc(at, size_t(region_end - at), MEM_COMMIT, PAGE_READWRITE)) {
+            committed += uint64_t(region_end - at);
+          }
+          at = region_end;
+        }
+        if (log && committed) log("Any360: " + std::to_string(committed >> 20) + " MB of reserved physical memory committed for the capture");
+        // What the host still cannot read (the capture would crash on it): said, and no capture then.
+        std::string unreadable;
+        uint64_t unreadable_bytes = 0;
+        for (at = runtime->memory()->TranslatePhysical<uint8_t*>(0); at < end;) {
+          MEMORY_BASIC_INFORMATION info{};
+          if (!VirtualQuery(at, &info, sizeof info)) break;
+          uint8_t* const region_end = std::min(end, static_cast<uint8_t*>(info.BaseAddress) + info.RegionSize);
+          const bool readable = info.State == MEM_COMMIT && !(info.Protect & (PAGE_NOACCESS | PAGE_GUARD));
+          if (!readable) {
+            unreadable_bytes += uint64_t(region_end - at);
+            if (unreadable.size() < 600) {
+              char text[96];
+              std::snprintf(text, sizeof text, " %08llX+%llX state %lX protect %lX;",
+                            (unsigned long long)(at - runtime->memory()->TranslatePhysical<uint8_t*>(0)),
+                            (unsigned long long)(region_end - at), info.State, info.Protect);
+              unreadable += text;
+            }
+          }
+          at = region_end;
+        }
+        if (unreadable_bytes) {
+          if (log) log("Any360: no capture, " + std::to_string(unreadable_bytes >> 10) + " KB of physical memory unreadable:" + unreadable);
+          continue;
+        }
+      }
+#endif
+      const bool ok = rex::cvar::SetFlagByName("gpu_any360_capture", "true") &&
+                      rex::cvar::SetFlagByName("gpu_draw_trace_frames", std::to_string(std::max(1u, frames))) &&
+                      rex::cvar::SetFlagByName("gpu_draw_trace", trace_path);
+      if (log) {
+        log(ok ? "Any360: the runtime's GPU records " + std::to_string(frames) + " frame(s) to " + trace_path + ".a360cap"
+               : "Any360: the runtime's GPU has no draw trace / Any360 capture settings");
+      }
+    }
+  }).detach();
+}
 
 void ReportRuntimeFrames(std::function<void(const std::string&)> log, double seconds) {
   g_runtime_frames_log = std::move(log);
