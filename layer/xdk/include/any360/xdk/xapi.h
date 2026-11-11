@@ -34,4 +34,42 @@ inline bool XMemCpy(const Memory& memory, uint32_t dest, uint32_t source, uint32
   return true;
 }
 
+// GetLastError and SetLastError: the thread's last error, a 32-bit field of the kernel's thread (+352) that the
+// processor's control region (r13) names at +256. While that region's field at +336 is not zero (a DPC runs: there
+// is no thread to speak of) GetLastError gives 0 and SetLastError stores nothing. Both decline a control region or
+// a thread that is not plain memory. SetLastError leaves r3 as it came; its plan says what it writes.
+namespace detail {
+inline uint32_t LoadBig32(const uint8_t* p) { return uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3]; }
+// Whether the control region can be read, and where the thread's last error is (0: a DPC runs, nowhere).
+inline bool LastErrorField(const Memory& memory, uint32_t pcr, uint32_t& field) {
+  field = 0;
+  if (!IsPlainMemory(pcr, 340)) return false;
+  if (LoadBig32(memory.Host(pcr + 336))) return true;
+  field = LoadBig32(memory.Host(pcr + 256)) + 352;
+  return IsPlainMemory(field, 4);
+}
+}  // namespace detail
+inline bool XapiGetLastError(const Memory& memory, uint32_t pcr, uint64_t& r3) {
+  uint32_t field;
+  if (!detail::LastErrorField(memory, pcr, field)) return false;
+  r3 = field ? detail::LoadBig32(memory.Host(field)) : 0;
+  return true;
+}
+inline bool XapiSetLastErrorPlan(const Memory& memory, uint32_t pcr, Range& write) {
+  uint32_t field;
+  write = {0, 0};
+  if (!detail::LastErrorField(memory, pcr, field)) return false;
+  if (field) write = {field, 4};
+  return true;
+}
+inline bool XapiSetLastError(const Memory& memory, uint32_t pcr, uint32_t error) {
+  Range write;
+  if (!XapiSetLastErrorPlan(memory, pcr, write)) return false;
+  if (write.size) {
+    uint8_t* to = memory.Host(write.at);
+    to[0] = uint8_t(error >> 24), to[1] = uint8_t(error >> 16), to[2] = uint8_t(error >> 8), to[3] = uint8_t(error);
+  }
+  return true;
+}
+
 }  // namespace any360::xdk

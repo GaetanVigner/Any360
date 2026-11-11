@@ -30,7 +30,8 @@ REXCVAR_DEFINE_BOOL(any360_xdk_verify, false, "Kernel",
 REXCVAR_DEFINE_STRING(any360_xdk_skip, "", "Kernel",
                       "Any360: bound library functions that run their own code while the others run as host routines, "
                       "by name, comma-separated (memcpy, forward copy, memset, memmove, XMemCpy, wcslen, strchr, "
-                      "strncmp, strncpy, strrchr, tolower, toupper, wcsncpy, wcscpy, strncat)");
+                      "strncmp, strncpy, strrchr, tolower, toupper, wcsncpy, wcscpy, strncat, wcscmp, strlen, strcmp, "
+                      "mbtowc, GetLastError, SetLastError)");
 REXCVAR_DEFINE_BOOL(any360_xdk_bench, false, "Kernel",
                     "Any360: every call of a bound library function is timed both ways, its own code and the host "
                     "routine; the log gets the calls and nanoseconds of each by size (slow)");
@@ -45,7 +46,9 @@ namespace {
 constexpr uint32_t kFunctions = uint32_t(Function::kCount);
 constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset",  "memmove", "XMemCpy",
                                             "wcslen", "strchr",       "strncmp", "strncpy", "strrchr",
-                                            "tolower", "toupper",     "wcsncpy", "wcscpy",  "strncat"};
+                                            "tolower", "toupper",     "wcsncpy", "wcscpy",  "strncat",
+                                            "wcscmp",  "strlen",      "strcmp",  "mbtowc",  "GetLastError",
+                                            "SetLastError"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -60,6 +63,11 @@ std::atomic<uint64_t> g_verified_by[kFunctions] = {}, g_declined_by[kFunctions] 
 // side; a few calls on either side are another thread writing its own data there at that moment.
 std::atomic<uint64_t> g_around_own[kFunctions] = {}, g_around_native[kFunctions] = {};
 std::atomic<uint64_t> g_around_logged{0};
+// Calls whose two sides differed at first and agreed when both were run again on the same input: another thread
+// wrote the source or the destination between the two sides (a copy of a global another thread updates). A
+// function that is wrong for an input is wrong at every try.
+std::atomic<uint64_t> g_settled[kFunctions] = {};
+constexpr int kTries = 3;
 
 // Timed calls by function and size class (class c: sizes with bit_width c, so 0, 1, 2-3, 4-7, ...).
 struct Timed {
@@ -70,6 +78,10 @@ Timed g_timed[kFunctions][33];
 constexpr uint32_t kExactSizes = 4096;
 std::atomic<uint32_t> g_exact[kFunctions][kExactSizes] = {};
 std::atomic<uint64_t> g_timed_calls{0};
+// Which side runs first alternates call by call of each function (the second finds the memory in the cache). By
+// function: with one count for all, two functions a title always calls one after the other could each keep the
+// same place (GetLastError after SetLastError), and the figures of both would lean one way.
+std::atomic<uint32_t> g_order[kFunctions] = {};
 uint64_t g_ticks_start = 0, g_timer_overhead = 0;
 std::chrono::steady_clock::time_point g_clock_start;
 
@@ -125,6 +137,10 @@ Mode Resolve(uint8_t* base) {
 struct Call {
   uint64_t dest_register;
   uint32_t dest, second, size, stack_pointer, value;
+  // The processor's control region (r13), for the functions that look the thread up.
+  uint32_t pcr;
+  // What the call leaves in r3, for the functions that write and return a value (ReturnsValue).
+  uint64_t result;
   // The bytes the call is about to write: [dest, dest + size) for most, found by Accepts for the string functions
   // that write to where a string ends or as far as one goes.
   any360::xdk::Range write;
@@ -138,6 +154,8 @@ bool Accepts(Function function, Call& c) {
     case Function::kWcsncpy: return any360::xdk::CrtWcsncpyPlan(c.dest, c.second, c.size, c.write);
     case Function::kWcscpy: return any360::xdk::CrtWcscpyPlan(g_memory, c.dest, c.second, c.write);
     case Function::kStrncat: return any360::xdk::CrtStrncatPlan(g_memory, c.dest, c.second, c.size, c.write);
+    case Function::kMbtowc: return any360::xdk::CrtMbtowcPlan(c.dest, c.second, c.size, c.write);
+    case Function::kSetLastError: return any360::xdk::XapiSetLastErrorPlan(g_memory, c.pcr, c.write);
     case Function::kMemcpy:
     case Function::kCopyForward: return any360::xdk::CrtMemcpyAccepts(c.dest, c.second, c.size);
     case Function::kMemset: return any360::xdk::CrtMemsetAccepts(c.dest, c.size);
@@ -147,8 +165,10 @@ bool Accepts(Function function, Call& c) {
   }
 }
 
-bool Native(Function function, const Call& c) {
+bool Native(Function function, Call& c) {
   switch (function) {
+    case Function::kMbtowc: return any360::xdk::CrtMbtowc(g_memory, c.dest, c.second, c.size, c.result);
+    case Function::kSetLastError: return any360::xdk::XapiSetLastError(g_memory, c.pcr, c.dest);
     case Function::kMemcpy: return any360::xdk::CrtMemcpy(g_memory, c.dest_register, c.second, c.size, c.stack_pointer);
     case Function::kCopyForward: return any360::xdk::CrtCopyForward(g_memory, c.dest, c.second, c.size);
     case Function::kMemset: return any360::xdk::CrtMemset(g_memory, c.dest, c.second, c.size);
@@ -164,8 +184,12 @@ bool Native(Function function, const Call& c) {
 // The functions that only read: their replacement gives the value they leave in r3.
 bool IsPure(Function function) {
   return function == Function::kWcslen || function == Function::kStrchr || function == Function::kStrncmp ||
-         function == Function::kStrrchr || function == Function::kTolower || function == Function::kToupper;
+         function == Function::kStrrchr || function == Function::kTolower || function == Function::kToupper ||
+         function == Function::kWcscmp || function == Function::kStrlen || function == Function::kStrcmp ||
+         function == Function::kGetLastError;
 }
+// The functions that write and leave a value of their own in r3 (the others that write return r3 as it came).
+bool ReturnsValue(Function function) { return function == Function::kMbtowc; }
 bool Pure(Function function, const Call& c, uint64_t& r3) {
   switch (function) {
     case Function::kWcslen: return any360::xdk::CrtWcslen(g_memory, c.dest, r3);
@@ -173,6 +197,10 @@ bool Pure(Function function, const Call& c, uint64_t& r3) {
     case Function::kStrrchr: return any360::xdk::CrtStrrchr(g_memory, c.dest_register, c.second, r3);
     case Function::kTolower: r3 = any360::xdk::CrtTolower(c.dest_register); return true;
     case Function::kToupper: r3 = any360::xdk::CrtToupper(c.dest_register); return true;
+    case Function::kWcscmp: return any360::xdk::CrtWcscmp(g_memory, c.dest, c.second, r3);
+    case Function::kStrlen: return any360::xdk::CrtStrlen(g_memory, c.dest, r3);
+    case Function::kStrcmp: return any360::xdk::CrtStrcmp(g_memory, c.dest, c.second, r3);
+    case Function::kGetLastError: return any360::xdk::XapiGetLastError(g_memory, c.pcr, r3);
     default: return any360::xdk::CrtStrncmp(g_memory, c.dest, c.second, c.size, r3);
   }
 }
@@ -180,12 +208,35 @@ bool Pure(Function function, const Call& c, uint64_t& r3) {
 // count asked.
 uint32_t PureWork(Function function, const Call& c, uint64_t r3) {
   switch (function) {
-    case Function::kWcslen: return uint32_t(r3);
+    case Function::kWcslen:
+    case Function::kStrlen: return uint32_t(r3);
+    case Function::kWcscmp:
+    case Function::kStrcmp:
+    case Function::kGetLastError: return 0;
     case Function::kStrchr:
     case Function::kStrrchr: return r3 ? uint32_t(r3) - c.dest : 0;
     case Function::kTolower:
     case Function::kToupper: return 0;
     default: return std::min<uint32_t>(c.size, 1u << 20);
+  }
+}
+
+// Whether a call reads nothing of what it writes, so that running it twice on the memory as it is gives the same
+// bytes twice: fills, and copies whose source is apart from what is written. Not strncat (it looks for the
+// terminator it then writes over) nor a copy onto its own source.
+bool RunsTwiceInPlace(Function function, const Call& c) {
+  switch (function) {
+    case Function::kMemset:
+    case Function::kXMemCpy:
+    case Function::kWcscpy:
+    case Function::kSetLastError: return true;
+    case Function::kMemcpy:
+    case Function::kCopyForward:
+    case Function::kMemmove:
+    case Function::kStrncpy:
+    case Function::kWcsncpy: return any360::xdk::AreApart(c.write.at, c.second, c.write.size);
+    case Function::kMbtowc: return c.write.size == 0 || c.second < c.write.at || c.second - c.write.at >= c.write.size;
+    default: return false;
   }
 }
 
@@ -278,7 +329,7 @@ void ReportTimes() {
 void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t value) {
   Mode mode = g_mode;
   if (mode == Mode::kUnresolved) mode = Resolve(base);
-  Call call{ctx.r3.u64, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r1.u32, value, {}};
+  Call call{ctx.r3.u64, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r1.u32, value, ctx.r13.u32, ctx.r3.u64, {}};
   const uint64_t dest_register = call.dest_register;
   const uint32_t second = call.second, stack_pointer = call.stack_pointer;
   uint32_t dest = call.dest, size = call.size;
@@ -296,6 +347,8 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
       else original(ctx, base);
     } else if (!Native(function, call)) {
       original(ctx, base);
+    } else if (ReturnsValue(function)) {
+      ctx.r3.u64 = call.result;
     }
     return;
   }
@@ -329,7 +382,7 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
     const uint64_t timed_call = g_timed_calls.fetch_add(1, std::memory_order_relaxed) + 1;
     uint64_t original_ticks, native_ticks;
     bool taken;
-    if (timed_call & 1) {
+    if (g_order[f].fetch_add(1, std::memory_order_relaxed) & 1) {
       const uint64_t a = Ticks();
       original(reference, base);
       const uint64_t b = Ticks();
@@ -370,34 +423,77 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
   uint8_t* const target = g_memory.Host(dest);
   uint8_t* const slot = g_memory.Host(stack_pointer - 8);
   const bool with_slot = ComparesStackSlot(function);
-  const std::vector<uint8_t> before(target, target + size);
+  // Most calls read nothing of what they write, so both sides can run one after the other on the memory as it is:
+  // what the call writes never goes back to what it was. It matters: a title fills a structure on one thread while
+  // another reads it, and bytes put back between the two sides showed that thread a pointer that was gone again
+  // (The Simpsons Game crashed in a level that way, with every call verified). The few that read what they write
+  // (a copy onto its own source, strncat's terminator) have the destination put back between the sides.
+  const bool in_place = RunsTwiceInPlace(function, call);
+  std::vector<uint8_t> before;
+  if (!in_place) before.assign(target, target + size);
   uint8_t slot_before[8];
   std::memcpy(slot_before, slot, 8);
+  const auto put_back = [&] {
+    if (in_place) return;
+    std::memcpy(target, before.data(), size);
+    if (with_slot) std::memcpy(slot, slot_before, 8);
+  };
 
   if (mode == Mode::kVerify) {
-    // The function's own code on a copy of the registers; what it wrote in [dest, dest + size) and in the 8 bytes
-    // below the stack pointer, and the r3 it returned, against the replacement's. And the bytes around the
-    // destination, which neither should change.
+    // What each side wrote in [dest, dest + size) and in the 8 bytes below the stack pointer, and the r3 each
+    // returned; and the bytes around the destination, which neither should change. The function's own code runs
+    // on a copy of the registers and runs last when the call runs in place: its result is what stays.
     const Margins margins = MarginsOf(call);
     const std::vector<uint8_t> around_before = ReadMargins(margins);
     PPCContext reference = ctx;
-    original(reference, base);
-    const std::vector<uint8_t> expected(target, target + size);
-    const std::vector<uint8_t> around_expected = ReadMargins(margins);
-    uint8_t slot_expected[8];
-    std::memcpy(slot_expected, slot, 8);
-    std::memcpy(target, before.data(), size);
-    if (with_slot) std::memcpy(slot, slot_before, 8);
-    Native(function, call);
-    const bool own_code_outside = around_expected != around_before;
-    const bool native_outside = ReadMargins(margins) != around_expected;
+    std::vector<uint8_t> first;
+    uint8_t slot_first[8];
+    bool own_code_outside = false, native_outside = false, same_bytes = false, same_slot = false, same_r3 = false;
+    // When the two sides differ, both again (kTries in all): what another thread wrote between them the first time
+    // is the same for both the second time.
+    int tries = 0;
+    for (; tries < kTries; ++tries) {
+      if (tries) {
+        put_back();
+        reference = ctx;
+        call.result = ctx.r3.u64;
+      }
+      if (in_place) {
+        Native(function, call);
+        first.assign(target, target + size);
+        std::memcpy(slot_first, slot, 8);
+        const std::vector<uint8_t> around_native = ReadMargins(margins);
+        original(reference, base);
+        if (!tries) {
+          native_outside = around_native != around_before;
+          own_code_outside = ReadMargins(margins) != around_native;
+        }
+      } else {
+        original(reference, base);
+        first.assign(target, target + size);
+        std::memcpy(slot_first, slot, 8);
+        const std::vector<uint8_t> around_own = ReadMargins(margins);
+        put_back();
+        Native(function, call);
+        if (!tries) {
+          own_code_outside = around_own != around_before;
+          native_outside = ReadMargins(margins) != around_own;
+        }
+      }
+      same_bytes = std::memcmp(target, first.data(), size) == 0;
+      same_slot = !with_slot || std::memcmp(slot, slot_first, 8) == 0;
+      same_r3 = ReturnsValue(function) ? call.result == reference.r3.u64 : ctx.r3.u32 == reference.r3.u32;
+      if (same_bytes && same_slot && same_r3) break;
+    }
+    if (tries && tries < kTries) g_settled[f].fetch_add(1, std::memory_order_relaxed);
     g_verified_by[f].fetch_add(1, std::memory_order_relaxed);
     const uint64_t verified = g_verified.fetch_add(1, std::memory_order_relaxed) + 1;
     if (verified == 1000 || verified % 1000000 == 0) {
       REXLOG_INFO("Any360 xdk: {} calls verified against the functions' own code ({}), {} different; bytes next to a "
-                  "destination changed during its own code: {}; during the replacement: {}; left to its own code: {}",
+                  "destination changed during its own code: {}; during the replacement: {}; left to its own code: {}; "
+                  "different at first and the same when run again (another thread wrote meanwhile): {}",
                   verified, CountsByFunction(g_verified_by), g_different.load(), CountsByFunction(g_around_own),
-                  CountsByFunction(g_around_native), CountsByFunction(g_declined_by));
+                  CountsByFunction(g_around_native), CountsByFunction(g_declined_by), CountsByFunction(g_settled));
     }
     if (own_code_outside || native_outside) {
       if (own_code_outside) g_around_own[f].fetch_add(1, std::memory_order_relaxed);
@@ -407,22 +503,25 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
                     kNames[f], dest_register, second, size, own_code_outside ? "the function's own code" : "the replacement");
       }
     }
-    const bool same_bytes = std::memcmp(target, expected.data(), size) == 0;
-    const bool same_slot = !with_slot || std::memcmp(slot, slot_expected, 8) == 0;
-    if (same_bytes && same_slot && ctx.r3.u32 == reference.r3.u32) return;
-    if (g_different.fetch_add(1, std::memory_order_relaxed) < 20) {
-      uint64_t slot_now, slot_wanted;
-      std::memcpy(&slot_now, slot, 8);
-      std::memcpy(&slot_wanted, slot_expected, 8);
-      REXLOG_ERROR("Any360 xdk: {} differs from the function's own code: r3 {:016X} source/fill {:08X} size {}: {}{}{}"
-                   "(stack slot {:016X}, its own code {:016X})",
-                   kNames[f], dest_register, second, size, same_bytes ? "" : "bytes written ",
-                   same_slot ? "" : "stack slot ", ctx.r3.u32 == reference.r3.u32 ? "" : "r3 ",
-                   any360::xdk::detail::ByteSwap64(slot_now), any360::xdk::detail::ByteSwap64(slot_wanted));
+    if (same_bytes && same_slot && same_r3) {
+      if (ReturnsValue(function)) ctx.r3.u64 = reference.r3.u64;
+      return;
     }
-    // The function's own result stands.
-    std::memcpy(target, expected.data(), size);
-    std::memcpy(slot, slot_expected, 8);
+    if (g_different.fetch_add(1, std::memory_order_relaxed) < 20) {
+      uint64_t slot_now, slot_other;
+      std::memcpy(&slot_now, slot, 8);
+      std::memcpy(&slot_other, slot_first, 8);
+      REXLOG_ERROR("Any360 xdk: {} differs from the function's own code: r3 {:016X} source/fill {:08X} size {}: {}{}{}"
+                   "(stack slot {:016X} and {:016X})",
+                   kNames[f], dest_register, second, size, same_bytes ? "" : "bytes written ",
+                   same_slot ? "" : "stack slot ", same_r3 ? "" : "r3 ",
+                   any360::xdk::detail::ByteSwap64(slot_now), any360::xdk::detail::ByteSwap64(slot_other));
+    }
+    // The function's own result stands: it ran last in place; otherwise what it wrote is put there again.
+    if (!in_place) {
+      std::memcpy(target, first.data(), size);
+      std::memcpy(slot, slot_first, 8);
+    }
     ctx.r3.u64 = reference.r3.u64;
     return;
   }
@@ -431,12 +530,11 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
   const uint64_t timed_call = g_timed_calls.fetch_add(1, std::memory_order_relaxed) + 1;
   uint64_t original_ticks, native_ticks;
   PPCContext copy = ctx;
-  if (timed_call & 1) {
+  if (g_order[f].fetch_add(1, std::memory_order_relaxed) & 1) {
     const uint64_t a = Ticks();
     original(copy, base);
     const uint64_t b = Ticks();
-    std::memcpy(target, before.data(), size);
-    if (with_slot) std::memcpy(slot, slot_before, 8);
+    put_back();
     const uint64_t c = Ticks();
     Native(function, call);
     const uint64_t d = Ticks();
@@ -445,13 +543,13 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
     const uint64_t a = Ticks();
     Native(function, call);
     const uint64_t b = Ticks();
-    std::memcpy(target, before.data(), size);
-    if (with_slot) std::memcpy(slot, slot_before, 8);
+    put_back();
     const uint64_t c = Ticks();
     original(copy, base);
     const uint64_t d = Ticks();
     native_ticks = b - a, original_ticks = d - c;
   }
+  if (ReturnsValue(function)) ctx.r3.u64 = call.result;
   Timed& timed = g_timed[f][std::bit_width(size)];
   timed.calls.fetch_add(1, std::memory_order_relaxed);
   timed.original.fetch_add(original_ticks, std::memory_order_relaxed);

@@ -429,6 +429,109 @@ void MoreStrings() {
   CHECK(xdk::AreApart(100, 200, 100) && !xdk::AreApart(100, 199, 100) && xdk::AreApart(200, 100, 100) && !xdk::AreApart(5, 5, 1));
 }
 
+// wcscmp, strlen and strcmp (they only read), then mbtowc against its model.
+void Comparisons() {
+  Pair p(81);
+  std::mt19937 rng(82);
+  uint64_t r3 = 0;
+  const auto put_wide = [&](uint32_t address, uint32_t length) {
+    for (uint32_t i = 0; i <= length; ++i) {
+      const uint16_t unit = i == length ? 0 : uint16_t(2 + rng() % 0xFFFC);  // room for one below and one above
+      p.native[address + 2 * i] = p.model[address + 2 * i] = uint8_t(unit >> 8);
+      p.native[address + 2 * i + 1] = p.model[address + 2 * i + 1] = uint8_t(unit);
+    }
+  };
+  const auto set_wide = [&](uint32_t address, uint16_t unit) {
+    p.native[address] = p.model[address] = uint8_t(unit >> 8);
+    p.native[address + 1] = p.model[address + 1] = uint8_t(unit);
+  };
+  // wcscmp: equal strings; an element above, below, and the terminator at every position of the second string.
+  for (uint32_t length = 0; length <= 100; ++length) {
+    const uint32_t left = 0x8000 + (length & 3), right = 0xA000 + (length & 5);
+    put_wide(left, length);
+    std::memcpy(&p.native[right], &p.native[left], 2 * length + 2);
+    std::memcpy(&p.model[right], &p.model[left], 2 * length + 2);
+    CHECK(xdk::CrtWcscmp(p.a, left, right, r3) && r3 == 0 && xdk::reference::Wcscmp(p.b, left, right) == 0);
+    for (uint32_t where = 0; where < length; where += 1 + length / 12) {
+      const uint16_t was = uint16_t(p.native[right + 2 * where] << 8 | p.native[right + 2 * where + 1]);
+      for (uint16_t other : {uint16_t(was + 1), uint16_t(was - 1), uint16_t(0), uint16_t(was ^ 0x8000), uint16_t(was ^ 0x0100)}) {
+        set_wide(right + 2 * where, other);
+        CHECK(xdk::CrtWcscmp(p.a, left, right, r3) && r3 == xdk::reference::Wcscmp(p.b, left, right));
+        CHECK(r3 == (was < other ? ~0ull : 1ull));
+        CHECK(xdk::CrtWcscmp(p.a, right, left, r3) && r3 == (other < was ? ~0ull : 1ull) && r3 == xdk::reference::Wcscmp(p.b, right, left));
+      }
+      set_wide(right + 2 * where, was);
+    }
+  }
+  // strlen: every length up to 400 at every alignment.
+  for (uint32_t length = 0; length <= 400; ++length) {
+    const uint32_t at = 0x10000 + (length & 7);
+    PutString(p, at, length, rng);
+    CHECK(xdk::CrtStrlen(p.a, at, r3) && r3 == length && r3 == xdk::reference::Strlen(p.b, at));
+  }
+  // strcmp: equal strings, a difference at every position (both signs), a string that ends first.
+  for (uint32_t length = 0; length <= 120; ++length) {
+    const uint32_t left = 0x18000 + (length & 3), right = 0x1A000 + (length & 5);
+    PutString(p, left, length, rng);
+    std::memcpy(&p.native[right], &p.native[left], length + 1);
+    std::memcpy(&p.model[right], &p.model[left], length + 1);
+    CHECK(xdk::CrtStrcmp(p.a, left, right, r3) && r3 == 0 && xdk::reference::Strcmp(p.b, left, right) == 0);
+    for (uint32_t where = 0; where < length; where += 1 + length / 12) {
+      const uint8_t was = p.native[right + where];
+      for (uint8_t other : {uint8_t(was == 255 ? 254 : was + 1), uint8_t(was == 1 ? 2 : was - 1), uint8_t(0)}) {
+        p.native[right + where] = p.model[right + where] = other;
+        CHECK(xdk::CrtStrcmp(p.a, left, right, r3) && r3 == xdk::reference::Strcmp(p.b, left, right));
+        CHECK(r3 == uint64_t(int64_t(was) - int64_t(other)));
+        CHECK(xdk::CrtStrcmp(p.a, right, left, r3) && r3 == uint64_t(int64_t(other) - int64_t(was)) &&
+              r3 == xdk::reference::Strcmp(p.b, right, left));
+      }
+      p.native[right + where] = p.model[right + where] = was;
+    }
+  }
+  CHECK(p.SameEverywhere());
+  // mbtowc: every byte, with and without a destination, with and without a source and a count.
+  for (uint32_t byte = 0; byte < 256; ++byte) {
+    const uint32_t source = 0x20000 + byte, dest = 0x30000 + 3 * byte;
+    p.native[source] = p.model[source] = uint8_t(byte);
+    for (uint32_t to : {dest, 0u}) {
+      for (uint32_t count : {1u, 5u, 0xFFFFFFFFu}) {
+        xdk::Range write;
+        CHECK(xdk::CrtMbtowcPlan(to, source, count, write) && write.at == to && write.size == (to ? 2u : 0u));
+        CHECK(xdk::CrtMbtowc(p.a, to, source, count, r3) && r3 == (byte ? 1u : 0u) && r3 == xdk::reference::Mbtowc(p.b, to, source, count));
+        if (to) CHECK(p.native[to] == 0 && p.native[to + 1] == byte);
+      }
+      xdk::Range write;
+      CHECK(xdk::CrtMbtowcPlan(to, source, 0, write) && write.size == 0 && xdk::CrtMbtowcPlan(to, 0, 4, write) && write.size == 0);
+      CHECK(xdk::CrtMbtowc(p.a, to, source, 0, r3) && r3 == 0 && xdk::reference::Mbtowc(p.b, to, source, 0) == 0);
+      CHECK(xdk::CrtMbtowc(p.a, to, 0, 4, r3) && r3 == 0 && xdk::reference::Mbtowc(p.b, to, 0, 4) == 0);
+    }
+    CHECK(p.Same(dest, dest + 2));
+  }
+  CHECK(p.SameEverywhere());
+  // Strings in the GPU's register window, a destination that is not plain memory: declined.
+  const Memory nowhere{};
+  CHECK(!xdk::CrtWcscmp(nowhere, 0x7FC80000, 0x1000, r3) && !xdk::CrtStrlen(nowhere, 0x7F000000, r3));
+  CHECK(!xdk::CrtStrcmp(nowhere, 0x7FFFFFFF, 0x1000, r3) && !xdk::CrtMbtowc(nowhere, 0x1000, 0x7F000010, 1, r3));
+  CHECK(!xdk::CrtMbtowc(p.a, 0x7EFFFFFF, 0x20001, 1, r3) && p.SameEverywhere());
+  // How far plain reads may go from an address: to the register window, to the physical view, to the end.
+  CHECK(xdk::PlainSpan(0) == 0x7F000000u && xdk::PlainSpan(0x7EFFFFFF) == 1 && xdk::PlainSpan(0x7F000000) == 0);
+  CHECK(xdk::PlainSpan(0x7FFFFFFF) == 0 && xdk::PlainSpan(0x80000000) == 0x60000000u && xdk::PlainSpan(0xDFFFFFFF) == 1);
+  CHECK(xdk::PlainSpan(0xE0000000) == 0x20000000u && xdk::PlainSpan(0xFFFFFFFF) == 1);
+  // A string that has not ended where plain memory does: declined (here the last bytes below the register window,
+  // none of them zero, on a memory whose base makes that address the arena's).
+  {
+    std::vector<uint8_t> edge(64, 0x41);
+    Memory at_edge{};
+    at_edge.base = edge.data() + 64 - 0x7F000000ull;
+    CHECK(!xdk::CrtStrlen(at_edge, 0x7F000000 - 64, r3) && !xdk::CrtStrchr(at_edge, 0x7F000000 - 64, 0x42, r3));
+    CHECK(!xdk::CrtStrrchr(at_edge, 0x7F000000 - 64, 0x41, r3) && !xdk::CrtStrcmp(at_edge, 0x7F000000 - 64, 0x7F000000 - 32, r3));
+    CHECK(!xdk::CrtStrncmp(at_edge, 0x7F000000 - 64, 0x7F000000 - 32, 100, r3));
+    CHECK(xdk::CrtStrncmp(at_edge, 0x7F000000 - 64, 0x7F000000 - 32, 32, r3) && r3 == 0);
+    edge[63] = 0;
+    CHECK(xdk::CrtStrlen(at_edge, 0x7F000000 - 64, r3) && r3 == 63 && xdk::CrtStrchr(at_edge, 0x7F000000 - 64, 0, r3) && r3 == 0x7EFFFFFFu);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -442,6 +545,7 @@ int main() {
   StringReads();
   StringCopies();
   MoreStrings();
+  Comparisons();
   SavedRegister();
   for (uint32_t seed = 1; seed <= 4; ++seed) Random(seed, 100000);
   PhysicalView();

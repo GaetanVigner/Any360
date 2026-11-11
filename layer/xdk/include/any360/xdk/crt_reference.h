@@ -163,4 +163,58 @@ inline void Strncat(const Memory& memory, uint32_t r3, uint32_t r4, uint32_t r5)
   *memory.Host(r11) = 0;
 }
 
+// wcscmp: r11 = the first string's halfword less the second's; while it is zero and the second's is not, the next
+// two; then -1, 0 or 1 as r11 is negative, zero or positive.
+inline uint64_t Wcscmp(const Memory& memory, uint32_t r3, uint32_t r4) {
+  const auto half = [&](uint32_t at) { return uint32_t(*memory.Host(at)) << 8 | *memory.Host(at + 1); };
+  int64_t r11;
+  for (;;) {
+    r11 = int64_t(half(r3));
+    const int64_t r10 = int64_t(half(r4));
+    r11 = r11 - r10;
+    if (r11 != 0 || r10 == 0) break;
+    r4 += 2;
+    r3 += 2;
+  }
+  if (r11 < 0) return uint64_t(int64_t(-1));
+  return r11 > 0 ? 1 : 0;
+}
+
+// strlen, the loop of bytes: r3 walks to past the terminator; r3 = the low half of (r3 - r11 - 1).
+inline uint64_t Strlen(const Memory& memory, uint32_t r3) {
+  const uint32_t r11 = r3;
+  uint8_t r10;
+  do {
+    r10 = *memory.Host(r3);
+    ++r3;
+  } while (r10 != 0);
+  return uint32_t(r3 - r11 - 1);
+}
+
+// strcmp, the loop of bytes: r3 = r10 - r9 for each pair of bytes, until the first string ends or r3 is not zero.
+inline uint64_t Strcmp(const Memory& memory, uint32_t r3, uint32_t r4) {
+  uint32_t r11 = r3;
+  for (;;) {
+    const int64_t r10 = *memory.Host(r11), r9 = *memory.Host(r4);
+    const int64_t difference = r10 - r9;
+    if (r10 == 0) return uint64_t(difference);
+    ++r11;
+    ++r4;
+    if (difference != 0) return uint64_t(difference);
+  }
+}
+
+// mbtowc: 0 with no source or no count; the byte read; for the terminator, a zero halfword stored when there is a
+// destination, and 0; otherwise the byte stored as a halfword when there is a destination, and 1.
+inline uint64_t Mbtowc(const Memory& memory, uint32_t r3, uint32_t r4, uint32_t r5) {
+  if (r4 == 0 || r5 == 0) return 0;
+  const uint8_t r11 = *memory.Host(r4);
+  if (r11 == 0) {
+    if (r3 != 0) *memory.Host(r3) = 0, *memory.Host(r3 + 1) = 0;
+    return 0;
+  }
+  if (r3 != 0) *memory.Host(r3) = 0, *memory.Host(r3 + 1) = r11;
+  return 1;
+}
+
 }  // namespace any360::xdk::reference

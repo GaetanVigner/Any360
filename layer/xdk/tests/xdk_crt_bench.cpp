@@ -226,6 +226,39 @@ int main(int argc, char** argv) {
          [&](const Call& c) { return uint32_t(xdk::CrtStrncpy(m, scratch + (c.dest & 0xFFFF), c.source, 2 * length + 16)); });
     std::printf("\n");
   }
+  // The string functions bound after those, the same way (tolower, toupper and mbtowc take no time that a length
+  // changes).
+  std::printf("more string functions, ns a call (model -> now):\n%9s | %19s | %19s | %19s | %19s | %19s | %19s | %19s\n",
+              "length", "strrchr", "strlen", "strcmp", "wcscmp", "wcscpy", "wcsncpy", "strncat");
+  for (uint32_t length : {4u, 16u, 64u, 256u, 2048u}) {
+    std::vector<Call> calls = CallsOfSize(2 * length + 2, 90 + length);
+    for (const Call& c : calls) {
+      for (uint32_t i = 0; i < 2 * length; ++i) arena[c.dest + i] = arena[c.source + i] = uint8_t(1 + (i * 7 + c.dest) % 250);
+      arena[c.dest + 2 * length] = arena[c.dest + 2 * length + 1] = 0;
+      arena[c.source + 2 * length] = arena[c.source + 2 * length + 1] = 0;
+    }
+    const uint32_t scratch = kStack - (1u << 20);
+    const auto pair = [&](auto&& model, auto&& now) {
+      const double slow = Fastest(calls, std::min(repeats, 3u), model), fast = Fastest(calls, repeats, now);
+      std::printf(" %8.2f -> %7.2f |", slow, fast);
+    };
+    std::printf("%9u |", length);
+    pair([&](const Call& c) { return uint32_t(xdk::reference::Strrchr(m, c.dest, 0xFB)); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtStrrchr(m, c.dest, 0xFB, r3); return uint32_t(r3); });
+    pair([&](const Call& c) { return uint32_t(xdk::reference::Strlen(m, c.dest)); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtStrlen(m, c.dest, r3); return uint32_t(r3); });
+    pair([&](const Call& c) { return uint32_t(xdk::reference::Strcmp(m, c.dest, c.source)); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtStrcmp(m, c.dest, c.source, r3); return uint32_t(r3); });
+    pair([&](const Call& c) { return uint32_t(xdk::reference::Wcscmp(m, c.dest, c.source)); },
+         [&](const Call& c) { uint64_t r3 = 0; xdk::CrtWcscmp(m, c.dest, c.source, r3); return uint32_t(r3); });
+    pair([&](const Call& c) { xdk::reference::Wcscpy(m, scratch + (c.dest & 0xFFFE), c.source); return 1u; },
+         [&](const Call& c) { return uint32_t(xdk::CrtWcscpy(m, scratch + (c.dest & 0xFFFE), c.source)); });
+    pair([&](const Call& c) { xdk::reference::Wcsncpy(m, scratch + (c.dest & 0xFFFE), c.source, length + 8); return 1u; },
+         [&](const Call& c) { return uint32_t(xdk::CrtWcsncpy(m, scratch + (c.dest & 0xFFFE), c.source, length + 8)); });
+    pair([&](const Call& c) { arena[scratch + (c.dest & 0xFFFF)] = 0; xdk::reference::Strncat(m, scratch + (c.dest & 0xFFFF), c.source, 2 * length); return 1u; },
+         [&](const Call& c) { arena[scratch + (c.dest & 0xFFFF)] = 0; return uint32_t(xdk::CrtStrncat(m, scratch + (c.dest & 0xFFFF), c.source, 2 * length)); });
+    std::printf("\n");
+  }
 
   // Each title's mix, three different draws of it; then all of them together (what a change is judged on).
   std::printf("the titles' mixes, sizes in random order (ns a call):\n");

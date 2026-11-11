@@ -82,8 +82,8 @@ per title, the native function is shared, and the check in game is run again for
 
 ## State
 
-Five functions that copy and fill, the same code in the three titles at hand, then ten string functions (below).
-Unit tests: `xdk_crt_tests` (1,248,176 checks) and `xdk_xapi_tests` (1,772,293 checks).
+Five functions that copy and fill, the same code in the three titles at hand, then sixteen more of the C runtime
+and XAPI (below). Unit tests: `xdk_crt_tests` (1,281,216 checks) and `xdk_xapi_tests` (1,780,296 checks).
 
 | Function | Library | Handler | Declines | Test Drive Unlimited | Crackdown | The Simpsons Game |
 |---|---|---|---|---|---|---|
@@ -132,6 +132,74 @@ ones to their own code and the others native, to be halved until one is left. `t
 writing them itself (a replacement gives r3 and the memory, not what the function's code happened to leave in
 r8 or cr0); for the functions bound here it finds only instructions that do nothing (`mr r8,r8`).
 
+### The comparisons, mbtowc and the last error (2026-11-11)
+
+Six more, from the functions that call nothing among those that are the same instructions in the three titles
+(172 of the 602), most call sites first. Models and unit tests as the others; `xdk_crt_bench` has a
+second table for every string function that reads or writes a length.
+
+| Function | Library | Handler | Declines | Test Drive Unlimited | Crackdown | The Simpsons Game |
+|---|---|---|---|---|---|---|
+| `wcscmp` | CRT | `CrtWcscmp` | a string that reaches the register window | not called: not bound | bound: 9,442,359 calls | bound: 2 |
+| `strlen`, a loop of bytes | a library next to the CRT | `CrtStrlen` | a string that does not end in plain memory | not called: not bound | bound: 15 | not called: not bound |
+| `strcmp`, a loop of bytes | the same | `CrtStrcmp` | the same | bound: 9,387 | not called: not bound | not called: not bound |
+| `mbtowc` (the "C" locale) | CRT | `CrtMbtowc` | a source in the register window, a destination that is not plain memory | not called: not bound | bound: 110,633 | not called: not bound |
+| `GetLastError` | XAPI | `XapiGetLastError` | a control region or a thread that is not plain memory | checked: 171,899; not bound | checked: 73,195; not bound | checked: 4,819; not bound |
+| `SetLastError` | XAPI | `XapiSetLastError` | the same | checked: 171,972; not bound | checked: 70,297; not bound | checked: 50,734; not bound |
+
+The check in game (every call both ways, 0 different): Test Drive Unlimited 5.0 M calls, Crackdown 46 M (in the
+city), The Simpsons Game 151 M (two minutes of a level). `strchr`, `strncmp` and `strrchr`, changed that day (the
+span, below), were in those runs again.
+
+The C runtime's own `strlen` and `strcmp` are not the same instructions in the three titles; the two here are C
+loops a library of the three carries (its name is not known; what they do is plain).
+
+`GetLastError` and `SetLastError` are five instructions each. Checked, they are right; measured, they gain nothing
+as host routines (below): the call through the binding costs what the loads cost. They are in `xapi.h` with their
+models and tests and bound in no title. `mbtowc`, `tolower` and `toupper` gain nothing either (1.0x) and lose
+nothing: they stay bound where they were checked.
+
+### The measure in game, the string functions and these (2026-11-11)
+
+`--any360_xdk_bench=true`, the function's own code against the host routine, nanoseconds a call (calls):
+
+| Function | Test Drive Unlimited | Crackdown | The Simpsons Game |
+|---|---|---|---|
+| `strchr` | 21.8 -> 8.7 (2.5x), 911 k | 22.6 -> 14.5 (1.6x), 46.5 k | 14.0 -> 11.1 (1.3x), 1.7 k |
+| `strrchr` | 152 -> 53 (2.9x), 80 | 55.9 -> 29.8 (1.9x), 1.3 k | 88 -> 43 (2.0x), 36 |
+| `strncmp` | 13.8 -> 9.9 (1.4x), 33.7 k | 16.0 -> 14.0 (1.1x), 15.3 k | 49 -> 35 (1.4x), 52 |
+| `strncpy` | 95 -> 52 (1.8x), 8.0 k | 99.8 -> 21.9 (4.6x), 55.3 k | 198 -> 49 (4.1x), 253 |
+| `strncat` | 34.8 -> 19.2 (1.8x), 538 | 121 -> 83 (1.4x), 104 | 48.7 -> 35.6 (1.4x), 36 |
+| `wcslen` | 171 -> 104 (1.6x), 253 | 32.4 -> 28.9 (1.1x), 306 k | |
+| `wcscpy` | 2 calls | 42.6 -> 31.2 (1.4x), 11.0 k | |
+| `wcsncpy` | | 79.4 -> 24.6 (3.2x), 5.1 k | |
+| `wcscmp` | | 12.8 -> 9.5 (1.3x), 9.54 M | 2 calls |
+| `strlen` (bytes) | | 108 -> 68 (1.6x), 15 | |
+| `strcmp` (bytes) | 39.0 -> 10.2 (3.8x), 8.7 k | | |
+| `tolower` | 8.3 -> 7.8 (1.1x), 4.7 k | 8.0 -> 7.7 (1.0x), 581 k | |
+| `toupper` | 7.9 -> 7.7 (1.0x), 2.1 k | | |
+| `mbtowc` | | 11.2 -> 11.2 (1.0x), 135 k | |
+| `GetLastError` | 7.7 -> 7.8 (1.0x), 172 k | 15.3 -> 14.4 (1.1x), 80 k | 48.9 -> 91.8 (0.5x), 2.0 k |
+| `SetLastError` | 7.9 -> 8.5 (0.9x), 172 k | 13.5 -> 13.9 (1.0x), 77 k | 49.9 -> 72.5 (0.7x), 36 k |
+
+About 8 ns is what a call costs to time at all. The one function here that a title calls much is `wcscmp` in
+Crackdown (53,000 calls a second in the city): 1.3x of 12.8 ns, about 0.2% of one thread. The Simpsons Game's
+figures for the last error were taken with one count for all functions deciding which side runs first; two
+functions always called one after the other may each have kept the same place. The order is by function now
+(not measured again).
+
+### What the benchmark changed: one test of the memory a string, not one a byte
+
+The functions that read a string a byte at a time tested every byte for the GPU's register window. `xdk_crt_bench`
+(the table of the string functions by length) had them 1.2 to 1.3 times slower than their own models: `strchr`
+51 ns against 47 for 64 bytes, `strlen` 67 against 55, `strcmp` 35 against 29. `PlainSpan(address)` says once how
+many bytes from an address are plain memory under one host pointer (to the register window, to the physical view,
+to the end of the address space); the function reads that far with no other test, and a string that has not
+ended there is left to the function's own code. After: `strchr` 31 ns, `strcmp` 19, `strncmp` 23 (was 32),
+`strrchr` 52 (was 71), and `strlen`, which is then the host's search for a zero byte, 5.8 ns (131 ns for 2,048
+bytes against 1,685 for its model). Unit tests: the spans at each boundary, and strings that have not ended at
+the window's edge, declined.
+
 `memmove` and the forward copy are the same instructions in the three titles; the vector copy is three builds of
 the same steps (other registers, the same tests), read in each. Its name is not in the titles: it is the function
 next to XAPI that copies 16-byte vectors, asks for the source's cache lines ahead and zeroes the destination's
@@ -169,6 +237,22 @@ What the check found that the unit tests had not: `memcpy` saves the 64 bits of 
 stack pointer, and Test Drive Unlimited calls it with a register whose high half is not zero (13,856 calls in
 13.7 M). The model had the high half as zero, so the tests passed on a wrong model. The model, the function and a
 unit test (`SavedRegister`) now have it.
+
+Two things the check itself got wrong, found on 2026-11-11 with Crackdown in its city and The Simpsons Game in a
+level, and how it runs since:
+
+- It ran the function's own code, put the destination back as it was, then ran the replacement. For an instant
+  the destination held its old bytes again. A title fills a structure on one thread while another draws it: The
+  Simpsons Game crashed 37 seconds into a level, every call verified and none different, its main thread reading a
+  pointer that was gone again. Most calls read nothing of what they write (fills, copies whose source is apart);
+  for those the replacement now runs first on the memory as it is and the function's own code over it, and what
+  they write never goes back. The few others (a copy onto its own source, `strncat`'s terminator) still have the
+  destination put back between the sides. The same level, 151 M calls: no crash. That the bytes put back were the
+  cause is what the evidence points to, not proven.
+- Two sides that differ are run again on the same input, three times at most. A function that is wrong for an
+  input is wrong each time; when the sides then agree, another thread wrote the source or the destination between
+  them. Crackdown's vector copy differed 3 times in 2.0 M calls (16 and 12 bytes copied from globals of the
+  image): run again, all three agreed, in two runs. The log counts those calls apart.
 
 The bytes next to a destination changed during a few calls (Test Drive Unlimited: 254 in 3 M while `memcpy`'s own
 code ran and 139 while the native one ran, all to one 256-byte buffer; The Simpsons Game: 80 and 56 in 83 M):
@@ -245,6 +329,8 @@ and `memset` behind the first tests of plain memory) against the code as it is:
 - The Simpsons Game called `XamContentCreate` with an empty file name and "create always": the content path was
   then its type's folder, emptied with every save in it. A package with an empty name is refused now
   (`Xam::ContentPath`).
+- The check in game crashed a title by itself (the bytes it put back between its two sides) and called another
+  thread's write a difference: "The check in game", above.
 - The Simpsons Game's menus run at 22 frames a second instead of 30 on some launches, the window shown (30 every
   time minimized): the renderer's thread waits in the presentation of each frame. Not looked into here: it is
   presentation, not a native function.

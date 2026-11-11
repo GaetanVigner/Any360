@@ -123,8 +123,40 @@ void Random(uint32_t seed, uint32_t count) {
 
 }  // namespace
 
+// GetLastError and SetLastError on a control region and a thread made up in the arena: the field read and written,
+// nothing while a DPC runs, the calls declined when either is not plain memory.
+void LastError() {
+  Pair p(91);
+  std::mt19937 rng(92);
+  const auto put = [&](uint32_t at, uint32_t value) {
+    for (uint32_t i = 0; i < 4; ++i) p.native[at + i] = p.model[at + i] = uint8_t(value >> (24 - 8 * i));
+  };
+  uint64_t r3 = 0;
+  for (uint32_t round = 0; round < 2000; ++round) {
+    const uint32_t pcr = 0x4000 + (rng() % 0x400) * 4, thread = 0x20000 + (rng() % 0x1000) * 4;
+    const uint32_t dpc = round % 5 == 0 ? 1 + rng() % 7 : 0, error = rng();
+    put(pcr + 336, dpc);
+    put(pcr + 256, thread);
+    put(thread + 352, rng());
+    xdk::Range write;
+    CHECK(xdk::XapiSetLastErrorPlan(p.a, pcr, write) && (dpc ? write.size == 0 : write.at == thread + 352 && write.size == 4));
+    CHECK(xdk::XapiSetLastError(p.a, pcr, error));
+    xdk::reference::SetLastError(p.b, pcr, error);
+    CHECK(p.Same(thread + 352, thread + 356));
+    CHECK(xdk::XapiGetLastError(p.a, pcr, r3) && r3 == xdk::reference::GetLastError(p.b, pcr) && r3 == (dpc ? 0u : error));
+  }
+  CHECK(p.SameEverywhere());
+  // A thread in the GPU's register window, a control region that reaches it: declined, nothing written.
+  put(0x4000 + 336, 0);
+  put(0x4000 + 256, 0x7F000000);
+  CHECK(!xdk::XapiGetLastError(p.a, 0x4000, r3) && !xdk::XapiSetLastError(p.a, 0x4000, 5) && p.SameEverywhere());
+  const Memory nowhere{};
+  CHECK(!xdk::XapiGetLastError(nowhere, 0x7EFFFF00, r3) && !xdk::XapiSetLastError(nowhere, 0x7EFFFF00, 5));
+}
+
 int main() {
   Predicates();
+  LastError();
   Apart();
   Overlapping();
   Declined();

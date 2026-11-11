@@ -14,7 +14,9 @@
 //   any360_xdk_verify   each call runs the function's own code first, then the replacement on the same input, and
 //                       compares what both wrote and returned, and what either wrote around the destination
 //                       (outside it: nothing should be); a difference is logged and the function's own result
-//                       kept. Run once, in game, for every newly bound function.
+//                       kept. Two sides that differ are run again on the same input: when they then agree, another
+//                       thread wrote meanwhile, and the call is counted apart. Run once, in game, for every newly
+//                       bound function.
 //   any360_xdk_skip     the names of bound functions that run their own code, the others native ("strncpy,wcscpy"):
 //                       to find which function a title's trouble comes from, by halves.
 //   any360_xdk_bench    each call is timed both ways (the function's own code and the replacement, in alternating
@@ -32,7 +34,8 @@ namespace any360::host::rexglue::xdk {
 
 enum class Function : uint32_t {
   kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy,
-  kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kCount
+  kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
+  kGetLastError, kSetLastError, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -207,6 +210,81 @@ inline void CrtStrncat(PPCContext& ctx, uint8_t* base, GuestFunction original) {
     return;
   }
   RunSlow(Function::kStrncat, ctx, base, original);
+}
+
+// wcscmp: r3 and r4 strings of 16-bit elements; returns -1, 0 or 1.
+inline void CrtWcscmp(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t r3;
+    if (any360::xdk::CrtWcscmp(g_memory, ctx.r3.u32, ctx.r4.u32, r3)) [[likely]] {
+      ctx.r3.u64 = r3;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kWcscmp, ctx, base, original);
+}
+// strlen and strcmp, the builds that are loops of bytes: r3 string (and r4); return the length, the difference of
+// the first bytes that differ.
+inline void CrtStrlen(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t r3;
+    if (any360::xdk::CrtStrlen(g_memory, ctx.r3.u32, r3)) [[likely]] {
+      ctx.r3.u64 = r3;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kStrlen, ctx, base, original);
+}
+inline void CrtStrcmp(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t r3;
+    if (any360::xdk::CrtStrcmp(g_memory, ctx.r3.u32, ctx.r4.u32, r3)) [[likely]] {
+      ctx.r3.u64 = r3;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kStrcmp, ctx, base, original);
+}
+// mbtowc: r3 destination (or 0), r4 source, r5 count; returns 1 for a character, 0 for none or the terminator.
+inline void CrtMbtowc(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t r3;
+    if (any360::xdk::CrtMbtowc(g_memory, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, r3)) [[likely]] {
+      ctx.r3.u64 = r3;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kMbtowc, ctx, base, original);
+}
+// XAPI's GetLastError (returns the thread's last error) and SetLastError (r3 the error, left as it came): the
+// thread is the one the control region in r13 names.
+inline void XapiGetLastError(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t r3;
+    if (any360::xdk::XapiGetLastError(g_memory, ctx.r13.u32, r3)) [[likely]] {
+      ctx.r3.u64 = r3;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kGetLastError, ctx, base, original);
+}
+inline void XapiSetLastError(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    if (any360::xdk::XapiSetLastError(g_memory, ctx.r13.u32, ctx.r3.u32)) [[likely]] return;
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kSetLastError, ctx, base, original);
 }
 
 // Calls verified against the functions' own code and found different, since the start (any360_xdk_verify).

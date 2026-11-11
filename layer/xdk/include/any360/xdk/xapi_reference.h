@@ -85,4 +85,27 @@ inline void XMemCpy(const Memory& memory, uint32_t dest, uint32_t source, uint32
   if (left) copy(to, from, left);
 }
 
+// GetLastError: r11 = the word at r13 + 336; not zero, 0; otherwise r11 = the word at r13 + 256 and r3 = the word at
+// r11 + 352. SetLastError: the same test, then r3 stored at r11 + 352.
+inline uint64_t GetLastError(const Memory& memory, uint32_t r13) {
+  const auto word = [&](uint32_t at) {
+    return uint32_t(*memory.Host(at)) << 24 | uint32_t(*memory.Host(at + 1)) << 16 | uint32_t(*memory.Host(at + 2)) << 8 |
+           *memory.Host(at + 3);
+  };
+  uint32_t r11 = word(r13 + 336);
+  if (r11 != 0) return 0;
+  r11 = word(r13 + 256);
+  return word(r11 + 352);
+}
+inline void SetLastError(const Memory& memory, uint32_t r13, uint32_t r3) {
+  const auto word = [&](uint32_t at) {
+    return uint32_t(*memory.Host(at)) << 24 | uint32_t(*memory.Host(at + 1)) << 16 | uint32_t(*memory.Host(at + 2)) << 8 |
+           *memory.Host(at + 3);
+  };
+  uint32_t r11 = word(r13 + 336);
+  if (r11 != 0) return;
+  r11 = word(r13 + 256);
+  for (uint32_t i = 0; i < 4; ++i) *memory.Host(r11 + 352 + i) = uint8_t(r3 >> (24 - 8 * i));
+}
+
 }  // namespace any360::xdk::reference

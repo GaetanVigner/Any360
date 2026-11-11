@@ -226,6 +226,17 @@ inline bool CrtMemmove(const Memory& memory, uint64_t dest_register, uint32_t so
 // only read give the value the function leaves in r3, all 64 bits of it, and decline (nothing is written, by
 // nature) a string that reaches the GPU's register window.
 inline bool IsRegisterWindow(uint32_t address) { return address - 0x7F000000u < 0x01000000u; }
+// The bytes from `address` on that are plain memory under one host pointer: up to the register window, to the
+// physical view at 0xE0000000 or to the end of the address space; none inside the window. The functions that read
+// a string a byte at a time ask once and read that far without a test at every byte (xdk_crt_bench: with the test
+// they were 1.2 to 1.3 times slower than their models); a string that has not ended there is left to the
+// function's own code.
+inline uint32_t PlainSpan(uint32_t address) {
+  if (address < 0x7F000000u) return 0x7F000000u - address;
+  if (address < 0x80000000u) return 0;
+  if (address < 0xE0000000u) return 0xE0000000u - address;
+  return uint32_t(0x100000000ull - address);
+}
 
 // wcslen: the 16-bit elements before the first zero one.
 inline bool CrtWcslen(const Memory& memory, uint32_t string, uint64_t& r3) {
@@ -244,11 +255,13 @@ inline bool CrtWcslen(const Memory& memory, uint32_t string, uint64_t& r3) {
 // a value above 255 is never found), of the terminator when `character` is 0, or 0. `string_register` is r3 whole:
 // the address found keeps its high half.
 inline bool CrtStrchr(const Memory& memory, uint64_t string_register, uint32_t character, uint64_t& r3) {
-  for (uint32_t at = uint32_t(string_register);; ++at) {
-    if (IsRegisterWindow(at)) return false;
-    const uint8_t byte = *memory.Host(at);
+  const uint32_t string = uint32_t(string_register), span = PlainSpan(string);
+  if (!span) return false;
+  const uint8_t* bytes = memory.Host(string);
+  for (uint32_t i = 0; i < span; ++i) {
+    const uint8_t byte = bytes[i];
     if (character ? byte == character : byte == 0) {
-      r3 = (string_register & 0xFFFFFFFF00000000ull) | at;
+      r3 = (string_register & 0xFFFFFFFF00000000ull) | (string + i);
       return true;
     }
     if (!byte) {
@@ -256,6 +269,7 @@ inline bool CrtStrchr(const Memory& memory, uint64_t string_register, uint32_t c
       return true;
     }
   }
+  return false;
 }
 
 // strncmp: the difference of the first two bytes that differ within `count` bytes (a signed 32-bit count: none
@@ -263,12 +277,16 @@ inline bool CrtStrchr(const Memory& memory, uint64_t string_register, uint32_t c
 inline bool CrtStrncmp(const Memory& memory, uint32_t left, uint32_t right, uint32_t count, uint64_t& r3) {
   r3 = 0;
   if (int32_t(count) <= 0) return true;
-  for (uint32_t i = 0;; ++i) {
-    if (IsRegisterWindow(left + i) || IsRegisterWindow(right + i)) return false;
-    const uint8_t a = *memory.Host(left + i), b = *memory.Host(right + i);
-    r3 = uint64_t(int64_t(a) - int64_t(b));
-    if (i + 1 == count || !a || a != b) return true;
+  const uint32_t left_span = PlainSpan(left), right_span = PlainSpan(right);
+  const uint32_t span = left_span < right_span ? left_span : right_span;
+  if (!span) return false;
+  const uint8_t* a = memory.Host(left);
+  const uint8_t* b = memory.Host(right);
+  for (uint32_t i = 0; i < span; ++i) {
+    r3 = uint64_t(int64_t(a[i]) - int64_t(b[i]));
+    if (i + 1 == count || !a[i] || a[i] != b[i]) return true;
   }
+  return false;
 }
 
 // strncpy: the source's bytes up to its terminator, `count` at most, then zeros up to `count` bytes; a byte at a
@@ -295,13 +313,16 @@ inline bool CrtStrncpy(const Memory& memory, uint32_t dest, uint32_t source, uin
 // strchr.
 inline bool CrtStrrchr(const Memory& memory, uint64_t string_register, uint32_t character, uint64_t& r3) {
   const uint64_t high = string_register & 0xFFFFFFFF00000000ull;
+  const uint32_t string = uint32_t(string_register), span = PlainSpan(string);
+  if (!span) return false;
+  const uint8_t* bytes = memory.Host(string);
   r3 = 0;
-  for (uint32_t at = uint32_t(string_register);; ++at) {
-    if (IsRegisterWindow(at)) return false;
-    const uint8_t byte = *memory.Host(at);
-    if (character ? byte == character : byte == 0) r3 = high | at;
+  for (uint32_t i = 0; i < span; ++i) {
+    const uint8_t byte = bytes[i];
+    if (character ? byte == character : byte == 0) r3 = high | (string + i);
     if (!byte) return true;
   }
+  return false;
 }
 
 // tolower and toupper of the "C" locale, on the whole register: 32 added to (taken from) r3 when its low half is
@@ -378,6 +399,79 @@ inline bool CrtStrncat(const Memory& memory, uint32_t dest, uint32_t source, uin
   uint8_t* to = memory.Host(write.at);
   std::memcpy(to, memory.Host(source), write.size - 1);
   to[write.size - 1] = 0;
+  return true;
+}
+
+// wcscmp: -1, 0 or 1 in the whole register, as the first 16-bit elements that differ compare (unsigned), 0 when the
+// strings end together.
+inline bool CrtWcscmp(const Memory& memory, uint32_t left, uint32_t right, uint64_t& r3) {
+  for (uint32_t i = 0;; i += 2) {
+    if (IsRegisterWindow(left + i) || IsRegisterWindow(right + i)) return false;
+    const uint8_t* a = memory.Host(left + i);
+    const uint8_t* b = memory.Host(right + i);
+    const uint32_t x = uint32_t(a[0]) << 8 | a[1], y = uint32_t(b[0]) << 8 | b[1];
+    if (x != y) {
+      r3 = x < y ? ~0ull : 1;
+      return true;
+    }
+    if (!x) {
+      r3 = 0;
+      return true;
+    }
+  }
+}
+
+// strlen and strcmp as loops of bytes: the builds a library of the three titles carries next to its own code (the
+// C runtime's own strlen and strcmp are not the same instructions in the three). strlen: the bytes before the
+// terminator, in the register's low half. strcmp: the difference of the first two bytes that differ, in the whole
+// register, 0 when the strings end together.
+inline bool CrtStrlen(const Memory& memory, uint32_t string, uint64_t& r3) {
+  const uint32_t span = PlainSpan(string);
+  if (!span) return false;
+  const uint8_t* bytes = memory.Host(string);
+  // The host's search for the terminator: it looks at no byte past the first zero's own aligned block.
+  const void* end = std::memchr(bytes, 0, span);
+  if (!end) return false;
+  r3 = uint32_t(static_cast<const uint8_t*>(end) - bytes);
+  return true;
+}
+inline bool CrtStrcmp(const Memory& memory, uint32_t left, uint32_t right, uint64_t& r3) {
+  const uint32_t left_span = PlainSpan(left), right_span = PlainSpan(right);
+  const uint32_t span = left_span < right_span ? left_span : right_span;
+  const uint8_t* a = memory.Host(left);
+  const uint8_t* b = memory.Host(right);
+  for (uint32_t i = 0; i < span; ++i) {
+    if (a[i] != b[i] || !a[i]) {
+      r3 = uint64_t(int64_t(a[i]) - int64_t(b[i]));
+      return true;
+    }
+  }
+  return false;
+}
+
+// mbtowc of the "C" locale: a byte is a character. With no source or a count of 0, nothing and 0; otherwise the
+// source's first byte as a 16-bit element at `dest` (when there is one) and 1, or 0 for the terminator. Declines a
+// source in the register window and a destination that is not plain memory. The plan says what is written.
+inline bool CrtMbtowcPlan(uint32_t dest, uint32_t source, uint32_t count, Range& write) {
+  write = {dest, 0};
+  if (!source || !count) return true;
+  if (IsRegisterWindow(source)) return false;
+  if (!dest) return true;
+  write.size = 2;
+  return IsPlainMemory(dest, 2);
+}
+inline bool CrtMbtowc(const Memory& memory, uint32_t dest, uint32_t source, uint32_t count, uint64_t& r3) {
+  Range write;
+  if (!CrtMbtowcPlan(dest, source, count, write)) return false;
+  r3 = 0;
+  if (!source || !count) return true;
+  const uint8_t byte = *memory.Host(source);
+  if (dest) {
+    uint8_t* to = memory.Host(dest);
+    to[0] = 0;
+    to[1] = byte;
+  }
+  r3 = byte ? 1 : 0;
   return true;
 }
 
