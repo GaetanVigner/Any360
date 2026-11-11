@@ -300,8 +300,10 @@ bool VulkanRenderer::Initialize() {
       const uint32_t element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
       const uint64_t bytes = uint64_t(r.pitch) * ((r.y + r.height + 31) & ~31u) * element;
       if (base < end && begin < base + bytes) {
-        if (late_resolve_reads_) {
-          if (r.stale) QueueWriteBack(base, r);  // lands once its batch has run: the texture reads the frame before
+        // Late: the texture reads what memory holds, this resolve of a frame or so before, while its new write lands
+        // once its batch has run. Only when memory holds this resolve: else it waits as below.
+        if (late_resolve_reads_ && r.landed.load(std::memory_order_acquire) == r.Signature()) {
+          if (r.stale) QueueWriteBack(base, r);
           continue;
         }
         if (r.stale) {
@@ -3723,7 +3725,14 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   }
   // Textures over the destination are hashed again before their next use (the tiled rows the rectangle reaches).
   if (textures_) {
-    const uint32_t element = is_depth ? 4 : (dest_format == 32 ? 8 : 4);
+    // The destination's texel size: 64-bit formats (k_16_16_16_16 and its float and EXPAND forms, k_32_32 and
+    // k_32_32_FLOAT) and 128-bit ones; with 4 bytes, half of a k_16_16_16_16 resolve stayed stale in a title whose
+    // textures are watched (Call of Duty: Black Ops's HDR bloom).
+    const uint32_t element = is_depth                                                                      ? 4
+                             : dest_format == 26 || dest_format == 29 || dest_format == 32 ||
+                                       dest_format == 34 || dest_format == 37                              ? 8
+                             : dest_format == 35 || dest_format == 38                                      ? 16
+                                                                                                           : 4;
     const uint64_t rows = (uint64_t(y0) + height + 31) & ~uint64_t(31);
     const uint32_t end = uint32_t(std::min<uint64_t>(dest_base + rows * ((dest_pitch + 31) & ~31u) * element, mirror_bytes_));
     textures_->MemoryChanged(dest_base, end);
@@ -3850,6 +3859,7 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
   w.depth = r.image.format == VK_FORMAT_R32_SFLOAT;
   w.float24 = r.float24;
   w.element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+  w.signature = r.Signature();
   if (!r.width || !AcquireReadback(VkDeviceSize(r.width) * r.height * w.element, w.buffer)) {
     return false;
   }
@@ -3992,6 +4002,7 @@ void VulkanRenderer::FinishWriteBacks(Batch& b) {
     CountSwapped(g_swapped.write_backs, uint64_t(w.width) * w.height * element);
     if (textures_) textures_->QueueMemoryChanged(w.base, w.base + w.pitch * ((w.y + w.height + 31) & ~31u) * element);
     GuestMemoryWritten(w.base, w.base + w.pitch * ((w.y + w.height + 31) & ~31u) * element);
+    w.resolved->landed.store(w.signature, std::memory_order_release);
     w.resolved->pending = false;
     ReleaseReadback(w.buffer);
   }

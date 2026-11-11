@@ -417,6 +417,14 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t pitch = 0, endian = 0, x = 0, y = 0, width = 0, height = 0;  // the last resolve's rectangle
     bool stale = false;    // guest memory lacks it (a resolve kept on the GPU only)
     std::atomic<bool> pending{false};  // its write into guest memory is recorded in a batch, done when it has run
+    // What guest memory holds of this destination: the Signature of the last write-back that landed there (0: none).
+    // A late read (late_resolve_reads) is only right when it is this resolve's: a destination two resolves share in
+    // a frame (Call of Duty: Black Ops's shadow depth, then its colour grading table) holds the other one's texels.
+    std::atomic<uint64_t> landed{0};
+    uint64_t Signature() const {
+      return (uint64_t(image.format) * 0x9E3779B97F4A7C15ull) ^ (uint64_t(pitch) << 48 | uint64_t(width) << 32 |
+                                                                  uint64_t(height) << 16 | (x ^ y << 8));
+    }
     bool float24 = false;  // a depth resolve from a D24FS8 surface (written back as float24 words)
     uint32_t scale = 1;    // host texels a guest texel along each axis (colour resolves: the resolution scale)
     Image small;           // a scaled resolve brought to one texel a guest texel for its write-back
@@ -442,6 +450,7 @@ class VulkanRenderer : public gfx::Renderer {
     Resolved* resolved;
     uint32_t base, x, y, width, height, pitch, endian, element;
     bool depth, float24;
+    uint64_t signature;  // the resolve's Signature when queued
   };
   // Batches in flight: each submission keeps what its commands use until the GPU has run it. A completion thread
   // waits for them in order, then does what was to follow each (guest memory writes of resolves, the command

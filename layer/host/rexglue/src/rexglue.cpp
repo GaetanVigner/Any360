@@ -904,7 +904,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
     return false;
   }
   // Textures are checked again only after the CPU writes their memory, as the runtime's own GPU does.
-  if (gfx::vk::TextureCache* textures = binding->renderer->texture_cache()) {
+  if (gfx::vk::TextureCache* textures = binding->renderer->texture_cache(); textures && options.watch_memory) {
     memory->RegisterPhysicalMemoryInvalidationCallback(&MemoryWritten, binding->renderer.get());
     textures->SetMemoryWatch([memory](uint32_t begin, uint32_t end) {
       memory->EnablePhysicalMemoryAccessCallbacks(begin, end - begin, true, false);

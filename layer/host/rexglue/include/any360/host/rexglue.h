@@ -70,6 +70,10 @@ struct GraphicsOptions {
   // time otherwise (Test Drive Unlimited: 105 -> 155 FPS in heavy scenes). Off by default: a title mixing CPU-written
   // and resolved texels in one texture would see them a frame apart.
   bool late_resolve_reads = false;
+  // Textures checked again only once the CPU writes their memory (the runtime's physical memory access callbacks), as
+  // the runtime's own GPU does; off: every texture hashed again each frame (slower; for a title whose memory is
+  // written in ways the watch misses).
+  bool watch_memory = true;
   // The renderer on a thread of its own (gfx::AsyncRenderer): the command processor reads the stream meanwhile.
   bool async_renderer = true;
   // Threads recording draws (secondary command buffers): -1 as many as the machine leaves (AutoRecordThreads), 0 none.
