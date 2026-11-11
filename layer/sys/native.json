@@ -8,6 +8,7 @@
   "memset",
   "memmove",
   "XMemCpy",
+  "D3D GPU wait step",
   "strchr",
   "strncmp",
   "strncpy",

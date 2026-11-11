@@ -15,6 +15,11 @@ target_link_libraries(xdk_xapi_tests PRIVATE any360_xdk)
 target_compile_options(xdk_xapi_tests PRIVATE -Wall -Wextra)
 add_test(NAME xdk_xapi_tests COMMAND xdk_xapi_tests)
 
+add_executable(xdk_d3d_tests tests/xdk_d3d_tests.cpp)
+target_link_libraries(xdk_d3d_tests PRIVATE any360_xdk)
+target_compile_options(xdk_d3d_tests PRIVATE -Wall -Wextra)
+add_test(NAME xdk_d3d_tests COMMAND xdk_d3d_tests)
+
 # Not tests: they print timings (xdk_crt_bench [repeats], xdk_xapi_bench [repeats]).
 add_executable(xdk_crt_bench tests/xdk_crt_bench.cpp)
 target_link_libraries(xdk_crt_bench PRIVATE any360_xdk)

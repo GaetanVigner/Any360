@@ -24,9 +24,11 @@
 //                       the title's own mix of sizes and what the replacement really saves.
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 
 #include "any360/xdk/crt.h"
+#include "any360/xdk/d3d.h"
 #include "any360/xdk/xapi.h"
 #include "rexglue.h"
 
@@ -353,6 +355,34 @@ ANY360_XDK_DOUBLE_TO_R3(CrtGetExp, kGetExp)
 ANY360_XDK_DOUBLE_TO_F1(CrtSetExp, kSetExp)
 ANY360_XDK_DOUBLE_TO_F1(CrtAddExp, kAddExp)
 #undef ANY360_XDK_DOUBLE_TO_F1
+
+// The D3D runtime's GPU wait step (any360/xdk/d3d.h): r3 the wait's state; returns nonzero while the wait goes on.
+// Its own code runs; then, while the graphics are bound to Any360 and any360_d3d_wait_sleep is on, the thread sleeps
+// until the GPU's progress count moves (or any360_d3d_wait_longest_us passes) instead of going straight back to its
+// caller's look. Not bound: the step is the function's own code alone (the runtime's GPU has its own progress).
+struct D3dWaitSettings {
+  bool sleeps = false;
+  uint32_t longest_us = 0;
+};
+const D3dWaitSettings& D3dWait();
+// Steps run, slept, and slept to their time-out: counted, logged every few seconds.
+void CountD3dWait(bool slept, bool moved);
+inline void D3dGpuWaitStep(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  original(ctx, base);
+  if (!ctx.r3.u32) return;
+  const D3dWaitSettings& settings = D3dWait();
+  if (!settings.sleeps || !GraphicsBound()) {
+    CountD3dWait(false, false);
+    return;
+  }
+  struct Gpu {
+    uint64_t Progress() { return GpuProgress(); }
+    void WaitProgress(uint64_t seen, std::chrono::microseconds longest) { WaitGpuProgress(seen, uint32_t(longest.count())); }
+  } gpu;
+  static thread_local any360::xdk::D3dGpuWait wait;
+  const bool moved = wait.Sleep(gpu, std::chrono::microseconds(settings.longest_us));
+  CountD3dWait(true, moved);
+}
 
 // Calls verified against the functions' own code and found different, since the start (any360_xdk_verify).
 struct Counters {

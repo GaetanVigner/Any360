@@ -132,9 +132,10 @@ class CommandProcessor : public sys::GpuBackend {
   // constant memory after such a fence; the GPU reads that memory in place, so the fence must wait for the draws.
   void SetFencesAfterDraws(bool after) { fences_after_draws_ = after; }
   void NotifyProgress();
-  // For the CPU side: a count that moves whenever the GPU's progress may have changed what the guest reads (the
-  // read pointer written back, a fence or memory write, an interrupt), and a wait for it to move, at most `timeout`.
-  // A title's own wait loops (polling the read pointer for ring space) sleep on it instead of spinning.
+  // For the CPU side: a count that moves after every write the guest can see of the GPU's progress (the read
+  // pointer written back, a fence, a memory write, a query's counts, an interrupt's callback), and a wait for it to
+  // move, at most `timeout`. A title's own wait loops (the D3D runtime polling the read pointer or a fence) sleep
+  // on it instead of spinning: a thread that read the count before it looked at its word misses no write.
   uint64_t Progress() const { return progress_.load(std::memory_order_acquire); }
   void WaitProgress(uint64_t seen, std::chrono::microseconds timeout);
 
@@ -239,6 +240,7 @@ class CommandProcessor : public sys::GpuBackend {
       });
     } else {
       action();
+      NotifyProgress();
     }
   }
   uint32_t LoadRaw(uint32_t address) const;

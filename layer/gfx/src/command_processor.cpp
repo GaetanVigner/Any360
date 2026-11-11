@@ -163,6 +163,7 @@ void CommandProcessor::StoreAfterDraws(uint32_t address, std::vector<uint32_t> r
   if (!renderer_ || !(fence ? fences_after_draws_ : writes_after_draws_)) {
     // Now, in stream order.
     for (uint32_t i = 0; i < raw_values.size(); ++i) StoreRaw((address + 4 * i) & 0x1FFFFFFF, raw_values[i]);
+    NotifyProgress();  // a thread of the title may sleep until this write (WaitProgress)
     return;
   }
   uint64_t first;
@@ -686,6 +687,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
         if (ended) {
           StoreRaw(counts + 0, kFakeSampleCount);   // Total_A
           StoreRaw(counts + 16, kFakeSampleCount);  // ZPass_A
+          NotifyProgress();
         }
       }
       break;

@@ -430,6 +430,57 @@ So the processor time is in how threads wait, in Any360's own layers and in the 
 functions. The cycles a thread carries when found at a wait include what it ran just before: the shares above
 are upper bounds for the waits themselves.
 
+The D3D runtime's spin was taken next: "The D3D runtime's GPU wait", below.
+
+### The D3D runtime's GPU wait (2026-11-11)
+
+Every wait of the D3D runtime for the GPU (room in the ring, the end of a frame, a fence, a query) is a loop in
+the caller around one function, the wait's step: eight `db16cyc` pauses, then the device's stop flag, the
+ring's read pointer and the time, and a hang check after about five seconds without progress. It returns nonzero
+while the wait goes on; the caller looks at its word between two steps. On the console the pauses give the
+hardware thread's time to the other one; recompiled they are nothing, and the loop takes a processor for as long
+as the GPU needs. Each of the four titles at hand has exactly one such function, the same steps at device
+offsets of its runtime's version: Test Drive Unlimited `sub_826737B8` (eight callers), The Simpsons Game
+`sub_82452018`, Crackdown `sub_826BBEE0`, Call of Duty: Black Ops `sub_824B3F38`, each in its `XDK D3D runtime`
+range (library) of `titles/<title>/modules.json` (Black Ops has no module map yet).
+
+`any360::xdk::D3dGpuWait` (`layer/xdk/include/any360/xdk/d3d.h`) and its binding
+`any360::host::rexglue::xdk::D3dGpuWaitStep` keep the step's own code. When it says the wait goes on, the
+thread sleeps until the GPU's progress count moves, at most `any360_d3d_wait_longest_us` (2 ms), so the step's
+own checks still run. The count (`CommandProcessor::Progress`) moves after every write the guest can see of the
+GPU: the read pointer written back, fences, memory writes and query counts, in stream order or after the draws,
+and interrupt callbacks; two of those (writes in stream order, the query counts) did not move it before and do
+now. The count a thread sleeps on is the one it read after its previous step, before the caller looked at its
+word again: no write is slept through. `any360_d3d_wait_sleep=false` gives the spin back. While the graphics are
+not bound to Any360 the step is its own code alone.
+
+It is not a replacement that computes the same thing faster, so the rule's check of both sides does not apply.
+What stands for it: `xdk_d3d_tests` (every order of the look, the write and the step on one thread; 20,000 waits
+raced against a writer, with and without other progress; two waiters; a lost wake would show as a wait of five
+seconds), `gfx_cp_tests` (3,000 waits on a memory write and the read pointer, against the command processor
+itself, with and without a renderer: none reaches its time-out), and the titles in play.
+
+Test Drive Unlimited driving, the same build, 30 seconds of `tools/cpu_profile.ps1` each (the two runs on
+different stretches of road):
+
+| | the step spins (`any360_d3d_wait_sleep=false`) | the step sleeps |
+|---|---|---|
+| Frames a second | 30 | 30 |
+| Processors used by the process | 1.86 | 1.31 |
+| The thread that waits | 0.98 of a processor | 0.21 |
+| Steps a second | 23 million | 800 to 1,000, a third of them to the 2 ms time-out |
+| The D3D runtime's share of the cycles | 18.6% | 1.3% |
+
+The spinning run counted its steps with a look at the clock each (44% of the thread, which spins either way);
+the count now looks at the clock once every 4,096 steps. The profile of the morning (45 s, before the waits of
+any360::sys changed) had 2.23 processors with the step spinning.
+
+The Simpsons Game's port already slept in this step on Any360's progress (its `ring_wait.cpp`, the same steps
+with 1 ms); it now calls the shared binding (menus at 30 frames a second, 60 to 100 steps a second, all slept).
+Crackdown's port has its own hook on the step (`gpu_fence_wait.cpp`): it blocks on the very word the GPU writes
+for the three waits that wait for one, and keeps the others spinning; left as it is. Black Ops does not bind it
+yet.
+
 ### Found on the way
 
 - Crackdown crashed after 40 to 55 seconds with a gamepad connected and the input group on `any360::sys`: its

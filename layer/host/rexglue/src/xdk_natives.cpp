@@ -37,6 +37,13 @@ REXCVAR_DEFINE_BOOL(any360_xdk_bench, false, "Kernel",
                     "Any360: every call of a bound library function is timed both ways, its own code and the host "
                     "routine; the log gets the calls and nanoseconds of each by size (slow)");
 
+REXCVAR_DEFINE_BOOL(any360_d3d_wait_sleep, true, "GPU",
+                    "Any360: the D3D runtime's GPU wait step a title binds sleeps until the GPU moves on (while the "
+                    "graphics are on Any360); off: it spins as its recompiled code does");
+REXCVAR_DEFINE_INT32(any360_d3d_wait_longest_us, 2000, "GPU",
+                     "Any360: the longest the D3D GPU wait step sleeps before its own checks run again (the device "
+                     "stopping, the GPU hang), in microseconds");
+
 namespace any360::host::rexglue::xdk {
 
 Mode g_mode = Mode::kUnresolved;
@@ -600,5 +607,37 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
 }
 
 Counters GetCounters() { return {g_verified.load(), g_different.load()}; }
+
+const D3dWaitSettings& D3dWait() {
+  static const D3dWaitSettings settings = [] {
+    D3dWaitSettings s;
+    s.sleeps = REXCVAR_GET(any360_d3d_wait_sleep);
+    s.longest_us = uint32_t(std::clamp(REXCVAR_GET(any360_d3d_wait_longest_us), 50, 100000));
+    REXLOG_INFO("Any360 d3d: the GPU wait step {}", s.sleeps ? "sleeps until the GPU moves (at most " +
+                                                                    std::to_string(s.longest_us) + " us)"
+                                                              : "spins (any360_d3d_wait_sleep off)");
+    return s;
+  }();
+  return settings;
+}
+
+namespace {
+std::atomic<uint64_t> g_wait_steps{0}, g_wait_slept{0}, g_wait_timed_out{0};
+std::atomic<int64_t> g_wait_next_report{0};
+}  // namespace
+
+void CountD3dWait(bool slept, bool moved) {
+  const uint64_t steps = g_wait_steps.fetch_add(1, std::memory_order_relaxed) + 1;
+  // A step that spins looks at the clock once every 4096 (millions of steps a second: the clock would be most of them).
+  if (!slept && (steps & 4095)) return;
+  if (slept) g_wait_slept.fetch_add(1, std::memory_order_relaxed);
+  if (slept && !moved) g_wait_timed_out.fetch_add(1, std::memory_order_relaxed);
+  const int64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  int64_t next = g_wait_next_report.load(std::memory_order_relaxed);
+  if (now < next || !g_wait_next_report.compare_exchange_strong(next, now + 10)) return;
+  if (next == 0) return;  // the first step: the report starts in 10 s
+  const uint64_t counted = g_wait_steps.exchange(0), sleeps = g_wait_slept.exchange(0), timed_out = g_wait_timed_out.exchange(0);
+  REXLOG_INFO("Any360 d3d: GPU wait steps in 10 s: {} ({} slept, {} of them to the time-out)", counted, sleeps, timed_out);
+}
 
 }  // namespace any360::host::rexglue::xdk

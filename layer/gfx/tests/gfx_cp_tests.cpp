@@ -318,6 +318,39 @@ void Waits() {
   CHECK(!cp.Idle());
 }
 
+// A title's thread waiting for the GPU the way the D3D runtime's waits do once they sleep (any360/xdk/d3d.h): it
+// looks at its word (a memory write, then the read pointer written back), and sleeps on the progress count it read
+// before that look. Every write the guest can see moves the count after it: no wait reaches its time-out (seconds
+// here), with the writes in stream order (no renderer) and after the draws (a renderer).
+void GuestWaits(bool with_renderer) {
+  CommandProcessor cp(g_physical.data());
+  Ring ring{cp};
+  Recorder recorder;
+  if (with_renderer) cp.SetRenderer(&recorder);
+  Fresh(cp, ring);
+  cp.Start();
+  const uint32_t marker = kData + 0x200;
+  uint64_t seen = ~uint64_t{0}, timed_out = 0, sleeps = 0;
+  const auto start = std::chrono::steady_clock::now();
+  auto sleep = [&] {
+    ++sleeps;
+    cp.WaitProgress(seen, std::chrono::seconds(5));
+    const uint64_t now = cp.Progress();
+    if (now == seen) ++timed_out;
+    seen = now;
+  };
+  for (uint32_t i = 1; i <= 3000; ++i) {
+    ring.Put({Type3(pm4::MEM_WRITE, 2), marker | 2, i, Type0(0x2060, 1), i});
+    ring.Kick();
+    while (Big(marker) != i) sleep();
+    while (Big(kWriteBack) != ring.write) sleep();
+  }
+  CHECK(timed_out == 0 && sleeps > 0);
+  CHECK(std::chrono::steady_clock::now() - start < std::chrono::seconds(5));
+  CHECK(cp.reg(0x2060) == 3000);
+  cp.Stop();
+}
+
 void Kernel() {
   // Through any360::sys: VdInitializeRingBuffer and the MMIO kick reach the command processor; the vblank counter moves.
   CommandProcessor cp(g_physical.data());
@@ -420,6 +453,8 @@ int main() {
   Constants();
   IndirectAndShaders();
   Waits();
+  GuestWaits(false);
+  GuestWaits(true);
   Kernel();
   std::printf("gfx_cp_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;
