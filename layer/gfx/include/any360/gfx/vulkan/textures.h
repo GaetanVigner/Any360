@@ -92,6 +92,10 @@ class TextureCache {
   // only for now).
   bool ReadRGBA8(const uint32_t fetch[6], uint32_t& width, uint32_t& height, std::vector<uint32_t>& pixels,
                  std::string& error) const;
+  // For diagnostics: a level of the texture as this module loads it, decoded to RGBA8 (R in the low byte; the
+  // fetch's swizzle not applied): 8-bit RGBA and the BC formats (DXT1-5, DXN, DXT5A).
+  bool DecodeRGBA8(const uint32_t fetch[6], uint32_t level, uint32_t& width, uint32_t& height, std::vector<uint32_t>& pixels,
+                   std::string& error) const;
 
   uint32_t uploads() const { return uploads_; }
   // Time spent hashing texture memory and loading levels for uploads (untiling, conversion), in nanoseconds.

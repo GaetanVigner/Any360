@@ -614,9 +614,9 @@ int main(int argc, char** argv) {
                   (long long)got[2], (long long)got[3], ok ? "" : " (wrong)");
       CHECK(ok);
     }
-    // A k_16_16_16_16 target resolved to a k_16_16_16_16 texture with an exponent bias of -1: the guest's 16-bit
-    // words (8 -> 8192), halved, in guest memory (tiled, 8 bytes a texel, 8-in-16). Call of Duty: Black Ops's HDR
-    // chain; not resolved at all before, the screen black.
+    // A k_16_16_16_16 target resolved to a k_16_16_16_16 texture with an exponent bias of -4: the guest's values
+    // (-32...32) divided by 16, as 16-bit unorm clamped to 0...1, in guest memory (tiled, 8 bytes a texel, 8-in-16),
+    // as the reference packs them. Call of Duty: Black Ops's HDR chain (black, then green, before).
     {
       const uint32_t rect = kVertices + 0x800, resolved = 0xA0000;
       const float rv[3][2] = {{0, 0}, {float(kSize), 0}, {float(kSize), float(kSize)}};
@@ -634,24 +634,25 @@ int main(int argc, char** argv) {
         s.Put({Type3(pm4::SET_CONSTANT, 5), 0u << 16 | 1024, Bits(8), Bits(-16), Bits(16), Bits(-8)});
         s.DrawAuto(kTriangleStrip, 4);
         s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});  // vf0: the copy rectangle
-        // Control (colour 0), base, pitch | height, info: endian 8-in-16, k_16_16_16_16, exponent bias -1.
-        s.Put({Type0(0x2318, 4), 0u, resolved, kSize | kSize << 16, 1u | 26u << 7 | 0x3Fu << 16});
+        // Control (colour 0), base, pitch | height, info: endian 8-in-16, k_16_16_16_16, exponent bias -4.
+        s.Put({Type0(0x2318, 4), 0u, resolved, kSize | kSize << 16, 1u | 26u << 7 | 0x3Cu << 16});
         s.Reg(0x2208, 6);
         s.DrawAuto(8, 3);
         s.Reg(0x2208, 4);
       });
-      const int16_t expect[4] = {4096, -8192, 8192, -4096};
+      // 8 / 16 = 0.5, -16 clamped to 0, 16 / 16 = 1, -8 clamped to 0.
+      const int32_t expect[4] = {32768, 0, 65535, 0};
       uint32_t wrong = 0;
       for (uint32_t y = 0; y < kSize; y += 7) {
         for (uint32_t x = 0; x < kSize; x += 7) {
           const uint8_t* texel = g_memory + resolved + vk::TiledOffset2D(int32_t(x), int32_t(y), kSize, 3);
           for (uint32_t c = 0; c < 4; ++c) {
-            const int16_t word = int16_t(uint16_t(texel[2 * c]) << 8 | texel[2 * c + 1]);
-            wrong += std::abs(word - expect[c]) > 1;
+            const int32_t word = int32_t(uint16_t(texel[2 * c]) << 8 | texel[2 * c + 1]);
+            wrong += std::abs(word - expect[c]) > 2;
           }
         }
       }
-      std::printf("gfx_render_tests: k_16_16_16_16 resolve, bias -1: %u wrong words\n", wrong);
+      std::printf("gfx_render_tests: k_16_16_16_16 resolve, bias -4: %u wrong words\n", wrong);
       CHECK(wrong == 0);
     }
     // Drawn into a k_8_8_8_8_GAMMA target, resolved with the target's format set to k_8_8_8_8: the same EDRAM

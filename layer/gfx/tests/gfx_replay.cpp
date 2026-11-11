@@ -20,6 +20,8 @@
 //     --pick X,Y  with --trace, prints each draw that changes colour target 0's pixel at (X, Y) (host pixels):
 //                 its number, the new value, its shaders and vertex fetch constant 0, each shader's microcode once and
 //                 the texture fetch constants set (slow)
+//     --dump-textures DIR  with --pick, writes the first levels of each texture those draws read, as loaded, as
+//                 DIR/tex_<base>_fmt<format>_L<level>.png (8-bit RGBA and the BC formats; the swizzle not applied)
 #include <algorithm>
 #include <atomic>
 #include <thread>
@@ -177,6 +179,23 @@ class TracingRenderer : public Renderer {
             const uint32_t* d = regs + 0x4800 + 6 * fc;
             if ((d[0] & 3) == 2 && d[1]) {
               std::printf("      texture fetch %u: %08X %08X %08X %08X %08X %08X\n", fc, d[0], d[1], d[2], d[3], d[4], d[5]);
+              // --dump-textures: its first levels as this replay loads them, once a texture.
+              if (dump_textures_.empty() || !r_.texture_cache() || !textures_dumped_.insert(d[1]).second) continue;
+              uint32_t first_level = 0, last_level = 0;
+              vk::TextureFetch::Parse(d).Levels(first_level, last_level);
+              for (uint32_t level = first_level; level <= last_level; ++level) {
+                uint32_t w = 0, h = 0;
+                std::vector<uint32_t> pixels;
+                std::string error;
+                if (!r_.texture_cache()->DecodeRGBA8(d, level, w, h, pixels, error)) {
+                  std::printf("        level %u not dumped: %s\n", level, error.c_str());
+                  break;
+                }
+                char name[64];
+                std::snprintf(name, sizeof(name), "/tex_%08X_fmt%u_L%u.png", d[1] & 0xFFFFF000, d[1] & 0x3F, level);
+                WritePng(dump_textures_ + name, w, h, pixels.data());
+                std::printf("        level %u written to %s%s\n", level, dump_textures_.c_str(), name);
+              }
             }
           }
         }
@@ -282,6 +301,11 @@ class TracingRenderer : public Renderer {
   uint32_t resolves_ = 0;
   uint32_t watch_ = 0;
   int32_t pick_x_ = -1, pick_y_ = -1;
+ public:
+  std::string dump_textures_;
+
+ private:
+  std::set<uint32_t> textures_dumped_;
   std::set<uint64_t> disassembled_;
   uint32_t draws_ = 0;
   std::map<uint64_t, uint32_t> picked_;
@@ -309,7 +333,7 @@ int main(int argc, char** argv) {
   std::string path, out, swaps;
   bool trace = false;
   int repeat = 1;  // --repeat N: the capture replayed N times, the timings of the last (warm caches, as in a game)
-  std::string dump;
+  std::string dump, dump_textures;
   uint32_t watch = 0;
   int32_t pick_x = -1, pick_y = -1;
   bool bench = false;
@@ -340,6 +364,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--threads") && i + 1 < argc) record_threads = uint32_t(std::atoi(argv[++i]));
     else if (!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = uint32_t(std::strtoul(argv[++i], nullptr, 16)) & 0x1FFFF000;
     else if (!std::strcmp(argv[i], "--pick") && i + 1 < argc) std::sscanf(argv[++i], "%d,%d", &pick_x, &pick_y);
+    else if (!std::strcmp(argv[i], "--dump-textures") && i + 1 < argc) dump_textures = argv[++i];
     else path = argv[i];
   }
   if (path.empty()) {
@@ -367,6 +392,7 @@ int main(int argc, char** argv) {
   renderer.SetFencesWhenCaptured(!fences_after_gpu);
   CommandProcessor cp(physical);
   TracingRenderer tracing(renderer, physical, dump, watch, pick_x, pick_y);
+  tracing.dump_textures_ = dump_textures;
   Renderer* target = trace ? static_cast<Renderer*>(&tracing) : &renderer;
   std::unique_ptr<AsyncRenderer> async_renderer;
   if (async) async_renderer = std::make_unique<AsyncRenderer>(cp, *target);

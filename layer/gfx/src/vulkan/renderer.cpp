@@ -3483,9 +3483,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   } else {
     const VkFormat host = surface->image.format;
     uint32_t dest_bytes = 0, source_bytes = 0;
-    // k_16_16_16_16 targets are held at a 32nd of their -32...32 range (snorm -1...1, as the reference does); their
-    // 16-bit words are the guest's, which a resolve to a k_16_16_16_16 texture writes multiplied by 2^bias, clamped
-    // (Call of Duty: Black Ops's HDR chain, 256x152 and 128x80 with a bias: without it, the screen went black).
+    // k_16_16_16_16 targets are held at a 32nd of their -32...32 range (snorm -1...1, as the reference does). A
+    // resolve to a k_16_16_16_16 texture writes the value times 2^bias as 16-bit unorm, clamped to 0...1, as the
+    // reference packs it (Call of Duty: Black Ops's HDR chain, 256x152 and 128x80 with a bias of 11; the raw words
+    // kept before were 64 times too dark and negatives read back bright, the levels green).
     const bool fixed16 = dest_format == 26 && host == VK_FORMAT_R16G16B16A16_SNORM;
     if (fixed16) {
       dest_bytes = 8, source_bytes = 8;
@@ -3601,8 +3602,12 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
           } else {
             uint16_t c[4];
             std::memcpy(c, texel, 8);
-            if (fixed16 && dest_bias) {
-              for (uint16_t& w : c) w = uint16_t(int16_t(std::clamp(std::lround(float(int16_t(w)) * scale), -32767L, 32767L)));
+            if (fixed16) {
+              // The guest value (-32...32, a 32nd of it held) times 2^bias, written as 16-bit unorm: 0...1 to 0...65535.
+              for (uint16_t& w : c) {
+                const float value = float(int16_t(w)) * (32.0f / 32767.0f) * scale;
+                w = uint16_t(std::lround(std::clamp(value, 0.0f, 1.0f) * 65535.0f));
+              }
             } else if (dest_bias) {
               for (uint16_t& h : c) h = FloatToHalf(HalfToFloat(h) * scale);
             }

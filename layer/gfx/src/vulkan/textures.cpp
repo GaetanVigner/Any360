@@ -550,6 +550,102 @@ bool TextureCache::ReadRGBA8(const uint32_t fetch[6], uint32_t& width, uint32_t&
   return true;
 }
 
+namespace {
+// BC blocks decoded on the CPU, for diagnostics: a BC1 colour block (4 colours, or 3 and black when c0 <= c1 and not
+// `opaque`), a BC4 channel block.
+void DecodeBc1(const uint8_t* b, bool opaque, uint32_t out[16]) {
+  uint16_t c0, c1;
+  std::memcpy(&c0, b, 2);
+  std::memcpy(&c1, b + 2, 2);
+  auto rgb = [](uint16_t c, uint32_t i) {
+    const uint32_t v[3] = {uint32_t(c >> 11) & 31, uint32_t(c >> 5) & 63, uint32_t(c) & 31};
+    return i == 1 ? (v[1] * 255 + 31) / 63 : (v[i] * 255 + 15) / 31;
+  };
+  uint32_t colors[4][3];
+  for (uint32_t i = 0; i < 3; ++i) {
+    const uint32_t a = rgb(c0, i), z = rgb(c1, i);
+    colors[0][i] = a, colors[1][i] = z;
+    if (opaque || c0 > c1) {
+      colors[2][i] = (2 * a + z) / 3, colors[3][i] = (a + 2 * z) / 3;
+    } else {
+      colors[2][i] = (a + z) / 2, colors[3][i] = 0;
+    }
+  }
+  uint32_t indices;
+  std::memcpy(&indices, b + 4, 4);
+  for (uint32_t t = 0; t < 16; ++t) {
+    const uint32_t* c = colors[(indices >> (2 * t)) & 3];
+    out[t] = c[0] | c[1] << 8 | c[2] << 16 | 0xFF000000u;
+  }
+}
+void DecodeBc4(const uint8_t* b, uint8_t out[16]) {
+  const uint32_t a0 = b[0], a1 = b[1];
+  uint32_t values[8] = {a0, a1};
+  for (uint32_t i = 2; i < 8; ++i) {
+    values[i] = a0 > a1 ? ((8 - i) * a0 + (i - 1) * a1) / 7 : i < 6 ? ((6 - i) * a0 + (i - 1) * a1) / 5 : i == 6 ? 0 : 255;
+  }
+  uint64_t bits = 0;
+  for (uint32_t i = 0; i < 6; ++i) bits |= uint64_t(b[2 + i]) << (8 * i);
+  for (uint32_t t = 0; t < 16; ++t) out[t] = uint8_t(values[(bits >> (3 * t)) & 7]);
+}
+}  // namespace
+
+bool TextureCache::DecodeRGBA8(const uint32_t fetch[6], uint32_t level, uint32_t& width, uint32_t& height,
+                               std::vector<uint32_t>& pixels, std::string& error) const {
+  const TextureFetch t = TextureFetch::Parse(fetch);
+  const TextureFormatInfo* info = GuestTextureFormat(t.format);
+  if (t.type != 2 || !info) return error = "not a texture this module reads", false;
+  std::vector<uint8_t> blocks;
+  if (!LoadLevel(t, *info, level, blocks, error)) return false;
+  width = std::max(t.width >> level, 1u), height = std::max(t.height >> level, 1u);
+  // Every slice (cube face, stacked layer, 3D z slice), one under the other.
+  const uint32_t slices = t.slices(), slice_height = height, slice_block_rows = (height + 3) / 4;
+  height *= slices;
+  pixels.assign(size_t(width) * height, 0xFF000000u);
+  const VkFormat f = info->format;
+  const uint32_t bw = (width + 3) / 4;
+  auto put = [&](uint32_t s, uint32_t bx, uint32_t by, const uint32_t texels[16]) {
+    for (uint32_t y = 0; y < 4 && by * 4 + y < slice_height; ++y) {
+      for (uint32_t x = 0; x < 4 && bx * 4 + x < width; ++x) {
+        pixels[(size_t(s) * slice_height + by * 4 + y) * width + bx * 4 + x] = texels[4 * y + x];
+      }
+    }
+  };
+  if (f == VK_FORMAT_R8G8B8A8_UNORM && info->block_bytes == 4) {
+    for (size_t i = 0; i < pixels.size() && 4 * i + 4 <= blocks.size(); ++i) std::memcpy(&pixels[i], &blocks[i * 4], 4);
+  } else if (f == VK_FORMAT_BC1_RGBA_UNORM_BLOCK || f == VK_FORMAT_BC2_UNORM_BLOCK || f == VK_FORMAT_BC3_UNORM_BLOCK ||
+             f == VK_FORMAT_BC4_UNORM_BLOCK || f == VK_FORMAT_BC5_UNORM_BLOCK) {
+    for (uint32_t s = 0; s < slices; ++s)
+    for (uint32_t by = 0; by < slice_block_rows; ++by) {
+      for (uint32_t bx = 0; bx < bw; ++bx) {
+        const uint8_t* b = &blocks[((size_t(s) * slice_block_rows + by) * bw + bx) * info->block_bytes];
+        uint32_t texels[16];
+        if (f == VK_FORMAT_BC1_RGBA_UNORM_BLOCK) {
+          DecodeBc1(b, false, texels);
+        } else if (f == VK_FORMAT_BC4_UNORM_BLOCK || f == VK_FORMAT_BC5_UNORM_BLOCK) {
+          uint8_t r[16], g[16] = {};
+          DecodeBc4(b, r);
+          if (f == VK_FORMAT_BC5_UNORM_BLOCK) DecodeBc4(b + 8, g);
+          for (uint32_t i = 0; i < 16; ++i) texels[i] = r[i] | uint32_t(g[i]) << 8 | 0xFF000000u;
+        } else {
+          DecodeBc1(b + 8, true, texels);
+          uint8_t a[16];
+          if (f == VK_FORMAT_BC3_UNORM_BLOCK) {
+            DecodeBc4(b, a);
+          } else {
+            for (uint32_t i = 0; i < 16; ++i) a[i] = uint8_t(((b[i / 2] >> (4 * (i & 1))) & 15) * 17);
+          }
+          for (uint32_t i = 0; i < 16; ++i) texels[i] = (texels[i] & 0xFFFFFF) | uint32_t(a[i]) << 24;
+        }
+        put(s, bx, by, texels);
+      }
+    }
+  } else {
+    return error = "format " + std::to_string(t.format) + " not decoded for diagnostics", false;
+  }
+  return true;
+}
+
 TextureCache::TextureCache(Device& device, const uint8_t* physical, uint32_t mirror_bytes)
     : device_(device), physical_(physical), mirror_bytes_(mirror_bytes) {}
 
