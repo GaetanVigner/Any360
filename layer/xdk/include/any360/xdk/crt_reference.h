@@ -96,4 +96,71 @@ inline void Strncpy(const Memory& memory, uint32_t r3, uint32_t r4, uint32_t r5)
   for (uint32_t zeros = r5 - 1; zeros != 0; --zeros) *memory.Host(r11++) = 0;
 }
 
+// strrchr: r3 is the last place the byte was seen, r9 walks; with r4 zero, r3 itself walks to the terminator.
+inline uint64_t Strrchr(const Memory& memory, uint64_t r3, uint32_t r4) {
+  const uint64_t high = r3 & 0xFFFFFFFF00000000ull;
+  uint32_t r9 = uint32_t(r3);
+  uint32_t r5 = *memory.Host(r9);
+  if (int32_t(r4) == 0) {
+    while (r5 != 0) r5 = *memory.Host(++r9);
+    return high | r9;
+  }
+  uint64_t found = 0;
+  if (int32_t(r5) == int32_t(r4)) found = high | r9;
+  while (r5 != 0) {
+    r5 = *memory.Host(++r9);
+    if (int32_t(r4) == int32_t(r5)) found = high | r9;
+  }
+  return found;
+}
+
+inline uint64_t Tolower(uint64_t r3) {
+  const uint32_t r11 = uint32_t(r3) - 65;
+  return r11 > 25 ? r3 : r3 + 32;
+}
+inline uint64_t Toupper(uint64_t r3) {
+  const uint32_t r11 = uint32_t(r3) - 97;
+  return r11 > 25 ? r3 : r3 - 32;
+}
+
+// wcsncpy: strncpy's steps on halfwords.
+inline void Wcsncpy(const Memory& memory, uint32_t r3, uint32_t r4, uint32_t r5) {
+  uint32_t r11 = r3;
+  if (r5 == 0) return;
+  for (;;) {
+    const uint8_t high = *memory.Host(r4), low = *memory.Host(r4 + 1);
+    r4 += 2;
+    *memory.Host(r11) = high;
+    *memory.Host(r11 + 1) = low;
+    r11 += 2;
+    if (!(high | low)) break;
+    if (--r5 == 0) return;
+  }
+  for (uint32_t zeros = r5 - 1; zeros != 0; --zeros, r11 += 2) *memory.Host(r11) = *memory.Host(r11 + 1) = 0;
+}
+
+// wcscpy: halfwords copied until the zero one has been.
+inline void Wcscpy(const Memory& memory, uint32_t r3, uint32_t r4) {
+  for (uint32_t r11 = r3;; r11 += 2, r4 += 2) {
+    const uint8_t high = *memory.Host(r4), low = *memory.Host(r4 + 1);
+    *memory.Host(r11) = high;
+    *memory.Host(r11 + 1) = low;
+    if (!(high | low)) return;
+  }
+}
+
+// strncat: r11 to the destination's terminator; then bytes copied until the source's terminator has been, or, the
+// count run out, a terminator written.
+inline void Strncat(const Memory& memory, uint32_t r3, uint32_t r4, uint32_t r5) {
+  uint32_t r11 = r3;
+  while (*memory.Host(r11) != 0) ++r11;
+  while (r5 != 0) {
+    const uint8_t r10 = *memory.Host(r4++);
+    --r5;
+    *memory.Host(r11++) = r10;
+    if (r10 == 0) return;
+  }
+  *memory.Host(r11) = 0;
+}
+
 }  // namespace any360::xdk::reference

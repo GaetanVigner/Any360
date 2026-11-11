@@ -340,6 +340,95 @@ void StringCopies() {
   CHECK(xdk::CrtStrncpyAccepts(0x1000, 0x2000, 64) && !xdk::CrtStrncpyAccepts(0xDFFFFFF0, 0x2000, 64));
 }
 
+// strrchr, tolower, toupper (they only read), then wcsncpy, wcscpy and strncat against their models.
+void MoreStrings() {
+  Pair p(71);
+  std::mt19937 rng(72);
+  uint64_t r3 = 0;
+  for (uint32_t length = 0; length <= 160; ++length) {
+    const uint32_t at = 0x4000 + (length & 7);
+    PutString(p, at, length, rng, 0x41);
+    const uint64_t reg = 0x1234000000000000ull | at;
+    CHECK(xdk::CrtStrrchr(p.a, reg, 0x41, r3) && r3 == 0 && xdk::reference::Strrchr(p.b, reg, 0x41) == 0);
+    CHECK(xdk::CrtStrrchr(p.a, reg, 0, r3) && r3 == reg + length && r3 == xdk::reference::Strrchr(p.b, reg, 0));
+    CHECK(xdk::CrtStrrchr(p.a, reg, 0x141, r3) && r3 == 0 && xdk::reference::Strrchr(p.b, reg, 0x141) == 0);
+    uint32_t last = 0;
+    for (uint32_t where = 0; where < length; where += 1 + length / 9) {
+      p.native[at + where] = p.model[at + where] = 0x41;  // one more occurrence, further on: the last one wins
+      last = where;
+      CHECK(xdk::CrtStrrchr(p.a, reg, 0x41, r3) && r3 == reg + last && r3 == xdk::reference::Strrchr(p.b, reg, 0x41));
+    }
+  }
+  for (uint64_t value = 0; value < 600; ++value) {
+    for (uint64_t high : {0ull, 0xFFFFFFFF00000000ull}) {
+      const uint64_t reg = high | value;
+      CHECK(xdk::CrtTolower(reg) == xdk::reference::Tolower(reg) && xdk::CrtToupper(reg) == xdk::reference::Toupper(reg));
+    }
+    CHECK(xdk::CrtTolower(value) == (value >= 65 && value <= 90 ? value + 32 : value));
+    CHECK(xdk::CrtToupper(value) == (value >= 97 && value <= 122 ? value - 32 : value));
+  }
+  CHECK(xdk::CrtTolower(0xFFFFFFFFull) == 0xFFFFFFFFull && xdk::CrtToupper(0x100000061ull) == 0x100000041ull);
+
+  // A 16-bit string of `length` elements at `address`.
+  const auto put_wide = [&](uint32_t address, uint32_t length) {
+    for (uint32_t i = 0; i <= length; ++i) {
+      const uint16_t unit = i == length ? 0 : uint16_t(1 + rng() % 0xFFFF);
+      p.native[address + 2 * i] = p.model[address + 2 * i] = uint8_t(unit >> 8);
+      p.native[address + 2 * i + 1] = p.model[address + 2 * i + 1] = uint8_t(unit);
+    }
+  };
+  for (uint32_t length = 0; length <= 60; ++length) {
+    const uint32_t source = 0x10000 + (length & 3);
+    put_wide(source, length);
+    // wcsncpy: counts around the length, apart and with the destination inside the source.
+    for (uint32_t count : {0u, 1u, length / 2, length, length + 1, length + 2, length + 20}) {
+      const uint32_t dest = 0x20000 + (count & 1);
+      CHECK(xdk::CrtWcsncpy(p.a, dest, source, count));
+      xdk::reference::Wcsncpy(p.b, dest, source, count);
+      CHECK(p.Same(dest, dest + 2 * count));
+      for (int32_t distance : {-6, -2, 2, 4, 30}) {
+        put_wide(source, length);
+        const uint32_t inside = uint32_t(int32_t(source) + distance);
+        CHECK(xdk::CrtWcsncpy(p.a, inside, source, count));
+        xdk::reference::Wcsncpy(p.b, inside, source, count);
+      }
+      put_wide(source, length);
+    }
+    CHECK(p.SameEverywhere());
+    // wcscpy: apart; a destination that overlaps the source is declined, nothing written.
+    xdk::Range write;
+    CHECK(xdk::CrtWcscpyPlan(p.a, 0x30000, source, write) && write.at == 0x30000 && write.size == 2 * (length + 1));
+    CHECK(xdk::CrtWcscpy(p.a, 0x30000 + (length & 1), source));
+    xdk::reference::Wcscpy(p.b, 0x30000 + (length & 1), source);
+    CHECK(p.Same(0x30000, 0x30000 + 2 * length + 3));
+    if (length) CHECK(!xdk::CrtWcscpy(p.a, source + 2, source) && !xdk::CrtWcscpy(p.a, source - 2, source));
+    CHECK(p.SameEverywhere());
+  }
+  // strncat: destination strings of several lengths, counts around the source's length.
+  for (uint32_t source_length = 0; source_length <= 40; ++source_length) {
+    for (uint32_t dest_length : {0u, 1u, 7u, 100u}) {
+      for (uint32_t count : {0u, 1u, source_length, source_length + 1, source_length + 9, 0xFFFFFFFFu}) {
+        const uint32_t dest = 0x50000 + (dest_length & 3), source = 0x60000 + (source_length & 5);
+        PutString(p, dest, dest_length, rng);
+        PutString(p, source, source_length, rng);
+        xdk::Range write;
+        CHECK(xdk::CrtStrncatPlan(p.a, dest, source, count, write) && write.at == dest + dest_length &&
+              write.size == (source_length < count ? source_length : count) + 1);
+        CHECK(xdk::CrtStrncat(p.a, dest, source, count));
+        xdk::reference::Strncat(p.b, dest, source, count);
+        CHECK(p.Same(dest, dest + dest_length + source_length + 2));
+      }
+    }
+    CHECK(p.SameEverywhere());
+  }
+  // A source inside what would be written: declined.
+  PutString(p, 0x70000, 20, rng);
+  CHECK(!xdk::CrtStrncat(p.a, 0x70000, 0x70000 + 22, 50) && p.SameEverywhere());
+  const Memory nowhere{};
+  CHECK(!xdk::CrtStrrchr(nowhere, 0x7FC80000, 1, r3) && !xdk::CrtWcsncpy(nowhere, 0x7F000000, 0x1000, 4));
+  CHECK(xdk::AreApart(100, 200, 100) && !xdk::AreApart(100, 199, 100) && xdk::AreApart(200, 100, 100) && !xdk::AreApart(5, 5, 1));
+}
+
 }  // namespace
 
 int main() {
@@ -352,6 +441,7 @@ int main() {
   Moves();
   StringReads();
   StringCopies();
+  MoreStrings();
   SavedRegister();
   for (uint32_t seed = 1; seed <= 4; ++seed) Random(seed, 100000);
   PhysicalView();

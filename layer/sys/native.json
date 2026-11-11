@@ -10,6 +10,13 @@
   "XMemCpy",
   "strchr",
   "strncmp",
-  "strncpy"
+  "strncpy",
+  "wcslen",
+  "strrchr",
+  "strncat",
+  "wcscpy",
+  "wcsncpy",
+  "tolower",
+  "toupper"
  ]
 }

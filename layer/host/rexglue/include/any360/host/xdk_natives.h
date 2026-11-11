@@ -15,6 +15,8 @@
 //                       compares what both wrote and returned, and what either wrote around the destination
 //                       (outside it: nothing should be); a difference is logged and the function's own result
 //                       kept. Run once, in game, for every newly bound function.
+//   any360_xdk_skip     the names of bound functions that run their own code, the others native ("strncpy,wcscpy"):
+//                       to find which function a title's trouble comes from, by halves.
 //   any360_xdk_bench    each call is timed both ways (the function's own code and the replacement, in alternating
 //                       order) and the log gets, size class by size class, the calls and the nanoseconds of each:
 //                       the title's own mix of sizes and what the replacement really saves.
@@ -29,11 +31,12 @@
 namespace any360::host::rexglue::xdk {
 
 enum class Function : uint32_t {
-  kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy, kCount
+  kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy,
+  kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
-enum class Mode : uint32_t { kUnresolved, kNative, kOriginal, kVerify, kBench };
+enum class Mode : uint32_t { kUnresolved, kNative, kOriginal, kVerify, kBench, kSelect };
 extern Mode g_mode;
 // Guest memory as the runtime maps it (the physical view's host offset), resolved with the mode.
 extern any360::xdk::Memory g_memory;
@@ -149,6 +152,61 @@ inline void CrtStrncpy(PPCContext& ctx, uint8_t* base, GuestFunction original) {
     return;
   }
   RunSlow(Function::kStrncpy, ctx, base, original);
+}
+// strrchr: r3 string, r4 character; returns the address of its last occurrence or 0.
+inline void CrtStrrchr(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t r3;
+    if (any360::xdk::CrtStrrchr(g_memory, ctx.r3.u64, ctx.r4.u32, r3)) [[likely]] {
+      ctx.r3.u64 = r3;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kStrrchr, ctx, base, original);
+}
+// tolower and toupper: r3 the character, changed in place.
+inline void CrtTolower(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    ctx.r3.u64 = any360::xdk::CrtTolower(ctx.r3.u64);
+    return;
+  }
+  RunSlow(Function::kTolower, ctx, base, original);
+}
+inline void CrtToupper(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    ctx.r3.u64 = any360::xdk::CrtToupper(ctx.r3.u64);
+    return;
+  }
+  RunSlow(Function::kToupper, ctx, base, original);
+}
+// wcsncpy: r3 destination, r4 source, r5 count of 16-bit elements; returns the destination.
+inline void CrtWcsncpy(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    if (any360::xdk::CrtWcsncpy(g_memory, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32)) [[likely]] return;
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kWcsncpy, ctx, base, original);
+}
+// wcscpy: r3 destination, r4 source; returns the destination.
+inline void CrtWcscpy(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    if (any360::xdk::CrtWcscpy(g_memory, ctx.r3.u32, ctx.r4.u32)) [[likely]] return;
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kWcscpy, ctx, base, original);
+}
+// strncat: r3 destination, r4 source, r5 count; returns the destination.
+inline void CrtStrncat(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    if (any360::xdk::CrtStrncat(g_memory, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32)) [[likely]] return;
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kStrncat, ctx, base, original);
 }
 
 // Calls verified against the functions' own code and found different, since the start (any360_xdk_verify).

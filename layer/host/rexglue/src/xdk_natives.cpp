@@ -27,6 +27,10 @@ REXCVAR_DEFINE_BOOL(any360_xdk_natives, true, "Kernel",
 REXCVAR_DEFINE_BOOL(any360_xdk_verify, false, "Kernel",
                     "Any360: every call of a bound library function runs its own code too and compares the results "
                     "(slow; logs differences and keeps the function's own result)");
+REXCVAR_DEFINE_STRING(any360_xdk_skip, "", "Kernel",
+                      "Any360: bound library functions that run their own code while the others run as host routines, "
+                      "by name, comma-separated (memcpy, forward copy, memset, memmove, XMemCpy, wcslen, strchr, "
+                      "strncmp, strncpy, strrchr, tolower, toupper, wcsncpy, wcscpy, strncat)");
 REXCVAR_DEFINE_BOOL(any360_xdk_bench, false, "Kernel",
                     "Any360: every call of a bound library function is timed both ways, its own code and the host "
                     "routine; the log gets the calls and nanoseconds of each by size (slow)");
@@ -40,13 +44,16 @@ namespace {
 
 constexpr uint32_t kFunctions = uint32_t(Function::kCount);
 constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset",  "memmove", "XMemCpy",
-                                            "wcslen", "strchr",       "strncmp", "strncpy"};
+                                            "wcslen", "strchr",       "strncmp", "strncpy", "strrchr",
+                                            "tolower", "toupper",     "wcsncpy", "wcscpy",  "strncat"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
 constexpr uint32_t kMargin = 256;
 
 std::atomic<uint64_t> g_verified{0}, g_different{0};
+// With any360_xdk_skip: the functions that run their own code.
+bool g_skipped[kFunctions] = {};
 std::atomic<uint64_t> g_verified_by[kFunctions] = {}, g_declined_by[kFunctions] = {};
 // Calls during which bytes next to the destination changed, while the function's own code ran and while the
 // replacement ran. A function that writes outside its destination does it at every such call and only on its own
@@ -81,6 +88,14 @@ Mode Resolve(uint8_t* base) {
   Mode mode = Mode::kNative;
   if (!REXCVAR_GET(any360_xdk_natives)) {
     mode = Mode::kOriginal;
+  } else if (const std::string skip = REXCVAR_GET(any360_xdk_skip); !skip.empty()) {
+    mode = Mode::kSelect;
+    std::string native;
+    for (uint32_t f = 0; f < kFunctions; ++f) {
+      g_skipped[f] = ("," + skip + ",").find("," + std::string(kNames[f]) + ",") != std::string::npos;
+      if (!g_skipped[f]) native += (native.empty() ? "" : ", ") + std::string(kNames[f]);
+    }
+    REXLOG_INFO("Any360 xdk: any360_xdk_skip \"{}\": as host routines: {}", skip, native);
   } else if (REXCVAR_GET(any360_xdk_verify)) {
     mode = Mode::kVerify;
   } else if (REXCVAR_GET(any360_xdk_bench)) {
@@ -98,6 +113,7 @@ Mode Resolve(uint8_t* base) {
   REXLOG_INFO("Any360 xdk: bound library functions run {}",
               mode == Mode::kNative     ? "as host routines"
               : mode == Mode::kOriginal ? "their own code (any360_xdk_natives off)"
+              : mode == Mode::kSelect   ? "as host routines but those skipped (any360_xdk_skip)"
               : mode == Mode::kVerify   ? "both ways, compared (any360_xdk_verify)"
                                         : "both ways, timed (any360_xdk_bench)");
   g_mode = mode;
@@ -109,11 +125,19 @@ Mode Resolve(uint8_t* base) {
 struct Call {
   uint64_t dest_register;
   uint32_t dest, second, size, stack_pointer, value;
+  // The bytes the call is about to write: [dest, dest + size) for most, found by Accepts for the string functions
+  // that write to where a string ends or as far as one goes.
+  any360::xdk::Range write;
 };
 
-// Whether the replacement takes the call, known before anything runs: the test the replacement itself makes.
-bool Accepts(Function function, const Call& c) {
+// Whether the replacement takes the call, known before anything runs: the test the replacement itself makes. Says
+// what the call will write.
+bool Accepts(Function function, Call& c) {
+  c.write = {c.dest, c.size};
   switch (function) {
+    case Function::kWcsncpy: return any360::xdk::CrtWcsncpyPlan(c.dest, c.second, c.size, c.write);
+    case Function::kWcscpy: return any360::xdk::CrtWcscpyPlan(g_memory, c.dest, c.second, c.write);
+    case Function::kStrncat: return any360::xdk::CrtStrncatPlan(g_memory, c.dest, c.second, c.size, c.write);
     case Function::kMemcpy:
     case Function::kCopyForward: return any360::xdk::CrtMemcpyAccepts(c.dest, c.second, c.size);
     case Function::kMemset: return any360::xdk::CrtMemsetAccepts(c.dest, c.size);
@@ -130,18 +154,25 @@ bool Native(Function function, const Call& c) {
     case Function::kMemset: return any360::xdk::CrtMemset(g_memory, c.dest, c.second, c.size);
     case Function::kMemmove: return any360::xdk::CrtMemmove(g_memory, c.dest_register, c.second, c.size, c.stack_pointer);
     case Function::kStrncpy: return any360::xdk::CrtStrncpy(g_memory, c.dest, c.second, c.size);
+    case Function::kWcsncpy: return any360::xdk::CrtWcsncpy(g_memory, c.dest, c.second, c.size);
+    case Function::kWcscpy: return any360::xdk::CrtWcscpy(g_memory, c.dest, c.second);
+    case Function::kStrncat: return any360::xdk::CrtStrncat(g_memory, c.dest, c.second, c.size);
     default: return any360::xdk::XMemCpy(g_memory, c.dest, c.second, c.size, c.size >= 16 || ByteStepIsOne(c.value));
   }
 }
 
 // The functions that only read: their replacement gives the value they leave in r3.
 bool IsPure(Function function) {
-  return function == Function::kWcslen || function == Function::kStrchr || function == Function::kStrncmp;
+  return function == Function::kWcslen || function == Function::kStrchr || function == Function::kStrncmp ||
+         function == Function::kStrrchr || function == Function::kTolower || function == Function::kToupper;
 }
 bool Pure(Function function, const Call& c, uint64_t& r3) {
   switch (function) {
     case Function::kWcslen: return any360::xdk::CrtWcslen(g_memory, c.dest, r3);
     case Function::kStrchr: return any360::xdk::CrtStrchr(g_memory, c.dest_register, c.second, r3);
+    case Function::kStrrchr: return any360::xdk::CrtStrrchr(g_memory, c.dest_register, c.second, r3);
+    case Function::kTolower: r3 = any360::xdk::CrtTolower(c.dest_register); return true;
+    case Function::kToupper: r3 = any360::xdk::CrtToupper(c.dest_register); return true;
     default: return any360::xdk::CrtStrncmp(g_memory, c.dest, c.second, c.size, r3);
   }
 }
@@ -150,7 +181,10 @@ bool Pure(Function function, const Call& c, uint64_t& r3) {
 uint32_t PureWork(Function function, const Call& c, uint64_t r3) {
   switch (function) {
     case Function::kWcslen: return uint32_t(r3);
-    case Function::kStrchr: return r3 ? uint32_t(r3) - c.dest : 0;
+    case Function::kStrchr:
+    case Function::kStrrchr: return r3 ? uint32_t(r3) - c.dest : 0;
+    case Function::kTolower:
+    case Function::kToupper: return 0;
     default: return std::min<uint32_t>(c.size, 1u << 20);
   }
 }
@@ -167,17 +201,17 @@ struct Margins {
 };
 Margins MarginsOf(const Call& c) {
   Margins m;
-  if (!c.size) return m;
+  if (!c.write.size) return m;
   const auto usable = [&](uint32_t address, uint32_t size) {
     if (!size || !any360::xdk::IsPlainMemory(address, size)) return false;
     const uint64_t stack_low = uint64_t(c.stack_pointer) - 2048, stack_high = c.stack_pointer;
     return uint64_t(address) + size <= stack_low || address >= stack_high;
   };
-  const uint32_t page = c.dest & ~0xFFFu;
-  m.before_size = std::min(kMargin, c.dest - page);
-  m.before = c.dest - m.before_size;
+  const uint32_t page = c.write.at & ~0xFFFu;
+  m.before_size = std::min(kMargin, c.write.at - page);
+  m.before = c.write.at - m.before_size;
   if (!usable(m.before, m.before_size)) m.before_size = 0;
-  const uint32_t end = c.dest + c.size;  // plain memory: no wrap
+  const uint32_t end = c.write.at + c.write.size;  // plain memory: no wrap
   const uint64_t page_end = (uint64_t(end - 1) | 0xFFF) + 1;
   m.after_size = uint32_t(std::min<uint64_t>(kMargin, page_end - end));
   m.after = end;
@@ -244,9 +278,17 @@ void ReportTimes() {
 void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t value) {
   Mode mode = g_mode;
   if (mode == Mode::kUnresolved) mode = Resolve(base);
-  const Call call{ctx.r3.u64, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r1.u32, value};
+  Call call{ctx.r3.u64, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r1.u32, value, {}};
   const uint64_t dest_register = call.dest_register;
-  const uint32_t dest = call.dest, second = call.second, size = call.size, stack_pointer = call.stack_pointer;
+  const uint32_t second = call.second, stack_pointer = call.stack_pointer;
+  uint32_t dest = call.dest, size = call.size;
+  if (mode == Mode::kSelect) {
+    if (g_skipped[uint32_t(function)]) {
+      original(ctx, base);
+      return;
+    }
+    mode = Mode::kNative;
+  }
   if (mode == Mode::kNative) {
     if (IsPure(function)) {
       uint64_t r3 = 0;
@@ -318,11 +360,13 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
   }
   // Verifying and timing run both sides on the same input: only the calls the replacement accepts, known before
   // anything runs.
-  if (mode == Mode::kOriginal || !Accepts(function, call) || size > kMostChecked) {
+  if (mode == Mode::kOriginal || !Accepts(function, call) || call.write.size > kMostChecked) {
     original(ctx, base);
     if (mode != Mode::kOriginal) g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
     return;
   }
+  // From here the destination is what the call writes.
+  dest = call.write.at, size = call.write.size;
   uint8_t* const target = g_memory.Host(dest);
   uint8_t* const slot = g_memory.Host(stack_pointer - 8);
   const bool with_slot = ComparesStackSlot(function);

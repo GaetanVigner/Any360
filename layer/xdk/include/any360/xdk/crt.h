@@ -290,4 +290,95 @@ inline bool CrtStrncpy(const Memory& memory, uint32_t dest, uint32_t source, uin
   return true;
 }
 
+// strrchr: the address of the last byte equal to `character` before the terminator (of the terminator when
+// `character` is 0), or 0; the 32 bits of r4 compared with the byte as a whole, the register's high half kept, as
+// strchr.
+inline bool CrtStrrchr(const Memory& memory, uint64_t string_register, uint32_t character, uint64_t& r3) {
+  const uint64_t high = string_register & 0xFFFFFFFF00000000ull;
+  r3 = 0;
+  for (uint32_t at = uint32_t(string_register);; ++at) {
+    if (IsRegisterWindow(at)) return false;
+    const uint8_t byte = *memory.Host(at);
+    if (character ? byte == character : byte == 0) r3 = high | at;
+    if (!byte) return true;
+  }
+}
+
+// tolower and toupper of the "C" locale, on the whole register: 32 added to (taken from) r3 when its low half is
+// an upper-case (lower-case) ASCII letter.
+inline uint64_t CrtTolower(uint64_t r3) { return uint32_t(r3) - 65u <= 25u ? r3 + 32 : r3; }
+inline uint64_t CrtToupper(uint64_t r3) { return uint32_t(r3) - 97u <= 25u ? r3 - 32 : r3; }
+
+// The bytes a function is about to write, known before it writes (a host that compares the function with the
+// title's own code keeps them).
+struct Range {
+  uint32_t at = 0, size = 0;
+};
+inline bool AreApart(uint32_t a, uint32_t b, uint32_t size) { return a >= b ? a - b >= size : b - a >= size; }
+
+// wcsncpy: strncpy on 16-bit elements (`count` of them). Declines ranges that are not plain memory.
+inline bool CrtWcsncpyPlan(uint32_t dest, uint32_t source, uint32_t count, Range& write) {
+  if (count > 0x00800000u) return false;
+  write = {dest, 2 * count};
+  return IsPlainMemory(dest, write.size) && IsPlainMemory(source, write.size);
+}
+inline bool CrtWcsncpy(const Memory& memory, uint32_t dest, uint32_t source, uint32_t count) {
+  Range write;
+  if (!CrtWcsncpyPlan(dest, source, count, write)) return false;
+  uint8_t* to = memory.Host(dest);
+  const uint8_t* from = memory.Host(source);
+  uint32_t i = 0;
+  while (i < count) {
+    const uint8_t high = from[2 * i], low = from[2 * i + 1];
+    to[2 * i] = high;
+    to[2 * i + 1] = low;
+    ++i;
+    if (!(high | low)) break;
+  }
+  for (; i < count; ++i) to[2 * i] = to[2 * i + 1] = 0;
+  return true;
+}
+
+// wcscpy: the source's 16-bit elements up to and with its zero one. Declines a source that reaches the register
+// window or runs past 16 MB, a destination that overlaps it (its code would copy what it has just written) and
+// ranges that are not plain memory.
+inline bool CrtWcscpyPlan(const Memory& memory, uint32_t dest, uint32_t source, Range& write) {
+  uint64_t length = 0;
+  if (!CrtWcslen(memory, source, length) || length >= 0x00800000u) return false;
+  write = {dest, uint32_t(2 * (length + 1))};
+  return AreApart(dest, source, write.size) && detail::ArePlain(dest, source, write.size);
+}
+inline bool CrtWcscpy(const Memory& memory, uint32_t dest, uint32_t source) {
+  Range write;
+  if (!CrtWcscpyPlan(memory, dest, source, write)) return false;
+  std::memcpy(memory.Host(dest), memory.Host(source), write.size);
+  return true;
+}
+
+// strncat: after the destination's terminator, the source's bytes up to its terminator, `count` at most, then a
+// terminator. Declines strings that reach the register window, a destination string of 16 MB or more, a written
+// range that overlaps the source and ranges that are not plain memory.
+inline bool CrtStrncatPlan(const Memory& memory, uint32_t dest, uint32_t source, uint32_t count, Range& write) {
+  uint32_t end = dest;
+  for (; *memory.Host(end); ++end) {
+    if (IsRegisterWindow(end) || end - dest >= 0x01000000u) return false;
+  }
+  uint32_t length = 0;
+  for (; length < count && length < 0x01000000u; ++length) {
+    if (IsRegisterWindow(source + length)) return false;
+    if (!*memory.Host(source + length)) break;
+  }
+  if (length >= 0x01000000u) return false;
+  write = {end, length + 1};
+  return AreApart(end, source, write.size) && detail::ArePlain(end, source, write.size);
+}
+inline bool CrtStrncat(const Memory& memory, uint32_t dest, uint32_t source, uint32_t count) {
+  Range write;
+  if (!CrtStrncatPlan(memory, dest, source, count, write)) return false;
+  uint8_t* to = memory.Host(write.at);
+  std::memcpy(to, memory.Host(source), write.size - 1);
+  to[write.size - 1] = 0;
+  return true;
+}
+
 }  // namespace any360::xdk

@@ -52,7 +52,18 @@
    "simpsons": "0x82A3FE90",
    "tdu": "0x82641450"
   },
-  "note": "the same instructions in the three titles. Any360: xdk::CrtStrchr, bound in The Simpsons Game"
+  "note": "the same instructions in the three titles. Any360: xdk::CrtStrchr, bound in the three"
+ },
+ {
+  "name": "strncat",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82AB97F8",
+   "simpsons": "0x82A3F030",
+   "tdu": "0x82640228"
+  },
+  "note": "the same instructions in the three titles. Any360: xdk::CrtStrncat, bound in the three"
  },
  {
   "name": "strncmp",
@@ -63,7 +74,7 @@
    "simpsons": "0x82A3EF20",
    "tdu": "0x8263FF40"
   },
-  "note": "the same instructions in the three titles. Any360: xdk::CrtStrncmp, bound in The Simpsons Game"
+  "note": "the same instructions in the three titles. Any360: xdk::CrtStrncmp, bound in the three"
  },
  {
   "name": "strncpy",
@@ -74,18 +85,73 @@
    "simpsons": "0x82A3D280",
    "tdu": "0x826401C8"
   },
-  "note": "the same instructions in the three titles. Any360: xdk::CrtStrncpy, bound in The Simpsons Game"
+  "note": "the same instructions in the three titles. Any360: xdk::CrtStrncpy, bound in the three"
+ },
+ {
+  "name": "strrchr",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82ABA4F0",
+   "simpsons": "0x82A428E0",
+   "tdu": "0x82640DE0"
+  },
+  "note": "the same instructions in the three titles. Any360: xdk::CrtStrrchr, bound in the three"
+ },
+ {
+  "name": "tolower",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82ABA9D8",
+   "simpsons": "0x826BE740",
+   "tdu": "0x82640938"
+  },
+  "note": "the same instructions in the three titles (the C locale's). Any360: xdk::CrtTolower, bound in Test Drive Unlimited and Crackdown (The Simpsons Game: no run has called it)"
+ },
+ {
+  "name": "toupper",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82AB6A08",
+   "simpsons": "0x827418C0",
+   "tdu": "0x82644140"
+  },
+  "note": "the same instructions in the three titles (the C locale's). Any360: xdk::CrtToupper, bound in Test Drive Unlimited (the two others: no run has called it)"
+ },
+ {
+  "name": "wcscpy",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82ABBCE8",
+   "simpsons": "0x82A41268",
+   "tdu": "0x82640DC0"
+  },
+  "note": "the same instructions in the three titles. Any360: xdk::CrtWcscpy, bound in Test Drive Unlimited and Crackdown (The Simpsons Game: no run has called it)"
  },
  {
   "name": "wcslen",
   "library": "CRT",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
    "crackdown": "0x82AB61B8",
    "simpsons": "0x82A3FED0",
    "tdu": "0x826431B0"
   },
-  "note": "the same instructions in the three titles. Any360: xdk::CrtWcslen (model and unit tests); not bound yet: no run of a title has called it with both sides compared"
+  "note": "the same instructions in the three titles. Any360: xdk::CrtWcslen, bound in Test Drive Unlimited and Crackdown (The Simpsons Game: no run has called it)"
+ },
+ {
+  "name": "wcsncpy",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82AB9DE0",
+   "simpsons": "0x82CADFC8",
+   "tdu": "0x82644158"
+  },
+  "note": "the same instructions in the three titles. Any360: xdk::CrtWcsncpy, bound in Crackdown (the two others: no run has called it)"
  },
  {
   "name": "D3DDevice_BeginTiling",

@@ -82,8 +82,8 @@ per title, the native function is shared, and the check in game is run again for
 
 ## State
 
-Five functions, the same code in the three titles at hand. Unit tests: `xdk_crt_tests` (1,200,921 checks) and
-`xdk_xapi_tests` (1,772,293 checks).
+Five functions that copy and fill, the same code in the three titles at hand, then ten string functions (below).
+Unit tests: `xdk_crt_tests` (1,248,176 checks) and `xdk_xapi_tests` (1,772,293 checks).
 
 | Function | Library | Handler | Declines | Test Drive Unlimited | Crackdown | The Simpsons Game |
 |---|---|---|---|---|---|---|
@@ -95,23 +95,42 @@ Five functions, the same code in the three titles at hand. Unit tests: `xdk_crt_
 
 ### The string functions (2026-11-11)
 
-Four functions of the C runtime that are the same instructions in the three titles, found by comparing every
+Ten functions of the C runtime that are the same instructions in the three titles, found by comparing every
 function of the three (602 are identical), most call sites first. Each has its model and unit tests
-(`xdk_crt_tests`, 1,237,593 checks with them) and a table in `xdk_crt_bench`.
+(`xdk_crt_tests`, 1,248,176 checks with them); the first four have a table in `xdk_crt_bench`.
 
-| Function | Handler | Declines | Bound | Check in game |
-|---|---|---|---|---|
-| `strchr` | `CrtStrchr` | a string that reaches the GPU's register window | The Simpsons Game | 1,650 calls, 0 different |
-| `strncmp` | `CrtStrncmp` | the same | The Simpsons Game | 16 calls, 0 different |
-| `strncpy` | `CrtStrncpy` | ranges of `count` bytes that are not plain memory | The Simpsons Game | 83 calls, 0 different |
-| `wcslen` | `CrtWcslen` | a string that reaches the GPU's register window | nowhere | not called in two minutes of The Simpsons Game: not bound until a run calls it |
+| Function | Handler | Declines | Test Drive Unlimited | Crackdown | The Simpsons Game |
+|---|---|---|---|---|---|
+| `strchr` | `CrtStrchr` | a string that reaches the GPU's register window | bound: 906,908 calls | bound: 18,831 | bound: 1,653 |
+| `strrchr` | `CrtStrrchr` | the same | bound: 38 | bound: 1,225 | bound: 5 |
+| `strncmp` | `CrtStrncmp` | the same | bound: 32,740 | bound: 21,021 | bound: 18 |
+| `wcslen` | `CrtWcslen` | the same | bound: 253 | bound: 155,149 | not called: not bound |
+| `tolower` | `CrtTolower` | nothing (the "C" locale's, on the register) | bound: 869 | bound: 88,097 | not called: not bound |
+| `toupper` | `CrtToupper` | nothing | bound: 2,081 | not called: not bound | not called: not bound |
+| `strncpy` | `CrtStrncpy` | ranges of `count` bytes that are not plain memory | bound: 4,436 | bound: 31,436 | bound: 85 |
+| `strncat` | `CrtStrncat` | strings that reach the register window, a written range that overlaps the source or is not plain memory | bound: 517 | bound: 14 | bound: 36 |
+| `wcscpy` | `CrtWcscpy` | a source that reaches the register window, a destination that overlaps it, ranges that are not plain memory | bound: 1 | bound: 2,171 | not called: not bound |
+| `wcsncpy` | `CrtWcsncpy` | ranges of `count` elements that are not plain memory | not called: not bound | bound: 1,154 | not called: not bound |
 
-They are not bound in Test Drive Unlimited and Crackdown yet: those two could not be built that day (the folder
-with the FFmpeg headers their XMA decoder needs was gone from the machine), and a function is not bound in a title
-before its check there. These functions are called little (The Simpsons Game: a few hundred to a few thousand
-calls in two minutes, against 65 M of `memcpy`) and the hand-written ones are no faster than their models for
-`strchr` and `strncmp` (each element costs a test of the register window): they are here to take the library off
-the recompiled code, not for speed, and are not tuned.
+The figures are the calls compared with the function's own code in one run of each title with
+`--any360_xdk_verify=true` (Test Drive Unlimited and Crackdown: 3.0 M calls of all the bound functions, to their
+title screens and first menu; The Simpsons Game: 184 M, its menus and a load), 0 different in the three. A function
+no run of a title has called is not bound there, whatever its tests say: `wcscpy` in Test Drive Unlimited and
+`strrchr` in The Simpsons Game rest on 1 and 5 calls, and on the unit tests.
+
+Three of them write a range whose size the registers do not give (`strncat`, `wcscpy`, `wcsncpy`): each has a plan
+(`CrtStrncatPlan` ...) that says, before anything is written, whether the function takes the call and which bytes
+it will write, so that the check in game can keep those bytes and the ones next to them for both sides.
+
+These functions are called little (thousands of calls where `memcpy` has millions) and the hand-written ones are
+no faster than their models for `strchr` and `strncmp` (each element costs a test of the register window): they
+are here to take the library off the recompiled code, not for speed, and are not tuned.
+
+To find which bound function a title's trouble comes from: `--any360_xdk_skip="strncpy,wcscpy"` leaves the named
+ones to their own code and the others native, to be halved until one is left. `tools/callee_registers.py
+<generated dir> <address>...` lists the volatile registers a title's code reads after calling a function before
+writing them itself (a replacement gives r3 and the memory, not what the function's code happened to leave in
+r8 or cr0); for the functions bound here it finds only instructions that do nothing (`mr r8,r8`).
 
 `memmove` and the forward copy are the same instructions in the three titles; the vector copy is three builds of
 the same steps (other registers, the same tests), read in each. Its name is not in the titles: it is the function
@@ -218,3 +237,14 @@ and `memset` behind the first tests of plain memory) against the code as it is:
   button; at 60 frames a second it does. Not looked into: it is the title's port, not a native function.
 - Crackdown's start took 32 seconds with the files on `any360::sys` (a file read one byte at a time, the host file
   opened for each byte): docs/SYS_BINDING.md, step 2.
+- The cure for that start (a handle keeps its host file open) broke The Simpsons Game for a night: with it, the
+  host's kernel reads straight into guest memory, and it does not write to pages the renderer has protected to see
+  the title's writes; a level's files read as 0 bytes. The native functions were suspected first (they were bound
+  the same evening) and cleared by `--any360_xdk_natives=false`, then by `--any360_xdk_skip`. The cause, the fix and
+  the tools that found it: docs/SYS_BINDING.md, step 2.
+- The Simpsons Game called `XamContentCreate` with an empty file name and "create always": the content path was
+  then its type's folder, emptied with every save in it. A package with an empty name is refused now
+  (`Xam::ContentPath`).
+- The Simpsons Game's menus run at 22 frames a second instead of 30 on some launches, the window shown (30 every
+  time minimized): the renderer's thread waits in the presentation of each frame. Not looked into here: it is
+  presentation, not a native function.
