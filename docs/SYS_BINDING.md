@@ -121,9 +121,27 @@ What the game found that the tests could not:
 - Crackdown reads a file one byte at a time before its title screen, 22,300 bytes, and asks for the file's size
   before each (2026-11-10, found with the same trace). The file layer opened the host file for every read and asked
   the host for the file's times and size at every query: 25 seconds of the title's start (32 seconds to its title
-  screen, 6 with the runtime's files). A handle now keeps one unbuffered stream for its reads and the host's last
-  answer about the file for 50 ms (`FileSystem::HostFile`), both dropped when the file layer itself changes the
-  file: 3 seconds to the title screen.
+  screen, 6 with the runtime's files). A handle now keeps its host file open for its reads
+  (`FileSystem::HostFile`, the host's own handle, let go when the file layer itself renames, removes, resizes or
+  creates a file) and the host is asked for a file's times and size in one question instead of three: 3 seconds to
+  the title screen. The handles together keep 256 host files at most, the one read longest ago giving its own up.
+  `any360_sys_keep_files=false` opens the host file at every read, as before.
+- That change broke The Simpsons Game for a night (2026-11-10 to 11): a level read without end, or started and
+  crashed on a character that was not there. A read through the kept file goes from the host's kernel straight
+  into guest memory, and the kernel does not write to pages a renderer has made read-only to see the title write
+  them again (the title's own writes go through the renderer's fault handler; the kernel's fail). The title loads a
+  level into memory its menus drew from: every read of the level gave 0 bytes and no error. `FileSystem::ReadHost`
+  now reads what the kernel would not write into memory of its own and copies it from there
+  (`sys_object_tests`: a read across a watched page, with `tests/watched_memory.cpp`). What was tried and was not
+  the cause: the host's answers about a file kept for 50 ms (taken out all the same: nothing a handle says of a
+  file may differ from what a path says), and the 512 streams the C library lets a process hold (the handles are
+  the host's own now; the title holds a few files at once).
+- What found it, and stays: `any360_sys_log_files` (every open, close and read that gives fewer bytes than asked,
+  by guest path: the reads of 0 bytes were plain in it); the crash report now lists where every other thread is,
+  one line a thread (they were all waiting: no race, the data was missing); `tools/crash_names.ps1` (a report's
+  addresses by name, from the PDB), `tools/thread_stacks.ps1` (where the threads of a running title are: the
+  thread that read without end) and `tools/guest_memory.ps1` (what a guest address holds in the running title:
+  the names the crashing function compared were the characters' and their bones'), none needing a debugger.
 - The Simpsons Game opens a file on one thread, opens it again on a second and reads it on a third within the same
   millisecond of its start (same trace). The table of open files had no lock: a look-up could walk it while another
   thread inserted. It has one now (`open_mutex_`: look-ups, insertions, removals, walks; never held across a call

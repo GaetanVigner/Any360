@@ -27,6 +27,12 @@ REXCVAR_DEFINE_STRING(any360_sys_runtime_calls, "", "Kernel",
 REXCVAR_DEFINE_INT32(any360_input_sample_us, 1000, "Kernel",
                      "Any360 input group: the controllers sampled on their own thread every this many microseconds, every "
                      "change queued for the title's polls; 0: sampled at each poll");
+REXCVAR_DEFINE_BOOL(any360_sys_keep_files, true, "Kernel",
+                    "Any360: an open file keeps its host file open between its reads; off: every read opens it "
+                    "(to tell whether a title's trouble comes from that)");
+REXCVAR_DEFINE_BOOL(any360_sys_log_files, false, "Kernel",
+                    "Any360: every file the title opens and closes and every read that gives fewer bytes than asked, by "
+                    "guest path, in the log");
 REXCVAR_DEFINE_INT32(any360_input_step_us, 16683, "Kernel",
                      "Any360 input group: polls step through the queued changes at most this often (one console frame), so "
                      "each stays visible for a frame; 0: every poll steps");
@@ -99,6 +105,11 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
 #endif
     }
     EnableSystemGroup(group, true);
+    if (group == SysGroup::kFiles) {
+      any360::sys::Files().SetKeepHostFiles(REXCVAR_GET(any360_sys_keep_files));
+      any360::sys::Files().SetLog([](const std::string& line) { REXLOG_INFO("Any360 system: {}", line); },
+                                  REXCVAR_GET(any360_sys_log_files));
+    }
     if (group == SysGroup::kInput) {
       any360::sys::XamState().SetInputStep(std::chrono::microseconds(std::max(0, REXCVAR_GET(any360_input_step_us))));
       if (REXCVAR_GET(any360_input_sample_us) > 0) {

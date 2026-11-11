@@ -31,6 +31,15 @@
 #include <map>
 #include <thread>
 
+// watched_memory.cpp: memory whose watched pages are read-only until code writes to them, as a renderer keeps the
+// pages it drew from.
+namespace any360::sys::test {
+uint8_t* WatchedMemoryCreate(size_t size);
+void WatchedMemoryWatch(size_t offset);
+int WatchedMemoryFaults();
+void WatchedMemoryDestroy();
+}  // namespace any360::sys::test
+
 namespace {
 
 using namespace any360::sys;
@@ -1000,8 +1009,9 @@ void FileTests() {
   CHECK(Files().ReadFile(g, g.Load32(out + 16), 0, iosb, buf, 4, out + 8) == kStatusEndOfFile);  // a failure is not pending
   // A handle keeps its host file between reads: a file read a byte at a time, its size asked before every byte, as
   // titles do (Crackdown: 22,000 bytes before its title screen). What the handle keeps never hides a change: a write
-  // through another handle shows at once in its size and its bytes, a change the host makes outside the file layer
-  // shows at once in the bytes and a moment later in the size, and the file can still be renamed and removed.
+  // through another handle, or one the host makes outside the file layer, shows at once in the file's size and in
+  // its bytes, and the file can still be renamed and removed. What a handle query says of the file is what a path
+  // query says at the same moment (a title compares them).
   {
     const char* bytes = "\\Device\\Harddisk0\\Partition1\\bytes.bin";
     CHECK(Files().CreateFile(g, out + 24, kRead | kWrite, path(bytes), iosb, 0, kOverwriteIf, kFileNonDirectoryFile | kFileSynchronousIo) == 0);
@@ -1024,14 +1034,65 @@ void FileTests() {
     CHECK(Files().ReadFile(g, r, 0, iosb, buf, 8, 0) == 0 && g.Load32(iosb + 4) == 4 && std::memcmp(g.host(buf), "IJKL", 4) == 0);
     { std::ofstream(root / "hdd" / "bytes.bin", std::ios::binary | std::ios::app) << "MN"; }
     CHECK(Files().ReadFile(g, r, 0, iosb, buf, 8, 0) == 0 && g.Load32(iosb + 4) == 2 && std::memcmp(g.host(buf), "MN", 2) == 0);
-    std::this_thread::sleep_for(std::chrono::milliseconds(80));
     CHECK(Files().QueryInformation(g, r, iosb, info, 56, kFileNetworkOpenInformation) == 0 && g.Load64(info + 40) == 14);
+    // The times and the size by the handle and by the path: the same.
+    CHECK(Files().QueryInformation(g, r, iosb, info, 56, kFileNetworkOpenInformation) == 0);
+    std::vector<uint8_t> by_handle(g.host(info), g.host(info) + 56);
+    CHECK(Files().QueryFullAttributes(g, path(bytes), info) == 0 && std::memcmp(g.host(info), by_handle.data(), 56) == 0);
     const char* moved = "\\Device\\Harddisk0\\Partition1\\moved.bin";
     std::memcpy(g.host(pat), bytes, std::strlen(bytes) + 1);
     std::memcpy(g.host(pat + 0x80), moved, std::strlen(moved) + 1);
     CHECK(Files().Win32MoveFile(g, pat, pat + 0x80) == 1 && fs::exists(root / "hdd" / "moved.bin") && !fs::exists(root / "hdd" / "bytes.bin"));
     CHECK(Objects().Close(r) == 0 && Objects().Close(w) == 0);
     CHECK(Files().Win32DeleteFile(g, pat + 0x80) == 1 && !fs::exists(root / "hdd" / "moved.bin"));
+  }
+  // A read into guest memory that a renderer watches (a read-only page, a fault handler that opens it when code
+  // writes there): the host's kernel does not write to such a page, and the read still gives every byte, the
+  // watched page written as the title's own code would write it, once. With the handle keeping its host file and
+  // without.
+  {
+    constexpr uint32_t kPage = 0x1000;
+    uint8_t* region = test::WatchedMemoryCreate(16 * kPage);
+    const Guest watched{region};
+    std::vector<char> content(3 * kPage);
+    for (size_t i = 0; i < content.size(); ++i) content[i] = char(i * 7 + (i >> 8));
+    { std::ofstream(root / "hdd" / "big.bin", std::ios::binary).write(content.data(), std::streamsize(content.size())); }
+    CHECK(Files().CreateFile(g, out + 24, kRead, path("\\Device\\Harddisk0\\Partition1\\big.bin"), iosb, 0, kOpen,
+                             kFileNonDirectoryFile | kFileSynchronousIo) == 0);
+    const uint32_t big = g.Load32(out + 24);
+    for (int keep = 1; keep >= 0; --keep) {
+      Files().SetKeepHostFiles(keep != 0);
+      std::memset(region, 0, 16 * kPage);
+      test::WatchedMemoryWatch(3 * kPage);
+      watched.Store64(0x108, 0);
+      CHECK(Files().ReadFile(watched, big, 0, 0x100, 2 * kPage, 3 * kPage, 0x108) == 0 && watched.Load32(0x104) == 3 * kPage);
+      CHECK(std::memcmp(region + 2 * kPage, content.data(), content.size()) == 0);
+      CHECK(test::WatchedMemoryFaults() == 1);
+    }
+    Files().SetKeepHostFiles(true);
+    CHECK(Objects().Close(big) == 0);
+    test::WatchedMemoryDestroy();
+  }
+  // More files open at once than a host lets a process hold (512 streams with MSVC's C library, 1024 descriptors
+  // on many a Linux): every handle still reads, and reads again after the others were read. No title at hand holds
+  // that many; one that did must not find its reads giving nothing past a limit it knows nothing of.
+  {
+    std::vector<uint32_t> handles;
+    bool opened = true, read = true;
+    for (int i = 0; i < 1200; ++i) {
+      opened = opened && Files().CreateFile(g, out + 24, kRead, path("game:\\media\\data.bin"), iosb, 0, kOpen,
+                                            kFileNonDirectoryFile | kFileSynchronousIo) == 0;
+      handles.push_back(g.Load32(out + 24));
+    }
+    for (int pass = 0; pass < 2; ++pass) {
+      for (uint32_t h : handles) {
+        g.Store64(out + 8, 4 * pass);
+        read = read && Files().ReadFile(g, h, 0, iosb, buf, 4, out + 8) == 0 && g.Load32(iosb + 4) == 4 &&
+               std::memcmp(g.host(buf), pass ? "4567" : "0123", 4) == 0;
+      }
+    }
+    CHECK(opened && read);
+    for (uint32_t h : handles) Objects().Close(h);
   }
   CHECK(Objects().Close(g.Load32(out + 16)) == 0);
   // The read signals an event; an unknown event handle is refused.

@@ -4,6 +4,8 @@
 // Open files are objects of the object manager (handles from the same table, closed by NtClose).
 #pragma once
 
+#include <functional>
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <map>
@@ -152,11 +154,36 @@ class FileSystem {
   std::string Canonical(const std::string& guest_path) const;
   std::string PathOf(Guest g, uint32_t attributes) const;
   uint32_t DeviceControl(Guest g, uint32_t code, uint32_t output, uint32_t output_length, uint32_t& written);
-  // The file layer is about to change host files, or has (a write, a resize, a rename, a removal, a creation): what
-  // the open handles keep of them is dropped. With `host`, a write to that file only: the handles on it forget its
-  // size and times and keep their streams; without, every handle lets go of its host file, which the host needs
-  // before it renames or removes one.
-  void HostChanged(const std::filesystem::path* host = nullptr);
+  // The file layer is about to resize, rename, remove or create host files: every handle lets go of the host file
+  // it keeps open for its reads, which the host needs before it renames or removes one.
+  void HostChanged();
+  // Up to `length` bytes of a handle's host file from `offset`; `usable` is false when the host file cannot be
+  // opened. The handle keeps the host file open for its next reads, another giving its own up where the handles
+  // already keep as many as they may.
+  uint32_t ReadHost(Open& file, uint64_t offset, uint8_t* to, uint32_t length, bool& usable);
+
+ public:
+  // Whether a handle keeps its host file open between its reads. Off: every read opens the host file, as before
+  // the handles kept it; for telling whether a title's trouble comes from that.
+  void SetKeepHostFiles(bool keep) { keep_host_files_ = keep; }
+  // Where the layer says what goes wrong on the host (a host file that does not open for a read: the title gets
+  // nothing and no error) and how many files the title holds open at once. With `calls`, also every open and close
+  // and every read that gives fewer bytes than asked, by guest path: what a title did with its files before it
+  // went wrong.
+  void SetLog(std::function<void(const std::string&)> log, bool calls = false) {
+    log_ = std::move(log);
+    log_calls_ = calls;
+  }
+
+ private:
+  bool keep_host_files_ = true;
+  std::function<void(const std::string&)> log_;
+  bool log_calls_ = false;
+  std::atomic<uint32_t> log_peak_{128};     // the next count of open files worth a line
+  std::atomic<uint32_t> log_unopened_{0};   // lines written about host files that do not open
+  std::atomic<bool> log_gave_up_{false};    // the line about handles giving their host files up is written
+  void LogOpen(const std::string& guest, uint32_t status, uint32_t handle, size_t open_now);
+  void LogRead(const Open& file, uint64_t offset, uint32_t length, uint32_t done, bool usable);
   // `at`, when given, is the offset to use instead of `offset_ptr` or the file position.
   uint32_t Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length, uint32_t offset_ptr,
                     bool write, const uint64_t* at = nullptr);

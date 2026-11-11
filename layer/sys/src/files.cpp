@@ -1,17 +1,26 @@
 #include "any360/sys/files.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <mutex>
 #include <system_error>
+#include <vector>
 
 #include "any360/sys/objects.h"
 
 namespace any360::sys {
 
-bool HostFileTimes(const std::filesystem::path& path, uint64_t& creation, uint64_t& access, uint64_t& write);  // host_times.cpp
+// host_times.cpp
+bool HostFileTimes(const std::filesystem::path& path, uint64_t& creation, uint64_t& access, uint64_t& write);
+bool HostFileStat(const std::filesystem::path& path, uint64_t& creation, uint64_t& access, uint64_t& write, uint64_t& size,
+                  bool& directory);
+intptr_t HostFileOpen(const std::filesystem::path& path);
+uint32_t HostFileRead(intptr_t file, uint64_t offset, uint8_t* to, uint32_t length);
+void HostFileClose(intptr_t file);
 
 namespace {
 
@@ -94,14 +103,21 @@ struct Stat {
 Stat StatOf(const std::filesystem::path& path) {
   Stat s;
   std::error_code error;
-  const bool directory = std::filesystem::is_directory(path, error);
-  uint64_t creation = 0, access = 0, write = 0;
-  if (!HostFileTimes(path, creation, access, write)) creation = access = write = FileTime(path);
+  uint64_t creation = 0, access = 0, write = 0, size = 0;
+  bool directory = false;
+  // One question to the host for all of it (titles ask before every read of a file they take a byte at a time); the
+  // three separate ones only where the host has no answer to that one.
+  if (HostFileStat(path, creation, access, write, size, directory)) {
+    s.size = directory ? 0 : size;
+  } else {
+    directory = std::filesystem::is_directory(path, error);
+    creation = access = write = FileTime(path);
+    s.size = directory ? 0 : uint64_t(std::filesystem::file_size(path, error));
+    if (error) s.size = 0;
+  }
   s.times[0] = creation;
   s.times[1] = access;
   s.times[2] = s.times[3] = write;
-  s.size = directory ? 0 : uint64_t(std::filesystem::file_size(path, error));
-  if (error) s.size = 0;
   s.allocation = (s.size + kCluster - 1) / kCluster * kCluster;
   s.attributes = directory ? kAttributeDirectory : kAttributeNormal;
   return s;
@@ -115,11 +131,6 @@ void StoreNetworkOpen(Guest g, uint32_t info, const Stat& s) {
   g.Store32(info + 48, s.attributes);
   g.Store32(info + 52, 0);
 }
-
-// How long an answer of the host about a file (size, times, attributes) serves the queries on a handle. The file
-// layer's own changes drop it at once (HostChanged); only a change made outside it, by the host's own code, can be
-// seen this much later.
-constexpr auto kStatAge = std::chrono::milliseconds(50);
 
 void StoreStatus(Guest g, uint32_t io_status, uint32_t status, uint32_t information) {
   if (!io_status) return;
@@ -300,11 +311,43 @@ uint32_t FileSystem::CreateFile(Guest g, uint32_t handle_out, uint32_t access, u
   return status;
 }
 
+namespace {
+std::string Hex(uint32_t value) {
+  char text[12];
+  std::snprintf(text, sizeof text, "%08X", value);
+  return text;
+}
+}  // namespace
+
+void FileSystem::LogOpen(const std::string& guest, uint32_t status, uint32_t handle, size_t open_now) {
+  if (!log_) return;
+  if (log_calls_) log_("files: open " + guest + (status ? ": status " + Hex(status) : ": handle " + Hex(handle)));
+  uint32_t peak = log_peak_;
+  if (open_now >= peak && log_peak_.compare_exchange_strong(peak, peak * 2)) {
+    log_("files: " + std::to_string(open_now) + " files open at once");
+  }
+}
+
+void FileSystem::LogRead(const Open& file, uint64_t offset, uint32_t length, uint32_t done, bool usable) {
+  if (!log_) return;
+  if (!usable) {
+    // The title is told nothing: said here, or nothing says why it then goes wrong.
+    if (log_unopened_++ < 32) {
+      log_("files: read of " + file.guest + " at " + std::to_string(offset) + ", " + std::to_string(length) +
+           " bytes: the host file does not open (" + file.host.string() + ")");
+    }
+  } else if (log_calls_ && done != length) {
+    log_("files: read of " + file.guest + " at " + std::to_string(offset) + ", " + std::to_string(length) + " bytes: " +
+         std::to_string(done) + " read");
+  }
+}
+
 uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access, uint32_t disposition, uint32_t options,
                               uint32_t& handle_out, uint32_t& action_out) {
   auto fail = [&](uint32_t status, uint32_t action) {
     action_out = action;
     handle_out = 0xFFFFFFFF;
+    LogOpen(guest, status, 0, 0);
     return status;
   };
   std::string rest;
@@ -318,12 +361,15 @@ uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access
     file.guest = guest;
     file.mount = mount;
     file.asynchronous = (options & kFileSynchronousIo) == 0;
+    size_t open_now = 0;
     {
       std::lock_guard lock(open_mutex_);
       open_[object] = file;
+      open_now = open_.size();
     }
     handle_out = Objects().OpenHandle(object);
     action_out = kOpened;
+    LogOpen(guest, kStatusSuccess, handle_out, open_now);
     return kStatusSuccess;
   }
   bool parent = false;
@@ -364,12 +410,15 @@ uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access
   file.directory = std::filesystem::is_directory(host, error);
   file.delete_on_close = (options & kFileDeleteOnClose) != 0;
   file.asynchronous = (options & kFileSynchronousIo) == 0;
+  size_t open_now = 0;
   {
     std::lock_guard lock(open_mutex_);
     open_[object] = file;
+    open_now = open_.size();
   }
   handle_out = Objects().OpenHandle(object);
   action_out = action;
+  LogOpen(guest, kStatusSuccess, handle_out, open_now);
   return kStatusSuccess;
 }
 
@@ -381,53 +430,107 @@ uint32_t FileSystem::Pending(uint32_t handle, uint32_t status) {
 // What an open handle keeps of its host file between calls. Titles read files a byte at a time and ask for the
 // file's size before every byte (Crackdown reads 22,000 bytes that way before its title screen); opening the host
 // file for each read and asking the host for its times and size at each query made that 25 seconds of its start.
-// So a handle keeps one stream for its reads, unbuffered (every read is the file as it is on the host, whoever wrote
-// it), and the host's last answer about the file for kStatAge.
-struct FileSystem::HostFile {
-  std::mutex mutex;  // a handle may be read on several threads
-  std::ifstream stream;
-  Stat stat;
-  std::chrono::steady_clock::time_point stat_at;
-  bool stat_known = false;
+// So a handle keeps its host file open for its reads: the host's own handle (every read is the file as it is on the
+// host, whoever wrote it), not a stream of the C library, of which a process holds 512 at most with MSVC's: the
+// 513th would read nothing and the title not be told. The handles together keep kKeptHostFiles host files at most
+// (a host has its own limit, 1024 descriptors a process on many a Linux): past it, the one read longest ago gives
+// its own up and opens it again at its next read. No title at hand comes near either limit (The Simpsons Game
+// holds a few files at once); the unit tests do. A handle keeps nothing of what the host says about the file
+// (size, times): a title may compare what it gets by a handle with what it gets by a path, and the host is asked
+// every time, in one question instead of three.
+constexpr uint32_t kKeptHostFiles = 256;
+namespace {
+std::atomic<uint32_t> g_kept_host_files{0};
+std::atomic<uint64_t> g_host_reads{0};
+}  // namespace
 
-  // Up to `length` bytes from `offset`; `usable` is false when the host file cannot be opened.
-  uint32_t Read(const std::filesystem::path& host, uint64_t offset, uint8_t* to, uint32_t length, bool& usable) {
-    std::lock_guard lock(mutex);
-    if (!stream.is_open()) {
-      // Unbuffered: asked before the open (where the library takes it then) and after (where it takes it then).
-      stream.rdbuf()->pubsetbuf(nullptr, 0);
-      stream.open(host, std::ios::binary);
-      if (stream.is_open()) stream.rdbuf()->pubsetbuf(nullptr, 0);
+struct FileSystem::HostFile {
+  std::mutex mutex;  // a handle may be read on several threads, and made to release its host file by another
+  intptr_t file = -1;
+  // The layer's count of reads at this one's last read; 0 while it keeps no host file.
+  std::atomic<uint64_t> used{0};
+
+  ~HostFile() { Release(); }
+
+  // Up to `length` bytes from `offset`; `usable` is false when the host file cannot be opened. Without `keep`, the
+  // host file is opened for the call alone.
+  uint32_t Read(const std::filesystem::path& host, uint64_t offset, uint8_t* to, uint32_t length, bool& usable, bool keep) {
+    if (!keep) {
+      const intptr_t once = HostFileOpen(host);
+      usable = once != -1;
+      if (!usable) return 0;
+      const uint32_t done = HostFileRead(once, offset, to, length);
+      HostFileClose(once);
+      return done;
     }
-    usable = stream.is_open();
+    std::lock_guard lock(mutex);
+    if (file == -1) {
+      file = HostFileOpen(host);
+      if (file != -1) ++g_kept_host_files;
+    }
+    usable = file != -1;
     if (!usable) return 0;
-    stream.clear();
-    stream.seekg(std::streamoff(offset));
-    stream.read(reinterpret_cast<char*>(to), length);
-    return uint32_t(stream.gcount());
+    used = ++g_host_reads;
+    return HostFileRead(file, offset, to, length);
   }
-  Stat Query(const std::filesystem::path& host) {
+  void Release() {
     std::lock_guard lock(mutex);
-    const auto now = std::chrono::steady_clock::now();
-    if (!stat_known || now - stat_at >= kStatAge) {
-      stat = StatOf(host);
-      stat_at = now;
-      stat_known = true;
-    }
-    return stat;
-  }
-  void Forget(bool release) {
-    std::lock_guard lock(mutex);
-    stat_known = false;
-    if (release && stream.is_open()) stream.close();
+    if (file == -1) return;
+    HostFileClose(file);
+    file = -1;
+    used = 0;
+    --g_kept_host_files;
   }
 };
 
-void FileSystem::HostChanged(const std::filesystem::path* host) {
+void FileSystem::HostChanged() {
   std::lock_guard lock(open_mutex_);
   for (auto& [object, file] : open_) {
-    if (file.host_file && (!host || file.host == *host)) file.host_file->Forget(host == nullptr);
+    if (file.host_file) file.host_file->Release();
   }
+}
+
+uint32_t FileSystem::ReadHost(Open& file, uint64_t offset, uint8_t* to, uint32_t length, bool& usable) {
+  if (!file.host_file) return 0;
+  if (keep_host_files_ && !file.host_file->used && g_kept_host_files >= kKeptHostFiles) {
+    // This handle is about to open its host file and the handles keep as many as they may: the one read longest
+    // ago lets go of its own.
+    std::lock_guard lock(open_mutex_);
+    HostFile* oldest = nullptr;
+    uint64_t when = ~0ull;
+    for (auto& [object, other] : open_) {
+      const uint64_t used = other.host_file ? other.host_file->used.load() : 0;
+      if (used && used < when) {
+        when = used;
+        oldest = other.host_file.get();
+      }
+    }
+    if (oldest) oldest->Release();
+    if (log_ && !log_gave_up_.exchange(true)) {
+      log_("files: the title reads more than " + std::to_string(kKeptHostFiles) +
+           " files in turn: the ones read longest ago give their host files up and open them again at their next read");
+    }
+  }
+  uint32_t done = file.host_file->Read(file.host, offset, to, length, usable, keep_host_files_);
+  // Fewer bytes than asked is the file's end, or guest memory the host's kernel will not write to: a renderer
+  // protects the pages it has taken a texture or a vertex buffer from, to see the title write them again, and the
+  // title's own writes go through its fault handler; the kernel's do not, the read gives nothing and says nothing
+  // (The Simpsons Game loads a level into memory its menus drew from: every read of the level gave 0 bytes, and
+  // the level started without its characters). So what is left is read into memory of the layer's own and copied
+  // from there, as the title's code would write it. At the file's end that costs one more read, of nothing.
+  if (usable && done < length) {
+    static thread_local std::vector<uint8_t> own;
+    constexpr uint32_t kStep = 1u << 20;
+    own.resize(std::min(length - done, kStep));
+    while (done < length) {
+      const uint32_t n = std::min<uint32_t>(length - done, uint32_t(own.size()));
+      const uint32_t got = file.host_file->Read(file.host, offset + done, own.data(), n, usable, keep_host_files_);
+      std::memcpy(to + done, own.data(), got);
+      done += got;
+      if (got < n) break;
+    }
+  }
+  return done;
 }
 
 uint32_t FileSystem::Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t io_status, uint32_t buffer, uint32_t length,
@@ -446,19 +549,17 @@ uint32_t FileSystem::Transfer(Guest g, uint32_t handle, uint32_t event, uint32_t
   uint32_t done = 0, status = kStatusSuccess;
   if (write) {
     if (file->mount->read_only) return kStatusAccessDenied;
-    {
-      std::fstream stream(file->host, std::ios::binary | std::ios::in | std::ios::out);
-      stream.seekp(std::streamoff(offset));
-      stream.write(reinterpret_cast<const char*>(g.host(buffer)), length);
-      done = stream ? length : 0;
-      if (!stream) status = kStatusAccessDenied;
-    }
-    HostChanged(&file->host);
+    std::fstream stream(file->host, std::ios::binary | std::ios::in | std::ios::out);
+    stream.seekp(std::streamoff(offset));
+    stream.write(reinterpret_cast<const char*>(g.host(buffer)), length);
+    done = stream ? length : 0;
+    if (!stream) status = kStatusAccessDenied;
   } else if (length) {
     // Nothing read from a file that opens is its end; from one that does not open, nothing and no error.
     bool usable = false;
-    done = file->host_file ? file->host_file->Read(file->host, offset, g.host(buffer), length, usable) : 0;
+    done = ReadHost(*file, offset, g.host(buffer), length, usable);
     if (!done && usable) status = kStatusEndOfFile;
+    LogRead(*file, offset, length, done, usable);
   }
   file->position = offset + done;
   StoreStatus(g, io_status, status, done);
@@ -482,11 +583,12 @@ uint32_t FileSystem::ReadFileScatter(Guest g, uint32_t handle, uint32_t event, u
   bool usable = false;
   for (uint32_t page = 0; file->host_file && done < length; ++page) {
     const uint32_t n = std::min<uint32_t>(0x1000, length - done);
-    const uint32_t got = file->host_file->Read(file->host, offset + done, g.host(g.Load32(segments + 4 * page)), n, usable);
+    const uint32_t got = ReadHost(*file, offset + done, g.host(g.Load32(segments + 4 * page)), n, usable);
     done += got;
     if (got != n) break;
   }
   if (length && !done && usable) status = kStatusEndOfFile;
+  if (length && file->host_file) LogRead(*file, offset, length, done, usable);
   file->position = offset + done;
   StoreStatus(g, io_status, status, done);
   if (event) Objects().NtSetEvent(g, event, 0);
@@ -502,17 +604,14 @@ uint32_t FileSystem::WriteFileGather(Guest g, uint32_t handle, uint32_t event, u
   if (file->mount->read_only) return kStatusAccessDenied;
   uint64_t offset = offset_ptr ? g.Load64(offset_ptr) : ~0ull;
   if (offset >= 0xFFFFFFFFFFFFFFFEull) offset = file->position;
+  std::fstream stream(file->host, std::ios::binary | std::ios::in | std::ios::out);
+  stream.seekp(std::streamoff(offset));
   uint32_t done = 0;
-  {
-    std::fstream stream(file->host, std::ios::binary | std::ios::in | std::ios::out);
-    stream.seekp(std::streamoff(offset));
-    for (uint32_t page = 0; done < length && stream; ++page) {
-      const uint32_t n = std::min<uint32_t>(0x1000, length - done);
-      stream.write(reinterpret_cast<const char*>(g.host(g.Load32(segments + 4 * page))), n);
-      if (stream) done += n;
-    }
+  for (uint32_t page = 0; done < length && stream; ++page) {
+    const uint32_t n = std::min<uint32_t>(0x1000, length - done);
+    stream.write(reinterpret_cast<const char*>(g.host(g.Load32(segments + 4 * page))), n);
+    if (stream) done += n;
   }
-  HostChanged(&file->host);
   const uint32_t status = done == length ? kStatusSuccess : kStatusAccessDenied;
   file->position = offset + done;
   StoreStatus(g, io_status, status, done);
@@ -579,7 +678,7 @@ uint32_t FileSystem::QueryInformation(Guest g, uint32_t handle, uint32_t io_stat
   Stat s;
   if (info_class == kFileBasicInformation || info_class == kFileStandardInformation ||
       info_class == kFileNetworkOpenInformation) {
-    s = file->host_file ? file->host_file->Query(file->host) : StatOf(file->host);
+    s = StatOf(file->host);
   }
   switch (info_class) {
     case kFileBasicInformation:
@@ -811,6 +910,7 @@ void FileSystem::OnClose(uint32_t object) {
     remove = it->second.delete_on_close;
     host = it->second.host;
     port = it->second.port;
+    if (log_ && log_calls_) log_("files: close " + it->second.guest);
     open_.erase(it);
   }
   if (remove) {

@@ -17,7 +17,7 @@ target_compile_options(any360_sys PRIVATE -Wall -Wextra)
 
 # The object manager's scenario tests need no reference runtime.
 enable_testing()
-add_executable(sys_object_tests tests/sys_object_tests.cpp)
+add_executable(sys_object_tests tests/sys_object_tests.cpp tests/watched_memory.cpp)
 target_link_libraries(sys_object_tests PRIVATE any360_sys)
 target_compile_options(sys_object_tests PRIVATE -Wall -Wextra)
 add_test(NAME sys_object_tests COMMAND sys_object_tests)
