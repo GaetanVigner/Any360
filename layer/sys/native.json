@@ -20,8 +20,6 @@
   "toupper",
   "wcscmp",
   "mbtowc",
-  "strlen (loop of bytes)",
-  "strcmp (loop of bytes)",
   "GetLastError",
   "SetLastError"
  ]

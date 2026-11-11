@@ -225,8 +225,9 @@ inline void CrtWcscmp(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   }
   RunSlow(Function::kWcscmp, ctx, base, original);
 }
-// strlen and strcmp, the builds that are loops of bytes: r3 string (and r4); return the length, the difference of
-// the first bytes that differ.
+// strlen and strcmp, the builds that are loops of bytes (Havok's own in the titles read: checked and measured
+// through these, bound in no title): r3 string (and r4); return the length, the difference of the first bytes
+// that differ.
 inline void CrtStrlen(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   if (g_mode == Mode::kNative) [[likely]] {
     uint64_t r3;

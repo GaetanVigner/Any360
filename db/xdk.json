@@ -455,6 +455,28 @@
   "note": ""
  },
  {
+  "name": "strcmp (loop of bytes)",
+  "library": "Havok",
+  "any360": "todo",
+  "titles": {
+   "crackdown": "0x8294DFC8",
+   "simpsons": "0x823896A8",
+   "tdu": "0x82545700"
+  },
+  "note": "Havok's own, inside its code in the three titles: the difference of the first bytes that differ. Any360 has xdk::CrtStrcmp for the value (checked in Test Drive Unlimited); bound in no title"
+ },
+ {
+  "name": "strlen (loop of bytes)",
+  "library": "Havok",
+  "any360": "todo",
+  "titles": {
+   "crackdown": "0x8294DFF8",
+   "simpsons": "0x82233B00",
+   "tdu": "0x82545950"
+  },
+  "note": "Havok's own, inside its code in the three titles: middleware, kept as it is. Any360 has xdk::CrtStrlen for the value (checked in Crackdown); bound in no title"
+ },
+ {
   "name": "GetLastError",
   "library": "XAPI",
   "any360": "native",
@@ -486,27 +508,5 @@
    "tdu": "0x82696950"
   },
   "note": "the XDK's vector copy next to XAPI: 16-byte vectors, dcbt ahead of the source, dcbz128 ahead of the destination; named after what it does (its name is not in the titles). Three builds of the same steps. Any360: xdk::XMemCpy for ranges that do not overlap, bound in the three"
- },
- {
-  "name": "strcmp (loop of bytes)",
-  "library": "unknown",
-  "any360": "native",
-  "titles": {
-   "crackdown": "0x8294DFC8",
-   "simpsons": "0x823896A8",
-   "tdu": "0x82545700"
-  },
-  "note": "a C loop the three titles carry outside the C runtime: the difference of the first bytes that differ. Any360: xdk::CrtStrcmp, bound in Test Drive Unlimited (the two others: no run has called it)"
- },
- {
-  "name": "strlen (loop of bytes)",
-  "library": "unknown",
-  "any360": "native",
-  "titles": {
-   "crackdown": "0x8294DFF8",
-   "simpsons": "0x82233B00",
-   "tdu": "0x82545950"
-  },
-  "note": "a C loop the three titles carry outside the C runtime (whose own strlen differs between them). Any360: xdk::CrtStrlen, bound in Crackdown (the two others: no run has called it)"
  }
 ]

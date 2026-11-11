@@ -65,7 +65,10 @@ Then, and only then, optimization:
 
 ## Adding one
 
-1. Find the function in the titles (`tools/library_scan.py`, the call counts of a trace) and read its generated
+1. Find the function in the titles (`tools/library_scan.py`, the call counts of a trace) and look its address up
+   in each title's `titles/<title>/modules.json`: it must sit in a range of kind `library`. The same instructions
+   in every title is not enough: Havok is in all three, and its own `strlen` and `strcmp` were bound for a few
+   hours as if they were a library's (State, below). Then read its generated
    code in each build at hand: every store and every exit, the registers it returns. The native function does what
    all of them do; where builds differ, it declines the case or the difference is a parameter of the handler.
 2. Write the model, then the tests (exhaustive where sizes and alignments are small, random above, the declined
@@ -141,8 +144,8 @@ second table for every string function that reads or writes a length.
 | Function | Library | Handler | Declines | Test Drive Unlimited | Crackdown | The Simpsons Game |
 |---|---|---|---|---|---|---|
 | `wcscmp` | CRT | `CrtWcscmp` | a string that reaches the register window | not called: not bound | bound: 9,442,359 calls | bound: 2 |
-| `strlen`, a loop of bytes | a library next to the CRT | `CrtStrlen` | a string that does not end in plain memory | not called: not bound | bound: 15 | not called: not bound |
-| `strcmp`, a loop of bytes | the same | `CrtStrcmp` | the same | bound: 9,387 | not called: not bound | not called: not bound |
+| `strlen`, a loop of bytes | Havok (middleware) | `CrtStrlen` | a string that does not end in plain memory | not called; not bound | checked: 15; not bound | not called; not bound |
+| `strcmp`, a loop of bytes | Havok (middleware) | `CrtStrcmp` | the same | checked: 9,387; not bound | not called; not bound | not called; not bound |
 | `mbtowc` (the "C" locale) | CRT | `CrtMbtowc` | a source in the register window, a destination that is not plain memory | not called: not bound | bound: 110,633 | not called: not bound |
 | `GetLastError` | XAPI | `XapiGetLastError` | a control region or a thread that is not plain memory | checked: 171,899; not bound | checked: 73,195; not bound | checked: 4,819; not bound |
 | `SetLastError` | XAPI | `XapiSetLastError` | the same | checked: 171,972; not bound | checked: 70,297; not bound | checked: 50,734; not bound |
@@ -151,8 +154,13 @@ The check in game (every call both ways, 0 different): Test Drive Unlimited 5.0 
 city), The Simpsons Game 151 M (two minutes of a level). `strchr`, `strncmp` and `strrchr`, changed that day (the
 span, below), were in those runs again.
 
-The C runtime's own `strlen` and `strcmp` are not the same instructions in the three titles; the two here are C
-loops a library of the three carries (its name is not known; what they do is plain).
+The two loops of bytes were a mistake of mine, put right the same day. They were picked for being the same
+instructions in the three titles and bound (Crackdown's `strlen`, Test Drive Unlimited's `strcmp`) before anyone
+looked at where they sit: inside Havok's code (`titles/tdu/modules.json`; at the head of Havok's range in
+Crackdown). Havok is middleware, kept as it is and never replaced function by function, so they are bound in no
+title. They stay in `crt.h` with their models and tests for the value they give: the C runtime's own `strlen` and
+`strcmp` are not the same instructions in the three titles, and each will need its build read. A function is
+looked up in the title's module map before it is picked: `kind` must be `library`.
 
 `GetLastError` and `SetLastError` are five instructions each. Checked, they are right; measured, they gain nothing
 as host routines (below): the call through the binding costs what the loads cost. They are in `xapi.h` with their
@@ -174,8 +182,8 @@ nothing: they stay bound where they were checked.
 | `wcscpy` | 2 calls | 42.6 -> 31.2 (1.4x), 11.0 k | |
 | `wcsncpy` | | 79.4 -> 24.6 (3.2x), 5.1 k | |
 | `wcscmp` | | 12.8 -> 9.5 (1.3x), 9.54 M | 2 calls |
-| `strlen` (bytes) | | 108 -> 68 (1.6x), 15 | |
-| `strcmp` (bytes) | 39.0 -> 10.2 (3.8x), 8.7 k | | |
+| `strlen` (bytes, Havok's: no longer bound) | | 108 -> 68 (1.6x), 15 | |
+| `strcmp` (bytes, Havok's: no longer bound) | 39.0 -> 10.2 (3.8x), 8.7 k | | |
 | `tolower` | 8.3 -> 7.8 (1.1x), 4.7 k | 8.0 -> 7.7 (1.0x), 581 k | |
 | `toupper` | 7.9 -> 7.7 (1.0x), 2.1 k | | |
 | `mbtowc` | | 11.2 -> 11.2 (1.0x), 135 k | |

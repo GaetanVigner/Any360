@@ -421,10 +421,12 @@ inline bool CrtWcscmp(const Memory& memory, uint32_t left, uint32_t right, uint6
   }
 }
 
-// strlen and strcmp as loops of bytes: the builds a library of the three titles carries next to its own code (the
-// C runtime's own strlen and strcmp are not the same instructions in the three). strlen: the bytes before the
-// terminator, in the register's low half. strcmp: the difference of the first two bytes that differ, in the whole
-// register, 0 when the strings end together.
+// strlen and strcmp as loops of bytes. The three titles carry these two inside Havok's code (in Test Drive
+// Unlimited's map; at the head of Havok in Crackdown's): middleware, kept as it is, so no title binds them. They
+// are here, with their models and tests, for what they do: the C runtime's own strlen and strcmp are not the same
+// instructions in the three titles and will each need its build read, and this is the value they must give.
+// strlen: the bytes before the terminator, in the register's low half. strcmp: the difference of the first two
+// bytes that differ, in the whole register, 0 when the strings end together.
 inline bool CrtStrlen(const Memory& memory, uint32_t string, uint64_t& r3) {
   const uint32_t span = PlainSpan(string);
   if (!span) return false;
