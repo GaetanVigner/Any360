@@ -9,6 +9,7 @@
 
 #include "any360/sys/files.h"
 #include "any360/sys/net.h"
+#include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
 #include "any360/sys/xam.h"
 
@@ -37,6 +38,14 @@ REXCVAR_DEFINE_STRING(any360_sys_network, "loopback", "Kernel",
 REXCVAR_DEFINE_BOOL(any360_sys_log_files, false, "Kernel",
                     "Any360: every file the title opens and closes and every read that gives fewer bytes than asked, by "
                     "guest path, in the log");
+REXCVAR_DEFINE_INT32(any360_sys_wait_look_ms, 16, "Kernel",
+                     "Any360: the longest a sleeping wait goes without looking at its objects again, in milliseconds. "
+                     "A wait is woken by signals, timers and APCs; looking only finds a signal state written straight "
+                     "into guest memory, which no title at hand does. 1 (with any360_sys_wait_first_look_ms=1): a look "
+                     "every millisecond, as the layer first did");
+REXCVAR_DEFINE_INT32(any360_sys_wait_first_look_ms, 16, "Kernel",
+                     "Any360: how long a sleeping wait goes before its first look at its objects (each next one twice "
+                     "as late, up to any360_sys_wait_look_ms)");
 REXCVAR_DEFINE_INT32(any360_input_step_us, 16683, "Kernel",
                      "Any360 input group: polls step through the queued changes at most this often (one console frame), so "
                      "each stays visible for a frame; 0: every poll steps");
@@ -109,6 +118,11 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
 #endif
     }
     EnableSystemGroup(group, true);
+    if (group == SysGroup::kObjects) {
+      any360::sys::Objects().SetWaitLook(std::chrono::milliseconds(std::max(1, REXCVAR_GET(any360_sys_wait_look_ms))),
+                                         std::chrono::milliseconds(std::max(1, REXCVAR_GET(any360_sys_wait_first_look_ms))));
+      any360::sys::Objects().SetWaitLog([](const std::string& line) { REXLOG_INFO("Any360 system: {}", line); });
+    }
     if (group == SysGroup::kFiles) {
       any360::sys::Files().SetKeepHostFiles(REXCVAR_GET(any360_sys_keep_files));
       any360::sys::Files().SetLog([](const std::string& line) { REXLOG_INFO("Any360 system: {}", line); },

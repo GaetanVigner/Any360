@@ -309,6 +309,108 @@ void Timers() {
   CHECK(t0 > 132223104000000000ull && SystemTime() >= t0);
 }
 
+// A sleeping wait is woken by what ends it and does not wake a thousand times a second to look: with looks up to
+// 200 ms apart, a signal, a timer, an APC and a time-out each end their wait on time; a state written straight into
+// guest memory is still found, within the longest look.
+void WaitsThatSleep() {
+  Fresh();
+  Objects().SetWaitLook(std::chrono::milliseconds(200));
+  const uint32_t out = kScratch + 0x200;
+  const int64_t five_seconds = -50000000;
+  const auto elapsed_ms = [](std::chrono::steady_clock::time_point since) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - since).count();
+  };
+  CHECK(Objects().CreateEvent(g, out, 0, 1, 0) == 0);
+  const uint32_t event = g.Load32(out), event_at = Objects().Lookup(event);
+  // A signal from another thread, long after the looks have spread out.
+  ObjectManager::WaitCounts before = Objects().wait_counts();
+  auto started = std::chrono::steady_clock::now();
+  std::thread setter([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(120));
+    Objects().NtSetEvent(g, event, 0);
+  });
+  CHECK(Objects().WaitForHandle(g, event, kMainThread, &five_seconds) == 0);
+  setter.join();
+  CHECK(elapsed_ms(started) >= 110 && elapsed_ms(started) < 180);
+  ObjectManager::WaitCounts after = Objects().wait_counts();
+  CHECK(after.on_signal == before.on_signal + 1 && after.by_looking == before.by_looking && after.slept == before.slept + 1);
+  CHECK(after.looks - before.looks <= 9);  // 1, 2, 4 ... 64 ms and the signal: not 120
+  // A timer that comes due while the wait sleeps.
+  CHECK(Objects().CreateTimer(g, out + 4, 0, 0) == 0);
+  const uint32_t timer = g.Load32(out + 4);
+  g.Store64(out + 8, uint64_t(int64_t(-1500000)));  // 150 ms
+  CHECK(Objects().NtSetTimerEx(g, timer, out + 8, 0, 0, 0, 0, 0) == 0);
+  started = std::chrono::steady_clock::now();
+  CHECK(Objects().WaitForHandle(g, timer, kMainThread, &five_seconds) == 0);
+  CHECK(elapsed_ms(started) >= 140 && elapsed_ms(started) < 200);
+  // A wait on something else wakes for the timer too and makes it fire: it is signalled by its due time.
+  g.Store64(out + 8, uint64_t(int64_t(-1500000)));
+  CHECK(Objects().NtSetTimerEx(g, timer, out + 8, 0, 0, 0, 0, 0) == 0);
+  const int64_t quarter_second = -2500000;
+  started = std::chrono::steady_clock::now();
+  std::thread watcher([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(180));
+    CHECK(g.Load32(Objects().Lookup(timer) + 4) == 1);
+  });
+  CHECK(Objects().WaitForHandle(g, event, kMainThread, &quarter_second) == kStatusTimeout);
+  watcher.join();
+  // A time-out ends on time, not at the next look.
+  CHECK(elapsed_ms(started) >= 240 && elapsed_ms(started) < 300);
+  // An APC queued to the thread ends its alertable wait at once.
+  started = std::chrono::steady_clock::now();
+  std::thread queuer([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(120));
+    Threads().QueueApcTo(kMainThread, 0x82000000, 1, 2, 3);
+  });
+  CHECK(Objects().WaitForHandle(g, event, kMainThread, &five_seconds, true) == kStatusUserApc);
+  queuer.join();
+  CHECK(elapsed_ms(started) >= 110 && elapsed_ms(started) < 180);
+  // A state written straight into guest memory, with nothing told to the layer: found by looking.
+  before = Objects().wait_counts();
+  started = std::chrono::steady_clock::now();
+  std::thread writer([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    g.Store32(event_at + 4, 1);
+  });
+  CHECK(Objects().WaitForHandle(g, event, kMainThread, &five_seconds) == 0);
+  writer.join();
+  CHECK(elapsed_ms(started) >= 20 && elapsed_ms(started) < 20 + 200 + 60);
+  after = Objects().wait_counts();
+  CHECK(after.by_looking == before.by_looking + 1 && after.looked_types[kSynchronizationEvent] == before.looked_types[kSynchronizationEvent] + 1);
+  // With the first look as late as the longest: a wait a signal ends wakes once, for the signal.
+  Objects().SetWaitLook(std::chrono::milliseconds(200), std::chrono::milliseconds(200));
+  before = Objects().wait_counts();
+  started = std::chrono::steady_clock::now();
+  std::thread second_setter([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(120));
+    Objects().NtSetEvent(g, event, 0);
+  });
+  CHECK(Objects().WaitForHandle(g, event, kMainThread, &five_seconds) == 0);
+  second_setter.join();
+  after = Objects().wait_counts();
+  CHECK(elapsed_ms(started) >= 110 && elapsed_ms(started) < 180 && after.looks - before.looks == 1);
+  // A timer armed by another thread while a wait already sleeps on it: the wait ends at the timer's due time.
+  started = std::chrono::steady_clock::now();
+  std::thread armer([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    g.Store64(out + 16, uint64_t(int64_t(-500000)));  // 50 ms from then
+    Objects().NtSetTimerEx(g, timer, out + 16, 0, 0, 0, 0, 0);
+  });
+  CHECK(Objects().NtCancelTimer(g, timer, 0) == 0);
+  g.Store32(Objects().Lookup(timer) + 4, 0);
+  CHECK(Objects().WaitForHandle(g, timer, kMainThread, &five_seconds) == 0);
+  armer.join();
+  CHECK(elapsed_ms(started) >= 95 && elapsed_ms(started) < 160);
+  // With a look every millisecond, as before: the same waits, a wake-up at every look (as many as the host's timer
+  // gives in a tenth of a second: 6 at its default 15.6 ms, 100 where a title has asked for a millisecond).
+  Objects().SetWaitLook(std::chrono::milliseconds(1));
+  before = Objects().wait_counts();
+  const int64_t tenth = -1000000;
+  CHECK(Objects().WaitForHandle(g, event, kMainThread, &tenth) == kStatusTimeout);
+  after = Objects().wait_counts();
+  CHECK(after.looks - before.looks >= 5 && after.timed_out == before.timed_out + 1);
+}
+
 void MultipleWaits() {
   Fresh();
   const uint32_t out = kScratch + 0x200, handles = kScratch + 0x300;
@@ -2403,6 +2505,7 @@ int main() {
   ReclaimTests();
   RwLockTests();
   Timers();
+  WaitsThatSleep();
   Lifetimes();
   MultipleWaits();
   Events();

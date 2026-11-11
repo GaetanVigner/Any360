@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <string>
 #include <thread>
 
 namespace any360::sys {
@@ -249,6 +250,10 @@ uint32_t ObjectManager::SetTimer(Guest g, uint32_t timer, int64_t due_time, uint
   g.Store32(timer + kHeaderSignalState, 0);
   g.Store8(timer + 3, 1);
   if (!was_armed) timers_.push_back(timer);
+  // The waits that sleep on it, and the wait of the thread its APC goes to, went to sleep before this due time
+  // was known: they wake to sleep again until it, not until their next look.
+  Wake(timer);
+  if (const auto apc = timer_apcs_.find(timer); apc != timer_apcs_.end()) AlertThread(apc->second.thread);
   return was_armed ? 1 : 0;
 }
 
@@ -625,11 +630,16 @@ bool ObjectManager::IsSatisfiable(Guest g, uint32_t object, uint32_t thread) con
 // A wait's place on its objects' lists while it sleeps (under dispatcher_mutex_): the thread's own condition.
 class ObjectManager::WaitRegistration {
  public:
-  WaitRegistration(ObjectManager& manager, const uint32_t* objects, uint32_t count)
-      : manager_(manager), objects_(objects), count_(count) {
+  WaitRegistration(ObjectManager& manager, const uint32_t* objects, uint32_t count, uint32_t thread)
+      : manager_(manager), objects_(objects), count_(count), thread_(thread) {
     for (uint32_t i = 0; i < count; ++i) manager.waiters_.emplace(objects[i], &waiter_);
+    if (thread) manager.thread_waits_[thread] = &waiter_;
   }
   ~WaitRegistration() {
+    if (thread_) {
+      const auto mine = manager_.thread_waits_.find(thread_);
+      if (mine != manager_.thread_waits_.end() && mine->second == &waiter_) manager_.thread_waits_.erase(mine);
+    }
     for (uint32_t i = 0; i < count_; ++i) {
       auto [first, last] = manager_.waiters_.equal_range(objects_[i]);
       for (auto it = first; it != last; ++it) {
@@ -640,18 +650,23 @@ class ObjectManager::WaitRegistration {
       }
     }
   }
-  void Sleep(std::unique_lock<std::recursive_mutex>& lock) const {
-    waiter_.ready.wait_for(lock, std::chrono::milliseconds(1));
+  // Until a signal on one of the objects or an APC to the thread wakes it, or `until`. True when woken.
+  bool Sleep(std::unique_lock<std::recursive_mutex>& lock, std::chrono::steady_clock::time_point until) const {
+    waiter_.woken = false;
+    waiter_.ready.wait_until(lock, until);
     if (ShuttingDown()) {  // the title is ending: the wait never comes back to its objects
       lock.unlock();
       ParkIfShuttingDown();
     }
+    return waiter_.woken;
   }
+  // Whether a signal came since the sleep began (a timer the wait's own look found due is one).
+  bool woken() const { return waiter_.woken; }
 
  private:
   ObjectManager& manager_;
   const uint32_t* objects_;
-  uint32_t count_;
+  uint32_t count_, thread_;
   static thread_local Waiter waiter_;
 };
 
@@ -659,7 +674,88 @@ thread_local ObjectManager::Waiter ObjectManager::WaitRegistration::waiter_;
 
 void ObjectManager::Wake(uint32_t object) {
   auto [first, last] = waiters_.equal_range(object);
-  for (auto it = first; it != last; ++it) it->second->ready.notify_one();
+  for (auto it = first; it != last; ++it) {
+    it->second->woken = true;
+    it->second->ready.notify_one();
+  }
+}
+
+void ObjectManager::AlertThread(uint32_t kthread) {
+  std::lock_guard lock(dispatcher_mutex_);
+  if (const auto it = thread_waits_.find(kthread); it != thread_waits_.end()) {
+    it->second->woken = true;
+    it->second->ready.notify_one();
+  }
+}
+
+void ObjectManager::SetWaitLook(std::chrono::microseconds longest, std::chrono::microseconds first) {
+  std::lock_guard lock(dispatcher_mutex_);
+  longest_look_ = std::max(longest, std::chrono::microseconds(1000));
+  first_look_ = std::clamp(first, std::chrono::microseconds(1000), longest_look_);
+}
+
+ObjectManager::WaitCounts ObjectManager::wait_counts() {
+  std::lock_guard lock(dispatcher_mutex_);
+  return wait_counts_;
+}
+
+void ObjectManager::SetWaitLog(std::function<void(const std::string&)> log) {
+  std::lock_guard lock(dispatcher_mutex_);
+  wait_log_ = std::move(log);
+  reported_at_ = std::chrono::steady_clock::now();
+}
+
+bool ObjectManager::SleepInWait(Guest g, std::unique_lock<std::recursive_mutex>& lock, const WaitRegistration& registration,
+                                std::chrono::microseconds& look, const std::chrono::steady_clock::time_point* deadline) {
+  const auto now = std::chrono::steady_clock::now();
+  auto until = now + look;
+  if (deadline && *deadline < until) until = *deadline;
+  if (!timers_.empty()) {
+    // The earliest timer: whoever sleeps wakes for it and makes it fire (Poll), for its waits and its APC.
+    uint64_t due = ~0ull;
+    for (const uint32_t timer : timers_) due = std::min(due, g.Load64(timer + kTimerDueTime));
+    const uint64_t system = SystemTime();
+    const uint64_t ahead = due > system ? std::min<uint64_t>(due - system, 36'000'000'000ull) : 0;  // an hour at most
+    const auto at = now + std::chrono::nanoseconds(ahead * 100);
+    if (at < until) until = at;
+  }
+  const bool woken = registration.Sleep(lock, until);
+  ++wait_counts_.looks;
+  look = woken ? first_look_ : std::min(look * 2, longest_look_);
+  return woken;
+}
+
+void ObjectManager::CountWait(Guest g, bool woken, uint32_t object) {
+  if (woken) {
+    ++wait_counts_.on_signal;
+  } else {
+    ++wait_counts_.by_looking;
+    ++wait_counts_.looked_types[g.Load8(object + kHeaderType) & 15];
+  }
+}
+
+void ObjectManager::ReportWaits() {
+  if (!wait_log_) return;
+  const auto now = std::chrono::steady_clock::now();
+  if (now - reported_at_ < std::chrono::seconds(10)) return;
+  const double seconds = std::chrono::duration<double>(now - reported_at_).count();
+  const WaitCounts& c = wait_counts_;
+  const WaitCounts& r = reported_counts_;
+  std::string types;
+  for (int type = 0; type < 16; ++type) {
+    if (const uint64_t n = c.looked_types[type] - r.looked_types[type]) {
+      types += (types.empty() ? " (type " : ", type ") + std::to_string(type) + " x" + std::to_string(n);
+    }
+  }
+  if (!types.empty()) types += ")";
+  wait_log_("waits in " + std::to_string(int(seconds)) + " s: " + std::to_string(c.immediate - r.immediate) +
+            " taken at once, " + std::to_string(c.slept - r.slept) + " slept: " + std::to_string(c.on_signal - r.on_signal) +
+            " ended on a signal, " + std::to_string(c.by_looking - r.by_looking) + " by looking" + types + ", " +
+            std::to_string(c.timed_out - r.timed_out) + " timed out, " + std::to_string(c.apcs - r.apcs) + " on an APC; " +
+            std::to_string(uint64_t(double(c.looks - r.looks) / seconds)) + " wake-ups a second to look (looks from " +
+            std::to_string(first_look_.count() / 1000) + " to " + std::to_string(longest_look_.count() / 1000) + " ms apart)");
+  reported_counts_ = wait_counts_;
+  reported_at_ = now;
 }
 
 void ObjectManager::SignalChanged(uint32_t object) {
@@ -684,18 +780,35 @@ uint32_t ObjectManager::WaitForObjects(Guest g, uint32_t count, const uint32_t* 
     return 0;
   };
   std::unique_lock lock(dispatcher_mutex_);
+  ReportWaits();
   int32_t taken = attempt();
-  if (taken >= 0) return uint32_t(taken);
+  if (taken >= 0) {
+    ++wait_counts_.immediate;
+    return uint32_t(taken);
+  }
   const auto limit = WaitLimit(timeout);
   if (limit.count() == 0) return kStatusTimeout;
   const auto start = std::chrono::steady_clock::now();
-  const WaitRegistration registration(*this, objects, count);
+  const bool bounded = limit != std::chrono::nanoseconds::max();
+  const auto deadline = bounded ? start + limit : std::chrono::steady_clock::time_point::max();
+  ++wait_counts_.slept;
+  const WaitRegistration registration(*this, objects, count, thread);
+  auto look = first_look_;
   for (;;) {
-    registration.Sleep(lock);
+    SleepInWait(g, lock, registration, look, bounded ? &deadline : nullptr);
     taken = attempt();
-    if (taken >= 0) return uint32_t(taken);
-    if (alertable && Threads().PendingApcs(thread)) return kStatusUserApc;
-    if (timeout && std::chrono::steady_clock::now() - start >= limit) return kStatusTimeout;
+    if (taken >= 0) {
+      CountWait(g, registration.woken(), objects[wait_type == kWaitAny ? uint32_t(taken) : 0]);
+      return uint32_t(taken);
+    }
+    if (alertable && Threads().PendingApcs(thread)) {
+      ++wait_counts_.apcs;
+      return kStatusUserApc;
+    }
+    if (timeout && std::chrono::steady_clock::now() - start >= limit) {
+      ++wait_counts_.timed_out;
+      return kStatusTimeout;
+    }
   }
 }
 
@@ -715,18 +828,35 @@ uint32_t ObjectManager::WaitForHandles(Guest g, uint32_t count, uint32_t handles
 
 uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread, const int64_t* timeout, bool alertable) {
   std::unique_lock lock(dispatcher_mutex_);
+  ReportWaits();
   Poll(g);
-  if (TrySatisfy(g, object, thread)) return kStatusSuccess;
+  if (TrySatisfy(g, object, thread)) {
+    ++wait_counts_.immediate;
+    return kStatusSuccess;
+  }
   const auto limit = WaitLimit(timeout);
   if (limit.count() == 0) return kStatusTimeout;
   const auto start = std::chrono::steady_clock::now();
-  const WaitRegistration registration(*this, &object, 1);
+  const bool bounded = limit != std::chrono::nanoseconds::max();
+  const auto deadline = bounded ? start + limit : std::chrono::steady_clock::time_point::max();
+  ++wait_counts_.slept;
+  const WaitRegistration registration(*this, &object, 1, thread);
+  auto look = first_look_;
   for (;;) {
-    registration.Sleep(lock);
+    SleepInWait(g, lock, registration, look, bounded ? &deadline : nullptr);
     Poll(g);
-    if (TrySatisfy(g, object, thread)) return kStatusSuccess;
-    if (alertable && Threads().PendingApcs(thread)) return kStatusUserApc;
-    if (timeout && std::chrono::steady_clock::now() - start >= limit) return kStatusTimeout;
+    if (TrySatisfy(g, object, thread)) {
+      CountWait(g, registration.woken(), object);
+      return kStatusSuccess;
+    }
+    if (alertable && Threads().PendingApcs(thread)) {
+      ++wait_counts_.apcs;
+      return kStatusUserApc;
+    }
+    if (timeout && std::chrono::steady_clock::now() - start >= limit) {
+      ++wait_counts_.timed_out;
+      return kStatusTimeout;
+    }
   }
 }
 

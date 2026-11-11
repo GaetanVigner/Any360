@@ -165,9 +165,21 @@ What the game found that the tests could not:
   the loading screen). The handle table had the same flaw (two threads creating events could get one slot, and a
   growing table moved the entries `Find` had handed out). `ObjectManager` now keeps a dispatcher lock, as the kernel
   does, for signal states, timers and the waits' tests, and the handle table (a deque) under `lifetime_mutex_`.
-  The waits sleep on a condition the routines signal instead of spinning, and look again every millisecond for states
+  The waits sleep on a condition the routines signal instead of spinning, and look again now and then for states
   written elsewhere (the title's inline `stw 0,4(r3)` resets, the other kernel). `sys_object_tests` has a
   four-producer, four-consumer test.
+- That look was every millisecond: every thread that waited woke a thousand times a second, 7,000 to 10,000
+  wake-ups a second in a title's menus (2026-11-11, found with `tools/cpu_profile.ps1`). A wait now sleeps until
+  what ends it: a signal through the layer's routines, the earliest timer's due time (it makes the timer fire, for
+  its waits and its APC), an APC queued to its thread (`AlertThread`), its time-out; arming a timer wakes the
+  waits that already sleep on it. The look stays as a net for a signal state written straight into guest memory,
+  16 ms apart by default (`any360_sys_wait_look_ms`, `any360_sys_wait_first_look_ms`; 1 and 1 give the old
+  behaviour). The log counts every ten seconds how the waits ended: in the menus of the three titles and in play
+  (a level of The Simpsons Game, Crackdown's city, Test Drive Unlimited driving), none ended by looking. Wake-ups
+  to look: 7,100 to 9,800 a second before, 1,450 to 1,900 after, which is about the signals themselves. Processors
+  used in the menus, old against new: Crackdown 0.37 -> 0.30 (0.39 -> 0.32 in another pair of runs), Test Drive
+  Unlimited 1.58 -> 1.35 (not the same screen in both), The Simpsons Game 0.97 -> 0.98 (1.18 -> 1.06 in another
+  pair): a real gain in Crackdown, inside what two runs differ by in The Simpsons Game. Frame rates the same.
 - Waking every wait on each signal (one condition for all) cost 17-22% of the frame rate: a dozen of the title's
   threads woke and queued on the lock for each event. A wait now sleeps on its thread's own condition, listed under
   the objects it waits on, and a signal wakes only those. Same city route, files only against files and objects:

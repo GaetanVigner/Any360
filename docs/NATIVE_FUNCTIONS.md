@@ -421,6 +421,11 @@ What it says:
   spinning (`sub_826800D8` calling `sub_826737B8`: eight `db16cyc`, four times, then a look at the ring's read
   pointer), at an even 30 frames a second: it waits for its swap, not for work.
 
+The first of those was taken on the same day: any360::sys's waits no longer look every millisecond
+(docs/SYS_BINDING.md, step 3). Wake-ups fell by four to seven times; the processor saved is small (0.07 of one in
+Crackdown's menus), most of what the profile put on those waits being the signals themselves and the code that ran
+before them.
+
 So the processor time is in how threads wait, in Any360's own layers and in the D3D runtime, not in library leaf
 functions. The cycles a thread carries when found at a wait include what it ran just before: the shares above
 are upper bounds for the waits themselves.

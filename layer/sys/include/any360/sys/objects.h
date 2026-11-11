@@ -2,9 +2,11 @@
 // semantics in the guest structures, as a decompiled title relies on them: the signal state lives in the object's
 // dispatcher header, the Ke* routines return the previous state, handles start at 0xF8000000 and count by four.
 // Objects a title creates through Nt* calls are allocated from the kernel heap the title hands the layer. Waits
-// consume a signalled object immediately and otherwise poll (relative timeouts); the scheduler proper comes later.
+// consume a signalled object immediately and otherwise sleep until a signal, a timer, an APC or their time-out,
+// looking at their objects now and then for a state written elsewhere; the scheduler proper comes later.
 #pragma once
 
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -139,6 +141,24 @@ class ObjectManager {
   void SetForeignHandles(ForeignHandles foreign) { foreign_ = std::move(foreign); }
   // An object's signal state changed outside these routines (a thread ended): its waits look again.
   void SignalChanged(uint32_t object);
+  // An APC was queued to a thread: its wait, if it sleeps in one, looks again (an alertable wait ends on it).
+  void AlertThread(uint32_t kthread);
+  // The longest a sleeping wait goes without looking at its objects again. A wait is woken by what the layer knows
+  // of (a signal through these routines, a timer coming due, an APC, its time-out); a signal state written straight
+  // into guest memory is only found by looking. A wait first looks after `first`, then twice as long each time
+  // nothing woke it, up to `longest`. One millisecond for both is a look every millisecond, as the layer first
+  // did: a thousand wake-ups a second for every thread that waits.
+  void SetWaitLook(std::chrono::microseconds longest, std::chrono::microseconds first = std::chrono::microseconds(1000));
+  // What the waits did since the start: taken at once or after sleeping, and of those that slept how each ended
+  // (`by_looking`: the state was found changed with nothing having woken the wait; by dispatcher type in
+  // `looked_types`), and how many times sleeping waits woke to look (`looks`).
+  struct WaitCounts {
+    uint64_t immediate = 0, slept = 0, on_signal = 0, by_looking = 0, timed_out = 0, apcs = 0, looks = 0;
+    uint64_t looked_types[16] = {};
+  };
+  WaitCounts wait_counts();
+  // Where the counts are written every ten seconds while waits are made (a line of what happened since the last).
+  void SetWaitLog(std::function<void(const std::string&)> log);
   // Whether a handle given as an event names an object here, or (outside this range) an event in the other kernel.
   bool EventHandleValid(uint32_t handle);
   // For the other managers: a guest region from the kernel heap (0 when exhausted), a handle on an existing object,
@@ -193,15 +213,27 @@ class ObjectManager {
   // tests its objects under it, so a release and a wait on two threads never lose a count. A wait sleeps on its
   // thread's condition, listed in `waiters_` under each object it waits on: a signal wakes only the waits on that
   // object (waking every wait made the title's threads queue on the lock, a fifth of Crackdown's frame rate), and each
-  // looks again every millisecond for states written elsewhere (the title's inline code, the other kernel). Taken
-  // after lifetime_mutex_, never before.
+  // looks again now and then for states written elsewhere (the title's inline code, the other kernel): SetWaitLook.
+  // Taken after lifetime_mutex_, never before.
   std::recursive_mutex dispatcher_mutex_;
   struct Waiter {
     std::condition_variable_any ready;
+    bool woken = false;  // a signal or an APC came while it slept (under dispatcher_mutex_)
   };
   std::unordered_multimap<uint32_t, Waiter*> waiters_;  // object -> the waits on it
+  std::unordered_map<uint32_t, Waiter*> thread_waits_;  // thread -> the wait it sleeps in
   void Wake(uint32_t object);                           // under dispatcher_mutex_
   class WaitRegistration;
+  // One sleep of a wait: until a signal or an APC wakes it, a timer comes due, `deadline` or the next look. Says
+  // whether it was woken, and makes the next look later when it was not.
+  bool SleepInWait(Guest g, std::unique_lock<std::recursive_mutex>& lock, const WaitRegistration& registration,
+                   std::chrono::microseconds& look, const std::chrono::steady_clock::time_point* deadline);
+  void CountWait(Guest g, bool woken, uint32_t object);
+  void ReportWaits();
+  std::chrono::microseconds longest_look_{1000}, first_look_{1000};
+  WaitCounts wait_counts_, reported_counts_;
+  std::chrono::steady_clock::time_point reported_at_{};
+  std::function<void(const std::string&)> wait_log_;
   struct Packet {
     uint32_t key, apc_context, status, bytes;
   };

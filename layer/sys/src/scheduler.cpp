@@ -142,8 +142,11 @@ void Scheduler::QueueIoApc(uint32_t kthread, uint32_t routine, uint32_t context,
 }
 
 void Scheduler::QueueApcTo(uint32_t kthread, uint32_t routine, uint32_t context, uint32_t arg1, uint32_t arg2) {
-  std::lock_guard lock(apc_mutex_);
-  apcs_.push_back({kthread, routine, context, arg1, arg2});
+  {
+    std::lock_guard lock(apc_mutex_);
+    apcs_.push_back({kthread, routine, context, arg1, arg2});
+  }
+  Objects().AlertThread(kthread);  // its wait, if it sleeps in one, looks now
 }
 
 size_t Scheduler::PendingApcs(uint32_t kthread) const {
