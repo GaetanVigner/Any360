@@ -386,6 +386,45 @@ and `memset` behind the first tests of plain memory) against the code as it is:
 - `memmove`'s own side (the backward copy) is called a few thousand times in two minutes at most: measured by size
   in `xdk_crt_bench` (the same copy as `memcpy`'s), not tuned.
 
+### Where the processor time goes (2026-11-11)
+
+Measured after 29 functions, to know what is worth porting next: `tools/cpu_profile.ps1` samples the threads of a
+running title about a thousand times a second each and puts on every sample the processor cycles the thread used
+since its last one. Titles in play, everything on Any360, 45 seconds each:
+
+| | Test Drive Unlimited (driving, 30 FPS) | Crackdown (city, 60 FPS) |
+|---|---|---|
+| Processors used | 2.23 | 2.12 |
+| Waits and sleeps (the system calls, with what ran just before them) | 27.9% | 44.6% |
+| The title's recompiled code | 46.8% | 28.6% |
+| of which the C runtime | 0.3% | under 0.5% |
+| of which the D3D runtime | 34.4% | 3.2% |
+| of which XAudio | | 5.9% |
+| of which game code | 9.0% | 15.8% |
+| Any360 (graphics almost all of it) | 8.8% | 11.6% |
+| The port's host code | 7.7% | 6.3% |
+| GPU driver | 2.4% | 2.2% |
+
+The Simpsons Game was measured in its menus and on a loading screen only (55 to 77% in waits and sleeps, the C
+runtime 0.4%); in a level it has not been.
+
+What it says:
+
+- The C runtime is 0.3 to 0.5% of the cycles. Nothing ported in this file can show in a frame rate, and nothing
+  left in the C runtime can either. The functions are here to take the library off the recompiled code.
+- A third to a half of the cycles go to threads that wake and sleep again: a wait with a short time-out in a loop.
+  By the function that asked: any360::sys's waits (`ObjectManager::WaitForObject` sleeps 1 ms at a time and looks
+  again: 5 to 18% of the cycles), the renderer's worker loops (`VulkanRenderer::RecordLoop` 5 to 8%,
+  `AsyncRenderer::Run`, `SubmitLoop`), Crackdown's two XAudio threads (a quarter of its cycles between them,
+  mostly waking and sleeping), the runtime's timer thread (2 to 9%).
+- Test Drive Unlimited's main thread is one processor, and 83% of it is the D3D runtime waiting for the GPU by
+  spinning (`sub_826800D8` calling `sub_826737B8`: eight `db16cyc`, four times, then a look at the ring's read
+  pointer), at an even 30 frames a second: it waits for its swap, not for work.
+
+So the processor time is in how threads wait, in Any360's own layers and in the D3D runtime, not in library leaf
+functions. The cycles a thread carries when found at a wait include what it ran just before: the shares above
+are upper bounds for the waits themselves.
+
 ### Found on the way
 
 - Crackdown crashed after 40 to 55 seconds with a gamepad connected and the input group on `any360::sys`: its
