@@ -24,6 +24,7 @@
  ],
  "open": [
   "Above 60 FPS the camera (right stick) barely turns: the title's camera logic, not the input path (every other input is right).",
-  "Loading screens and the heaviest scenes drop to 21-25 FPS: bound by the game's own CPU thread, not by the renderer (1-3 ms a frame)."
+  "Loading screens and the heaviest scenes drop to 21-25 FPS: bound by the game's own CPU thread, not by the renderer (1-3 ms a frame).",
+  "On some launches the menus and loading screens run at 22 FPS instead of 30 with the window shown (7 launches of 11; never minimized; levels keep 60): the renderer's thread waits in the presentation of each frame. Not looked into yet."
  ]
 }
