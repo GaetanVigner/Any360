@@ -2099,9 +2099,17 @@ void VulkanRenderer::MemExported(std::vector<MemExport> exports) {
   // ranges copied into the readback buffer at the flush, then into guest memory; a mirror: copied back from it;
   // imported: written in place. The texture cache forgets what it held there.
   ++stats_.memexports;
-  // The ranges come back whole, elements the shaders did not write included: the GPU's copy of them is made current
-  // first (uploaded with the batch), or what the title wrote there since would be undone.
-  for (const MemExport& e : exports) ReadsGuestMemory(e.base, e.bytes);
+  // The ranges are read back whole, but only the words the shaders changed are written into guest memory: a stream's
+  // range (its element count) is often far larger than what a draw exports, and Call of Duty: Black Ops streams
+  // textures into the rest meanwhile, which a whole copy turned to noise. The GPU's copy of the ranges is made current
+  // first (every page uploaded with the batch, not only those known stale), and what it was given is kept to compare.
+  std::vector<std::vector<uint8_t>> given(exports.size());
+  for (size_t i = 0; i < exports.size(); ++i) {
+    const MemExport& e = exports[i];
+    GuestMemoryWritten(e.base, e.base + e.bytes);  // uploaded again whole, from guest memory as it is now
+    ReadsGuestMemory(e.base, e.bytes);
+    given[i].assign(physical_ + e.base, physical_ + e.base + e.bytes);
+  }
   uint32_t readback_bytes = 0;
   for (MemExport& e : exports) e.readback = readback_bytes, readback_bytes += (e.bytes + 15) & ~15u;
   if (vram_guest_on_ && memexport_readback_.size < readback_bytes) {
@@ -2114,14 +2122,26 @@ void VulkanRenderer::MemExported(std::vector<MemExport> exports) {
     }
   }
   memexports_ = exports;
-  WhenDone([this, exports = std::move(exports)] {
-    for (const MemExport& e : exports) {
-      if (vram_guest_on_) {
-        std::memcpy(physical_ + e.base, static_cast<const uint8_t*>(memexport_readback_.mapped) + e.readback, e.bytes);
-      } else if (!shared_memory_imported_) {
-        std::memcpy(physical_ + e.base, static_cast<const uint8_t*>(shared_memory_.mapped) + e.base, e.bytes);
+  if (batch_open_) batch().memexport = true;  // its actions (this copy) wait for the GPU, never released early
+  WhenDone([this, exports = std::move(exports), given = std::move(given)] {
+    WritingGuestMemoryScope writing;
+    for (size_t i = 0; i < exports.size(); ++i) {
+      const MemExport& e = exports[i];
+      const uint8_t* after = vram_guest_on_ ? static_cast<const uint8_t*>(memexport_readback_.mapped) + e.readback
+                             : !shared_memory_imported_ ? static_cast<const uint8_t*>(shared_memory_.mapped) + e.base
+                                                        : nullptr;
+      if (!after) continue;  // imported: written in place
+      // The words the shaders changed, from what they were given; the rest is left as the title has it now.
+      const uint8_t* before = given[i].data();
+      uint32_t first = UINT32_MAX, last = 0;
+      for (uint32_t at = 0; at + 4 <= e.bytes; at += 4) {
+        if (std::memcmp(after + at, before + at, 4) == 0) continue;
+        std::memcpy(physical_ + e.base + at, after + at, 4);
+        first = std::min(first, at), last = at + 4;
       }
-      if (textures_) textures_->MemoryChanged(e.base, e.base + e.bytes);
+      if (first == UINT32_MAX) continue;
+      AuditWrite("memexport", e.base + first, e.base + last);
+      if (textures_) textures_->MemoryChanged(e.base + first, e.base + last);
     }
   });
   WaitIdle();
@@ -2443,6 +2463,7 @@ VkCommandBuffer VulkanRenderer::Record() {
       b.timing_keys.clear();
     }
     recorded_.valid = false;  // a new command buffer has no state
+    b.memexport = false;
     batch_open_ = true;
     b.pieces_used = 0;
     order_.clear();
@@ -2645,7 +2666,7 @@ void VulkanRenderer::TakeReleased(std::vector<std::function<void()>>& actions) {
     if (b.done || b.released) return true;
     // Colour resolves it reads back into guest memory do not hold it (they land when the batch has run; the runtime
     // never writes them back at all). Depth resolves do: a title reading depth on the CPU must see this frame's.
-    if (!b.submitted || !b.captured) return false;
+    if (!b.submitted || !b.captured || b.memexport) return false;
     for (const PendingWriteBack& w : b.write_backs) {
       if (w.depth) return false;
     }
@@ -2987,6 +3008,7 @@ void VulkanRenderer::WriteQuery(const Batch::Query& query) {
   uint32_t counts[8] = {};
   counts[0] = counts[4] = uint32_t(std::min<uint64_t>(samples, UINT32_MAX));
   if (uint64_t(query.address) + sizeof(counts) <= mirror_bytes_) {
+    AuditWrite("occlusion query", query.address, uint32_t(query.address + sizeof(counts)));
     std::memcpy(physical_ + query.address, counts, sizeof(counts));
     GuestMemoryWritten(query.address, query.address + uint32_t(sizeof(counts)));
   }
@@ -3754,6 +3776,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
                                                                                                            : 4;
     const uint64_t rows = (uint64_t(y0) + height + 31) & ~uint64_t(31);
     const uint32_t end = uint32_t(std::min<uint64_t>(dest_base + rows * ((dest_pitch + 31) & ~31u) * element, mirror_bytes_));
+    if (!on_gpu || read_back) AuditWrite(on_gpu ? "resolve (queued)" : "resolve on the CPU", dest_base, end);
     textures_->MemoryChanged(dest_base, end);
     GuestMemoryWritten(dest_base, end);  // the pages copied into video memory too (vertices a title resolved)
   }
@@ -3794,6 +3817,43 @@ void VulkanRenderer::GuestMemoryWritten(uint32_t begin, uint32_t end) {
 }
 
 bool VulkanRenderer::WritingGuestMemory() { return t_writing_guest_memory; }
+
+void VulkanRenderer::AuditWrite(const char* what, uint32_t begin, uint32_t end) {
+  if (!audit_writes_ || begin >= end) return;
+  std::lock_guard lock(audit_mutex_);
+  if (audit_pending_.size() < 100000) audit_pending_.push_back({what, begin, end});
+}
+
+void VulkanRenderer::CheckAuditedWrites() {
+  if (!audit_writes_ || !textures_) return;
+  std::vector<AuditedWrite> pending;
+  {
+    std::lock_guard lock(audit_mutex_);
+    pending.swap(audit_pending_);
+  }
+  for (const AuditedWrite& w : pending) {
+    uint32_t base = 0, format = 0;
+    uint64_t age = 0;
+    if (!textures_->CompressedOver(w.begin, w.end, base, format, age)) continue;
+    ++audit_hits_;
+    if (age < 2) ++audit_hits_in_use_;
+    std::lock_guard lock(audit_mutex_);
+    // Those over a texture in use (drawn with this frame or the last) first; a few of the others.
+    if (audit_logged_ >= 200 || (age >= 2 && audit_logged_ >= 20)) continue;
+    ++audit_logged_;
+    char text[200];
+    std::snprintf(text, sizeof text, "GPU-side write (%s) of %08X-%08X over a texture of format %u at %08X used %llu frame(s) ago",
+                  w.what, w.begin, w.end, format, base, (unsigned long long)age);
+    audit_log_.push_back(text);
+  }
+}
+
+std::vector<std::string> VulkanRenderer::TakeAuditLog() {
+  std::lock_guard lock(audit_mutex_);
+  std::vector<std::string> log;
+  log.swap(audit_log_);
+  return log;
+}
 
 void VulkanRenderer::CpuWrote(uint32_t begin, uint32_t end) {
   if (t_writing_guest_memory || begin >= end) return;
@@ -4004,6 +4064,9 @@ void VulkanRenderer::FinishWriteBacks(Batch& b) {
       {3, 2, 1, 0, 7, 6, 5, 4, 11, 10, 9, 8, 15, 14, 13, 12}, {2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13},
       {7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8}};
   for (PendingWriteBack& w : b.write_backs) {
+    AuditWrite(w.depth ? "depth resolve write-back" : "resolve write-back", w.base,
+               uint32_t(std::min<uint64_t>(uint64_t(w.base) + uint64_t(w.pitch) * ((w.y + w.height + 31) & ~31u) * w.element,
+                                           mirror_bytes_)));
     const uint8_t* src = static_cast<const uint8_t*>(w.buffer.mapped);
     const uint32_t element = w.element;
     const bool depth = w.depth;
@@ -4106,6 +4169,7 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
       s->unpaired_this_frame = s->paired = false;
     }
   }
+  CheckAuditedWrites();
   if (textures_) textures_->NewFrame();  // the CPU may have written any texture since
   // Textures not used for a while (the title moved on) are dropped, now and then, once there are many: the cache
   // otherwise grows for as long as the title runs. Freed after the open batch has run (batches before may read them).

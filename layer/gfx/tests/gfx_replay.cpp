@@ -367,7 +367,8 @@ int main(int argc, char** argv) {
   int32_t pick_x = -1, pick_y = -1;
   bool bench = false;
   bool async = false;
-  bool late_reads = false;  // --late-reads: textures over resolves kept on the GPU read the frame before (as titles may set)
+  bool late_reads = false;
+  bool audit = false;  // --audit: GPU-side writes landing on compressed textures, printed at the end  // --late-reads: textures over resolves kept on the GPU read the frame before (as titles may set)
   uint32_t record_threads = 0;  // --threads N: draws recorded on N threads (secondary command buffers)  // --async: the renderer on a thread of its own (AsyncRenderer), as in a title  // --bench: as in a title (diagnostics off, textures watched instead of hashed), kick time only
   std::string profile;  // --profile FILE: the main thread's instruction pointer sampled during the last pass
   uint32_t scale = 1;
@@ -389,6 +390,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--fences-after-gpu")) fences_after_gpu = true;
     else if (!std::strcmp(argv[i], "--async")) async = true;
     else if (!std::strcmp(argv[i], "--late-reads")) late_reads = true;
+    else if (!std::strcmp(argv[i], "--audit")) audit = true;
     else if (!std::strcmp(argv[i], "--pipeline-cache") && i + 1 < argc) pipeline_cache = argv[++i];
     else if (!std::strcmp(argv[i], "--msaa") && i + 1 < argc) msaa = uint32_t(std::atoi(argv[++i]));
     else if (!std::strcmp(argv[i], "--scale") && i + 1 < argc) scale = uint32_t(std::clamp(std::atoi(argv[++i]), 1, 4));
@@ -422,6 +424,7 @@ int main(int argc, char** argv) {
   renderer.SetRecordThreads(record_threads);
   renderer.SetFencesWhenCaptured(!fences_after_gpu);
   renderer.SetLateResolveReads(late_reads);
+  renderer.SetAuditWrites(audit);
   CommandProcessor cp(physical);
   TracingRenderer tracing(renderer, physical, dump, watch, pick_x, pick_y);
   tracing.dump_textures_ = dump_textures;
@@ -724,6 +727,11 @@ int main(int argc, char** argv) {
     std::sort(reasons.rbegin(), reasons.rend());
     std::printf("gfx_replay: not drawn, by reason:\n");
     for (const auto& [count, why] : reasons) std::printf("  %8u  %s\n", count, why.c_str());
+  }
+  for (const std::string& line : renderer.TakeAuditLog()) std::printf("gfx_replay: %s\n", line.c_str());
+  if (audit) {
+    std::printf("gfx_replay: audited writes over compressed textures: %llu, over one in use %llu\n",
+                (unsigned long long)renderer.audit_hits_.load(), (unsigned long long)renderer.audit_hits_in_use_.load());
   }
   std::vector<std::pair<uint64_t, uint32_t>> opcodes;
   for (uint32_t op = 0; op < 128; ++op) {

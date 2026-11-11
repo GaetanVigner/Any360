@@ -269,6 +269,12 @@ class VulkanRenderer : public gfx::Renderer {
   // itself (WritingGuestMemory on the writing thread) are not the CPU's.
   void CpuWrote(uint32_t begin, uint32_t end);
   static bool WritingGuestMemory();
+  // Diagnostics: each write the GPU side makes into guest memory checked against the textures in the cache; one that
+  // lands on a compressed texture (DXT, DXN, 5:6:5: never a render target's copy) is noted with where it came from
+  // (TakeAuditLog, any thread). `what`: the writing path.
+  void SetAuditWrites(bool on) { audit_writes_ = on; }
+  void AuditWrite(const char* what, uint32_t begin, uint32_t end);
+  std::vector<std::string> TakeAuditLog();
   uint32_t ResolveFormatAt(uint32_t base) const {
     const auto it = resolve_formats_.find(base);
     return it == resolve_formats_.end() ? UINT32_MAX : it->second;
@@ -493,6 +499,10 @@ class VulkanRenderer : public gfx::Renderer {
     // it (fences) needs not wait for the GPU to run it (resolves written back land later, as the CPU rarely reads them).
     bool captured = false;
     bool submitted = false, released = false;  // on the queue; what follows it done then (guarded by done_mutex_)
+    // Its draws export to memory (memexport): what follows it waits for the GPU, never released at submission (the
+    // exports' copy into guest memory is one of its actions; run early, it copied what an earlier export left in the
+    // readback buffer, and Call of Duty: Black Ops's textures, copied into place by memexport, turned to noise).
+    bool memexport = false;
     Buffer guest_staging;  // the guest memory its draws fetch, copied at the flush
     bool uploaded = false;  // its upload command buffer ran too (time stamped)
   };
@@ -523,6 +533,22 @@ class VulkanRenderer : public gfx::Renderer {
   std::vector<std::pair<uint32_t, uint32_t>> cpu_writes_;
   std::atomic<bool> any_cpu_writes_{false};
   void ApplyCpuWrites();
+  bool audit_writes_ = false;
+  std::mutex audit_mutex_;
+  struct AuditedWrite {
+    const char* what;
+    uint32_t begin, end;
+  };
+  std::vector<AuditedWrite> audit_pending_;  // checked on the renderer's thread at each swap (CheckAuditedWrites)
+  std::vector<std::string> audit_log_;
+  uint32_t audit_logged_ = 0;
+  void CheckAuditedWrites();
+
+ public:
+  // Audited writes that landed on a compressed texture, and among them on one used this frame or the last.
+  std::atomic<uint64_t> audit_hits_{0}, audit_hits_in_use_{0};
+
+ private:
   int32_t submitted_unlisted_ = -1;  // the batch handed to the submission thread before Flush listed it in flight
   std::vector<std::function<void()>> released_actions_;  // the submission thread's
   void WaitBatch(uint32_t index);

@@ -156,6 +156,9 @@ class TextureCache {
   void SetBeforeMemoryRead(std::function<void(uint32_t, uint32_t)> callback) { before_read_ = std::move(callback); }
   void DropGpuSources(uint32_t begin, uint32_t end);
   bool CachedOver(uint64_t begin, uint64_t end) const;
+  // For diagnostics: the cached compressed texture (DXT, DXN, CTX1, 5:6:5) over [begin, end) used last: its base,
+  // format and the frames since it was used (0: this frame). Called on the cache's own thread.
+  bool CompressedOver(uint32_t begin, uint32_t end, uint32_t& base, uint32_t& format, uint64_t& age) const;
   // Whether the last view View returned is of a resolution-scaled texture (copied from a scaled GPU source: scale x
   // scale texels a guest texel), which the shaders sample with the scale taken into account.
   bool last_view_scaled() const { return last_view_scaled_; }

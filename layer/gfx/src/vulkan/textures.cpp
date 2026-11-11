@@ -1099,6 +1099,20 @@ bool TextureCache::CachedOver(uint64_t begin, uint64_t end) const {
   return false;
 }
 
+bool TextureCache::CompressedOver(uint32_t begin, uint32_t end, uint32_t& base, uint32_t& format, uint64_t& age) const {
+  // The most recently used one.
+  bool found = false;
+  for (const auto& [key, t] : textures_) {
+    const uint32_t f = key[1] & 0x3F;
+    const bool compressed = f == 4 || (f >= 18 && f <= 20) || f == 49 || (f >= 51 && f <= 53) || (f >= 58 && f <= 60);
+    if (compressed && t->begin < end && begin < t->end && (!found || epoch_ - t->used < age)) {
+      base = key[1] & 0xFFFFF000, format = f, age = epoch_ - t->used;
+      found = true;
+    }
+  }
+  return found;
+}
+
 void TextureCache::SetGpuSource(const GpuSource& source) {
   gpu_sources_[source.base] = source;
   // The rows it covers, at most 8 bytes a texel (the format is the texture's to say).

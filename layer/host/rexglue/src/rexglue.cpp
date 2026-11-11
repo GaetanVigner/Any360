@@ -516,6 +516,11 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
                   (s.ns_texture_hash - last_.ns_texture_hash) / ms,
                   (s.ns_texture_load - last_.ns_texture_load) / ms);
     log_(detail);
+    for (const std::string& line : TakeAuditLog()) log_("Any360: " + line);
+    if (audit_hits_.load()) {
+      log_("Any360: audited writes over compressed textures so far: " + std::to_string(audit_hits_.load()) + ", over one in use " +
+           std::to_string(audit_hits_in_use_.load()));
+    }
     if (gfx::vk::TextureCache* textures = texture_cache()) {
       // The textures uploaded most since the last report: base, format, size, and what last resolved there.
       std::vector<std::pair<uint32_t, std::array<uint32_t, 4>>> top;
@@ -969,7 +974,13 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   // the vertices copied into video memory over it are stale (textures are not kept over such words).
   binding->cp->SetMemoryWrittenHook([renderer = binding->renderer.get()](uint32_t begin, uint32_t end) {
     renderer->GuestMemoryWritten(begin, end);
+    renderer->AuditWrite("command processor", begin, end);
   });
+  // Diagnostics: ANY360_GPU_AUDIT_WRITES=1 notes GPU-side writes that land on compressed textures (frame report).
+  if (const char* audit = std::getenv("ANY360_GPU_AUDIT_WRITES"); audit && *audit == '1') {
+    binding->renderer->SetAuditWrites(true);
+    if (options.log) options.log("Any360: GPU-side writes into guest memory audited");
+  }
   sys::Graphics().StartVblank(vblank_hz);
   g_vblank_hz = vblank_hz;
   g_binding = binding.release();
