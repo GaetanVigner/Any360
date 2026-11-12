@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <random>
 
+#include "any360/xdk/crt.h"
 #include "rexglue.h"
 
 namespace any360::host::rexglue::d3d {
@@ -43,6 +44,11 @@ struct Case {
   const char* (*differs)(const PPCContext& a, const PPCContext& b) = nullptr;
   uint32_t calls = 3000;
 };
+
+// Guest memory as the self-test sees it (set when it starts): the cases' replacements run on it, inline, as the
+// title's bindings run on theirs.
+inline any360::xdk::Memory g_selftest_memory;
+inline const any360::xdk::Memory& SelfTestMemory() { return g_selftest_memory; }
 
 // Registers a case (from a static initializer).
 bool Register(const Case& c);

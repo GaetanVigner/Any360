@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -73,7 +74,24 @@ double NsPerTick() {
   return rate;
 }
 
-any360::xdk::Memory g_mem;
+any360::xdk::Memory& g_mem = g_selftest_memory;
+
+double Median(std::vector<uint32_t>& v) {
+  std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end());
+  return double(v[v.size() / 2]);
+}
+// What two reads of the clock in a row cost, in ticks (the median of many).
+double ClockTicks() {
+  static const double ticks = [] {
+    std::vector<uint32_t> v(4001);
+    for (uint32_t& t : v) {
+      const uint64_t a = Ticks();
+      t = uint32_t(Ticks() - a);
+    }
+    return Median(v);
+  }();
+  return ticks;
+}
 
 // A guest range's bytes.
 struct Region {
@@ -136,7 +154,7 @@ struct Runner {
   std::vector<Region> restored;  // put back between the two sides: the compared ones and the stack below the call's
   std::vector<uint8_t> at_start;
   Result r;
-  uint64_t own_ticks = 0, mine_ticks = 0, timed = 0;
+  std::vector<uint32_t> own_ticks, mine_ticks;  // a timed call each
 };
 Runner g_run;
 
@@ -152,7 +170,7 @@ void StartCase(Runner& run, const Case& c) {
   run.in_case = true, run.phase = 0, run.i = 0;
   run.r = Result{};
   run.r.name = c.name;
-  run.own_ticks = run.mine_ticks = run.timed = 0;
+  run.own_ticks.clear(), run.mine_ticks.clear();
   run.rng.seed(0x5EED0000u ^ uint32_t(std::hash<std::string>{}(c.name)));
   run.s = CallSetup{};
   run.s.base = run.base, run.s.device = run.device, run.s.scratch = run.scratch, run.s.rng = &run.rng;
@@ -166,6 +184,27 @@ void StartCase(Runner& run, const Case& c) {
   run.restored.push_back({run.s.stack - 0x2000, 0x2000});
   run.at_start = Read(run.restored);
   REXLOG_INFO("Any360 D3D self-test: {}", c.name);
+}
+
+// The calls timed in a row, and the registers a call takes (put back before each).
+constexpr int kRepeat = 8;
+inline void RestoreArguments(PPCContext& ctx, const PPCContext& call) {
+  ctx.r1 = call.r1, ctx.r3 = call.r3, ctx.r4 = call.r4, ctx.r5 = call.r5, ctx.r6 = call.r6;
+  ctx.r7 = call.r7, ctx.r8 = call.r8, ctx.r9 = call.r9, ctx.r10 = call.r10;
+}
+// What putting the registers back kRepeat times costs, with the clock read twice, in ticks (the median of many).
+double RepeatTicks(const PPCContext& call) {
+  std::vector<uint32_t> v(2001);
+  PPCContext ctx = call;
+  for (uint32_t& t : v) {
+    const uint64_t a = Ticks();
+    for (int k = 0; k < kRepeat; ++k) {
+      RestoreArguments(ctx, call);
+      std::atomic_signal_fence(std::memory_order_seq_cst);
+    }
+    t = uint32_t(Ticks() - a);
+  }
+  return Median(v);
 }
 
 // One call of the case: compared (phase 0) or timed (phase 1).
@@ -207,35 +246,40 @@ void OneCall(Runner& run, const Case& c) {
     }
     return;
   }
-  // Timed, in alternating order (the second side finds the memory in the cache); a declined call is not timed.
+  // Timed, in alternating order (the second side finds the memory in the cache), kRepeat calls in a row on the
+  // memory each leaves (the clock's tick is coarse next to a call), the argument registers put back before each;
+  // a sample where the replacement declined a call is not kept.
   PPCContext own = call, mine = call;
-  uint64_t own_one = 0, mine_one = 0;
-  bool taken = false;
+  uint64_t own_ticks = 0, mine_ticks = 0;
+  bool taken = true;
   for (int side = 0; side < 2; ++side) {
     const bool original_now = (side == 0) == bool(run.i & 1);
+    PPCContext& ctx = original_now ? own : mine;
     const uint64_t a = Ticks();
-    if (original_now) {
-      c.original(own, base);
-      own_one = Ticks() - a;
-    } else {
-      taken = c.native(mine, base);
-      mine_one = Ticks() - a;
+    for (int k = 0; k < kRepeat; ++k) {
+      RestoreArguments(ctx, call);
+      if (original_now) c.original(ctx, base);
+      else taken = c.native(ctx, base) && taken;
     }
+    (original_now ? own_ticks : mine_ticks) = Ticks() - a;
     Write(restored, before);
   }
-  if (taken) run.own_ticks += own_one, run.mine_ticks += mine_one, ++run.timed;
+  if (taken) run.own_ticks.push_back(uint32_t(own_ticks)), run.mine_ticks.push_back(uint32_t(mine_ticks));
 }
 
 void EndCase(Runner& run) {
   Write(run.restored, run.at_start);
   Result& r = run.r;
-  if (run.timed) {
-    r.original_ns = double(run.own_ticks) * NsPerTick() / double(run.timed);
-    r.native_ns = double(run.mine_ticks) * NsPerTick() / double(run.timed);
+  // The median sample of each side (an interrupt in a call of 20 ns would weigh on a mean), less what reading the
+  // clock and putting the registers back cost, a call.
+  if (!run.own_ticks.empty()) {
+    const double overhead = RepeatTicks(run.seed);
+    r.original_ns = std::max(Median(run.own_ticks) - overhead, 0.0) * NsPerTick() / kRepeat;
+    r.native_ns = std::max(Median(run.mine_ticks) - overhead, 0.0) * NsPerTick() / kRepeat;
   }
   char line[512];
   std::snprintf(line, sizeof line,
-                "%-28s %6llu calls, %llu declined, %llu different; original %.1f ns, native %.1f ns (%.2fx)%s%s\n",
+                "%-28s %6llu calls, %llu declined, %llu different; median original %.1f ns, native %.1f ns (%.2fx faster)%s%s\n",
                 r.name.c_str(), static_cast<unsigned long long>(r.calls), static_cast<unsigned long long>(r.declined),
                 static_cast<unsigned long long>(r.different), r.original_ns, r.native_ns,
                 r.native_ns > 0 ? r.original_ns / r.native_ns : 0.0, r.first_difference.empty() ? "" : "; first: ",
@@ -292,7 +336,6 @@ bool Start(Runner& run, const PPCContext& ctx, uint8_t* base, uint32_t device) {
 }  // namespace
 
 uint8_t* CallSetup::Host(uint32_t address) const { return g_mem.Host(address); }
-const any360::xdk::Memory& SelfTestMemory() { return g_mem; }
 
 bool Register(const Case& c) {
   Cases().push_back(c);

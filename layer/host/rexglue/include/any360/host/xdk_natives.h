@@ -42,7 +42,8 @@ enum class Function : uint32_t {
   kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy,
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
-  kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource, kCount
+  kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
+  kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -531,8 +532,9 @@ inline void D3dGpuWaitStep(PPCContext& ctx, uint8_t* base, GuestFunction origina
 
 // The D3D runtime's state setters (any360/xdk/d3d_state.h), one kind each: r3 the device. `Kind` has Native (the
 // replacement on the registers), Writes (the device bytes, sources and stack it may write) and kFunction. The
-// device's layout is the title's (g_d3d_layout: the default is the runtime Crackdown links).
-inline any360::xdk::D3dLayout g_d3d_layout;
+// device's layout (g_d3d_layout) is a constant, so that its offsets compile to immediates as the runtime's own do: the
+// default layout, the runtime Crackdown links (a title with another runtime gets kinds on its own layout).
+inline constexpr any360::xdk::D3dLayout g_d3d_layout{};
 // A kind whose function returns nothing (its r3 left as its code last used it) says so with kVoid.
 template <class Kind>
 constexpr bool KeepsR3() {
@@ -688,6 +690,64 @@ struct SetStreamSource {
     AddRange(w, ctx.r3.u32 + l.state_dirty, 8);
     return BinderWrites(ctx, w, l.stream_bound + 4 * stream, ctx.r1.u32 - 64);
   }
+};
+// SetSamplerState for a stage's minification or magnification filter: r4 the stage, r5 the filter.
+template <bool kMagnification>
+struct SamplerFilter {
+  static constexpr Function kFunction = Function::kD3dSamplerFilter;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetSamplerFilter(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, kMagnification);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    if (ctx.r4.u32 >= 32 || !any360::xdk::IsPlainMemory(ctx.r3.u32, l.device_bytes)) return false;
+    AddRange(w, ctx.r3.u32 + l.fetch_constants + 24 * ctx.r4.u32, 24);
+    AddRange(w, ctx.r3.u32 + l.fetch_dirty, 8);
+    return true;
+  }
+};
+// SetVertexDeclaration: r4 the declaration.
+struct SetVertexDeclaration {
+  static constexpr Function kFunction = Function::kD3dSetVertexDeclaration;
+  static constexpr bool kVoid = true;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetVertexDeclaration(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32, ctx.r1.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    if (!any360::xdk::IsPlainMemory(ctx.r3.u32, g_d3d_layout.device_bytes)) return false;
+    return BinderWrites(ctx, w, g_d3d_layout.vertex_declaration, ctx.r1.u32 - 48);
+  }
+};
+// SetPixelShader / SetVertexShader: r4 the shader. Verify compares the device words it sets and the fetch
+// constants its program writes.
+template <bool kVertex>
+struct SetShader {
+  static constexpr Function kFunction = Function::kD3dSetShader;
+  static constexpr bool kVoid = true;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetShader(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32, kVertex, ctx.r1.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    if (!any360::xdk::IsPlainMemory(ctx.r3.u32, l.device_bytes)) return false;
+    any360::xdk::detail::ShaderProgram program;
+    bool has_program = false;
+    if (!any360::xdk::D3dShaderProgramOf(g_memory, l, ctx.r3.u32, ctx.r4.u32, kVertex, program, has_program)) return false;
+    if (!BinderWrites(ctx, w, kVertex ? l.vertex_shader : l.pixel_shader, ctx.r1.u32 - 48)) return false;
+    AddRange(w, ctx.r3.u32 + l.state_dirty, 8);
+    AddRange(w, ctx.r3.u32 + l.float_dirty[kVertex ? 0 : 1], 8);
+    AddRange(w, ctx.r3.u32 + l.constant_dirty, 8);
+    AddRange(w, ctx.r3.u32 + l.shader_flags, 1);
+    if (has_program && program.write_low < program.write_high)
+      AddRange(w, ctx.r3.u32 + l.fetch_constants + program.write_low, program.write_high - program.write_low);
+    return true;
+  }
+};
+// The runtime's CPU range write-back (dcbf, sync): nothing in recompiled code.
+struct FlushCpuRange {
+  static constexpr Function kFunction = Function::kD3dFlushCpuRange;
+  static bool Native(const any360::xdk::Memory&, PPCContext&) { return any360::xdk::D3dFlushCpuRange(); }
+  static bool Writes(const PPCContext&, std::vector<any360::xdk::Range>&) { return true; }
 };
 }  // namespace d3d_state
 

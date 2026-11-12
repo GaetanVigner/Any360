@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <random>
+#include <vector>
 
 #include "any360/xdk/d3d_reference.h"
 #include "any360/xdk/d3d_state.h"
@@ -31,6 +32,8 @@ xdk::D3dLayout Shifted() {
   l.stream_bound += 40, l.texture_mip_floor += 40, l.texture_mip_ceiling += 40, l.stream_stride += 40;
   l.shader_stream_stride += 40, l.resource_fence += 40, l.resource_busy_mask += 40, l.release_cursor += 40;
   l.release_end += 40;
+  l.stage_filter_index += 40, l.stage_lod_limit += 40, l.vertex_declaration += 40, l.pixel_shader += 40;
+  l.vertex_shader += 40, l.shader_flags += 40;
   return l;
 }
 
@@ -218,6 +221,103 @@ void TestSetStreamSource(const xdk::D3dLayout& l, uint32_t seed) {
   CHECK(taken > 1500 && declined > 100);
 }
 
+// The sampler filters: the runtime's table placed in the arena (its address is the title's).
+void TestSamplerFilter(xdk::D3dLayout l, uint32_t seed) {
+  l.sampler_filter_table = 0x70000;
+  std::mt19937_64 rng(seed);
+  uint64_t taken = 0;
+  for (int round = 0; round < 3000; ++round) {
+    Pair p(seed + round);
+    const uint32_t stage = rng() % 16 ? uint32_t(rng() % 32) : 32 + uint32_t(rng() % 8);
+    const uint64_t filter = rng() % 2 ? rng() % 8 : rng();
+    const bool mag = rng() % 2;
+    if (xdk::D3dSetSamplerFilter(p.a, l, kDevice, stage, uint32_t(filter), mag)) {
+      ++taken;
+      ref::SamplerFilter(p.b, l, kDevice, stage, filter, mag);
+    }
+    CHECK(p.SameEverywhere());
+  }
+  CHECK(taken > 2500);
+}
+
+void TestSetVertexDeclaration(const xdk::D3dLayout& l, uint32_t seed) {
+  std::mt19937_64 rng(seed);
+  uint64_t taken = 0, declined = 0;
+  for (int round = 0; round < 2000; ++round) {
+    Pair p(seed + round);
+    RandomRelease(p, l, rng, l.vertex_declaration);
+    const uint32_t declaration = rng() % 4 == 0 ? 0 : uint32_t(rng());
+    if (xdk::D3dSetVertexDeclaration(p.a, l, kDevice, declaration, kStackPointer)) {
+      ++taken;
+      ref::SetVertexDeclaration(p.b, l, kDevice, declaration, kStackPointer);
+    } else {
+      ++declined;
+    }
+    CHECK(p.SameEverywhere());
+  }
+  CHECK(taken > 1200 && declined > 100);
+}
+
+// A shader with a constant program: skipped entries, copies, masked writes, each part ended or cut by the program's
+// end; now and then an odd count (the runtime would loop for ever) or a place past the device (declined).
+void PutHalf(Pair& p, uint32_t at, uint32_t v) {
+  for (std::vector<uint8_t>* mem : {&p.native, &p.model}) (*mem)[at] = uint8_t(v >> 8), (*mem)[at + 1] = uint8_t(v);
+}
+uint32_t RandomShader(Pair& p, const xdk::D3dLayout& l, std::mt19937_64& rng, bool vertex) {
+  const uint32_t shader = 0x40000 + 4 * uint32_t(rng() % 0x1000);
+  const uint32_t block = shader + (vertex ? 872 : 40);
+  if (rng() % 6 == 0) {
+    Put32Both(p, block + 20, 0);
+    return shader;
+  }
+  const uint32_t header = 0x50000 + 4 * uint32_t(rng() % 0x1000);
+  Put32Both(p, block + 20, header - block);
+  if (rng() % 3 == 0) Put32Both(p, header + 8, 0), Put32Both(p, header + 12, 0);
+  const uint32_t program = header + 20;
+  uint32_t at = program;
+  const uint32_t room = l.device_bytes - l.fetch_constants;
+  const auto place = [&](uint32_t bytes) { return rng() % 64 == 0 ? room : uint32_t(rng() % (768 - bytes)) & ~3u; };
+  for (uint32_t i = rng() % 4; i > 0; --i) PutHalf(p, at + 2, 1 + uint32_t(rng() % 100)), at += 8;
+  const bool cut = rng() % 5 == 0;
+  if (!cut) {
+    PutHalf(p, at + 2, 0), at += 4;
+    for (uint32_t i = rng() % 4; i > 0; --i) {
+      const uint32_t words = 1 + uint32_t(rng() % 8);
+      PutHalf(p, at, place(4 * words)), PutHalf(p, at + 2, words), at += 4 + 4 * words;
+    }
+    if (rng() % 3) {
+      PutHalf(p, at + 2, 0), at += 4;
+      for (uint32_t i = rng() % 4; i > 0; --i) {
+        const uint32_t count = rng() % 32 == 0 ? 3 : 2 * (1 + uint32_t(rng() % 8));
+        PutHalf(p, at, place(2 * count)), PutHalf(p, at + 2, count), at += 4 + 4 * count;
+      }
+      if (rng() % 2) PutHalf(p, at + 2, 0), at += 4;
+    }
+  }
+  Put32Both(p, header + 16, at - program);
+  return shader;
+}
+
+void TestSetShader(const xdk::D3dLayout& l, uint32_t seed) {
+  std::mt19937_64 rng(seed);
+  uint64_t taken = 0, declined = 0;
+  for (int round = 0; round < 4000; ++round) {
+    Pair p(seed + round);
+    const bool vertex = rng() % 2;
+    RandomRelease(p, l, rng, vertex ? l.vertex_shader : l.pixel_shader);
+    const uint32_t shader = rng() % 5 == 0 ? 0 : RandomShader(p, l, rng, vertex);
+    if (xdk::D3dSetShader(p.a, l, kDevice, shader, vertex, kStackPointer)) {
+      ++taken;
+      ref::SetShader(p.b, l, kDevice, shader, vertex, kStackPointer);
+    } else {
+      ++declined;
+    }
+    CHECK(p.SameEverywhere());
+  }
+  CHECK(taken > 2500 && declined > 100);
+  CHECK(xdk::D3dFlushCpuRange());
+}
+
 }  // namespace
 
 int main() {
@@ -234,5 +334,11 @@ int main() {
   TestSetTexture(shifted, 1000);
   TestSetStreamSource(standard, 1100);
   TestSetStreamSource(shifted, 1200);
+  TestSamplerFilter(standard, 1300);
+  TestSamplerFilter(shifted, 1400);
+  TestSetVertexDeclaration(standard, 1500);
+  TestSetVertexDeclaration(shifted, 1600);
+  TestSetShader(standard, 1700);
+  TestSetShader(shifted, 1800);
   return xdk_test::Finish("xdk_d3d_state_tests");
 }

@@ -426,6 +426,139 @@ inline void SetStreamSource(const Memory& m, const D3dLayout& l, uint32_t r3, ui
   std_(m, r31 + l.state_dirty, ld(m, r31 + l.state_dirty) | (uint64_t(8) << 16));
 }
 
+// sub_826B1180 (minification: rlwinm r7,r9,22,31,31; rlwimi r9,r10,11,20,20; rlwinm r7,r7,4,0,27; rlwimi r31,r10,21,
+// 9,10 and 4,6) / sub_826B1308 (magnification: 21; 10,21,21; 6,0,25; 19, 11,12 and 4,6). r3 device, r4 stage,
+// r5 filter.
+inline void SamplerFilter(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4, uint64_t r5, bool mag) {
+  const uint64_t r7a = (r4 + 32) & 0xFFFFFFFFull;
+  const uint64_t r6 = uint64_t(1) << 63;
+  const uint32_t r8 = uint32_t(r3 + r4);
+  uint32_t r11 = uint32_t(r4 * 24);
+  const uint32_t r9t = l.sampler_filter_table;
+  r11 += r3;
+  uint32_t r10 = rlwinm(uint32_t(r5), 30, 2, 31);
+  r11 += l.fetch_constants;
+  const uint64_t r6b = (r7a & 127) >= 64 ? 0 : r6 >> (r7a & 127);
+  uint32_t r7 = lbz(m, r8 + l.stage_filter_index);
+  uint32_t r31 = lwz(m, r11 + 12);
+  r7 = rotlw(r7, 2);
+  const uint32_t r4b = lwz(m, r7 + r9t);
+  uint32_t r9 = lwz(m, r11 + 16);
+  r7 = mag ? rlwinm(r9, 21, 31, 31) : rlwinm(r9, 22, 31, 31);
+  r9 = mag ? rlwimi(r9, r10, 10, 21, 21) : rlwimi(r9, r10, 11, 20, 20);
+  r7 |= r10;
+  r7 -= 1;
+  r7 = r4b & ~r7;
+  stw(m, r11 + 16, r9);
+  r7 = mag ? rlwinm(r7, 6, 0, 25) : rlwinm(r7, 4, 0, 27);
+  r10 = r7 | r10;
+  r10 |= uint32_t(r5);
+  if (mag) {
+    r31 = rlwimi(r31, r10, 19, 11, 12);
+    r31 = rlwimi(r31, r10, 19, 4, 6);
+  } else {
+    r31 = rlwimi(r31, r10, 21, 9, 10);
+    r31 = rlwimi(r31, r10, 21, 4, 6);
+  }
+  r10 = rotlw(r31, 0);
+  r7 = r10;
+  stw(m, r11 + 12, r31);
+  r10 = rlwimi(r10, r7, 31, 13, 31);
+  const uint32_t r8b = lbz(m, r8 + l.stage_lod_limit);
+  r10 = rlwimi(r10, r7, 31, 1, 11);
+  r7 = rlwinm(r10, 13, 20, 31);
+  r10 = rlwinm(r8b, 30, 2, 31);
+  r10 -= 1;
+  r7 &= r10;
+  r10 = r8b & ~r10;
+  r10 = r7 + r10;
+  r10 = rlwimi(r10, r9, 0, 0, 29);
+  stw(m, r11 + 16, r10);
+  std_(m, r3 + l.fetch_dirty, ld(m, r3 + l.fetch_dirty) | r6b);
+}
+// sub_826B1E50 (SetVertexDeclaration).
+inline void SetVertexDeclaration(const Memory& m, const D3dLayout& l, uint32_t r3, uint32_t r4, uint32_t caller_r1) {
+  Release(m, l, r3, lwz(m, r3 + l.vertex_declaration), caller_r1 - 128);
+  stw(m, r3 + l.vertex_declaration, r4);
+}
+inline uint32_t lhz(const Memory& m, uint32_t ea) { return uint32_t(*m.Host(ea)) << 8 | *m.Host(ea + 1); }
+// sub_826B3458 (SetPixelShader) / sub_826B3848 (SetVertexShader): r3 device, r4 shader.
+inline void SetShader(const Memory& m, const D3dLayout& l, uint32_t r3, uint32_t r4, bool vertex, uint32_t caller_r1) {
+  const uint32_t r30 = r3, r29 = r4;
+  const uint32_t slot = vertex ? l.vertex_shader : l.pixel_shader;
+  if (vertex && r29 != 0) std_(m, r30 + l.state_dirty, ld(m, r30 + l.state_dirty) | (uint64_t(8) << 16));
+  Release(m, l, r30, lwz(m, r30 + slot), caller_r1 - 128);
+  uint32_t r11;
+  if (vertex) {
+    const uint32_t flags = lbz(m, r30 + l.shader_flags);
+    stw(m, r30 + slot, r29);
+    *m.Host(r30 + l.shader_flags) = uint8_t(rlwinm(flags, 0, 0, 30));
+    if (r29 == 0) return;
+    r11 = r29 + 872;
+    if (r11 == 0) return;  // addic. r11,r29,872
+  } else {
+    stw(m, r30 + slot, r29);
+    uint64_t d = ld(m, r30 + l.state_dirty);
+    d |= uint64_t(16) << 16;
+    std_(m, r30 + l.state_dirty, d);
+    d |= uint64_t(2) << 16;
+    std_(m, r30 + l.state_dirty, d);
+    if (r29 == 0) return;
+    r11 = r29 + 40;
+  }
+  const uint32_t r10 = lwz(m, r11 + 20);
+  if (r10 == 0) return;
+  r11 = r10 + r11;
+  const uint32_t floats = r30 + l.float_dirty[vertex ? 0 : 1];
+  std_(m, floats, ld(m, floats) & ~ld(m, r11 + 0));
+  if (ld(m, r11 + 8) != 0) std_(m, r30 + l.constant_dirty, ld(m, r30 + l.constant_dirty) | (uint64_t(1) << 56));
+  uint32_t r31 = r11 + 20;
+  const uint32_t r28 = r30 + l.fetch_constants;
+  const uint32_t r29e = lwz(m, r11 + 16) + r31;
+  if (r31 >= r29e) return;
+  do {  // loc_826B3558
+    const uint32_t count = lhz(m, r31 + 2);
+    r31 += 4;
+    if (count == 0) break;
+    r31 += 4;
+  } while (r31 < r29e);
+  if (r31 >= r29e) return;  // loc_826B3574
+  bool masked = false;
+  for (;;) {  // loc_826B357C
+    const uint32_t words = lhz(m, r31 + 2), place = lhz(m, r31);
+    r31 += 4;
+    if (words == 0) {
+      masked = true;
+      break;
+    }
+    const uint32_t bytes = rlwinm(words, 2, 0, 29);
+    for (uint32_t i = 0; i < bytes; ++i) *m.Host(place + r28 + i) = *m.Host(r31 + i);  // bl memcpy
+    r31 += bytes;
+    if (!(r31 < r29e)) break;
+  }
+  if (!masked && !(r31 < r29e)) return;
+  while (r31 < r29e) {  // loc_826B35B8 / loc_826B3604
+    uint32_t count = lhz(m, r31 + 2);
+    const uint32_t place = lhz(m, r31);
+    r31 += 4;
+    if (count == 0) return;
+    uint32_t word = place + r28;
+    do {
+      count += 0x10000;
+      uint32_t r9 = lwz(m, word);
+      const uint32_t r8 = lwz(m, r31);
+      count -= 2;
+      const uint32_t r7 = lwz(m, r31 + 4);
+      r9 &= r8;
+      r31 += 8;
+      r9 |= r7;
+      stw(m, word, r9);
+      word += 4;
+      count &= 0xFFFFu;
+    } while (count != 0);
+  }
+}
+
 }  // namespace state
 
 }  // namespace any360::xdk::reference

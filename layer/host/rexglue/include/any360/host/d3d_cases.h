@@ -14,8 +14,6 @@
 
 namespace any360::host::rexglue::d3d {
 
-const any360::xdk::Memory& SelfTestMemory();
-
 // Big-endian words into guest memory.
 inline void Put32(CallSetup& s, uint32_t address, uint32_t value) {
   uint8_t* p = s.Host(address);
@@ -144,8 +142,8 @@ struct Constants {
   }
 };
 // The resource binders: the old resource in the slot (none or a header in the scratch), a fence pending or not, the
-// busy mask, the release list in the scratch with room (never full: the runtime would take a new block from the
-// command buffer, which in the device copy is the title's own).
+// busy mask, the release list in the scratch with room for 32 records (never full, even over the timed calls in a
+// row: the runtime would take a new block from the command buffer, which in the device copy is the title's own).
 inline void Release(CallSetup& s, uint32_t slot) {
   std::mt19937_64& rng = *s.rng;
   const any360::xdk::D3dLayout& l = g_d3d_layout;
@@ -154,7 +152,7 @@ inline void Release(CallSetup& s, uint32_t slot) {
   Put32(s, s.device + l.resource_busy_mask, rng() % 4 == 0 ? 0 : uint32_t(rng()));
   const uint32_t cursor = s.scratch + 0x28000 + 8 * uint32_t(rng() % 256);
   Put32(s, s.device + l.release_cursor, cursor);
-  Put32(s, s.device + l.release_end, cursor + 64);
+  Put32(s, s.device + l.release_end, cursor + 256);
 }
 struct Texture {
   static void Setup(CallSetup& s, PPCContext& ctx) {
@@ -178,6 +176,82 @@ struct Stream {
     ctx.r6.u64 = rng() % 3 == 0 ? 0 : rng() % 0x10000;
     ctx.r7.u64 = rng() % 8 == 0 ? rng() : 4 * (rng() % 32);
     ctx.r8.u64 = rng() % 2 ? uint64_t(1) << (rng() % 64) : rng();
+  }
+};
+struct SamplerFilter {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t stage = uint32_t(rng() % 32);
+    if (rng() % 3 == 0) s.Host(s.device + l.stage_filter_index + stage)[0] = uint8_t(rng() % 8);
+    if (rng() % 3 == 0) s.Host(s.device + l.stage_lod_limit + stage)[0] = uint8_t(rng());
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = stage;
+    ctx.r5.u64 = rng() % 2 ? rng() % 8 : rng();
+  }
+};
+struct VertexDeclaration {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    Release(s, g_d3d_layout.vertex_declaration);
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = rng() % 4 == 0 ? 0 : s.scratch + 0x100 + uint32_t(rng() % 0x8000);
+  }
+};
+// A shader in the scratch with a constant program writing within the first 768 bytes of the fetch constants.
+inline void PutHalf(CallSetup& s, uint32_t at, uint32_t v) {
+  uint8_t* p = s.Host(at);
+  p[0] = uint8_t(v >> 8), p[1] = uint8_t(v);
+}
+template <bool kVertex>
+struct Shader {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    Release(s, kVertex ? g_d3d_layout.vertex_shader : g_d3d_layout.pixel_shader);
+    ctx.r3.u64 = s.device;
+    if (rng() % 5 == 0) {
+      ctx.r4.u64 = 0;
+      return;
+    }
+    const uint32_t shader = s.scratch + 0x8000 + 4 * uint32_t(rng() % 0x800);
+    const uint32_t block = shader + (kVertex ? 872 : 40);
+    ctx.r4.u64 = shader;
+    if (rng() % 6 == 0) {
+      Put32(s, block + 20, 0);
+      return;
+    }
+    const uint32_t header = s.scratch + 0x10000 + 4 * uint32_t(rng() % 0x1000);
+    Put32(s, block + 20, header - block);
+    if (rng() % 3 == 0) Put32(s, header + 8, 0), Put32(s, header + 12, 0);
+    const uint32_t program = header + 20;
+    uint32_t at = program;
+    const auto place = [&](uint32_t bytes) { return uint32_t(rng() % (768 - bytes)) & ~3u; };
+    for (uint32_t i = rng() % 4; i > 0; --i) PutHalf(s, at + 2, 1 + uint32_t(rng() % 100)), at += 8;
+    if (rng() % 5) {
+      PutHalf(s, at + 2, 0), at += 4;
+      for (uint32_t i = rng() % 4; i > 0; --i) {
+        const uint32_t words = 1 + uint32_t(rng() % 8);
+        PutHalf(s, at, place(4 * words)), PutHalf(s, at + 2, words), at += 4 + 4 * words;
+      }
+      if (rng() % 3) {
+        PutHalf(s, at + 2, 0), at += 4;
+        for (uint32_t i = rng() % 4; i > 0; --i) {
+          const uint32_t count = 2 * (1 + uint32_t(rng() % 8));
+          PutHalf(s, at, place(2 * count)), PutHalf(s, at + 2, count), at += 4 + 4 * count;
+        }
+        if (rng() % 2) PutHalf(s, at + 2, 0), at += 4;
+      }
+    }
+    Put32(s, header + 16, at - program);
+  }
+};
+// The CPU range write-back: r3 the start, r4 the end (not a size: an end below the start makes the runtime's loop
+// run for 2^29 lines), a range below 1 MB.
+struct FlushRange {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    ctx.r3.u64 = rng() % 4 == 0 ? 0x7F100000u + uint32_t(rng() % 0x1000000) : s.scratch + uint32_t(rng() % 0x40000);
+    ctx.r4.u64 = ctx.r3.u64 + rng() % (1u << 20);
   }
 };
 // SetPixelShaderConstantF: as SetShaderConstants.

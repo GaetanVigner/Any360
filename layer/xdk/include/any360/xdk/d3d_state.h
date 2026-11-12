@@ -46,6 +46,11 @@ struct D3dLayout {
   // A replaced resource's release (D3dSetTexture): the pending fence, the busy mask, the release list's cursor and
   // end.
   uint32_t resource_fence = 10780, resource_busy_mask = 10784, release_cursor = 13148, release_end = 13152;
+  // The sampler filters (D3dSetSamplerFilter): the runtime's table of anisotropic bits (a guest address in the
+  // title's image), each stage's index into it and its LOD limit (a byte each).
+  uint32_t sampler_filter_table = 0x820E9E30u, stage_filter_index = 11644, stage_lod_limit = 11722;
+  // The bound vertex declaration and shaders, and the flags byte whose bit 0 a vertex shader clears.
+  uint32_t vertex_declaration = 12156, pixel_shader = 12412, vertex_shader = 12416, shader_flags = 10813;
 };
 
 namespace detail {
@@ -323,6 +328,200 @@ inline bool D3dSetStreamSource(const Memory& m, const D3dLayout& l, uint32_t dev
   }
   return true;
 }
+
+// SetSamplerState for a texture stage's minification (`magnification` false) or magnification filter: r4 the stage,
+// r5 the filter. The filter goes into the stage's fetch constant (word 3, with the anisotropic bits from the
+// runtime's table, indexed by the stage's byte at stage_filter_index, when the filter or the word 4 flag asks for
+// it); word 4 keeps the filter's flag and its low two bits are recomputed from word 3 and the stage's byte at
+// stage_lod_limit. Sets the stage's fetch dirty bit (bit 31 - stage).
+inline bool D3dSetSamplerFilter(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t stage, uint32_t filter,
+                                bool magnification) {
+  if (stage >= 32 || !IsPlainMemory(device, l.device_bytes)) return false;
+  uint8_t* d = m.Host(device);
+  const uint32_t table_at = l.sampler_filter_table + 4 * uint32_t(d[l.stage_filter_index + stage]);
+  if (!IsPlainMemory(table_at, 4) || detail::Overlap(table_at, 4, device, l.device_bytes)) return false;
+  uint8_t* f = d + l.fetch_constants + 24 * stage;
+  const uint32_t table = detail::At32(m.Host(table_at));
+  const uint32_t v = filter >> 2;
+  uint32_t f4 = detail::At32(f + 16);
+  const uint32_t flag = (f4 >> (magnification ? 11 : 10)) & 1u;
+  f4 = magnification ? (f4 & ~0x400u) | ((v & 1u) << 10) : (f4 & ~0x800u) | ((v & 1u) << 11);
+  const uint32_t aniso = table & ~((flag | v) - 1u);
+  const uint32_t bits = (magnification ? aniso << 6 : aniso << 4) | v | filter;
+  const uint32_t field = magnification ? 0x0E180000u : 0x0E600000u;
+  const uint32_t f3 = (detail::At32(f + 12) & ~field) | (std::rotl(bits, magnification ? 19 : 21) & field);
+  detail::Set32(f + 12, f3);
+  const uint32_t mixed = (f3 & 0x80080000u) | (std::rotr(f3, 1) & 0x7FF7FFFFu);
+  const uint32_t limit = d[l.stage_lod_limit + stage];
+  const uint32_t mask = (limit >> 2) - 1u;
+  const uint32_t low = (((mixed >> 19) & 0xFFFu) & mask) + (limit & ~mask);
+  detail::Set32(f + 16, (f4 & 0xFFFFFFFCu) | (low & 3u));
+  uint8_t* dirty = d + l.fetch_dirty;
+  detail::Store64(dirty, detail::ByteSwap64(detail::ByteSwap64(detail::Load64(dirty)) | (uint64_t(1) << (31 - stage))));
+  return true;
+}
+
+// SetVertexDeclaration: r4 the declaration; the old one released as the binders do (record word at r1 - 48).
+inline bool D3dSetVertexDeclaration(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t declaration,
+                                    uint32_t stack_pointer) {
+  if (!IsPlainMemory(device, l.device_bytes)) return false;
+  uint8_t* d = m.Host(device);
+  const uint32_t stack_word = stack_pointer - 48;
+  detail::Release release;
+  if (!detail::PlanRelease(m, l, d, device, detail::At32(d + l.vertex_declaration), stack_word, release)) return false;
+  detail::DoRelease(m, l, d, release, stack_word);
+  detail::Set32(d + l.vertex_declaration, declaration);
+  return true;
+}
+
+// The constant program a shader carries (at `header`: +0 the bits of the float constants it sets itself, cleared
+// from the shader's dirty bits; +8 nonzero when it sets bool or integer constants; +16 the program's size; +20 the
+// program): entries of a half-word place in the fetch constants (from fetch_constants) and a half-word count.
+// First entries of 8 bytes to skip until one of count 0; then copies (count words follow) until one of count 0;
+// then masked writes (count / 2 pairs of AND and OR words follow) until one of count 0 or the program's end.
+namespace detail {
+struct ShaderProgram {
+  uint32_t header = 0, program = 0, end = 0, highest = 0;  // highest: the last byte read
+  uint32_t write_low = ~0u, write_high = 0;  // the fetch constant bytes written, from fetch_constants
+};
+// Walks the program as the runtime does, reading only; false when it would read past `limit` bytes, write outside
+// the device, loop for ever (an odd count) or read the device.
+inline bool PlanShaderProgram(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t header, ShaderProgram& p) {
+  if (!IsPlainMemory(header, 20) || Overlap(header, 20, device, l.device_bytes)) return false;
+  const uint32_t size = At32(m.Host(header + 16));
+  if (size > 0x10000) return false;
+  p.header = header, p.program = header + 20, p.end = header + 20 + size;
+  const uint32_t limit = size + 0x40000;  // the masked writes may run past the end, as the runtime reads them
+  if (!IsPlainMemory(p.program, limit)) return false;
+  const auto half = [&](uint32_t at) { return uint32_t(m.Host(at)[0]) << 8 | m.Host(at)[1]; };
+  const auto in = [&](uint32_t at, uint32_t bytes) { return at - p.program + bytes <= limit; };
+  uint32_t at = p.program;
+  while (at < p.end) {
+    if (!in(at, 4)) return false;
+    const uint32_t count = half(at + 2);
+    at += 4;
+    if (count == 0) break;
+    at += 4;
+  }
+  if (at < p.end) {
+    for (;;) {
+      if (!in(at, 4)) return false;
+      const uint32_t place = half(at), words = half(at + 2);
+      at += 4;
+      if (words == 0) break;
+      if (!in(at, 4 * words) || place + 4 * words > l.device_bytes - l.fetch_constants) return false;
+      p.write_low = std::min(p.write_low, place), p.write_high = std::max(p.write_high, place + 4 * words);
+      at += 4 * words;
+      if (at >= p.end) break;
+    }
+    while (at < p.end) {
+      if (!in(at, 4)) return false;
+      const uint32_t place = half(at), count = half(at + 2);
+      at += 4;
+      if (count == 0) break;
+      if (count & 1u) return false;
+      if (!in(at, 4 * count) || place + 2 * count > l.device_bytes - l.fetch_constants) return false;
+      p.write_low = std::min(p.write_low, place), p.write_high = std::max(p.write_high, place + 2 * count);
+      at += 4 * count;
+    }
+  }
+  // What the walk read (the entry read last ends at `at`), apart from the device it writes.
+  p.highest = std::max(at, p.end);
+  return !Overlap(p.program, p.highest - p.program, device, l.device_bytes);
+}
+inline void RunShaderProgram(const Memory& m, const D3dLayout& l, uint8_t* d, const ShaderProgram& p) {
+  const auto half = [&](uint32_t at) { return uint32_t(m.Host(at)[0]) << 8 | m.Host(at)[1]; };
+  uint8_t* constants = d + l.fetch_constants;
+  uint32_t at = p.program;
+  while (at < p.end) {
+    const uint32_t count = half(at + 2);
+    at += 4;
+    if (count == 0) break;
+    at += 4;
+  }
+  if (at >= p.end) return;
+  for (;;) {
+    const uint32_t place = half(at), words = half(at + 2);
+    at += 4;
+    if (words == 0) break;
+    std::memcpy(constants + place, m.Host(at), 4 * words);
+    at += 4 * words;
+    if (at >= p.end) break;
+  }
+  while (at < p.end) {
+    const uint32_t place = half(at), count = half(at + 2);
+    at += 4;
+    if (count == 0) return;
+    uint8_t* word = constants + place;
+    const uint8_t* pairs = m.Host(at);
+    for (uint32_t i = 0; i < count / 2; ++i, word += 4, pairs += 8) {
+      Store32(word, (Load32(word) & Load32(pairs)) | Load32(pairs + 4));  // byte order kept: AND and OR are bytewise
+    }
+    at += 4 * count;
+  }
+}
+}  // namespace detail
+
+// What D3dSetShader may write besides the release (verify): false when it declines. `program` is set when the
+// shader has one.
+inline bool D3dShaderProgramOf(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t shader, bool vertex,
+                               detail::ShaderProgram& program, bool& has_program) {
+  has_program = false;
+  if (!shader) return true;
+  const uint32_t block = shader + (vertex ? 872u : 40u);
+  if ((vertex && block == 0) || !IsPlainMemory(block + 20, 4) || detail::Overlap(block + 20, 4, device, l.device_bytes))
+    return false;
+  const uint32_t offset = detail::At32(m.Host(block + 20));
+  if (!offset) return true;
+  has_program = detail::PlanShaderProgram(m, l, device, block + offset, program);
+  return has_program;
+}
+
+// SetPixelShader (`vertex` false) / SetVertexShader: r4 the shader or 0. The old one released (record word at
+// r1 - 48), the shader kept, the render state's dirty bits (pixel: 0x120000; vertex: 0x80000 when a shader is set,
+// and bit 0 of the flags byte cleared), then the shader's constant program (its header at the shader's +40 / +872
+// plus the offset there at +20, when nonzero): the float constants' dirty bits it sets itself cleared, the bool and
+// integer constants' dirty bit set when it has any, its fetch constant writes done.
+inline bool D3dSetShader(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t shader, bool vertex,
+                         uint32_t stack_pointer) {
+  if (!IsPlainMemory(device, l.device_bytes)) return false;
+  uint8_t* d = m.Host(device);
+  const uint32_t stack_word = stack_pointer - 48;
+  const uint32_t slot = vertex ? l.vertex_shader : l.pixel_shader;
+  const uint32_t block = shader + (vertex ? 872u : 40u);
+  (void)block;
+  detail::ShaderProgram program;
+  bool has_program = false;
+  if (!D3dShaderProgramOf(m, l, device, shader, vertex, program, has_program)) return false;  // (the runtime's
+  // addic. test of the block's address declined there)
+  detail::Release release;
+  if (!detail::PlanRelease(m, l, d, device, detail::At32(d + slot), stack_word, release)) return false;
+  if (has_program && (detail::Overlap(program.header, 24, stack_word, 8) ||
+                      (release.kind == detail::Release::kRecord && detail::Overlap(program.header, 24, release.record, 8)) ||
+                      (release.kind == detail::Release::kFence && detail::Overlap(program.header, 24, release.old + 8, 4))))
+    return false;
+  uint8_t* state = d + l.state_dirty;
+  const auto or_state = [&](uint64_t bits) { detail::Store64(state, detail::ByteSwap64(detail::ByteSwap64(detail::Load64(state)) | bits)); };
+  if (vertex && shader) or_state(0x80000);
+  detail::DoRelease(m, l, d, release, stack_word);
+  detail::Set32(d + slot, shader);
+  if (vertex) d[l.shader_flags] &= 0xFEu;
+  else or_state(0x120000);
+  if (!has_program) return true;
+  const uint8_t* h = m.Host(program.header);
+  uint8_t* floats = d + l.float_dirty[vertex ? 0 : 1];
+  detail::Store64(floats, detail::ByteSwap64(detail::ByteSwap64(detail::Load64(floats)) & ~detail::ByteSwap64(detail::Load64(h))));
+  if (detail::Load64(h + 8)) {
+    uint8_t* c = d + l.constant_dirty;
+    detail::Store64(c, detail::ByteSwap64(detail::ByteSwap64(detail::Load64(c)) | (uint64_t(1) << 56)));
+  }
+  detail::RunShaderProgram(m, l, d, program);
+  return true;
+}
+
+// The runtime's write-back of a CPU range for the GPU (dcbf over its lines, then sync): both are no-ops in recompiled
+// code, so the function leaves nothing but its scratch registers and the stack below the caller's. Nothing to do.
+inline bool D3dFlushCpuRange() { return true; }
 
 // SetPixelShaderConstantF: D3dSetShaderConstants (d3d.h) at the pixel registers and their dirty bits.
 inline bool D3dSetPixelShaderConstants(const Memory& m, const D3dLayout& l, uint64_t device, uint64_t first,
