@@ -296,6 +296,16 @@
   "note": "the same upload for the constants of 4 bytes a bit: per run a header and the words, no pads; the room test leaves the header out. The same steps in Crackdown, Test Drive Unlimited and Call of Duty: Black Ops (sub_824B20F0); The Simpsons Game's port patched its copy by hand (it makes each page writable before writing). Any360: xdk::D3dDirtyWords, bound in Crackdown and Test Drive Unlimited, not in The Simpsons Game (the port's patch would be bypassed)"
  },
  {
+  "name": "D3D set shader constants",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B2F68",
+   "tdu": "0x8266B808"
+  },
+  "note": "the copy of a title's shader constants into the device: count vectors from any alignment (lvlx, lvrx) to device + (first + 112) * 16, four then one at a time, then the dirty bits or-ed into the device's first doubleword; saves r7 at r1 + 48. The same steps in another order in both runtimes. Named after what it does. Any360: xdk::D3dSetShaderConstants, bound in both"
+ },
+ {
   "name": "D3DDevice_BeginTiling",
   "library": "D3D",
   "any360": "todo",

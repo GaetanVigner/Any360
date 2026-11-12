@@ -574,6 +574,26 @@ Unlimited 817,387 and 508,704. Bench (menus, the fixed order):
 | Test Drive Unlimited, the words (1.4 million calls) | 38 ns | 25 ns | 1.5x |
 | Test Drive Unlimited, the constants (1.6 million calls) | 140 ns | 52 ns | 2.7x |
 
+### D3D's copy of the shader constants, and where Crackdown's city stands (2026-11-12)
+
+**The copy of a title's shader constants into the device** (`xdk::D3dSetShaderConstants`, `d3d.h`; Crackdown
+`sub_826B2F68`, Test Drive Unlimited `sub_8266B808`, the same steps in another order): `count` vectors of 16 bytes
+from any alignment (lvlx and lvrx) to the device's copy of the constant registers, four then one at a time, then
+the dirty bits or-ed into the device's first doubleword; it saves r7 in its caller's parameter area. A copy that
+reads over what it writes is declined. `xdk_d3d_tests`: 86,021 checks with it (every count to 70 and long ones,
+every alignment of the source, the device on and off 16 bytes, 64-bit registers, the declines). In game, verified:
+Crackdown 329,139 calls, Test Drive Unlimited 1,687,731, none different. Bench: Crackdown 44 -> 27 ns (1.7x),
+Test Drive Unlimited 18.0 -> 14.3 ns (1.3x, 8.4 million calls; its most frequent copy, one vector, gains only
+0.7 ns: the checks of plain memory cost about what the copy saves, about 0.1 ms a second in all, left as it is).
+
+**Crackdown's city with today's functions** (`tools/cpu_profile.ps1`, 45 s, 2026-11-12): the process used 1.33
+processors (2.12 in the profile of the day before, another stretch of the city, with the waits and every
+function of this file since then). XAudio fell from 5.9% of the cycles to 0.85%, all the libraries together to
+about 4%: the biggest library function left is XAudio's effects chain (`sub_82A4DCF0`, 0.40%), then D3D's
+`sub_826C3750` (0.37%). The rest: waits and sleeps 49%, the game's own code 13%, Any360's graphics 15% (the
+command processor's thread, the renderer's draws and write-backs). The library functions have given most of what
+they had to give; what costs now is Any360's graphics and the game's own code.
+
 ### Found on the way
 
 - Crackdown crashed after 40 to 55 seconds with a gamepad connected and the input group on `any360::sys`: its

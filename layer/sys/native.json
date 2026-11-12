@@ -11,6 +11,7 @@
   "D3D GPU wait step",
   "D3D dirty constants",
   "D3D dirty words",
+  "D3D set shader constants",
   "XAudio mix ramp",
   "strchr",
   "strncmp",

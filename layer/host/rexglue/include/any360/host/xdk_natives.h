@@ -38,7 +38,7 @@ namespace any360::host::rexglue::xdk {
 enum class Function : uint32_t {
   kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy,
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
-  kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kCount
+  kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -54,6 +54,8 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
 void RunMixSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
 // And for the D3D runtime's upload of the dirty shader constants (D3dDirtyConstants below).
 void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t cursor_offset, bool words);
+// And for its copy of a title's shader constants into the device (D3dSetShaderConstants below).
+void RunSetConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
 
 // r3 destination, r4 source, r5 size; returns the destination (r3 as it came).
 inline void CrtMemcpy(PPCContext& ctx, uint8_t* base, GuestFunction original) {
@@ -452,6 +454,20 @@ inline void D3dDirtyWords(PPCContext& ctx, uint8_t* base, GuestFunction original
     return;
   }
   RunConstantsSlow(ctx, base, original, cursor_offset, true);
+}
+
+// The D3D runtime's copy of a title's shader constants into the device (any360/xdk/d3d.h): r3 the device, r4 the
+// first register, r5 the constants, r6 how many, r7 the dirty bits; r3 left as it came.
+inline void D3dSetShaderConstants(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    if (any360::xdk::D3dSetShaderConstants(g_memory, ctx.r3.u64, ctx.r4.u64, ctx.r5.u32, ctx.r6.u32, ctx.r7.u64,
+                                           ctx.r1.u32)) [[likely]] {
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSetConstantsSlow(ctx, base, original);
 }
 
 // The D3D runtime's GPU wait step (any360/xdk/d3d.h): r3 the wait's state; returns nonzero while the wait goes on.
