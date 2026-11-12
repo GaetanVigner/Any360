@@ -74,6 +74,18 @@ add_executable(gfx_render_tests tests/gfx_render_tests.cpp)
 target_link_libraries(gfx_render_tests PRIVATE any360_gfx_vulkan)
 target_compile_options(gfx_render_tests PRIVATE -Wall -Wextra)
 add_test(NAME gfx_render_tests COMMAND gfx_render_tests)
+# The same scenes with every draw marked for the GPU and described (ANY360_GPU_CHECKPOINTS, the lost-device
+# diagnostic): the diagnostic must not change a pixel.
+add_test(NAME gfx_render_tests_checkpoints COMMAND gfx_render_tests)
+set_tests_properties(gfx_render_tests_checkpoints PROPERTIES ENVIRONMENT "ANY360_GPU_CHECKPOINTS=1")
+
+# Thousands of frames (textures changing and coming and going, a resolve, a swap): nothing the renderer holds grows
+# without bound, the process's memory stops growing; CPU and GPU time a frame reported as a baseline.
+add_executable(gfx_resource_tests tests/gfx_resource_tests.cpp)
+target_link_libraries(gfx_resource_tests PRIVATE any360_gfx_vulkan $<$<BOOL:${WIN32}>:psapi>)
+target_compile_options(gfx_resource_tests PRIVATE -Wall -Wextra)
+target_compile_definitions(gfx_resource_tests PRIVATE $<$<BOOL:${WIN32}>:NOMINMAX WIN32_LEAN_AND_MEAN>)
+add_test(NAME gfx_resource_tests COMMAND gfx_resource_tests)
 
 # Replays a frame capture (capture.h) and reports what its frames need: gfx_replay CAPTURE [--gpu NAME] [--out DIR].
 add_executable(gfx_replay tests/gfx_replay.cpp)

@@ -622,6 +622,8 @@ class SpirvShaderTranslator : public ShaderTranslator {
   // Closes conditionals opened by exec and instructions within them (but not by
   // labels) and updates the state accordingly.
   void CloseExecConditionals();
+  // any360: closes the forward skips open towards `target` (all of them with UINT32_MAX), innermost first.
+  void CloseForwardSkips(uint32_t target);
 
   spv::Id GetStorageAddressingIndex(InstructionStorageAddressingMode addressing_mode,
                                     uint32_t storage_index, bool is_float_constant = false);
@@ -993,6 +995,18 @@ class SpirvShaderTranslator : public ShaderTranslator {
   // any360: the return addresses of up to four nested calls (control flow indices), and how many are pushed.
   spv::Id var_main_call_return_;
   spv::Id var_main_call_depth_;
+  // any360: a forward jump with no label before its target is a selection skipping to the target within the same
+  // pass of the main loop, not a new pass: a jump through the main loop's continue put the pixels of a quad that
+  // jumped and those that did not in different passes, and derivatives taken after the target (texture LOD) then
+  // hung NVIDIA GPUs (Call of Duty: Black Ops). The skip is set where the jump is taken; the selections open towards
+  // their target (all to the next label) are closed there.
+  spv::Id var_main_jump_skip_;
+  struct ForwardSkip {
+    uint32_t target;
+    spv::Block* merge;
+  };
+  std::vector<ForwardSkip> forward_skips_;
+  uint32_t last_label_ = 0;
   // int.
   spv::Id var_main_address_register_;
   // float.

@@ -376,6 +376,11 @@ to 1,800 draws a frame at 60 FPS. Nothing in Any360 is written for it; what it n
   `off` (`any360_sys_network=off`: no connection, as before). `sys_net_tests` runs UDP, VDP, broadcast, TCP, `select`,
   the options and the Winsock errors over real loopback sockets.
 
+Since 2026-11-12 the full binding is Call of Duty's default: `SetDefaultSystemGroups("all")` (the groups a title
+switches when `any360_sys_groups` is left empty; `all` and `none` are values of the setting for every title) and
+`any360_gpu` on, `--any360_sys_groups=none --any360_gpu=false` for the runtime. Checked 10 minutes in a level with
+no GPU reset once the translator's forward jumps were fixed (docs/GFX.md, "Lost devices").
+
 How the game's own messages were read: the port logs its fatal errors (`src/error_log.cpp` wraps the routine every
 fatal error goes through), and each group was tried alone first. Single groups mislead here: a group alone needs the
 others' objects (an event the runtime made, an APC on a thread it does not run), so a file read never completes and

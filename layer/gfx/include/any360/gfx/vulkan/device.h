@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace any360::gfx::vk {
@@ -55,6 +56,13 @@ class Device {
   bool occlusion_query_precise() const { return occlusion_query_precise_; }  // exact sample counts
   // After VK_ERROR_DEVICE_LOST: what the driver says faulted (VK_EXT_device_fault), or why it cannot say.
   std::string DescribeFault() const;
+  // Diagnostics (ANY360_GPU_CHECKPOINTS=1, VK_NV_device_diagnostic_checkpoints): a marker the GPU passes in `cb`, and
+  // after a lost device the last marker each pipeline stage passed (stage flags, marker).
+  bool checkpoints() const { return set_checkpoint_ != nullptr; }
+  void SetCheckpoint(VkCommandBuffer cb, uint64_t marker) const {
+    if (set_checkpoint_) set_checkpoint_(cb, reinterpret_cast<const void*>(uintptr_t(marker)));
+  }
+  std::vector<std::pair<VkPipelineStageFlags, uint64_t>> QueueCheckpoints() const;
   const std::string& error() const { return error_; }
 
   // A memory type with the bits of `type_bits` and all of `flags`, or UINT32_MAX.
@@ -85,6 +93,8 @@ class Device {
   bool occlusion_query_precise_ = false;
   bool device_fault_ = false;
   PFN_vkGetDeviceFaultInfoEXT get_fault_ = nullptr;
+  PFN_vkCmdSetCheckpointNV set_checkpoint_ = nullptr;
+  PFN_vkGetQueueCheckpointDataNV get_checkpoints_ = nullptr;
   VkCommandPool pool_ = VK_NULL_HANDLE;
   VkPhysicalDeviceProperties properties_{};
   VkPhysicalDeviceMemoryProperties memory_{};

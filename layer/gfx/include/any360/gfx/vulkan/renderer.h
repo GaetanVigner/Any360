@@ -477,6 +477,7 @@ class VulkanRenderer : public gfx::Renderer {
     std::vector<std::pair<uint64_t, uint64_t>> timing_keys;  // ANY360_DRAW_TIMING: each draw's pixel / vertex hash
     std::vector<std::pair<uint64_t, uint64_t>> shader_pairs;  // the vertex / pixel shaders it draws with (stall report)
     uint32_t memexport_dispatches = 0;                        // compute dispatches for memexport it records
+    std::vector<std::string> checkpoints;  // its draws marked for the GPU, described (ANY360_GPU_CHECKPOINTS)
     std::array<uint8_t, kGpuMarks> mark_kinds{};
     VkCommandBuffer upload_cb = VK_NULL_HANDLE;  // guest memory the batch's shaders read, copied into video memory first
     // With recording threads, the batch is several primary command buffers run in order: pieces this thread records
@@ -699,6 +700,7 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t index_bytes, primitives, reset_index, host_index_count;
     uint32_t query;  // the host occlusion query around the draw (UINT32_MAX: none)
     uint32_t timing;  // its time stamp in draw_timing_ (ANY360_DRAW_TIMING; UINT32_MAX: none)
+    uint64_t checkpoint;  // its GPU marker (ANY360_GPU_CHECKPOINTS; 0: none): batch + 1 above, draw + 1 below
     // The texture sets a recording thread makes (sets[2 + stage] then), by layout: images, then samplers.
     static constexpr uint32_t kMaxBindings = 16;
     VkDescriptorSetLayout texture_layouts[2];
@@ -707,6 +709,8 @@ class VulkanRenderer : public gfx::Renderer {
     VkSampler samplers[2][kMaxBindings];
   };
   void RecordJob(VkCommandBuffer cb, const DrawJob& job, RecordedState& rs, std::vector<uint16_t>& scratch) const;
+  // After a lost device: the draw each pipeline stage last passed (ANY360_GPU_CHECKPOINTS), to the stall log.
+  void ReportCheckpoints() const;
   // Recording threads: chunks of the open render pass's draws, each into a secondary command buffer; the pass's
   // chunks run in order when it ends (EndRendering waits for them).
   struct RecordTask {

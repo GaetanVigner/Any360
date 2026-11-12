@@ -161,6 +161,62 @@ int main(int argc, char** argv) {
     std::vector<uint8_t> depth_only = fsi.CreateDepthOnlyFragmentShader();
     Check(depth_only.size() >= 20 && depth_only.size() % 4 == 0, "fsi: depth-only fragment shader produced");
 
+    // Vertex fetches keep their address within the 512 MB of physical memory the shared memory binding holds: the
+    // dword address is masked with 2^27 - 1 before the load (a read past the buffer is undefined in Vulkan; the
+    // rendered effect is gfx_render_tests' "vertex fetch past 512 MB").
+    {
+        Result fetch = Translate(full, xenos::ShaderType::kVertex, BuildFetchPositionShader(), 0x5A0004, "vs_fetch/full");
+        uint32_t mask_id = 0;
+        bool masked = false;
+        for (size_t i = 5; i < fetch.spirv.size();) {
+            const uint32_t count = fetch.spirv[i] >> 16, opcode = fetch.spirv[i] & 0xFFFF;
+            if (!count || i + count > fetch.spirv.size()) break;
+            if (opcode == 43 /* OpConstant */ && count == 4 && fetch.spirv[i + 3] == (1u << 27) - 1) {
+                mask_id = fetch.spirv[i + 2];
+            }
+            if (opcode == 199 /* OpBitwiseAnd */ && count == 5 && mask_id &&
+                (fetch.spirv[i + 3] == mask_id || fetch.spirv[i + 4] == mask_id)) {
+                masked = true;
+            }
+            i += count;
+        }
+        Check(mask_id != 0 && masked, "vs_fetch/full: the shared memory address is masked to 512 MB");
+    }
+
+    // A forward jump to the next label (`jmp` over one exec, on a bool constant) is a selection within the same pass
+    // of the main loop: the jump stores true into xe_var_jump_skip and the label stores false back, instead of
+    // continuing the main loop (a quad whose pixels took different passes hung NVIDIA GPUs on derivatives after
+    // the target; the jump's effect is gfx_render_tests' "shader control flow:kCondJmp").
+    {
+        using O = uc::ControlFlowOpcode;
+        Alu a, b, c;
+        a.vector_mask = 0b1111, a.dest = 1, a.src1 = c0, a.src2 = c0;
+        b.vector = uc::AluVectorOpcode::kAdd, b.vector_mask = 0b1111, b.dest = 1, b.src1 = {1, true}, b.src2 = c0;
+        c.vector_mask = 0b1111, c.dest = kColor0, c.is_export = true, c.src1 = c.src2 = {1, true};
+        std::vector<uint32_t> body;
+        for (const Alu* alu : {&a, &b, &c}) PushAlu(body, *alu);
+        // Control flow 0 alloc, 1 exec A, 2 jmp to 4 on bool 3, 3 exec B, 4 exece C; instructions at slots 3-5.
+        std::vector<uint32_t> ps_jump =
+            BuildCfShader({CfAlloc(uc::AllocType::kPsColors, 0), CfExec(O::kExec, 3, 1, 0),
+                           CfBranch(O::kCondJmp, 4, false, 3, true), CfExec(O::kExec, 4, 1, 0),
+                           CfExec(O::kExecEnd, 5, 1, 0)},
+                          body);
+        Result jump = Translate(full, xenos::ShaderType::kPixel, ps_jump, 0x5A0005, "ps_forward_jump/full");
+        uint32_t skip_id = 0, stores = 0;
+        for (size_t i = 5; i < jump.spirv.size();) {
+            const uint32_t count = jump.spirv[i] >> 16, opcode = jump.spirv[i] & 0xFFFF;
+            if (!count || i + count > jump.spirv.size()) break;
+            if (opcode == 5 /* OpName */ && count >= 3 &&
+                std::strcmp(reinterpret_cast<const char*>(&jump.spirv[i + 2]), "xe_var_jump_skip") == 0) {
+                skip_id = jump.spirv[i + 1];
+            }
+            if (opcode == 62 /* OpStore */ && count >= 3 && skip_id && jump.spirv[i + 1] == skip_id) ++stores;
+            i += count;
+        }
+        Check(skip_id != 0 && stores >= 2, "ps_forward_jump/full: the forward jump skips within the pass (" +
+                                               std::to_string(stores) + " stores to xe_var_jump_skip)");
+    }
+
     std::error_code ec;
     std::filesystem::create_directories(out_dir, ec);
     WriteSpv(out_dir, "smoke_vs.spv", vs_full.spirv);

@@ -1947,6 +1947,68 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       rendering_open_ = true;
       rendering_key_ = key;
     }
+    if (device_.checkpoints()) {
+      // ANY360_GPU_CHECKPOINTS: the draw marked for the GPU, described for the report of a lost device.
+      std::vector<std::string>& marks = batch().checkpoints;
+      job.checkpoint = (uint64_t(current_ + 1) << 32) | uint64_t(marks.size() + 1);
+      char text[320];
+      std::snprintf(text, sizeof text,
+                    "draw %zu: shaders %016llX/%016llX, primitive %u, %u indices (host %u, %s%s), %u primitives, "
+                    "viewport %.0fx%.0f at %.0f,%.0f, scissor %ux%u, %s pass",
+                    marks.size(), (unsigned long long)draw.vertex_shader->hash,
+                    (unsigned long long)(draw.pixel_shader ? draw.pixel_shader->hash : 0), draw.primitive_type,
+                    draw.index_count, job.host_index_count,
+                    job.index_type == VK_INDEX_TYPE_NONE_KHR ? "no index buffer" : "indexed",
+                    job.index_32 ? " 32-bit" : "", job.primitives, job.viewport.width, job.viewport.height,
+                    job.viewport.x, job.viewport.y, job.scissor.extent.width, job.scissor.extent.height,
+                    segment_secondary_ ? "threaded" : "inline");
+      std::string described = text;
+      // Its indices' range (as the guest wrote them, reset index left out) and its vertex buffers: an index past a
+      // buffer's size fetches whatever lies beyond it.
+      if (job.index_src && job.index_bytes) {
+        const uint32_t width = job.index_32 ? 4 : 2, count = job.index_bytes / width;
+        uint32_t low = UINT32_MAX, high = 0;
+        for (uint32_t i = 0; i < count; ++i) {
+          uint32_t v = 0;
+          std::memcpy(&v, job.index_src + i * width, width);
+          if (job.endian == Endian::k8in16) {
+            v = width == 2 ? uint32_t(uint16_t(v << 8 | v >> 8)) : ((v & 0x00FF00FFu) << 8 | (v & 0xFF00FF00u) >> 8);
+          } else if (job.endian == Endian::k8in32) {
+            v = std::byteswap(v);
+          } else if (job.endian == Endian::k16in32) {
+            v = v << 16 | v >> 16;
+          }
+          if (job.restart && v == (job.index_32 ? job.reset_index : (job.reset_index & 0xFFFF))) continue;
+          low = std::min(low, v), high = std::max(high, v);
+        }
+        char range[96];
+        std::snprintf(range, sizeof range, "; indices %u-%u (offset %u)", low, high, regs[0x2102]);
+        described += range;
+      }
+      for (const auto& binding : vs->shader->vertex_bindings()) {
+        const uint32_t* vf = regs + reg::kFetchConstants + 2 * binding.fetch_constant;
+        char buffer[128];
+        std::snprintf(buffer, sizeof buffer, "; vf%u at %08X, %u dwords, stride %u", binding.fetch_constant,
+                      vf[0] & ~3u, (vf[1] >> 2) & 0xFFFFFF, binding.stride_words);
+        described += buffer;
+      }
+      // Its textures as their fetch constants describe them: vertex stage first.
+      for (uint32_t stage = 0; stage < 2; ++stage) {
+        const TranslatedShader* shader = stage ? ps : vs;
+        if (!shader) continue;
+        for (const auto& binding : shader->shader->GetTextureBindingsAfterTranslation()) {
+          const TextureFetch t = TextureFetch::Parse(regs + reg::kFetchConstants + 6 * binding.fetch_constant);
+          uint32_t first = 0, last = 0;
+          t.Levels(first, last);
+          char texture[160];
+          std::snprintf(texture, sizeof texture, "; %s tf%u%s: type %u dim %u fmt %u %ux%ux%u levels %u-%u at %08X aniso %u",
+                        stage ? "ps" : "vs", binding.fetch_constant, binding.is_signed ? " signed" : "", t.type,
+                        t.dimension, t.format, t.width, t.height, t.depth, first, last, t.base, t.aniso);
+          described += texture;
+        }
+      }
+      marks.push_back(std::move(described));
+    }
     if (segment_secondary_) {
       if (!open_task_) {
         if (!spare_tasks_.empty()) {
@@ -2324,6 +2386,7 @@ void VulkanRenderer::RecordJob(VkCommandBuffer cb, const DrawJob& job, RecordedS
   if (job.query != UINT32_MAX) {
     f.vkCmdBeginQuery(cb, query_pool_, job.query, device_.occlusion_query_precise() ? VK_QUERY_CONTROL_PRECISE_BIT : 0);
   }
+  if (job.checkpoint) device_.SetCheckpoint(cb, job.checkpoint);
   if (job.index_type != VK_INDEX_TYPE_NONE_KHR) {
     f.vkCmdBindIndexBuffer(cb, job.index_buffer, job.index_offset, job.index_type);
     f.vkCmdDrawIndexed(cb, job.host_index_count, 1, 0, 0, 0);
@@ -2481,6 +2544,7 @@ VkCommandBuffer VulkanRenderer::Record() {
     }
     b.shader_pairs.clear();
     b.memexport_dispatches = 0;
+    b.checkpoints.clear();
     if (gpu_marks_) {
       f.vkCmdResetQueryPool(b.cb, gpu_marks_, kGpuMarks * uint32_t(&b - batches_.data()), kGpuMarks);
       b.marks = 0;
@@ -2676,6 +2740,7 @@ void VulkanRenderer::Submit(uint32_t index) {
       told = true;
       Fail("batch submission failed first with VkResult " + std::to_string(int(result)) +
            (result == VK_ERROR_DEVICE_LOST ? " (device lost; " + device_.DescribeFault() + ")" : std::string()));
+      if (result == VK_ERROR_DEVICE_LOST && stall_log_) ReportCheckpoints();
     } else {
       Fail("batch submission");
     }
@@ -2985,6 +3050,27 @@ void VulkanRenderer::WaitIdle() {
   for (uint32_t i = 0; i < kBatches; ++i) WaitBatch(i);
 }
 
+void VulkanRenderer::ReportCheckpoints() const {
+  // The last marker each stage passed: the draw after the earliest of them is where the GPU stopped.
+  if (!device_.checkpoints()) {
+    stall_log_("Any360: no GPU checkpoints (ANY360_GPU_CHECKPOINTS=1 with VK_NV_device_diagnostic_checkpoints)");
+    return;
+  }
+  const auto passed = device_.QueueCheckpoints();
+  if (passed.empty()) stall_log_("Any360: the queue reports no checkpoint passed");
+  for (const auto& [stage, marker] : passed) {
+    const uint32_t batch = uint32_t(marker >> 32), ordinal = uint32_t(marker);
+    std::string what = "marker " + std::to_string(marker);
+    if (batch >= 1 && batch <= kBatches && ordinal >= 1 && ordinal <= batches_[batch - 1].checkpoints.size()) {
+      what = "batch " + std::to_string(batch - 1) + " " + batches_[batch - 1].checkpoints[ordinal - 1] + " (of " +
+             std::to_string(batches_[batch - 1].checkpoints.size()) + ")";
+    }
+    char flags[32];
+    std::snprintf(flags, sizeof flags, "stage %08X", unsigned(stage));
+    stall_log_("Any360: lost device, last checkpoint passed at " + std::string(flags) + ": " + what);
+  }
+}
+
 void VulkanRenderer::Complete() {
   for (;;) {
     uint32_t index;
@@ -3019,7 +3105,12 @@ void VulkanRenderer::Complete() {
         stall_log_("Any360: batch " + std::to_string(index) + " not finished by the GPU after 1 s; " +
                    std::to_string(b.memexport_dispatches) + " memexport dispatches; its shaders (vertex/pixel):" + shaders);
       }
-      device_.fn().vkWaitForFences(device_.device(), 1, &b.fence, VK_TRUE, UINT64_MAX);
+      // A driver may report a lost device's fences as signalled: the checkpoints are read whatever the wait says.
+      const VkResult waited = device_.fn().vkWaitForFences(device_.device(), 1, &b.fence, VK_TRUE, UINT64_MAX);
+      if (stall_log_) {
+        stall_log_("Any360: batch " + std::to_string(index) + " ended its wait with VkResult " + std::to_string(int(waited)));
+        ReportCheckpoints();
+      }
     }
     complete_phase_ = 4;
     FinishBatch(b);

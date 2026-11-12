@@ -4,8 +4,9 @@
 // file holding `#include "any360/host/system_exports.inc"` (the overrides must be defined in the executable) and one
 // call to StartSystemFromSettings once the image is loaded (OnPostSetup).
 //
-// Settings: any360_sys_groups (comma-separated: stateless, files, objects, threads, memory, xam, input, audio; empty:
-// the binding stays off), any360_sys_trace, any360_sys_trace_all, any360_sys_trace_groups, any360_sys_trace_names,
+// Settings: any360_sys_groups (comma-separated: stateless, files, objects, threads, memory, xam, input, audio; `all`:
+// the eight; `none`: the binding stays off; empty: the title's default, SetDefaultSystemGroups, else off),
+// any360_sys_trace, any360_sys_trace_all, any360_sys_trace_groups, any360_sys_trace_names,
 // any360_sys_runtime_calls (see SystemOptions).
 #pragma once
 
@@ -17,10 +18,20 @@
 
 namespace any360::host::rexglue {
 
-// Starts the system binding when any360_sys_groups names groups: the title's files mounted as the runtime mounts them
-// (\Device\Harddisk0\Partition1 as game: and d:, read-only unless allow_game_relative_writes), saves and profile
-// settings where the runtime keeps them (user_data_root), plus `title_mounts` (devices the title registers on the
-// runtime's file system itself). False when the binding is off or could not start (logged).
+// The groups switched when any360_sys_groups is left empty (same syntax: `all`, a list), for a title whose port runs on
+// any360::sys by default; the player turns it off with `--any360_sys_groups=none`. Called before
+// StartSystemFromSettings; without it, an empty setting leaves the binding off.
+void SetDefaultSystemGroups(const std::string& groups);
+
+// The groups a value of any360_sys_groups switches, in order and once each: `setting`, or `title_default` when it is
+// empty; `all` stands for the eight, `none` for nothing (an unknown name is kept, to be reported).
+std::vector<std::string> SystemGroupsNamed(const std::string& setting, const std::string& title_default);
+
+// Starts the system binding when any360_sys_groups (or the title's default) names groups: the title's files mounted
+// as the runtime mounts them (\Device\Harddisk0\Partition1 as game: and d:, read-only unless
+// allow_game_relative_writes), saves and profile settings where the runtime keeps them (user_data_root), plus
+// `title_mounts` (devices the title registers on the runtime's file system itself). False when the binding is off or
+// could not start (logged).
 bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const std::filesystem::path& user_data_root,
                              const std::vector<SystemMount>& title_mounts = {});
 

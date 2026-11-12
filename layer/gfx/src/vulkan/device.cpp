@@ -216,6 +216,9 @@ bool Device::Create(const DeviceOptions& options) {
   device_info.pQueueCreateInfos = &queue_info;
   std::vector<const char*> device_extensions;
   if (surface_) device_extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+  // Diagnostics: ANY360_GPU_CHECKPOINTS=1 marks every draw for the GPU, so a lost device says which it stopped in.
+  const char* checkpoints_env = std::getenv("ANY360_GPU_CHECKPOINTS");
+  bool checkpoints = false;
   // Importing host memory: the renderer then reads guest memory in place instead of copying it.
   {
     uint32_t count = 0;
@@ -229,6 +232,11 @@ bool Device::Create(const DeviceOptions& options) {
         VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &host};
         fn_.vkGetPhysicalDeviceProperties2(physical_, &props2);
         host_pointer_alignment_ = host.minImportedHostPointerAlignment;
+      }
+      if (checkpoints_env && *checkpoints_env == '1' &&
+          std::strcmp(e.extensionName, VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME) == 0) {
+        device_extensions.push_back(VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME);
+        checkpoints = true;
       }
       if (std::strcmp(e.extensionName, VK_EXT_DEVICE_FAULT_EXTENSION_NAME) == 0) {
         VkPhysicalDeviceFaultFeaturesEXT has{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT};
@@ -262,6 +270,12 @@ bool Device::Create(const DeviceOptions& options) {
   if (device_fault_) {
     get_fault_ = reinterpret_cast<PFN_vkGetDeviceFaultInfoEXT>(fn_.vkGetDeviceProcAddr(device_, "vkGetDeviceFaultInfoEXT"));
   }
+  if (checkpoints) {
+    set_checkpoint_ = reinterpret_cast<PFN_vkCmdSetCheckpointNV>(fn_.vkGetDeviceProcAddr(device_, "vkCmdSetCheckpointNV"));
+    get_checkpoints_ =
+        reinterpret_cast<PFN_vkGetQueueCheckpointDataNV>(fn_.vkGetDeviceProcAddr(device_, "vkGetQueueCheckpointDataNV"));
+    if (!set_checkpoint_ || !get_checkpoints_) set_checkpoint_ = nullptr, get_checkpoints_ = nullptr;
+  }
 
   VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
   pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -271,6 +285,17 @@ bool Device::Create(const DeviceOptions& options) {
     return false;
   }
   return true;
+}
+
+std::vector<std::pair<VkPipelineStageFlags, uint64_t>> Device::QueueCheckpoints() const {
+  std::vector<std::pair<VkPipelineStageFlags, uint64_t>> passed;
+  if (!get_checkpoints_) return passed;
+  uint32_t count = 0;
+  get_checkpoints_(queue_, &count, nullptr);
+  std::vector<VkCheckpointDataNV> data(count, VkCheckpointDataNV{VK_STRUCTURE_TYPE_CHECKPOINT_DATA_NV});
+  get_checkpoints_(queue_, &count, data.data());
+  for (uint32_t i = 0; i < count; ++i) passed.push_back({data[i].stage, uint64_t(uintptr_t(data[i].pCheckpointMarker))});
+  return passed;
 }
 
 std::string Device::DescribeFault() const {

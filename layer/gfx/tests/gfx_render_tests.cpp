@@ -2329,6 +2329,60 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: shader opcodes: %zu of %zu cases right\n", passed.size(), cases.size());
     s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
   }
+  // Vertex fetches past the guest's 512 MB of physical memory: indices 0x200000 and up with a 64-dword stride put
+  // the vertex addresses 512 MB above the quad's, and the fetch takes them modulo 512 MB as the console's 29-bit
+  // physical addresses do (Vulkan leaves a read past the buffer undefined: an NVIDIA GPU reset in Call of Duty:
+  // Black Ops, whose streamed geometry can hold such indices). A renderer of its own over 512 MB of guest memory
+  // (the other scenarios' is 2 MB); the quad must cover the target.
+  {
+    constexpr uint32_t kFull = 0x20000000, kStride = 64;
+    uint8_t* const full = static_cast<uint8_t*>(::operator new(kFull, std::align_val_t(65536)));
+    uint8_t* const saved = g_memory;
+    g_memory = full;  // Scene and SetBig write here meanwhile
+    std::memset(full, 0, kMemory);
+    {
+      vk::VulkanRenderer wide(device, full, kFull);
+      CHECK(wide.Initialize());
+      CommandProcessor wide_cp(full);
+      wide_cp.SetRenderer(&wide);
+      wide_cp.InitializeRingBuffer({}, kRing, 12);
+      Scene w{wide_cp};
+      const float v[4][4] = {{-1, -1, 0.5f, 1}, {1, -1, 0.5f, 1}, {-1, 1, 0.5f, 1}, {1, 1, 0.5f, 1}};
+      for (uint32_t i = 0; i < 4; ++i) {
+        for (uint32_t c = 0; c < 4; ++c) SetBig(kVertices + 4 * kStride * i + 4 * c, Bits(v[i][c]));
+      }
+      std::vector<uint32_t> vs;
+      t::PushCfPair(vs, t::CfAlloc(uc::AllocType::kVsPosition, 0), t::CfExec(uc::ControlFlowOpcode::kExecEnd, 1, 2, 0b0001));
+      t::PushVertexFetch(vs, 1, 0, 0, rex::graphics::xenos::VertexFormat::k_32_32_32_32_FLOAT, kStride, 0);
+      t::PushAluVector(vs, uc::AluVectorOpcode::kMax, uint32_t(uc::ExportRegister::kVSPosition), true, 0b1111, {1, true},
+                       {1, true});
+      const float clear[4] = {0, 0, 0, 1};
+      CHECK(wide.ClearColor(color0, clear));
+      w.Defaults();
+      w.Shader(0, vs);
+      w.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+      w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, kVertices | 3, 2u | (4 * kStride) << 2});
+      w.Color(51, 102, 153, 255);
+      // A strip of four immediate 32-bit indices, each 2^27 / 64 = 0x200000 above the quad's.
+      constexpr uint32_t kWrap = (kFull / 4) / kStride;
+      w.Put({Type3(pm4::DRAW_INDX_2, 5), 4u << 16 | 1u << 11 | 1u << 6 | kTriangleStrip, kWrap + 0, kWrap + 1, kWrap + 2,
+             kWrap + 3});
+      w.Run();
+      std::vector<uint8_t> bytes;
+      CHECK(wide.ReadBack(color0, kSize, kSize, bytes));
+      Pixels p;
+      p.data.assign(kSize * kSize, 0);
+      if (bytes.size() == kSize * kSize * 4) std::memcpy(p.data.data(), bytes.data(), bytes.size());
+      const uint32_t colour = Rgba(51, 102, 153, 255);
+      CHECK(wide.stats().failed == 0);
+      CHECK(p.Count(colour) == kSize * kSize);
+      std::printf("gfx_render_tests: vertex fetch past 512 MB: %u of %u pixels drawn from the wrapped address (%s)\n",
+                  p.Count(colour), kSize * kSize, wide.guest_memory_in_place() ? "read in place" : "copied");
+    }
+    g_memory = saved;
+    ::operator delete(full, std::align_val_t(65536));
+  }
+
   std::printf("gfx_render_tests: guest memory %s\n", renderer.guest_memory_in_place() ? "read in place" : "copied per draw");
   std::printf("gfx_render_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;

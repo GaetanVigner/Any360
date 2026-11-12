@@ -372,3 +372,28 @@ missing, not a feature.
 
 It avoids geometry shaders and rasterizer-ordered views so that it runs through MoltenVK and on mobile GPUs:
 rectangle and quad lists are expanded in the vertex stage.
+
+### Lost devices (Call of Duty: Black Ops, 2026-11-12)
+
+Call of Duty's levels reset NVIDIA GPUs after a few minutes (System log: nvlddmkm event 153 twice, 2 s apart) on
+any360::gfx and on ReXGlue's own Vulkan backend alike, never on its Direct3D 12 one: the shared SPIR-V translation.
+
+- **Forward jumps stay in one pass.** The translator made every `jmp` a new pass of its main loop (`loop { switch
+  (pc) }`). In a quad where some pixels jumped and others did not, the pixels reached the code after the label in
+  different passes, and derivatives taken there (texture LOD) waited for pixels that never came: the GPU hung,
+  seemingly at random, in the world materials whose shadow lookups are skipped by a predicated `jmp`. A forward jump
+  to the next label is now a selection within the same pass (`xe_var_jump_skip`); backward jumps, calls and loops
+  keep the main loop. Bisected in game: emptying the 3D, cube or shadow textures did not help, sampling without
+  derivatives did, and the change held 10 minutes where six runs before had frozen in 1 to 5.
+- **Shared memory addresses are taken modulo 512 MB** (a vertex fetch or memexport past the buffer is undefined in
+  Vulkan; Direct3D reads 0).
+- **Diagnostic**: `ANY360_GPU_CHECKPOINTS=1` marks every draw for the GPU (`VK_NV_device_diagnostic_checkpoints`);
+  after a lost device the stall log names the draw each pipeline stage last passed, with its shaders, index range,
+  vertex buffers and textures.
+
+Tests: `gfx_shader_tests` (the jump's selection, the address mask), `gfx_render_tests` (control flow cases, a
+vertex fetch past 512 MB drawn from the wrapped address), `gfx_render_tests_checkpoints` (every scene with the
+checkpoints on), and `gfx_resource_tests`: 3,000 frames of textured draws, uploads, textures used once, a resolve
+and a swap, checking that nothing the renderer holds grows without bound and the process stops growing; it reports
+CPU and GPU time a frame as the baseline for optimizations (RTX 5070 Ti: ~0.3 ms CPU, ~0.02 ms GPU, textures capped
+at 1,207 by eviction, +4 MB from frame 1,800 to 3,000).

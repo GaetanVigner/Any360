@@ -165,6 +165,8 @@ void SpirvShaderTranslator::Reset() {
 
   cf_exec_conditional_merge_ = nullptr;
   cf_instruction_predicate_merge_ = nullptr;
+  forward_skips_.clear();
+  last_label_ = 0;
 }
 
 uint32_t SpirvShaderTranslator::GetModificationRegisterCount() const {
@@ -502,6 +504,9 @@ void SpirvShaderTranslator::StartTranslation() {
     var_main_call_depth_ =
         builder_->createVariable(spv::NoPrecision, spv::StorageClassFunction, type_int_,
                                  "xe_var_call_depth", const_int_0_);
+    var_main_jump_skip_ =
+        builder_->createVariable(spv::NoPrecision, spv::StorageClassFunction, type_bool_,
+                                 "xe_var_jump_skip", builder_->makeBoolConstant(false));
     var_main_previous_scalar_ =
         builder_->createVariable(spv::NoPrecision, spv::StorageClassFunction, type_float_,
                                  "xe_var_previous_scalar", const_float_0_);
@@ -666,6 +671,7 @@ std::vector<uint8_t> SpirvShaderTranslator::CompleteTranslation() {
   if (!is_depth_only_fragment_shader_) {
     // Close flow control within the last switch case.
     CloseExecConditionals();
+    CloseForwardSkips(UINT32_MAX);
     bool has_main_switch = !current_shader().label_addresses().empty();
     // After the final exec (if it happened to be not exece, which would already
     // have a break branch), break from the switch if it exists, or from the
@@ -798,6 +804,7 @@ std::vector<uint8_t> SpirvShaderTranslator::CompleteTranslation() {
         builder_->createStore(const_int4_0_, var_main_loop_address_);
         builder_->createStore(const_int4_0_, var_main_call_return_);  // any360
         builder_->createStore(const_int_0_, var_main_call_depth_);    // any360
+        builder_->createStore(builder_->makeBoolConstant(false), var_main_jump_skip_);  // any360
         builder_->createStore(const_float_0_, var_main_previous_scalar_);
         builder_->createStore(const_int_0_, var_main_vfetch_address_);
         builder_->createStore(const_float_0_, var_main_tfetch_lod_);
@@ -1309,8 +1316,10 @@ void SpirvShaderTranslator::ProcessLabel(uint32_t cf_index) {
 
   assert_false(current_shader().label_addresses().empty());
 
-  // Close flow control within the previous switch case.
+  // Close flow control within the previous switch case, then the forward jumps' skips to this label.
   CloseExecConditionals();
+  CloseForwardSkips(cf_index);
+  last_label_ = cf_index;
 
   spv::Function& function = builder_->getBuildPoint()->getParent();
   // Create the next switch case and fallthrough to it.
@@ -1571,6 +1580,22 @@ void SpirvShaderTranslator::ProcessJumpInstruction(const ParsedJumpInstruction& 
 
   if (builder_->getBuildPoint()->isTerminated()) {
     // Unreachable for some reason.
+    return;
+  }
+  // any360: forward to the next label: skipped within this pass of the main loop (var_main_jump_skip_).
+  const std::set<uint32_t>& labels = current_shader().label_addresses();
+  const auto next_label = labels.upper_bound(last_label_);
+  if (instr.target_address > last_label_ && next_label != labels.end() && *next_label == instr.target_address) {
+    builder_->createStore(builder_->makeBoolConstant(true), var_main_jump_skip_);
+    CloseExecConditionals();
+    EnsureBuildPointAvailable();
+    spv::Id skip = builder_->createLoad(var_main_jump_skip_, spv::NoPrecision);
+    spv::Block* merge = new spv::Block(builder_->getUniqueId(), builder_->getBuildPoint()->getParent());
+    builder_->createSelectionMerge(merge, spv::SelectionControlDontFlattenMask);
+    spv::Block& inner = builder_->makeNewBlock();
+    builder_->createConditionalBranch(skip, merge, &inner);
+    builder_->setBuildPoint(&inner);
+    forward_skips_.push_back({instr.target_address, merge});
     return;
   }
   main_switch_next_pc_phi_operands_.push_back(builder_->makeIntConstant(int(instr.target_address)));
@@ -3513,6 +3538,22 @@ void SpirvShaderTranslator::CloseInstructionPredication() {
   cf_instruction_predicate_merge_ = nullptr;
 }
 
+void SpirvShaderTranslator::CloseForwardSkips(uint32_t target) {
+  bool closed = false;
+  while (!forward_skips_.empty() && (target == UINT32_MAX || forward_skips_.back().target == target)) {
+    spv::Block& inner_block = *builder_->getBuildPoint();
+    if (!inner_block.isTerminated()) {
+      builder_->createBranch(forward_skips_.back().merge);
+    }
+    inner_block.getParent().addBlock(forward_skips_.back().merge);
+    builder_->setBuildPoint(forward_skips_.back().merge);
+    forward_skips_.pop_back();
+    closed = true;
+  }
+  // The pixels that jumped go on from here like the others.
+  if (closed) builder_->createStore(builder_->makeBoolConstant(false), var_main_jump_skip_);
+}
+
 void SpirvShaderTranslator::CloseExecConditionals() {
   // Within the exec - instruction-level predicate check.
   CloseInstructionPredication();
@@ -4138,11 +4179,15 @@ spv::Id SpirvShaderTranslator::LoadUint32FromSharedMemory(spv::Id address_dwords
   uint32_t binding_count_log2 = GetSharedMemoryStorageBufferCountLog2();
 
   if (!binding_count_log2) {
-    // Single binding - load directly.
+    // Single binding - load directly, the address kept within the 512 MB of physical memory the binding holds: an
+    // address past it (a vertex index the title never meant to be drawn, garbage in a buffer it streams into) is out
+    // of the buffer's bounds, which Vulkan leaves undefined (an NVIDIA GPU reset in Call of Duty: Black Ops) where
+    // Direct3D reads 0.
     id_vector_temp_.clear();
     // The only SSBO struct member.
     id_vector_temp_.push_back(const_int_0_);
-    id_vector_temp_.push_back(address_dwords_int);
+    id_vector_temp_.push_back(builder_->createBinOp(spv::OpBitwiseAnd, type_int_, address_dwords_int,
+                                                    builder_->makeIntConstant(int((uint32_t(1) << (29 - 2)) - 1))));
     return builder_->createLoad(
         builder_->createAccessChain(storage_class, buffers_shared_memory_, id_vector_temp_),
         spv::NoPrecision);
@@ -4225,11 +4270,12 @@ void SpirvShaderTranslator::StoreUint32ToSharedMemory(spv::Id value, spv::Id add
   uint32_t binding_count_log2 = GetSharedMemoryStorageBufferCountLog2();
 
   if (!binding_count_log2) {
-    // Single binding - store directly.
+    // Single binding - store directly, within the binding's 512 MB as loads are.
     id_vector_temp_.clear();
     // The only SSBO struct member.
     id_vector_temp_.push_back(const_int_0_);
-    id_vector_temp_.push_back(address_dwords_int);
+    id_vector_temp_.push_back(builder_->createBinOp(spv::OpBitwiseAnd, type_int_, address_dwords_int,
+                                                    builder_->makeIntConstant(int((uint32_t(1) << (29 - 2)) - 1))));
     store(builder_->createAccessChain(storage_class, buffers_shared_memory_, id_vector_temp_));
     return;
   }

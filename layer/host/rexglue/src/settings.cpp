@@ -15,7 +15,8 @@
 
 REXCVAR_DEFINE_STRING(any360_sys_groups, "", "Kernel",
                       "Any360: system call groups run on any360::sys, comma-separated (stateless, files, objects, threads, "
-                      "memory, xam, input, audio); empty: all on the runtime");
+                      "memory, xam, input, audio), all (the eight) or none; empty: the title's default (none unless "
+                      "the title sets one)");
 REXCVAR_DEFINE_BOOL(any360_sys_trace, false, "Kernel",
                     "Any360: log the first call of each system call that goes to any360::sys, and to the runtime");
 REXCVAR_DEFINE_BOOL(any360_sys_trace_all, false, "Kernel",
@@ -57,6 +58,9 @@ void InstallCrashReport();  // crash_report.cpp
 namespace {
 
 bool g_started_from_settings = false;
+std::string g_default_groups;
+
+constexpr const char* kAllGroups = "stateless,files,objects,threads,memory,xam,input,audio";
 
 std::vector<std::string> SplitList(const std::string& text) {
   std::vector<std::string> items;
@@ -72,9 +76,28 @@ std::vector<std::string> SplitList(const std::string& text) {
 
 }  // namespace
 
+void SetDefaultSystemGroups(const std::string& groups) { g_default_groups = groups; }
+
+std::vector<std::string> SystemGroupsNamed(const std::string& setting, const std::string& title_default) {
+  std::vector<std::string> groups;
+  for (const std::string& name : SplitList(setting.empty() ? title_default : setting)) {
+    if (name == "none") continue;
+    if (name == "all") {
+      for (const std::string& each : SplitList(kAllGroups)) groups.push_back(each);
+      continue;
+    }
+    groups.push_back(name);
+  }
+  std::vector<std::string> unique;
+  for (const std::string& name : groups) {
+    if (std::find(unique.begin(), unique.end(), name) == unique.end()) unique.push_back(name);
+  }
+  return unique;
+}
+
 bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const std::filesystem::path& user_data_root,
                              const std::vector<SystemMount>& title_mounts) {
-  const std::vector<std::string> groups = SplitList(REXCVAR_GET(any360_sys_groups));
+  const std::vector<std::string> groups = SystemGroupsNamed(REXCVAR_GET(any360_sys_groups), g_default_groups);
   if (groups.empty()) return false;
   SystemOptions options;
   options.trace_calls = REXCVAR_GET(any360_sys_trace);

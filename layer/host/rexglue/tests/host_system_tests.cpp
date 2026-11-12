@@ -22,7 +22,9 @@
 #include <fstream>
 #include <string>
 #include <thread>
+#include <vector>
 
+#include "any360/host/settings.h"
 #include "any360/host/system.h"
 #include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
@@ -243,7 +245,25 @@ void Entry(PPCContext& ctx, uint8_t* base) {
 
 }  // namespace
 
+// The groups any360_sys_groups switches: a list as given, `all` the eight, `none` nothing, empty the title's default
+// (none unless the title sets one), each group once.
+void CheckGroupsNamed() {
+  using List = std::vector<std::string>;
+  const List eight = {"stateless", "files", "objects", "threads", "memory", "xam", "input", "audio"};
+  CHECK(SystemGroupsNamed("", "") == List{});
+  CHECK(SystemGroupsNamed("none", "all") == List{});
+  CHECK(SystemGroupsNamed("", "all") == eight);
+  CHECK(SystemGroupsNamed("all", "") == eight);
+  CHECK(SystemGroupsNamed("files, xam", "all") == (List{"files", "xam"}));
+  CHECK(SystemGroupsNamed("", "files,input") == (List{"files", "input"}));
+  CHECK(SystemGroupsNamed("xam,all,xam", "") ==
+        (List{"xam", "stateless", "files", "objects", "threads", "memory", "input", "audio"}));
+  CHECK(SystemGroupsNamed("files,unknown", "") == (List{"files", "unknown"}));  // reported when started
+  std::printf("host_system_tests: group settings parsed\n");
+}
+
 int main() {
+  CheckGroupsNamed();
   const std::filesystem::path root = std::filesystem::temp_directory_path() / "any360-host-system-tests";
   std::filesystem::create_directories(root);
   rex::Runtime runtime(root);
