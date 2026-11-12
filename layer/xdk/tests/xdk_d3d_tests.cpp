@@ -290,6 +290,51 @@ void DirtyWords() {
   CHECK(!Words(p, 48, {0x80000, 0x10000, 0x30000, 0x7F000000u, 1, 0}));
 }
 
+// The copy of a title's shader constants into the device against its model: every count up to 70 and long ones,
+// sources at every alignment, the device on and off 16 bytes, 64-bit registers.
+bool SetConstants(xdk_test::Pair& p, uint64_t device, uint64_t first, uint32_t source, uint32_t count, uint64_t dirty) {
+  namespace xdk = any360::xdk;
+  constexpr uint32_t kStackPointer = xdk_test::kStack - 512;
+  any360::xdk::Range write;
+  const bool planned = xdk::D3dSetShaderConstantsAccepts(device, first, source, count, kStackPointer, write);
+  const bool accepted = xdk::D3dSetShaderConstants(p.a, device, first, source, count, dirty, kStackPointer);
+  CHECK(planned == accepted);
+  if (!accepted) {
+    CHECK(p.SameEverywhere());
+    return false;
+  }
+  xdk::reference::D3dSetShaderConstants(p.b, device, first, source, count, dirty, kStackPointer);
+  CHECK(p.SameEverywhere());
+  return true;
+}
+
+void ShaderConstants() {
+  xdk_test::Pair p(29);
+  std::mt19937_64 rng(31);
+  uint64_t accepted = 0, calls = 0;
+  for (uint32_t count = 0; count <= 70; ++count) {
+    for (uint32_t align = 0; align < 16; ++align) {
+      for (uint32_t device_align : {0u, 4u, 8u}) {
+        const uint64_t high = (rng() % 4 == 0) ? (rng() << 32) : 0;
+        const uint64_t device = high | (0x20000 + device_align);
+        const uint64_t first = rng() % 400;
+        ++calls;
+        accepted += SetConstants(p, device, first, 0x60000 + align + 16 * uint32_t(rng() % 8), count, rng());
+      }
+    }
+  }
+  for (uint32_t count : {255u, 256u, 300u, 512u}) {
+    ++calls;
+    accepted += SetConstants(p, 0x20000, 0, 0x60003, count, rng());
+  }
+  CHECK(accepted == calls);
+  // Declined: the source over the destination, the device's bits in what is written, memory that is not plain.
+  CHECK(!SetConstants(p, 0x20000, 0, 0x20000 + 112 * 16 + 8, 4, 1));
+  CHECK(!SetConstants(p, 0x20000, 0x10000000 - 112, 0x60000, 4, 1));  // (first + 112) * 16 wraps to the device
+  CHECK(!SetConstants(p, 0x20000, 0, 0x7F000000u, 4, 1));
+  CHECK(!SetConstants(p, 0x7FC80000u, 0, 0x60000, 4, 1));
+}
+
 }  // namespace
 
 int main() {
@@ -299,5 +344,6 @@ int main() {
   TwoWaiters();
   DirtyConstants();
   DirtyWords();
+  ShaderConstants();
   return xdk_test::Finish("xdk_d3d_tests");
 }

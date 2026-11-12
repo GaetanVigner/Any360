@@ -33,7 +33,7 @@ REXCVAR_DEFINE_STRING(any360_xdk_skip, "", "Kernel",
                       "by name, comma-separated (memcpy, forward copy, memset, memmove, XMemCpy, wcslen, strchr, "
                       "strncmp, strncpy, strrchr, tolower, toupper, wcsncpy, wcscpy, strncat, wcscmp, strlen, strcmp, "
                       "mbtowc, GetLastError, SetLastError, _stricmp, strstr, _finite, _isnan, _sptype, _get_exp, "
-                      "_set_exp, _add_exp, XAudio mix ramp, D3D dirty constants, D3D dirty words)");
+                      "_set_exp, _add_exp, XAudio mix ramp, D3D dirty constants, D3D dirty words, D3D set shader constants)");
 REXCVAR_DEFINE_BOOL(any360_xdk_bench, false, "Kernel",
                     "Any360: every call of a bound library function is timed both ways, its own code and the host "
                     "routine; the log gets the calls and nanoseconds of each by size (slow)");
@@ -58,7 +58,7 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "tolower", "toupper",     "wcsncpy", "wcscpy",  "strncat",
                                             "wcscmp",  "strlen",      "strcmp",  "mbtowc",  "GetLastError",
                                             "SetLastError", "_stricmp", "strstr", "_finite", "_isnan", "_sptype",
-                                            "_get_exp", "_set_exp", "_add_exp", "XAudio mix ramp", "D3D dirty constants", "D3D dirty words"};
+                                            "_get_exp", "_set_exp", "_add_exp", "XAudio mix ramp", "D3D dirty constants", "D3D dirty words", "D3D set shader constants"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -857,6 +857,36 @@ void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, ui
   };
   s.call = fmt::format("device {:08X} mask {:016X} index {:X} constants {:08X} buffer {:08X}", device, mask, index,
                        source, buffer.at);
+  RunSides(mode, s, ctx, base, original);
+}
+
+void RunSetConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  constexpr uint32_t f = uint32_t(Function::kSetConstants);
+  const Mode mode = SlowMode(f, base);
+  const uint64_t device = ctx.r3.u64, first = ctx.r4.u64, dirty = ctx.r7.u64;
+  const uint32_t source = ctx.r5.u32, count = ctx.r6.u32, stack_pointer = ctx.r1.u32;
+  const auto native = [=](PPCContext&) {
+    return any360::xdk::D3dSetShaderConstants(g_memory, device, first, source, count, dirty, stack_pointer);
+  };
+  if (mode == Mode::kNative) {
+    if (!native(ctx)) original(ctx, base);
+    return;
+  }
+  any360::xdk::Range constants;
+  if (mode == Mode::kOriginal ||
+      !any360::xdk::D3dSetShaderConstantsAccepts(device, first, source, count, stack_pointer, constants)) {
+    original(ctx, base);
+    if (mode != Mode::kOriginal) g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  // The device is the rendering thread's own.
+  Sides s;
+  s.f = f;
+  s.writes = {constants, {uint32_t(device), 8}, {stack_pointer + 48, 8}};
+  s.work = count * 16;
+  s.native = [&](PPCContext& c) { native(c); };
+  s.differs = [](const PPCContext& a, const PPCContext& b) -> const char* { return a.r3.u64 != b.r3.u64 ? "r3" : nullptr; };
+  s.call = fmt::format("device {:016X} first {} constants {:08X} count {} dirty {:016X}", device, first, source, count, dirty);
   RunSides(mode, s, ctx, base, original);
 }
 

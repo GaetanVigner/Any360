@@ -176,6 +176,36 @@ inline bool D3dDirtyWords(const Memory& memory, uint32_t device, uint32_t cursor
   return true;
 }
 
+// The D3D runtime's copy of a title's shader constants into the device (named after what it does; Crackdown's
+// sub_826B2F68, Test Drive Unlimited's sub_8266B808, the same steps in another order): r3 the device, r4 the first
+// constant register, r5 the constants (any alignment: lvlx and lvrx), r6 how many (16 bytes each), r7 the dirty bits
+// to add. The vectors go to the device + (r4 + 112) * 16 (rounded down to 16 bytes, as stvx does), four at a time
+// then one at a time; then the device's first doubleword gets r7 or-ed in. It saves r7 at r1 + 48 (the caller's
+// parameter area). Declined: memory that is not plain, a source over the destination or the device's first
+// doubleword. r3 is left as it came; the other volatile registers are the function's own.
+inline bool D3dSetShaderConstantsAccepts(uint64_t device, uint64_t first, uint32_t source, uint32_t count,
+                                         uint32_t stack_pointer, Range& write) {
+  const uint32_t dest = uint32_t(device + ((uint32_t(first + 112) << 4) & 0xFFFFFFF0u)) & ~0xFu;
+  const uint64_t bytes = uint64_t(count) * 16;
+  if (bytes >= 0x100000000ull) return false;
+  write = {dest, uint32_t(bytes)};
+  const uint32_t d = uint32_t(device);
+  return IsPlainMemory(dest, write.size) && IsPlainMemory(source, write.size) && IsPlainMemory(d, 8) &&
+         IsPlainMemory(stack_pointer + 48, 8) && detail::Disjoint(dest, write.size, source, write.size) &&
+         detail::Disjoint(dest, write.size, d, 8) && detail::Disjoint(dest, write.size, stack_pointer + 48, 8) &&
+         detail::Disjoint(d, 8, stack_pointer + 48, 8);
+}
+inline bool D3dSetShaderConstants(const Memory& memory, uint64_t device, uint64_t first, uint32_t source, uint32_t count,
+                                  uint64_t dirty, uint32_t stack_pointer) {
+  Range write;
+  if (!D3dSetShaderConstantsAccepts(device, first, source, count, stack_pointer, write)) return false;
+  detail::Store64(memory.Host(stack_pointer + 48), detail::ByteSwap64(dirty));
+  std::memcpy(memory.Host(write.at), memory.Host(source), write.size);
+  uint8_t* bits = memory.Host(uint32_t(device));
+  detail::Store64(bits, detail::ByteSwap64(detail::ByteSwap64(detail::Load64(bits)) | dirty));
+  return true;
+}
+
 // Every wait of the D3D runtime for the GPU (the ring's read pointer passing a position: room in the ring, the end
 // of a frame; a fence; a query's result) is a loop in the caller around one function, the wait's step: r3 is the
 // wait's state, whose first word is the device, and it returns nonzero while the wait may go on (zero: the device

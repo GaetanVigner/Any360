@@ -99,4 +99,66 @@ inline void D3dDirtyWords(const Memory& memory, uint32_t cursor_offset, uint64_t
   store32(uint32_t(r26) + cursor_offset, uint32_t(r4));
 }
 
+// The copy of a title's shader constants into the device (Crackdown's sub_826B2F68), instruction by instruction:
+// lvlx loads from the address to its 16-byte block's end into the vector's left, lvrx the bytes before the address
+// from its block into the right (nothing when the address is on 16 bytes), vor joins them.
+inline void D3dSetShaderConstants(const Memory& memory, uint64_t r3, uint64_t r4, uint64_t r5, uint64_t r6, uint64_t r7,
+                                  uint32_t r1) {
+  using Vector = uint8_t[16];
+  const auto lvlx = [&](uint32_t ea, Vector& v) {
+    const uint32_t n = 16 - (ea & 15);
+    for (uint32_t i = 0; i < 16; ++i) v[i] = i < n ? *memory.Host(ea + i) : 0;
+  };
+  const auto lvrx = [&](uint32_t ea, Vector& v) {
+    const uint32_t n = ea & 15;  // the bytes of the block before ea
+    for (uint32_t i = 0; i < 16; ++i) v[i] = i >= 16 - n ? *memory.Host((ea & ~0xFu) + (i - (16 - n))) : 0;
+  };
+  const auto stvx = [&](uint32_t ea, const Vector& v) {
+    for (uint32_t i = 0; i < 16; ++i) *memory.Host((ea & ~0xFu) + i) = v[i];
+  };
+  for (int i = 0; i < 8; ++i) *memory.Host(r1 + 48 + i) = uint8_t(r7 >> (8 * (7 - i)));  // std r7,48(r1)
+  uint64_t r10 = (uint32_t(r4 + 112) << 4) & 0xFFFFFFF0u;
+  uint64_t r11 = r5, r9 = r6;
+  r10 = r10 + r3;
+  if (uint32_t(r6) > 3) {
+    uint64_t r8 = ((uint32_t(r6 - 4) >> 2) & 0x3FFFFFFFu) + 1;
+    do {
+      Vector v0, v13, v12, v11, v10, v9, v8, v7;
+      lvlx(uint32_t(r11), v0);
+      lvrx(uint32_t(r11 + 16), v13);
+      lvlx(uint32_t(r11 + 16), v12);
+      for (int i = 0; i < 16; ++i) v0[i] |= v13[i];
+      lvrx(uint32_t(r11 + 32), v11);
+      lvlx(uint32_t(r11 + 32), v10);
+      for (int i = 0; i < 16; ++i) v13[i] = v12[i] | v11[i];
+      lvrx(uint32_t(r11 + 48), v9);
+      lvlx(uint32_t(r11 + 48), v8);
+      lvrx(uint32_t(r11 + 64), v7);
+      for (int i = 0; i < 16; ++i) v12[i] = v10[i] | v9[i], v11[i] = v8[i] | v7[i];
+      stvx(uint32_t(r10), v0);
+      r8 -= 1;
+      stvx(uint32_t(r10 + 16), v13);
+      r11 += 64;
+      r9 -= 4;
+      stvx(uint32_t(r10 + 32), v12);
+      r10 += 64;
+      stvx(uint32_t(r10 - 64 + 48), v11);
+    } while (uint32_t(r8) != 0);
+  }
+  while (uint32_t(r9) != 0) {
+    Vector v0, v13;
+    r9 -= 1;
+    lvlx(uint32_t(r11), v0);
+    lvrx(uint32_t(r11 + 16), v13);
+    r11 += 16;
+    for (int i = 0; i < 16; ++i) v0[i] |= v13[i];
+    stvx(uint32_t(r10), v0);
+    r10 += 16;
+  }
+  uint64_t bits = 0;  // ld r11,0(r3); or r11,r11,r7; std r11,0(r3)
+  for (int i = 0; i < 8; ++i) bits = bits << 8 | *memory.Host(uint32_t(r3) + i);
+  bits |= r7;
+  for (int i = 0; i < 8; ++i) *memory.Host(uint32_t(r3) + i) = uint8_t(bits >> (8 * (7 - i)));
+}
+
 }  // namespace any360::xdk::reference
