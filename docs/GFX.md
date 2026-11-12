@@ -465,3 +465,28 @@ larger budget and `FinishPipelines` in its loading screens (a fine-tuning step, 
 
 Test: `gfx_render_tests` records two pipelines at one sample, warms them up at 4x MSAA in a new renderer, and its
 first frame makes none and waits for none.
+
+### EDRAM shared between surfaces (2026-11-12)
+
+EDRAM is one memory, and a title may draw a target at one base and read it back from another: Call of Duty: Black
+Ops draws its 1024x2048 shadow atlas in two halves at depth bases 0x180 and 0x4C0 (pitch 1040, 13 tiles a row: the
+second is the first's rows 1024 on) and resolves it whole from 0x180. With one host image per base the second half
+never reached the resolve, so the shadow test said "lit" there (stairs and walls bright where the reference is dark).
+
+Surfaces of the same pitch, format and kind whose bases are a whole number of tile rows apart now share an
+EdramGroup: for each tile row of EDRAM (16 sample rows), the surface that wrote it last and the version. Every write
+(a draw's rectangle, a resolve's clear) marks its rows; before a surface is drawn, resolved, cleared in part or read
+back, the rows another surface wrote since are copied from that surface (its samples resolved, kept), whole rows
+(the writer held the rest of each row: it was synced before it wrote). A first version copied everything the other
+surface had ever written and brought another frame's scene depth into a lamp's shadow map piece (the player's gun in
+its light); tile rows by version cannot.
+
+Depth resolves kept on the GPU stay at the guest resolution whatever the resolution scale: a title samples a depth
+texture texel by texel (a shadow map's percentage-closer filter with offsets of one guest texel and getWeights2D's
+weights on the guest grid), and scaled, light leaked along shadow edges in thin streaks.
+
+Tests: `gfx_render_tests` (red at base 0, green at base 2 read from base 0 from row 32 on; a top-half redraw keeps
+the green; newer rows only; at scale 2 a depth resolve held at 1x and a colour one at 2x). Measured on a reference
+capture of Black Ops's spawn view: the stairs' gap to the reference from 17.1 to 0.56 (1x) and 0.74 (2x).
+Still open there: a lamp's spot light whose lit area is cut to a rectangle (its own 512x512 shadow map at 1D5D0000,
+drawn and resolved at one base: not this), and light sprites (a floor lamp's halo).

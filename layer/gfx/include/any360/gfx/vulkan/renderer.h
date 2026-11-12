@@ -79,6 +79,7 @@ struct RendererStats {
   uint64_t sample_resolve_pixels = 0;  // and the host pixels they covered
   uint32_t samples_dropped = 0;        // surfaces back to one sample (drawn without colour and depth together)
   uint32_t samples_given_back = 0;     // and given their samples again (drawn with them together, then cleared)
+  uint32_t edram_alias_copies = 0;     // copies between surfaces over the same EDRAM (SyncAliases)
   uint32_t pipeline_waits = 0;  // draws not drawn while their pipeline compiles (SetAsyncPipelines)
   uint32_t pipelines_warmed = 0;  // pipelines queued from the recipes of earlier runs (WarmUpPipelines)
   uint32_t render_targets = 0;
@@ -189,6 +190,13 @@ class VulkanRenderer : public gfx::Renderer {
   void WaitSubmitted();
 
   // The host image of a surface, created on first use (width = pitch, height = the EDRAM rows the surface spans).
+  // Surfaces over the same EDRAM (SyncAliases): by tile row, the version written last and the surface that wrote it.
+  struct Surface;
+  struct EdramGroup {
+    std::vector<uint64_t> version;  // by tile row
+    std::vector<Surface*> writer;   // by tile row (null: none yet)
+    uint32_t members = 0;
+  };
   struct Surface {
     SurfaceKey key;
     Image image;
@@ -206,6 +214,14 @@ class VulkanRenderer : public gfx::Renderer {
     bool paired = false;               // drawn with colour and depth targets together this frame
     bool unpaired_this_frame = false;  // a depth target drawn without colour targets this frame
     int32_t written[4] = {INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN};  // what it holds: drawn or cleared since
+    // EDRAM is one memory: surfaces of the same pitch, format and kind whose bases are a whole number of tile rows
+    // apart hold the same samples (Call of Duty: Black Ops draws its shadow atlas at two bases 1024 rows apart and
+    // resolves it whole from the first). Such surfaces share an EdramGroup that knows, for each tile row of EDRAM (16
+    // sample rows), which surface wrote it last and the version it wrote; `row0` is this surface's first tile row
+    // there, `have` the version of each of its tile rows it holds (SyncAliases).
+    EdramGroup* group = nullptr;
+    uint32_t row0 = 0;
+    std::vector<uint64_t> have;
     Image& target() { return ms.image ? ms : image; }  // what draws render into
     VkImageLayout& target_layout() { return ms.image ? ms_layout : layout; }
   };
@@ -274,6 +290,11 @@ class VulkanRenderer : public gfx::Renderer {
   // What the renderer holds, to see it does not grow without bound: render targets, resolves kept, pipelines.
   size_t surface_count() const { return surfaces_.size(); }
   size_t resolved_count() const { return resolved_.size(); }
+  // The resolution scale a resolve kept on the GPU holds at `dest_base` (0: none there), for tests.
+  uint32_t resolve_scale(uint32_t dest_base) const {
+    const auto it = resolved_.find(dest_base & 0x1FFFFFFF);
+    return it == resolved_.end() ? 0 : it->second.scale;
+  }
   size_t pipeline_count() const { return pipelines_.size(); }
   // A host that watches guest memory for CPU writes (as for textures): guest memory copied into video memory is then
   // copied again only after a write (GuestMemoryWritten), not at every batch. `watch(begin, end)` arms a one-shot watch.
@@ -378,8 +399,26 @@ class VulkanRenderer : public gfx::Renderer {
   // A surface drawn back at one sample given its samples again, when a clear over `area` is about to cover all it
   // holds (the multisampled image needs nothing of the single-sample one).
   void GiveSamplesBack(Surface* surface, const int32_t area[4]);
-  static void GrowDrawn(Surface* surface, int32_t left, int32_t top, int32_t right, int32_t bottom) {
+  // Before a surface is read or drawn: what the surfaces over the same EDRAM wrote since it last did, copied into it
+  // at their rows (their samples first resolved and dropped, its own too). True when something was copied.
+  // Rows within [skip_top, skip_bottom) (host rows) are left: the caller overwrites them whole.
+  bool SyncAliases(Surface& surface, int32_t skip_top = 0, int32_t skip_bottom = 0);
+  // Whether a surface over shared EDRAM has rows another one wrote since it last held them.
+  bool AliasesNewer(const Surface* surface) const {
+    if (!surface || !surface->group || surface->group->members < 2) return false;
+    const EdramGroup& g = *surface->group;
+    for (size_t i = 0; i < surface->have.size(); ++i) {
+      if (g.version[surface->row0 + i] > surface->have[i] && g.writer[surface->row0 + i] != surface) return true;
+    }
+    return false;
+  }
+  // The tile rows of `surface` host rows [top, bottom) cover, written by it now.
+  void MarkWritten(Surface* surface, int32_t top, int32_t bottom);
+  std::map<std::array<uint32_t, 4>, std::unique_ptr<EdramGroup>> edram_groups_;
+  uint64_t edram_version_ = 0;
+  void GrowDrawn(Surface* surface, int32_t left, int32_t top, int32_t right, int32_t bottom) {
     if (!surface) return;
+    if (surface->group && surface->group->members > 1) MarkWritten(surface, top, bottom);
     int32_t* w = surface->written;
     w[0] = std::min(w[0], left), w[1] = std::min(w[1], top), w[2] = std::max(w[2], right), w[3] = std::max(w[3], bottom);
     if (!surface->ms.image) return;

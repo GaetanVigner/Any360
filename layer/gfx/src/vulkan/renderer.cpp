@@ -641,7 +641,102 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& requested)
     return nullptr;
   }
   ++stats_.render_targets;
+  // Its EDRAM group: same pitch, format and kind, bases a whole number of tile rows apart.
+  {
+    const std::array<uint32_t, 4> group_key = {key.pitch, key.format, key.depth, key.base % tiles_per_row};
+    std::unique_ptr<EdramGroup>& group = edram_groups_[group_key];
+    if (!group) {
+      group = std::make_unique<EdramGroup>();
+      const size_t rows = 2048 / tiles_per_row + 2;
+      group->version.assign(rows, 0);
+      group->writer.assign(rows, nullptr);
+    }
+    slot->group = group.get();
+    slot->row0 = key.base / tiles_per_row;
+    slot->have.assign(std::min<size_t>(height / 16, group->version.size() - slot->row0), 0);
+    if (++group->members == 2) {
+      // Shared from now on: what each surface already holds is the EDRAM's (the first to hold a row has it).
+      for (auto& [other_key, other] : surfaces_) {
+        if (!other || other.get() == slot.get() || other->group != group.get()) continue;
+        for (size_t i = 0; i < other->have.size(); ++i) {
+          const size_t row = other->row0 + i;
+          if (group->writer[row]) continue;
+          group->writer[row] = other.get();
+          group->version[row] = ++edram_version_;
+          other->have[i] = group->version[row];
+        }
+      }
+    }
+  }
   return slot.get();
+}
+
+void VulkanRenderer::MarkWritten(Surface* s, int32_t top, int32_t bottom) {
+  EdramGroup& g = *s->group;
+  const int32_t row_height = 16 * int32_t(scale_);
+  const int32_t first = std::max(top, 0) / row_height;
+  const int32_t last = std::min((std::max(bottom, 0) + row_height - 1) / row_height, int32_t(s->have.size()));
+  for (int32_t i = first; i < last; ++i) {
+    const size_t row = s->row0 + size_t(i);
+    g.version[row] = ++edram_version_;
+    g.writer[row] = s;
+    s->have[size_t(i)] = g.version[row];
+  }
+}
+
+bool VulkanRenderer::SyncAliases(Surface& s, int32_t skip_top, int32_t skip_bottom) {
+  if (!AliasesNewer(&s)) return false;
+  EdramGroup& g = *s.group;
+  const Functions& f = device_.fn();
+  const VkImageAspectFlags aspect =
+      s.key.depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+  const int32_t row_height = 16 * int32_t(scale_);
+  bool copied = false;
+  // Runs of tile rows another surface wrote last, each copied whole from it (it held the rest of each row when it
+  // wrote: every write is preceded by this).
+  for (size_t i = 0; i < s.have.size();) {
+    const size_t row = s.row0 + i;
+    Surface* writer = g.writer[row];
+    const bool overwritten = int32_t(i) * row_height >= skip_top && int32_t(i + 1) * row_height <= skip_bottom;
+    if (!(g.version[row] > s.have[i] && writer && writer != &s) || overwritten) {
+      ++i;
+      continue;
+    }
+    size_t end = i + 1;
+    while (end < s.have.size() && g.writer[s.row0 + end] == writer && g.version[s.row0 + end] > s.have[end] &&
+           !(int32_t(end) * row_height >= skip_top && int32_t(end + 1) * row_height <= skip_bottom)) {
+      ++end;
+    }
+    const int32_t top = int32_t(i) * row_height, rows = int32_t(end - i) * row_height;
+    const int32_t source_top = int32_t(row - writer->row0) * row_height;
+    const int32_t height = std::min({rows, int32_t(s.image.height) - top, int32_t(writer->image.height) - source_top});
+    const int32_t width = int32_t(std::min(s.image.width, writer->image.width));
+    if (height > 0 && width > 0) {
+      // Between single-sample images: the writer's samples resolved over the rows (it keeps them), this one's dropped
+      // (resolved first: nothing lost) when it has any.
+      DropSamples(s);
+      EndRendering();
+      const VkCommandBuffer cb = Record();
+      ResolveSamples(cb, *writer, 0, source_top, width, source_top + height);
+      Transition(cb, writer->image, writer->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, aspect);
+      Transition(cb, s.image, s.layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, aspect);
+      VkImageCopy region{};
+      region.srcSubresource = region.dstSubresource = {aspect, 0, 0, 1};
+      region.srcOffset = {0, source_top, 0};
+      region.dstOffset = {0, top, 0};
+      region.extent = {uint32_t(width), uint32_t(height), 1};
+      f.vkCmdCopyImage(cb, writer->image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, s.image.image,
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+      int32_t* w = s.written;
+      w[0] = std::min(w[0], 0), w[1] = std::min(w[1], top), w[2] = std::max(w[2], width), w[3] = std::max(w[3], top + height);
+      ++stats_.edram_alias_copies;
+      copied = true;
+    }
+    for (size_t j = i; j < end; ++j) s.have[j] = g.version[s.row0 + j];
+    i = end;
+  }
+  if (copied) target_memo_.valid = false;
+  return copied;
 }
 
 bool VulkanRenderer::SampleBitsViews(Surface& s) {
@@ -839,6 +934,7 @@ bool VulkanRenderer::ClearColor(const SurfaceKey& key, const float rgba[4]) {
   WaitIdle();  // and the submitter thread is done with the queue the one-time submit below uses
   Surface* s = GetSurface(key);
   if (!s || key.depth) return false;
+  if (s->group && s->group->members > 1) MarkWritten(s, 0, int32_t(s->image.height));
   const Functions& f = device_.fn();
   return device_.Submit([&](VkCommandBuffer cb) {
     Transition(cb, s->image, s->layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -859,6 +955,7 @@ bool VulkanRenderer::ClearDepthStencil(const SurfaceKey& key, float depth, uint3
   WaitIdle();  // and the submitter thread is done with the queue the one-time submit below uses
   Surface* s = GetSurface(key);
   if (!s || !key.depth) return false;
+  if (s->group && s->group->members > 1) MarkWritten(s, 0, int32_t(s->image.height));
   const Functions& f = device_.fn();
   return device_.Submit([&](VkCommandBuffer cb) {
     const VkImageAspectFlags aspects = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
@@ -879,6 +976,10 @@ bool VulkanRenderer::ReadBack(const SurfaceKey& key, uint32_t width, uint32_t he
   WaitIdle();  // and guest memory has what the batches write into it
   Surface* s = GetSurface(key);
   if (!s || key.depth || width > s->image.width || height > s->image.height) return false;
+  if (SyncAliases(*s)) {  // what was drawn over the same EDRAM at another base, in it before it is read
+    Flush();
+    WaitIdle();
+  }
   const Functions& f = device_.fn();
   // Every host colour format is 4 bytes a texel but the four-component 16-bit and two-component 32-bit ones.
   const VkFormat format = ColorTargetFormat(key.format);
@@ -1612,7 +1713,12 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t window_offset = regs[kPaScWindowOffset];
   const int32_t offset_x = int32_t(window_offset << 17) >> 17, offset_y = int32_t(window_offset << 1) >> 17;
   for (uint32_t i = 0; i < 4; ++i) color_infos[i] = regs[kRbColorInfo[i]];
-  if (target_memo_.valid && std::memcmp(target_memo_.key, target_key, sizeof(target_key)) == 0) {
+  bool memo_ok = target_memo_.valid && std::memcmp(target_memo_.key, target_key, sizeof(target_key)) == 0;
+  if (memo_ok) {
+    for (uint32_t i = 0; i < 4 && memo_ok; ++i) memo_ok = !AliasesNewer(static_cast<Surface*>(target_memo_.colors[i]));
+    memo_ok = memo_ok && !AliasesNewer(static_cast<Surface*>(target_memo_.depth));
+  }
+  if (memo_ok) {
     for (uint32_t i = 0; i < 4; ++i) colors[i] = static_cast<Surface*>(target_memo_.colors[i]);
     depth_surface = static_cast<Surface*>(target_memo_.depth);
     width = target_memo_.width, height = target_memo_.height, depth_control = target_memo_.depth_control;
@@ -1656,6 +1762,10 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     if (MemExportWithoutRasterization(draw)) return;
     ++stats_.skipped;  // nothing bound: no target this draw could change
     return;
+  }
+  // What the surfaces over the same EDRAM wrote since, in the targets before the draw tests or blends against them.
+  for (Surface* t : {colors[0], colors[1], colors[2], colors[3], depth_surface}) {
+    if (t) SyncAliases(*t);
   }
   // Host MSAA where it smooths edges. A depth target drawn without colour targets through a whole frame (a shadow
   // map; a depth pre-pass is drawn with them in the same frame) goes back to one sample at the swap, as do the
@@ -3716,6 +3826,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     Fail("resolve source surface");
     return;
   }
+  SyncAliases(*surface);  // what was drawn over the same EDRAM at another base
   // Host pixels a guest pixel (samples, each scale x scale pixels).
   const uint32_t host_x = sample_x * scale_, host_y = sample_y * scale_;
   if (x0 >= int32_t(surface->image.width / host_x) || y0 >= int32_t(surface->image.height / host_y)) {
@@ -4025,6 +4136,11 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     Surface* color_target = clear_color ? surface : nullptr;
     Surface* depth_target =
         clear_depth ? GetSurface({depth_info & 0xFFF, pitch * sample_x, (depth_info >> 16) & 1, 1}) : nullptr;
+    if (depth_target) {
+      // The rows the clear leaves keep what is over them; those it covers whole need nothing.
+      const bool whole_rows = x0 == 0 && (x0 + int32_t(width)) * int32_t(host_x) >= int32_t(depth_target->image.width);
+      SyncAliases(*depth_target, whole_rows ? y0 * int32_t(host_y) : 0, whole_rows ? (y0 + int32_t(height)) * int32_t(host_y) : 0);
+    }
     VkClearValue color_value{}, depth_value{};
     if (color_target) {
       const uint64_t clear = regs[kRbColorClear] | uint64_t(regs[kRbColorClearLo]) << 32;
@@ -4650,9 +4766,11 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   }
   const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(y0) + height + 31) & ~31u;
   Resolved& r = resolved_[dest_base];
-  // Scaled as the surface when each pixel is one sample (a copy of every host pixel); an MSAA surface's sample is
-  // taken at the guest resolution (one host pixel of it).
-  const uint32_t s = scale_ > 1 && sample_x == scale_ && sample_y == scale_ ? scale_ : 1;
+  // At the guest resolution whatever the resolution scale (one host pixel of each guest pixel or sample): a depth
+  // texture is data a title samples texel by texel, a shadow map's percentage-closer filter with offsets of one guest
+  // texel and getWeights2D's weights on the guest grid. Scaled, the point fetches landed on host texels off that grid
+  // and light leaked along shadow edges (Call of Duty: Black Ops's stairs at 2x: thin lit streaks).
+  const uint32_t s = 1;
   if (r.image.image && r.scale != s) {
     Record();
     batch().retired.push_back(r.image);  // another scale: nothing of it is kept

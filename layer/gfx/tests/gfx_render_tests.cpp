@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <chrono>
 #include <new>
+#include <random>
 #include <functional>
 #include <string>
 #include <vector>
@@ -2331,11 +2332,102 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: shader opcodes: %zu of %zu cases right\n", passed.size(), cases.size());
     s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
   }
+  // EDRAM is one memory: a 64-pixel pitch is one tile a row (16 rows), so a target at base 2 is the rows of the one at
+  // base 0 from row 32 on. Red drawn at base 0, then green at base 2: the surface at base 0 reads red above row 32,
+  // green from it (as Call of Duty: Black Ops draws its shadow atlas at two bases and resolves it from the first);
+  // then red again at base 0 over its top half only leaves the green below.
+  {
+    const uint32_t red = Rgba(204, 0, 0, 255), green = Rgba(0, 204, 0, 255);
+    const uint32_t copies_before = renderer.stats().edram_alias_copies;
+    Pixels p = scenario("EDRAM aliasing", nullptr, [&] {
+      s.Vertices(0);
+      s.Color(204, 0, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2001, 2);  // RB_COLOR_INFO: k_8_8_8_8 at tile 2
+      s.Color(0, 204, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2001, 0);
+    });
+    CHECK(p.At(5, 10) == red && p.At(5, 31) == red && p.At(5, 32) == green && p.At(60, 63) == green);
+    // Red over the top half at base 0 (window scissor rows 0-31): the green rows stay.
+    Pixels q = scenario("EDRAM aliasing again", nullptr, [&] {
+      s.Vertices(0);
+      s.Reg(0x2001, 2);
+      s.Color(0, 204, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2001, 0);
+      s.Put({Type0(kPaScWindowScissorTl, 2), 0, 32u << 16 | kSize});
+      s.Color(204, 0, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    });
+    CHECK(q.At(5, 10) == red && q.At(5, 40) == green);
+    // Only what is newer comes across, row by row: blue at base 2, red over all of base 0 (its rows 32-63 are base 2's
+    // rows 0-31), then green at base 2 below what base 0 reads (its rows 40-63, base 0's rows 72-95). Base 0 keeps its
+    // red: base 2's old blue over the same rows must not come back with its newer green (a shadow atlas piece took
+    // another frame's depth that way in Call of Duty: Black Ops: the player's gun in a lamp's light).
+    const uint32_t blue = Rgba(0, 0, 204, 255);
+    Pixels r = scenario("EDRAM aliasing, newer rows only", nullptr, [&] {
+      s.Vertices(0);
+      s.Reg(0x2001, 2);
+      s.Color(0, 0, 204, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2001, 0);
+      s.Color(204, 0, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2001, 2);
+      s.Put({Type0(kPaScWindowScissorTl, 2), 40u << 16, 64u << 16 | kSize});
+      s.Color(0, 204, 0, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2001, 0);
+    });
+    CHECK(r.At(5, 10) == red && r.At(5, 40) == red && r.At(60, 63) == red && r.Count(blue) == 0);
+    const uint32_t copies = renderer.stats().edram_alias_copies - copies_before;
+    CHECK(copies >= 2);
+    std::printf("gfx_render_tests: EDRAM aliasing: rows 32 on drawn at base 2 read at base 0 (%u copies)\n", copies);
+  }
+  // At a resolution scale of 2, a depth resolve kept on the GPU stays at the guest resolution (a title samples a depth
+  // texture texel by texel: a shadow map's filter with offsets of one guest texel and weights on the guest grid leaked
+  // light along shadow edges when it was scaled), a colour resolve is scaled.
+  {
+    vk::VulkanRenderer scaled(device, g_memory, kMemory, 2);
+    CHECK(scaled.Initialize());
+    CommandProcessor c(g_memory);
+    c.SetRenderer(&scaled);
+    c.InitializeRingBuffer({}, kRing, 12);
+    Scene w{c};
+    const uint32_t rect = kVertices + 0x800, depth_dest = 0xC0000, colour_dest = 0xD0000;
+    const float clear[4] = {0, 0, 0, 1};
+    CHECK(scaled.ClearColor(color0, clear));
+    CHECK(scaled.ClearDepthStencil(depth, 1.0f, 0));
+    w.Defaults();
+    w.Shader(0, t::BuildFetchPositionShader());
+    w.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+    w.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 7u << 4);  // z_enable, z_write, ALWAYS
+    w.Vertices(0);
+    w.Color(255, 255, 255, 255);
+    w.DrawAuto(kTriangleStrip, 4);
+    w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});
+    w.Put({Type0(0x2318, 4), 4u, depth_dest, 64u | 64u << 16, 2u | 22u << 7});  // depth, k_24_8, 8-in-32
+    w.Reg(0x2208, 6);
+    w.DrawAuto(8, 3);
+    w.Put({Type0(0x2318, 4), 0u, colour_dest, 64u | 64u << 16, 2u | 6u << 7});  // colour 0, k_8_8_8_8
+    w.DrawAuto(8, 3);
+    w.Reg(0x2208, 4);
+    w.Run();
+    CHECK(scaled.stats().failed == 0);
+    CHECK(scaled.resolve_scale(depth_dest) == 1 && scaled.resolve_scale(colour_dest) == 2);
+    std::printf("gfx_render_tests: resolves at scale 2: depth held at %ux, colour at %ux\n", scaled.resolve_scale(depth_dest),
+                scaled.resolve_scale(colour_dest));
+  }
   // Pipeline warm-up: a run with asynchronous pipelines and one sample records its pipelines' recipes beside the
   // pipeline cache; the next run, at 4x host MSAA (pipelines the driver's cache of the first run cannot hold),
   // compiles them before the title draws (WarmUpPipelines, FinishPipelines), and its first frame waits for none.
   {
-    const std::string cache = (std::filesystem::temp_directory_path() / "gfx_render_tests_warmup.bin").string();
+    // A name of its own: ctest runs this executable twice at once (gfx_render_tests_checkpoints), and a shared file
+    // made one run read the other's half-written recipes.
+    const std::string cache = (std::filesystem::temp_directory_path() /
+                               ("gfx_render_tests_warmup_" + std::to_string(std::random_device{}()) + ".bin"))
+                                  .string();
     std::error_code error;
     std::filesystem::remove(cache, error);
     std::filesystem::remove(cache + ".recipes", error);
