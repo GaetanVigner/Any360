@@ -1,0 +1,81 @@
+# any360::d3d: the titles' D3D runtime, native
+
+Decision (user, 2026-11-12): no legacy Xbox translation layer is left. Today a title's statically linked XDK D3D
+runtime (recompiled PowerPC) builds Xenos command streams (PM4) in guest memory, and Any360's command processor
+(`layer/gfx/src/command_processor.cpp`) decodes them back into draws for the Vulkan renderer. The runtime is to be
+replaced by native code that drives the renderer directly, every entry point of it, and the game-engine code that
+writes GPU commands itself too. Asked between that and a hybrid that intercepts only the flush points, the user chose
+the complete replacement, Crackdown first.
+
+## What there is to replace (`tools/d3d_inventory.py`)
+
+Crackdown's runtime, 0x826ACC90-0x826CF4B0 (`titles/crackdown/d3d_inventory.json`):
+
+| Class | Functions | Instructions | Call sites from the title | What they are |
+|---|---|---|---|---|
+| flush | 64 | 12,708 | 177 | build PM4 or call the Vd* exports: draws, clears, resolves, swaps, waits, state flushes, command buffer replay, ring setup |
+| entry | 163 | 7,406 | 2,292 | called by the title, build no PM4: state setters, resources, getters |
+| internal | 326 | 14,913 | 0 | reached only from inside the runtime |
+
+Outside the runtime, four functions build PM4 themselves: the engine's prebaked shader binds (`sub_828BB130`,
+`sub_828BB308`, `sub_828BB4E8`: SET_STATE, IM_LOAD) and a wait just below the runtime's range (`sub_826AC8F0`). The
+other titles (`tools/d3d_inventory.py tdu|simpsons`, their generated code cuts functions finer): Test Drive Unlimited
+1,436 functions, 89 flush and 94 entry (372 call sites from the title), 7 functions outside that build PM4 (a draw among
+them); The Simpsons Game 1,636 functions, 112 flush and 170 entry (2,317), 17 outside (a block of EA's engine,
+`sub_825F8FE0`-`sub_825FABA8`). Each title links its own version of the runtime: the same functions, other
+device offsets (the command buffer pointer at device + 48 in Crackdown, + 40 in Test Drive Unlimited).
+
+Crackdown's studies before Any360 (`F:\Crackdown\HLE_RENDERER_FEASIBILITY.md`, `HLE_RENDERER_PLAN.md`) give the device
+layout: a full Xenos register mirror with 64-bit dirty masks at +0 (vertex shader constants, 4 float4 a bit), +8
+(pixel shader constants), +16, +24 (32 fetch slots), +32; float constants from +0x700; fetch constants at +1024 (24
+bytes a slot); the command buffer's write pointer and end at +48/+52. Draw records read from that mirror after a draw
+call matched the GPU's register state for 100% of the opaque scene's draws. About half of the scene's draws come from
+recorded command buffers replayed by `sub_826C3750` (INDIRECT_BUFFER), not from draw calls.
+
+## Design
+
+**The device stays in guest memory, in the runtime's layout.** Title code reads and writes it directly (the XDK's
+inline D3D functions compile into the game), so the native functions keep it exactly as the original ones do: the
+register mirror, the dirty masks, the resources' headers. A title's layout is a table (`titles/<title>/d3d.json`:
+the functions by name and address, the device's offsets), the code that uses it is Any360's and the same for every
+title.
+
+**Three kinds of replacement, each checked its own way:**
+
+1. *Entry functions* (setters, resources, getters) are transforms of guest memory and registers, like the C runtime's
+   functions of `docs/NATIVE_FUNCTIONS.md`: a model, unit tests, and `--any360_xdk_verify` in game (both sides run,
+   memory and registers compared). Exact by construction, one group at a time, the game playable after each.
+2. *Flush functions* produce renderer work instead of PM4. Checked against the PM4 path as an oracle: in a compare
+   mode both run, the native function's draw (its `DrawCall`: registers, shaders, fetch) is compared with the one the
+   command processor decodes from the original function's PM4 for the same draw, and the PM4 one is rendered.
+3. *Engine code that builds PM4* (Crackdown's prebaked shader binds) is title code: replaced per title, the same way.
+
+**Order while both paths exist.** Until every flush function is native, native draws and PM4 from functions not
+replaced yet must reach the renderer in the order the title issued them. A native flush function writes, where its
+PM4 would have gone, one Any360 packet (a type-3 opcode no Xenos packet uses) carrying the index of a native record;
+the command processor runs the record when it reaches the packet. Fences, waits and the ring's read pointer keep
+working as they do. Once every flush function of a title is native the ring holds only these packets; then it goes:
+records go straight to the renderer's queue, fences are written when the GPU finishes the work they follow.
+
+**Command buffers.** The runtime records a command buffer by pointing its write pointer into the buffer while the
+title makes ordinary D3D calls; replay is an INDIRECT_BUFFER. Native: recording appends records to the buffer's list,
+replay submits the list (with what the replay sets around it: predication, the inherited state).
+
+**The renderer's input.** First the same `DrawCall` the command processor builds (registers, shaders), filled from the
+device's mirror: exact by construction, and the renderer is unchanged. Later a leaner record (per-draw state blocks
+shared between draws) once everything is native.
+
+## Phases
+
+| # | Phase | Done when |
+|---|---|---|
+| D0 | Inventory (done: `tools/d3d_inventory.py`, `titles/crackdown/d3d_inventory.json`); then each of the 227 entry and flush functions named and its arguments and device fields written in `titles/crackdown/d3d.json` | every entry and flush function of Crackdown's runtime has a name and a role |
+| D1 | Entry functions native, group by group (constants and fetch setters first: `sub_826B2F68` is already one, `xdk::D3dSetShaderConstants`), verified in game | the 163 entry functions run natively in Crackdown, `--any360_xdk_verify` clean |
+| D2 | The record packet in the command processor and the renderer; the first flush function native (indexed draw `sub_826B9FF8`), compare mode against PM4 | its draws match the PM4 ones, the image unchanged |
+| D3 | Every draw, clear, resolve, swap, query and fence native | no PM4 from the runtime but command buffer replays and ring setup |
+| D4 | Command buffers recorded and replayed as record lists | no PM4 from the runtime at all |
+| D5 | The engine's PM4 (`sub_828BB*`) native | the ring carries only record packets |
+| D6 | The ring and the command processor out of Crackdown's path (kept as the oracle for the other titles and for checks) | Crackdown runs with no PM4 built or decoded |
+| D7 | Test Drive Unlimited, The Simpsons Game, Call of Duty: Black Ops: their layouts and their engines' PM4 | each runs with no PM4 |
+
+D0-D6 are months of work. The game stays playable after every step: what is not native yet runs as before.
