@@ -33,7 +33,7 @@ REXCVAR_DEFINE_STRING(any360_xdk_skip, "", "Kernel",
                       "by name, comma-separated (memcpy, forward copy, memset, memmove, XMemCpy, wcslen, strchr, "
                       "strncmp, strncpy, strrchr, tolower, toupper, wcsncpy, wcscpy, strncat, wcscmp, strlen, strcmp, "
                       "mbtowc, GetLastError, SetLastError, _stricmp, strstr, _finite, _isnan, _sptype, _get_exp, "
-                      "_set_exp, _add_exp, XAudio mix ramp, D3D dirty constants)");
+                      "_set_exp, _add_exp, XAudio mix ramp, D3D dirty constants, D3D dirty words)");
 REXCVAR_DEFINE_BOOL(any360_xdk_bench, false, "Kernel",
                     "Any360: every call of a bound library function is timed both ways, its own code and the host "
                     "routine; the log gets the calls and nanoseconds of each by size (slow)");
@@ -58,7 +58,7 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "tolower", "toupper",     "wcsncpy", "wcscpy",  "strncat",
                                             "wcscmp",  "strlen",      "strcmp",  "mbtowc",  "GetLastError",
                                             "SetLastError", "_stricmp", "strstr", "_finite", "_isnan", "_sptype",
-                                            "_get_exp", "_set_exp", "_add_exp", "XAudio mix ramp", "D3D dirty constants"};
+                                            "_get_exp", "_set_exp", "_add_exp", "XAudio mix ramp", "D3D dirty constants", "D3D dirty words"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -816,14 +816,17 @@ void RunMixSlow(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   RunSides(mode, s, ctx, base, original);
 }
 
-void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t cursor_offset) {
-  constexpr uint32_t f = uint32_t(Function::kDirtyConstants);
+void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t cursor_offset, bool words) {
+  const uint32_t f = uint32_t(words ? Function::kDirtyWords : Function::kDirtyConstants);
   const Mode mode = SlowMode(f, base);
   const uint32_t device = ctx.r3.u32, source = ctx.r6.u32;
   const uint64_t mask = ctx.r4.u64, index = ctx.r5.u64;
   const auto native = [=](PPCContext& c) {
     uint64_t i = index, cursor = 0;
-    if (!any360::xdk::D3dDirtyConstants(g_memory, device, cursor_offset, mask, i, source, cursor)) return false;
+    if (!(words ? any360::xdk::D3dDirtyWords(g_memory, device, cursor_offset, mask, i, source, cursor)
+                : any360::xdk::D3dDirtyConstants(g_memory, device, cursor_offset, mask, i, source, cursor))) {
+      return false;
+    }
     c.r4.u64 = cursor;
     c.r5.u64 = i;
     return true;
@@ -834,7 +837,8 @@ void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, ui
   }
   any360::xdk::Range buffer;
   if (mode == Mode::kOriginal ||
-      !any360::xdk::D3dDirtyConstantsAccepts(g_memory, device, cursor_offset, mask, index, source, buffer)) {
+      !(words ? any360::xdk::D3dDirtyWordsAccepts(g_memory, device, cursor_offset, mask, index, source, buffer)
+              : any360::xdk::D3dDirtyConstantsAccepts(g_memory, device, cursor_offset, mask, index, source, buffer))) {
     original(ctx, base);
     if (mode != Mode::kOriginal) g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
     return;
@@ -843,7 +847,7 @@ void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, ui
   Sides s;
   s.f = f;
   s.writes = {buffer, {device + cursor_offset, 4}};
-  s.work = uint32_t(std::popcount(mask)) * 64;
+  s.work = uint32_t(std::popcount(mask)) * (words ? 4 : 64);
   s.native = [&](PPCContext& c) { native(c); };
   s.differs = [](const PPCContext& a, const PPCContext& b) -> const char* {
     if (a.r3.u64 != b.r3.u64) return "r3";

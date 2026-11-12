@@ -231,6 +231,65 @@ void DirtyConstants() {
   CHECK(!Constants(p, 48, {0x80000, 0x10000, 0x30000, 0x7F000000u, 1, 0}));
 }
 
+// The upload of 4-byte constants against its model: the same masks and alignments, the room test's edge.
+bool Words(xdk_test::Pair& p, uint32_t offset, const ConstantsCase& c) {
+  namespace xdk = any360::xdk;
+  const auto put32 = [&](uint32_t a, uint32_t v) {
+    for (int b = 0; b < 4; ++b) p.native[a + b] = p.model[a + b] = uint8_t(v >> (8 * (3 - b)));
+  };
+  put32(c.device + offset, c.cursor);
+  put32(c.device + offset + 4, c.end);
+  uint64_t index = c.index, cursor = 0;
+  any360::xdk::Range write;
+  const bool planned = xdk::D3dDirtyWordsAccepts(p.a, c.device, offset, c.mask, c.index, c.source, write);
+  const bool accepted = xdk::D3dDirtyWords(p.a, c.device, offset, c.mask, index, c.source, cursor);
+  CHECK(planned == accepted);
+  if (!accepted) {
+    CHECK(p.SameEverywhere());
+    return false;
+  }
+  uint64_t r4 = c.mask, r5 = c.index;
+  xdk::reference::D3dDirtyWords(p.b, offset, c.device, r4, r5, c.source);
+  CHECK(p.SameEverywhere());
+  CHECK(r4 == cursor && r5 == index);
+  CHECK(write.at == c.cursor + 4 && write.at + write.size == uint32_t(cursor) + 4);
+  return true;
+}
+
+void DirtyWords() {
+  xdk_test::Pair p(19);
+  std::mt19937_64 rng(23);
+  std::vector<uint64_t> masks = {1, 3, 0x8000000000000000ull, 0xC000000000000001ull, ~0ull, 0xFFull << 20,
+                                 0x5555555555555555ull, 0xAAAAAAAAAAAAAAAAull, 0x00000000FFFFFFFFull,
+                                 0xFFFFFFFF00000000ull, 0x8000000000000001ull, 0x0F0F0F0F0F0F0F0Full};
+  for (int i = 0; i < 400; ++i) masks.push_back(rng() & rng());
+  uint64_t accepted = 0;
+  for (uint32_t offset : {48u, 40u}) {
+    for (uint64_t mask : masks) {
+      for (uint32_t align : {0u, 4u, 8u, 12u}) {
+        for (uint32_t source : {0x40000u, 0x40001u, 0x40006u}) {
+          const uint32_t cursor = 0x10000 + align + 16 * uint32_t(rng() % 64);
+          const uint64_t index = (rng() % 4 == 0) ? (rng() << 32) | (rng() & 0x3FF) : rng() % 1024;
+          accepted += Words(p, offset, {0x80000, cursor, 0x30000, source, mask, index});
+        }
+      }
+    }
+  }
+  CHECK(accepted == 2 * masks.size() * 4 * 3);
+  // The room test: the run's bytes after the pointer, the header not counted, must stay below the end.
+  CHECK(!Words(p, 48, {0x80000, 0x10000, 0x10000 + 8, 0x40000, 0xC000000000000000ull, 0}));
+  CHECK(Words(p, 48, {0x80000, 0x10000, 0x10000 + 9, 0x40000, 0xC000000000000000ull, 0}));
+  // The first run fits, the second does not: the whole call is declined.
+  CHECK(!Words(p, 48, {0x80000, 0x10000, 0x10000 + 12, 0x40000, 0x8000000000000001ull, 0}));
+  // A mask of 0, a pointer not on 4 bytes, the source over the buffer, the device's words in what is written,
+  // memory that is not plain: declined.
+  CHECK(!Words(p, 48, {0x80000, 0x10000, 0x30000, 0x40000, 0, 0}));
+  CHECK(!Words(p, 48, {0x80000, 0x10002, 0x30000, 0x40000, 1, 0}));
+  CHECK(!Words(p, 48, {0x80000, 0x10000, 0x30000, 0x10004, 0x8000000000000000ull, 0}));
+  CHECK(!Words(p, 48, {0x10000 - 48 + 4, 0x10000, 0x30000, 0x40000, 0x8000000000000000ull, 0}));
+  CHECK(!Words(p, 48, {0x80000, 0x10000, 0x30000, 0x7F000000u, 1, 0}));
+}
+
 }  // namespace
 
 int main() {
@@ -239,5 +298,6 @@ int main() {
   Raced(20000, true);
   TwoWaiters();
   DirtyConstants();
+  DirtyWords();
   return xdk_test::Finish("xdk_d3d_tests");
 }

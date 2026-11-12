@@ -65,4 +65,38 @@ inline void D3dDirtyConstants(const Memory& memory, uint32_t cursor_offset, uint
   store32(uint32_t(r26) + cursor_offset, uint32_t(r4));  // stw r4,48(r26)
 }
 
+// The upload of 4-byte constants (Crackdown's sub_826C5B00), instruction by instruction, for the calls with room.
+inline void D3dDirtyWords(const Memory& memory, uint32_t cursor_offset, uint64_t r3, uint64_t& r4, uint64_t& r5,
+                          uint64_t r6) {
+  const auto load32 = [&](uint32_t a) { return std::byteswap(detail::Load32(memory.Host(a))); };
+  const auto store32 = [&](uint32_t a, uint32_t v) { detail::Store32(memory.Host(a), std::byteswap(v)); };
+  const uint64_t r26 = r3;
+  uint64_t r31 = r4;
+  uint64_t r29 = r6 - 4;
+  r4 = load32(uint32_t(r26) + cursor_offset);
+  do {
+    const uint64_t lz = r31 ? uint64_t(std::countl_zero(r31)) : 64;  // cntlzd r11,r31
+    const uint64_t r9 = load32(uint32_t(r26) + cursor_offset + 4);
+    const uint64_t r10 = uint32_t(lz << 2) & 0xFFFFFFFCu;  // rlwinm r10,r11,2,0,29
+    const uint64_t r28 = lz + r5;
+    r29 = r10 + r29;
+    r31 = lz >= 64 ? 0 : r31 << lz;
+    const uint64_t r30 = ~r31 ? uint64_t(std::countl_zero(~r31)) : 64;
+    const uint64_t r27 = uint32_t(r30 << 2) & 0xFFFFFFFCu;
+    if (!(uint32_t(r27 + r4) < uint32_t(r9))) return;  // the runtime's function: never reached by the tests
+    const uint32_t header = (uint32_t((r30 - 1) << 16) & 0xFFFF0000u) | uint32_t(r28);
+    r5 = r30 + r28;
+    r4 += 4, store32(uint32_t(r4), header);
+    uint64_t r11 = r30;
+    do {  // loc_826C5B98
+      r29 += 4;
+      const uint32_t word = load32(uint32_t(r29));
+      r11 -= 1;
+      r31 = r31 << 1;
+      r4 += 4, store32(uint32_t(r4), word);
+    } while (uint32_t(r11) != 0);
+  } while (r31 != 0);
+  store32(uint32_t(r26) + cursor_offset, uint32_t(r4));
+}
+
 }  // namespace any360::xdk::reference

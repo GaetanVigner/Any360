@@ -38,7 +38,7 @@ namespace any360::host::rexglue::xdk {
 enum class Function : uint32_t {
   kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy,
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
-  kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kCount
+  kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -53,7 +53,7 @@ void RunSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction or
 // The same for XAudio's mix (its own registers and memory: XAudioMixRamp below).
 void RunMixSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
 // And for the D3D runtime's upload of the dirty shader constants (D3dDirtyConstants below).
-void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t cursor_offset);
+void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t cursor_offset, bool words);
 
 // r3 destination, r4 source, r5 size; returns the destination (r3 as it came).
 inline void CrtMemcpy(PPCContext& ctx, uint8_t* base, GuestFunction original) {
@@ -437,7 +437,21 @@ inline void D3dDirtyConstants(PPCContext& ctx, uint8_t* base, GuestFunction orig
     original(ctx, base);
     return;
   }
-  RunConstantsSlow(ctx, base, original, cursor_offset);
+  RunConstantsSlow(ctx, base, original, cursor_offset, false);
+}
+// The same upload for constants of 4 bytes a bit (any360/xdk/d3d.h, D3dDirtyWords).
+inline void D3dDirtyWords(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t cursor_offset) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint64_t index = ctx.r5.u64, cursor = 0;
+    if (any360::xdk::D3dDirtyWords(g_memory, ctx.r3.u32, cursor_offset, ctx.r4.u64, index, ctx.r6.u32, cursor)) [[likely]] {
+      ctx.r4.u64 = cursor;
+      ctx.r5.u64 = index;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunConstantsSlow(ctx, base, original, cursor_offset, true);
 }
 
 // The D3D runtime's GPU wait step (any360/xdk/d3d.h): r3 the wait's state; returns nonzero while the wait goes on.

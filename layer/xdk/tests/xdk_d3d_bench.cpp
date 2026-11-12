@@ -51,6 +51,18 @@ int main(int argc, char** argv) {
       }, 20000);
       std::printf("dirty constants mask %016llX (%2d constants): replacement %7.1f ns, model %8.1f ns\n",
                   static_cast<unsigned long long>(mask), std::popcount(mask), native, model);
+      const double words = NsPerCall([&] {
+        reset();
+        index = 0;
+        xdk::D3dDirtyWords(memory, kDevice, kOffset, mask, index, kSource, cursor);
+      }, 200000);
+      const double words_model = NsPerCall([&] {
+        reset();
+        uint64_t r4 = mask, r5 = 0;
+        xdk::reference::D3dDirtyWords(memory, kOffset, kDevice, r4, r5, kSource);
+      }, 20000);
+      std::printf("dirty words     mask %016llX (%2d words):     replacement %7.1f ns, model %8.1f ns\n",
+                  static_cast<unsigned long long>(mask), std::popcount(mask), words, words_model);
     }
   }
   return 0;

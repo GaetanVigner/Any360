@@ -285,6 +285,17 @@
   "note": "the upload of the shader constants a 64-bit mask marks as changed into the command buffer: per run of set bits, type-2 pads to 16 bytes, a header ((words - 1) << 16 | index) and the run's 64-byte constants; the runtime's function that makes room for a run that does not fit. The same steps in both runtimes, the buffer's pointer at device + 48 (Crackdown) and + 40 (Test Drive Unlimited); The Simpsons Game's runtime has another one. Named after what it does. Any360: xdk::D3dDirtyConstants (a call without room for every run declined), bound in both"
  },
  {
+  "name": "D3D dirty words",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C5B00",
+   "tdu": "0x8268DB50",
+   "simpsons": "0x8245E8C8"
+  },
+  "note": "the same upload for the constants of 4 bytes a bit: per run a header and the words, no pads; the room test leaves the header out. The same steps in Crackdown, Test Drive Unlimited and Call of Duty: Black Ops (sub_824B20F0); The Simpsons Game's port patched its copy by hand (it makes each page writable before writing). Any360: xdk::D3dDirtyWords, bound in Crackdown and Test Drive Unlimited, not in The Simpsons Game (the port's patch would be bypassed)"
+ },
+ {
   "name": "D3DDevice_BeginTiling",
   "library": "D3D",
   "any360": "todo",

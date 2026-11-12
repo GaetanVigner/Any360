@@ -522,8 +522,9 @@ after the benchmark's order was fixed, below):
 | of which one constant (15%) | 40 ns | 23 ns | 1.7x |
 | of which 64 constants | 387 ns | 102 ns | 3.8x |
 
-What they are worth: Crackdown's menus mix about 4,700 times a second, 0.3 ms a second saved; the city, with more
-voices, was not measured (the profile's 2.4% would make it about 1% of the process's cycles). The uploads are once
+What they are worth: Crackdown's menus mix about 4,700 times a second, 0.3 ms a second saved; its city about
+455,000 times a second (measured 2026-11-12, 14.9 million calls: 161 -> 83 ns a call, 1.9x), 73 -> 38 ms of a
+processor a second, about 3.5% of one saved. The uploads are once
 or twice a draw: about 0.1 ms a frame in Test Drive Unlimited's driving, a little less in Crackdown's city.
 
 Found on the way:
@@ -543,6 +544,35 @@ Found on the way:
   and the log of slow calls had both looked at those first seconds only (the report comes at the 200,000th timed
   call). Copying and watching only the pages a batch reads (not the gaps under 64 KB copied along) was tried and
   left out: these pages are read, and it gained nothing measured.
+
+### D3D's dirty words, and both uploads planned at once (2026-11-12)
+
+**D3D's upload of 4-byte constants** (`xdk::D3dDirtyWords`, `d3d.h`): the dirty-constants upload's sibling for the
+constants of one word a bit (Crackdown `sub_826C5B00`, Test Drive Unlimited `sub_8268DB50`, Call of Duty: Black Ops
+`sub_824B20F0`, the same steps; The Simpsons Game `sub_8245E8C8`). Per run of set bits a header and the run's words,
+no pads; its room test leaves the header out. The Simpsons Game's port patched its copy of the function by hand (it
+makes each page writable before writing to it: its write pointer can land in read-only memory): a replacement would
+bypass the patch, and it is not bound there.
+
+**Both uploads planned in constant time.** A replacement plans a call before writing, so that it can decline it
+whole. The first version walked the runs twice (plan, then write) with a test of plain memory a run: on the host
+it was slower than the step-by-step model for small masks (one word: 8.3 ns against 2.7). The write pointer only
+grows, so each run's room test is stricter than the one before and the last run's decides them all; where the last
+run starts follows from the mask alone (its set bits, its runs: set bits whose next higher bit is clear, the length
+of the lowest run), and after the first run of 64-byte constants every header takes 3 pads. The plan is now a few
+bit counts, then one pass writes. `xdk_d3d_bench`: one word 8.3 -> 4.7 ns, 32 runs of words 139 -> 71 ns, 32 runs
+of constants 232 -> 161 ns. Checks: `xdk_d3d_tests` 79,184 (the words' masks and alignments as the constants', the
+room test's edge, a second run without room).
+
+In game, verified (none different): Crackdown 804,915 uploads of words and 381,458 of constants, Test Drive
+Unlimited 817,387 and 508,704. Bench (menus, the fixed order):
+
+| | own code | replacement | |
+|---|---|---|---|
+| Crackdown, the words (620,000 calls) | 51 ns | 33 ns | 1.6x |
+| Crackdown, the constants (287,000 calls) | 70 ns | 38 ns | 1.8x |
+| Test Drive Unlimited, the words (1.4 million calls) | 38 ns | 25 ns | 1.5x |
+| Test Drive Unlimited, the constants (1.6 million calls) | 140 ns | 52 ns | 2.7x |
 
 ### Found on the way
 
