@@ -509,34 +509,40 @@ wait: 412 masks, every alignment of the buffer's pointer, sources unaligned, bot
 overlaps). In game with `--any360_xdk_verify`: Crackdown 237,124 mixes and 207,223 uploads, Test Drive Unlimited
 156,818 uploads, none different (registers included for the mix).
 
-In game with `--any360_xdk_bench` (menus, the calls' own mix of sizes):
+In game with `--any360_xdk_bench`, the calls' own mix of sizes (the mix in Crackdown's menus; the uploads in play,
+after the benchmark's order was fixed, below):
 
 | | own code | replacement | |
 |---|---|---|---|
 | Crackdown, the mix (256 samples, 1.9 million calls) | 144-183 ns | 81-91 ns | 1.8-2.0x |
-| Test Drive Unlimited, the upload (113,583 calls) | 94 ns | 45 ns | 2.1x |
-| of which one constant (68%) | 42 ns | 26 ns | 1.6x |
-| of which 64 constants | 336 ns | 88 ns | 3.8x |
-| Crackdown, the upload of 64 constants | 397 ns | 97 ns | 4.1x |
-| Crackdown, the upload of 63 constants | 3,231-3,891 ns | 3,338-4,111 ns | 1.0x |
+| Crackdown, the upload (3.0 million calls, in the city) | 60 ns | 32 ns | 1.9x |
+| of which one constant (66%) | 40 ns | 24 ns | 1.7x |
+| of which 64 constants | 488 ns | 214 ns | 2.3x |
+| Test Drive Unlimited, the upload (1.5 million calls, driving) | 129 ns | 53 ns | 2.5x |
+| of which one constant (15%) | 40 ns | 23 ns | 1.7x |
+| of which 64 constants | 387 ns | 102 ns | 3.8x |
 
 What they are worth: Crackdown's menus mix about 4,700 times a second, 0.3 ms a second saved; the city, with more
 voices, was not measured (the profile's 2.4% would make it about 1% of the process's cycles). The uploads are once
-or twice a draw: Test Drive Unlimited saves about 0.05 ms a frame.
+or twice a draw: about 0.1 ms a frame in Test Drive Unlimited's driving, a little less in Crackdown's city.
 
 Found on the way:
 
 - **The benchmark's order was biased.** Which side runs first alternated call by call of a function. Crackdown
   uploads constants twice a frame (the vertex shader's, then the pixel shader's), so the second call was always on
-  the same side: the replacement always ran first, and it alone paid a fault the frame's first write to that page of
-  the command buffer takes (below). It measured 0.1x (7.6 microseconds against 0.5) where the two sides are equal.
-  The order is now the count times the golden ratio's fraction: half and half with no period. A call ten times
-  slower than the function's own code is logged with its arguments and run again at once (the second run shows
-  whether the time was the replacement's or the memory's).
-- **A page fault a frame in Crackdown's command buffer**: the first CPU write to the page the pixel shader's
-  constants go to takes 40,000-80,000 ticks (about 10-20 microseconds), whoever writes it: the renderer watches
-  pages of physical memory it copies to the GPU (`EnablePhysicalMemoryAccessCallbacks`), and command-buffer pages
-  are among them. Any360's renderer's cost, not the function's; not looked into here.
+  the same side: the replacement always ran first, and it alone paid the page fault below. It measured 0.1x (7.6
+  microseconds against 0.5) where the two sides are equal. The order is now the count times the golden ratio's
+  fraction: half and half with no period. A call ten times slower than the function's own code is logged with its
+  arguments and run again at once (the second run shows whether the time was the replacement's or the memory's).
+- **Faults on Crackdown's command buffer, the first seconds only.** A draw reads data the title put in the command
+  buffer itself, so the renderer copies that page to video memory and watches it; the CPU then goes on writing
+  commands into the same page, and that write takes a fault (40,000-80,000 ticks, 10-20 microseconds, whoever
+  writes it). Logged (each watch the renderer arms over the buffer, 100 s in the menus): 20 to 24 a second during
+  the first five seconds, one more at 37 s, then none: the renderer stops watching a page the CPU wrote three times
+  (`kHotPageWrites`), and the buffer's pages are each written once a lap. Nothing to change. The benchmark's report
+  and the log of slow calls had both looked at those first seconds only (the report comes at the 200,000th timed
+  call). Copying and watching only the pages a batch reads (not the gaps under 64 KB copied along) was tried and
+  left out: these pages are read, and it gained nothing measured.
 
 ### Found on the way
 
