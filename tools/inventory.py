@@ -24,7 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FUNC = re.compile(r'DEFINE_REX_FUNC\(sub_([0-9A-Fa-f]{8})\)')
 MNEMONIC = re.compile(r'^[ \t]*// [a-z][a-z0-9_.]*[+-]?(?: [^\n]*)?\n(?![ \t]*//)', re.M)
-BIND = re.compile(r'(?P<macro>REX_HOOK(?:_RAW)?|REX_FUNC|[A-Z][A-Z0-9_]*_BIND(?:_REPLACEMENT|_WITH)?)\(\s*(?:sub_|0x)?'
+BIND = re.compile(r'(?P<macro>REX_HOOK(?:_RAW)?|REX_FUNC|[A-Z][A-Z0-9_]*_BIND(?:_[A-Z0-9]+)?)\(\s*(?:sub_|0x)?'
                   r'(?P<address>[0-9A-Fa-f]{8})\b\s*(?:,\s*(?P<handler>[A-Za-z_][A-Za-z0-9_:]*))?')
 COMMENT = re.compile(r'(?:^[ \t]*//[^\n]*\n)+', re.M)
 
