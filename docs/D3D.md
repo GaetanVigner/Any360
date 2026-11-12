@@ -65,12 +65,28 @@ replay submits the list (with what the replay sets around it: predication, the i
 device's mirror: exact by construction, and the renderer is unchanged. Later a leaner record (per-draw state blocks
 shared between draws) once everything is native.
 
+## Testing without playing: the self-test
+
+`--any360_d3d_selftest=true` (layer/host/rexglue/src/d3d_selftest.cpp) turns a title launch into a test bench: from
+the title's 2000th D3D call (its first menu frames: the ring is up), every case a title registers (`ANY360_D3D_CASE`
+with its own addresses; inputs in `any360/host/d3d_cases.h`) runs the title's original function and Any360's
+replacement 3000 times on generated inputs, on a copy of the device in the self-test's own memory, and compares what
+each leaves there, in its scratch memory, on the caller's stack and in r3 (not for functions returning nothing). Then
+both are timed, 8 calls in a row an input (the clock's tick can be 10 ns), and the medians written. The work goes in
+slices of a few milliseconds a frame on the title's D3D thread, one thread at a time, so the title keeps drawing; the
+results go to the log and `d3d_selftest.txt`, and the process ends by itself (Crackdown: 24 cases, about 3 minutes,
+minimized, no input).
+
+What a case must never do: let the original reach a path that writes the title's real state through a pointer the
+device copy still holds (making room in the command buffer, a new release-list block), give an upload a mask of 0 or
+a count the runtime loops on, or a range whose end is below its start.
+
 ## Phases
 
 | # | Phase | Done when |
 |---|---|---|
-| D0 | Inventory (done: `tools/d3d_inventory.py`, `titles/crackdown/d3d_inventory.json`); then each of the 227 entry and flush functions named and its arguments and device fields written in `titles/crackdown/d3d.json` | every entry and flush function of Crackdown's runtime has a name and a role |
-| D1 | Entry functions native, group by group (constants and fetch setters first: `sub_826B2F68` is already one, `xdk::D3dSetShaderConstants`), verified in game | the 163 entry functions run natively in Crackdown, `--any360_xdk_verify` clean |
+| D0 | Done (2026-11-12). Inventory: `tools/d3d_inventory.py`, `titles/crackdown/d3d_inventory.json`. Roles: `tools/d3d_roles.py` writes `titles/crackdown/d3d.json`, each of the 227 entry and flush functions with its argument registers, the offsets it reads and writes in r3's object, its PM4 and calls, and a name (`titles/crackdown/d3d_names.json`: 37 read so far, the most called) or a role made from those | every entry and flush function of Crackdown's runtime has a name and a role |
+| D1 | In progress: 22 bound native in Crackdown (blend, constants, SetTexture, SetStreamSource, samplers, vertex declaration, shader binds, CPU range flush: `any360/xdk/d3d_state.h`), each checked by the in-game self-test (`--any360_d3d_selftest`) and `--any360_xdk_verify`, every one at least 1.1x its original. Entry functions native, group by group (constants and fetch setters first: `sub_826B2F68` is already one, `xdk::D3dSetShaderConstants`), verified in game | the 163 entry functions run natively in Crackdown, `--any360_xdk_verify` clean |
 | D2 | The record packet in the command processor and the renderer; the first flush function native (indexed draw `sub_826B9FF8`), compare mode against PM4 | its draws match the PM4 ones, the image unchanged |
 | D3 | Every draw, clear, resolve, swap, query and fence native | no PM4 from the runtime but command buffer replays and ring setup |
 | D4 | Command buffers recorded and replayed as record lists | no PM4 from the runtime at all |
