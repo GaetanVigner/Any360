@@ -418,6 +418,15 @@ bool CommandProcessor::Execute() {
       total += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
     }
   } busy_time{ns_busy_, busy_start};
+  if (capture_requested_.load(std::memory_order_acquire)) {
+    std::function<void()> start;
+    {
+      std::lock_guard<std::mutex> lock(capture_request_mutex_);
+      start.swap(capture_request_);
+      capture_requested_ = false;
+    }
+    if (start) start();
+  }
   if (capture_) capture_->Kick(ring_base_, ring_dwords_, read, write);
   Reader r{ring_base_, ring_dwords_, read, (write + ring_dwords_ - read) % ring_dwords_};
   bool ok = true;

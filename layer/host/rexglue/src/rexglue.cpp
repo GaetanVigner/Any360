@@ -752,11 +752,14 @@ struct Binding {
   std::unique_ptr<gfx::AsyncRenderer> async;
   InterruptThread interrupts;
   std::unique_ptr<Sampler> sampler;
-  // A frame capture: requested by a trigger file, opened and closed on the title's thread at a kick while the
-  // command processor is idle (it records each kick from its own thread), so the writer never changes under it.
+  // A frame capture: requested by a trigger file, opened on the command processor's thread before its next kick
+  // (RequestCapture: a title may never leave it idle at a kick), closed on the title's thread once it has recorded
+  // its kicks.
   uint8_t* physical = nullptr;
   std::string capture_path;
   uint32_t capture_kicks = 0;
+  std::mutex capture_mutex;  // the writer, set on the command processor's thread
+  bool capture_requested = false;
   std::unique_ptr<gfx::capture::Writer> writer;
   std::chrono::steady_clock::time_point next_trigger_check{};
   std::function<void(const std::string&)> log;
@@ -787,13 +790,18 @@ uint32_t ReadGpuRegister(void*, void*, uint32_t address) { return sys::Graphics(
 // writer itself: a title may never leave it idle at a kick).
 void CaptureAtKick(Binding& b) {
   if (b.capture_path.empty()) return;
-  if (b.writer) {
-    if (b.cp->CaptureDone()) {
-      const uint64_t bytes = b.writer->bytes_written();
-      b.writer.reset();
-      if (b.log) b.log("Any360: capture written to " + b.capture_path + " (" + std::to_string(bytes >> 20) + " MB)");
+  {
+    std::lock_guard lock(b.capture_mutex);
+    if (b.writer) {
+      if (b.cp->CaptureDone()) {
+        const uint64_t bytes = b.writer->bytes_written();
+        b.writer.reset();
+        b.capture_requested = false;
+        if (b.log) b.log("Any360: capture written to " + b.capture_path + " (" + std::to_string(bytes >> 20) + " MB)");
+      }
+      return;
     }
-    return;
+    if (b.capture_requested) return;
   }
   const auto now = std::chrono::steady_clock::now();
   if (now < b.next_trigger_check) return;
@@ -804,18 +812,27 @@ void CaptureAtKick(Binding& b) {
   } else {
     return;
   }
-  if (!b.cp->Idle()) return;  // at a later kick
   std::remove(trigger.c_str());
-  auto writer = std::make_unique<gfx::capture::Writer>();
-  if (!writer->Open(b.capture_path, b.physical, kPhysicalBytes, b.cp->registers(), gfx::reg::kRegisterCount,
-                    "any360::host::rexglue binding")) {
-    if (b.log) b.log("Any360: cannot open the capture " + b.capture_path);
-    return;
+  {
+    std::lock_guard lock(b.capture_mutex);
+    b.capture_requested = true;
   }
-  writer->Shaders(b.cp->shader(0).microcode, b.cp->shader(1).microcode);
-  b.writer = std::move(writer);
-  b.cp->SetCapture(b.writer.get(), b.capture_kicks);
-  if (b.log) b.log("Any360: capturing " + std::to_string(b.capture_kicks) + " kicks into " + b.capture_path);
+  // Opened by the command processor before the next kick it runs, every kick before done.
+  b.cp->RequestCapture([&b] {
+    auto writer = std::make_unique<gfx::capture::Writer>();
+    if (!writer->Open(b.capture_path, b.physical, kPhysicalBytes, b.cp->registers(), gfx::reg::kRegisterCount,
+                      "any360::host::rexglue binding")) {
+      if (b.log) b.log("Any360: cannot open the capture " + b.capture_path);
+      std::lock_guard lock(b.capture_mutex);
+      b.capture_requested = false;
+      return;
+    }
+    writer->Shaders(b.cp->shader(0).microcode, b.cp->shader(1).microcode);
+    std::lock_guard lock(b.capture_mutex);
+    b.writer = std::move(writer);
+    b.cp->SetCapture(b.writer.get(), b.capture_kicks);
+    if (b.log) b.log("Any360: capturing " + std::to_string(b.capture_kicks) + " kicks into " + b.capture_path);
+  });
 }
 
 void WriteGpuRegister(void*, void*, uint32_t address, uint32_t value) {

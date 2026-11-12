@@ -179,6 +179,15 @@ class CommandProcessor : public sys::GpuBackend {
     capture_ = writer;
   }
   bool CaptureDone() const { return capture_done_; }
+  // A capture started on the command processor's own thread, before the next kick it runs: `start` (which calls
+  // SetCapture) runs there with every kick before it done and the registers as the next one finds them. For a title
+  // whose command processor is never idle at a kick (always a wait queued, or the bottleneck): Call of Duty: Black
+  // Ops in a level.
+  void RequestCapture(std::function<void()> start) {
+    std::lock_guard<std::mutex> lock(capture_request_mutex_);
+    capture_request_ = std::move(start);
+    capture_requested_ = true;
+  }
   // Replay of a capture: the register file and the shaders as it starts, then each kick it recorded. A wait that is
   // not met when reached (on the CPU, absent from a replay) passes, counted in replay_skipped_waits().
   void Restore(const uint32_t* registers, uint32_t count);
@@ -285,6 +294,9 @@ class CommandProcessor : public sys::GpuBackend {
   capture::Writer* capture_ = nullptr;
   uint32_t capture_kicks_left_ = 0;
   std::atomic<bool> capture_done_{false};
+  std::mutex capture_request_mutex_;
+  std::function<void()> capture_request_;
+  std::atomic<bool> capture_requested_{false};
   bool replaying_ = false;
   uint32_t replay_skipped_waits_ = 0;
   std::array<uint64_t, 128> opcode_counts_{};

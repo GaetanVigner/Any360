@@ -277,9 +277,36 @@ class TracingRenderer : public Renderer {
           std::fclose(raw);
         }
       }
+      // The destination's bytes as stored too, to compare replays byte for byte.
+      if (std::FILE* raw = std::fopen((dump_ + "/resolve_" + std::to_string(resolves_) + "_fmt6_" + std::to_string(width) +
+                                       "x" + std::to_string(height) + ".bin").c_str(), "wb")) {
+        uint32_t span = 0;
+        for (uint32_t y = 0; y < height; ++y) {
+          for (uint32_t x = 0; x < width; ++x) span = std::max(span, uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), width, 2)) + 4);
+        }
+        std::fwrite(physical_ + (regs[0x2319] & 0x1FFFFFFF), 1, span, raw);
+        std::fclose(raw);
+      }
       ++resolves_;
       WritePng(name, width, height, pixels.data());
       std::printf("    written to %s\n", name.c_str());
+    } else if (!dump_.empty() && (format == 26 || format == 32) && width && height) {
+      // A 64-bit resolve (k_16_16_16_16, k_16_16_16_16_FLOAT): the destination's texels as the title reads them
+      // (tiled, as stored), raw, to compare replays (--msaa, --scale) byte for byte.
+      const uint32_t base = regs[0x2319] & 0x1FFFFFFF;
+      uint32_t span = 0;
+      for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+          span = std::max(span, uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), width, 3)) + 8);
+        }
+      }
+      const std::string name = dump_ + "/resolve_" + std::to_string(resolves_++) + "_fmt" + std::to_string(format) + "_" +
+                               std::to_string(width) + "x" + std::to_string(height) + ".bin";
+      if (std::FILE* raw = std::fopen(name.c_str(), "wb")) {
+        std::fwrite(physical_ + base, 1, span, raw);
+        std::fclose(raw);
+        std::printf("    written to %s\n", name.c_str());
+      }
     } else if (!dump_.empty() && (regs[0x2318] & 7) == 0 && width && height) {
       // A colour 0 resolve in another format (k_2_10_10_10: The Simpsons Game) is often left on the GPU: its source
       // surface read back instead, as the host keeps it (8-bit components for k_2_10_10_10 targets).

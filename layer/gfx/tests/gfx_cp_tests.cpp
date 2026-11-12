@@ -5,9 +5,12 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <memory>
 #include <thread>
 #include <vector>
 
+#include "any360/gfx/capture.h"
 #include "any360/gfx/command_processor.h"
 #include "any360/sys/graphics.h"
 
@@ -445,6 +448,54 @@ void GammaRamp() {
 
 }  // namespace
 
+// A capture requested while the command processor is never idle at a kick (a wait always queued: Call of Duty: Black
+// Ops in a level) starts on its own thread before the next kick it runs and records the kicks asked for.
+void CaptureWhileBusy() {
+  CommandProcessor cp(g_physical.data());
+  Ring ring{cp};
+  Fresh(cp, ring);
+  cp.Start();
+  const uint32_t fence = kData + 0x300, marker = kData + 0x304;
+  SetBig(fence, 0);
+  ring.Put({Type3(pm4::WAIT_REG_MEM, 5), 0x13, fence | 2, 7, 0xFFFFFFFF, 0x100});
+  ring.Kick();
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  CHECK(!cp.Idle());  // held by the wait: an idle check at a kick never passes
+  const std::string path = (std::filesystem::temp_directory_path() / "gfx_cp_tests_capture.a360cap").string();
+  std::unique_ptr<capture::Writer> writer;
+  std::thread::id started_on;
+  cp.RequestCapture([&] {
+    started_on = std::this_thread::get_id();
+    writer = std::make_unique<capture::Writer>();
+    CHECK(writer->Open(path, g_physical.data(), uint32_t(g_physical.size()), cp.registers(), reg::kRegisterCount,
+                       "gfx_cp_tests"));
+    cp.SetCapture(writer.get(), 2);
+  });
+  SetBig(fence, 7);  // the wait passes; the next kicks start the capture, then are recorded
+  for (uint32_t i = 1; i <= 3; ++i) {
+    ring.Put({Type3(pm4::MEM_WRITE, 2), marker | 2, i});
+    ring.Kick();
+    for (int t = 0; t < 200 && Big(marker) != i; ++t) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  CHECK(Big(marker) == 3);
+  CHECK(writer && started_on != std::thread::id() && started_on != std::this_thread::get_id());
+  CHECK(cp.CaptureDone());
+  cp.Stop();
+  uint32_t kicks = 0;
+  if (writer) {
+    writer->Close();
+    capture::Reader reader;
+    CHECK(reader.Open(path));
+    uint32_t type = 0;
+    std::vector<uint8_t> payload;
+    while (reader.Next(type, payload)) kicks += type == capture::kKick;
+  }
+  CHECK(kicks == 2);
+  std::printf("gfx_cp_tests: capture started on the command processor's thread, %u kicks recorded\n", kicks);
+  std::error_code error;
+  std::filesystem::remove(path, error);
+}
+
 int main() {
   ReferenceDetails();
   GammaRamp();
@@ -456,6 +507,7 @@ int main() {
   GuestWaits(false);
   GuestWaits(true);
   Kernel();
+  CaptureWhileBusy();
   std::printf("gfx_cp_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;
 }
