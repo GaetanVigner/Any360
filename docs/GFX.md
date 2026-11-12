@@ -446,3 +446,22 @@ checkpoints on), and `gfx_resource_tests`: 3,000 frames of textured draws, uploa
 and a swap, checking that nothing the renderer holds grows without bound and the process stops growing; it reports
 CPU and GPU time a frame as the baseline for optimizations (RTX 5070 Ti: ~0.3 ms CPU, ~0.02 ms GPU, textures capped
 at 1,207 by eviction, +4 MB from frame 1,800 to 3,000).
+
+### Pipeline warm-up (2026-11-12)
+
+Vulkan wants a pipeline for each combination of shaders and render state, and the renderer only learns a combination
+at the draw that needs it; with asynchronous pipelines that draw is left out until its pipeline is made. The driver's
+cache (`any360_pipelines.bin`) keeps pipelines for the settings they were made with, so a new host MSAA or a new
+driver starts empty: Call of Duty's first run at 4x MSAA left 847 draws a frame out while it compiled, objects
+appearing only once approached, against 3 to 29 in runs whose pipelines were cached.
+
+Every pipeline a title draws with is now also kept as a recipe beside the cache (`<cache>.recipes`): the shaders'
+microcode, their modifications, the render state and whether the pass was multisampled, not the host MSAA or the
+resolution. At the next run the recipes are compiled for that run's settings before the title draws with them
+(`WarmUpPipelines`: each swap translates what 2 ms allow, the compiler threads make the pipelines; a recipe
+recorded without host MSAA is made at one sample and at the host's count). Call of Duty: 624 recipes from a 1x run,
+then a first run at 2x with 2x MSAA, a setting never used: no draw waited. A title may call `WarmUpPipelines` with a
+larger budget and `FinishPipelines` in its loading screens (a fine-tuning step, after the generic path).
+
+Test: `gfx_render_tests` records two pipelines at one sample, warms them up at 4x MSAA in a new renderer, and its
+first frame makes none and waits for none.

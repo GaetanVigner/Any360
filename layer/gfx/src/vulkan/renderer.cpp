@@ -146,6 +146,9 @@ VkStencilOpState StencilState(uint32_t func, uint32_t fail, uint32_t pass, uint3
 
 struct VulkanRenderer::TranslatedShader {
   std::unique_ptr<rg::SpirvShader> shader;
+  uint32_t type = 0;  // 0 vertex, 1 pixel
+  uint64_t hash = 0;  // the command processor's (the cache key)
+  std::vector<uint32_t> microcode;  // kept for the pipeline recipes
   std::map<uint64_t, VkShaderModule> modules;  // by modification (VK_NULL_HANDLE: translation failed)
 };
 
@@ -497,6 +500,7 @@ bool VulkanRenderer::Initialize() {
     cache_info.initialDataSize = 0;
     if (f.vkCreatePipelineCache(d, &cache_info, nullptr, &pipeline_cache_) != VK_SUCCESS) pipeline_cache_ = VK_NULL_HANDLE;
   }
+  LoadRecipes();
   if (async_pipelines_) {
     // A few threads: pipelines come in bursts (a new area), and the title's own threads keep the rest busy.
     const uint32_t threads = std::clamp(std::thread::hardware_concurrency() / 4, 1u, 3u);
@@ -908,6 +912,7 @@ VulkanRenderer::TranslatedShader* VulkanRenderer::GetShader(const gfx::Shader& s
   last_shader_hash_[stage] = source.hash;
   if (slot) return last_shader_[stage] = slot.get();
   slot = std::make_unique<TranslatedShader>();
+  slot->type = source.type, slot->hash = source.hash, slot->microcode = source.microcode;
   const rg::xenos::ShaderType type = source.type ? rg::xenos::ShaderType::kPixel : rg::xenos::ShaderType::kVertex;
   slot->shader = std::make_unique<rg::SpirvShader>(type, source.hash, source.microcode.data(), source.microcode.size(),
                                                    std::endian::native);
@@ -946,6 +951,7 @@ VkShaderModule VulkanRenderer::GetModule(TranslatedShader& shader, uint64_t modi
   info.codeSize = binary.size();
   info.pCode = reinterpret_cast<const uint32_t*>(binary.data());
   if (device_.fn().vkCreateShaderModule(device_.device(), &info, nullptr, &module) != VK_SUCCESS) return module = VK_NULL_HANDLE;
+  module_sources_[uint64_t(module)] = {&shader, modification};
   ++stats_.translations;
   return module;
 }
@@ -978,6 +984,7 @@ VkPipelineLayout VulkanRenderer::PipelineLayout(uint32_t vs_textures, uint32_t v
   info.setLayoutCount = SpirvShaderTranslator::kDescriptorSetCount;
   info.pSetLayouts = sets;
   if (device_.fn().vkCreatePipelineLayout(device_.device(), &info, nullptr, &layout) != VK_SUCCESS) layout = VK_NULL_HANDLE;
+  if (layout) layout_counts_[uint64_t(layout)] = {vs_textures, vs_samplers, ps_textures, ps_samplers};
   return layout;
 }
 
@@ -985,6 +992,7 @@ VkPipeline VulkanRenderer::GetPipeline(const PipelineKey& key, bool& pending) {
   pending = false;
   auto it = pipelines_.find(key);
   if (it != pipelines_.end()) return it->second;
+  RecordRecipe(key);
   if (compilers_.empty()) {
     const VkPipeline pipeline = CreatePipeline(key);
     if (pipeline) {
@@ -1051,6 +1059,7 @@ void VulkanRenderer::CompilePipelines() {
 
 void VulkanRenderer::SavePipelineCache() {
   if (!pipeline_cache_ || pipeline_cache_path_.empty()) return;
+  SaveRecipes();
   std::lock_guard lock(save_mutex_);
   const Functions& f = device_.fn();
   size_t bytes = 0;
@@ -1067,6 +1076,147 @@ void VulkanRenderer::SavePipelineCache() {
   if (!file) return;
   const bool written = std::fwrite(data.data(), 1, bytes, file) == bytes;
   if (std::fclose(file) == 0 && written) std::filesystem::rename(temp, path, ec);
+}
+
+// ---- Pipeline recipes (WarmUpPipelines) ----
+
+namespace {
+constexpr char kRecipesMagic[8] = {'A', '3', '6', '0', 'R', 'C', 'P', '1'};
+}  // namespace
+
+void VulkanRenderer::RecordRecipe(const PipelineKey& key) {
+  if (pipeline_cache_path_.empty()) return;
+  const auto vs = module_sources_.find(key.vs_module);
+  const auto ps = key.ps_module ? module_sources_.find(key.ps_module) : module_sources_.end();
+  const auto layout = layout_counts_.find(key.layout);
+  if (vs == module_sources_.end() || (key.ps_module && ps == module_sources_.end()) || layout == layout_counts_.end()) {
+    return;
+  }
+  PipelineRecipe r{};
+  r.vs_hash = vs->second.first->hash, r.vs_type = vs->second.first->type, r.vs_modification = vs->second.second;
+  if (key.ps_module) {
+    r.ps_hash = ps->second.first->hash, r.ps_type = ps->second.first->type, r.ps_modification = ps->second.second;
+  }
+  std::memcpy(r.layout, layout->second.data(), sizeof(r.layout));
+  r.topology = key.topology, r.cull_mode = key.cull_mode, r.front_face_clockwise = key.front_face_clockwise;
+  r.polygon_mode = key.polygon_mode, r.depth_control = key.depth_control, r.depth_format = key.depth_format;
+  std::memcpy(r.color_formats, key.color_formats, sizeof(r.color_formats));
+  std::memcpy(r.blend_controls, key.blend_controls, sizeof(r.blend_controls));
+  r.color_masks = key.color_masks, r.primitive_restart = key.primitive_restart;
+  r.samples = samples_ == VK_SAMPLE_COUNT_1_BIT ? 2 : key.samples > 1 ? 1 : 0;
+  std::lock_guard lock(recipes_mutex_);
+  if (!recipe_set_.insert(r).second) return;
+  recipe_list_.push_back(r);
+  if (warm_next_ == recipe_list_.size() - 1) ++warm_next_;  // asked for now: nothing to warm up
+  recipe_shaders_.try_emplace({vs->second.first->type, vs->second.first->hash}, vs->second.first->microcode);
+  if (key.ps_module) {
+    recipe_shaders_.try_emplace({ps->second.first->type, ps->second.first->hash}, ps->second.first->microcode);
+  }
+  recipes_dirty_ = true;
+}
+
+void VulkanRenderer::LoadRecipes() {
+  if (pipeline_cache_path_.empty()) return;
+  std::FILE* file = std::fopen((pipeline_cache_path_ + ".recipes").c_str(), "rb");
+  if (!file) return;
+  auto read = [&](void* to, size_t bytes) { return std::fread(to, 1, bytes, file) == bytes; };
+  char magic[8];
+  uint32_t recipe_bytes = 0, shader_count = 0;
+  bool ok = read(magic, 8) && !std::memcmp(magic, kRecipesMagic, 8) && read(&recipe_bytes, 4) &&
+            recipe_bytes == sizeof(PipelineRecipe) && read(&shader_count, 4);
+  std::lock_guard lock(recipes_mutex_);
+  for (uint32_t i = 0; ok && i < shader_count; ++i) {
+    uint32_t type = 0, words = 0;
+    uint64_t hash = 0;
+    ok = read(&type, 4) && read(&hash, 8) && read(&words, 4) && words < (1u << 20);
+    std::vector<uint32_t> microcode(ok ? words : 0);
+    ok = ok && read(microcode.data(), size_t(words) * 4);
+    if (ok) recipe_shaders_.try_emplace({type, hash}, std::move(microcode));
+  }
+  uint32_t count = 0;
+  ok = ok && read(&count, 4);
+  for (uint32_t i = 0; ok && i < count; ++i) {
+    PipelineRecipe r;
+    ok = read(&r, sizeof(r));
+    if (ok && recipe_set_.insert(r).second) recipe_list_.push_back(r);
+  }
+  std::fclose(file);
+  recipes_loaded_ = recipe_list_.size();
+  warm_next_ = 0;
+}
+
+void VulkanRenderer::SaveRecipes() {
+  std::lock_guard lock(recipes_mutex_);
+  if (!recipes_dirty_ || pipeline_cache_path_.empty()) return;
+  const std::string path = pipeline_cache_path_ + ".recipes", temp = path + ".tmp";
+  std::FILE* file = std::fopen(temp.c_str(), "wb");
+  if (!file) return;
+  bool ok = std::fwrite(kRecipesMagic, 1, 8, file) == 8;
+  const uint32_t recipe_bytes = sizeof(PipelineRecipe), shader_count = uint32_t(recipe_shaders_.size());
+  ok = ok && std::fwrite(&recipe_bytes, 4, 1, file) == 1 && std::fwrite(&shader_count, 4, 1, file) == 1;
+  for (const auto& [id, microcode] : recipe_shaders_) {
+    const uint32_t words = uint32_t(microcode.size());
+    ok = ok && std::fwrite(&id.first, 4, 1, file) == 1 && std::fwrite(&id.second, 8, 1, file) == 1 &&
+         std::fwrite(&words, 4, 1, file) == 1 && std::fwrite(microcode.data(), 4, words, file) == words;
+  }
+  const uint32_t count = uint32_t(recipe_list_.size());
+  ok = ok && std::fwrite(&count, 4, 1, file) == 1 &&
+       std::fwrite(recipe_list_.data(), sizeof(PipelineRecipe), count, file) == count;
+  if (std::fclose(file) == 0 && ok) {
+    std::error_code ec;
+    std::filesystem::rename(temp, path, ec);
+    if (!ec) recipes_dirty_ = false;
+  }
+}
+
+void VulkanRenderer::FinishPipelines() {
+  std::unique_lock lock(compile_mutex_);
+  compiled_cv_.wait(lock, [this] { return compile_stop_ || (compile_queue_.empty() && compiled_.size() == compiling_.size()); });
+  TakeCompiledPipelines();
+}
+
+size_t VulkanRenderer::WarmUpPipelines(std::chrono::microseconds budget) {
+  if (compilers_.empty()) return 0;  // pipelines made at the draw: nothing to gain ahead of it
+  const auto end = std::chrono::steady_clock::now() + budget;
+  while (warm_next_ < recipe_list_.size() && std::chrono::steady_clock::now() < end) {
+    const PipelineRecipe r = recipe_list_[warm_next_++];
+    auto translate = [&](uint32_t type, uint64_t hash, uint64_t modification) -> VkShaderModule {
+      const auto it = recipe_shaders_.find({type, hash});
+      if (it == recipe_shaders_.end()) return VK_NULL_HANDLE;
+      gfx::Shader source;
+      source.type = type, source.hash = hash, source.microcode = it->second;
+      TranslatedShader* shader = GetShader(source);
+      return shader ? GetModule(*shader, modification) : VK_NULL_HANDLE;
+    };
+    const VkShaderModule vs = translate(r.vs_type, r.vs_hash, r.vs_modification);
+    const VkShaderModule ps = r.ps_hash ? translate(r.ps_type, r.ps_hash, r.ps_modification) : VK_NULL_HANDLE;
+    const VkPipelineLayout layout = PipelineLayout(r.layout[0], r.layout[1], r.layout[2], r.layout[3]);
+    if (!vs || (r.ps_hash && !ps) || !layout) continue;
+    PipelineKey key{};
+    key.vs_module = uint64_t(vs), key.ps_module = uint64_t(ps), key.layout = uint64_t(layout);
+    key.topology = r.topology, key.cull_mode = r.cull_mode, key.front_face_clockwise = r.front_face_clockwise;
+    key.polygon_mode = r.polygon_mode, key.depth_control = r.depth_control, key.depth_format = r.depth_format;
+    std::memcpy(key.color_formats, r.color_formats, sizeof(key.color_formats));
+    std::memcpy(key.blend_controls, r.blend_controls, sizeof(key.blend_controls));
+    key.color_masks = r.color_masks, key.primitive_restart = r.primitive_restart;
+    // The sample counts this run draws the recipe with: one recorded without host MSAA may be either now.
+    uint32_t counts[2] = {1, 0};
+    if (samples_ > VK_SAMPLE_COUNT_1_BIT) {
+      if (r.samples == 1) counts[0] = uint32_t(samples_);
+      if (r.samples == 2) counts[1] = uint32_t(samples_);
+    }
+    for (uint32_t samples : counts) {
+      if (!samples) continue;
+      key.samples = samples;
+      std::lock_guard lock(compile_mutex_);
+      TakeCompiledPipelines();
+      if (pipelines_.count(key) || !compiling_.insert(key).second) continue;
+      compile_queue_.push_back(key);
+      compile_cv_.notify_one();
+      ++stats_.pipelines_warmed;
+    }
+  }
+  return recipe_list_.size() - warm_next_;
 }
 
 VkPipeline VulkanRenderer::CreatePipeline(const PipelineKey& key) {
@@ -4341,6 +4491,9 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
     }
   }
   pipeline_waits_this_frame_ = 0;
+  // The recipes of earlier runs, a little each frame until all are queued (2 ms here: menus and loading screens
+  // swap too).
+  if (warm_next_ < recipe_list_.size()) WarmUpPipelines(std::chrono::microseconds(2000));
   if (samples_ > VK_SAMPLE_COUNT_1_BIT) {
     for (auto& [key, s] : surfaces_) {
       if (s->unpaired_this_frame && !s->paired && s->ms.image) DropSamples(*s);

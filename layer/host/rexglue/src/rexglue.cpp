@@ -935,6 +935,10 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
     DestroyWindow(binding->window);
     return false;
   }
+  if (options.log && binding->renderer->recipes_loaded()) {
+    options.log("Any360: " + std::to_string(binding->renderer->recipes_loaded()) +
+                " pipeline recipes of earlier runs, compiled for this run's settings before the title draws with them");
+  }
   // Textures are checked again only after the CPU writes their memory, as the runtime's own GPU does.
   if (gfx::vk::TextureCache* textures = binding->renderer->texture_cache(); textures && options.watch_memory) {
     memory->RegisterPhysicalMemoryInvalidationCallback(&MemoryWritten, binding->renderer.get());

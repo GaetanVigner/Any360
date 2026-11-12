@@ -9,6 +9,8 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <chrono>
 #include <new>
 #include <functional>
 #include <string>
@@ -2329,6 +2331,68 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: shader opcodes: %zu of %zu cases right\n", passed.size(), cases.size());
     s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
   }
+  // Pipeline warm-up: a run with asynchronous pipelines and one sample records its pipelines' recipes beside the
+  // pipeline cache; the next run, at 4x host MSAA (pipelines the driver's cache of the first run cannot hold),
+  // compiles them before the title draws (WarmUpPipelines, FinishPipelines), and its first frame waits for none.
+  {
+    const std::string cache = (std::filesystem::temp_directory_path() / "gfx_render_tests_warmup.bin").string();
+    std::error_code error;
+    std::filesystem::remove(cache, error);
+    std::filesystem::remove(cache + ".recipes", error);
+    const float black_clear[4] = {0, 0, 0, 1};
+    // A frame of two pipelines: colour only, then colour with a depth test.
+    auto frame = [&](vk::VulkanRenderer& r) {
+      CommandProcessor c(g_memory);
+      c.SetRenderer(&r);
+      c.InitializeRingBuffer({}, kRing, 12);
+      Scene w{c};
+      CHECK(r.ClearColor(color0, black_clear));
+      CHECK(r.ClearDepthStencil(depth, 1.0f, 0));
+      w.Defaults();
+      w.Shader(0, t::BuildFetchPositionShader());
+      w.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+      w.Vertices(0);
+      w.Color(51, 102, 153, 255);
+      w.DrawAuto(kTriangleList, 3);
+      w.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 1u << 4);
+      w.Color(204, 51, 102, 255);
+      w.DrawIndexed16(kTriangleList, 3);
+      w.Run();
+    };
+    {
+      vk::VulkanRenderer first(device, g_memory, kMemory);
+      first.SetPipelineCache(cache);
+      first.SetAsyncPipelines(true);
+      CHECK(first.Initialize());
+      for (int i = 0; i < 3; ++i) {
+        frame(first);
+        first.FinishPipelines();
+      }
+      CHECK(first.stats().failed == 0);
+    }  // the cache and its recipes written
+    CHECK(std::filesystem::exists(cache + ".recipes", error));
+    vk::VulkanRenderer second(device, g_memory, kMemory);
+    second.SetPipelineCache(cache);
+    second.SetAsyncPipelines(true);
+    second.SetMsaa(4);
+    CHECK(second.Initialize());
+    const size_t recipes = second.recipes_loaded();
+    CHECK(recipes >= 2);
+    CHECK(second.WarmUpPipelines(std::chrono::seconds(10)) == 0);
+    second.FinishPipelines();
+    const uint32_t warmed = second.stats().pipelines_warmed, waits_before = second.stats().pipeline_waits;
+    const uint32_t made_before = second.stats().pipelines;
+    CHECK(warmed >= recipes);
+    frame(second);
+    const uint32_t waits = second.stats().pipeline_waits - waits_before, made = second.stats().pipelines - made_before;
+    // Every pipeline the frame drew with was one of the warmed ones: none made at its draw, none waited for.
+    CHECK(waits == 0 && made == 0 && second.stats().failed == 0);
+    std::printf("gfx_render_tests: pipeline warm-up: %zu recipes, %u pipelines compiled ahead at 4x MSAA; the frame "
+                "made %u and waited for %u\n", recipes, warmed, made, waits);
+    std::filesystem::remove(cache, error);
+    std::filesystem::remove(cache + ".recipes", error);
+  }
+
   // Vertex fetches past the guest's 512 MB of physical memory: indices 0x200000 and up with a 64-dword stride put
   // the vertex addresses 512 MB above the quad's, and the fetch takes them modulo 512 MB as the console's 29-bit
   // physical addresses do (Vulkan leaves a read past the buffer undefined: an NVIDIA GPU reset in Call of Duty:

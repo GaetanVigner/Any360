@@ -34,8 +34,10 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <mutex>
 #include <functional>
 #include <deque>
@@ -78,6 +80,7 @@ struct RendererStats {
   uint32_t samples_dropped = 0;        // surfaces back to one sample (drawn without colour and depth together)
   uint32_t samples_given_back = 0;     // and given their samples again (drawn with them together, then cleared)
   uint32_t pipeline_waits = 0;  // draws not drawn while their pipeline compiles (SetAsyncPipelines)
+  uint32_t pipelines_warmed = 0;  // pipelines queued from the recipes of earlier runs (WarmUpPipelines)
   uint32_t render_targets = 0;
   uint32_t texture_uploads = 0;
   uint32_t texture_gpu_copies = 0;  // textures copied from a resolve kept on the GPU
@@ -151,6 +154,18 @@ class VulkanRenderer : public gfx::Renderer {
   // Pipelines compiled on threads of their own: a draw waits a millisecond at most for its pipeline, then is not
   // drawn until it is ready (a frame or so without it rather than a stall of tens of milliseconds). Before Initialize.
   void SetAsyncPipelines(bool on) { async_pipelines_ = on; }
+  // Pipeline warm-up. Every pipeline a title draws with is kept as a recipe beside the pipeline cache
+  // (<cache>.recipes: the shaders' microcode, their modifications and the render state, and whether the pass was
+  // multisampled, but not the host MSAA or resolution of that run). The driver's cache only holds pipelines for the
+  // settings they were made with; the recipes are compiled again for this run's settings (another MSAA, a new driver)
+  // before the title draws with them, so its objects are not left out while their pipelines compile. With
+  // asynchronous pipelines only: each swap queues what `budget` allows (translating the shaders is the cost on this
+  // thread; the compiler threads make the pipelines); a title may call it with more in its loading screens.
+  // Returns the recipes left.
+  size_t WarmUpPipelines(std::chrono::microseconds budget);
+  size_t recipes_loaded() const { return recipes_loaded_; }
+  // Waits until every pipeline queued (by draws or the warm-up) is compiled and ready for the draws.
+  void FinishPipelines();
   ~VulkanRenderer() override;
 
   bool Initialize();
@@ -313,6 +328,20 @@ class VulkanRenderer : public gfx::Renderer {
   void CompilePipelines();                            // a compiler thread
   void TakeCompiledPipelines();                       // compile_mutex_ held
   void SavePipelineCache();                           // any thread
+  // Recipes (WarmUpPipelines): plain dwords, compared as bytes.
+  struct PipelineRecipe {
+    uint64_t vs_hash, vs_modification, ps_hash, ps_modification;  // ps_hash 0: no pixel shader
+    uint32_t vs_type, ps_type;
+    uint32_t layout[4];  // the pipeline layout's counts: vertex textures and samplers, pixel textures and samplers
+    uint32_t topology, cull_mode, front_face_clockwise, polygon_mode, depth_control, depth_format;
+    uint32_t color_formats[4], blend_controls[4], color_masks, primitive_restart;
+    uint32_t samples;  // 0 one sample with host MSAA on, 1 the host MSAA, 2 not known (recorded without host MSAA)
+    uint32_t reserved;
+    bool operator==(const PipelineRecipe& o) const { return std::memcmp(this, &o, sizeof(*this)) == 0; }
+  };
+  void RecordRecipe(const PipelineKey& key);  // the renderer's thread
+  void LoadRecipes();                         // Initialize
+  void SaveRecipes();                         // any thread
   // Texture set layouts by stage and counts (sampled images, then samplers, as the reference lays them out) and
   // pipeline layouts by the four counts.
   VkDescriptorSetLayout TextureSetLayout(bool vertex, uint32_t textures, uint32_t samplers);
@@ -378,6 +407,16 @@ class VulkanRenderer : public gfx::Renderer {
   uint32_t pipeline_waits_this_frame_ = 0;  // draws that waited for a pipeline since the last swap
   bool compile_stop_ = false;
   std::vector<std::thread> compilers_;
+  // Recipes: those recorded and loaded (in order, once each), the shaders they name (microcode by type and hash), and
+  // what a pipeline key's handles were made from. recipes_mutex_ guards what SaveRecipes reads from another thread.
+  std::mutex recipes_mutex_;
+  std::vector<PipelineRecipe> recipe_list_;
+  std::unordered_set<PipelineRecipe, BytesHash> recipe_set_;
+  std::map<std::pair<uint32_t, uint64_t>, std::vector<uint32_t>> recipe_shaders_;
+  bool recipes_dirty_ = false;
+  std::unordered_map<uint64_t, std::pair<const TranslatedShader*, uint64_t>> module_sources_;  // module: shader, modification
+  std::unordered_map<uint64_t, std::array<uint32_t, 4>> layout_counts_;  // pipeline layout: its counts
+  size_t recipes_loaded_ = 0, warm_next_ = 0;  // recipe_list_[warm_next_ ...] are still to be queued
   std::unordered_map<SurfaceKey, std::unique_ptr<Surface>, BytesHash> surfaces_;
   std::unique_ptr<TextureCache> textures_;
   VkFormat depth_format_ = VK_FORMAT_UNDEFINED;
