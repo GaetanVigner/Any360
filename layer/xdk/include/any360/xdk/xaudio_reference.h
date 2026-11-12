@@ -127,4 +127,19 @@ inline void XAudioMixRamp(const Memory& memory, VmxRegisters& x) {
 }
 #endif
 
+// XAudio's fill (TDU's sub_826B9E38 and its four siblings), instruction by instruction: `rounds` rounds of eight
+// stores of the float at +4, from +8; then 0 at +0.
+inline void XAudioFill(const Memory& memory, uint32_t r3, uint32_t rounds) {
+  uint32_t r11 = r3 + 12;
+  for (uint32_t r10 = rounds; r10 != 0; --r10) {
+    for (int32_t k = -4; k <= 24; k += 4) {
+      const uint8_t* from = memory.Host(r3 + 4);  // lfs f0,4(r3): read again for each store
+      uint8_t* to = memory.Host(r11 + uint32_t(k));
+      for (int b = 0; b < 4; ++b) to[b] = from[b];  // stfs f0: the single's bits
+    }
+    r11 += 32;
+  }
+  for (int b = 0; b < 4; ++b) *memory.Host(r3 + b) = 0;  // li r11,0; stw r11,0(r3)
+}
+
 }  // namespace any360::xdk::reference

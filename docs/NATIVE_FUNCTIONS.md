@@ -594,6 +594,23 @@ about 4%: the biggest library function left is XAudio's effects chain (`sub_82A4
 command processor's thread, the renderer's draws and write-backs). The library functions have given most of what
 they had to give; what costs now is Any360's graphics and the game's own code.
 
+### Shared library functions not ported yet, and XAudio's fills (2026-11-12)
+
+Past the profiles' hot spots, the library functions the three titles share instruction for instruction
+(`tools/shared_functions.py tdu crackdown simpsons --leaf`) and Any360 has not ported, most called first: an
+Xbox Live helper (1,054 call sites: a single player game hardly runs it), the C runtime's `_controlfp`-like FPSCR
+helper (77: it would need the guest's floating-point state, left), XAPI and D3D wrappers that tail-call another
+function, five XAudio fills, small D3D functions of a format or a fetch constant (no loop: a host routine gains
+nothing on them, as GetLastError showed).
+
+**XAudio's fills** (`xdk::XAudioFill`, `xaudio.h`): a block's buffer of 256, 512, 1024, 2048 or 4096 floats set to
+the block's float, then the block's first word to 0; five builds of the same steps, the same in the three titles.
+lfs and stfs move a single's bits as they are on the console: the replacement copies the bits (the recompiled
+code converts to double and back, the same bits for every float but a signalling NaN). `xdk_xaudio_tests`: 13,555
+with them (the five sizes, any alignment, signalling NaNs and denormals, declines). In game: Crackdown calls them 64
+times (at start), verified none different, 1,327 -> 86 ns a call (15.4x); Test Drive Unlimited and The Simpsons
+Game did not call them in their menus: not bound there.
+
 ### Found on the way
 
 - Crackdown crashed after 40 to 55 seconds with a gamepad connected and the input group on `any360::sys`: its

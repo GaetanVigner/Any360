@@ -199,4 +199,24 @@ inline bool XAudioMixRamp(const Memory& memory, VmxRegisters& x) {
 #endif
 }
 
+// XAudio's fill of a block's buffer with its value (named after what it does; five builds, one a size: 256, 512,
+// 1024, 2048 and 4096 floats, the same steps in the three titles at hand): r3 the block, a word, a float at +4, the
+// buffer from +8. Eight floats a round, each the block's float read again (lfs) and stored (stfs), then the block's
+// first word set to 0. lfs and stfs move a single's bits unchanged on the console (a load converts nothing that
+// matters for a single stored back): the replacement copies the bits. Leaves f1-f31 alone and f0 the value as a
+// double. Declined: memory that is not plain.
+inline bool XAudioFillAccepts(uint32_t block, uint32_t floats) {
+  return floats <= (1u << 20) && IsPlainMemory(block, 8 + 4 * floats);
+}
+inline bool XAudioFill(const Memory& memory, uint32_t block, uint32_t floats, uint32_t& value_bits) {
+  if (!XAudioFillAccepts(block, floats)) return false;
+  uint32_t raw;  // the value as guest memory holds it (big-endian): stored as it is
+  std::memcpy(&raw, memory.Host(block + 4), 4);
+  uint8_t* to = memory.Host(block + 8);
+  for (uint32_t i = 0; i < floats; ++i) std::memcpy(to + 4 * i, &raw, 4);
+  detail::Store32(memory.Host(block), 0);
+  value_bits = std::byteswap(raw);
+  return true;
+}
+
 }  // namespace any360::xdk

@@ -33,7 +33,7 @@ REXCVAR_DEFINE_STRING(any360_xdk_skip, "", "Kernel",
                       "by name, comma-separated (memcpy, forward copy, memset, memmove, XMemCpy, wcslen, strchr, "
                       "strncmp, strncpy, strrchr, tolower, toupper, wcsncpy, wcscpy, strncat, wcscmp, strlen, strcmp, "
                       "mbtowc, GetLastError, SetLastError, _stricmp, strstr, _finite, _isnan, _sptype, _get_exp, "
-                      "_set_exp, _add_exp, XAudio mix ramp, D3D dirty constants, D3D dirty words, D3D set shader constants)");
+                      "_set_exp, _add_exp, XAudio mix ramp, D3D dirty constants, D3D dirty words, D3D set shader constants, XAudio fill)");
 REXCVAR_DEFINE_BOOL(any360_xdk_bench, false, "Kernel",
                     "Any360: every call of a bound library function is timed both ways, its own code and the host "
                     "routine; the log gets the calls and nanoseconds of each by size (slow)");
@@ -58,7 +58,7 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "tolower", "toupper",     "wcsncpy", "wcscpy",  "strncat",
                                             "wcscmp",  "strlen",      "strcmp",  "mbtowc",  "GetLastError",
                                             "SetLastError", "_stricmp", "strstr", "_finite", "_isnan", "_sptype",
-                                            "_get_exp", "_set_exp", "_add_exp", "XAudio mix ramp", "D3D dirty constants", "D3D dirty words", "D3D set shader constants"};
+                                            "_get_exp", "_set_exp", "_add_exp", "XAudio mix ramp", "D3D dirty constants", "D3D dirty words", "D3D set shader constants", "XAudio fill"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -887,6 +887,41 @@ void RunSetConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original)
   s.native = [&](PPCContext& c) { native(c); };
   s.differs = [](const PPCContext& a, const PPCContext& b) -> const char* { return a.r3.u64 != b.r3.u64 ? "r3" : nullptr; };
   s.call = fmt::format("device {:016X} first {} constants {:08X} count {} dirty {:016X}", device, first, source, count, dirty);
+  RunSides(mode, s, ctx, base, original);
+}
+
+void RunFillSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t floats) {
+  constexpr uint32_t f = uint32_t(Function::kFill);
+  const Mode mode = SlowMode(f, base);
+  const uint32_t block = ctx.r3.u32;
+  const auto native = [=](PPCContext& c) {
+    uint32_t bits;
+    if (!any360::xdk::XAudioFill(g_memory, block, floats, bits)) return false;
+    c.fpscr.disableFlushMode();
+    c.f0.f64 = double(std::bit_cast<float>(bits));
+    return true;
+  };
+  if (mode == Mode::kNative) {
+    if (!native(ctx)) original(ctx, base);
+    return;
+  }
+  if (mode == Mode::kOriginal || !any360::xdk::XAudioFillAccepts(block, floats)) {
+    original(ctx, base);
+    if (mode != Mode::kOriginal) g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  // The block is the audio thread's own.
+  Sides s;
+  s.f = f;
+  s.writes = {{block, 8 + 4 * floats}};
+  s.work = floats * 4;
+  s.native = [&](PPCContext& c) { native(c); };
+  s.differs = [](const PPCContext& a, const PPCContext& b) -> const char* {
+    if (a.r3.u64 != b.r3.u64) return "r3";
+    if (a.f0.u64 != b.f0.u64) return "f0";
+    return nullptr;
+  };
+  s.call = fmt::format("block {:08X} floats {}", block, floats);
   RunSides(mode, s, ctx, base, original);
 }
 

@@ -161,6 +161,29 @@ void Declines() {
   CHECK(Mix(p, Call(0x7F000000, 0x7F000000, 0x80000, 0x80100, 3)));
 }
 
+// XAudio's fill against its model: the five sizes, blocks at any alignment, values of every kind (signalling NaNs
+// and denormals keep their bits), a block past the end of plain memory.
+void Fills() {
+  Pair p(13);
+  std::mt19937 rng(17);
+  for (uint32_t rounds : {32u, 64u, 128u, 256u, 512u}) {
+    for (int i = 0; i < 40; ++i) {
+      const uint32_t block = 0x20000 + uint32_t(rng() % 4096) * (i % 3 == 0 ? 1 : 4);
+      const uint32_t value = i % 5 == 0 ? 0x7F800001u : i % 5 == 1 ? 0x00000003u : uint32_t(rng());
+      for (int b = 0; b < 4; ++b) p.native[block + 4 + b] = p.model[block + 4 + b] = uint8_t(value >> (8 * (3 - b)));
+      uint32_t bits = 0;
+      CHECK(xdk::XAudioFill(p.a, block, rounds * 8, bits));
+      xdk::reference::XAudioFill(p.b, block, rounds);
+      CHECK(p.SameEverywhere());
+      CHECK(bits == value);
+    }
+  }
+  uint32_t bits = 0;
+  CHECK(!xdk::XAudioFill(p.a, 0x7EFFF000u, 4096, bits));
+  CHECK(!xdk::XAudioFill(p.a, 0xFFFFF000u, 4096, bits));
+  CHECK(p.SameEverywhere());
+}
+
 }  // namespace
 
 int main() {
@@ -168,5 +191,6 @@ int main() {
   SpecialValues();
   Overlaps();
   Declines();
+  Fills();
   return xdk_test::Finish("xdk_xaudio_tests");
 }

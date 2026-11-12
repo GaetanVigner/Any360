@@ -38,7 +38,7 @@ namespace any360::host::rexglue::xdk {
 enum class Function : uint32_t {
   kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy,
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
-  kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kCount
+  kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -56,6 +56,8 @@ void RunMixSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
 void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t cursor_offset, bool words);
 // And for its copy of a title's shader constants into the device (D3dSetShaderConstants below).
 void RunSetConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
+// And for XAudio's fill (XAudioFill below).
+void RunFillSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t floats);
 
 // r3 destination, r4 source, r5 size; returns the destination (r3 as it came).
 inline void CrtMemcpy(PPCContext& ctx, uint8_t* base, GuestFunction original) {
@@ -468,6 +470,22 @@ inline void D3dSetShaderConstants(PPCContext& ctx, uint8_t* base, GuestFunction 
     return;
   }
   RunSetConstantsSlow(ctx, base, original);
+}
+
+// XAudio's fill of a block's buffer with its value (any360/xdk/xaudio.h): r3 the block; `floats` the build's size
+// (eight times its rounds). Leaves f0 the value as a double, as the function's lfs does (flush mode off first).
+inline void XAudioFill(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t floats) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint32_t bits;
+    if (any360::xdk::XAudioFill(g_memory, ctx.r3.u32, floats, bits)) [[likely]] {
+      ctx.fpscr.disableFlushMode();
+      ctx.f0.f64 = double(std::bit_cast<float>(bits));
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunFillSlow(ctx, base, original, floats);
 }
 
 // The D3D runtime's GPU wait step (any360/xdk/d3d.h): r3 the wait's state; returns nonzero while the wait goes on.

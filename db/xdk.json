@@ -640,6 +640,61 @@
   "note": "the XDK's vector copy next to XAPI: 16-byte vectors, dcbt ahead of the source, dcbz128 ahead of the destination; named after what it does (its name is not in the titles). Three builds of the same steps. Any360: xdk::XMemCpy for ranges that do not overlap, bound in the three"
  },
  {
+  "name": "XAudio fill 1024",
+  "library": "XAudio",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82A594B8",
+   "tdu": "0x826B9FD8",
+   "simpsons": "0x82C6EA10"
+  },
+  "note": "XAudio's fill of a block's 1024 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown; not in the two others (no run called it)"
+ },
+ {
+  "name": "XAudio fill 2048",
+  "library": "XAudio",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82A593E8",
+   "tdu": "0x826B9F08",
+   "simpsons": "0x82C6E940"
+  },
+  "note": "XAudio's fill of a block's 2048 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown; not in the two others (no run called it)"
+ },
+ {
+  "name": "XAudio fill 256",
+  "library": "XAudio",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82A59450",
+   "tdu": "0x826B9F70",
+   "simpsons": "0x82C6E9A8"
+  },
+  "note": "XAudio's fill of a block's 256 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown; not in the two others (no run called it)"
+ },
+ {
+  "name": "XAudio fill 4096",
+  "library": "XAudio",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82A59520",
+   "tdu": "0x826BA040",
+   "simpsons": "0x82C6EA78"
+  },
+  "note": "XAudio's fill of a block's 4096 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown; not in the two others (no run called it)"
+ },
+ {
+  "name": "XAudio fill 512",
+  "library": "XAudio",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82A59318",
+   "tdu": "0x826B9E38",
+   "simpsons": "0x82C6E870"
+  },
+  "note": "XAudio's fill of a block's 512 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown; not in the two others (no run called it)"
+ },
+ {
   "name": "XAudio mix ramp",
   "library": "XAudio",
   "any360": "native",
