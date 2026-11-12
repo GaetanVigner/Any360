@@ -779,6 +779,7 @@ uint32_t ObjectManager::WaitForObjects(Guest g, uint32_t count, const uint32_t* 
     for (uint32_t i = 0; i < count; ++i) TrySatisfy(g, objects[i], thread);
     return 0;
   };
+  Threads().ReportStacks(g);
   std::unique_lock lock(dispatcher_mutex_);
   ReportWaits();
   int32_t taken = attempt();
@@ -827,6 +828,7 @@ uint32_t ObjectManager::WaitForHandles(Guest g, uint32_t count, uint32_t handles
 }
 
 uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread, const int64_t* timeout, bool alertable) {
+  Threads().ReportStacks(g);
   std::unique_lock lock(dispatcher_mutex_);
   ReportWaits();
   Poll(g);

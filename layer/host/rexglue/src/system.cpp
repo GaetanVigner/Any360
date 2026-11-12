@@ -459,6 +459,8 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
     title.module_handle = module->hmodule_ptr();
     title.xex_header = module->guest_xex_header();
     title.title_id = module->title_id();
+    // A thread created with no stack size gets the title's default, as the console's kernel gives it.
+    any360::sys::Threads().SetDefaultStackSize(module->stack_size());
     const std::string& path = module->path();
     const size_t slash = path.find_last_of("\\/:");
     title.module_name = slash == std::string::npos ? path : path.substr(slash + 1);

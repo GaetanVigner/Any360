@@ -29,6 +29,7 @@
 #include <chrono>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <thread>
 
 // watched_memory.cpp: memory whose watched pages are read-only until code writes to them, as a renderer keeps the
@@ -537,6 +538,88 @@ void SchedulerTests() {
   const uint32_t ka = Objects().Lookup(gm.Load32(out)), kb = Objects().Lookup(gm.Load32(out + 4));
   CHECK(slots == 2 && gm.Load32(gm.Load32(ka + 0x68)) == gm.Load32(ka + 0x14C) && gm.Load32(gm.Load32(kb + 0x68)) == gm.Load32(kb + 0x14C));
   CHECK(gm.Load32(ka + 0x68) != gm.Load32(kb + 0x68));
+  Threads().Shutdown();
+}
+
+// Thread stacks: a thread created with no size gets the default the host set (the title's); every stack is filled
+// and has a red zone below it, so the stack watch tells how deep a thread went and logs a thread that used more than
+// 3/4 of its stack, then one that ran past its end (which writes over the kernel heap's other blocks), once each.
+void StackTests() {
+  Fresh();
+  Objects().SetKernelHeap(0x10000, 0x70000);
+  Objects().SetGuest(Guest{g_memory.data()});
+  Objects().Reset();
+  const Guest gm{g_memory.data()};
+  Threads().SetDispatcher(&Dispatch, nullptr);
+  const uint32_t out = kScratch + 0x200;
+  const int64_t second = -10000000;
+  std::vector<std::string> lines;
+  std::mutex lines_mutex;
+  Threads().SetStackLog(
+      [&](const std::string& line) {
+        std::lock_guard lock(lines_mutex);
+        lines.push_back(line);
+      },
+      std::chrono::milliseconds(0), true);
+  auto count = [&](const char* text) {
+    std::lock_guard lock(lines_mutex);
+    return std::count_if(lines.begin(), lines.end(), [&](const std::string& l) { return l.find(text) != std::string::npos; });
+  };
+  // The host's default (the title's XEX), 0 keeping it; a size asked wins.
+  Threads().SetDefaultStackSize(0x8000);
+  Threads().SetDefaultStackSize(0);
+  CHECK(Threads().default_stack_size() == 0x8000);
+  uint32_t limit = 0, base = 0;
+  std::atomic<int> step{0};
+  g_code_args[0x5000] = [&](uint32_t pcr, uint32_t stack, std::vector<uint64_t>) {
+    const uint32_t kt = gm.Load32(pcr + 0x100);
+    limit = gm.Load32(kt + 0x60);
+    base = gm.Load32(kt + 0x5C);
+    CHECK(base - limit == 0x8000 && stack < base && stack > base - 0x100);
+    // Untouched stack and red zone hold the fill.
+    CHECK(gm.Load32(limit) == 0xBEBEBEBE && gm.Load32(limit - Scheduler::kStackRedZone) == 0xBEBEBEBE);
+    CHECK(Threads().StackDepth(gm, kt) < 0x100);
+    // Half the stack: nothing logged.
+    gm.Store32(base - 0x4000, 1);
+    Threads().ReportStacks(gm);
+    CHECK(count("used") == 0 && Threads().StackDepth(gm, kt) == 0x4000);
+    // Past 3/4: logged once.
+    gm.Store32(base - 0x7000, 1);
+    Threads().ReportStacks(gm);
+    Threads().ReportStacks(gm);
+    CHECK(count("used 28 of its 32 KB stack") == 1);
+    // Past its end into the red zone: logged once, with how far.
+    gm.Store32(limit - 0x10, 1);
+    Threads().ReportStacks(gm);
+    Threads().ReportStacks(gm);
+    CHECK(count("ran 16 bytes past the end of its 32 KB stack") == 1);
+    CHECK(Threads().StackDepth(gm, kt) == 0x8010);
+    step = 1;
+    return 0;
+  };
+  CHECK(Threads().CreateThread(gm, out, 0, 0, 0, 0x5000, 0, 0) == 0);
+  CHECK(Objects().WaitForHandle(gm, gm.Load32(out), kMainThread, &second) == 0 && step == 1);
+  CHECK(count("starts at 00005000") == 1 && count("32 KB (the default)") == 1);
+  // A size asked is kept; the red zone sits inside the stack's own block, below its limit, so two threads' stacks and
+  // red zones never overlap.
+  g_code_args[0x5100] = [&](uint32_t pcr, uint32_t, std::vector<uint64_t>) {
+    const uint32_t kt = gm.Load32(pcr + 0x100);
+    CHECK(gm.Load32(kt + 0x5C) - gm.Load32(kt + 0x60) == 0x6000);
+    return 0;
+  };
+  CHECK(Threads().CreateThread(gm, out, 0x6000, 0, 0, 0x5100, 0, 0) == 0);
+  CHECK(Objects().WaitForHandle(gm, gm.Load32(out), kMainThread, &second) == 0);
+  CHECK(count("24 KB (asked)") == 1);
+  {
+    GuestContext a{}, b{};
+    CHECK(Threads().CreateContext(gm, 0x4000, a) == 0 && Threads().CreateContext(gm, 0x4000, b) == 0);
+    const uint32_t a_limit = gm.Load32(a.kthread + 0x60), a_base = gm.Load32(a.kthread + 0x5C);
+    const uint32_t b_limit = gm.Load32(b.kthread + 0x60), b_base = gm.Load32(b.kthread + 0x5C);
+    CHECK(a_base <= b.kthread && b_limit - Scheduler::kStackRedZone > b.kthread && a_base - a_limit == 0x4000 &&
+          b_base - b_limit == 0x4000);
+  }
+  Threads().SetStackLog(nullptr, std::chrono::milliseconds(0), false);
+  Threads().SetDefaultStackSize(0x10000);
   Threads().Shutdown();
 }
 
@@ -2502,6 +2585,7 @@ int main() {
   UserProfileTests();
   MemoryTests();
   SchedulerTests();
+  StackTests();
   ReclaimTests();
   RwLockTests();
   Timers();

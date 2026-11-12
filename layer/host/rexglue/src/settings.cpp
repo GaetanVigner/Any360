@@ -36,6 +36,12 @@ REXCVAR_DEFINE_BOOL(any360_sys_keep_files, true, "Kernel",
 REXCVAR_DEFINE_STRING(any360_sys_network, "loopback", "Kernel",
                       "Any360: the console's network with the xam group: loopback (the console alone at 127.0.0.1, its "
                       "sockets the host's, nothing leaves the machine) or off (no connection: every socket call fails)");
+REXCVAR_DEFINE_INT32(any360_sys_default_stack_kb, 0, "Kernel",
+                     "Any360 threads group: the stack of a thread the title creates with no size, in KB; 0: the title's "
+                     "default (its XEX header's, as the console). Smaller values reproduce a stack overflow sooner");
+REXCVAR_DEFINE_BOOL(any360_sys_log_threads, false, "Kernel",
+                    "Any360 threads group: each thread the title creates (start address, stack) in the log. Threads "
+                    "that use more than 3/4 of their stack or run past its end are logged either way");
 REXCVAR_DEFINE_BOOL(any360_sys_log_files, false, "Kernel",
                     "Any360: every file the title opens and closes and every read that gives fewer bytes than asked, by "
                     "guest path, in the log");
@@ -145,6 +151,13 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
       any360::sys::Objects().SetWaitLook(std::chrono::milliseconds(std::max(1, REXCVAR_GET(any360_sys_wait_look_ms))),
                                          std::chrono::milliseconds(std::max(1, REXCVAR_GET(any360_sys_wait_first_look_ms))));
       any360::sys::Objects().SetWaitLog([](const std::string& line) { REXLOG_INFO("Any360 system: {}", line); });
+    }
+    if (group == SysGroup::kThreads) {
+      any360::sys::Threads().SetDefaultStackSize(uint32_t(std::max(0, REXCVAR_GET(any360_sys_default_stack_kb))) * 1024);
+      any360::sys::Threads().SetStackLog([](const std::string& line) { REXLOG_WARN("Any360 system: {}", line); },
+                                         std::chrono::seconds(2), REXCVAR_GET(any360_sys_log_threads));
+      REXLOG_INFO("Any360 system: threads created with no stack size get {} KB",
+                  any360::sys::Threads().default_stack_size() / 1024);
     }
     if (group == SysGroup::kFiles) {
       any360::sys::Files().SetKeepHostFiles(REXCVAR_GET(any360_sys_keep_files));

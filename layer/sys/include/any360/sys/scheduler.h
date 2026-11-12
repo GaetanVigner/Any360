@@ -6,9 +6,13 @@
 // running one pauses at its next delay, yield or wait.
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <functional>
 #include <initializer_list>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -51,8 +55,27 @@ class Scheduler {
   // The KPROCESS new threads belong to (its type and TLS bitmap); allocated in the kernel heap when none is set.
   void SetProcess(uint32_t kprocess);
   uint32_t process() const { return process_; }
-  // Default stack size of a thread created with none (the title's XEX says; 64 KB otherwise).
-  void SetDefaultStackSize(uint32_t size) { default_stack_size_ = size; }
+  // Default stack size of a thread created with none: the host sets the title's (its XEX header's default stack
+  // size, as the console's kernel takes); 64 KB otherwise. 0 keeps the current one.
+  void SetDefaultStackSize(uint32_t size) {
+    if (size) default_stack_size_ = size;
+  }
+  uint32_t default_stack_size() const { return default_stack_size_; }
+
+  // Stack watch. Stacks live in the kernel heap next to other threads' blocks with no guard page, so a thread that
+  // runs past the end of its stack silently writes over whatever lies below. Each stack and a red zone of
+  // kStackRedZone bytes below it are filled with kStackFill when made; ReportStacks scans the live threads' stacks (at
+  // most once per `interval`) and logs, once per thread, the first time one used more than 3/4 of its stack and the
+  // first time one wrote into its red zone (it ran past its end). With `log_creation` (verbose) each thread's creation
+  // is logged too (its start address and stack), and each new deepest use past half its stack in 4 KB steps. Without
+  // a log nothing is scanned.
+  static constexpr uint32_t kStackRedZone = 0x1000;
+  static constexpr uint8_t kStackFill = 0xBE;
+  void SetStackLog(std::function<void(const std::string&)> log, std::chrono::milliseconds interval, bool log_creation);
+  void ReportStacks(Guest g);
+  // The deepest a live thread's stack has gone so far (bytes from its base to the lowest byte written), 0 when the
+  // scheduler does not run that thread; more than the stack's size when it ran into its red zone.
+  uint32_t StackDepth(Guest g, uint32_t kthread) const;
   // Joins every thread; call before the guest memory goes away.
   void Shutdown();
 
@@ -137,6 +160,10 @@ class Scheduler {
   void* dispatcher_user_ = nullptr;
   uint32_t process_ = 0;
   uint32_t default_stack_size_ = 0x10000;
+  std::function<void(const std::string&)> stack_log_;
+  std::chrono::milliseconds stack_interval_{0};
+  bool log_creation_ = false;
+  std::atomic<int64_t> next_stack_report_{0};  // steady-clock milliseconds
   uint32_t next_thread_id_ = 1;
   uint8_t next_cpu_ = 0;  // the hardware thread a new thread without a processor mask gets (round-robin)
   struct Apc {

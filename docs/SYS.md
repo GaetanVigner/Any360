@@ -75,7 +75,11 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   the pointer, as the Xbox kernel does), `KeQueryBasePriorityThread`, `KeSetBasePriorityThread`,
   `KeSetDisableBoostThread`. A thread is a dispatcher object signalled when it ends. Suspension is cooperative: a thread
   created suspended waits before its first instruction, a running one pauses at its next delay, yield or wait. The
-  title process (KPROCESS) is created with the first thread when none is set.
+  title process (KPROCESS) is created with the first thread when none is set. A thread created with no stack size gets
+  the title's default (the XEX header's default stack size, set by the host, as the console's kernel takes it; 64 KB
+  with none). Stacks sit in the kernel heap next to other threads' blocks with no guard page, so each has a 4 KB red
+  zone below it and is filled with 0xBE: the stack watch (`SetStackLog`, `ReportStacks`, run from waits and delays)
+  logs a thread that used more than 3/4 of its stack and one that ran past its end, once each.
 - **The memory manager** (`memory.h`, scenario tests): the guest heaps as the kernel lays them out (virtual 4 KB pages
   below 0x40000000 and 64 KB pages above, the physical views at 0xA0000000 / 0xC0000000 / 0xE0000000 over one 512 MB
   physical space, page states free / reserved / committed with their protections and regions).

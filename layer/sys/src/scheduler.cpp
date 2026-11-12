@@ -5,8 +5,10 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <thread>
 
 #include "any360/sys/objects.h"
@@ -53,6 +55,9 @@ uint8_t CpuOf(uint32_t affinity) {
 
 struct Scheduler::Thread {
   uint32_t kthread = 0, pcr = 0, stack_top = 0, start = 0, context = 0, xapi = 0;
+  uint32_t stack_limit = 0, stack_base = 0;
+  uint8_t stack_reported = 0;  // stack watch: 1 = past 3/4 logged, 2 = past its end logged (threads_mutex_)
+  uint32_t stack_logged = 0;   // stack watch, verbose: the deepest use logged so far (threads_mutex_)
   std::thread host;
   std::thread::id runner;  // the host thread running Run: `host` itself, or one a ThreadRunner runs it on
   std::mutex mutex;
@@ -197,7 +202,7 @@ uint32_t Scheduler::CreateContext(Guest g, uint32_t stack_size, GuestContext& co
 
   const uint32_t kthread = Objects().AllocateObject(kThreadSize, reclaimable),
                  pcr = Objects().AllocateObject(kPcrSize, reclaimable), tls = Objects().AllocateObject(kTlsBytes, reclaimable),
-                 stack = Objects().AllocateObject(stack_size + 0x1000, reclaimable);
+                 stack = Objects().AllocateObject(stack_size + kStackRedZone + 0x1000, reclaimable);
   if (!kthread || !pcr || !tls || !stack) {
     for (const uint32_t block : {kthread, pcr, tls, stack}) {
       if (block && reclaimable) Objects().FreeObject(block);
@@ -211,7 +216,9 @@ uint32_t Scheduler::CreateContext(Guest g, uint32_t stack_size, GuestContext& co
   std::memset(g.host(kthread), 0, kThreadSize);
   std::memset(g.host(pcr), 0, kPcrSize);
   std::memset(g.host(tls), 0, kTlsBytes);
-  const uint32_t stack_limit = (stack + 0xFFF) & ~0xFFFu, stack_base = stack_limit + stack_size;
+  // The red zone below the stack belongs to the stack's block: a thread running past its end writes there first.
+  const uint32_t stack_limit = (stack + kStackRedZone + 0xFFF) & ~0xFFFu, stack_base = stack_limit + stack_size;
+  std::memset(g.host(stack), kStackFill, stack_size + kStackRedZone + 0x1000);
 
   // The thread object: a dispatcher object of type 6, unsignalled until the thread ends.
   g.Store8(kthread + kHeaderType, kThread);
@@ -357,9 +364,19 @@ uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_si
   t->start = start_address;
   t->context = start_context;
   t->xapi = xapi_startup;
+  t->stack_limit = g.Load32(kthread + kStackLimit);
+  t->stack_base = g.Load32(kthread + kStackBase);
   {
     std::lock_guard lock(threads_mutex_);
     threads_.push_back(t);
+  }
+  if (log_creation_ && stack_log_) {
+    char line[200];
+    std::snprintf(line, sizeof line, "thread %u starts at %08X (context %08X), stack %08X-%08X: %u KB (%s)",
+                  g.Load32(kthread + kThreadId), start_address, start_context,
+                  t->stack_limit, t->stack_base, (t->stack_base - t->stack_limit) / 1024,
+                  stack_size ? "asked" : "the default");
+    stack_log_(line);
   }
   if (handle_out) g.Store32(handle_out, (creation_flags & kCreateHandleIsObject) ? kthread : Objects().OpenHandle(kthread));
   if (thread_id_out) g.Store32(thread_id_out, g.Load32(kthread + kThreadId));
@@ -369,6 +386,74 @@ uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_si
     t->host = std::thread([this, t] { RunAsGuestThread([](void* thread) { Threads().Run(static_cast<Thread*>(thread)); }, t); });
   }
   return kStatusSuccess;
+}
+
+namespace {
+// The lowest address in [low, high) whose word is no longer the stack fill (a stack's deepest write), `high` if none.
+uint32_t LowestWritten(Guest g, uint32_t low, uint32_t high) {
+  constexpr uint32_t kFillWord = 0x01010101u * Scheduler::kStackFill;
+  for (uint32_t at = low; at + 4 <= high; at += 4) {
+    uint32_t word;
+    std::memcpy(&word, g.host(at), 4);
+    if (word != kFillWord) return at;
+  }
+  return high;
+}
+}  // namespace
+
+void Scheduler::SetStackLog(std::function<void(const std::string&)> log, std::chrono::milliseconds interval,
+                            bool log_creation) {
+  stack_log_ = std::move(log);
+  stack_interval_ = interval;
+  log_creation_ = log_creation;
+  next_stack_report_ = 0;
+}
+
+void Scheduler::ReportStacks(Guest g) {
+  if (!stack_log_) return;
+  const int64_t now =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+  int64_t next = next_stack_report_.load(std::memory_order_relaxed);
+  if (now < next || !next_stack_report_.compare_exchange_strong(next, now + stack_interval_.count())) return;
+  std::vector<std::string> lines;
+  {
+    std::lock_guard lock(threads_mutex_);
+    for (Thread* t : threads_) {
+      if (t->done || !t->stack_base || t->stack_reported >= 2) continue;
+      const uint32_t size = t->stack_base - t->stack_limit;
+      const uint32_t lowest = LowestWritten(g, t->stack_limit - kStackRedZone, t->stack_base);
+      const uint32_t depth = t->stack_base - lowest;
+      char line[300];
+      if (lowest < t->stack_limit) {
+        std::snprintf(line, sizeof line,
+                      "thread %u (start %08X) ran %u bytes past the end of its %u KB stack (%08X-%08X)%s: what lies "
+                      "below is other blocks of the kernel heap (another thread's stack, KTHREAD, PCR), written over",
+                      g.Load32(t->kthread + kThreadId), t->start, t->stack_limit - lowest, size / 1024, t->stack_limit,
+                      t->stack_base, lowest == t->stack_limit - kStackRedZone ? " at least (the whole red zone)" : "");
+        t->stack_reported = 2;
+      } else if ((depth > size / 4 * 3 && t->stack_reported < 1) ||
+                 (log_creation_ && depth > size / 2 && depth >= t->stack_logged + 0x1000)) {
+        std::snprintf(line, sizeof line, "thread %u (start %08X) used %u of its %u KB stack (%08X-%08X)",
+                      g.Load32(t->kthread + kThreadId), t->start, (depth + 1023) / 1024, size / 1024, t->stack_limit,
+                      t->stack_base);
+        if (depth > size / 4 * 3) t->stack_reported = 1;
+        t->stack_logged = depth;
+      } else {
+        continue;
+      }
+      lines.emplace_back(line);
+    }
+  }
+  for (const std::string& line : lines) stack_log_(line);
+}
+
+uint32_t Scheduler::StackDepth(Guest g, uint32_t kthread) const {
+  std::lock_guard lock(threads_mutex_);
+  for (const Thread* t : threads_) {
+    if (t->kthread != kthread || !t->stack_base) continue;
+    return t->stack_base - LowestWritten(g, t->stack_limit - kStackRedZone, t->stack_base);
+  }
+  return 0;
 }
 
 void Scheduler::PauseWhileSuspended(Guest g, Thread* thread) {
@@ -438,6 +523,7 @@ uint32_t Scheduler::TerminateThread(Guest g, uint32_t pcr, uint32_t exit_code) {
 }
 
 uint32_t Scheduler::Delay(Guest g, uint32_t pcr, int64_t interval, bool alertable) {
+  ReportStacks(g);
   const uint32_t kthread = g.Load32(pcr + kPrcbCurrentThread);
   if (Thread* t = Find(kthread)) PauseWhileSuspended(g, t);
   std::chrono::nanoseconds duration{0};
