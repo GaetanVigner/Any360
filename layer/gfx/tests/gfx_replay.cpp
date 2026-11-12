@@ -145,6 +145,17 @@ class TracingRenderer : public Renderer {
     const vk::RendererStats before = r_.stats();
     r_.Draw(draw);
     ++draws_;
+    // A draw skipped with targets bound and colour written: the scissors it had (the first few).
+    if (r_.stats().skipped != before.skipped && (regs[0x2208] & 7) == 4 && (regs[0x2104] & 0xF) && skips_shown_ < 8) {
+      ++skips_shown_;
+      std::printf("    skipped draw %u: window offset %08X, window scissor %08X-%08X, screen scissor %08X-%08X, "
+                  "viewport scale %g %g offset %g %g, surface %08X colour0 %08X, vs %016llX ps %016llX\n",
+                  draws_, regs[0x2080], regs[0x2081], regs[0x2082], regs[0x200E], regs[0x200F],
+                  std::bit_cast<float>(regs[0x210F]), std::bit_cast<float>(regs[0x2111]),
+                  std::bit_cast<float>(regs[0x2110]), std::bit_cast<float>(regs[0x2112]), regs[0x2000], regs[0x2001],
+                  (unsigned long long)(draw.vertex_shader ? draw.vertex_shader->hash : 0),
+                  (unsigned long long)(draw.pixel_shader ? draw.pixel_shader->hash : 0));
+    }
     if (pick_x_ >= 0 && (regs[0x2208] & 7) == 4 && (regs[0x2104] & 0xF)) {
       const uint32_t pitch = regs[0x2000] & 0x3FFF;
       const vk::SurfaceKey key{regs[0x2001] & 0xFFF, pitch, (regs[0x2001] >> 16) & 0xF, 0};
@@ -357,6 +368,7 @@ class TracingRenderer : public Renderer {
   uint32_t resolves_ = 0;
   uint32_t watch_ = 0;
   int32_t pick_x_ = -1, pick_y_ = -1;
+  uint32_t skips_shown_ = 0;
  public:
   std::string dump_textures_;
 
