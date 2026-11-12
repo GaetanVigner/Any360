@@ -58,6 +58,8 @@ try {
     if ($LASTEXITCODE) { throw "xdk_d3d_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_cp_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "gfx_cp_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'gfx/gfx_write_back_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "gfx_write_back_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_shader_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "gfx_shader_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_vulkan_tests.exe') | Out-Host

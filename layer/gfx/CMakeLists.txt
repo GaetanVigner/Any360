@@ -53,7 +53,7 @@ add_test(NAME gfx_shader_tests COMMAND gfx_shader_tests)
 # any360_gfx_vulkan: the Vulkan side of the renderer. The loader is opened at run time (VK_NO_PROTOTYPES), so the
 # build needs only the vendored Khronos headers (third_party/vulkan-headers) and no Vulkan SDK.
 add_library(any360_gfx_vulkan STATIC src/vulkan/device.cpp src/vulkan/renderer.cpp src/vulkan/textures.cpp
-            src/vulkan/presenter.cpp src/vulkan/gamma_shader.cpp src/vulkan/depth_shader.cpp)
+            src/vulkan/presenter.cpp src/vulkan/gamma_shader.cpp src/vulkan/depth_shader.cpp src/vulkan/write_back.cpp)
 target_link_libraries(any360_gfx_vulkan PUBLIC any360_gfx any360_xenos_shader)
 target_include_directories(any360_gfx_vulkan PUBLIC include ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vulkan-headers/include)
 # The Vulkan idiom {sType} leaves the other fields zero on purpose.
@@ -62,6 +62,12 @@ target_compile_options(any360_gfx_vulkan PUBLIC -Wno-missing-field-initializers)
 if(NOT WIN32)
     target_link_libraries(any360_gfx_vulkan PUBLIC ${CMAKE_DL_LIBS})
 endif()
+
+# The resolve write-back against its first version (no GPU needed); --bench times both.
+add_executable(gfx_write_back_tests tests/gfx_write_back_tests.cpp)
+target_link_libraries(gfx_write_back_tests PRIVATE any360_gfx_vulkan)
+target_compile_options(gfx_write_back_tests PRIVATE -Wall -Wextra)
+add_test(NAME gfx_write_back_tests COMMAND gfx_write_back_tests)
 
 # On a real driver: the translated shaders compiled into pipelines, an offscreen target drawn and read back.
 add_executable(gfx_vulkan_tests tests/gfx_vulkan_tests.cpp)

@@ -505,13 +505,16 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       }
       last_tsc_ = tsc;
     }
-    char detail[512];
+    char detail[640];
     std::snprintf(detail, sizeof(detail),
-                  "Any360: per frame: resolves %.1f on the GPU, %.1f read back, %.1f depth, %.1f written back later, "
+                  "Any360: per frame: resolves %.1f on the GPU, %.1f read back, %.1f depth, %.1f written back later "
+                  "(%.3f ms; the first version %.3f ms), "
                   "%.2f superseded by the CPU; textures ms: hashing %.2f, "
                   "loading for uploads %.2f",
                   (s.resolves_on_gpu - last_.resolves_on_gpu) / n, (s.resolves_read_back - last_.resolves_read_back) / n,
                   (s.resolves_depth - last_.resolves_depth) / n, (s.resolve_write_backs - last_.resolve_write_backs) / n,
+                  (s.ns_write_backs - last_.ns_write_backs) / 1e6 / n,
+                  (s.ns_write_backs_reference - last_.ns_write_backs_reference) / 1e6 / n,
                   (s.resolves_superseded - last_.resolves_superseded) / n,
                   (s.ns_texture_hash - last_.ns_texture_hash) / ms,
                   (s.ns_texture_load - last_.ns_texture_load) / ms);

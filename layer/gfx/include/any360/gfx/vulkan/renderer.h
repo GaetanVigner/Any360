@@ -85,6 +85,9 @@ struct RendererStats {
   uint32_t resolves_on_gpu = 0, resolves_read_back = 0, resolves_depth = 0;  // kinds of resolves among them
   uint32_t resolves_superseded = 0;  // resolves kept on the GPU the CPU wrote over before they were written back
   uint32_t resolve_write_backs = 0;  // GPU resolves written into guest memory later (read by a texture otherwise)
+  // Their pixels written into guest memory (WriteBackTiled), and with ANY360_WRITE_BACK_BENCH the first version on
+  // the same pixels too (each write-back done both ways, in alternating order: the same bytes twice).
+  uint64_t ns_write_backs = 0, ns_write_backs_reference = 0;
   uint64_t ns_texture_hash = 0, ns_texture_load = 0;  // within textures: hashing, loading levels for uploads
   uint32_t flushes = 0;
   // Time spent (nanoseconds, summed): draws in all, of which copying guest memory and submitting; resolves; swaps.

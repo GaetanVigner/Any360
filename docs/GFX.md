@@ -292,6 +292,35 @@ Measured with `gfx_window_demo --draws N` (N triangles, each with its own vertex
 What remains on the CPU: the resolve's readback and tiling into guest memory (needed while the CPU or a later
 texture can read it), texture untiling and hashing, and translating shaders the first time.
 
+### The CPU's share in play (2026-11-12)
+
+`tools/cpu_profile.ps1` on Crackdown's city (45 s, every sys group and the GPU on Any360, the native library
+functions of docs/NATIVE_FUNCTIONS.md bound): the process used 1.33 processors; Any360's graphics took 15% of its
+cycles on three threads:
+
+- **The command processor's thread (6%)**: `ExecutePacket` 3.5%, most of it type-0 register writes (Crackdown
+  sends 5 to 8 MB of registers a frame, its constants for 2,000 draws: a byte-swapped copy of that much is mostly
+  memory traffic, the swap itself 0.1-0.2 ms a frame), then `DRAW_INDX`. Its WAIT_REG_MEM (16 ms a frame: the ring
+  waits for the title's frame pacing word) sleeps on the progress count and costs little.
+- **The renderer's thread (6%)**: `Draw` 2%, texture loads, `MemoryChanged`.
+- **The completion thread (2.8%)**: the resolves written back into guest memory (`FinishWriteBacks`: 21 a frame in
+  places), with `TiledOffset2D` and the byte shuffle called once per 16 bytes.
+
+The write-back is now `WriteBackTiled` (`layer/gfx/src/vulkan/write_back.cpp`). A tiled offset is that of the same
+element in the row's first 32 elements plus a step per 32 (the macro tile's x lands in the offset's bits from 9 up,
+which the tiling only shifts), so a row needs a table of 8 or 16 offsets instead of one computation per 16 bytes;
+the byte shuffle runs in the loop instead of a call (it was a function of its own: SSSE3 code cannot be inlined
+into the baseline build's function); the depth conversion to float24 and the unorm rounding are inlined, lround
+replaced by a rounding in double that gives the same values. The first version stays as
+`WriteBackTiledReference`: `gfx_write_back_tests` compares the two on 3,000 random rectangles (both element sizes,
+every byte order, depth unorm and float24, any offset and width, past the end of memory) and, with `--bench`,
+times them: a 1280x720 colour resolve 0.93 -> 0.37 ms (2.5x), depth 2.6 -> 1.9 ms (1.4x).
+
+In game, `ANY360_WRITE_BACK_BENCH=1` writes each resolve back both ways (the same bytes twice, in alternating
+order) and the log's "written back later" gives both times. Crackdown's city: 0.51 ms a frame against 0.98-1.01
+with 21 write-backs a frame, 0.09 against 0.19 with 3: 2.0x, about 30 ms of a processor a second where the title
+reads back most.
+
 ### Frame capture and replay (2026-11-01)
 
 Hand-written PM4 shows that a feature works; only a title's frames show which features it needs, in what order.
