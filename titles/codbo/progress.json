@@ -19,19 +19,21 @@
    "input",
    "audio"
   ],
-  "default": false,
-  "where": "all eight groups, opt-in: `--any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio`; no call reaches ReXGlue's kernel in its first minute and a half, its local server's sockets on Any360's network (loopback: nothing leaves the machine)"
+  "default": true,
+  "where": "all eight groups, by default (`--any360_sys_groups=none` for ReXGlue's kernel); no call reaches ReXGlue's kernel, its local server's sockets on Any360's network (loopback: nothing leaves the machine); played 10 minutes in a level"
  },
  "gfx": {
   "bound": true,
-  "default": false,
-  "where": "opt-in: `--any360_gpu=true`; the game draws its first scenes through `any360::gfx` at 60 FPS (1,700 to 1,800 draws a frame with every system call on `any360::sys`)",
+  "default": true,
+  "where": "by default (`--any360_gpu=false` for ReXGlue's GPU); menus, a campaign level and Zombies drawn through `any360::gfx` at 60 FPS, 10 minutes in a level with no GPU reset since the translator's forward jumps stay in one pass",
   "todo": [
-   "Check what is drawn against ReXGlue's GPU, scene by scene, beyond the first minute."
+   "Models that flicker in the first seconds of a level (draws skipped while their pipelines compile in the background).",
+   "Short green artifacts at the start of a level, and lighting that shifts with the camera's rotation.",
+   "Dotted artifacts on some items (also on ReXGlue's Vulkan backend: the shared translator)."
   ]
  },
  "next": [
-  "Play it on the full binding past its first minute and a half: the menus, a campaign level, Zombies, saves, sound, the gamepad.",
+  "Play the campaign past its first level and Zombies past a few rounds on the default binding: saves, sound, the gamepad.",
   "Recompile `default_mp.xex`, the multiplayer executable.",
   "Find the XDK and C runtime functions Any360 already has (`memcpy`, `memset`, the string functions) in this executable and bind them after a check in game."
  ],
