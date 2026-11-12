@@ -9,7 +9,8 @@ target_compile_options(any360_host_rexglue PRIVATE -Wall -Wextra)
 # The settings glue logs through the runtime's spdlog: kept apart from the renderer's vendored fmt (its namespace
 # renamed) so it compiles against the runtime's fmt. Titles get it with the binding. With it, the native replacements
 # of library functions (xdk_natives.h), which log and read settings the same way.
-add_library(any360_host_rexglue_settings STATIC src/settings.cpp src/crash_report.cpp src/xdk_natives.cpp)
+add_library(any360_host_rexglue_settings STATIC src/settings.cpp src/crash_report.cpp src/xdk_natives.cpp
+            src/d3d_selftest.cpp)
 target_include_directories(any360_host_rexglue_settings PUBLIC include)
 target_link_libraries(any360_host_rexglue_settings PUBLIC any360_sys_ppc any360_xdk)
 target_compile_options(any360_host_rexglue_settings PRIVATE -Wall -Wextra)

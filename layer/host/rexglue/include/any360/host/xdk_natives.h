@@ -26,10 +26,13 @@
 
 #include <chrono>
 #include <cstdint>
+#include <vector>
 
 #include "any360/xdk/crt.h"
 #include "any360/xdk/d3d.h"
+#include "any360/xdk/d3d_state.h"
 #include "any360/xdk/xaudio.h"
+#include "d3d_selftest.h"
 #include "any360/xdk/xapi.h"
 #include "rexglue.h"
 
@@ -38,7 +41,8 @@ namespace any360::host::rexglue::xdk {
 enum class Function : uint32_t {
   kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy,
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
-  kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill, kCount
+  kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
+  kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -58,6 +62,12 @@ void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, ui
 void RunSetConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
 // And for XAudio's fill (XAudioFill below).
 void RunFillSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t floats);
+// And for the D3D runtime's state setters (D3dState below): `native` the replacement on the registers (false: it
+// declines), `writes` what it may write (false: it declines).
+using D3dStateNative = bool (*)(const any360::xdk::Memory&, PPCContext&);
+using D3dStateWrites = bool (*)(const PPCContext&, std::vector<any360::xdk::Range>&);
+void RunD3dStateSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original, D3dStateNative native,
+                     D3dStateWrites writes);
 
 // r3 destination, r4 source, r5 size; returns the destination (r3 as it came).
 inline void CrtMemcpy(PPCContext& ctx, uint8_t* base, GuestFunction original) {
@@ -461,6 +471,7 @@ inline void D3dDirtyWords(PPCContext& ctx, uint8_t* base, GuestFunction original
 // The D3D runtime's copy of a title's shader constants into the device (any360/xdk/d3d.h): r3 the device, r4 the
 // first register, r5 the constants, r6 how many, r7 the dirty bits; r3 left as it came.
 inline void D3dSetShaderConstants(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  d3d::SawDevice(ctx, base, ctx.r3.u32);  // the D3D self-test, when asked, starts here
   if (g_mode == Mode::kNative) [[likely]] {
     if (any360::xdk::D3dSetShaderConstants(g_memory, ctx.r3.u64, ctx.r4.u64, ctx.r5.u32, ctx.r6.u32, ctx.r7.u64,
                                            ctx.r1.u32)) [[likely]] {
@@ -515,6 +526,108 @@ inline void D3dGpuWaitStep(PPCContext& ctx, uint8_t* base, GuestFunction origina
   const bool moved = wait.Sleep(gpu, std::chrono::microseconds(settings.longest_us));
   CountD3dWait(true, moved);
 }
+
+// The D3D runtime's state setters (any360/xdk/d3d_state.h), one kind each: r3 the device. `Kind` has Native (the
+// replacement on the registers), Writes (the device bytes, sources and stack it may write) and kFunction. The
+// device's layout is the title's (g_d3d_layout: the default is the runtime Crackdown links).
+inline any360::xdk::D3dLayout g_d3d_layout;
+template <class Kind>
+inline void D3dState(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    if (Kind::Native(g_memory, ctx)) [[likely]] return;
+    original(ctx, base);
+    return;
+  }
+  RunD3dStateSlow(Kind::kFunction, ctx, base, original, &Kind::Native, &Kind::Writes);
+}
+namespace d3d_state {
+inline void AddRange(std::vector<any360::xdk::Range>& w, uint32_t at, uint32_t size) { w.push_back({at, size}); }
+// The blend setters: the blend word and flags, the render targets' words, the dirty bits.
+inline bool BlendWrites(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+  const any360::xdk::D3dLayout& l = g_d3d_layout;
+  const uint32_t device = ctx.r3.u32;
+  if (!any360::xdk::D3dBlendAccepts(l, device)) return false;
+  AddRange(w, device + l.blend_control, 4);
+  AddRange(w, device + l.blend_flags, 4);
+  for (uint32_t t : l.target_blend) AddRange(w, device + t, 4);
+  AddRange(w, device + l.state_dirty, 8);
+  return true;
+}
+template <any360::xdk::D3dBlendField kField>
+struct BlendField {
+  static constexpr Function kFunction = Function::kD3dBlend;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetBlendField(m, g_d3d_layout, ctx.r3.u32, kField, ctx.r4.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) { return BlendWrites(ctx, w); }
+};
+struct BlendEnable {
+  static constexpr Function kFunction = Function::kD3dBlend;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetBlendEnable(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) { return BlendWrites(ctx, w); }
+};
+struct SeparateAlphaBlend {
+  static constexpr Function kFunction = Function::kD3dBlend;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetSeparateAlphaBlend(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) { return BlendWrites(ctx, w); }
+};
+// r4 the first register, r5 the source, r6 the count.
+template <bool kPixel>
+struct BoolConstants {
+  static constexpr Function kFunction = Function::kD3dBoolConstants;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetBoolConstants(m, g_d3d_layout, ctx.r3.u32, kPixel, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    any360::xdk::Range words;
+    if (!any360::xdk::D3dBoolConstantsAccepts(g_d3d_layout, ctx.r3.u32, kPixel, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32,
+                                              words))
+      return false;
+    w.push_back(words);
+    AddRange(w, ctx.r3.u32 + g_d3d_layout.constant_dirty, 8);
+    return true;
+  }
+};
+template <bool kPixel>
+struct IntConstants {
+  static constexpr Function kFunction = Function::kD3dIntConstants;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetIntConstants(m, g_d3d_layout, ctx.r3.u32, kPixel, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    any360::xdk::Range words;
+    if (!any360::xdk::D3dIntConstantsAccepts(g_d3d_layout, ctx.r3.u32, kPixel, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32,
+                                             words))
+      return false;
+    w.push_back(words);
+    AddRange(w, ctx.r3.u32 + g_d3d_layout.constant_dirty, 8);
+    return true;
+  }
+};
+// SetPixelShaderConstantF: r4 the first register, r5 the constants, r6 how many, r7 the dirty bits.
+struct PixelConstants {
+  static constexpr Function kFunction = Function::kD3dPixelConstants;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetPixelShaderConstants(m, g_d3d_layout, ctx.r3.u64, ctx.r4.u64, ctx.r5.u32, ctx.r6.u32,
+                                                   ctx.r7.u64, ctx.r1.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    any360::xdk::Range constants;
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    if (!any360::xdk::D3dSetShaderConstantsAccepts(ctx.r3.u64, ctx.r4.u64, ctx.r5.u32, ctx.r6.u32, ctx.r1.u32,
+                                                   constants, l.float_constant_base[1], l.float_dirty[1]))
+      return false;
+    w.push_back(constants);
+    AddRange(w, ctx.r3.u32 + l.float_dirty[1], 8);
+    AddRange(w, ctx.r1.u32 + 48, 8);
+    return true;
+  }
+};
+}  // namespace d3d_state
 
 // Calls verified against the functions' own code and found different, since the start (any360_xdk_verify).
 struct Counters {

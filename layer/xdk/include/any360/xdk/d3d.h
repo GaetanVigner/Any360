@@ -183,25 +183,30 @@ inline bool D3dDirtyWords(const Memory& memory, uint32_t device, uint32_t cursor
 // then one at a time; then the device's first doubleword gets r7 or-ed in. It saves r7 at r1 + 48 (the caller's
 // parameter area). Declined: memory that is not plain, a source over the destination or the device's first
 // doubleword. r3 is left as it came; the other volatile registers are the function's own.
+// `vector_base` is where the registers start in the device (in 16-byte registers: 112 the vertex shader's, 368
+// the pixel shader's in Crackdown's runtime), `dirty_offset` where their dirty bits are.
 inline bool D3dSetShaderConstantsAccepts(uint64_t device, uint64_t first, uint32_t source, uint32_t count,
-                                         uint32_t stack_pointer, Range& write) {
-  const uint32_t dest = uint32_t(device + ((uint32_t(first + 112) << 4) & 0xFFFFFFF0u)) & ~0xFu;
+                                         uint32_t stack_pointer, Range& write, uint32_t vector_base = 112,
+                                         uint32_t dirty_offset = 0) {
+  const uint32_t dest = uint32_t(device + ((uint32_t(first + vector_base) << 4) & 0xFFFFFFF0u)) & ~0xFu;
   const uint64_t bytes = uint64_t(count) * 16;
   if (bytes >= 0x100000000ull) return false;
   write = {dest, uint32_t(bytes)};
-  const uint32_t d = uint32_t(device);
+  const uint32_t d = uint32_t(device + dirty_offset);
   return IsPlainMemory(dest, write.size) && IsPlainMemory(source, write.size) && IsPlainMemory(d, 8) &&
          IsPlainMemory(stack_pointer + 48, 8) && detail::Disjoint(dest, write.size, source, write.size) &&
          detail::Disjoint(dest, write.size, d, 8) && detail::Disjoint(dest, write.size, stack_pointer + 48, 8) &&
          detail::Disjoint(d, 8, stack_pointer + 48, 8);
 }
 inline bool D3dSetShaderConstants(const Memory& memory, uint64_t device, uint64_t first, uint32_t source, uint32_t count,
-                                  uint64_t dirty, uint32_t stack_pointer) {
+                                  uint64_t dirty, uint32_t stack_pointer, uint32_t vector_base = 112,
+                                  uint32_t dirty_offset = 0) {
   Range write;
-  if (!D3dSetShaderConstantsAccepts(device, first, source, count, stack_pointer, write)) return false;
+  if (!D3dSetShaderConstantsAccepts(device, first, source, count, stack_pointer, write, vector_base, dirty_offset))
+    return false;
   detail::Store64(memory.Host(stack_pointer + 48), detail::ByteSwap64(dirty));
   std::memcpy(memory.Host(write.at), memory.Host(source), write.size);
-  uint8_t* bits = memory.Host(uint32_t(device));
+  uint8_t* bits = memory.Host(uint32_t(device + dirty_offset));
   detail::Store64(bits, detail::ByteSwap64(detail::ByteSwap64(detail::Load64(bits)) | dirty));
   return true;
 }
