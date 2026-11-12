@@ -14,10 +14,17 @@
   PDB next to the exe. A thread found at a wait or a sleep carries the cycles it used since its last sample: what
   it ran just before, and the call itself. A large share there is threads that wake and sleep again thousands of
   times a second (a wait with a short time-out in a loop), which the last table places by the function that asked.
+
+  -LinesOf '<regex>': for the functions whose name matches, the cycles by source line too (from the PDB's line
+  table), and the time their calls spent in DLLs (the GPU driver, waits) by the line that called. Where in a
+  function the time goes, when the function itself is too big to tell.
 .EXAMPLE
   .\tools\cpu_profile.ps1 -ProcessName simpsons -Title simpsons -Seconds 60 -Out profile.txt
+.EXAMPLE
+  .\tools\cpu_profile.ps1 -ProcessName crackdown -Seconds 45 -LinesOf 'VulkanRenderer::Draw' -Out draw.txt
 #>
-param([Parameter(Mandatory = $true)][string]$ProcessName, [string]$Title = '', [int]$Seconds = 60, [int]$Top = 40, [string]$Out = '')
+param([Parameter(Mandatory = $true)][string]$ProcessName, [string]$Title = '', [int]$Seconds = 60, [int]$Top = 40, [string]$Out = '',
+      [string]$LinesOf = '')  # not $Lines: PowerShell's names ignore case, and $lines is the report
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
@@ -37,6 +44,7 @@ public static class CpuProfile {
   [DllImport("dbghelp.dll", CharSet = CharSet.Ansi)] static extern bool SymInitialize(IntPtr process, string path, bool invade);
   [DllImport("dbghelp.dll")] static extern bool SymFromAddr(IntPtr process, ulong address, out ulong displacement, IntPtr symbol);
   [DllImport("dbghelp.dll")] static extern bool SymCleanup(IntPtr process);
+  [DllImport("dbghelp.dll")] static extern bool SymGetLineFromAddr64(IntPtr process, ulong address, out uint displacement, IntPtr line);
 
   // By thread: instruction address -> cycles. And, for the cycles spent outside the executable, the first return
   // address into the executable found on the stack -> cycles.
@@ -131,8 +139,9 @@ public static class CpuProfile {
 
   static IntPtr symbol;
   public static bool OpenSymbols(string path) {
-    SymSetOptions(0x2 | 0x4);
+    SymSetOptions(0x2 | 0x4 | 0x10);  // undecorated names, deferred loads, line numbers
     symbol = Marshal.AllocHGlobal(88 + 1024);
+    line = Marshal.AllocHGlobal(64);
     return SymInitialize(process, path, true);
   }
   // The function an address is in, without the offset; null where no symbol is known.
@@ -143,6 +152,18 @@ public static class CpuProfile {
     ulong displacement;
     if (!SymFromAddr(process, address, out displacement, symbol)) return null;
     return Marshal.PtrToStringAnsi(new IntPtr(symbol.ToInt64() + 84));
+  }
+  static IntPtr line;
+  // The source file (its name only) and line of an address; null where the PDB has none.
+  public static string Line(ulong address) {
+    for (int i = 0; i < 64; i += 8) Marshal.WriteInt64(line, i, 0);
+    Marshal.WriteInt32(line, 0, 40);  // IMAGEHLP_LINE64
+    uint displacement;
+    if (!SymGetLineFromAddr64(process, address, out displacement, line)) return null;
+    string file = Marshal.PtrToStringAnsi(Marshal.ReadIntPtr(line, 24));
+    if (file == null) return null;
+    int slash = Math.Max(file.LastIndexOf('\\'), file.LastIndexOf('/'));
+    return file.Substring(slash + 1) + ":" + Marshal.ReadInt32(line, 16);
   }
   public static void Close() { SymCleanup(process); CloseHandle(process); }
 }
@@ -204,7 +225,7 @@ function Place([string]$name, [uint64]$address) {
   return "the executable's other code", "host code of the title's port and its C++ runtime"
 }
 
-$by_name = @{}; $by_kind = @{}; $by_group = @{}; $by_thread = @{}; $total = [uint64]0
+$by_name = @{}; $by_kind = @{}; $by_group = @{}; $by_thread = @{}; $total = [uint64]0; $by_line = @{}
 foreach ($tid in [CpuProfile]::ByThread.Keys) {
   $mine = @{}; $sum = [uint64]0
   foreach ($pair in [CpuProfile]::ByThread[$tid].GetEnumerator()) {
@@ -213,6 +234,10 @@ foreach ($tid in [CpuProfile]::ByThread.Keys) {
     $label = if ($name) { $name } else { $group }
     if ($pair.Key -lt $low -or $pair.Key -ge $high) { $label = "$group!$label" }
     $by_name[$label] = [uint64]$by_name[$label] + $pair.Value
+    if ($LinesOf -and $name -and $name -match $LinesOf) {
+      $where = [CpuProfile]::Line($pair.Key); if (-not $where) { $where = 'no line' }
+      $key = "$where  ($name)"; $by_line[$key] = [uint64]$by_line[$key] + $pair.Value
+    }
     $by_kind[$kind] = [uint64]$by_kind[$kind] + $pair.Value
     $by_group["$kind | $group"] = [uint64]$by_group["$kind | $group"] + $pair.Value
     $mine[$label] = [uint64]$mine[$label] + $pair.Value
@@ -222,7 +247,14 @@ foreach ($tid in [CpuProfile]::ByThread.Keys) {
   $total += $sum
 }
 $callers = @{}
-foreach ($pair in [CpuProfile]::Callers.GetEnumerator()) { $n = [CpuProfile]::Name($pair.Key); if (-not $n) { $n = 'no symbol' }; $callers[$n] = [uint64]$callers[$n] + $pair.Value }
+$caller_lines = @{}
+foreach ($pair in [CpuProfile]::Callers.GetEnumerator()) {
+  $n = [CpuProfile]::Name($pair.Key); if (-not $n) { $n = 'no symbol' }; $callers[$n] = [uint64]$callers[$n] + $pair.Value
+  if ($LinesOf -and $n -match $LinesOf) {
+    $where = [CpuProfile]::Line($pair.Key); if (-not $where) { $where = 'no line' }
+    $key = "$where  ($n)"; $caller_lines[$key] = [uint64]$caller_lines[$key] + $pair.Value
+  }
+}
 [CpuProfile]::Close()
 function Share([uint64]$cycles) { if ($total) { '{0,5:N1}%' -f (100.0 * $cycles / $total) } else { '  n/a' } }
 $lines = New-Object System.Collections.Generic.List[string]
@@ -245,6 +277,12 @@ foreach ($n in ($by_name.GetEnumerator() | Sort-Object Value -Descending | Selec
 }
 $lines.Add(''); $lines.Add('time spent in DLLs (waits and sleeps among them), by the function of the executable that called them:')
 foreach ($c in ($callers.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 15)) { $n = $c.Key; if ($n.Length -gt 110) { $n = $n.Substring(0, 110) }; $lines.Add("  $(Share $c.Value)  $n") }
+if ($LinesOf) {
+  $lines.Add(''); $lines.Add("by source line, the functions matching '$LinesOf' (their own code):")
+  foreach ($l in ($by_line.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First $Top)) { $n = $l.Key; if ($n.Length -gt 130) { $n = $n.Substring(0, 130) }; $lines.Add("  $(Share $l.Value)  $n") }
+  $lines.Add(''); $lines.Add("by source line, the time those functions' calls spent in DLLs (the driver, waits):")
+  foreach ($l in ($caller_lines.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First $Top)) { $n = $l.Key; if ($n.Length -gt 130) { $n = $n.Substring(0, 130) }; $lines.Add("  $(Share $l.Value)  $n") }
+}
 if ($Out) {
   $lines | Set-Content -Path $Out -Encoding ascii
   # Every thread's cycles by function, to sort and group again without another run.

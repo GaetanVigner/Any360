@@ -321,6 +321,26 @@ order) and the log's "written back later" gives both times. Crackdown's city: 0.
 with 21 write-backs a frame, 0.09 against 0.19 with 3: 2.0x, about 30 ms of a processor a second where the title
 reads back most.
 
+The renderer's thread (20% of the cycles in the city): `Draw`'s own code is spread over hundreds of lines, none
+above 0.2% of the cycles (`tools/cpu_profile.ps1 -LinesOf 'VulkanRenderer::Draw'`, a new option: a function's
+cycles by source line, and the time its calls spend in DLLs by the line that called). What stood out:
+
+- **The diagnostics' clock.** Every other report period times each draw's sections (`Timer`, `mark`), and
+  steady_clock's QueryPerformanceCounter cost 1.25% of the process's cycles. The renderer's timers read the
+  time-stamp counter now, in nanoseconds by a rate measured once at `Initialize`: 0.18%. The report reads truer
+  too: "draws" was 4.2-4.3 ms a frame for 4,300 draws and is 2.8-3.2 ms for 5,100 (the clock was inside what it
+  timed).
+- **Images made and freed in Crackdown's cut-scenes.** The log's report gives the GPU objects created a frame now
+  (`gfx::vk::CreatedGpuObjects`), and `ANY360_LOG_ALLOCATIONS=1` logs each with its size, format and caller. Before
+  the city, Crackdown resolved three formats to one address: a resolve kept one spare image of another format, so
+  each switch freed one and made one, 6 images a frame for about 40 seconds (their creation and release on the
+  completion thread were 2% of the cycles where it ran). A resolve keeps up to four spares now
+  (`Resolved::spares`, the oldest freed beyond them): 0.00 images a frame in the same stretch. In the city's steady
+  scenes nothing is created either way.
+- Left as they are: the constants' compare and copy into the batch's buffer (about 1% between them: the buffer is
+  the GPU's, written once; the copy kept to compare against is the cached one), and the record threads woken every
+  32 draws (0.9%).
+
 ### Frame capture and replay (2026-11-01)
 
 Hand-written PM4 shows that a feature works; only a title's frames show which features it needs, in what order.

@@ -447,13 +447,18 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t scale = 1;    // host texels a guest texel along each axis (colour resolves: the resolution scale)
     Image small;           // a scaled resolve brought to one texel a guest texel for its write-back
     VkImageLayout small_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-    // The image of the other format last resolved here (titles alternate colour and depth resolves to one
-    // destination): swapped back in instead of an image made and freed at each resolve.
-    Image spare;
-    VkImageLayout spare_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-    uint32_t spare_scale = 1;
-    Image spare_small;  // the spare's own small image, swapped in with it (else made again at each write-back)
-    VkImageLayout spare_small_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    // The images of the other formats last resolved here (titles alternate colour and depth resolves to one
+    // destination, Crackdown three formats at one address in its cut-scenes): swapped back in instead of an image
+    // made and freed at each resolve. The oldest beyond kSpares is freed.
+    struct Spare {
+      Image image;
+      VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+      uint32_t scale = 1;
+      Image small;  // its own small image, swapped in with it (else made again at each write-back)
+      VkImageLayout small_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    };
+    static constexpr size_t kSpares = 4;
+    std::vector<Spare> spares;  // oldest first
   };
   // Writes a resolve kept on the GPU into guest memory: now (WriteBackResolved: the batch runs), or when the batch
   // has run (QueueWriteBack: its copy recorded in the batch; the CPU reads guest memory only after a fence, which runs

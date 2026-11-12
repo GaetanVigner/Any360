@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <source_location>
 #include <string>
 #include <utility>
 #include <vector>
@@ -108,7 +109,9 @@ struct Buffer {
   void* mapped = nullptr;
   VkDeviceSize size = 0;
 };
-bool CreateBuffer(const Device& d, VkDeviceSize size, VkBufferUsageFlags usage, bool host_visible, Buffer& out);
+// `where`: the caller, for the allocation log (SetAllocationLog).
+bool CreateBuffer(const Device& d, VkDeviceSize size, VkBufferUsageFlags usage, bool host_visible, Buffer& out,
+                  std::source_location where = std::source_location::current());
 void DestroyBuffer(const Device& d, Buffer& b);
 
 struct Image {
@@ -121,7 +124,17 @@ struct Image {
 // `alias`: another format of the same size views of the image may take (VK_FORMAT_UNDEFINED: none).
 bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
                    VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
-                   VkFormat alias = VK_FORMAT_UNDEFINED);
+                   VkFormat alias = VK_FORMAT_UNDEFINED, std::source_location where = std::source_location::current());
 void DestroyImage(const Device& d, Image& i);
+
+// Buffers and images created since the start, and their bytes: a renderer that creates some every frame pays the
+// driver and the kernel twice (the allocation, then its release on another thread).
+struct GpuObjectCounts {
+  uint64_t buffers = 0, images = 0, bytes = 0;
+};
+GpuObjectCounts CreatedGpuObjects();
+// Each creation from now on logged with its size, format and caller (null: none). For finding what a renderer
+// creates in a steady scene.
+void SetAllocationLog(std::function<void(const std::string&)> log);
 
 }  // namespace any360::gfx::vk

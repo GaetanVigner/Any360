@@ -24,14 +24,38 @@ namespace rg = rex::graphics;
 using rg::SpirvShaderTranslator;
 
 namespace {
+// The diagnostics' clock: the time-stamp counter, a few nanoseconds a read where steady_clock's
+// QueryPerformanceCounter costs tens (1.25% of Crackdown's cycles in the city, with each draw's sections timed
+// every other period); in nanoseconds by a rate measured once (MeasureTickRate, at Initialize). Elsewhere
+// steady_clock.
+#if defined(_M_X64) || defined(__x86_64__)
+double g_ns_per_tick = 0;
+void MeasureTickRate() {
+  if (g_ns_per_tick) return;
+  const auto t0 = std::chrono::steady_clock::now();
+  const uint64_t c0 = __rdtsc();
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  const uint64_t c1 = __rdtsc();
+  const auto t1 = std::chrono::steady_clock::now();
+  g_ns_per_tick = double(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count()) / double(std::max<uint64_t>(c1 - c0, 1));
+}
+inline uint64_t ClockNow() { return __rdtsc(); }
+inline uint64_t ClockNs(uint64_t ticks) { return uint64_t(double(ticks) * g_ns_per_tick); }
+#else
+void MeasureTickRate() {}
+inline uint64_t ClockNow() {
+  return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+inline uint64_t ClockNs(uint64_t ticks) { return ticks; }
+#endif
 // Adds the time from construction to destruction to a counter.
 struct Timer {
   uint64_t& total;
   const bool on = Diagnosing();
-  std::chrono::steady_clock::time_point start = on ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+  uint64_t start = on ? ClockNow() : 0;
   explicit Timer(uint64_t& t) : total(t) {}
   ~Timer() {
-    if (on) total += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+    if (on) total += ClockNs(ClockNow() - start);
   }
 };
 // Register file indices the renderer reads.
@@ -255,8 +279,14 @@ VulkanRenderer::~VulkanRenderer() {
     DestroyImage(device_, surface->image);
     DestroyImage(device_, surface->ms);
   }
-  for (auto& [base, r] : resolved_) DestroyImage(device_, r.image), DestroyImage(device_, r.small), DestroyImage(device_, r.spare),
-                                        DestroyImage(device_, r.spare_small);
+  for (auto& [base, r] : resolved_) {
+    DestroyImage(device_, r.image);
+    DestroyImage(device_, r.small);
+    for (Resolved::Spare& s : r.spares) {
+      DestroyImage(device_, s.image);
+      DestroyImage(device_, s.small);
+    }
+  }
 }
 
 bool VulkanRenderer::Fail(const std::string& why) {
@@ -267,6 +297,7 @@ bool VulkanRenderer::Fail(const std::string& why) {
 }
 
 bool VulkanRenderer::Initialize() {
+  MeasureTickRate();  // the diagnostics' clock rate, once
   const Functions& f = device_.fn();
   VkDevice d = device_.device();
   // Compute too: a memory-exporting vertex shader without rasterization runs as a compute dispatch.
@@ -1130,11 +1161,11 @@ VkPipeline VulkanRenderer::CreatePipeline(const PipelineKey& key) {
 void VulkanRenderer::Draw(const DrawCall& draw) {
   Timer draw_timer(stats_.ns_draws);
   const bool timing = draw_timer.on;
-  auto section = timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+  uint64_t section = timing ? ClockNow() : 0;
   auto mark = [&](uint64_t& total) {
     if (!timing) return;
-    const auto now = std::chrono::steady_clock::now();
-    total += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(now - section).count());
+    const uint64_t now = ClockNow();
+    total += ClockNs(now - section);
     section = now;
   };
   const Functions& f = device_.fn();
@@ -3646,8 +3677,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
         Record();
         batch().retired.push_back(own->second.image);
         if (own->second.small.image) batch().retired.push_back(own->second.small);
-        if (own->second.spare.image) batch().retired.push_back(own->second.spare);
-        if (own->second.spare_small.image) batch().retired.push_back(own->second.spare_small);
+        for (Resolved::Spare& s : own->second.spares) {
+          batch().retired.push_back(s.image);
+          if (s.small.image) batch().retired.push_back(s.small);
+        }
         resolved_.erase(own);
         if (textures_) textures_->DropGpuSources(dest_base, dest_base + 1);
       }
@@ -4061,29 +4094,41 @@ bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t p
                                         VkImageUsageFlags usage) {
   if (r.image.image && r.image.format == format && r.image.width >= pitch && r.image.height >= rows) return true;
   if (r.image.image && r.image.format != format) {
-    // Another format: the spare if it is this one and large enough, the current one kept as the spare. The rectangle
+    // Another format: a spare if one is this one and large enough, the current one kept as a spare. The rectangle
     // left to write back was the other image's: it does not describe this one (Call of Duty: Black Ops resolves
     // 1024 rows in one format, then 608 in another, to the same address; the union of the two, copied out of the
     // 608-row image, lost the Vulkan device).
     r.stale = false;
     r.x = r.y = r.width = r.height = 0;
-    if (r.spare.image && r.spare.format == format && r.spare_scale == r.scale && r.spare.width >= pitch && r.spare.height >= rows) {
-      std::swap(r.image, r.spare);
-      std::swap(r.layout, r.spare_layout);
-      std::swap(r.small, r.spare_small);
-      std::swap(r.small_layout, r.spare_small_layout);
-      return true;
+    for (Resolved::Spare& s : r.spares) {
+      if (s.image.format == format && s.scale == r.scale && s.image.width >= pitch && s.image.height >= rows) {
+        std::swap(r.image, s.image);
+        std::swap(r.layout, s.layout);
+        std::swap(r.small, s.small);
+        std::swap(r.small_layout, s.small_layout);
+        // The one swapped out is now the newest.
+        std::rotate(&s, &s + 1, r.spares.data() + r.spares.size());
+        return true;
+      }
     }
-    if (r.spare.image) {
+    // Another spare of this format (too small or another scale) goes: the new image replaces it.
+    for (size_t i = 0; i < r.spares.size();) {
+      if (r.spares[i].image.format != format) {
+        ++i;
+        continue;
+      }
       Record();
-      batch().retired.push_back(r.spare);  // batches may still read it: freed after this one has run
+      batch().retired.push_back(r.spares[i].image);  // batches may still read it: freed after this one has run
+      if (r.spares[i].small.image) batch().retired.push_back(r.spares[i].small);
+      r.spares.erase(r.spares.begin() + ptrdiff_t(i));
     }
-    if (r.spare_small.image) {
+    if (r.spares.size() >= Resolved::kSpares) {
       Record();
-      batch().retired.push_back(r.spare_small);
+      batch().retired.push_back(r.spares.front().image);
+      if (r.spares.front().small.image) batch().retired.push_back(r.spares.front().small);
+      r.spares.erase(r.spares.begin());
     }
-    r.spare = r.image, r.spare_layout = r.layout, r.spare_scale = r.scale;
-    r.spare_small = r.small, r.spare_small_layout = r.small_layout;
+    r.spares.push_back({r.image, r.layout, r.scale, r.small, r.small_layout});
     r.image = Image{};
     r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
     r.small = Image{};

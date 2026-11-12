@@ -1,6 +1,8 @@
 #include "any360/gfx/vulkan/device.h"
 
+#include <atomic>
 #include <cstring>
+#include <mutex>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -386,7 +388,41 @@ bool Device::EndOneTime(VkCommandBuffer cb) {
   return ok;
 }
 
-bool CreateBuffer(const Device& d, VkDeviceSize size, VkBufferUsageFlags usage, bool host_visible, Buffer& out) {
+namespace {
+std::atomic<uint64_t> g_buffers{0}, g_images{0}, g_bytes{0};
+std::mutex g_allocation_log_mutex;
+std::function<void(const std::string&)> g_allocation_log;
+std::atomic<bool> g_allocation_logging{false};
+
+void Created(const char* what, uint64_t bytes, uint32_t width, uint32_t height, uint32_t format, uint32_t usage,
+             const std::source_location& where) {
+  g_bytes.fetch_add(bytes, std::memory_order_relaxed);
+  if (!g_allocation_logging.load(std::memory_order_relaxed)) return;
+  std::string file = where.file_name();
+  file = file.substr(file.find_last_of("/\\") + 1);
+  char text[200];
+  std::snprintf(text, sizeof text, "Any360: created %s %ux%u format %u usage 0x%X, %llu KB, at %s:%u", what, width,
+                height, format, usage, static_cast<unsigned long long>(bytes >> 10), file.c_str(), unsigned(where.line()));
+  std::lock_guard lock(g_allocation_log_mutex);
+  if (g_allocation_log) g_allocation_log(text);
+}
+}  // namespace
+
+GpuObjectCounts CreatedGpuObjects() {
+  return {g_buffers.load(std::memory_order_relaxed), g_images.load(std::memory_order_relaxed),
+          g_bytes.load(std::memory_order_relaxed)};
+}
+
+void SetAllocationLog(std::function<void(const std::string&)> log) {
+  std::lock_guard lock(g_allocation_log_mutex);
+  g_allocation_log = std::move(log);
+  g_allocation_logging.store(bool(g_allocation_log), std::memory_order_relaxed);
+}
+
+bool CreateBuffer(const Device& d, VkDeviceSize size, VkBufferUsageFlags usage, bool host_visible, Buffer& out,
+                  std::source_location where) {
+  g_buffers.fetch_add(1, std::memory_order_relaxed);
+  Created("buffer", size, 0, 0, 0, usage, where);
   const Functions& f = d.fn();
   VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
   info.size = size;
@@ -419,7 +455,9 @@ void DestroyBuffer(const Device& d, Buffer& b) {
 }
 
 bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
-                   VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples, VkFormat alias) {
+                   VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples, VkFormat alias,
+                   std::source_location where) {
+  g_images.fetch_add(1, std::memory_order_relaxed);
   const Functions& f = d.fn();
   VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
   const VkFormat formats[2] = {format, alias};
@@ -448,6 +486,7 @@ bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat fo
   alloc.memoryTypeIndex = d.MemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   if (alloc.memoryTypeIndex == UINT32_MAX || f.vkAllocateMemory(d.device(), &alloc, nullptr, &out.memory) != VK_SUCCESS) return false;
   f.vkBindImageMemory(d.device(), out.image, out.memory, 0);
+  Created("image", req.size, width, height, uint32_t(format), usage, where);
   out.format = format;
   out.width = width;
   out.height = height;
