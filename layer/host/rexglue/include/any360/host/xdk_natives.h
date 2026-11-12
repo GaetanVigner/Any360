@@ -42,7 +42,7 @@ enum class Function : uint32_t {
   kMemcpy, kCopyForward, kMemset, kMemmove, kXMemCpy, kWcslen, kStrchr, kStrncmp, kStrncpy,
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
-  kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kCount
+  kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -66,8 +66,10 @@ void RunFillSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_
 // declines), `writes` what it may write (false: it declines).
 using D3dStateNative = bool (*)(const any360::xdk::Memory&, PPCContext&);
 using D3dStateWrites = bool (*)(const PPCContext&, std::vector<any360::xdk::Range>&);
+// `keeps_r3`: the function leaves r3 as it came (compared); otherwise it returns nothing and leaves r3 whatever its
+// last use was (not compared).
 void RunD3dStateSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original, D3dStateNative native,
-                     D3dStateWrites writes);
+                     D3dStateWrites writes, bool keeps_r3 = true);
 
 // r3 destination, r4 source, r5 size; returns the destination (r3 as it came).
 inline void CrtMemcpy(PPCContext& ctx, uint8_t* base, GuestFunction original) {
@@ -531,6 +533,12 @@ inline void D3dGpuWaitStep(PPCContext& ctx, uint8_t* base, GuestFunction origina
 // replacement on the registers), Writes (the device bytes, sources and stack it may write) and kFunction. The
 // device's layout is the title's (g_d3d_layout: the default is the runtime Crackdown links).
 inline any360::xdk::D3dLayout g_d3d_layout;
+// A kind whose function returns nothing (its r3 left as its code last used it) says so with kVoid.
+template <class Kind>
+constexpr bool KeepsR3() {
+  if constexpr (requires { Kind::kVoid; }) return !Kind::kVoid;
+  return true;
+}
 template <class Kind>
 inline void D3dState(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   if (g_mode == Mode::kNative) [[likely]] {
@@ -538,7 +546,7 @@ inline void D3dState(PPCContext& ctx, uint8_t* base, GuestFunction original) {
     original(ctx, base);
     return;
   }
-  RunD3dStateSlow(Kind::kFunction, ctx, base, original, &Kind::Native, &Kind::Writes);
+  RunD3dStateSlow(Kind::kFunction, ctx, base, original, &Kind::Native, &Kind::Writes, KeepsR3<Kind>());
 }
 namespace d3d_state {
 inline void AddRange(std::vector<any360::xdk::Range>& w, uint32_t at, uint32_t size) { w.push_back({at, size}); }
@@ -625,6 +633,60 @@ struct PixelConstants {
     AddRange(w, ctx.r3.u32 + l.float_dirty[1], 8);
     AddRange(w, ctx.r1.u32 + 48, 8);
     return true;
+  }
+};
+// The resource binders: what they may write, from the same plan as the replacement's.
+inline bool BinderWrites(const PPCContext& ctx, std::vector<any360::xdk::Range>& w, uint32_t slot, uint32_t stack_word) {
+  const any360::xdk::D3dLayout& l = g_d3d_layout;
+  const uint32_t device = ctx.r3.u32;
+  const uint8_t* d = g_memory.Host(device);
+  any360::xdk::detail::Release r;
+  if (!any360::xdk::detail::PlanRelease(g_memory, l, d, device, any360::xdk::detail::At32(d + slot), stack_word, r))
+    return false;
+  AddRange(w, device + slot, 4);
+  AddRange(w, device + l.fetch_dirty, 8);
+  AddRange(w, stack_word, 8);
+  if (r.kind == any360::xdk::detail::Release::kFence) AddRange(w, r.old + 8, 4);
+  if (r.kind == any360::xdk::detail::Release::kRecord) AddRange(w, r.record, 8), AddRange(w, device + l.release_cursor, 4);
+  return true;
+}
+// SetTexture: r4 the stage, r5 the texture, r6 the dirty bits.
+struct SetTexture {
+  static constexpr Function kFunction = Function::kD3dSetTexture;
+  static constexpr bool kVoid = true;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetTexture(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u64, ctx.r1.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t stage = ctx.r4.u32, texture = ctx.r5.u32;
+    if (stage >= 32 || !any360::xdk::IsPlainMemory(ctx.r3.u32, l.device_bytes)) return false;
+    if (texture && (!any360::xdk::IsPlainMemory(texture + 28, 24) ||
+                    any360::xdk::detail::Overlap(texture + 28, 24, ctx.r3.u32, l.device_bytes)))
+      return false;
+    AddRange(w, ctx.r3.u32 + l.fetch_constants + 24 * stage, 24);
+    return BinderWrites(ctx, w, l.texture_bound + 4 * stage, ctx.r1.u32 - 80);
+  }
+};
+// SetStreamSource: r4 the stream, r5 the buffer, r6 the offset, r7 the stride, r8 the dirty bits.
+struct SetStreamSource {
+  static constexpr Function kFunction = Function::kD3dSetStreamSource;
+  static constexpr bool kVoid = true;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetStreamSource(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32,
+                                           ctx.r8.u64, ctx.r1.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t stream = ctx.r4.u32, buffer = ctx.r5.u32;
+    if (stream > 15 || !any360::xdk::IsPlainMemory(ctx.r3.u32, l.device_bytes)) return false;
+    if (buffer && (!any360::xdk::IsPlainMemory(buffer + 24, 8) ||
+                   any360::xdk::detail::Overlap(buffer + 24, 8, ctx.r3.u32, l.device_bytes)))
+      return false;
+    AddRange(w, ctx.r3.u32 + l.vertex_fetch_last - 8 * stream, 8);
+    AddRange(w, ctx.r3.u32 + l.stream_stride + stream, 1);
+    AddRange(w, ctx.r3.u32 + l.state_dirty, 8);
+    return BinderWrites(ctx, w, l.stream_bound + 4 * stream, ctx.r1.u32 - 64);
   }
 };
 }  // namespace d3d_state

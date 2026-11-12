@@ -27,6 +27,10 @@ xdk::D3dLayout Shifted() {
   for (int i = 0; i < 2; ++i) l.bool_constants[i] += 40, l.int_constants[i] += 40, l.float_dirty[i] += 40;
   l.float_constant_base[0] += 3, l.float_constant_base[1] += 3;
   l.blend_extent += 40;
+  l.fetch_constants += 40, l.vertex_fetch_last += 40, l.fetch_dirty += 40, l.texture_bound += 40;
+  l.stream_bound += 40, l.texture_mip_floor += 40, l.texture_mip_ceiling += 40, l.stream_stride += 40;
+  l.shader_stream_stride += 40, l.resource_fence += 40, l.resource_busy_mask += 40, l.release_cursor += 40;
+  l.release_end += 40;
   return l;
 }
 
@@ -152,6 +156,68 @@ void TestPixelFloatConstants(const xdk::D3dLayout& l, uint32_t seed) {
   CHECK(taken > 1900);
 }
 
+// The binders' common inputs: the old resource in the slot (none, a header in the arena, one inside the device: declined),
+// a fence pending or not, the busy mask, the release list with room or full.
+void RandomRelease(Pair& p, const xdk::D3dLayout& l, std::mt19937_64& rng, uint32_t slot) {
+  uint32_t old = 0;
+  switch (rng() % 6) {
+    case 0: old = 0; break;
+    case 1: old = kDevice + uint32_t(rng() % 1000); break;  // declined
+    default: old = 0x50000 + uint32_t(rng() % 0x1000); break;
+  }
+  Put32Both(p, kDevice + slot, old);
+  Put32Both(p, kDevice + l.resource_fence, rng() % 3 == 0 ? uint32_t(rng()) : 0);
+  Put32Both(p, kDevice + l.resource_busy_mask, rng() % 4 == 0 ? 0 : uint32_t(rng()));
+  const uint32_t cursor = 0x60000 + 8 * uint32_t(rng() % 256);
+  Put32Both(p, kDevice + l.release_cursor, cursor);
+  Put32Both(p, kDevice + l.release_end, rng() % 6 == 0 ? cursor : cursor + 64);
+}
+
+void TestSetTexture(const xdk::D3dLayout& l, uint32_t seed) {
+  std::mt19937_64 rng(seed);
+  uint64_t taken = 0, declined = 0;
+  for (int round = 0; round < 3000; ++round) {
+    Pair p(seed + round);
+    const uint32_t stage = rng() % 16 ? uint32_t(rng() % 32) : 32 + uint32_t(rng() % 8);
+    const uint32_t texture = rng() % 4 == 0 ? 0 : rng() % 32 == 0 ? kDevice + 64 : 0x40000 + uint32_t(rng() % 0x10000);
+    const uint64_t dirty = rng() % 2 ? uint64_t(1) << (rng() % 64) : rng();
+    RandomRelease(p, l, rng, l.texture_bound + 4 * (stage % 32));
+    if (xdk::D3dSetTexture(p.a, l, kDevice, stage, texture, dirty, kStackPointer)) {
+      ++taken;
+      ref::SetTexture(p.b, l, kDevice, stage, texture, dirty, kStackPointer);
+      CHECK(p.SameEverywhere());
+    } else {
+      ++declined;
+      CHECK(p.SameEverywhere());
+    }
+  }
+  CHECK(taken > 1500 && declined > 100);
+}
+
+void TestSetStreamSource(const xdk::D3dLayout& l, uint32_t seed) {
+  std::mt19937_64 rng(seed);
+  uint64_t taken = 0, declined = 0;
+  for (int round = 0; round < 3000; ++round) {
+    Pair p(seed + round);
+    const uint32_t stream = rng() % 16 ? uint32_t(rng() % 16) : 16 + uint32_t(rng() % 8);
+    const uint32_t buffer = rng() % 4 == 0 ? 0 : rng() % 32 == 0 ? kDevice + 64 : 0x40000 + uint32_t(rng() % 0x10000);
+    const uint32_t offset = rng() % 3 == 0 ? 0 : uint32_t(rng() % 0x10000);
+    const uint32_t stride = rng() % 8 == 0 ? uint32_t(rng()) : 4 * uint32_t(rng() % 32);
+    const uint64_t dirty = rng() % 2 ? uint64_t(1) << (rng() % 64) : rng();
+    if (rng() % 2) p.a.base[kDevice + l.shader_stream_stride + stream % 16] = p.b.base[kDevice + l.shader_stream_stride + stream % 16] = uint8_t(stride >> 2);
+    RandomRelease(p, l, rng, l.stream_bound + 4 * (stream % 16));
+    if (xdk::D3dSetStreamSource(p.a, l, kDevice, stream, buffer, offset, stride, dirty, kStackPointer)) {
+      ++taken;
+      ref::SetStreamSource(p.b, l, kDevice, stream, buffer, offset, stride, dirty, kStackPointer);
+      CHECK(p.SameEverywhere());
+    } else {
+      ++declined;
+      CHECK(p.SameEverywhere());
+    }
+  }
+  CHECK(taken > 1500 && declined > 100);
+}
+
 }  // namespace
 
 int main() {
@@ -164,5 +230,9 @@ int main() {
   TestIntConstants(shifted, 600);
   TestPixelFloatConstants(standard, 700);
   TestPixelFloatConstants(shifted, 800);
+  TestSetTexture(standard, 900);
+  TestSetTexture(shifted, 1000);
+  TestSetStreamSource(standard, 1100);
+  TestSetStreamSource(shifted, 1200);
   return xdk_test::Finish("xdk_d3d_state_tests");
 }

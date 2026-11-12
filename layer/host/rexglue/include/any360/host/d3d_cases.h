@@ -97,11 +97,14 @@ struct DirtyUpload {
 
 // A state setter of xdk_natives.h (xdk::d3d_state: Native on the registers, in the title's layout) with the inputs
 // of `Inputs` (a static Setup).
+inline const char* NoRegisterDiffers(const PPCContext&, const PPCContext&) { return nullptr; }
 template <class Kind, class Inputs>
 struct State {
   static bool Native(PPCContext& ctx, uint8_t*) { return Kind::Native(SelfTestMemory(), ctx); }
   static void Setup(CallSetup& s, PPCContext& ctx) { Inputs::Setup(s, ctx); }
-  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = nullptr;
+  // A function that returns nothing leaves r3 as its code last used it: not compared.
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) =
+      xdk::KeepsR3<Kind>() ? nullptr : &NoRegisterDiffers;
 };
 namespace state {
 using xdk::g_d3d_layout;
@@ -138,6 +141,43 @@ struct Constants {
     ctx.r5.u64 = s.scratch + 0x100 + uint32_t(rng() % 0x8000);
     ctx.r6.u64 = 1 + rng() % most;
     (void)kBytes;
+  }
+};
+// The resource binders: the old resource in the slot (none or a header in the scratch), a fence pending or not, the
+// busy mask, the release list in the scratch with room (never full: the runtime would take a new block from the
+// command buffer, which in the device copy is the title's own).
+inline void Release(CallSetup& s, uint32_t slot) {
+  std::mt19937_64& rng = *s.rng;
+  const any360::xdk::D3dLayout& l = g_d3d_layout;
+  Put32(s, s.device + slot, rng() % 4 == 0 ? 0 : s.scratch + 0x20000 + uint32_t(rng() % 0x1000));
+  Put32(s, s.device + l.resource_fence, rng() % 3 == 0 ? uint32_t(rng()) : 0);
+  Put32(s, s.device + l.resource_busy_mask, rng() % 4 == 0 ? 0 : uint32_t(rng()));
+  const uint32_t cursor = s.scratch + 0x28000 + 8 * uint32_t(rng() % 256);
+  Put32(s, s.device + l.release_cursor, cursor);
+  Put32(s, s.device + l.release_end, cursor + 64);
+}
+struct Texture {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t stage = uint32_t(rng() % 32);
+    Release(s, g_d3d_layout.texture_bound + 4 * stage);
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = stage;
+    ctx.r5.u64 = rng() % 4 == 0 ? 0 : s.scratch + 0x100 + uint32_t(rng() % 0x8000);
+    ctx.r6.u64 = rng() % 2 ? uint64_t(1) << (rng() % 64) : rng();
+  }
+};
+struct Stream {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t stream = uint32_t(rng() % 16);
+    Release(s, g_d3d_layout.stream_bound + 4 * stream);
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = stream;
+    ctx.r5.u64 = rng() % 4 == 0 ? 0 : s.scratch + 0x100 + uint32_t(rng() % 0x8000);
+    ctx.r6.u64 = rng() % 3 == 0 ? 0 : rng() % 0x10000;
+    ctx.r7.u64 = rng() % 8 == 0 ? rng() : 4 * (rng() % 32);
+    ctx.r8.u64 = rng() % 2 ? uint64_t(1) << (rng() % 64) : rng();
   }
 };
 // SetPixelShaderConstantF: as SetShaderConstants.

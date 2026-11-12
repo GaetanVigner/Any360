@@ -132,7 +132,8 @@ struct Runner {
   uint32_t i = 0;
   std::mt19937_64 rng;
   CallSetup s;
-  std::vector<Region> regions;
+  std::vector<Region> regions;   // compared
+  std::vector<Region> restored;  // put back between the two sides: the compared ones and the stack below the call's
   std::vector<uint8_t> at_start;
   Result r;
   uint64_t own_ticks = 0, mine_ticks = 0, timed = 0;
@@ -159,7 +160,11 @@ void StartCase(Runner& run, const Case& c) {
   // caller's frames) are compared; below it is the callee's own, which the original fills and the replacement not.
   run.s.stack = (uint32_t(run.seed.r1.u32) - 0x1000u) & ~0xFu;
   run.regions = {{run.device, kDeviceBytes}, {run.scratch, kScratchBytes}, {run.s.stack, 0x1000}};
-  run.at_start = Read(run.regions);
+  // Below the stack pointer: the callee's own, not compared, but each side finds it as the other did (a function
+  // may read what an earlier call left there).
+  run.restored = run.regions;
+  run.restored.push_back({run.s.stack - 0x2000, 0x2000});
+  run.at_start = Read(run.restored);
   REXLOG_INFO("Any360 D3D self-test: {}", c.name);
 }
 
@@ -168,26 +173,27 @@ void OneCall(Runner& run, const Case& c) {
   uint8_t* base = run.base;
   CallSetup& s = run.s;
   const std::vector<Region>& regions = run.regions;
+  const std::vector<Region>& restored = run.restored;
   Randomize(run);
   PPCContext call = run.seed;
   c.setup(s, call);
   call.r1.u64 = s.stack;
-  const std::vector<uint8_t> before = Read(regions);
+  const std::vector<uint8_t> before = Read(restored);
   if (run.phase == 0) {
     Result& r = run.r;
     PPCContext own = call;
     c.original(own, base);
     const std::vector<uint8_t> own_bytes = Read(regions);
-    Write(regions, before);
+    Write(restored, before);
     PPCContext mine = call;
     ++r.calls;
     if (!c.native(mine, base)) {
       ++r.declined;
-      Write(regions, before);
+      Write(restored, before);
       return;
     }
     const std::vector<uint8_t> mine_bytes = Read(regions);
-    Write(regions, before);
+    Write(restored, before);
     uint32_t where = 0;
     const bool bytes_differ = FirstDifference(regions, own_bytes, mine_bytes, where);
     const char* reg = (c.differs ? c.differs : &R3Differs)(mine, own);
@@ -215,13 +221,13 @@ void OneCall(Runner& run, const Case& c) {
       taken = c.native(mine, base);
       mine_one = Ticks() - a;
     }
-    Write(regions, before);
+    Write(restored, before);
   }
   if (taken) run.own_ticks += own_one, run.mine_ticks += mine_one, ++run.timed;
 }
 
 void EndCase(Runner& run) {
-  Write(run.regions, run.at_start);
+  Write(run.restored, run.at_start);
   Result& r = run.r;
   if (run.timed) {
     r.original_ns = double(run.own_ticks) * NsPerTick() / double(run.timed);

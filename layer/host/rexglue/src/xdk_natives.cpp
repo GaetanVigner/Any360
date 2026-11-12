@@ -60,7 +60,7 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "SetLastError", "_stricmp", "strstr", "_finite", "_isnan", "_sptype",
                                             "_get_exp", "_set_exp", "_add_exp", "XAudio mix ramp", "D3D dirty constants", "D3D dirty words", "D3D set shader constants", "XAudio fill",
                                             "D3D blend", "D3D bool constants", "D3D int constants",
-                                            "D3D pixel shader constants"};
+                                            "D3D pixel shader constants", "D3D SetTexture", "D3D SetStreamSource"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -893,7 +893,7 @@ void RunSetConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original)
 }
 
 void RunD3dStateSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original, D3dStateNative native,
-                     D3dStateWrites writes) {
+                     D3dStateWrites writes, bool keeps_r3) {
   const uint32_t f = uint32_t(function);
   const Mode mode = SlowMode(f, base);
   if (mode == Mode::kNative) {
@@ -913,7 +913,9 @@ void RunD3dStateSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFun
   s.work = 0;
   for (const any360::xdk::Range& r : s.writes) s.work += r.size;
   s.native = [native](PPCContext& c) { native(g_memory, c); };
-  s.differs = [](const PPCContext& a, const PPCContext& b) -> const char* { return a.r3.u64 != b.r3.u64 ? "r3" : nullptr; };
+  s.differs = [keeps_r3](const PPCContext& a, const PPCContext& b) -> const char* {
+    return keeps_r3 && a.r3.u64 != b.r3.u64 ? "r3" : nullptr;
+  };
   s.call = fmt::format("device {:08X} r4 {:X} r5 {:X} r6 {:X} r7 {:X}", ctx.r3.u32, ctx.r4.u64, ctx.r5.u64, ctx.r6.u64,
                        ctx.r7.u64);
   RunSides(mode, s, ctx, base, original);

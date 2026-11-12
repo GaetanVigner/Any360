@@ -3,6 +3,7 @@
 #pragma once
 
 #include <bit>
+#include <cstdlib>
 #include <cstdint>
 
 #include "d3d.h"
@@ -301,6 +302,128 @@ inline void IntConstants(const Memory& m, const D3dLayout& l, uint32_t r3, bool 
     r11 += 4;
   } while (uint32_t(r6) != 0);
   std_(m, r3 + l.constant_dirty, ld(m, r3 + l.constant_dirty) | (uint64_t(1) << 56));
+}
+
+inline uint8_t lbz(const Memory& m, uint32_t ea) { return *m.Host(ea); }
+// The old resource's release, as sub_826AF038 and sub_826B1D30 write it (from loc_826AF138 / loc_826B1DA0); `r1` the
+// function's own stack pointer (its record word at 80(r1)). The block-full call (sub_826C3440) is not modelled: the
+// tests give the list room.
+inline void Release(const Memory& m, const D3dLayout& l, uint32_t r31, uint32_t r28, uint32_t r1) {
+  if (r28 == 0) return;
+  uint32_t r11 = lwz(m, r31 + l.resource_fence);
+  if (r11 != 0) {
+    stw(m, r28 + 8, r11);
+    return;
+  }
+  r11 = lwz(m, r31 + l.resource_busy_mask);
+  const uint32_t r10 = lwz(m, r28 + 0);
+  if ((r11 & r10) == 0) return;
+  r11 = lwz(m, r31 + l.release_end);
+  const uint32_t r3 = lwz(m, r31 + l.release_cursor);
+  if (!(r3 < r11)) std::abort();  // bl sub_826C3440
+  r11 = lwz(m, r1 + 80);
+  r11 = rlwimi(r11, r28, 30, 2, 31);
+  r11 = rlwinm(r11, 0, 2, 0);
+  stw(m, r1 + 84, 0xFFFFFFFFu);
+  stw(m, r1 + 80, r11);
+  std_(m, r3, ld(m, r1 + 80));
+  stw(m, r31 + l.release_cursor, r3 + 8);
+}
+// sub_826AF038 (SetTexture): r3 device, r4 stage, r5 texture, r6 dirty bits; r1 the caller's stack pointer.
+inline void SetTexture(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4, uint32_t r5, uint64_t r6,
+                       uint32_t caller_r1) {
+  const uint32_t r1 = caller_r1 - 160;
+  const uint32_t r31 = r3;
+  const uint32_t r29 = rlwinm(uint32_t(r4 + l.texture_bound / 4), 2, 0, 29);
+  const uint32_t r28 = lwz(m, r29 + r31);
+  if (r5 != 0) {
+    uint32_t r10 = lwz(m, r5 + 32);
+    uint32_t r11 = uint32_t(r4 * 24);
+    const uint32_t r8 = uint32_t(r31 + r4);
+    uint32_t r9 = lwz(m, r5 + 48);
+    uint32_t r27 = lwz(m, r5 + 28);
+    uint32_t r25 = lwz(m, r5 + 36);
+    uint32_t r26 = lwz(m, r5 + 40);
+    uint32_t r4b = rlwinm(r10, 12, 20, 31);
+    r11 += r31;
+    r4b += 512;
+    r11 += l.fetch_constants;
+    uint32_t r30 = r10 & 0x1FFFFFFFu;
+    uint32_t r3b = rlwinm(r4b, 0, 19, 19);
+    r10 = lwz(m, r5 + 44);
+    uint32_t r7 = rlwinm(r9, 12, 20, 31);
+    r3b += r30;
+    r7 += 512;
+    r30 = lwz(m, r11 + 0);
+    r4b = rlwinm(r9, 0, 3, 22);
+    r7 = rlwinm(r7, 0, 19, 19);
+    stw(m, r11 + 8, r25);
+    r27 = rlwimi(r27, r30, 0, 10, 21);
+    r25 = lwz(m, r11 + 20);
+    r7 += r4b;
+    r9 = lbz(m, r8 + l.texture_mip_floor);
+    r4b = lwz(m, r11 + 16);
+    r30 = rlwinm(r10, 30, 28, 31);
+    r10 = rlwimi(r10, r4b, 0, 30, 21);
+    r4b = lwz(m, r11 + 12);
+    r7 = rlwimi(r7, r25, 0, 23, 31);
+    r26 = rlwimi(r26, r4b, 0, 1, 12);
+    stw(m, r11 + 0, r27);
+    r27 = lwz(m, r11 + 4);
+    r3b = rlwimi(r3b, r27, 0, 20, 20);
+    stw(m, r11 + 16, r10);
+    stw(m, r11 + 20, r7);
+    stw(m, r11 + 12, r26);
+    stw(m, r11 + 4, r3b);
+    if (r30 > r9) r9 = rlwinm(lwz(m, r5 + 44), 30, 28, 31);
+    r7 = lwz(m, r5 + 44);
+    r10 = rlwimi(r10, r9, 2, 26, 29);
+    uint32_t r8b = lbz(m, r8 + l.texture_mip_ceiling);
+    r7 = rlwinm(r7, 26, 28, 31);
+    stw(m, r11 + 16, r10);
+    if (r7 < r8b) r8b = r7;
+    r10 = rlwimi(r10, r8b, 6, 22, 25);
+    stw(m, r11 + 16, r10);
+    std_(m, r31 + l.fetch_dirty, ld(m, r31 + l.fetch_dirty) | r6);
+  }
+  stw(m, r29 + r31, r5);
+  Release(m, l, r31, r28, r1);
+}
+// sub_826B1D30 (SetStreamSource): r3 device, r4 stream, r5 buffer, r6 offset, r7 stride, r8 dirty bits.
+inline void SetStreamSource(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4, uint32_t r5, uint64_t r6,
+                            uint64_t r7, uint64_t r8, uint32_t caller_r1) {
+  const uint32_t r1 = caller_r1 - 144;
+  const uint32_t r30 = r5, r31 = r3;
+  const uint64_t r29 = r4, r26 = r7;
+  if (r30 != 0) {
+    uint32_t r10 = lwz(m, r30 + 24);
+    const uint64_t r11 = 17 - r29;
+    uint32_t r9 = lwz(m, r30 + 28);
+    r10 = uint32_t(r10 + r6);
+    r9 = uint32_t(r9 - r6);
+    const uint32_t r6b = rlwinm(r10, 12, 20, 31);
+    const uint32_t r7b = r10 & 0x1FFFFFFFu;
+    r10 = r6b + 512;
+    const uint64_t r5b = r11 + 206;
+    uint32_t r11b = rlwinm(uint32_t(r11), 3, 0, 28);
+    r10 = rlwinm(r10, 0, 19, 19);
+    r11b += r31;
+    const uint32_t r6c = rlwinm(uint32_t(r5b), 3, 0, 28);
+    r10 += r7b;
+    stw(m, r11b + (l.vertex_fetch_last + 4 - 17 * 8), r9);  // 1652(r11)
+    stw(m, r6c + r31 - (206 + 17) * 8 + l.vertex_fetch_last, r10);
+    std_(m, r31 + l.fetch_dirty, ld(m, r31 + l.fetch_dirty) | r8);
+  }
+  const uint32_t r27 = rlwinm(uint32_t(r29 + l.stream_bound / 4), 2, 0, 29);
+  const uint32_t r28 = lwz(m, r27 + r31);
+  Release(m, l, r31, r28, r1);
+  const uint32_t r11 = rlwinm(uint32_t(r26), 30, 2, 31);
+  stw(m, r27 + r31, r30);
+  const uint32_t r10 = uint32_t(r31 + r29);
+  *m.Host(r10 + l.stream_stride) = uint8_t(r11);
+  if (r11 == 0) return;
+  if (r11 == lbz(m, r10 + l.shader_stream_stride)) return;
+  std_(m, r31 + l.state_dirty, ld(m, r31 + l.state_dirty) | (uint64_t(8) << 16));
 }
 
 }  // namespace state

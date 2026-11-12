@@ -34,6 +34,18 @@ struct D3dLayout {
   uint32_t float_dirty[2] = {0, 8};
   // The device bytes the blend setters touch, from the device's start (plain-memory check).
   uint32_t blend_extent = 11576;
+  // The device's size as the resource binders check it (no field of theirs past it).
+  uint32_t device_bytes = 16384;
+  // Fetch constants (24 bytes a texture stage from fetch_constants; the vertex fetch constants, two words a stream,
+  // down from vertex_fetch_last for stream 0) and their 64 dirty bits.
+  uint32_t fetch_constants = 1024, vertex_fetch_last = 1784, fetch_dirty = 24;
+  // The bound resources (a word a texture stage, a word a stream), the stages' mip limits (a byte each), the
+  // streams' strides in words as set and as the vertex shader has them (a byte each).
+  uint32_t texture_bound = 12264, stream_bound = 12180, texture_mip_floor = 11670, texture_mip_ceiling = 11696;
+  uint32_t stream_stride = 12248, shader_stream_stride = 11552;
+  // A replaced resource's release (D3dSetTexture): the pending fence, the busy mask, the release list's cursor and
+  // end.
+  uint32_t resource_fence = 10780, resource_busy_mask = 10784, release_cursor = 13148, release_end = 13152;
 };
 
 namespace detail {
@@ -186,6 +198,129 @@ inline bool D3dSetIntConstants(const Memory& m, const D3dLayout& l, uint32_t dev
     out[0] = 0, out[1] = in[11], out[2] = in[7], out[3] = in[3];
   }
   detail::Or64(m, device + l.constant_dirty, uint64_t(1) << 56);
+  return true;
+}
+
+// The resource binders (SetTexture, SetStreamSource). Binding a resource in a slot replaces the one there: the old
+// one is marked as used by the GPU until the commands so far are done, by one of two means. With a fence pending
+// (the device's word at resource_fence), that fence goes into the resource (its word at +8). Otherwise, when the
+// resource's first word has a bit of the device's busy mask, the resource goes into the device's release list: a
+// record of two words (the resource's address >> 2, then 0xFFFFFFFF) at the list's cursor. The record's first word
+// keeps the top bit of the function's own stack word it builds the record in, which the function never sets (its
+// value is whatever an earlier call left there, below the caller's stack pointer: `stack_word`, read and written
+// the same way here). A list block that is full makes the runtime take a new one from the command buffer: declined.
+namespace detail {
+struct Release {
+  enum Kind { kNone, kFence, kRecord } kind = kNone;
+  uint32_t old = 0, fence = 0, record = 0;
+};
+inline bool PlanRelease(const Memory& m, const D3dLayout& l, const uint8_t* d, uint32_t device, uint32_t old,
+                        uint32_t stack_word, Release& r) {
+  r = {};
+  r.old = old;
+  if (!old) return true;
+  if (!IsPlainMemory(old, 12) || Overlap(old, 12, device, l.device_bytes)) return false;
+  r.fence = At32(d + l.resource_fence);
+  if (r.fence) {
+    r.kind = Release::kFence;
+    return true;
+  }
+  if (!(At32(d + l.resource_busy_mask) & At32(m.Host(old)))) return true;
+  const uint32_t cursor = At32(d + l.release_cursor), end = At32(d + l.release_end);
+  if (cursor >= end) return false;  // a new block: the runtime's own code
+  if (!IsPlainMemory(cursor, 8) || Overlap(cursor, 8, device, l.device_bytes) || Overlap(cursor, 8, old, 12) ||
+      !IsPlainMemory(stack_word, 8) || Overlap(stack_word, 8, device, l.device_bytes) || Overlap(stack_word, 8, old, 12) ||
+      Overlap(stack_word, 8, cursor, 8))
+    return false;
+  r.kind = Release::kRecord;
+  r.record = cursor;
+  return true;
+}
+inline void DoRelease(const Memory& m, const D3dLayout& l, uint8_t* d, const Release& r, uint32_t stack_word) {
+  if (r.kind == Release::kFence) {
+    Set32(m.Host(r.old + 8), r.fence);
+  } else if (r.kind == Release::kRecord) {
+    const uint32_t first = (At32(m.Host(stack_word)) & 0x80000000u) | (r.old >> 2);
+    Set32(m.Host(stack_word), first);
+    Set32(m.Host(stack_word + 4), 0xFFFFFFFFu);
+    Set32(m.Host(r.record), first);
+    Set32(m.Host(r.record + 4), 0xFFFFFFFFu);
+    Set32(d + l.release_cursor, r.record + 8);
+  }
+}
+// A GPU address from a CPU one, as the runtime makes it: the low 29 bits, plus 4 KB when the top 12 bits + 512
+// carry into bit 12 (the physical view's pages at 0xE0000000 and up start 4 KB further).
+inline uint32_t GpuAddress(uint32_t cpu, uint32_t low_mask) { return (((cpu >> 20) + 512) & 0x1000u) + (cpu & low_mask); }
+}  // namespace detail
+
+// SetTexture: r4 the stage, r5 the texture (its fetch constant's six words at +28, as built at its creation) or 0,
+// r6 the fetch constants' dirty bits; r1 the caller's stack pointer (the function's own record word at r1 - 80).
+// The stage's fetch constant takes the texture's, keeping some of the slot's own bits (the sampler state's), the
+// mip range clamped by the stage's limits; the slot's pointer takes the texture, the old one is released.
+inline bool D3dSetTexture(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t stage, uint32_t texture,
+                          uint64_t dirty, uint32_t stack_pointer) {
+  if (stage >= 32 || !IsPlainMemory(device, l.device_bytes)) return false;
+  if (texture && (!IsPlainMemory(texture + 28, 24) || detail::Overlap(texture + 28, 24, device, l.device_bytes)))
+    return false;
+  uint8_t* d = m.Host(device);
+  const uint32_t stack_word = stack_pointer - 80;
+  const uint32_t slot = l.texture_bound + 4 * stage;
+  detail::Release release;
+  if (!detail::PlanRelease(m, l, d, device, detail::At32(d + slot), stack_word, release)) return false;
+  if (texture) {
+    using detail::At32;
+    const uint8_t* t = m.Host(texture + 28);
+    uint8_t* f = d + l.fetch_constants + 24 * stage;
+    const uint32_t t0 = At32(t), t1 = At32(t + 4), t2 = At32(t + 8), t3 = At32(t + 12), t4 = At32(t + 16),
+                   t5 = At32(t + 20);
+    const uint32_t f0 = At32(f), f1 = At32(f + 4), f3 = At32(f + 12), f4 = At32(f + 16), f5 = At32(f + 20);
+    const uint32_t low = std::max((t4 >> 2) & 0xFu, uint32_t(d[l.texture_mip_floor + stage]));
+    const uint32_t high = std::min((t4 >> 6) & 0xFu, uint32_t(d[l.texture_mip_ceiling + stage]));
+    detail::Set32(f, (t0 & ~0x003FFC00u) | (f0 & 0x003FFC00u));
+    detail::Set32(f + 4, (detail::GpuAddress(t1, 0x1FFFFFFFu) & ~0x800u) | (f1 & 0x800u));
+    detail::Set32(f + 8, t2);
+    detail::Set32(f + 12, (t3 & ~0x7FF80000u) | (f3 & 0x7FF80000u));
+    // The texture's mip bits (0x3FC) give way to its range clamped by the stage's limits.
+    detail::Set32(f + 16, (f4 & 0xFFFFFC03u) | ((low << 2) & 0x3Cu) | ((high << 6) & 0x3C0u));
+    detail::Set32(f + 20, (detail::GpuAddress(t5, 0x1FFFFE00u) & ~0x1FFu) | (f5 & 0x1FFu));
+    uint8_t* bits = d + l.fetch_dirty;
+    detail::Store64(bits, detail::ByteSwap64(detail::ByteSwap64(detail::Load64(bits)) | dirty));
+  }
+  detail::Set32(d + slot, texture);
+  detail::DoRelease(m, l, d, release, stack_word);
+  return true;
+}
+
+// SetStreamSource: r4 the stream (0-15), r5 the vertex buffer (its address and size at +24 and +28) or 0, r6 the
+// offset into it, r7 the stride, r8 the fetch constants' dirty bits; r1 the caller's stack pointer (record word at
+// r1 - 64). The stream's vertex fetch constant (two words, the last stream's first) takes the buffer's GPU address
+// from the offset and the size left; the stream's stride in words is kept (and the vertex shader's stride bit of
+// the render state's dirty bits set when it differs from the shader's); the old buffer is released.
+inline bool D3dSetStreamSource(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t stream, uint32_t buffer,
+                               uint32_t offset, uint32_t stride, uint64_t dirty, uint32_t stack_pointer) {
+  if (stream > 15 || !IsPlainMemory(device, l.device_bytes)) return false;
+  if (buffer && (!IsPlainMemory(buffer + 24, 8) || detail::Overlap(buffer + 24, 8, device, l.device_bytes))) return false;
+  uint8_t* d = m.Host(device);
+  const uint32_t stack_word = stack_pointer - 64;
+  const uint32_t slot = l.stream_bound + 4 * stream;
+  detail::Release release;
+  if (!detail::PlanRelease(m, l, d, device, detail::At32(d + slot), stack_word, release)) return false;
+  if (buffer) {
+    const uint8_t* b = m.Host(buffer + 24);
+    uint8_t* f = d + l.vertex_fetch_last - 8 * stream;
+    detail::Set32(f + 4, detail::At32(b + 4) - offset);
+    detail::Set32(f, detail::GpuAddress(detail::At32(b) + offset, 0x1FFFFFFFu));
+    uint8_t* bits = d + l.fetch_dirty;
+    detail::Store64(bits, detail::ByteSwap64(detail::ByteSwap64(detail::Load64(bits)) | dirty));
+  }
+  detail::DoRelease(m, l, d, release, stack_word);
+  detail::Set32(d + slot, buffer);
+  const uint32_t words = stride >> 2;
+  d[l.stream_stride + stream] = uint8_t(words);
+  if (words && words != d[l.shader_stream_stride + stream]) {
+    uint8_t* bits = d + l.state_dirty;
+    detail::Store64(bits, detail::ByteSwap64(detail::ByteSwap64(detail::Load64(bits)) | 0x80000u));
+  }
   return true;
 }
 
