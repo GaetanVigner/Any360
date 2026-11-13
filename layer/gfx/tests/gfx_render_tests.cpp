@@ -2502,16 +2502,24 @@ int main(int argc, char** argv) {
                   4 * kSize * kSize);
       CHECK(red == 0 && green >= (2 * kSize - 1) * (2 * kSize - 1));
     }
-    // A scaled resolve read back into guest memory holds, for each guest pixel, a value the console's pixel could
-    // hold: one of its host pixels, not their average. A red quad whose right edge is a quarter into guest pixel 16
-    // covers one of that pixel's two host pixels at 2x; written back, the pixel is red or black, never a blend (a
-    // colour grading table drawn at 2x turned black into pink that way).
+    // A texture at the guest's resolution read one texel a guest pixel by a full-screen pass, with linear
+    // filtering, at 2x: every host pixel of a guest pixel gets the console's value (the texel at its centre), so a
+    // resolve averaged down and written back holds the texture exactly. Columns alternate black and white: a host
+    // pixel a quarter texel off read a quarter of the neighbour, and the average was grey (Call of Duty: Black Ops's
+    // colour grading table, built that way from an identity table, turned black pink at 2x).
     {
-      const uint32_t half_quad = kVertices + 0xF00, written_back = 0xE0000;
-      const float right = 16.25f / 32.0f - 1.0f;
-      const float q[4][4] = {{-1, -1, 0.5f, 1}, {right, -1, 0.5f, 1}, {-1, 1, 0.5f, 1}, {right, 1, 0.5f, 1}};
+      const uint32_t texture = 0x1B0000, written_back = 0xE0000, quad = kVertices + 0x400;
+      for (uint32_t y = 0; y < 64; ++y) {
+        for (uint32_t x = 0; x < 64; ++x) {
+          SetBig(texture + uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), 64, 2)),
+                 x & 1 ? Rgba(255, 255, 255, 255) : Rgba(0, 0, 0, 255));
+        }
+      }
+      // Texcoords half a texel in: the console reads each texel at its centre.
+      const float h = 0.5f / 64.0f;
+      const float v[4][6] = {{-1, -1, 0, 1, h, 1 + h}, {1, -1, 0, 1, 1 + h, 1 + h}, {-1, 1, 0, 1, h, h}, {1, 1, 0, 1, 1 + h, h}};
       for (uint32_t i = 0; i < 4; ++i) {
-        for (uint32_t c = 0; c < 4; ++c) SetBig(half_quad + 16 * i + 4 * c, Bits(q[i][c]));
+        for (uint32_t c = 0; c < 6; ++c) SetBig(quad + 24 * i + 4 * c, Bits(v[i][c]));
       }
       const float rv[3][2] = {{0, 0}, {float(kSize), 0}, {float(kSize), float(kSize)}};
       for (uint32_t i = 0; i < 3; ++i) {
@@ -2521,9 +2529,15 @@ int main(int argc, char** argv) {
       std::memset(g_memory + written_back, 0x55, 64 * 64 * 4);
       CHECK(scaled.ClearColor(color0, clear));
       w.Defaults();
-      w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, half_quad | 3, 2u | 16u << 2});
-      w.Color(255, 0, 0, 255);
+      w.Shader(0, t::BuildTexturedVertexShader());
+      w.Shader(1, t::BuildTexturedPixelShader(1));
+      w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+      // tf1: clamp to edge, pitch 64, tiled, k_8_8_8_8 8-in-32; 64x64; RGBA, linear mag and min filters; 2D.
+      w.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 2u << 22 | 1u << 31,
+             6u | 2u << 6 | texture, 63u | 63u << 13, 0x688u << 1 | 1u << 19 | 1u << 21, 0, 1u << 9});
       w.DrawAuto(kTriangleStrip, 4);
+      w.Shader(0, t::BuildFetchPositionShader());
+      w.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
       w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});
       w.Put({Type0(0x2318, 4), 0u, written_back, 64u | 64u << 16, 2u | 6u << 7});  // colour 0, k_8_8_8_8
       w.Reg(0x2208, 6);
@@ -2532,21 +2546,19 @@ int main(int argc, char** argv) {
       w.Run();
       scaled.WriteBackForTools(written_back);
       scaled.WaitIdle();
-      auto texel = [&](uint32_t x, uint32_t y) {
-        uint32_t v;
-        std::memcpy(&v, g_memory + written_back + vk::TiledOffset2D(int32_t(x), int32_t(y), 64, 2), 4);
-        return v;
-      };
-      const uint32_t red = texel(4, 10), black = texel(60, 10);
-      uint32_t blends = 0;
+      uint32_t exact = 0, grey = 0;
       for (uint32_t y = 0; y < 64; ++y) {
         for (uint32_t x = 0; x < 64; ++x) {
-          const bool blend = texel(x, y) != red && texel(x, y) != black;
-          blends += blend;
+          uint32_t got, want;
+          std::memcpy(&got, g_memory + written_back + vk::TiledOffset2D(int32_t(x), int32_t(y), 64, 2), 4);
+          std::memcpy(&want, g_memory + texture + vk::TiledOffset2D(int32_t(x), int32_t(y), 64, 2), 4);
+          exact += got == want;
+          const uint8_t r = uint8_t(got >> 24);
+          grey += r > 16 && r < 240;
         }
       }
-      std::printf("gfx_render_tests: scaled resolve written back: %u of 4096 texels a blend of red and black\n", blends);
-      CHECK(red != black && blends == 0);
+      std::printf("gfx_render_tests: a texture read 1:1 at 2x, written back: %u of 4096 texels exact, %u grey\n", exact, grey);
+      CHECK(exact == 4096 && grey == 0);
     }
   }
   // Pipeline warm-up: a run with asynchronous pipelines and one sample records its pipelines' recipes beside the

@@ -3667,7 +3667,8 @@ bool VulkanRenderer::ResolveDepth(Surface& surface, bool float24, int32_t x0, in
 
 bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint32_t width, uint32_t height,
                                   uint32_t sample_x, uint32_t sample_y, uint32_t dest_base, uint32_t dest_pitch,
-                                  uint32_t dest_endian, VkFormat format, int32_t dest_dx, int32_t dest_dy) {
+                                  uint32_t dest_endian, VkFormat format, int32_t dest_dx, int32_t dest_dy,
+                                  bool fill_half_pixel) {
   const Functions& f = device_.fn();
   // The destination's texels: the source's coordinates, moved by dest_dx/dest_dy within a containing resolve.
   // Within the source surface (its pixels: samples x scale a guest pixel).
@@ -3719,6 +3720,39 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   f.vkCmdBlitImage(cb, surface.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, r.image.image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region,
                    sample_x * sample_y > 1 ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
+  if (fill_half_pixel && s > 1 && width > 1 && height > 1) {
+    // D3D's pixel centres (PA_SU_VTX_CNTL pix_center 0) move the geometry half a guest pixel: scaled, the first host
+    // rows and columns of a quad drawn on whole pixels are not covered (a guest pixel's centre is, its first host
+    // pixel's is not), and they keep what was there before. As the reference does, the first `scale / 2` host rows
+    // and columns at the top and left of the resolved area take the first covered one (a texture read 1:1 from such a
+    // pass came back with its first row averaged with the clear colour).
+    const int32_t fill = s / 2;
+    Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    for (int32_t k = 0; k < fill; ++k) {
+      VkImageCopy row{};
+      row.srcSubresource = row.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      row.srcOffset = {dx0 * s, dy0 * s + fill, 0};
+      row.dstOffset = {dx0 * s, dy0 * s + k, 0};
+      row.extent = {width * uint32_t(s), 1, 1};
+      f.vkCmdCopyImage(cb, r.image.image, VK_IMAGE_LAYOUT_GENERAL, r.image.image, VK_IMAGE_LAYOUT_GENERAL, 1, &row);
+    }
+    VkMemoryBarrier2 between{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    between.srcStageMask = between.dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+    between.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    between.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    VkDependencyInfo rows_done{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    rows_done.memoryBarrierCount = 1;
+    rows_done.pMemoryBarriers = &between;
+    f.vkCmdPipelineBarrier2(cb, &rows_done);
+    for (int32_t k = 0; k < fill; ++k) {
+      VkImageCopy column{};
+      column.srcSubresource = column.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+      column.srcOffset = {dx0 * s + fill, dy0 * s, 0};
+      column.dstOffset = {dx0 * s + k, dy0 * s, 0};
+      column.extent = {1, height * uint32_t(s), 1};
+      f.vkCmdCopyImage(cb, r.image.image, VK_IMAGE_LAYOUT_GENERAL, r.image.image, VK_IMAGE_LAYOUT_GENERAL, 1, &column);
+    }
+  }
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   // The rectangle to write back: this one, with what earlier ones left unwritten (another player's half).
   uint32_t rx0 = uint32_t(dx0), ry0 = uint32_t(dy0), rx1 = rx0 + width, ry1 = ry0 + height;
@@ -3952,7 +3986,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       break;
     }
     if (!ResolveOnGpu(*surface, x0, y0, width, height, sample_x, sample_y, dest_base, dest_pitch, dest_endian,
-                      gpu_format, dest_dx, dest_dy)) {
+                      gpu_format, dest_dx, dest_dy, (regs[kPaSuVtxCntl] & 1) == 0)) {
       return;
     }
   }
@@ -4460,12 +4494,10 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   Image* source = &r.image;
   if (r.scale > 1) {
-    // A scaled resolve: down to one texel a guest texel, into a small image of its own read back from there. What a
-    // title reads back as data (a colour grading table drawn as a target, a luminance chain the CPU reads) takes one
-    // of the guest pixel's host pixels, a value the console's pixel could hold: an average made values no guest
-    // pixel has (at 2x, Call of Duty: Black Ops's colour table blended its entries across the edges of the blocks
-    // it is drawn from, and black came out pink). A front buffer presented from guest memory is averaged (an image
-    // to look at). Depth: one texel taken.
+    // A scaled resolve: averaged down to one texel a guest texel (a linear blit by an integer factor; depth: one
+    // texel taken) into a small image of its own, read back from there. Passes that make data at the guest's
+    // resolution give every host pixel of a guest pixel the console's value (the translator's 1:1 fetches), so
+    // their average is that value.
     const uint32_t small_width = r.image.width / r.scale, small_height = r.image.height / r.scale;
     if (!r.small.image || r.small.format != r.image.format || r.small.width < small_width || r.small.height < small_height) {
       if (r.small.image) {
@@ -4489,7 +4521,7 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
     blit.dstOffsets[0] = {int32_t(r.x), int32_t(r.y), 0};
     blit.dstOffsets[1] = {int32_t(r.x + r.width), int32_t(r.y + r.height), 1};
     device_.fn().vkCmdBlitImage(cb, r.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, r.small.image,
-                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, (w.depth || !front_buffers_.count(base)) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR);
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, w.depth ? VK_FILTER_NEAREST : VK_FILTER_LINEAR);
     Transition(cb, r.small, r.small_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
     source = &r.small;
   }

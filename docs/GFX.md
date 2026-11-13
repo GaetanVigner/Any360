@@ -504,19 +504,26 @@ PA_CL_CLIP_CNTL clip_disable is not honoured yet: the reference clamps depth the
 day; no Black Ops reference capture changed with it, and an in-game report of dark walls first blamed on it was the
 scaled post-processing below, so it stays out until a capture shows a draw that needs it.
 
-### Scaled resolves read back: one host pixel a guest pixel (2026-11-13)
+### Data passes at a resolution scale: 1:1 fetches at the guest pixel's centre, half-pixel fill (2026-11-13)
 
-A resolve kept on the GPU at a resolution scale above 1 and written back into guest memory (what the CPU or a texture
-read from memory consumes) takes one of each guest pixel's host pixels (a nearest blit), no longer their average; a
-front buffer presented from guest memory is still averaged. Black Ops draws a 32x32x32 colour grading table as a
-32x1024 target and reads it back as a 3D texture: at 2x each host pixel samples a quarter of a guest pixel off the
-centre, so near the edges of the blocks the table is drawn from the two host pixels of a guest pixel took different
-source texels, and their average was an entry no 1x render holds (black became 31,24,28: dark debris came out flat
-lavender where the reference is black). Reference capture `ref_debris` at 2x: 7.24% to 1.78% of pixels off (0.76% at
-1x); the other captures change little to the eye (the spawn view a little brighter: an exposure chain read back the
-same way averaged closer). Rendering such small data targets at 1x would be exact for both; the scale is global
-today. Test: `gfx_render_tests` (at 2x, a red quad ending a quarter into a guest pixel, resolved and written back:
-every texel red or black).
+Black Ops builds a colour grading table each frame: a full-screen pass reads a 32x1024 identity table (a texture at
+the guest's resolution) one texel a guest pixel with linear filtering and draws the graded 32x32x32 table, which a
+later pass reads back as a 3D texture. At 2x each host pixel sampled a quarter of a texel off the console's sample
+point, blending neighbouring entries (across the table's slices too); averaged back, black came out 31,24,28 and
+dark debris showed flat lavender where the reference is black. Taking one host pixel instead of the average (tried
+first) gave other entries of the wrong block: coloured rings in gradients (a TV's glow, floor lights).
+
+- In a pixel shader at a scale above 1, a 2D fetch of a texture at the guest's resolution whose coordinate moves one
+  texel a guest pixel along the screen's axes (within 1/64) is made at the guest pixel's centre: every host pixel of
+  it gets the console's value. Other fetches (scene textures, magnified or minified) keep the host's detail.
+- As the reference does (resolve_resolution_scale_fill_half_pixel_offset), a resolve of a scaled surface drawn with
+  D3D's pixel centres gives the first scale/2 host rows and columns of its area the first covered one's values: the
+  half-pixel move leaves them uncovered for quads on whole pixels.
+- Scaled resolves written back stay averaged; with the above the average is the console's value for such passes.
+
+Reference captures at 2x with 4x host MSAA, pixels off before / after: debris 7.24% / 1.10%, spawn 3.39% / 2.16%,
+lamp 8.01% / 5.21%, Pygmalion wall 4.71% / 2.70%. Test: `gfx_render_tests` (at 2x, a black and white column texture
+read 1:1 with linear filtering, resolved and written back: every texel exact).
 
 Polygon offset's slope factor is multiplied by the resolution scale (the guest's unit is 1/16 of a guest pixel; a
 host pixel is a fraction of one), as the reference does: less bias at 2x let shadow maps fight with their receivers.

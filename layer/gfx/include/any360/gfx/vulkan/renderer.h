@@ -687,7 +687,7 @@ class VulkanRenderer : public gfx::Renderer {
   // resolve with the red/blue swap: the blit places each component, the texture copies the bytes as they are).
   bool ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint32_t width, uint32_t height, uint32_t sample_x,
                     uint32_t sample_y, uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian, VkFormat format,
-                    int32_t dest_dx = 0, int32_t dest_dy = 0);
+                    int32_t dest_dx = 0, int32_t dest_dy = 0, bool fill_half_pixel = false);
   std::set<uint32_t> front_buffers_;  // bases swapped as front buffers: resolves there are always read back
   void ReadsGuestMemory(uint32_t address, uint32_t bytes);
   VkQueryPool timestamps_ = VK_NULL_HANDLE;  // four a batch: start, end, its upload's start, end

@@ -1243,19 +1243,55 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
               builder_->makeFloatConstant(0.5f * axis_scale));
           sub[i] = builder_->createNoContractionBinOp(spv::OpFSub, type_float_, frag, centre);
         }
+        // The coordinate in texels, its screen derivatives (per host pixel) and its value at the guest pixel's
+        // centre, for both axes.
+        spv::Id t[2] = {}, t_dx[2] = {}, t_dy[2] = {}, t_centre[2] = {};
         for (uint32_t i = 0; i < 2; ++i) {
           if (!(revert_resolution_scale_axes & (UINT32_C(1) << i)) || size[i] == spv::NoResult) continue;
-          spv::Id scale = const_texture_resolution_scale[i];
-          spv::Id t = builder_->createNoContractionBinOp(spv::OpFMul, type_float_, coordinates[i], size[i]);
-          spv::Id t_dx = builder_->createUnaryOp(spv::OpDPdxFine, type_float_, t);
-          spv::Id t_dy = builder_->createUnaryOp(spv::OpDPdyFine, type_float_, t);
-          spv::Id t_centre = builder_->createNoContractionBinOp(
-              spv::OpFSub, type_float_, t,
+          t[i] = builder_->createNoContractionBinOp(spv::OpFMul, type_float_, coordinates[i], size[i]);
+          t_dx[i] = builder_->createUnaryOp(spv::OpDPdxFine, type_float_, t[i]);
+          t_dy[i] = builder_->createUnaryOp(spv::OpDPdyFine, type_float_, t[i]);
+          t_centre[i] = builder_->createNoContractionBinOp(
+              spv::OpFSub, type_float_, t[i],
               builder_->createNoContractionBinOp(
-                  spv::OpFAdd, type_float_, builder_->createNoContractionBinOp(spv::OpFMul, type_float_, sub[0], t_dx),
-                  builder_->createNoContractionBinOp(spv::OpFMul, type_float_, sub[1], t_dy)));
+                  spv::OpFAdd, type_float_, builder_->createNoContractionBinOp(spv::OpFMul, type_float_, sub[0], t_dx[i]),
+                  builder_->createNoContractionBinOp(spv::OpFMul, type_float_, sub[1], t_dy[i])));
+        }
+        // any360: a texture at the guest's resolution (not a scaled copy of a render target) read one texel a guest
+        // pixel, along the screen's axes, by a full-screen pass (a colour grading table built from an identity
+        // table, read with linear filtering): the console reads each texel at its centre, the host pixels of a guest
+        // pixel a quarter of a texel either side, which blends neighbouring entries (across a table's slices: Call of
+        // Duty: Black Ops's grading turned black pink at 2x). Such a fetch is made at the guest pixel's centre, the
+        // console's value; the host has no more detail to show there anyway.
+        spv::Id one_to_one = spv::NoResult;
+        if (t[0] != spv::NoResult && t[1] != spv::NoResult) {
+          auto near_value = [&](spv::Id value, float target) {
+            spv::Id distance = builder_->createUnaryBuiltinCall(
+                type_float_, ext_inst_glsl_std_450_, GLSLstd450FAbs,
+                builder_->createNoContractionBinOp(
+                    spv::OpFSub, type_float_,
+                    builder_->createUnaryBuiltinCall(type_float_, ext_inst_glsl_std_450_, GLSLstd450FAbs, value),
+                    builder_->makeFloatConstant(target)));
+            return builder_->createBinOp(spv::OpFOrdLessThan, type_bool_, distance, builder_->makeFloatConstant(1.0f / 64.0f));
+          };
+          // Texels a guest pixel: the host derivative times the scale.
+          spv::Id per_guest[2][2];
+          for (uint32_t i = 0; i < 2; ++i) {
+            per_guest[i][0] = builder_->createNoContractionBinOp(spv::OpFMul, type_float_, t_dx[i], const_texture_resolution_scale[0]);
+            per_guest[i][1] = builder_->createNoContractionBinOp(spv::OpFMul, type_float_, t_dy[i], const_texture_resolution_scale[1]);
+          }
+          one_to_one = builder_->createBinOp(
+              spv::OpLogicalAnd, type_bool_,
+              builder_->createBinOp(spv::OpLogicalAnd, type_bool_, near_value(per_guest[0][0], 1.0f), near_value(per_guest[0][1], 0.0f)),
+              builder_->createBinOp(spv::OpLogicalAnd, type_bool_, near_value(per_guest[1][0], 0.0f), near_value(per_guest[1][1], 1.0f)));
+          one_to_one = builder_->createBinOp(spv::OpLogicalAnd, type_bool_, one_to_one,
+                                             builder_->createUnaryOp(spv::OpLogicalNot, type_bool_, texture_resolution_scaled));
+        }
+        for (uint32_t i = 0; i < 2; ++i) {
+          if (t[i] == spv::NoResult) continue;
+          spv::Id scale = const_texture_resolution_scale[i];
           spv::Id guest_texel =
-              builder_->createUnaryBuiltinCall(type_float_, ext_inst_glsl_std_450_, GLSLstd450Floor, t_centre);
+              builder_->createUnaryBuiltinCall(type_float_, ext_inst_glsl_std_450_, GLSLstd450Floor, t_centre[i]);
           spv::Id first = builder_->createNoContractionBinOp(spv::OpFMul, type_float_, guest_texel, scale);
           spv::Id last = builder_->createNoContractionBinOp(
               spv::OpFSub, type_float_, builder_->createNoContractionBinOp(spv::OpFAdd, type_float_, first, scale),
@@ -1270,7 +1306,7 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
                       spv::OpFAdd, type_float_,
                       builder_->createNoContractionBinOp(spv::OpFAdd, type_float_, guest_texel,
                                                          builder_->makeFloatConstant(0.5f)),
-                      builder_->createNoContractionBinOp(spv::OpFSub, type_float_, t, t_centre)),
+                      builder_->createNoContractionBinOp(spv::OpFSub, type_float_, t[i], t_centre[i])),
                   scale));
           id_vector_temp_.clear();
           id_vector_temp_.push_back(host_texel);
@@ -1282,6 +1318,11 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
               builder_->createNoContractionBinOp(spv::OpFAdd, type_float_, host_texel, builder_->makeFloatConstant(0.5f)),
               builder_->createNoContractionBinOp(spv::OpFMul, type_float_, size[i], scale));
           coordinates[i] = builder_->createTriOp(spv::OpSelect, type_float_, snap, snapped, coordinates[i]);
+          if (one_to_one != spv::NoResult) {
+            coordinates[i] = builder_->createTriOp(
+                spv::OpSelect, type_float_, one_to_one,
+                builder_->createNoContractionBinOp(spv::OpFDiv, type_float_, t_centre[i], size[i]), coordinates[i]);
+          }
         }
       }
       if (instr.dimension == xenos::FetchOpDimension::k3DOrStacked) {
