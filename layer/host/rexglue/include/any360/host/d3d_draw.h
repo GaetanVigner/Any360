@@ -27,6 +27,8 @@ struct Runtime {
   GuestFunction flush_state = nullptr;       // r3 device, r4 dirty bits, r5 a device word -> r3 the bits left
   GuestFunction flush_misc = nullptr;        // r3 device, r4 the bits (the misc state's group)
   GuestFunction flush_waits = nullptr;       // r3 device, r4 the bits (the group with waits)
+  GuestFunction allocate = nullptr;          // r3 device, r4 dwords, r5 alignment -> r3 the block (0: none) at the end
+                                             // of the command buffer's segment (BeginVertices' vertices and indices)
   uint32_t primitive_table = 0;              // guest address: [divisor, overlap] a primitive type
 };
 inline Runtime g_runtime;
@@ -95,6 +97,38 @@ inline void FlushDirtyState(PPCContext& ctx, uint8_t* base, const any360::xdk::M
   }
 }
 
+namespace detail {
+// What both draws decline before writing anything: memory, the occlusion-query variant, the helpers (diagnostic), a
+// split the primitive table cannot give.
+inline bool DrawAccepted(const any360::xdk::Memory& m, uint32_t device, uint64_t primitive, uint32_t count,
+                         uint32_t& split_at) {
+  const Runtime& rt = g_runtime;
+  if (!rt.make_room || !any360::xdk::IsPlainMemory(device, 16384)) return false;
+  const uint8_t* d = m.Host(device);
+  if (d[10812] & 0x02) return false;
+  if (!DrawHelpers()) {
+    const uint64_t state = At64(d + 16), other = At64(d + 24), misc = At64(d + 32);
+    if ((uint32_t(state) & 0x001E0000u) || (At64(d + 40) & state) || uint32_t(other) || (misc & 0x007E000000000000ull))
+      return false;
+  }
+  split_at = rt.primitive_table + (uint32_t(primitive) << 3);
+  return count <= 65535 || (any360::xdk::IsPlainMemory(split_at, 8) && At32(m.Host(split_at)) != 0);
+}
+// The vertices or indices a packet draws: all of them up to 65535, else the largest even multiple of the primitive's
+// divisor that fits; the rest drawn after, from `overlap` before where this one ends.
+inline uint32_t DrawnNow(const any360::xdk::Memory& m, uint32_t split_at, uint32_t count) {
+  if (count <= 65535) return count;
+  const uint32_t divisor = At32(m.Host(split_at));
+  return ((65535u / divisor) & ~1u) * divisor;
+}
+// DRAW_INDX's visibility query dword: the device's query byte for its current query, bit 8 set when one is current.
+inline uint32_t QueryWord(const uint8_t* d) {
+  const uint32_t index = d[11907];
+  const uint32_t query = d[11842 + index];
+  return ((query & ~0x100u) | ((index != 0 ? 1u : 0u) << 8)) & 0x1FFu & ~0xC0u;
+}
+}  // namespace detail
+
 // DrawIndexedVertices: r3 device, r4 primitive type, r5 the value of VGT register 0x2102, r6 the first index, r7 the
 // index count. False (nothing done): the runtime's own code runs it (the occlusion-query variant, memory that is not
 // plain, no vertex declaration, a split the primitive table cannot give). `records`: the draw as Any360's record.
@@ -103,35 +137,21 @@ inline bool DrawIndexed(PPCContext& ctx, uint8_t* base, const any360::xdk::Memor
   namespace record = any360::xdk::record;
   const Runtime& rt = g_runtime;
   const uint32_t device = ctx.r3.u32;
-  if (!rt.make_room || !any360::xdk::IsPlainMemory(device, 16384)) return false;
-  uint8_t* d = m.Host(device);
-  if (d[10812] & 0x02) return false;
   const uint64_t primitive = ctx.r4.u64;
   const uint32_t vgt = ctx.r5.u32, caller_r1 = ctx.r1.u32;
-  uint32_t first = ctx.r6.u32, count = ctx.r7.u32;
+  uint32_t first = ctx.r6.u32, count = ctx.r7.u32, split_at = 0;
+  if (!DrawAccepted(m, device, primitive, count, split_at)) return false;
+  uint8_t* d = m.Host(device);
   const uint32_t declaration = At32(d + 12156);
   if (!declaration || !any360::xdk::IsPlainMemory(declaration, 28)) return false;
-  const uint32_t split_at = rt.primitive_table + (uint32_t(primitive) << 3);
-  if (!DrawHelpers()) {
-    const uint64_t state = detail::At64(d + 16), other = detail::At64(d + 24), misc = detail::At64(d + 32);
-    if ((uint32_t(state) & 0x001E0000u) || (detail::At64(d + 40) & state) || uint32_t(other) ||
-        (misc & 0x007E000000000000ull))
-      return false;
-  }
-  if (count > 65535 && (!any360::xdk::IsPlainMemory(split_at, 8) || At32(m.Host(split_at)) == 0)) return false;
   ctx.r1.u64 = caller_r1 - 240;  // the function's own frame: its callees' frames below it, as the runtime's
   FlushDirtyState(ctx, base, m, device);
   const uint8_t* decl = m.Host(declaration);
   for (;;) {
     uint32_t cursor = At32(d + 48);
     if (cursor > At32(d + 56)) cursor = uint32_t(Call(ctx, base, rt.make_room, device));
-    uint32_t drawn = count;
-    if (count > 65535) {
-      const uint32_t divisor = At32(m.Host(split_at));
-      drawn = ((65535u / divisor) & ~1u) * divisor;
-    }
+    const uint32_t drawn = DrawnNow(m, split_at, count);
     const uint32_t decl0 = At32(decl), index_base = At32(decl + 24);
-    const uint32_t query_index = d[11907];
     uint32_t initiator = (drawn << 16) | (uint32_t(primitive) & 0x3F);
     const uint32_t endian = std::rotl(decl0, 1) & 0xC0000000u;
     uint32_t size = (drawn & 0xFFFFFFu) | endian;
@@ -148,12 +168,49 @@ inline bool DrawIndexed(PPCContext& ctx, uint8_t* base, const any360::xdk::Memor
       const uint32_t words[4] = {record::KindWord(record::kDraw, 0), initiator, address, size};
       std::memcpy(out + 12, words, 16);
     } else {
-      uint32_t query = d[11842 + query_index];
-      query = ((query & ~0x100u) | ((query_index != 0 ? 1u : 0u) << 8)) & 0x1FFu & ~0xC0u;
-      Set32(out + 8, 0xC0032201u), Set32(out + 12, query), Set32(out + 16, initiator), Set32(out + 20, address);
+      Set32(out + 8, 0xC0032201u), Set32(out + 12, QueryWord(d)), Set32(out + 16, initiator), Set32(out + 20, address);
       Set32(out + 24, size);
     }
     Set32(d + 48, cursor + 28);
+    const uint32_t left = count - drawn;
+    if (left == 0) break;
+    const uint32_t overlap = At32(m.Host(split_at + 4));
+    count = overlap + left;
+    first += drawn - overlap;
+  }
+  ctx.r1.u64 = caller_r1;
+  return true;
+}
+
+// DrawVertices: r3 device, r4 primitive type, r5 the first vertex (VGT 0x2102), r6 the vertex count. The same flush,
+// then DRAW_INDX with auto indices (or its record), the first vertex moving on with each split.
+inline bool DrawVertices(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  namespace record = any360::xdk::record;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32;
+  const uint64_t primitive = ctx.r4.u64;
+  const uint32_t caller_r1 = ctx.r1.u32;
+  uint32_t first = ctx.r5.u32, count = ctx.r6.u32, split_at = 0;
+  if (!DrawAccepted(m, device, primitive, count, split_at)) return false;
+  uint8_t* d = m.Host(device);
+  ctx.r1.u64 = caller_r1 - 208;
+  FlushDirtyState(ctx, base, m, device);
+  for (;;) {
+    uint32_t cursor = At32(d + 48);
+    if (cursor > At32(d + 56)) cursor = uint32_t(Call(ctx, base, rt.make_room, device));
+    const uint32_t drawn = DrawnNow(m, split_at, count);
+    const uint32_t initiator = (drawn << 16) | (uint32_t(primitive) & 0x3F) | 0x80;  // auto indices
+    uint8_t* out = m.Host(cursor + 4);
+    Set32(out, 8450), Set32(out + 4, first);  // type-0: VGT 0x2102
+    if (records) {
+      Set32(out + 8, record::Header(record::DrawWords(false)));
+      const uint32_t words[2] = {record::KindWord(record::kDraw, 2), initiator};
+      std::memcpy(out + 12, words, 8);
+    } else {
+      Set32(out + 8, 0xC0012201u), Set32(out + 12, QueryWord(d)), Set32(out + 16, initiator);
+    }
+    Set32(d + 48, cursor + 20);
     const uint32_t left = count - drawn;
     if (left == 0) break;
     const uint32_t overlap = At32(m.Host(split_at + 4));
@@ -169,6 +226,156 @@ inline bool DrawIndexed(PPCContext& ctx, uint8_t* base, const any360::xdk::Memor
 inline void DrawIndexedOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && DrawIndexed(ctx, base, m, DrawRecords())) return;
+  original(ctx, base);
+}
+
+namespace detail {
+// What the Begin draws write before their draw: VGT 0x2102, the immediate vertices' fetch constant (registers
+// 0x48BA-0x48BF: `words` the first four, then the block's GPU address with 3 and its size in dwords) and three zeros
+// at 0x5000.
+inline uint8_t* WriteBeginState(uint8_t* out, uint32_t vgt, const uint32_t (&words)[4], uint32_t vertices, uint32_t dwords) {
+  Set32(out, 8450), Set32(out + 4, vgt);
+  Set32(out + 8, 0x000548BAu);
+  for (int i = 0; i < 4; ++i) Set32(out + 12 + 4 * i, words[i]);
+  Set32(out + 28, GpuAddress(vertices, 0x1FFFFFFFu) | 3u);
+  Set32(out + 32, 0x10000002u | ((dwords << 2) & 0x03FFFFFCu));
+  Set32(out + 36, 0x00025000u), Set32(out + 40, 0), Set32(out + 44, 0), Set32(out + 48, 0);
+  return out + 52;
+}
+// The stream 0 stride as the Begin draws set it for their vertices (the shader's stride bit when it differs from the
+// vertex shader's), before the flush; the stride byte as it was, after.
+inline uint8_t SetBeginStride(uint8_t* d, uint32_t stride) {
+  const uint8_t saved = d[12248];
+  const uint32_t words = (stride >> 2) & 0xFF;
+  d[12248] = uint8_t(words);
+  if (words != d[11552] && At32(d + 12416)) Set64(d + 16, At64(d + 16) | 0x80000);
+  return saved;
+}
+inline bool BeginAccepted(const any360::xdk::Memory& m, uint32_t device) {
+  uint32_t split_at;
+  return g_runtime.allocate && DrawAccepted(m, device, 0, 0, split_at);
+}
+}  // namespace detail
+
+// BeginVertices: r3 device, r4 primitive type, r5 the vertex count, r6 the stride in bytes. Flushes, takes a block for
+// the vertices at the end of the command buffer's segment, writes the immediate vertices' fetch constant and an auto
+// draw of them after the cursor (EndVertices moves the cursor past them: their end at +13076, the block at +13080 and
+// its dwords at +13088), and returns the block (r3; 0 when there is none, the cursor kept).
+inline bool BeginVertices(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  namespace record = any360::xdk::record;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32;
+  if (!BeginAccepted(m, device)) return false;
+  uint8_t* d = m.Host(device);
+  const uint64_t primitive = ctx.r4.u64;
+  const uint32_t count = ctx.r5.u32, stride = ctx.r6.u32, caller_r1 = ctx.r1.u32;
+  const uint32_t dwords = (count * stride) >> 2;
+  const uint8_t saved = SetBeginStride(d, stride);
+  ctx.r1.u64 = caller_r1 - 176;
+  FlushDirtyState(ctx, base, m, device);
+  const uint32_t limit = At32(d + 56);
+  uint32_t cursor = At32(d + 48);
+  d[12248] = saved;
+  if (cursor > limit) cursor = uint32_t(Call(ctx, base, rt.make_room, device));
+  const uint32_t vertices = uint32_t(Call(ctx, base, rt.allocate, device, dwords, 16));
+  ctx.r1.u64 = caller_r1;
+  if (!vertices) {
+    Set32(d + 48, cursor);
+    ctx.r3.u64 = 0;
+    return true;
+  }
+  uint8_t* out = WriteBeginState(m.Host(cursor + 4), 0, {1, 0, 1, 0}, vertices, dwords);
+  const uint32_t initiator = ((count << 16) & 0xFFFF0000u) | (uint32_t(primitive) & 0x3F) | 0x80;
+  if (records) {
+    Set32(out, record::Header(record::DrawWords(false)));
+    const uint32_t words[2] = {record::KindWord(record::kDraw, 2), initiator};
+    std::memcpy(out + 4, words, 8);
+  } else {
+    Set32(out, 0xC0012201u), Set32(out + 4, QueryWord(d)), Set32(out + 8, initiator);
+  }
+  Set64(d + 24, At64(d + 24) | 1);
+  Set32(d + 13076, cursor + 64), Set32(d + 13080, vertices), Set32(d + 13088, dwords);
+  ctx.r3.u64 = vertices;
+  return true;
+}
+
+// BeginIndexedVertices: r3 device, r4 primitive type, r5 VGT 0x2102, r6 the vertex count, r7 the index count, r8 flags
+// (bit 2: 32-bit indices; bits 0-1: their endianness), r9 the stride, r10 where to write the index block, and the
+// ninth argument (the caller's stack word at +84) where to write the vertex block. Takes both blocks, writes the fetch constant and an
+// indexed draw of the index block, and returns 0 (S_OK), or E_OUTOFMEMORY with both pointers 0 and the cursor kept
+// when either block cannot be had.
+inline bool BeginIndexedVertices(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  namespace record = any360::xdk::record;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32;
+  const uint32_t caller_r1 = ctx.r1.u32, index_out = ctx.r10.u32;
+  if (!BeginAccepted(m, device) || !any360::xdk::IsPlainMemory(index_out, 4) ||
+      !any360::xdk::IsPlainMemory(caller_r1 + 84, 4))
+    return false;
+  const uint32_t vertex_out = At32(m.Host(caller_r1 + 84));
+  if (!any360::xdk::IsPlainMemory(vertex_out, 4)) return false;
+  uint8_t* d = m.Host(device);
+  const uint64_t primitive = ctx.r4.u64;
+  const uint32_t vgt = ctx.r5.u32, indices = ctx.r7.u32, flags = ctx.r8.u32, stride = ctx.r9.u32;
+  const uint32_t vertex_dwords = (ctx.r6.u32 * stride) >> 2;
+  const bool wide = (flags & 4) != 0;
+  const uint32_t index_dwords = wide ? indices : ((indices + 1) >> 1) & 0x7FFFFFFFu;
+  const uint8_t saved = SetBeginStride(d, stride);
+  ctx.r1.u64 = caller_r1 - 240;
+  FlushDirtyState(ctx, base, m, device);
+  const uint32_t limit = At32(d + 56);
+  uint32_t cursor = At32(d + 48);
+  d[12248] = saved;
+  if (cursor > limit) cursor = uint32_t(Call(ctx, base, rt.make_room, device));
+  const uint32_t vertices = uint32_t(Call(ctx, base, rt.allocate, device, vertex_dwords, 16));
+  const uint32_t index_block = uint32_t(Call(ctx, base, rt.allocate, device, index_dwords, 16));
+  ctx.r1.u64 = caller_r1;
+  if (!vertices || !index_block) {
+    Set32(d + 48, cursor);
+    Set32(m.Host(index_out), 0), Set32(m.Host(vertex_out), 0);
+    ctx.r3.s64 = int32_t(0x8007000Eu);
+    return true;
+  }
+  uint8_t* out = WriteBeginState(m.Host(cursor + 4), vgt, {0, 0, 0, 0}, vertices, vertex_dwords);
+  uint32_t initiator = (indices << 16) | (uint32_t(primitive) & 0x3F);
+  const uint32_t endian = std::rotl(flags, 30) & 0xC0000000u;
+  uint32_t size = (indices & 0xFFFFFFu) | endian;
+  if (wide) initiator |= 0x800, size = ((indices << 1) & 0x00FFFFFEu) | endian;
+  const uint32_t address = GpuAddress(index_block, 0x1FFFFFFFu);
+  if (records) {
+    Set32(out, record::Header(record::DrawWords(true)));
+    const uint32_t words[4] = {record::KindWord(record::kDraw, 0), initiator, address, size};
+    std::memcpy(out + 4, words, 16);
+  } else {
+    Set32(out, 0xC0032201u), Set32(out + 4, QueryWord(d)), Set32(out + 8, initiator), Set32(out + 12, address);
+    Set32(out + 16, size);
+  }
+  Set64(d + 24, At64(d + 24) | 1);
+  Set32(d + 13076, cursor + 72), Set32(d + 13080, vertices), Set32(d + 13084, index_block);
+  Set32(d + 13088, vertex_dwords), Set32(d + 13092, index_dwords);
+  Set32(m.Host(index_out), index_block), Set32(m.Host(vertex_out), vertices);
+  ctx.r3.u64 = 0;
+  return true;
+}
+
+// The same for DrawVertices.
+inline void DrawVerticesOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && DrawVertices(ctx, base, m, DrawRecords())) return;
+  original(ctx, base);
+}
+
+// And for the Begin draws.
+inline void BeginVerticesOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && BeginVertices(ctx, base, m, DrawRecords())) return;
+  original(ctx, base);
+}
+inline void BeginIndexedVerticesOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && BeginIndexedVertices(ctx, base, m, DrawRecords())) return;
   original(ctx, base);
 }
 

@@ -268,12 +268,13 @@ inline void Put64(CallSetup& s, uint32_t address, uint64_t value) {
   Put32(s, address, uint32_t(value >> 32));
   Put32(s, address + 4, uint32_t(value));
 }
-// The command buffer from the start to the cursor, decoded into register writes and draws in the order they come, in
-// place of the buffer (the rest of its room zeroed); the cursor made the list's end. PM4 and Any360's records of the
-// same writes and draws give the same list.
-inline void CanonicalCommands(CallSetup& s) {
+// The command buffer from the start to `cursor` (the last word written: by default the device's cursor), decoded into
+// register writes and draws in the order they come, in place of the buffer (the rest of its room zeroed); the device's
+// cursor made the list's length. PM4 and Any360's records of the same writes and draws give the same list.
+inline void CanonicalCommands(CallSetup& s, uint32_t cursor = 0) {
   namespace record = any360::xdk::record;
-  const uint32_t start = Get32(s, s.scratch), cursor = Get32(s, s.device + 48);
+  const uint32_t start = Get32(s, s.scratch);
+  if (!cursor) cursor = Get32(s, s.device + 48);
   std::vector<uint32_t> out;
   uint32_t at = start + 4;
   while (at <= cursor && out.size() < 0x4000) {
@@ -296,6 +297,8 @@ inline void CanonicalCommands(CallSetup& s) {
         for (uint32_t i = 0; i < 8 && i < count; ++i) std::memcpy(&raw[i], s.Host(at + 4 * i), 4);
         if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kDraw && count == record::DrawWords(true)) {
           out.insert(out.end(), {1, raw[1], raw[2], raw[3]});
+        } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kDraw && count == record::DrawWords(false)) {
+          out.insert(out.end(), {1, raw[1], 0, 0});
         } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kRegisters) {
           for (uint32_t i = 1; i < count; ++i) {
             uint32_t v;
@@ -304,6 +307,8 @@ inline void CanonicalCommands(CallSetup& s) {
           }
         } else if (opcode == 0x22 && count == 4) {  // DRAW_INDX with DMA indices: its query dword is not drawn
           out.insert(out.end(), {1, Get32(s, at + 4), Get32(s, at + 8), Get32(s, at + 12)});
+        } else if (opcode == 0x22 && count == 2) {  // DRAW_INDX with auto indices
+          out.insert(out.end(), {1, Get32(s, at + 4), 0, 0});
         } else {
           out.insert(out.end(), {2, opcode, count});
           for (uint32_t i = 0; i < count; ++i) out.push_back(Get32(s, at + 4 * i));
@@ -318,10 +323,32 @@ inline void CanonicalCommands(CallSetup& s) {
 }
 // kHelpers: every dirty group, the title's shader, state, misc and wait helpers called too (they read through the
 // device copy's pointers, which are the title's: shaders and buffers, read only by them).
-template <bool kRecords, bool kHelpers = false>
+// The Begin draws (d3d_draw.h): the draws' device, the runtime's allocator given a segment in the scratch (its
+// descriptor at +13140 a fake one whose word at +152 is set, its top at +14540), failing now and then (bit 6 of
+// +10813). BeginIndexedVertices' index pointer in the scratch, its vertex pointer the ninth argument (the caller's
+// stack word at +84). Their packet lies past the cursor (EndVertices moves it): decoded up to +13076.
+template <bool kRecords, bool kIndexed>
+struct Begin {
+  static bool Native(PPCContext& ctx, uint8_t* base) {
+    return kIndexed ? d3d_draw::BeginIndexedVertices(ctx, base, SelfTestMemory(), kRecords)
+                    : d3d_draw::BeginVertices(ctx, base, SelfTestMemory(), kRecords);
+  }
+  static void Setup(CallSetup& s, PPCContext& ctx);
+  // r3 compared: the block, or the HRESULT.
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = nullptr;
+  static void Normalize(CallSetup& s, PPCContext& after) {
+    if constexpr (!kRecords) return;
+    const bool written = kIndexed ? after.r3.u32 == 0 : after.r3.u32 != 0;
+    CanonicalCommands(s, written ? Get32(s, s.device + 13076) : 0);
+  }
+};
+
+// kIndexed false: DrawVertices (r5 the first vertex, r6 the count).
+template <bool kRecords, bool kHelpers = false, bool kIndexed = true>
 struct DrawIndexed {
   static bool Native(PPCContext& ctx, uint8_t* base) {
-    return d3d_draw::DrawIndexed(ctx, base, SelfTestMemory(), kRecords);
+    return kIndexed ? d3d_draw::DrawIndexed(ctx, base, SelfTestMemory(), kRecords)
+                    : d3d_draw::DrawVertices(ctx, base, SelfTestMemory(), kRecords);
   }
   static void Setup(CallSetup& s, PPCContext& ctx) {
     std::mt19937_64& rng = *s.rng;
@@ -354,12 +381,39 @@ struct DrawIndexed {
     ctx.r5.u64 = uint32_t(rng());
     ctx.r6.u64 = rng() % 0x10000;
     ctx.r7.u64 = rng() % 16 == 0 ? 65536 + rng() % 200000 : 1 + rng() % 3000;
+    if (!kIndexed) ctx.r5.u64 = rng() % 0x10000, ctx.r6.u64 = ctx.r7.u64;
   }
   static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
   static void Normalize(CallSetup& s, PPCContext&) {
     if constexpr (kRecords) CanonicalCommands(s);
   }
 };
+
+template <bool kRecords, bool kIndexed>
+void Begin<kRecords, kIndexed>::Setup(CallSetup& s, PPCContext& ctx) {
+  DrawIndexed<kRecords, true>::Setup(s, ctx);
+  std::mt19937_64& rng = *s.rng;
+  const uint32_t segment = s.scratch + 0x7000;
+  Put32(s, s.device + 13140, segment);
+  Put32(s, segment + 152, 1);
+  Put32(s, s.device + 14540, s.scratch + 0x2E000);
+  uint8_t& flags = s.Host(s.device + 10813)[0];
+  flags = rng() % 8 == 0 ? flags | 0x40 : flags & ~0x40;
+  const uint64_t primitive = ctx.r4.u64;
+  ctx.r4.u64 = primitive;
+  if (kIndexed) {
+    ctx.r5.u64 = uint32_t(rng());
+    ctx.r6.u64 = 1 + rng() % 256;
+    ctx.r7.u64 = 1 + rng() % 512;
+    ctx.r8.u64 = rng() % 8;
+    ctx.r9.u64 = 4 * (1 + rng() % 16);
+    ctx.r10.u64 = s.scratch + 0x6000;
+    Put32(s, s.stack + 84, s.scratch + 0x6004);
+  } else {
+    ctx.r5.u64 = 1 + rng() % 256;
+    ctx.r6.u64 = 4 * (1 + rng() % 16);
+  }
+}
 // SetPixelShaderConstantF: as SetShaderConstants.
 struct PixelFloats {
   static void Setup(CallSetup& s, PPCContext& ctx) { SetShaderConstants::Setup(s, ctx); }
