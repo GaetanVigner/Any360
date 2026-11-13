@@ -651,6 +651,102 @@ inline void FlushWaitGroupOrOriginal(PPCContext& ctx, uint8_t* base, GuestFuncti
   if (m.base == base && NativeDraws() && FlushWaitGroup(ctx, m, DrawRecords())) return;
   original(ctx, base);
 }
+// sub_826C5768 (the draws' state group): r3 device, r4 the state's dirty bits, r5 the device's word +10432 (the
+// 0x2203 register's value); r3 back: the bits it did not handle.
+// - Bit 8: register 0x2203 from r5. When the device tiles (10815 bit 6, then 10812 bit 4, or bit 5 with the five
+//   words at +12160 matching those at +12448 or 0), one predicated SET_CONSTANT a tile (+12468 of them, last first)
+//   under its bin mask (3 << 2 * tile), the tile's word (+12832 on) in its top 15 bits and bit 0 kept as +11572's
+//   mode says; then r5 itself to bin 0 when tile 0's value lost bit 0 (10812 bit 6), and the device's bins back
+//   (+12428, +12432). Else a plain write, bit 0 cleared when +11572's bits 17-19 are 0.
+// - Bit 57 (with the device's +40 mask): register 0x2000 (+10240); bit 37: 0x2104 (+10332). The values these change
+//   are then written again under the bin mask 0x15555555 (predicated) and the bins put back.
+// Declines when the cursor needs room first, when a tiled write would pass the room's limit (the runtime makes room
+// in the middle) or the tile count is 0 (the runtime reads an unset stack word) or over 16.
+inline bool FlushState(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  const uint32_t device = ctx.r3.u32;
+  if (!any360::xdk::IsPlainMemory(device, 16384)) return false;
+  uint8_t* d = m.Host(device);
+  const uint32_t cursor = At32(d + 48), limit = At32(d + 56);
+  if (cursor > limit) return false;
+  uint64_t bits = ctx.r4.u64;
+  const uint32_t value = ctx.r5.u32;
+  uint32_t count = 0;
+  bool tiled = false;
+  if (bits & 0x100) {
+    if (d[10815] & 0x40) {
+      const uint8_t flags = d[10812];
+      if (flags & 0x10) {
+        tiled = true;
+      } else if (flags & 0x20) {
+        tiled = true;
+        for (uint32_t k = 0; k < 5 && tiled; ++k) {
+          const uint32_t want = At32(d + 12160 + 4 * k);
+          tiled = At32(d + 12448 + 4 * k) == want || want == 0;
+        }
+      }
+    }
+    if (tiled) {
+      count = At32(d + 12468);
+      if (count == 0 || count > 16) return false;
+      if (uint64_t(cursor) + 4ull * ((records ? 3 : 2) + (records ? 6 : 5) * count) > limit) return false;
+    }
+  }
+  // Every word this writes (a bound), in the room: the runtime writes past its limit after the tiles' loop.
+  const uint32_t most = 4 * ((records ? 36 : 28) + (records ? 6 : 5) * count);
+  if (!any360::xdk::IsPlainMemory(cursor + 4, most) || (records && uint64_t(cursor) + most > At32(d + 52)))
+    return false;
+  Out out{m, cursor, records};
+  uint32_t again_2203 = ~0u, again_2000 = ~0u, again_2104 = ~0u;
+  if (bits & 0x100) {
+    if (tiled) {
+      out.Bins(1, 0);
+      const uint32_t mode = (At32(d + 11572) >> 17) & 7;
+      uint32_t tile_value = 0, last = 0;
+      for (uint32_t i = count; i-- > 0;) {
+        tile_value = (value & 0x1FFFFu) | (At32(d + 12832 + 4 * i) << 17);
+        const bool keep = mode != 0 && (mode != 2 || (i == 0 && (d[10815] & 0x20)));
+        last = keep ? tile_value : tile_value & ~1u;
+        out.Bins(0, 3u << (2 * i));
+        out.ContextConstant(0x203, last);
+      }
+      if (last != tile_value && (d[10812] & 0x40)) out.Bins(0, 1), out.ContextConstant(0x203, tile_value);
+      out.Bins(0, At32(d + 12428)), out.Bins(1, At32(d + 12432));
+    } else {
+      const uint32_t written = (At32(d + 11572) & 0xE0000u) ? value : value & ~1u;
+      out.Registers(0x2203, {written});
+      if (written != value && (d[10812] & 0x40)) again_2203 = value;
+    }
+    bits &= ~uint64_t(0x100);
+  }
+  const uint64_t handled = At64(d + 40) & bits;
+  if (handled & (uint64_t(1) << 57)) {
+    const uint32_t v = At32(d + 10240);
+    out.Registers(0x2000, {v});
+    bits &= ~(uint64_t(1) << 57);
+    again_2000 = (At32(d + 12896) & 0x3FFFu) | (v & 0xFFFFC000u);
+  }
+  if (handled & (uint64_t(1) << 37)) {
+    out.Registers(0x2104, {At32(d + 10332)});
+    bits &= ~(uint64_t(1) << 37);
+    again_2104 = 0;
+  }
+  if ((again_2104 & again_2000 & again_2203) != ~0u) {
+    out.Bins(1, 0), out.Bins(0, 0x15555555u);
+    if (again_2203 != ~0u) out.ContextConstant(0x203, again_2203);
+    if (again_2000 != ~0u) out.ContextConstant(0x000, again_2000);
+    if (again_2104 != ~0u) out.ContextConstant(0x104, again_2104);
+    out.Bins(0, At32(d + 12428)), out.Bins(1, At32(d + 12432));
+  }
+  Set32(d + 48, out.cursor);
+  ctx.r3.u64 = bits;
+  return true;
+}
+inline void FlushStateOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && FlushState(ctx, m, DrawRecords())) return;
+  original(ctx, base);
+}
 
 // The state of a clear and of a copy: VGT 0x2100-0x2102, 0x2204-0x2206, 0x2312 and 0x200D.
 inline void WriteClearState(detail::Out& out) {

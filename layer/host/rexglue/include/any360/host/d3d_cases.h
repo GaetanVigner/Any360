@@ -612,6 +612,40 @@ struct GroupHelper {
   }
 };
 
+// The draws' state helper (d3d_draw.h): every path (tiled or not, the five words matching or not, every +11572 mode,
+// 1-4 tiles mostly, up to 19), random values, r3 (the bits left) compared.
+template <bool kRecords>
+struct StateHelper {
+  static bool Native(PPCContext& ctx, uint8_t*) { return d3d_draw::FlushState(ctx, SelfTestMemory(), kRecords); }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t cursor = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
+    Put32(s, s.scratch, cursor);
+    Put32(s, s.device + 48, cursor);
+    Put32(s, s.device + 52, s.scratch + 0x30000);
+    Put32(s, s.device + 56, s.scratch + 0x2F000);
+    s.Host(s.device + 10815)[0] = uint8_t(rng());
+    s.Host(s.device + 10812)[0] = uint8_t(rng());
+    for (uint32_t k = 0; k < 5; ++k) {
+      const uint32_t want = rng() % 3 == 0 ? 0 : uint32_t(rng() % 4);
+      Put32(s, s.device + 12160 + 4 * k, want);
+      Put32(s, s.device + 12448 + 4 * k, rng() % 4 ? want : uint32_t(rng() % 4));
+    }
+    Put32(s, s.device + 12468, rng() % 16 == 0 ? uint32_t(rng() % 20) : 1 + uint32_t(rng() % 4));
+    for (uint32_t i = 0; i < 16; ++i) Put32(s, s.device + 12832 + 4 * i, uint32_t(rng()));
+    for (uint32_t at : {11572u, 12428u, 12432u, 10240u, 12896u, 10332u}) Put32(s, s.device + at, uint32_t(rng()));
+    const auto some = [&](uint64_t v) { return v | (rng() % 2 ? uint64_t(1) << 57 : 0) | (rng() % 2 ? uint64_t(1) << 37 : 0); };
+    Put64(s, s.device + 40, some(rng() % 2 ? rng() : 0));
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = some(rng() % 2 ? rng() : 0) | (rng() % 4 ? 0x100 : 0);
+    ctx.r5.u64 = rng();
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = nullptr;
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
+  }
+};
+
 template <bool kRecords, bool kIndexed>
 void Begin<kRecords, kIndexed>::Setup(CallSetup& s, PPCContext& ctx) {
   DrawIndexed<kRecords, true>::Setup(s, ctx);
