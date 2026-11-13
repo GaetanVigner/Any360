@@ -337,6 +337,76 @@ void ShaderConstants() {
 
 }  // namespace
 
+// The uploads as register records against the PM4 they replace: both buffers decoded into (register, value) in the
+// order written (type-0 values big-endian, pads skipped; records' values in the host's order) give the same list, the
+// same index after; the records stop before the buffer's end, or are declined.
+std::vector<std::pair<uint32_t, uint32_t>> Decode(const std::vector<uint8_t>& memory, uint32_t from, uint32_t to) {
+  namespace record = any360::xdk::record;
+  std::vector<std::pair<uint32_t, uint32_t>> out;
+  const auto big = [&](uint32_t a) {
+    return uint32_t(memory[a]) << 24 | uint32_t(memory[a + 1]) << 16 | uint32_t(memory[a + 2]) << 8 | memory[a + 3];
+  };
+  const auto host = [&](uint32_t a) {
+    uint32_t v;
+    std::memcpy(&v, &memory[a], 4);
+    return v;
+  };
+  uint32_t at = from;
+  while (at <= to) {
+    const uint32_t h = big(at);
+    at += 4;
+    const uint32_t count = ((h >> 16) & 0x3FFF) + 1;
+    if ((h >> 30) == 2) continue;
+    if ((h >> 30) == 0) {
+      for (uint32_t i = 0; i < count; ++i, at += 4) out.push_back({(h & 0x7FFF) + i, big(at)});
+      continue;
+    }
+    const uint32_t kind = host(at);
+    CHECK(((h >> 8) & 0x7F) == record::kOpcode && (kind & 0xFF) == record::kRegisters);
+    for (uint32_t i = 1; i < count; ++i) out.push_back({(kind >> 8) + i - 1, std::byteswap(big(at + 4 * i))});
+    at += 4 * count;
+  }
+  return out;
+}
+
+void UploadRecords() {
+  namespace xdk = any360::xdk;
+  std::mt19937_64 rng(23);
+  uint64_t compared = 0, declined = 0;
+  for (int round = 0; round < 3000; ++round) {
+    const bool words = round & 1;
+    xdk_test::Pair p(100 + round);
+    const uint32_t device = 0x80000, offset = round % 3 ? 48 : 40;
+    const uint32_t cursor = 0x10000 + 4 * uint32_t(rng() % 64);
+    const uint32_t end = rng() % 8 ? 0x30000 : cursor + 4 * uint32_t(rng() % 800);
+    const auto put32 = [&](uint32_t a, uint32_t v) {
+      for (int b = 0; b < 4; ++b) p.native[a + b] = p.model[a + b] = uint8_t(v >> (8 * (3 - b)));
+    };
+    put32(device + offset, cursor), put32(device + offset + 4, end);
+    uint64_t mask = rng() % 4 ? rng() & rng() : rng();
+    if (!mask) mask = 1;
+    const uint64_t index0 = rng() % 1024;
+    const uint32_t source = 0x40000 + 4 * uint32_t(rng() % 64);
+    uint64_t index_pm4 = index0, index_records = index0, cursor_pm4 = 0, cursor_records = 0;
+    const bool pm4 = words ? xdk::D3dDirtyWords(p.a, device, offset, mask, index_pm4, source, cursor_pm4)
+                           : xdk::D3dDirtyConstants(p.a, device, offset, mask, index_pm4, source, cursor_pm4);
+    const std::vector<uint8_t> before = p.model;
+    const bool records = words ? xdk::D3dDirtyWordsRecords(p.b, device, offset, mask, index_records, source, cursor_records)
+                               : xdk::D3dDirtyConstantsRecords(p.b, device, offset, mask, index_records, source, cursor_records);
+    if (!records) {
+      ++declined;
+      CHECK(p.model == before);  // nothing written
+      continue;
+    }
+    CHECK(pm4);  // the records fit only where the PM4 does (their room is checked against the same end)
+    if (!pm4) continue;
+    ++compared;
+    CHECK(index_pm4 == index_records && cursor_records < end);
+    CHECK(Decode(p.native, cursor + 4, uint32_t(cursor_pm4)) == Decode(p.model, cursor + 4, uint32_t(cursor_records)));
+  }
+  CHECK(compared > 2000 && declined > 50);
+}
+
 int main() {
   Orders();
   Raced(20000, false);
@@ -345,5 +415,6 @@ int main() {
   DirtyConstants();
   DirtyWords();
   ShaderConstants();
+  UploadRecords();
   return xdk_test::Finish("xdk_d3d_tests");
 }

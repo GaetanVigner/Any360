@@ -36,6 +36,10 @@
 #include "any360/xdk/xapi.h"
 #include "rexglue.h"
 
+namespace any360::host::rexglue::d3d_draw {
+bool DrawRecords();  // any360_d3d_records (d3d_draw.cpp)
+}
+
 namespace any360::host::rexglue::xdk {
 
 enum class Function : uint32_t {
@@ -445,7 +449,10 @@ inline void XAudioMixRamp(PPCContext& ctx, uint8_t* base, GuestFunction original
 inline void D3dDirtyConstants(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t cursor_offset) {
   if (g_mode == Mode::kNative) [[likely]] {
     uint64_t index = ctx.r5.u64, cursor = 0;
-    if (any360::xdk::D3dDirtyConstants(g_memory, ctx.r3.u32, cursor_offset, ctx.r4.u64, index, ctx.r6.u32, cursor))
+    // With any360_d3d_records, Any360's register records (the PM4 form when they would not fit).
+    if ((d3d_draw::DrawRecords() &&
+         any360::xdk::D3dDirtyConstantsRecords(g_memory, ctx.r3.u32, cursor_offset, ctx.r4.u64, index, ctx.r6.u32, cursor)) ||
+        any360::xdk::D3dDirtyConstants(g_memory, ctx.r3.u32, cursor_offset, ctx.r4.u64, index, ctx.r6.u32, cursor))
         [[likely]] {
       ctx.r4.u64 = cursor;
       ctx.r5.u64 = index;
@@ -460,7 +467,9 @@ inline void D3dDirtyConstants(PPCContext& ctx, uint8_t* base, GuestFunction orig
 inline void D3dDirtyWords(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t cursor_offset) {
   if (g_mode == Mode::kNative) [[likely]] {
     uint64_t index = ctx.r5.u64, cursor = 0;
-    if (any360::xdk::D3dDirtyWords(g_memory, ctx.r3.u32, cursor_offset, ctx.r4.u64, index, ctx.r6.u32, cursor)) [[likely]] {
+    if ((d3d_draw::DrawRecords() &&
+         any360::xdk::D3dDirtyWordsRecords(g_memory, ctx.r3.u32, cursor_offset, ctx.r4.u64, index, ctx.r6.u32, cursor)) ||
+        any360::xdk::D3dDirtyWords(g_memory, ctx.r3.u32, cursor_offset, ctx.r4.u64, index, ctx.r6.u32, cursor)) [[likely]] {
       ctx.r4.u64 = cursor;
       ctx.r5.u64 = index;
       return;

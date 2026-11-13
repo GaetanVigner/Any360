@@ -879,6 +879,18 @@ bool CommandProcessor::ExecuteRecord(Reader& r, uint32_t end) {
     case record::kRegisters: {
       const uint32_t count = end - r.offset;
       if (argument + count > reg::kRegisterCount) return true;
+      // Registers the command processor does not act on, not wrapping the ring: copied at once, already in the host's
+      // order (the type-0 path's copy without its byte swap).
+      const uint32_t last = argument + count, at = r.offset >= r.capacity ? r.offset - r.capacity : r.offset;
+      auto touches = [&](uint32_t lo, uint32_t hi) { return argument < hi && lo < last; };
+      if (at + count <= r.capacity && !touches(reg::DC_LUT_RW_INDEX, reg::DC_LUT_30_COLOR + 1) &&
+          !touches(reg::SCRATCH_REG0, reg::SCRATCH_REG0 + 8) && !touches(reg::COHER_STATUS_HOST, reg::COHER_STATUS_HOST + 1)) {
+        std::memcpy(registers_.data() + argument, Host(r.base + 4 * at), 4 * size_t(count));
+        MarkDirty(argument, count);
+        r.offset += count;
+        r.remaining -= count;
+        return true;
+      }
       for (uint32_t i = 0; i < count; ++i) SetRegister(argument + i, NextRaw(r));
       return true;
     }

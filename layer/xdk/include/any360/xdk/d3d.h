@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "crt.h"
+#include "d3d_records.h"
 
 namespace any360::xdk {
 
@@ -174,6 +175,52 @@ inline bool D3dDirtyWords(const Memory& memory, uint32_t device, uint32_t cursor
   cursor_register = plan.final_cursor;
   index = plan.index_after;
   return true;
+}
+
+// The same uploads written as Any360's register records (d3d_records.h) instead of type-0 packets: a record a run of
+// set bits, its registers' values in the host's byte order (swapped from the title's big-endian constants), no pads.
+// Declined (false, nothing written) where the PM4 upload is, and when the records would reach the buffer's end (a
+// record a run is a word longer than its packet): the caller then writes the PM4 form.
+namespace detail {
+template <uint32_t kWordsABit>
+inline bool UploadAsRecords(const Memory& memory, uint32_t device, uint32_t cursor_offset, uint64_t mask, uint64_t& index,
+                            uint32_t source, uint64_t& cursor_register, const UploadPlan& plan) {
+  const MaskShape s = ShapeOf(mask);
+  const uint64_t bytes = 4ull * (2ull * s.runs + uint64_t(kWordsABit) * s.ones);
+  const uint64_t final_cursor = uint64_t(plan.cursor) + bytes;
+  if (final_cursor >= plan.end || !IsPlainMemory(plan.cursor + 4, uint32_t(bytes)) ||
+      !Disjoint(plan.cursor + 4, uint32_t(bytes), plan.source_at, plan.source_size) ||
+      !Disjoint(plan.cursor + 4, uint32_t(bytes), device + cursor_offset, 8))
+    return false;
+  uint8_t* to = memory.Host(plan.cursor + 4);
+  const uint8_t* from = memory.Host(kWordsABit == 16 ? (source & ~0xFu) : source);
+  uint32_t at = uint32_t(index);
+  ForEachRun(mask, [&](uint32_t skip, uint32_t run) {
+    from += skip * 4 * kWordsABit, at += skip * kWordsABit;
+    const uint32_t words = run * kWordsABit;
+    Store32(to, std::byteswap(record::Header(record::RegistersWords(words))));
+    Store32(to + 4, record::KindWord(record::kRegisters, at));
+    to += 8;
+    for (uint32_t w = 0; w < words; ++w) Store32(to + 4 * w, std::byteswap(Load32(from + 4 * w)));
+    to += 4 * words, from += 4 * words, at += words;
+  });
+  Store32(memory.Host(device + cursor_offset), std::byteswap(uint32_t(final_cursor)));
+  cursor_register = final_cursor;
+  index = plan.index_after;
+  return true;
+}
+}  // namespace detail
+inline bool D3dDirtyConstantsRecords(const Memory& memory, uint32_t device, uint32_t cursor_offset, uint64_t mask,
+                                     uint64_t& index, uint32_t source, uint64_t& cursor_register) {
+  detail::UploadPlan plan;
+  if (!detail::PlanD3dConstants(memory, device, cursor_offset, mask, index, source, plan)) return false;
+  return detail::UploadAsRecords<16>(memory, device, cursor_offset, mask, index, source, cursor_register, plan);
+}
+inline bool D3dDirtyWordsRecords(const Memory& memory, uint32_t device, uint32_t cursor_offset, uint64_t mask,
+                                 uint64_t& index, uint32_t source, uint64_t& cursor_register) {
+  detail::UploadPlan plan;
+  if (!detail::PlanD3dWords(memory, device, cursor_offset, mask, index, source, plan)) return false;
+  return detail::UploadAsRecords<1>(memory, device, cursor_offset, mask, index, source, cursor_register, plan);
 }
 
 // The D3D runtime's copy of a title's shader constants into the device (named after what it does; Crackdown's

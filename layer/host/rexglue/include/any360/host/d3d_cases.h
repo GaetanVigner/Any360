@@ -69,14 +69,25 @@ inline const char* R3R4R5Differ(const PPCContext& a, const PPCContext& b) {
   if (a.r5.u64 != b.r5.u64) return "r5";
   return nullptr;
 }
-template <uint32_t kCursor, bool kWords>
+// kRecords: as the adapter writes them with any360_d3d_records (records, else PM4), compared through Normalize, r4
+// (the cursor) not compared.
+inline const char* R3R5Differ(const PPCContext& a, const PPCContext& b) {
+  if (a.r3.u64 != b.r3.u64) return "r3";
+  if (a.r5.u64 != b.r5.u64) return "r5";
+  return nullptr;
+}
+template <uint32_t kCursor, bool kWords, bool kRecords = false>
 struct DirtyUpload {
   static bool Native(PPCContext& ctx, uint8_t*) {
     uint64_t index = ctx.r5.u64, cursor = 0;
-    const bool taken = kWords ? any360::xdk::D3dDirtyWords(SelfTestMemory(), ctx.r3.u32, kCursor, ctx.r4.u64, index,
-                                                           ctx.r6.u32, cursor)
-                              : any360::xdk::D3dDirtyConstants(SelfTestMemory(), ctx.r3.u32, kCursor, ctx.r4.u64,
-                                                               index, ctx.r6.u32, cursor);
+    const any360::xdk::Memory& m = SelfTestMemory();
+    bool taken = false;
+    if (kRecords)
+      taken = kWords ? any360::xdk::D3dDirtyWordsRecords(m, ctx.r3.u32, kCursor, ctx.r4.u64, index, ctx.r6.u32, cursor)
+                     : any360::xdk::D3dDirtyConstantsRecords(m, ctx.r3.u32, kCursor, ctx.r4.u64, index, ctx.r6.u32, cursor);
+    if (!taken)
+      taken = kWords ? any360::xdk::D3dDirtyWords(m, ctx.r3.u32, kCursor, ctx.r4.u64, index, ctx.r6.u32, cursor)
+                     : any360::xdk::D3dDirtyConstants(m, ctx.r3.u32, kCursor, ctx.r4.u64, index, ctx.r6.u32, cursor);
     if (!taken) return false;
     ctx.r4.u64 = cursor;
     ctx.r5.u64 = index;
@@ -86,6 +97,7 @@ struct DirtyUpload {
     std::mt19937_64& rng = *s.rng;
     const uint32_t cursor = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
     const uint32_t end = s.scratch + 0x30000;
+    Put32(s, s.scratch, cursor);  // the buffer's start, for Normalize
     Put32(s, s.device + kCursor, cursor);
     Put32(s, s.device + kCursor + 4, end);
     ctx.r3.u64 = s.device;
@@ -93,7 +105,8 @@ struct DirtyUpload {
     ctx.r5.u64 = rng() % 0x4400;
     ctx.r6.u64 = s.scratch + 0x34000 + (kWords ? uint32_t(rng() % 64) * 4 : uint32_t(rng() % 64) * 16);
   }
-  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &R3R4R5Differ;
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = kRecords ? &R3R5Differ : &R3R4R5Differ;
+  static void Normalize(CallSetup& s, PPCContext&);
 };
 
 // A state setter of xdk_natives.h (xdk::d3d_state: Native on the registers, in the title's layout) with the inputs
@@ -605,5 +618,14 @@ struct PixelFloats {
   static void Setup(CallSetup& s, PPCContext& ctx) { SetShaderConstants::Setup(s, ctx); }
 };
 }  // namespace state
+
+template <uint32_t kCursor, bool kWords, bool kRecords>
+void DirtyUpload<kCursor, kWords, kRecords>::Normalize(CallSetup& s, PPCContext&) {
+  if constexpr (kRecords) {
+    // The device's cursor field at kCursor (48 here, as the canonical decoding reads).
+    if constexpr (kCursor == 48) state::CanonicalCommands(s, 0);
+  }
+}
+
 
 }  // namespace any360::host::rexglue::d3d
