@@ -295,10 +295,13 @@ inline void CanonicalCommands(CallSetup& s, uint32_t cursor = 0) {
         const uint32_t opcode = (h >> 8) & 0x7F;
         uint32_t raw[8] = {};
         for (uint32_t i = 0; i < 8 && i < count; ++i) std::memcpy(&raw[i], s.Host(at + 4 * i), 4);
+        const uint32_t predicated = h & 1;
         if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kDraw && count == record::DrawWords(true)) {
-          out.insert(out.end(), {1, raw[1], raw[2], raw[3]});
+          out.insert(out.end(), {1, raw[1], raw[2], raw[3], predicated});
         } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kDraw && count == record::DrawWords(false)) {
-          out.insert(out.end(), {1, raw[1], 0, 0});
+          out.insert(out.end(), {1, raw[1], 0, 0, predicated});
+        } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kBins && count == record::kBinsWords) {
+          out.insert(out.end(), {3, raw[0] >> 8, raw[1], predicated});
         } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kRegisters) {
           for (uint32_t i = 1; i < count; ++i) {
             uint32_t v;
@@ -306,9 +309,11 @@ inline void CanonicalCommands(CallSetup& s, uint32_t cursor = 0) {
             out.insert(out.end(), {0, (raw[0] >> 8) + i - 1, v});
           }
         } else if (opcode == 0x22 && count == 4) {  // DRAW_INDX with DMA indices: its query dword is not drawn
-          out.insert(out.end(), {1, Get32(s, at + 4), Get32(s, at + 8), Get32(s, at + 12)});
+          out.insert(out.end(), {1, Get32(s, at + 4), Get32(s, at + 8), Get32(s, at + 12), predicated});
         } else if (opcode == 0x22 && count == 2) {  // DRAW_INDX with auto indices
-          out.insert(out.end(), {1, Get32(s, at + 4), 0, 0});
+          out.insert(out.end(), {1, Get32(s, at + 4), 0, 0, predicated});
+        } else if (opcode >= 0x60 && opcode <= 0x63 && count == 1) {  // SET_BIN_MASK_LO/HI, SET_BIN_SELECT_LO/HI
+          out.insert(out.end(), {3, opcode - 0x60, Get32(s, at), predicated});
         } else {
           out.insert(out.end(), {2, opcode, count});
           for (uint32_t i = 0; i < count; ++i) out.push_back(Get32(s, at + 4 * i));
@@ -382,6 +387,34 @@ struct DrawIndexed {
     ctx.r6.u64 = rng() % 0x10000;
     ctx.r7.u64 = rng() % 16 == 0 ? 65536 + rng() % 200000 : 1 + rng() % 3000;
     if (!kIndexed) ctx.r5.u64 = rng() % 0x10000, ctx.r6.u64 = ctx.r7.u64;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
+  }
+};
+
+// SetPredication (d3d_draw.h): the draws' device with its tiling flags, bound surfaces and query bytes changed now and
+// then, a mask of 0 (all tiles) one call in three.
+template <bool kRecords>
+struct Predication {
+  static bool Native(PPCContext& ctx, uint8_t* base) {
+    return d3d_draw::SetPredication(ctx, base, SelfTestMemory(), kRecords);
+  }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    DrawIndexed<kRecords>::Setup(s, ctx);
+    std::mt19937_64& rng = *s.rng;
+    s.Host(s.device + 10812)[0] = uint8_t(rng());
+    s.Host(s.device + 10815)[0] = uint8_t(rng());
+    s.Host(s.device + 11841)[0] = rng() % 2 ? 0 : uint8_t(rng());
+    s.Host(s.device + 11907)[0] = rng() % 2 ? 0 : uint8_t(rng() % 4);
+    for (uint32_t k = 0; k < 5; ++k) {
+      const uint32_t surface = rng() % 3 == 0 ? 0 : uint32_t(rng() % 4);
+      Put32(s, s.device + 12160 + 4 * k, surface);
+      Put32(s, s.device + 12448 + 4 * k, rng() % 2 ? surface : uint32_t(rng() % 4));
+    }
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = rng() % 3 == 0 ? 0 : uint32_t(rng());
   }
   static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
   static void Normalize(CallSetup& s, PPCContext&) {

@@ -566,6 +566,24 @@ void Records() {
   s.ring.Put({Type0(0x2500, 1), 0x99});
   s.ring.Run();
   CHECK(s.cp.reg(0x2500) == 0x99);
+  // Bin records as SET_BIN_MASK/SELECT: a predicated draw record runs only for a tile both have.
+  s.recorder.draws.clear();
+  const auto bins = [&](uint32_t which, uint32_t value) {
+    s.ring.Put(record::Header(record::kBinsWords));
+    raw(s.ring, record::KindWord(record::kBins, which)), raw(s.ring, value);
+  };
+  const auto predicated_draw = [&] {
+    s.ring.Put(record::Header(record::DrawWords(false), true));
+    raw(s.ring, record::KindWord(record::kDraw, 2)), raw(s.ring, auto_initiator);
+  };
+  bins(0, 0x1), bins(1, 0), bins(2, 0x2), bins(3, 0);
+  predicated_draw();
+  bins(2, 0x3);
+  predicated_draw();
+  bins(0, 0), bins(1, 0x80000000u), bins(3, 0x80000000u);
+  predicated_draw();
+  s.ring.Run();
+  CHECK(s.recorder.draws.size() == 2);
 }
 
 int main() {

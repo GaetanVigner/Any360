@@ -879,6 +879,13 @@ void CommandProcessor::ExecuteRecord(Reader& r, uint32_t end) {
       SubmitDraw(draw);
       return;
     }
+    case record::kBins: {
+      if (r.offset >= end || argument > 3) return;
+      const uint64_t value = NextRaw(r);
+      uint64_t& bins = argument < 2 ? bin_mask_ : bin_select_;
+      bins = (argument & 1) ? (bins & 0xFFFFFFFFull) | value << 32 : (bins & 0xFFFFFFFF00000000ull) | value;
+      return;
+    }
     default:
       return;  // a kind this build does not know: skipped
   }

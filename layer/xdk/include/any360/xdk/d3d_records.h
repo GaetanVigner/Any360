@@ -9,6 +9,11 @@
 //   kDraw       argument: the draw's source as in the initiator (0 DMA indices, 2 auto). Then the initiator (as
 //               VGT_DRAW_INITIATOR) and, for DMA indices, VGT_DMA_BASE and VGT_DMA_SIZE: what DRAW_INDX draws, without
 //               its visibility query dword (the command processor reads the query from PA_SC_VIZ_QUERY).
+//   kBins       argument: 0 the bin mask's low half, 1 its high half, 2 the bin select's low half, 3 its high half
+//               (SET_BIN_MASK_LO and the others). Then the value.
+//
+// A record is predicated as PM4 is: bit 0 of its header (the runtime predicates its draws, which run only for the
+// tiles that the bin select and mask both have).
 //
 // The writers (any360/xdk/d3d_state.h and the host's D3D natives) and the command processor (layer/gfx) share this
 // header only; it has no dependency.
@@ -19,14 +24,17 @@
 namespace any360::xdk::record {
 
 constexpr uint32_t kOpcode = 0x7E;
-enum Kind : uint32_t { kRegisters = 1, kDraw = 2 };
+enum Kind : uint32_t { kRegisters = 1, kDraw = 2, kBins = 3 };
 
-// The packet's header for `words` words after it (the kind word included).
-constexpr uint32_t Header(uint32_t words) { return (3u << 30) | ((words - 1) << 16) | (kOpcode << 8); }
+// The packet's header for `words` words after it (the kind word included), `predicated` or not.
+constexpr uint32_t Header(uint32_t words, bool predicated = false) {
+  return (3u << 30) | ((words - 1) << 16) | (kOpcode << 8) | (predicated ? 1u : 0u);
+}
 constexpr uint32_t KindWord(Kind kind, uint32_t argument) { return uint32_t(kind) | (argument << 8); }
 
 // The words after the header of a register record of `count` registers, and of a draw record (the kind word included).
 constexpr uint32_t RegistersWords(uint32_t count) { return 1 + count; }
 constexpr uint32_t DrawWords(bool dma) { return dma ? 4 : 2; }
+constexpr uint32_t kBinsWords = 2;
 
 }  // namespace any360::xdk::record

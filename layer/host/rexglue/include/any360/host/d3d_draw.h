@@ -164,7 +164,7 @@ inline bool DrawIndexed(PPCContext& ctx, uint8_t* base, const any360::xdk::Memor
     uint8_t* out = m.Host(cursor + 4);
     Set32(out, 8450), Set32(out + 4, vgt);  // type-0: VGT 0x2102
     if (records) {
-      Set32(out + 8, record::Header(record::DrawWords(true)));
+      Set32(out + 8, record::Header(record::DrawWords(true), true));
       const uint32_t words[4] = {record::KindWord(record::kDraw, 0), initiator, address, size};
       std::memcpy(out + 12, words, 16);
     } else {
@@ -204,7 +204,7 @@ inline bool DrawVertices(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
     uint8_t* out = m.Host(cursor + 4);
     Set32(out, 8450), Set32(out + 4, first);  // type-0: VGT 0x2102
     if (records) {
-      Set32(out + 8, record::Header(record::DrawWords(false)));
+      Set32(out + 8, record::Header(record::DrawWords(false), true));
       const uint32_t words[2] = {record::KindWord(record::kDraw, 2), initiator};
       std::memcpy(out + 12, words, 8);
     } else {
@@ -288,7 +288,7 @@ inline bool BeginVertices(PPCContext& ctx, uint8_t* base, const any360::xdk::Mem
   uint8_t* out = WriteBeginState(m.Host(cursor + 4), 0, {1, 0, 1, 0}, vertices, dwords);
   const uint32_t initiator = ((count << 16) & 0xFFFF0000u) | (uint32_t(primitive) & 0x3F) | 0x80;
   if (records) {
-    Set32(out, record::Header(record::DrawWords(false)));
+    Set32(out, record::Header(record::DrawWords(false), true));
     const uint32_t words[2] = {record::KindWord(record::kDraw, 2), initiator};
     std::memcpy(out + 4, words, 8);
   } else {
@@ -345,7 +345,7 @@ inline bool BeginIndexedVertices(PPCContext& ctx, uint8_t* base, const any360::x
   if (wide) initiator |= 0x800, size = ((indices << 1) & 0x00FFFFFEu) | endian;
   const uint32_t address = GpuAddress(index_block, 0x1FFFFFFFu);
   if (records) {
-    Set32(out, record::Header(record::DrawWords(true)));
+    Set32(out, record::Header(record::DrawWords(true), true));
     const uint32_t words[4] = {record::KindWord(record::kDraw, 0), initiator, address, size};
     std::memcpy(out + 4, words, 16);
   } else {
@@ -358,6 +358,65 @@ inline bool BeginIndexedVertices(PPCContext& ctx, uint8_t* base, const any360::x
   Set32(m.Host(index_out), index_block), Set32(m.Host(vertex_out), vertices);
   ctx.r3.u64 = 0;
   return true;
+}
+
+// SetPredication: r3 device, r4 the tiles (bits) the next commands run for, 0 for all. The runtime keeps it (+12428:
+// the mask written, -1 for all; +12436 set when a mask is; +10804; +12432 and +10808 cleared) and, with no mask, sets
+// flag 0x02 of +10812 (the draws' predicated-query variant) when its tiling conditions hold; then writes the bin mask
+// (SET_BIN_MASK_LO, or Any360's bins record).
+inline bool SetPredication(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  namespace record = any360::xdk::record;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32, tiles = ctx.r4.u32;
+  if (!rt.make_room || !any360::xdk::IsPlainMemory(device, 16384)) return false;
+  uint8_t* d = m.Host(device);
+  if (tiles == 0) {
+    const uint8_t flags = d[10812];
+    Set32(d + 12436, 0);
+    bool tiled = false;
+    if (flags & 0x10) {
+      tiled = true;
+    } else if (flags & 0x20) {
+      tiled = true;
+      for (uint32_t k = 0; k < 5 && tiled; ++k) {
+        const uint32_t bound = At32(d + 12160 + 4 * k);
+        tiled = At32(d + 12448 + 4 * k) == bound || bound == 0;
+      }
+    }
+    const bool query = tiled && !(flags & 0x08) && ((d[10815] & 0x40) || (d[11841] == 0 && d[11907] == 0));
+    Set32(d + 12428, 0xFFFFFFFFu);
+    d[10812] = uint8_t((flags & ~0x02) | (query ? 0x02 : 0));
+  } else {
+    Set32(d + 12428, tiles);
+    Set32(d + 12436, 1);
+    d[10812] &= 0xFD;
+  }
+  const uint32_t limit = At32(d + 56);
+  uint32_t cursor = At32(d + 48);
+  Set32(d + 12432, 0), Set32(d + 10804, tiles), Set32(d + 10808, 0);
+  if (cursor > limit) {
+    const uint32_t caller_r1 = ctx.r1.u32;
+    ctx.r1.u64 = caller_r1 - 96;
+    cursor = uint32_t(Call(ctx, base, rt.make_room, device));
+    ctx.r1.u64 = caller_r1;
+  }
+  uint8_t* out = m.Host(cursor + 4);
+  if (records) {
+    Set32(out, record::Header(record::kBinsWords));
+    const uint32_t words[2] = {record::KindWord(record::kBins, 0), At32(d + 12428)};
+    std::memcpy(out + 4, words, 8);
+    Set32(d + 48, cursor + 12);
+  } else {
+    Set32(out, 0xC0006000u), Set32(out + 4, At32(d + 12428));
+    Set32(d + 48, cursor + 8);
+  }
+  return true;
+}
+inline void SetPredicationOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && SetPredication(ctx, base, m, DrawRecords())) return;
+  original(ctx, base);
 }
 
 // The same for DrawVertices.
