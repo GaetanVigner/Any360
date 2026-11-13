@@ -332,7 +332,10 @@ std::string Device::DescribeFault() const {
 
 void Device::Destroy() {
   if (device_) {
-    fn_.vkDeviceWaitIdle(device_);
+    {
+      std::lock_guard queue_lock(queue_mutex_);
+      fn_.vkDeviceWaitIdle(device_);
+    }
     if (pool_) fn_.vkDestroyCommandPool(device_, pool_, nullptr);
     fn_.vkDestroyDevice(device_, nullptr);
   }
@@ -383,7 +386,11 @@ bool Device::EndOneTime(VkCommandBuffer cb) {
   VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
   submit.commandBufferCount = 1;
   submit.pCommandBuffers = &cb;
-  const bool ok = fn_.vkQueueSubmit(queue_, 1, &submit, VK_NULL_HANDLE) == VK_SUCCESS && fn_.vkQueueWaitIdle(queue_) == VK_SUCCESS;
+  bool ok;
+  {
+    std::lock_guard queue_lock(queue_mutex_);
+    ok = fn_.vkQueueSubmit(queue_, 1, &submit, VK_NULL_HANDLE) == VK_SUCCESS && fn_.vkQueueWaitIdle(queue_) == VK_SUCCESS;
+  }
   fn_.vkFreeCommandBuffers(device_, pool_, 1, &cb);
   return ok;
 }

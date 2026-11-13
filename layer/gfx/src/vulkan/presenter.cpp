@@ -112,7 +112,10 @@ Presenter::~Presenter() {
   const Functions& f = device_.fn();
   VkDevice d = device_.device();
   if (!d) return;
-  f.vkDeviceWaitIdle(d);
+  {
+    std::lock_guard queue_lock(device_.queue_mutex());
+    f.vkDeviceWaitIdle(d);
+  }
   DestroySwapchain();
   for (uint32_t i = 0; i < kFrames; ++i) {
     if (fences_[i]) f.vkDestroyFence(d, fences_[i], nullptr);
@@ -137,7 +140,10 @@ bool Presenter::Resize(uint32_t width, uint32_t height) {
   const Functions& f = device_.fn();
   VkDevice d = device_.device();
   if (!device_.surface()) return Fail("no surface: the device was made without a window");
-  f.vkDeviceWaitIdle(d);
+  {
+    std::lock_guard queue_lock(device_.queue_mutex());
+    f.vkDeviceWaitIdle(d);
+  }
   if (!pool_) {
     VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -317,6 +323,7 @@ bool Presenter::PresentWith(const uint32_t* rgba, const BlitFn* blit_source, uin
   submit.pCommandBuffers = &cb;
   submit.signalSemaphoreCount = 1;
   submit.pSignalSemaphores = &rendered_[index];
+  std::unique_lock queue_lock(device_.queue_mutex());  // the submit and the present, as one use of the queue
   if (f.vkQueueSubmit(device_.queue(), 1, &submit, fences_[slot]) != VK_SUCCESS) return Fail("vkQueueSubmit failed");
   slot_ = (slot + 1) % kFrames;
   VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
@@ -326,6 +333,7 @@ bool Presenter::PresentWith(const uint32_t* rgba, const BlitFn* blit_source, uin
   present.pSwapchains = &swapchain_;
   present.pImageIndices = &index;
   const VkResult presented = f.vkQueuePresentKHR(device_.queue(), &present);
+  queue_lock.unlock();
   if (presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR) {
     return presented == VK_ERROR_OUT_OF_DATE_KHR ? Fail("swapchain out of date (resize)") : Fail("vkQueuePresentKHR failed");
   }

@@ -225,7 +225,10 @@ VulkanRenderer::~VulkanRenderer() {
   for (std::thread& t : compilers_) t.join();
   TakeCompiledPipelines();
   SavePipelineCache();
-  f.vkDeviceWaitIdle(d);
+  {
+    std::lock_guard queue_lock(device_.queue_mutex());
+    f.vkDeviceWaitIdle(d);
+  }
   for (Batch& b : batches_) {
     if (b.fence) f.vkDestroyFence(d, b.fence, nullptr);
     if (timestamps_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, timestamps_, nullptr);
@@ -3061,7 +3064,12 @@ void VulkanRenderer::Submit(uint32_t index) {
   submit.commandBufferCount = uint32_t(s.cbs.size());
   submit.pCommandBuffers = s.cbs.data();
   if (submit_phase_ == 2) submit_phase_ = 3;
-  if (const VkResult result = f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence); result != VK_SUCCESS) {
+  VkResult submitted;
+  {
+    std::lock_guard queue_lock(device_.queue_mutex());
+    submitted = f.vkQueueSubmit(device_.queue(), 1, &submit, b.fence);
+  }
+  if (const VkResult result = submitted; result != VK_SUCCESS) {
     // The first failure with its result (and the driver's fault description when the device is lost).
     static bool told = false;
     if (!told) {
@@ -5002,7 +5010,10 @@ void VulkanRenderer::RecordFrameBlit(VkCommandBuffer cb, VkImage target, VkOffse
   gamma_next_ = (gamma_next_ + 1) % kGammaFrames;
   // The output image, as large as the frame.
   if (g.image.width < frame_.width || g.image.height < frame_.height) {
-    f.vkDeviceWaitIdle(device_.device());
+    {
+      std::lock_guard queue_lock(device_.queue_mutex());
+      f.vkDeviceWaitIdle(device_.device());
+    }
     DestroyImage(device_, g.image);
     g.layout = VK_IMAGE_LAYOUT_UNDEFINED;
     if (!CreateImage2D(device_, frame_.width, frame_.height, VK_FORMAT_R8G8B8A8_UNORM,

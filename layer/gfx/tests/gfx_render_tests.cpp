@@ -15,6 +15,8 @@
 #include <random>
 #include <functional>
 #include <string>
+#include <atomic>
+#include <thread>
 #include <vector>
 
 #include "any360/gfx/capture.h"
@@ -2574,6 +2576,35 @@ int main(int argc, char** argv) {
       std::printf("gfx_render_tests: a texture read 1:1 at 2x, written back: %u of 4096 texels exact, %u grey\n", exact, grey);
       CHECK(exact == 4096 && grey == 0);
     }
+  }
+  // The queue from two threads at once: one-time submits on a thread of their own while the renderer draws and its
+  // submitter thread submits batches. Every submit succeeds and no draw fails (Device::queue_mutex: unguarded, two
+  // threads on the queue lost the device now and then at a title's start).
+  {
+    std::atomic<bool> stop{false};
+    std::atomic<uint32_t> other_failed{0}, other_done{0};
+    const uint32_t failed_before = renderer.stats().failed;
+    std::thread other([&] {
+      while (!stop.load()) {
+        if (!device.Submit([](VkCommandBuffer) {})) other_failed.fetch_add(1);
+        other_done.fetch_add(1);
+      }
+    });
+    const uint32_t color = Rgba(30, 60, 90, 255);
+    uint32_t right = 0;
+    for (uint32_t i = 0; i < 100; ++i) {
+      Pixels p = scenario("queue from two threads", nullptr, [&] {
+        s.Vertices(0);
+        s.Color(30, 60, 90, 255);
+        s.DrawAuto(kTriangleStrip, 4);
+      });
+      right += p.Count(color) == kSize * kSize;
+    }
+    stop = true;
+    other.join();
+    std::printf("gfx_render_tests: queue from two threads: %u of 100 frames right, %u one-time submits beside them, %u "
+                "failed\n", right, other_done.load(), other_failed.load());
+    CHECK(right == 100 && other_failed.load() == 0 && other_done.load() > 0 && renderer.stats().failed == failed_before);
   }
   // Pipeline warm-up: a run with asynchronous pipelines and one sample records its pipelines' recipes beside the
   // pipeline cache; the next run, at 4x host MSAA (pipelines the driver's cache of the first run cannot hold),

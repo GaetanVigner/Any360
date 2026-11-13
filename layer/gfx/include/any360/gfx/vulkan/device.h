@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <source_location>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -49,6 +50,11 @@ class Device {
   VkPhysicalDevice physical() const { return physical_; }
   VkDevice device() const { return device_; }
   VkQueue queue() const { return queue_; }
+  // Held around every use of the queue (vkQueueSubmit, vkQueuePresentKHR, vkQueueWaitIdle, vkDeviceWaitIdle): the
+  // renderer's submitter thread, the presenter and one-time submits use it from different threads, and Vulkan wants
+  // a queue used by one thread at a time (two at once lost the device now and then at a title's start, when the
+  // window's resize waited for the device while a frame's batches were being submitted).
+  std::mutex& queue_mutex() const { return queue_mutex_; }
   VkSurfaceKHR surface() const { return surface_; }
   // VK_EXT_external_memory_host: the alignment a host allocation must have to be imported (0: not available).
   VkDeviceSize host_pointer_alignment() const { return host_pointer_alignment_; }
@@ -88,6 +94,7 @@ class Device {
   VkPhysicalDevice physical_ = VK_NULL_HANDLE;
   VkDevice device_ = VK_NULL_HANDLE;
   VkQueue queue_ = VK_NULL_HANDLE;
+  mutable std::mutex queue_mutex_;
   VkSurfaceKHR surface_ = VK_NULL_HANDLE;
   VkDeviceSize host_pointer_alignment_ = 0;
   uint32_t queue_family_ = 0;

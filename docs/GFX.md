@@ -559,3 +559,17 @@ The rexglue host's screenshot option records a burst: when `<screenshot>.burst` 
 900 if empty), the next presented frames are written at half size as raw PPM files into `<screenshot>_burst` by a
 thread of their own (frames are dropped when it falls behind, and the log says how many). A light missing for one
 frame at the start of a Black Ops match was found that way; a capture slows the title too much to show it.
+
+### One thread at a time on the queue (2026-11-13)
+
+The renderer's submitter thread, the presenter (its submit and present, and vkDeviceWaitIdle when the window is
+resized), one-time submits and the destructors all used the one Vulkan queue with nothing between them; Vulkan wants
+a queue (and vkDeviceWaitIdle, which uses every queue) used by one thread at a time. At a title's start, when the
+embedded window follows the title's and the swapchain is made again, the resize's vkDeviceWaitIdle met a frame's
+batches being submitted: Black Ops lost the device (or hung a batch, or crashed in the driver) in the first seconds of
+about one launch in four at 1440p with 4x MSAA. `Device::queue_mutex` is now held around every use of the queue.
+Launched 15 times in a row after it: no failure (4 of 15 the run before). The Vulkan SDK's crash diagnostic layer
+showed the way: every submit had completed when the device was lost.
+
+Test: `gfx_render_tests` (one-time submits on a thread of their own beside 100 frames the renderer draws and submits:
+every frame right, no submit failed).

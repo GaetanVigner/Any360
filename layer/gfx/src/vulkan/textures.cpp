@@ -667,7 +667,10 @@ TextureCache::~TextureCache() {
   const Functions& f = device_.fn();
   VkDevice d = device_.device();
   if (!d) return;
-  f.vkDeviceWaitIdle(d);
+  {
+    std::lock_guard queue_lock(device_.queue_mutex());
+    f.vkDeviceWaitIdle(d);
+  }
   for (Buffer& staging : pending_staging_) DestroyBuffer(device_, staging);
   pending_staging_.clear();
   for (Buffer& staging : free_staging_) DestroyBuffer(device_, staging);
