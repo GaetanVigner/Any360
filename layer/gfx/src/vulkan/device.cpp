@@ -203,6 +203,7 @@ bool Device::Create(const DeviceOptions& options) {
   enabled.features.fullDrawIndexUint32 = supported.features.fullDrawIndexUint32;
   enabled.features.independentBlend = supported.features.independentBlend;
   enabled.features.depthClamp = supported.features.depthClamp;
+  depth_clamp_ = supported.features.depthClamp;
   enabled.features.imageCubeArray = supported.features.imageCubeArray;
   enabled.features.shaderStorageImageWriteWithoutFormat = supported.features.shaderStorageImageWriteWithoutFormat;
   enabled.features.sampleRateShading = supported.features.sampleRateShading;

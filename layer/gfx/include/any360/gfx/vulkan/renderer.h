@@ -295,6 +295,12 @@ class VulkanRenderer : public gfx::Renderer {
     const auto it = resolved_.find(dest_base & 0x1FFFFFFF);
     return it == resolved_.end() ? 0 : it->second.scale;
   }
+  // Writes a resolve kept on the GPU at `dest_base` into guest memory now, for tools that read the destination
+  // (gfx_replay --dump-resolves): false when none is kept there.
+  bool WriteBackForTools(uint32_t dest_base) {
+    const auto it = resolved_.find(dest_base & 0x1FFFFFFF);
+    return it != resolved_.end() && it->second.image.image && WriteBackResolved(it->first, it->second);
+  }
   size_t pipeline_count() const { return pipelines_.size(); }
   // A host that watches guest memory for CPU writes (as for textures): guest memory copied into video memory is then
   // copied again only after a write (GuestMemoryWritten), not at every batch. `watch(begin, end)` arms a one-shot watch.
@@ -336,7 +342,7 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t color_masks;       // RB_COLOR_MASK of the bound targets
     uint32_t primitive_restart; // strips cut where the index buffer holds the reset index
     uint32_t samples;           // host MSAA samples of the pass's targets
-    uint32_t reserved;          // zero (keeps the key free of implicit padding: it is compared with memcmp)
+    uint32_t depth_clamp;       // PA_CL_CLIP_CNTL clip_disable: depth clamped to the viewport's range, not clipped
     bool operator<(const PipelineKey& other) const { return std::memcmp(this, &other, sizeof(*this)) < 0; }
     bool operator==(const PipelineKey& other) const { return std::memcmp(this, &other, sizeof(*this)) == 0; }
   };
@@ -357,7 +363,7 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t topology, cull_mode, front_face_clockwise, polygon_mode, depth_control, depth_format;
     uint32_t color_formats[4], blend_controls[4], color_masks, primitive_restart;
     uint32_t samples;  // 0 one sample with host MSAA on, 1 the host MSAA, 2 not known (recorded without host MSAA)
-    uint32_t reserved;
+    uint32_t depth_clamp;  // as the key's (0 in recipes saved before it)
     bool operator==(const PipelineRecipe& o) const { return std::memcmp(this, &o, sizeof(*this)) == 0; }
   };
   void RecordRecipe(const PipelineKey& key);  // the renderer's thread

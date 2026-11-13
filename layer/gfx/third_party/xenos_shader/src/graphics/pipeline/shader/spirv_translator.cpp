@@ -3314,6 +3314,26 @@ void SpirvShaderTranslator::StartFragmentShaderInMain() {
           spv::OpFMul, type_float_, param_gen_x,
           builder_->makeFloatConstant(4.0f / float(host_scale_quarters_x_)));
     }
+    // Any360 draws a guest MSAA surface as its samples (2x: twice the rows; 4x: twice the columns too), so a
+    // fragment's coordinates count samples: back to the guest pixel the sample is in, the resolution scale's
+    // fraction kept as above (soft particles and screen-space effects read textures at the pixel's place).
+    spv::Id param_gen_msaa = LoadMsaaSamplesFromFlags();
+    auto param_gen_samples_to_pixels = [&](spv::Id value, xenos::MsaaSamples doubled_from) {
+      spv::Id halved = builder_->createNoContractionBinOp(
+          spv::OpFAdd, type_float_,
+          builder_->createUnaryBuiltinCall(
+              type_float_, ext_inst_glsl_std_450_, GLSLstd450Floor,
+              builder_->createNoContractionBinOp(spv::OpFMul, type_float_, value,
+                                                 builder_->makeFloatConstant(0.5f))),
+          builder_->createUnaryBuiltinCall(type_float_, ext_inst_glsl_std_450_, GLSLstd450Fract,
+                                           value));
+      return builder_->createTriOp(
+          spv::OpSelect, type_float_,
+          builder_->createBinOp(spv::OpUGreaterThanEqual, type_bool_, param_gen_msaa,
+                                builder_->makeUintConstant(uint32_t(doubled_from))),
+          halved, value);
+    };
+    param_gen_x = param_gen_samples_to_pixels(param_gen_x, xenos::MsaaSamples::k4X);
     param_gen_x = builder_->createUnaryBuiltinCall(type_float_, ext_inst_glsl_std_450_,
                                                    GLSLstd450FAbs, param_gen_x);
     if (!modification.pixel.param_gen_point) {
@@ -3350,6 +3370,7 @@ void SpirvShaderTranslator::StartFragmentShaderInMain() {
           spv::OpFMul, type_float_, param_gen_y,
           builder_->makeFloatConstant(4.0f / float(host_scale_quarters_y_)));
     }
+    param_gen_y = param_gen_samples_to_pixels(param_gen_y, xenos::MsaaSamples::k2X);
     param_gen_y = builder_->createUnaryBuiltinCall(type_float_, ext_inst_glsl_std_450_,
                                                    GLSLstd450FAbs, param_gen_y);
     if (modification.pixel.param_gen_point) {

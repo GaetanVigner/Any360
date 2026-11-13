@@ -263,6 +263,8 @@ class TracingRenderer : public Renderer {
     const uint32_t info = regs[0x231B], format = (info >> 7) & 0x3F;
     const uint32_t width = regs[0x231A] & 0x3FFF, height = (regs[0x231A] >> 16) & 0x3FFF;
     if (!dump_.empty() && format == 6 && !(regs[0x2318] & 0x8) && width && height) {
+      // A resolve kept on the GPU: in guest memory first (what this replay made, not the capture's bytes).
+      r_.WriteBackForTools(regs[0x2319]);
       std::vector<uint32_t> pixels(size_t(width) * height);
       for (uint32_t y = 0; y < height; ++y) {
         for (uint32_t x = 0; x < width; ++x) {

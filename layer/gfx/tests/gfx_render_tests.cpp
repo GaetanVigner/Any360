@@ -1051,6 +1051,72 @@ int main(int argc, char** argv) {
                 kSize * kSize, back_facing);
     CHECK(exact == kSize * kSize && (back_facing == 0 || back_facing == kSize * kSize - kSize));
   }
+  // The same over a guest MSAA surface, which the renderer draws as its samples (2x: twice the rows; 4x: twice the
+  // columns too): each sample gets its guest pixel's position, as the console's pixel shader does (a soft particle
+  // reading the scene's depth at its pixel read rows twice too far down before: Call of Duty: Black Ops's lamp halos
+  // were cut to their quads).
+  for (const uint32_t msaa : {1u, 2u}) {
+    const vk::SurfaceKey target{1536, kSize, 7, 0};
+    const float zero[4] = {0, 0, 0, 0};
+    CHECK(renderer.ClearColor(target, zero));
+    const uint32_t pitch = msaa == 2 ? kSize / 2 : kSize, rows = kSize / 2;
+    scenario(msaa == 1 ? "parameter generation at 2x MSAA" : "parameter generation at 4x MSAA", nullptr, [&] {
+      s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, true}));
+      s.Reg(0x2000, pitch | msaa << 16);  // RB_SURFACE_INFO: the pitch in pixels, the MSAA mode
+      s.Reg(0x2001, 7u << 16 | 1536);     // RB_COLOR_INFO: k_16_16_16_16_FLOAT at tile 1536
+      s.Reg(0x2302, 1);
+      s.Put({Type0(0x210F, 6), Bits(pitch / 2.0f), Bits(pitch / 2.0f), Bits(-float(rows) / 2.0f), Bits(rows / 2.0f), Bits(1), Bits(0)});
+      s.Put({Type0(0x200E, 2), 0, rows << 16 | pitch});
+      s.Put({Type0(0x2080, 3), 0, 0, rows << 16 | pitch});
+      s.Reg(0x2180, 1u << 18);  // SQ_PROGRAM_CNTL: param_gen
+      s.Reg(0x2181, 0);
+      s.Vertices(0);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2180, 0);
+      s.Reg(0x2302, 0);
+    });
+    std::vector<uint8_t> bytes;
+    CHECK(renderer.ReadBack(target, kSize, kSize, bytes));
+    auto half = [](uint16_t h) {
+      const float magnitude = std::ldexp(float((h & 0x3FF) | ((h >> 10) & 0x1F ? 0x400 : 0)), ((h >> 10) & 0x1F ? (h >> 10) & 0x1F : 1) - 25);
+      return h & 0x8000 ? -magnitude : magnitude;
+    };
+    uint32_t exact = 0;
+    for (uint32_t y = 0; y < kSize && bytes.size() == kSize * kSize * 8; ++y) {
+      for (uint32_t x = 0; x < kSize; ++x) {
+        uint16_t h[2];
+        std::memcpy(h, bytes.data() + (size_t(y) * kSize + x) * 8, 4);
+        exact += std::fabs(half(h[0])) == float(msaa == 2 ? x / 2 : x) && half(h[1]) == float(y / 2);
+      }
+    }
+    std::printf("gfx_render_tests: parameter generation at %ux MSAA: %u of %u samples with their pixel's position\n",
+                msaa == 2 ? 4 : 2, exact, kSize * kSize);
+    CHECK(exact == kSize * kSize);
+  }
+  // Clipping off (PA_CL_CLIP_CNTL clip_disable): a quad beyond the far plane (z 1.5) is drawn at it, its depth
+  // clamped (as the reference does: a shadow map's occluders behind the light's near plane still cast shadows); with
+  // clipping on it is not drawn.
+  {
+    WriteQuad(12, 1.5f);
+    WriteQuad(13, 0.9f);
+    const uint32_t color = Rgba(90, 30, 160, 255);
+    uint32_t drawn[3] = {};
+    for (const uint32_t clip_disable : {0u, 1u, 2u}) {
+      Pixels p = scenario("depth clamp", nullptr, [&] {
+        s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+        s.Reg(0x2204, (clip_disable & 1) << 16);
+        s.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 7u << 4);  // z_enable, z_write, ALWAYS
+        s.Vertices(clip_disable == 2 ? 13 : 12);
+        s.Color(90, 30, 160, 255);
+        s.DrawAuto(kTriangleStrip, 4);
+        s.Reg(0x2204, 0);
+      });
+      drawn[clip_disable] = p.Count(color);
+    }
+    std::printf("gfx_render_tests: depth clamp: a quad beyond the far plane %u pixels clipped, %u with clipping off "
+                "(%u in range)\n", drawn[0], drawn[1], drawn[2]);
+    CHECK(drawn[0] == 0 && drawn[1] == kSize * kSize && drawn[2] == kSize * kSize);
+  }
   // The colour exponent bias of RB_COLOR_INFO: +1 doubles what the shader writes (0.2 -> 0.4).
   {
     Pixels p = scenario("exponent bias", nullptr, [&] {
@@ -2418,6 +2484,48 @@ int main(int argc, char** argv) {
     CHECK(scaled.resolve_scale(depth_dest) == 1 && scaled.resolve_scale(colour_dest) == 2);
     std::printf("gfx_render_tests: resolves at scale 2: depth held at %ux, colour at %ux\n", scaled.resolve_scale(depth_dest),
                 scaled.resolve_scale(colour_dest));
+    // Polygon offset's slope at scale 2: the guest's unit is 1/16 of a guest pixel, and a host pixel is half of one,
+    // so the depth slope per host pixel is half: the bias is scaled back up (as the reference does). A plane sloped
+    // 1/128 a guest pixel along x, then the same plane 0.005 further with a slope bias of -16 (-1/128 at the guest's
+    // scale; -1/256 without the scale, which would leave it behind): it passes LESS everywhere.
+    {
+      const uint32_t near_plane = kVertices + 0xD00, far_plane = kVertices + 0xE00;
+      const float xs[4] = {-1, 1, -1, 1}, ys[4] = {-1, -1, 1, 1};
+      for (uint32_t i = 0; i < 4; ++i) {
+        const float z = 0.5f + 0.25f * xs[i];
+        const float a[4] = {xs[i], ys[i], z, 1}, b[4] = {xs[i], ys[i], z + 0.005f, 1};
+        for (uint32_t c = 0; c < 4; ++c) {
+          SetBig(near_plane + 16 * i + 4 * c, Bits(a[c]));
+          SetBig(far_plane + 16 * i + 4 * c, Bits(b[c]));
+        }
+      }
+      CHECK(scaled.ClearColor(color0, clear));
+      CHECK(scaled.ClearDepthStencil(depth, 1.0f, 0));
+      w.Defaults();
+      w.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 1u << 4);  // z_enable, z_write, LESS
+      w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, near_plane | 3, 2u | 16u << 2});
+      w.Color(255, 0, 0, 255);
+      w.DrawAuto(kTriangleStrip, 4);
+      w.Reg(kPaSuScModeCntl, 1u << 11 | 1u << 12);  // polygon offset, front and back
+      w.Put({Type0(0x2380, 4), Bits(-16.0f), Bits(0.0f), Bits(-16.0f), Bits(0.0f)});
+      w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, far_plane | 3, 2u | 16u << 2});
+      w.Color(0, 255, 0, 255);
+      w.DrawAuto(kTriangleStrip, 4);
+      w.Reg(kPaSuScModeCntl, 0);
+      w.Put({Type0(0x2380, 4), 0, 0, 0, 0});
+      w.Run();
+      std::vector<uint8_t> bytes;
+      CHECK(scaled.ReadBack(color0, 2 * kSize, 2 * kSize, bytes));
+      // The half-pixel shift of D3D's pixel centres leaves the first host row and column to the clear colour.
+      uint32_t green = 0, red = 0;
+      for (size_t i = 0; i + 4 <= bytes.size(); i += 4) {
+        green += bytes[i] == 0 && bytes[i + 1] == 255 && bytes[i + 2] == 0;
+        red += bytes[i] == 255 && bytes[i + 1] == 0 && bytes[i + 2] == 0;
+      }
+      std::printf("gfx_render_tests: polygon offset slope at scale 2: %u of %u host pixels in front\n", green,
+                  4 * kSize * kSize);
+      CHECK(red == 0 && green >= (2 * kSize - 1) * (2 * kSize - 1));
+    }
   }
   // Pipeline warm-up: a run with asynchronous pipelines and one sample records its pipelines' recipes beside the
   // pipeline cache; the next run, at 4x host MSAA (pipelines the driver's cache of the first run cannot hold),

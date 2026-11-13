@@ -55,6 +55,7 @@ class Device {
   uint32_t queue_family() const { return queue_family_; }
   const VkPhysicalDeviceProperties& properties() const { return properties_; }
   bool occlusion_query_precise() const { return occlusion_query_precise_; }  // exact sample counts
+  bool depth_clamp() const { return depth_clamp_; }  // depthClampEnable in pipelines
   // After VK_ERROR_DEVICE_LOST: what the driver says faulted (VK_EXT_device_fault), or why it cannot say.
   std::string DescribeFault() const;
   // Diagnostics (ANY360_GPU_CHECKPOINTS=1, VK_NV_device_diagnostic_checkpoints): a marker the GPU passes in `cb`, and
@@ -92,6 +93,7 @@ class Device {
   VkDeviceSize host_pointer_alignment_ = 0;
   uint32_t queue_family_ = 0;
   bool occlusion_query_precise_ = false;
+  bool depth_clamp_ = false;
   bool device_fault_ = false;
   PFN_vkGetDeviceFaultInfoEXT get_fault_ = nullptr;
   PFN_vkCmdSetCheckpointNV set_checkpoint_ = nullptr;

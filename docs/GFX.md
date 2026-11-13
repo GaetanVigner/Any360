@@ -490,3 +490,24 @@ the green; newer rows only; at scale 2 a depth resolve held at 1x and a colour o
 capture of Black Ops's spawn view: the stairs' gap to the reference from 17.1 to 0.56 (1x) and 0.74 (2x).
 Still open there: a lamp's spot light whose lit area is cut to a rectangle (its own 512x512 shadow map at 1D5D0000,
 drawn and resolved at one base: not this), and light sprites (a floor lamp's halo).
+
+### Pixel positions over guest MSAA, depth clamp, scaled slope bias (2026-11-13)
+
+A guest MSAA surface is drawn as its samples (2x: twice the rows; 4x: twice the columns too), so a fragment's
+coordinates count samples. The pixel position a pixel shader asks for (SQ_PROGRAM_CNTL param_gen) is the guest
+pixel's again: the translator halves the sample coordinate along each doubled axis (keeping the resolution scale's
+fraction, as the reference does at scale). Before, rows were twice too far down: Call of Duty: Black Ops's soft
+light halos read the scene's depth at the wrong place and showed as their sharp-edged quads (a lamp over a door).
+Black Ops's spawn reference capture: 1.91% to 1.10% of pixels off.
+
+PA_CL_CLIP_CNTL clip_disable now clamps depth instead of clipping (depthClampEnable, as the reference): what lies
+beyond the near or far plane is drawn at it.
+
+Polygon offset's slope factor is multiplied by the resolution scale (the guest's unit is 1/16 of a guest pixel; a
+host pixel is a fraction of one), as the reference does: less bias at 2x let shadow maps fight with their receivers.
+
+gfx_replay `--dump-resolves` now writes a resolve kept on the GPU into guest memory first (WriteBackForTools), so
+depth resolves dump what the replay made instead of zeros.
+
+Tests: `gfx_render_tests` (parameter generation at 2x and 4x MSAA, every sample its pixel's position; a quad beyond
+the far plane clipped, drawn with clipping off; at scale 2 a plane biased by its slope in front of the same plane).
