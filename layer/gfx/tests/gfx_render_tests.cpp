@@ -1093,6 +1093,20 @@ int main(int argc, char** argv) {
                 msaa == 2 ? 4 : 2, exact, kSize * kSize);
     CHECK(exact == kSize * kSize);
   }
+  // A render target the renderer has not held before reads zeros, as the console's EDRAM before anything is drawn
+  // there, not what video memory held (a title blending over a target before its first clear showed that as
+  // flickering colours). Fresh targets of three formats, read back before any draw.
+  {
+    uint32_t nonzero = 0;
+    for (const uint32_t format : {0u, 6u, 7u}) {
+      const vk::SurfaceKey fresh{1900 + format * 8, kSize, format, 0};
+      std::vector<uint8_t> bytes;
+      CHECK(renderer.ReadBack(fresh, kSize, kSize, bytes));
+      for (uint8_t b : bytes) nonzero += b != 0;
+    }
+    std::printf("gfx_render_tests: fresh render targets: %u nonzero bytes\n", nonzero);
+    CHECK(nonzero == 0);
+  }
   // The colour exponent bias of RB_COLOR_INFO: +1 doubles what the shader writes (0.2 -> 0.4).
   {
     Pixels p = scenario("exponent bias", nullptr, [&] {
@@ -1397,8 +1411,8 @@ int main(int argc, char** argv) {
               stats.translations, stats.pipelines, stats.render_targets);
   // Render targets: colour 0, depth, colour 1, the 16_16_16_16_FLOAT target, the float24 depth surface and the nine
   // render target formats, of which the two AS_ ones share their base format's surface (12, not 14), as k_8_8_8_8
-  // shares k_8_8_8_8_GAMMA's.
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 12 && stats.texture_uploads == 6 && stats.resolves == 3);
+  // shares k_8_8_8_8_GAMMA's; and the three fresh targets read back as zeros (15).
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 15 && stats.texture_uploads == 6 && stats.resolves == 3);
   // (The resolved texture is copied from the resolve on the GPU, not uploaded: 6 uploads, not 7. Two resolves: that one and
   // the k_16_16_16_16 one.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8

@@ -641,6 +641,27 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& requested)
     return nullptr;
   }
   ++stats_.render_targets;
+  // Zeros, as the console's EDRAM holds before anything is drawn there, rather than what video memory held before:
+  // a title that blends over a target, or reads it, before its first clear showed that as flickering colours.
+  {
+    EndRendering();
+    const VkCommandBuffer cb = Record();
+    const Functions& f = device_.fn();
+    VkImageSubresourceRange range{aspect, 0, 1, 0, 1};
+    for (const bool samples : {false, true}) {
+      Image& image = samples ? slot->ms : slot->image;
+      VkImageLayout& layout = samples ? slot->ms_layout : slot->layout;
+      if (!image.image) continue;
+      Transition(cb, image, layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, aspect);
+      if (key.depth) {
+        const VkClearDepthStencilValue zero{0.0f, 0};
+        f.vkCmdClearDepthStencilImage(cb, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
+      } else {
+        const VkClearColorValue zero{};
+        f.vkCmdClearColorImage(cb, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
+      }
+    }
+  }
   // Its EDRAM group: same pitch, format and kind, bases a whole number of tile rows apart.
   {
     const std::array<uint32_t, 4> group_key = {key.pitch, key.format, key.depth, key.base % tiles_per_row};
@@ -930,9 +951,9 @@ void VulkanRenderer::Transition(VkCommandBuffer cb, Image& image, VkImageLayout&
 }
 
 bool VulkanRenderer::ClearColor(const SurfaceKey& key, const float rgba[4]) {
+  Surface* s = GetSurface(key);  // first: a new surface's zeros are recorded in the batch the flush submits
   Flush();     // what was drawn before comes first
   WaitIdle();  // and the submitter thread is done with the queue the one-time submit below uses
-  Surface* s = GetSurface(key);
   if (!s || key.depth) return false;
   if (s->group && s->group->members > 1) MarkWritten(s, 0, int32_t(s->image.height));
   const Functions& f = device_.fn();
@@ -951,9 +972,9 @@ bool VulkanRenderer::ClearColor(const SurfaceKey& key, const float rgba[4]) {
 }
 
 bool VulkanRenderer::ClearDepthStencil(const SurfaceKey& key, float depth, uint32_t stencil) {
+  Surface* s = GetSurface(key);  // first: a new surface's zeros are recorded in the batch the flush submits
   Flush();     // what was drawn before comes first
   WaitIdle();  // and the submitter thread is done with the queue the one-time submit below uses
-  Surface* s = GetSurface(key);
   if (!s || !key.depth) return false;
   if (s->group && s->group->members > 1) MarkWritten(s, 0, int32_t(s->image.height));
   const Functions& f = device_.fn();
@@ -4444,6 +4465,16 @@ bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t p
     return false;
   }
   VkImageLayout grown_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  {
+    // Zeros where no resolve has written yet (a texture over more of the destination than a first resolve covers
+    // read what video memory held before).
+    EndRendering();
+    VkCommandBuffer cb = Record();
+    Transition(cb, grown, grown_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    const VkClearColorValue zero{};
+    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    device_.fn().vkCmdClearColorImage(cb, grown.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
+  }
   if (keep) {
     // What earlier resolves to this base wrote stays (a second rectangle below the first, say).
     EndRendering();

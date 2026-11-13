@@ -533,3 +533,12 @@ depth resolves dump what the replay made instead of zeros.
 
 Tests: `gfx_render_tests` (parameter generation at 2x and 4x MSAA, every sample its pixel's position; at scale 2 a
 plane biased by its slope in front of the same plane).
+
+### New render targets and resolve images start as zeros (2026-11-13)
+
+A render target the renderer creates (and its host MSAA image) and a new resolve image are cleared to zeros, as the
+console's EDRAM holds before anything is drawn there, instead of what video memory held: a title blending over a
+target, or a texture reading part of a destination, before the first clear or resolve showed that as flickering
+colours (Black Ops at the start of a match, where its targets are created). The test API's ClearColor and
+ClearDepthStencil take the surface before flushing, so its zeros come first. Test: `gfx_render_tests` (three fresh
+targets read back as zeros). The reference captures replay unchanged.
