@@ -615,6 +615,22 @@ void Records() {
   s.ring.Run();
   CHECK(s.recorder.shaders == 1 && pm4_side.recorder.shaders == 1 && s.recorder.last_hash == pm4_side.recorder.last_hash);
   CHECK(s.cp.reg(0x2501) == 0x9A);
+  // Shader-load and constant-load records as IM_LOAD and LOAD_ALU_CONSTANT: the same microcode (hash), the same
+  // constants from memory.
+  for (uint32_t i = 0; i < 3; ++i) SetBig(kData + 256 + 4 * i, microcode[i] ^ 0x0F0F0F0Fu);
+  for (uint32_t i = 0; i < 4; ++i) SetBig(kData + 512 + 4 * i, 0xA0000000u + i);
+  pm4_side.ring.Put({Type3(pm4::IM_LOAD, 2), (kData + 256) | 1, 3});
+  pm4_side.ring.Put({Type3(pm4::LOAD_ALU_CONSTANT, 3), kData + 512, 0 << 16 | 0x48, 4});
+  pm4_side.ring.Run();
+  s.ring.Put(record::Header(record::kShaderLoadWords));
+  raw(s.ring, record::KindWord(record::kShaderLoad, 0)), raw(s.ring, (kData + 256) | 1), raw(s.ring, 3);
+  s.ring.Put(record::Header(record::kConstantLoadWords));
+  raw(s.ring, record::KindWord(record::kConstantLoad, 0)), raw(s.ring, kData + 512), raw(s.ring, 0 << 16 | 0x48),
+      raw(s.ring, 4);
+  s.ring.Run();
+  CHECK(s.recorder.shaders == 2 && pm4_side.recorder.shaders == 2 && s.recorder.last_hash == pm4_side.recorder.last_hash);
+  for (uint32_t i = 0; i < 4; ++i)
+    CHECK(s.cp.reg(0x4000 + 0x48 + i) == 0xA0000000u + i && pm4_side.cp.reg(0x4000 + 0x48 + i) == 0xA0000000u + i);
 }
 
 int main() {

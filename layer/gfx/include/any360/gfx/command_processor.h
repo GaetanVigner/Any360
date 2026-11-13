@@ -247,6 +247,10 @@ class CommandProcessor : public sys::GpuBackend {
   // `words`: the guest (big-endian) microcode when it is not contiguous at `address` (an immediate load wrapping
   // around the ring's end, gathered).
   void LoadShader(uint32_t type, uint32_t address, uint32_t dwords, const uint32_t* words = nullptr);
+  // SET_CONSTANT's and LOAD_ALU_CONSTANT's write: `n` values (value_at(i)) to the constants of `type` (0 ALU,
+  // 1 fetch, 2 bool, 3 loop, 4 registers) from `index` on.
+  template <class ValueAt>
+  void WriteConstants(uint32_t type, uint32_t index, uint32_t n, ValueAt value_at);
   std::vector<uint32_t> wrapped_shader_;  // an immediate load gathered across the ring's end
   void Interrupt(uint32_t source, uint32_t cpu);
 

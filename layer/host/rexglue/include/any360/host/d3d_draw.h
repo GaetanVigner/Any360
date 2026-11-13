@@ -38,6 +38,8 @@ struct Runtime {
   GuestFunction resolve_clear_color = nullptr;  // the resolve's color clear after the copy (v1 the color)
   GuestFunction resolve_clear_depth = nullptr;  // the resolve's depth clear after the copy (f1 the depth)
   GuestFunction release_block = nullptr;     // r3 device -> a new release-list block (the binders decline it)
+  GuestFunction constant_list = nullptr;     // r3 device, r4 a shader part, r5 its data's base: the part's literal
+                                             // constants (LOAD_ALU_CONSTANT; a title may hook it)
   // The resolve's format table (a half-word a format), default destination point, copy pixel shader (15 dwords) and
   // vertex offset float: guest addresses in the title's image.
   uint32_t resolve_format_table = 0, resolve_default_point = 0, resolve_pixel_shader = 0, resolve_offset_float = 0;
@@ -463,13 +465,36 @@ struct Out {
       for (uint32_t v : values) Word(v);
     }
   }
-  // SET_CONSTANT (predicated) of context register `index` (0x2000 + index).
-  void ContextConstant(uint32_t index, uint32_t value) {
+  // SET_CONSTANT (predicated) of context registers from `index` (0x2000 + index).
+  void ContextConstants(uint32_t index, std::initializer_list<uint32_t> values) {
+    const uint32_t n = uint32_t(values.size());
     if (records) {
-      Word(any360::xdk::record::Header(any360::xdk::record::RegistersWords(1), true));
-      Host(any360::xdk::record::KindWord(any360::xdk::record::kRegisters, 0x2000 + index)), Host(value);
+      Word(any360::xdk::record::Header(any360::xdk::record::RegistersWords(n), true));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kRegisters, 0x2000 + index));
+      for (uint32_t v : values) Host(v);
     } else {
-      Word(0xC0012D01u), Word(0x00040000u | index), Word(value);
+      Word(0xC0002D01u | (n << 16)), Word(0x00040000u | index);
+      for (uint32_t v : values) Word(v);
+    }
+  }
+  void ContextConstant(uint32_t index, uint32_t value) { ContextConstants(index, {value}); }
+  // IM_LOAD: the microcode at `address_type` (its low 2 bits the shader type), `dwords` of it.
+  void ShaderLoad(uint32_t address_type, uint32_t dwords, bool predicated) {
+    if (records) {
+      Word(any360::xdk::record::Header(any360::xdk::record::kShaderLoadWords, predicated));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kShaderLoad, 0)), Host(address_type), Host(dwords);
+    } else {
+      Word(0xC0012700u | (predicated ? 1u : 0u)), Word(address_type), Word(dwords);
+    }
+  }
+  // LOAD_ALU_CONSTANT.
+  void ConstantLoad(uint32_t address, uint32_t offset_type, uint32_t dwords) {
+    if (records) {
+      Word(any360::xdk::record::Header(any360::xdk::record::kConstantLoadWords));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kConstantLoad, 0)), Host(address), Host(offset_type),
+          Host(dwords);
+    } else {
+      Word(0xC0022F00u), Word(address), Word(offset_type), Word(dwords);
     }
   }
   // SET_BIN_MASK_LO (0), _HI (1), SET_BIN_SELECT_LO (2), _HI (3).
@@ -745,6 +770,289 @@ inline bool FlushState(PPCContext& ctx, const any360::xdk::Memory& m, bool recor
 inline void FlushStateOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && FlushState(ctx, m, DrawRecords())) return;
+  original(ctx, base);
+}
+
+namespace detail {
+// sub_826C6A50's constant list of a shader part at `part` (its +20: the list's offset from the part; the list: +16
+// its entries' bytes, the entries from +20, 8 bytes each: u16 the first constant (in 4-dword units), u16 the dwords
+// (0 ends the list), u32 the values' address from `base`). The entries it writes, or -1 when its memory is not plain
+// or it is longer than 4096.
+inline int ConstantListEntries(const any360::xdk::Memory& m, uint32_t part) {
+  if (!any360::xdk::IsPlainMemory(part + 20, 4)) return -1;
+  const uint32_t offset = At32(m.Host(part + 20));
+  if (!offset) return 0;
+  const uint32_t list = part + offset;
+  if (!any360::xdk::IsPlainMemory(list + 16, 4)) return -1;
+  uint32_t at = list + 20;
+  const uint32_t end = at + At32(m.Host(list + 16));
+  int entries = 0;
+  for (; at < end; at += 8, ++entries) {
+    if (entries > 4096 || !any360::xdk::IsPlainMemory(at, 8)) return -1;
+    if (!(m.Host(at)[2] | m.Host(at)[3])) break;
+  }
+  return entries;
+}
+// The list as LOAD_ALU_CONSTANT packets (or records).
+inline void WriteConstantList(const any360::xdk::Memory& m, uint32_t part, uint32_t base, Out& out) {
+  const uint32_t offset = At32(m.Host(part + 20));
+  if (!offset) return;
+  const uint32_t list = part + offset;
+  uint32_t at = list + 20;
+  const uint32_t end = at + At32(m.Host(list + 16));
+  for (; at < end; at += 8) {
+    const uint8_t* e = m.Host(at);
+    const uint32_t first = uint32_t(e[0]) << 8 | e[1], dwords = uint32_t(e[2]) << 8 | e[3];
+    if (!dwords) break;
+    out.ConstantLoad(GpuAddress(At32(e + 4) + base, 0x1FFFFFFFu), first << 2, dwords);
+  }
+}
+// sub_826C5580 (the shader helper's bit 17): bit 0 of the device's +10432 from +10814 and +10420, bit 1 from the
+// pixel shader's and +11572's, +10420's modes; when bit 1 is on and +10813's bit 3 was, an EVENT_WRITE 15 (bit 3
+// cleared); else bit 3 set for the modes that need it.
+inline void UpdateShaderControl(const any360::xdk::Memory& m, uint8_t* d, Out& out) {
+  uint32_t pixel_bit = 0;
+  if (const uint32_t ps = At32(d + 12412)) pixel_bit = (At32(m.Host(ps + At32(m.Host(ps + 64)) + 48)) >> 27) & 1;
+  const uint32_t control = At32(d + 11572) >> 20, state = At32(d + 10420), shifted = state >> 1;
+  const uint32_t word = (At32(d + 10432) & ~1u) | ((uint32_t(d[10814]) >> 6) & shifted & 1);
+  Set32(d + 10432, word);
+  uint32_t bit;
+  if (!(control & 2)) {
+    bit = control & 1;
+  } else {
+    const uint32_t mode = (state >> 4) & 7;
+    const bool fits = (word & 0x10) ? (mode == 4 || mode == 6 || mode == 2) : (mode == 1 || mode == 3 || mode == 2);
+    bit = (word & 1) & (pixel_bit == 0) & (shifted & 1) & uint32_t(fits);
+    if (state & 1) {
+      bit &= uint32_t(!(state & 0x3800u)) & uint32_t(!(state & 0xE0000u));
+      if (state & 0x80) bit &= uint32_t(!(state & 0xE0000000u)) & uint32_t(!(state & 0x03800000u));
+    }
+  }
+  const uint32_t now = (At32(d + 10432) & ~2u) | (bit << 1);
+  Set32(d + 10432, now);
+  if (now & 2) {
+    if (d[10813] & 8) d[10813] &= 0xF7, out.Event(0x46, {15});
+  } else if ((shifted & 1) && (state & 4)) {
+    const uint32_t mode = (state >> 4) & 7;
+    if (mode == 7 || mode == 5 || ((now & 0x10) ? (mode == 1 || mode == 3) : (mode == 4 || mode == 6))) d[10813] |= 8;
+  }
+}
+}  // namespace detail
+
+// sub_826C6A50 (the shaders' literal constants): r3 device, r4 a shader part, r5 its data's base; the part's constant
+// list as LOAD_ALU_CONSTANT packets or records. Declines when the list's memory is not plain or the cursor would need
+// room.
+inline bool ConstantList(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  const uint32_t device = ctx.r3.u32;
+  if (!any360::xdk::IsPlainMemory(device, 16384)) return false;
+  uint8_t* d = m.Host(device);
+  const int entries = ConstantListEntries(m, ctx.r4.u32);
+  if (entries < 0) return false;
+  if (!entries) return true;
+  const uint32_t cursor = At32(d + 48), bytes = 20 * uint32_t(entries);
+  if (cursor > At32(d + 56) || uint64_t(cursor) + bytes > At32(d + 56) || !any360::xdk::IsPlainMemory(cursor + 4, bytes))
+    return false;
+  Out out{m, cursor, records};
+  WriteConstantList(m, ctx.r4.u32, ctx.r5.u32, out);
+  Set32(d + 48, out.cursor);
+  return true;
+}
+inline void ConstantListOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && ConstantList(ctx, m, DrawRecords())) return;
+  original(ctx, base);
+}
+
+namespace detail {
+// sub_826C6B00's check of a vertex shader's patched copy `which` (the shader's +which*416: +40 the patch set it was
+// made for, +48/+56 the device state it was made for, +64 the GPU frame it was last used): kHit when it was made for
+// the device's patch set (+11540, its +48) and state (+12248, +12256, under the patch set's masks +32, +40); kBusy when
+// not, and the GPU still reads it (its frame after the frame the GPU is done with: +10780 now, *+10768 done); kPatch
+// otherwise (the runtime patches the microcode again: sub_826C6010).
+enum PatchCache { kHit, kBusy, kPatch };
+inline PatchCache CheckPatchCache(const any360::xdk::Memory& m, const uint8_t* d, uint32_t vs, uint32_t which) {
+  const uint8_t* e = m.Host(vs + which * 416);
+  const uint8_t* patch = m.Host(At32(d + 11540));
+  if (At32(e + 40) == At32(patch + 48) &&
+      !(((At64(e + 48) ^ At64(d + 12248)) & At64(patch + 32)) | ((At64(e + 56) ^ At64(d + 12256)) & At64(patch + 40))))
+    return kHit;
+  if (const uint32_t used = At32(e + 64)) {
+    const uint32_t now = At32(d + 10780), done = At32(m.Host(At32(d + 10768)));
+    if (now - used < now - done) return kBusy;
+  }
+  return kPatch;
+}
+// Its hit: the copy marked used this frame, the device's patched state (+11552) the state it was made for.
+inline void UsePatchedCopy(const any360::xdk::Memory& m, uint8_t* d, uint32_t vs, uint32_t which) {
+  Set32(m.Host(vs + which * 416 + 64), At32(d + 10780));
+  std::memcpy(d + 11552, d + 12248, 16);
+}
+}  // namespace detail
+
+// sub_826C6C48 (the draws' shader flush): r3 device, r4 the state's dirty bits (bits 17-20 the shaders'); r3 back:
+// the bits left. The vertex shader (+12416; none: nothing) and the pixel shader (+12412, may be none): the pixel
+// shader's constant list and IM_LOAD (bit 20), the vertex shader's (bit 19), the interpolation control 0x2208 and the
+// shader programs 0x2180-0x2181 (under the bins when the device tiles, the vertex shader's second program for the
+// odd tiles), the device's copies of them (+10400, +10404, +10408, +10452, +12420). Bit 17 first: the shader control
+// (detail::UpdateShaderControl). The constant lists through the title's function (Runtime::constant_list: titles hook
+// it).
+// The vertex shader's patched copies (+11540 a patch set) native when cached (detail::CheckPatchCache). Declines,
+// before anything is written, when a copy must be patched again or the shaders linked (sub_826C68E0, sub_826C6010:
+// the vertex shader's outputs differ from the pixel shader's inputs, +10813 bit 0, +10812 bit 7, a copy the cache
+// misses), when the cursor would need room, or when the shaders' memory is not plain.
+inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  using any360::xdk::IsPlainMemory;
+  const uint32_t device = ctx.r3.u32;
+  if (!g_runtime.constant_list || !IsPlainMemory(device, 16384)) return false;
+  uint8_t* d = m.Host(device);
+  const auto R = [&](uint32_t a) { return At32(m.Host(a)); };
+  const uint32_t cursor = At32(d + 48), limit = At32(d + 56);
+  if (cursor > limit) return false;
+  uint64_t bits = ctx.r4.u64;
+  const uint32_t vs = At32(d + 12416), ps = At32(d + 12412);
+  // What the runtime will do, read first.
+  if (ps && (!IsPlainMemory(ps, 68) || !IsPlainMemory(ps + R(ps + 64) + 40, 32))) return false;
+  int entries = 0;
+  uint32_t part = 0;  // the vertex shader's part the interpolators come from
+  bool patched = false, odd_patched = false;  // the patched copies used (sub_826C6B00's cache hits)
+  if (vs) {
+    if (!IsPlainMemory(vs, 912)) return false;
+    const uint32_t first = vs + R(vs + 896), second = vs + R(vs + 904);
+    if (!IsPlainMemory(first + 872, 32) || !IsPlainMemory(second + 872, 32)) return false;
+    part = (!ps && (R(vs + 872) & 0x20)) ? second + 872 : first + 872;
+    uint64_t will = bits | ((bits & 0x20000) ? 0x100 : 0);
+    const uint32_t mode = At32(d + 10452) & 7;
+    if (!ps && mode != 5) will |= 0x80008;
+    if (ps && (will & 0x100000) && mode != 4) will |= 0x80008;
+    const uint32_t mismatch =
+        ps ? (R(ps + R(ps + 64) + 40 + 20) ^ R(part + 20)) & 0x7FFFFu : R(part + 20) & 0x1Fu;
+    const bool linked = (d[10813] & 1) || mismatch;
+    if (linked && (will & 0x180000)) return false;
+    const bool own_list = !linked && (will & 0x80000);
+    if (own_list && At32(d + 11540) && !(R(vs + 872) & 0x40)) {
+      // The patched copies (sub_826C6B00): native when they are cached; a patch or a link is the runtime's.
+      if ((d[10812] & 0x80) || !IsPlainMemory(At32(d + 11540) + 32, 24) || !IsPlainMemory(At32(d + 10768), 4))
+        return false;
+      const uint32_t which = (!ps && (R(vs + 872) & 0x20)) ? 1 : 0;
+      if (CheckPatchCache(m, d, vs, which) != kHit) return false;
+      patched = true;
+      // The interpolation mode as the runtime will have it (its odd tiles' copy wanted when it changes).
+      uint32_t before = At32(d + 10452);
+      if (!ps && (before & 7) != 5) before = (before & ~7u) | 5;
+      if (ps && (will & 0x100000) && (before & 7) != 4) before = (before & ~7u) | 4;
+      bool five = (d[10812] & 0x40) != 0;
+      if (five && ps) {
+        const uint32_t f = R(ps + R(ps + 64) + 40 + 28);
+        five = !(At32(d + 10428) & 8) && !(f & 0x10) && !(f & 0x20);
+      }
+      if (five && (before & 7) != 5 && (R(vs + 872) & 0x20)) {
+        const PatchCache odd = which == 1 ? kHit : CheckPatchCache(m, d, vs, 1);
+        if (odd == kPatch) return false;
+        odd_patched = odd == kHit;
+      }
+    }
+    const int pixel_entries = ps && (will & 0x100000) ? ConstantListEntries(m, ps + 40) : 0;
+    const int vertex_entries = own_list ? ConstantListEntries(m, vs + 872) : 0;
+    if (pixel_entries < 0 || vertex_entries < 0) return false;
+    entries = pixel_entries + vertex_entries;
+  }
+  const uint32_t most = 4 * (64 + 5 * uint32_t(entries));
+  if (uint64_t(cursor) + most > limit || !IsPlainMemory(cursor + 4, most)) return false;
+
+  Out out{m, cursor, records};
+  const auto constant_list = [&](uint32_t part, uint32_t data) {
+    Set32(d + 48, out.cursor);
+    Call(ctx, base, g_runtime.constant_list, device, part, data);
+    out.cursor = At32(d + 48);
+  };
+  if (bits & 0x20000) UpdateShaderControl(m, d, out), bits |= 0x100;
+  if (!vs) {
+    Set32(d + 48, out.cursor);
+    ctx.r3.u64 = bits;
+    return true;
+  }
+  constexpr uint32_t kNone = ~0u;
+  uint32_t vertex_control = kNone, vertex_load = kNone, odd_load = kNone;
+  uint32_t pixel_part = 0, pixel_program = 0, pixel_extra = 0;
+  if (!ps) {
+    const uint32_t v = At32(d + 10452);
+    if ((v & 7) != 5) Set32(d + 10452, (v & ~7u) | 5), bits |= 0x80008;
+  } else {
+    const uint32_t ps_body = ps + R(ps + 64);
+    pixel_part = ps_body + 40;
+    pixel_program = R(pixel_part + 8), pixel_extra = R(pixel_part + 12);
+    if ((pixel_program & 0x70000000u) > 0x10000000u) d[10814] |= 0x10;
+    if (bits & 0x100000) {
+      constant_list(ps + 40, R(ps + 24));
+      bits |= 0x4000;
+      out.ShaderLoad(GpuAddress(R(ps_body + 40) + R(ps + 24), 0x1FFFFFFEu) | 1, R(ps_body + 44) >> 2, false);
+      Set32(d + 10408, R(pixel_part + 24));
+      const uint32_t v = At32(d + 10452);
+      if ((v & 7) != 4) bits |= 0x80008, Set32(d + 10452, (v & ~7u) | 4);
+    }
+  }
+  const uint32_t mismatch = ps ? (R(pixel_part + 20) ^ R(part + 20)) & 0x7FFFFu : R(part + 20) & 0x1Fu;
+  const uint32_t before = At32(d + 10452);
+  uint32_t interpolation = before;
+  const uint32_t vertex_program = R(part + 8), vertex_extra = R(part + 12);
+  if (d[10812] & 0x40) {
+    bool five = true;
+    if (ps) {
+      const uint32_t f = R(pixel_part + 28);
+      five = !(At32(d + 10428) & 8) && !(f & 0x10) && !(f & 0x20);
+    }
+    if (five) interpolation = (interpolation & ~7u) | 5;
+    if (interpolation != At32(d + 12420) || (bits & 8)) bits |= 8, Set32(d + 12420, interpolation), vertex_control = interpolation;
+  }
+  if (!((d[10813] & 1) || mismatch) && (bits & 0x80000)) {
+    constant_list(vs + 872, R(vs + 32));
+    d[10814] &= 0x7F;
+    vertex_load = (R(vs + 872) & 0x20) && !ps ? 1 : 0;
+    if (patched) {
+      UsePatchedCopy(m, d, vs, vertex_load);
+      if (odd_patched) UsePatchedCopy(m, d, vs, 1), odd_load = 1, d[10814] |= 0x80;
+    } else if (((interpolation ^ before) & 7) && (R(vs + 872) & 0x20)) {
+      odd_load = 1, d[10814] |= 0x80;
+    }
+  }
+  uint32_t program = kNone, program_extra = kNone;
+  if (bits & 0x180000) {
+    bits |= 0x18000;
+    Set32(d + 10404, vertex_extra | pixel_extra), Set32(d + 10400, vertex_program | pixel_program);
+    if (d[10814] & 0x80) {
+      const uint32_t second = vs + R(vs + 904);
+      program = R(second + 880) | pixel_program, program_extra = R(second + 884) | pixel_extra;
+    }
+  }
+  const auto load = [&](uint32_t which, bool predicated) {
+    const uint32_t entry = vs + R(vs + 896 + 8 * which);
+    out.ShaderLoad(GpuAddress(R(entry + 872) + R(vs + 32), 0x1FFFFFFFu), R(entry + 876) >> 2, predicated);
+  };
+  if (d[10812] & 0x40) {
+    out.Bins(0, 0x15555555u), out.Bins(1, 0);
+    if (bits & 8) out.Registers(0x2208, {At32(d + 10452)}), bits &= ~uint64_t(8);
+    if (vertex_control != kNone) out.ContextConstant(0x208, vertex_control);
+    if (bits & 0x10000) bits &= ~uint64_t(0x18000), out.Registers(0x2180, {At32(d + 10400), At32(d + 10404)});
+    if (program != kNone) out.ContextConstants(0x180, {program, program_extra});
+    if (odd_load != kNone) {
+      load(odd_load, true);
+      if (vertex_load != kNone) out.Bins(0, 0x2AAAAAAAu), load(vertex_load, true);
+    } else if (vertex_load != kNone) {
+      load(vertex_load, false);
+    }
+    out.Bins(0, At32(d + 12428)), out.Bins(1, At32(d + 12432));
+  } else if (vertex_load != kNone) {
+    load(vertex_load, false);
+  }
+  Set32(d + 48, out.cursor);
+  ctx.r3.u64 = bits;
+  return true;
+}
+inline void FlushShadersOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && FlushShaders(ctx, base, m, DrawRecords())) return;
   original(ctx, base);
 }
 

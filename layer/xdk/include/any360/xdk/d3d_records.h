@@ -19,6 +19,10 @@
 //   kInvalidate argument: 0. Then INVALIDATE_STATE's word.
 //   kWait       argument: 0. Then WAIT_REG_MEM's five words (function, address or register, reference, mask,
 //               interval).
+//   kShaderLoad argument: 0. Then IM_LOAD's two words: the microcode's address with the shader type in its low 2 bits
+//               (0 vertex, 1 pixel), and its size in dwords.
+//   kConstantLoad argument: 0. Then LOAD_ALU_CONSTANT's three words: the values' address, the offset and type of the
+//               first constant (as SET_CONSTANT's), the dwords.
 //
 // A record is predicated as PM4 is: bit 0 of its header (the runtime predicates its draws, which run only for the
 // tiles that the bin select and mask both have).
@@ -32,7 +36,17 @@
 namespace any360::xdk::record {
 
 constexpr uint32_t kOpcode = 0x7E;
-enum Kind : uint32_t { kRegisters = 1, kDraw = 2, kBins = 3, kEvent = 4, kShader = 5, kInvalidate = 6, kWait = 7 };
+enum Kind : uint32_t {
+  kRegisters = 1,
+  kDraw = 2,
+  kBins = 3,
+  kEvent = 4,
+  kShader = 5,
+  kInvalidate = 6,
+  kWait = 7,
+  kShaderLoad = 8,
+  kConstantLoad = 9,
+};
 
 // The packet's header for `words` words after it (the kind word included), `predicated` or not.
 constexpr uint32_t Header(uint32_t words, bool predicated = false) {
@@ -45,5 +59,7 @@ constexpr uint32_t RegistersWords(uint32_t count) { return 1 + count; }
 constexpr uint32_t DrawWords(bool dma) { return dma ? 4 : 2; }
 constexpr uint32_t kBinsWords = 2;
 constexpr uint32_t EventWords(uint32_t packet_words) { return 1 + packet_words; }
+constexpr uint32_t kShaderLoadWords = 3;
+constexpr uint32_t kConstantLoadWords = 4;
 
 }  // namespace any360::xdk::record

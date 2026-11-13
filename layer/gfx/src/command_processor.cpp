@@ -522,6 +522,23 @@ bool CommandProcessor::ExecutePacket(Reader& r, int depth) {
   }
 }
 
+template <class ValueAt>
+void CommandProcessor::WriteConstants(uint32_t type, uint32_t index, uint32_t n, ValueAt value_at) {
+  static constexpr uint32_t kBase[] = {reg::kAluConstants, reg::kFetchConstants, reg::kBoolConstants, reg::kLoopConstants,
+                                       reg::kContextRegisters};
+  if (type > 4) return;
+  const uint32_t first = kBase[type] + index;
+  // Constants (the usual case): written at once, none of them a register the command processor acts on.
+  auto touches = [&](uint32_t lo, uint32_t hi) { return first < hi && lo < first + n; };
+  if (uint64_t(first) + n <= reg::kRegisterCount && !touches(reg::DC_LUT_RW_INDEX, reg::DC_LUT_30_COLOR + 1) &&
+      !touches(reg::SCRATCH_REG0, reg::SCRATCH_REG0 + 8) && !touches(reg::COHER_STATUS_HOST, reg::COHER_STATUS_HOST + 1)) {
+    for (uint32_t i = 0; i < n; ++i) std::atomic_ref<uint32_t>(registers_[first + i]).store(value_at(i), std::memory_order_release);
+    if (n) MarkDirty(first, n);
+    return;
+  }
+  for (uint32_t i = 0; i < n; ++i) SetRegister(first + i, value_at(i));
+}
+
 bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
   const uint32_t opcode = (packet >> 8) & 0x7F, count = ((packet >> 16) & 0x3FFF) + 1;
   if (count > r.remaining) return false;
@@ -545,19 +562,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
   }
   auto has = [&](uint32_t n) { return end - r.offset >= n; };
   auto write_constants = [&](uint32_t type, uint32_t index, uint32_t n, auto value_at) {
-    static constexpr uint32_t kBase[] = {reg::kAluConstants, reg::kFetchConstants, reg::kBoolConstants, reg::kLoopConstants,
-                                         reg::kContextRegisters};
-    if (type > 4) return;
-    const uint32_t first = kBase[type] + index;
-    // Constants (the usual case): written at once, none of them a register the command processor acts on.
-    auto touches = [&](uint32_t lo, uint32_t hi) { return first < hi && lo < first + n; };
-    if (uint64_t(first) + n <= reg::kRegisterCount && !touches(reg::DC_LUT_RW_INDEX, reg::DC_LUT_30_COLOR + 1) &&
-        !touches(reg::SCRATCH_REG0, reg::SCRATCH_REG0 + 8) && !touches(reg::COHER_STATUS_HOST, reg::COHER_STATUS_HOST + 1)) {
-      for (uint32_t i = 0; i < n; ++i) std::atomic_ref<uint32_t>(registers_[first + i]).store(value_at(i), std::memory_order_release);
-      if (n) MarkDirty(first, n);
-      return;
-    }
-    for (uint32_t i = 0; i < n; ++i) SetRegister(first + i, value_at(i));
+    WriteConstants(type, index, n, value_at);
   };
 
   // What the CPU can observe of the GPU's progress (fences, memory writes, interrupts) happens once the draws before
@@ -942,6 +947,19 @@ bool CommandProcessor::ExecuteRecord(Reader& r, uint32_t end) {
     }
     case record::kInvalidate:
       return true;  // as INVALIDATE_STATE: nothing kept here to invalidate
+    case record::kShaderLoad: {
+      if (end - r.offset < 2) return true;
+      const uint32_t address_type = NextRaw(r), start_size = NextRaw(r);
+      if ((address_type & 3) <= 1) LoadShader(address_type & 3, address_type & ~3u, start_size & 0xFFFF);
+      return true;
+    }
+    case record::kConstantLoad: {
+      if (end - r.offset < 3) return true;
+      const uint32_t address = NextRaw(r) & 0x3FFFFFFF, offset_type = NextRaw(r), dwords = NextRaw(r) & 0xFFF;
+      WriteConstants((offset_type >> 16) & 0xFF, offset_type & 0x7FF, dwords,
+                     [&](uint32_t i) { return LoadBig(address + 4 * i); });
+      return true;
+    }
     case record::kWait: {
       if (end - r.offset < 5) return true;
       uint32_t w[5];

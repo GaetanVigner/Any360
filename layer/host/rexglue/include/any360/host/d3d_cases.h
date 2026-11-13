@@ -359,6 +359,14 @@ inline void CanonicalCommands(CallSetup& s, uint32_t cursor = 0) {
         } else if (opcode == 0x46 || opcode == 0x58 || opcode == 0x5A || opcode == 0x5B) {  // the events
           out.insert(out.end(), {4, opcode, count, predicated});
           for (uint32_t i = 0; i < count && i < 7; ++i) out.push_back(Get32(s, at + 4 * i));
+        } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kShaderLoad) {
+          out.insert(out.end(), {8, raw[1], raw[2], predicated});
+        } else if (opcode == 0x27 && count == 2) {  // IM_LOAD
+          out.insert(out.end(), {8, Get32(s, at), Get32(s, at + 4), predicated});
+        } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kConstantLoad) {
+          out.insert(out.end(), {9, raw[1], raw[2], raw[3], predicated});
+        } else if (opcode == 0x2F && count == 3) {  // LOAD_ALU_CONSTANT
+          out.insert(out.end(), {9, Get32(s, at), Get32(s, at + 4), Get32(s, at + 8), predicated});
         } else if (opcode >= 0x60 && opcode <= 0x63 && count == 1) {  // SET_BIN_MASK_LO/HI, SET_BIN_SELECT_LO/HI
           out.insert(out.end(), {3, opcode - 0x60, Get32(s, at), predicated});
         } else {
@@ -641,6 +649,125 @@ struct StateHelper {
     ctx.r5.u64 = rng();
   }
   static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = nullptr;
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
+  }
+};
+
+// The draws' shader helper (d3d_draw.h): a vertex and a pixel shader built in the scratch (their parts, constant
+// lists and microcode entries at random, the interpolators matching or not), every device field the helper reads at
+// random, no pixel shader a third of the time, no vertex shader now and then. The calls that would patch or link the
+// shaders (sub_826C6B00, sub_826C68E0: they write the title's shaders, its shader counter, and allocate) are kept
+// from happening: their dirty bits cleared, or +11540 zeroed.
+template <bool kRecords>
+struct ShaderHelper {
+  static bool Native(PPCContext& ctx, uint8_t* base) {
+    return d3d_draw::FlushShaders(ctx, base, SelfTestMemory(), kRecords);
+  }
+  // A constant list at `at`, its values within 0x2100 bytes of the data's base (a title's hook reads them).
+  static void List(CallSetup& s, std::mt19937_64& rng, uint32_t at) {
+    const uint32_t n = uint32_t(rng() % 5);
+    Put32(s, at + 16, 8 * n + (rng() % 4 == 0 ? 8 : 0));
+    for (uint32_t i = 0; i <= n; ++i) {
+      const uint32_t dwords = rng() % 16 == 0 ? 0 : 1 + uint32_t(rng() % 64);
+      Put32(s, at + 20 + 8 * i, uint32_t(rng() % 0x400) << 16 | dwords);
+      Put32(s, at + 24 + 8 * i, 4 * uint32_t(rng() % 0x800));
+    }
+  }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t cursor = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
+    Put32(s, s.scratch, cursor);
+    Put32(s, s.device + 48, cursor);
+    Put32(s, s.device + 52, s.scratch + 0x30000);
+    Put32(s, s.device + 56, s.scratch + 0x2F000);
+    const uint32_t vs = s.scratch + 0x2000, ps = s.scratch + 0x5000;
+    Put32(s, vs + 32, s.scratch + 0x8000);
+    Put32(s, ps + 24, s.scratch + 0x8000);
+    Put32(s, vs + 892, rng() % 4 ? 0x400 - 872 : 0);
+    Put32(s, vs + 896, 0x500);
+    Put32(s, vs + 904, 0x600);
+    List(s, rng, vs + 0x400);
+    Put32(s, ps + 60, rng() % 4 ? 0x300 - 40 : 0);
+    Put32(s, ps + 64, 0x100);
+    List(s, rng, ps + 0x300);
+    const bool has_ps = rng() % 3 != 0, has_vs = rng() % 16 != 0;
+    Put32(s, s.device + 12416, has_vs ? vs : 0);
+    Put32(s, s.device + 12412, has_ps ? ps : 0);
+    const uint32_t pixel_mask = uint32_t(rng());
+    Put32(s, ps + 0x100 + 40 + 20, pixel_mask);
+    for (uint32_t part : {vs + 0x500 + 872, vs + 0x600 + 872})
+      Put32(s, part + 20, rng() % 2 ? (has_ps ? pixel_mask : pixel_mask & ~0x1Fu) : uint32_t(rng()));
+    for (uint32_t at : {10428u, 12428u, 12432u, 11572u, 10420u, 10432u}) Put32(s, s.device + at, uint32_t(rng()));
+    const uint32_t modes[] = {4, 5, uint32_t(rng() % 8)};
+    const uint32_t interpolation = (uint32_t(rng()) & ~7u) | modes[rng() % 3];
+    Put32(s, s.device + 10452, interpolation);
+    Put32(s, s.device + 12420, rng() % 2 ? (interpolation & ~7u) | (rng() % 2 ? 5 : interpolation & 7) : uint32_t(rng()));
+    for (uint32_t at : {10812u, 10813u, 10814u}) s.Host(s.device + at)[0] = uint8_t(rng());
+    Put32(s, s.device + 11540, rng() % 2 ? uint32_t(rng()) : 0);
+    uint64_t bits = (rng() & ~uint64_t(0x1E0008)) | uint64_t(rng() % 16) << 17 | uint64_t(rng() % 2) << 3;
+    if (has_vs) {
+      const uint32_t part = (!has_ps && (Get32(s, vs + 872) & 0x20)) ? vs + 0x600 + 872 : vs + 0x500 + 872;
+      uint64_t will = bits | ((bits & 0x20000) ? 0x100 : 0);
+      const uint32_t mode = interpolation & 7;
+      if (!has_ps && mode != 5) will |= 0x80008;
+      if (has_ps && (will & 0x100000) && mode != 4) will |= 0x80008;
+      const uint32_t mismatch = has_ps ? (pixel_mask ^ Get32(s, part + 20)) & 0x7FFFFu : Get32(s, part + 20) & 0x1Fu;
+      const bool linked = (s.Host(s.device + 10813)[0] & 1) || mismatch;
+      if (linked && (will & 0x180000)) {
+        bits &= ~uint64_t(0x180000);
+        if (!has_ps) Put32(s, s.device + 10452, (interpolation & ~7u) | 5);
+      } else if (!linked && (will & 0x80000) && !(Get32(s, vs + 872) & 0x40)) {
+        // The patched copies' path: no link (+10812 bit 7), the first copy cached; the odd tiles' copy cached or
+        // still read by the GPU (never one the runtime would patch).
+        s.Host(s.device + 10812)[0] &= 0x7F;
+        if (Get32(s, s.device + 11540)) {
+          const uint32_t patch = s.scratch + 0x7000, done = s.scratch + 0x7100;
+          Put32(s, s.device + 11540, patch);
+          Put32(s, s.device + 10768, done);
+          const uint32_t now = uint32_t(rng());
+          Put32(s, s.device + 10780, now);
+          Put32(s, done, now - 100);
+          const uint32_t which = (!has_ps && (Get32(s, vs + 872) & 0x20)) ? 1 : 0;
+          const auto at64 = [&](uint32_t a) { return uint64_t(Get32(s, a)) << 32 | Get32(s, a + 4); };
+          for (uint32_t e : {vs, vs + 416}) {
+            const bool busy = e != vs + 416 * which && rng() % 3 == 0;
+            Put32(s, e + 40, busy ? ~Get32(s, patch + 48) : Get32(s, patch + 48));
+            Put64(s, e + 48, at64(s.device + 12248) ^ (rng() & ~at64(patch + 32)));
+            Put64(s, e + 56, at64(s.device + 12256) ^ (rng() & ~at64(patch + 40)));
+            Put32(s, e + 64, busy ? now - uint32_t(rng() % 100) : uint32_t(rng()));
+          }
+        }
+      }
+    }
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = bits;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = nullptr;
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
+  }
+};
+
+// The shaders' literal constants (sub_826C6A50): a list in the scratch (as the shader helper's), its data there.
+template <bool kRecords>
+struct ConstantListCase {
+  static bool Native(PPCContext& ctx, uint8_t*) { return d3d_draw::ConstantList(ctx, SelfTestMemory(), kRecords); }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t cursor = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
+    Put32(s, s.scratch, cursor);
+    Put32(s, s.device + 48, cursor);
+    Put32(s, s.device + 52, s.scratch + 0x30000);
+    Put32(s, s.device + 56, s.scratch + 0x2F000);
+    const uint32_t part = s.scratch + 0x2000;
+    Put32(s, part + 20, rng() % 8 ? 0x400 : 0);
+    ShaderHelper<kRecords>::List(s, rng, part + 0x400);
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = part;
+    ctx.r5.u64 = s.scratch + 0x8000;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
   static void Normalize(CallSetup& s, PPCContext&) {
     if constexpr (kRecords) CanonicalCommands(s);
   }

@@ -42,7 +42,8 @@ REXCVAR_DEFINE_BOOL(any360_d3d_selftest, false, "GPU",
 REXCVAR_DEFINE_INT32(any360_d3d_selftest_slice_ms, 3, "GPU",
                      "Any360: the D3D self-test's work a frame, in milliseconds (the title keeps running)");
 REXCVAR_DEFINE_STRING(any360_d3d_selftest_only, "", "GPU",
-                      "Any360: the D3D self-test runs only the cases whose name contains this text (empty: all)");
+                      "Any360: the D3D self-test runs only the cases whose name contains one of these texts, separated by commas "
+                      "(empty: all)");
 REXCVAR_DEFINE_INT32(any360_d3d_selftest_after, 2000, "GPU",
                      "Any360: the D3D self-test starts at this call of the D3D function that triggers it (the "
                      "title draws by then)");
@@ -377,9 +378,16 @@ void FirstDevice(const PPCContext& ctx, uint8_t* base, uint32_t device) {
   const uint64_t budget = uint64_t(double(std::max(REXCVAR_GET(any360_d3d_selftest_slice_ms), 1)) * 1e6 / ns);
   while (Ticks() - now < budget) {
     const std::string only = REXCVAR_GET(any360_d3d_selftest_only);
-    while (run.index < Cases().size() && !run.in_case && !only.empty() &&
-           std::string(Cases()[run.index].name).find(only) == std::string::npos)
-      ++run.index;
+    const auto wanted = [&](const std::string& name) {
+      // Several texts, separated by commas: a case runs when its name contains one.
+      for (size_t at = 0; at <= only.size();) {
+        const size_t comma = std::min(only.find(',', at), only.size());
+        if (comma > at && name.find(only.substr(at, comma - at)) != std::string::npos) return true;
+        at = comma + 1;
+      }
+      return false;
+    };
+    while (run.index < Cases().size() && !run.in_case && !only.empty() && !wanted(Cases()[run.index].name)) ++run.index;
     if (run.index >= Cases().size()) Finish(run.report);
     const Case& c = Cases()[run.index];
     if (!run.in_case) StartCase(run, c);
