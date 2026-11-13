@@ -588,6 +588,30 @@ struct ResolveCase {
   static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
 };
 
+// The draws' fetch-constant and wait-group helpers (d3d_draw.h): the device copy's command buffer in the scratch (its
+// start in the scratch's first word), every pointer alignment, masks of every shape (never 0).
+template <bool kRecords, bool kWait>
+struct GroupHelper {
+  static bool Native(PPCContext& ctx, uint8_t*) {
+    return kWait ? d3d_draw::FlushWaitGroup(ctx, SelfTestMemory(), kRecords)
+                 : d3d_draw::FlushFetchConstants(ctx, SelfTestMemory(), kRecords);
+  }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t cursor = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
+    Put32(s, s.scratch, cursor);
+    Put32(s, s.device + 48, cursor);
+    Put32(s, s.device + 52, s.scratch + 0x30000);
+    Put32(s, s.device + 56, s.scratch + 0x2F000);
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = RandomMask(rng);
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
+  }
+};
+
 template <bool kRecords, bool kIndexed>
 void Begin<kRecords, kIndexed>::Setup(CallSetup& s, PPCContext& ctx) {
   DrawIndexed<kRecords, true>::Setup(s, ctx);

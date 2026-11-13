@@ -539,6 +539,119 @@ struct Out {
 // with no depth surface. Uploads the dirty state the clear's draws use, loads the clear's shaders (IM_LOAD_IMMEDIATE),
 // sets the state of a clear, then draws each target through the runtime's own target clear and restores the viewport.
 // As PM4 or as Any360's records.
+namespace detail {
+// The runtime's 8-byte-aligned uploads (sub_826C5D40's fetch constants, sub_826C5BC0's group): for each run of set
+// bits of `mask` (bit 63 first), `words` dwords a bit from `source` (the device's copy) to the registers from `first`
+// on. PM4: a type-2 pad when the cursor is not on 8 bytes, the type-0 header, the data on 8 bytes. `extra`: the room
+// test's words past the run (5 and 1). Declines, writing nothing, when a run lacks room (the runtime then writes it
+// in pieces, making room) or the mask is 0 (it would loop for ever).
+struct AlignedUpload {
+  uint32_t words, first, source, extra;
+};
+inline bool AlignedUploadFits(const uint8_t* d, uint64_t mask, const AlignedUpload& u, uint32_t cursor, bool records,
+                              uint32_t& final_cursor) {
+  if (!mask) return false;
+  const uint32_t end = At32(d + 52);
+  uint64_t bits = mask;
+  uint64_t at = cursor;
+  while (bits) {
+    const uint32_t skip = uint32_t(std::countl_zero(bits));
+    bits <<= skip;
+    const uint32_t run = uint32_t(std::countl_zero(~bits));
+    bits = run == 64 ? 0 : bits << run;
+    const uint64_t data = uint64_t(run) * u.words;
+    if (records) {
+      at += 8 + 4 * data;
+      if (at >= end) return false;
+    } else {
+      if (4 * (data + u.extra) + at >= end) return false;  // the runtime's own test, before its pad
+      at += (at & 7) + 4 + 4 * data;
+    }
+  }
+  final_cursor = uint32_t(at);
+  return at < 0xFFFFFFF0u;
+}
+inline void WriteAlignedUpload(const any360::xdk::Memory& m, uint8_t* d, uint64_t mask, const AlignedUpload& u, Out& out) {
+  uint64_t bits = mask;
+  uint32_t index = u.first;
+  const uint8_t* from = d + u.source;
+  while (bits) {
+    const uint32_t skip = uint32_t(std::countl_zero(bits));
+    bits <<= skip;
+    const uint32_t run = uint32_t(std::countl_zero(~bits));
+    bits = run == 64 ? 0 : bits << run;
+    from += size_t(skip) * 4 * u.words, index += skip * u.words;
+    const uint32_t data = run * u.words;
+    if (out.records) {
+      out.Word(any360::xdk::record::Header(any360::xdk::record::RegistersWords(data)));
+      out.Host(any360::xdk::record::KindWord(any360::xdk::record::kRegisters, index));
+      uint8_t* to = m.Host(out.cursor + 4);
+      for (uint32_t w = 0; w < data; ++w) any360::xdk::detail::Store32(to + 4 * w, std::byteswap(any360::xdk::detail::Load32(from + 4 * w)));
+    } else {
+      Set32(m.Host(out.cursor + 4), 0x80000000u);
+      out.cursor += out.cursor & 7;
+      out.Word(((data - 1) << 16) | index);
+      std::memcpy(m.Host(out.cursor + 4), from, 4 * size_t(data));
+    }
+    out.cursor += 4 * data, from += 4 * data, index += data;
+  }
+}
+}  // namespace detail
+
+// sub_826C5D40 (the draws' misc group): r3 device, r4 the fetch constants' dirty bits; their 6 dwords a slot from the
+// device's copy (+1024) to the fetch constant registers (0x4800 on), then the three registers at 0x5000 (0, 0x25000,
+// 0, as the runtime writes them).
+inline bool FlushFetchConstants(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  const uint32_t device = ctx.r3.u32;
+  if (!any360::xdk::IsPlainMemory(device, 16384)) return false;
+  uint8_t* d = m.Host(device);
+  const AlignedUpload upload{6, 0x4800, 1024, 5};
+  const uint32_t cursor = At32(d + 48);
+  uint32_t final_cursor = 0;
+  if (!AlignedUploadFits(d, ctx.r4.u64, upload, cursor, records, final_cursor) ||
+      !any360::xdk::IsPlainMemory(cursor + 4, final_cursor - cursor + 32))
+    return false;
+  Out out{m, cursor, records};
+  WriteAlignedUpload(m, d, ctx.r4.u64, upload, out);
+  out.Registers(0x5000, {0, 0x00025000u, 0});
+  Set32(d + 48, out.cursor);
+  return true;
+}
+// sub_826C5BC0 (the draws' wait group): r3 device, r4 its dirty bits. VGT 0x2007 from the device, the copy registers
+// cleared, a wait for the copy, then the group's 4 dwords a bit from the device (+10144) to the registers from 0x2388.
+// Declined when the cursor needs room first (the runtime's make-room).
+inline bool FlushWaitGroup(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  const uint32_t device = ctx.r3.u32;
+  if (!any360::xdk::IsPlainMemory(device, 16384)) return false;
+  uint8_t* d = m.Host(device);
+  const uint32_t cursor = At32(d + 48);
+  if (cursor > At32(d + 56)) return false;
+  // Everything checked before anything is written: the fixed packets (13 dwords as PM4, 17 as records), then the runs.
+  const AlignedUpload upload{4, 0x2388, 10144, 1};
+  uint32_t final_cursor = 0;
+  if (!AlignedUploadFits(d, ctx.r4.u64, upload, cursor + (records ? 68 : 52), records, final_cursor) ||
+      !any360::xdk::IsPlainMemory(cursor + 4, final_cursor - cursor))
+    return false;
+  Out out{m, cursor, records};
+  out.Registers(0x2007, {At32(d + 10268)}), out.Registers(0xA31, {0x10000}), out.Registers(0xA2F, {0, 4096});
+  out.Wait(3, 2609, 0, 0x80000000u, 8);
+  WriteAlignedUpload(m, d, ctx.r4.u64, upload, out);
+  Set32(d + 48, out.cursor);
+  return true;
+}
+inline void FlushFetchConstantsOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && FlushFetchConstants(ctx, m, DrawRecords())) return;
+  original(ctx, base);
+}
+inline void FlushWaitGroupOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && FlushWaitGroup(ctx, m, DrawRecords())) return;
+  original(ctx, base);
+}
+
 // The state of a clear and of a copy: VGT 0x2100-0x2102, 0x2204-0x2206, 0x2312 and 0x200D.
 inline void WriteClearState(detail::Out& out) {
   out.Registers(0x2100, {0xFFFF, 0, 0}), out.Registers(0x2204, {0x10000, 0x10000, 768});
