@@ -14,6 +14,11 @@
 //   kEvent      argument: the PM4 event packet it stands for (EVENT_WRITE 0x46, EVENT_WRITE_SHD 0x58,
 //               EVENT_WRITE_EXT 0x5A, EVENT_WRITE_ZPD 0x5B). Then that packet's words: the initiator, and the
 //               address and value it writes.
+//   kShader     argument: 0 the vertex shader, 1 the pixel shader. Then the microcode as it is in the title's memory
+//               (big-endian: copied as is, as IM_LOAD_IMMEDIATE carries it).
+//   kInvalidate argument: 0. Then INVALIDATE_STATE's word.
+//   kWait       argument: 0. Then WAIT_REG_MEM's five words (function, address or register, reference, mask,
+//               interval).
 //
 // A record is predicated as PM4 is: bit 0 of its header (the runtime predicates its draws, which run only for the
 // tiles that the bin select and mask both have).
@@ -27,7 +32,7 @@
 namespace any360::xdk::record {
 
 constexpr uint32_t kOpcode = 0x7E;
-enum Kind : uint32_t { kRegisters = 1, kDraw = 2, kBins = 3, kEvent = 4 };
+enum Kind : uint32_t { kRegisters = 1, kDraw = 2, kBins = 3, kEvent = 4, kShader = 5, kInvalidate = 6, kWait = 7 };
 
 // The packet's header for `words` words after it (the kind word included), `predicated` or not.
 constexpr uint32_t Header(uint32_t words, bool predicated = false) {

@@ -442,13 +442,109 @@ inline int32_t Fctiwz(float f) {
 inline float AtFloat(const uint8_t* p) { return std::bit_cast<float>(At32(p)); }
 }  // namespace detail
 
+namespace detail {
+// Writes a flush's packets after the command buffer's cursor (the last word written), as the runtime's PM4 or as
+// Any360's records (any360/xdk/d3d_records.h): each call one packet.
+struct Out {
+  const any360::xdk::Memory& m;
+  uint32_t cursor;
+  bool records;
+  void Word(uint32_t v) { cursor += 4, Set32(m.Host(cursor), v); }
+  void Host(uint32_t v) { cursor += 4, std::memcpy(m.Host(cursor), &v, 4); }
+  // Consecutive registers from `first` (type-0, or a register record; predicated for SET_CONSTANT's form).
+  void Registers(uint32_t first, std::initializer_list<uint32_t> values) {
+    const uint32_t n = uint32_t(values.size());
+    if (records) {
+      Word(any360::xdk::record::Header(any360::xdk::record::RegistersWords(n)));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kRegisters, first));
+      for (uint32_t v : values) Host(v);
+    } else {
+      Word(((n - 1) << 16) | first);
+      for (uint32_t v : values) Word(v);
+    }
+  }
+  // SET_CONSTANT (predicated) of context register `index` (0x2000 + index).
+  void ContextConstant(uint32_t index, uint32_t value) {
+    if (records) {
+      Word(any360::xdk::record::Header(any360::xdk::record::RegistersWords(1), true));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kRegisters, 0x2000 + index)), Host(value);
+    } else {
+      Word(0xC0012D01u), Word(0x00040000u | index), Word(value);
+    }
+  }
+  // SET_BIN_MASK_LO (0), _HI (1), SET_BIN_SELECT_LO (2), _HI (3).
+  void Bins(uint32_t which, uint32_t value) {
+    if (records) {
+      Word(any360::xdk::record::Header(any360::xdk::record::kBinsWords));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kBins, which)), Host(value);
+    } else {
+      Word(0xC0006000u + (which << 8)), Word(value);
+    }
+  }
+  void Event(uint32_t opcode, std::initializer_list<uint32_t> words) {
+    const uint32_t n = uint32_t(words.size());
+    if (records) {
+      Word(any360::xdk::record::Header(any360::xdk::record::EventWords(n)));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kEvent, opcode));
+      for (uint32_t v : words) Host(v);
+    } else {
+      Word(0xC0000000u | ((n - 1) << 16) | (opcode << 8));
+      for (uint32_t v : words) Word(v);
+    }
+  }
+  void Invalidate(uint32_t value) {
+    if (records) {
+      Word(any360::xdk::record::Header(2));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kInvalidate, 0)), Host(value);
+    } else {
+      Word(0xC0003B00u), Word(value);
+    }
+  }
+  // IM_LOAD_IMMEDIATE of `dwords` of microcode at `from` (as in memory) into shader `type`.
+  void Shader(uint32_t type, uint32_t from, uint32_t dwords) {
+    if (records) {
+      Word(any360::xdk::record::Header(1 + dwords));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kShader, type));
+    } else {
+      Word(0xC0002B00u | ((dwords + 1) << 16)), Word(type), Word(dwords);
+    }
+    std::memcpy(m.Host(cursor + 4), m.Host(from), 4 * size_t(dwords));
+    cursor += 4 * dwords;
+  }
+  void Wait(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e) {
+    if (records) {
+      Word(any360::xdk::record::Header(6));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kWait, 0));
+      for (uint32_t v : {a, b, c, d, e}) Host(v);
+    } else {
+      Word(0xC0043C00u);
+      for (uint32_t v : {a, b, c, d, e}) Word(v);
+    }
+  }
+  // DRAW_INDX_2 with auto indices (`predicated` its header's bit 0).
+  void AutoDraw(uint32_t initiator, bool predicated) {
+    if (records) {
+      Word(any360::xdk::record::Header(any360::xdk::record::DrawWords(false), predicated));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kDraw, 2)), Host(initiator);
+    } else {
+      Word(0xC0003600u | (predicated ? 1u : 0u)), Word(initiator);
+    }
+  }
+};
+}  // namespace detail
+
 // The clear (the runtime's Clear under its rect wrapper): r3 device, r4 the flags (bits 0-3 color targets, 4-5 depth
 // and stencil), r5 the rect (x1, y1, x2, y2), r6 the colors (4 floats; 0: the default color), f1 the depth, r8 the
 // stencil. The rect clipped by the viewport and (when on) the scissor; nothing when empty or when only depth is asked
 // with no depth surface. Uploads the dirty state the clear's draws use, loads the clear's shaders (IM_LOAD_IMMEDIATE),
 // sets the state of a clear, then draws each target through the runtime's own target clear and restores the viewport.
-// PM4 only for now (records: the shader loads and invalidation need record kinds).
-inline bool Clear(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+// As PM4 or as Any360's records.
+// The state of a clear and of a copy: VGT 0x2100-0x2102, 0x2204-0x2206, 0x2312 and 0x200D.
+inline void WriteClearState(detail::Out& out) {
+  out.Registers(0x2100, {0xFFFF, 0, 0}), out.Registers(0x2204, {0x10000, 0x10000, 768});
+  out.Registers(0x2312, {0xFFFF}), out.Registers(0x200D, {0});
+}
+inline bool Clear(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
   using namespace detail;
   const Runtime& rt = g_runtime;
   const uint32_t device = ctx.r3.u32, rect = ctx.r5.u32, caller_r1 = ctx.r1.u32;
@@ -511,27 +607,19 @@ inline bool Clear(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) 
     return cursor > At32(d + 56) ? uint32_t(Call(ctx, base, rt.make_room, device)) : cursor;
   };
   // The bin mask, an invalidation, the clear's vertex shader.
-  uint32_t cursor = room();
-  uint8_t* out = m.Host(cursor + 4);
-  Set32(out, 0xC0006000u), Set32(out + 4, At32(d + 12428)), Set32(out + 8, 0xC0003B00u), Set32(out + 12, 768);
-  Set32(out + 16, 0xC01C2B00u), Set32(out + 20, 0), Set32(out + 24, 27);
-  std::memcpy(out + 28, m.Host(rt.clear_vertex_shader), 108);
-  Set32(d + 48, cursor + 136);
+  Out out{m, room(), records};
+  out.Bins(0, At32(d + 12428)), out.Invalidate(768), out.Shader(0, rt.clear_vertex_shader, 27);
+  Set32(d + 48, out.cursor);
   // Its pixel shader, and VGT 0x2180-0x2181.
-  cursor = room();
-  out = m.Host(cursor + 4);
-  Set32(out, 0xC00A2B00u), Set32(out + 4, 1), Set32(out + 8, 9);
-  std::memcpy(out + 12, m.Host(rt.clear_pixel_shader), 36);
-  Set32(out + 48, 0x00012180u), Set32(out + 52, 0x10010001u), Set32(out + 56, 0);
-  Set32(d + 48, cursor + 60);
+  out.cursor = room();
+  out.Shader(1, rt.clear_pixel_shader, 9), out.Registers(0x2180, {0x10010001u, 0});
+  Set32(d + 48, out.cursor);
   // The state of a clear.
-  cursor = room();
-  out = m.Host(cursor + 4);
-  static constexpr uint32_t kState[12] = {0x00022100u, 0xFFFF, 0, 0, 0x00022204u, 0x10000, 0x10000, 768, 8978, 0xFFFF, 8205, 0};
-  for (int i = 0; i < 12; ++i) Set32(out + 4 * i, kState[i]);
+  out.cursor = room();
+  WriteClearState(out);
   Set64(d + 16, At64(d + 16) | (uint64_t(1) << 41) | (uint64_t(1) << 40) | (uint64_t(1) << 44) | 0xE0 | 0x180000);
   Set64(d + 32, At64(d + 32) | 0x80000);
-  Set32(d + 48, cursor + 48);
+  Set32(d + 48, out.cursor);
   const auto clear_target = [&](uint32_t target) {
     Set32(m.Host(frame + 92), stencil);
     // The rect as the runtime holds it: words loaded, zero-extended.
@@ -543,11 +631,9 @@ inline bool Clear(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) 
   if (!(flags & 0xF)) {
     clear_target(0xFFFFFFFFu);
   } else {
-    cursor = room();
-    out = m.Host(cursor + 4);
-    static constexpr uint32_t kTargets[6] = {8452, 0xFFFF, 8706, 0, 8705, 0x00010001u};
-    for (int i = 0; i < 6; ++i) Set32(out + 4 * i, kTargets[i]);
-    Set32(d + 48, cursor + 24);
+    out.cursor = room();
+    out.Registers(0x2104, {0xFFFF}), out.Registers(0x2202, {0}), out.Registers(0x2201, {0x00010001u});
+    Set32(d + 48, out.cursor);
     Set64(d + 16, At64(d + 16) | (uint64_t(1) << 37) | 512 | 1024);
     for (uint32_t target = 0; target < 4; ++target) {
       if (!((1u << target) & flags) || !At32(d + 12160 + 4 * target)) continue;
@@ -568,7 +654,7 @@ inline bool Clear(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) 
 }
 inline void ClearOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
-  if (m.base == base && NativeDraws() && Clear(ctx, base, m)) return;
+  if (m.base == base && NativeDraws() && Clear(ctx, base, m, DrawRecords())) return;
   original(ctx, base);
 }
 
@@ -629,8 +715,8 @@ inline float Frsp(double v) { return float(v); }
 // stencil arguments. The copy registers from the texture's format, pitch and the point; the clears; the viewport
 // widened over the rect; the dirty state; the tiles' copy addresses when tiled; the copy shader, the state of a copy,
 // a rect of three vertices taken through the runtime's allocator and drawn in copy mode; the copy's cache events and
-// wait; the texture's fence or release. PM4 only for now.
-inline bool Resolve(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+// wait; the texture's fence or release. As PM4 or as Any360's records.
+inline bool Resolve(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
   using namespace detail;
   const Runtime& rt = g_runtime;
   using any360::xdk::IsPlainMemory;
@@ -763,30 +849,27 @@ inline bool Resolve(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m
   const auto room = [&](uint32_t cursor) {
     return cursor > At32(d + 56) ? uint32_t(Call(ctx, base, rt.make_room, device)) : cursor;
   };
-  const auto put = [&](uint32_t& cursor, uint32_t v) { cursor += 4, Set32(m.Host(cursor), v); };
-  uint32_t cursor = At32(d + 48);
+  Out out{m, At32(d + 48), records};
   if (TiledTargets(d)) {
-    cursor = room(cursor);
-    put(cursor, 0xC0006100u), put(cursor, 0);
+    out.cursor = room(out.cursor);
+    out.Bins(1, 0);
     for (uint32_t tile = 0; tile < At32(d + 12468); ++tile) {
       const uint32_t tx = At32(d + 12712 + 8 * tile), ty = At32(d + 12712 + 8 * tile + 4);
-      put(cursor, 0xC0006000u), put(cursor, 3u << (2 * tile)), put(cursor, 0xC0012D01u), put(cursor, 0x00040319u);
-      put(cursor, (ty * pitch + ((tx << 5) & ~0x1Fu)) * bytes + address);
-      Set32(d + 48, cursor);
-      cursor = room(cursor);
+      out.Bins(0, 3u << (2 * tile));
+      out.ContextConstant(0x319, (ty * pitch + ((tx << 5) & ~0x1Fu)) * bytes + address);
+      Set32(d + 48, out.cursor);
+      out.cursor = room(out.cursor);
     }
-    put(cursor, 0xC0006000u), put(cursor, At32(d + 12428)), put(cursor, 0xC0006100u), put(cursor, At32(d + 12432));
-    Set32(d + 48, cursor);
+    out.Bins(0, At32(d + 12428)), out.Bins(1, At32(d + 12432));
+    Set32(d + 48, out.cursor);
   }
-  cursor = room(At32(d + 48));
+  out.cursor = room(At32(d + 48));
   if (d[10814] & 0x10) {
-    for (int i = 0; i < 3; ++i) put(cursor, 0xC0004600u), put(cursor, 6);
+    for (int i = 0; i < 3; ++i) out.Event(0x46, {6});
     d[10814] &= 0xEF;
   }
-  put(cursor, 0xC0003B00u), put(cursor, 256), put(cursor, 0xC0102B00u), put(cursor, 0), put(cursor, 15);
-  std::memcpy(m.Host(cursor + 4), m.Host(rt.resolve_pixel_shader), 60);
-  cursor += 60;
-  for (uint32_t v : {0x00012180u, 0x00010002u, 0u, 8712u, 6u, 8704u, 0u}) put(cursor, v);
+  out.Invalidate(256), out.Shader(0, rt.resolve_pixel_shader, 15);
+  out.Registers(0x2180, {0x00010002u, 0}), out.Registers(0x2208, {6}), out.Registers(0x2200, {0});
   uint32_t depth_state = 0;
   if (clear_depth) {
     const uint8_t b = d[10814];
@@ -795,29 +878,28 @@ inline bool Resolve(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m
     depth_state = ((mixed >> 4) & 7 & ~2u) | (At32(d + 10432) & ~0xFu);
     Set64(d + 16, At64(d + 16) | 0x20000);
   }
-  put(cursor, 1480), put(cursor, 0x00020000u);
-  Set32(d + 48, cursor);
+  out.Registers(0x5C8, {0x00020000u});
+  Set32(d + 48, out.cursor);
   Call(ctx, base, rt.flush_state, device, 256, depth_state);
-  cursor = room(At32(d + 48));
-  static constexpr uint32_t kState[12] = {0x00022100u, 0xFFFF, 0, 0, 0x00022204u, 0x10000, 0x10000, 768, 8978, 0xFFFF, 8205, 0};
-  for (uint32_t v : kState) put(cursor, v);
+  out.cursor = room(At32(d + 48));
+  WriteClearState(out);
   Set64(d + 16, At64(d + 16) | (uint64_t(1) << 41) | (uint64_t(1) << 40) | (uint64_t(1) << 44) | 0xE0);
   Set64(d + 32, At64(d + 32) | 0x80000);
-  Set32(d + 48, cursor);
+  Set32(d + 48, out.cursor);
   if (texture_kind == 3 && source != 4) {
     const uint32_t target = source == 0 ? 0 : source + 1;
     const uint32_t info = At32(d + 10244 + 4 * target);
     if ((info & 0x000F0000u) == 0x10000u) {
-      cursor = room(cursor);
-      put(cursor, 8193 + target), put(cursor, (info & 0x03FFFFFFu) & ~0x000FF000u);
+      out.cursor = room(out.cursor);
+      out.Registers(0x2001 + target, {(info & 0x03FFFFFFu) & ~0x000FF000u});
       Set64(d + 16, At64(d + 16) | ((uint64_t(1) << 63) >> ((target + 7) & 0xFF)));
-      Set32(d + 48, cursor);
+      Set32(d + 48, out.cursor);
     }
   }
-  cursor = room(cursor);
+  out.cursor = room(out.cursor);
   const uint32_t vertices = uint32_t(Call(ctx, base, rt.allocate, device, 6, 4));
   if (!vertices) {
-    Set32(d + 48, cursor);
+    Set32(d + 48, out.cursor);
     ctx.r1.u64 = caller_r1;
     return true;
   }
@@ -830,13 +912,12 @@ inline bool Resolve(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m
   const float v[6] = {left, top, right, top, right, bottom};
   for (int i = 0; i < 6; ++i) Set32(vx + 4 * i, std::bit_cast<uint32_t>(v[i]));
   const uint32_t vertex_address = GpuAddress(vertices, 0x1FFFFFFFu) | 3u;
-  for (uint32_t w : {0x00054800u, vertex_address, 0x1000001Au, 0u, 0u, 0u, 0u, 0x00025000u, 0u, 0u, 0u})
-    put(cursor, w);
-  put(cursor, At32(d + 12436) | 0xC0003600u), put(cursor, 0x00030088u);
-  Set32(d + 48, cursor);
-  cursor = room(cursor);
-  put(cursor, 0xC0004600u), put(cursor, 6), put(cursor, 8199), put(cursor, At32(d + 10268));
-  Set32(d + 48, cursor);
+  out.Registers(0x4800, {vertex_address, 0x1000001Au, 0, 0, 0, 0}), out.Registers(0x5000, {0, 0, 0});
+  out.AutoDraw(0x00030088u, (At32(d + 12436) & 1) != 0);
+  Set32(d + 48, out.cursor);
+  out.cursor = room(out.cursor);
+  out.Event(0x46, {6}), out.Registers(0x2007, {At32(d + 10268)});
+  Set32(d + 48, out.cursor);
   if (viewport) RestoreViewport(ctx, base, device, d);
   const uint32_t copied = At32(f + 128) * pitch * At32(f + 140) * At32(f + 124);
   uint8_t* tex = m.Host(texture);
@@ -844,13 +925,12 @@ inline bool Resolve(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m
   Set64(d + 16, At64(d + 16) | 0x80000 | 8);
   Set64(d + 24, At64(d + 24) | 0x80000000ull);
   Set64(d + 16, At64(d + 16) | 0x18000 | 2048 | 256);
-  cursor = room(At32(d + 48));
-  for (uint32_t w : {2609u, 0x03000100u, 0x00010A2Fu, (copied + 8191) & ~0xFFFu, address & ~0xFFFu, 0xC0043C00u, 3u, 2609u,
-                     0u, 0x80000000u, 8u})
-    put(cursor, w);
+  out.cursor = room(At32(d + 48));
+  out.Registers(0xA31, {0x03000100u}), out.Registers(0xA2F, {(copied + 8191) & ~0xFFFu, address & ~0xFFFu});
+  out.Wait(3, 2609, 0, 0x80000000u, 8);
   Set32(d + 10648, 0), Set32(d + 10660, 0);
-  for (uint32_t w : {8984u, 0u, 8987u, 0u}) put(cursor, w);
-  Set32(d + 48, cursor);
+  out.Registers(0x2318, {0}), out.Registers(0x231B, {0});
+  Set32(d + 48, out.cursor);
   const uint32_t fence = At32(d + 10780);
   if (fence) {
     Set32(tex + 8, fence), Set32(tex + 12, fence);
@@ -867,7 +947,7 @@ inline bool Resolve(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m
 }
 inline void ResolveOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
-  if (m.base == base && NativeDraws() && Resolve(ctx, base, m)) return;
+  if (m.base == base && NativeDraws() && Resolve(ctx, base, m, DrawRecords())) return;
   original(ctx, base);
 }
 

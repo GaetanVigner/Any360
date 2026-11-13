@@ -238,7 +238,7 @@ class CommandProcessor : public sys::GpuBackend {
   // EVENT_WRITE, EVENT_WRITE_SHD, EVENT_WRITE_EXT, EVENT_WRITE_ZPD (or the event record of one): its `n` words.
   void Event(uint32_t opcode, const uint32_t* w, uint32_t n);
   // An Any360 record (any360/xdk/d3d_records.h): registers or a draw.
-  void ExecuteRecord(Reader& r, uint32_t end);
+  bool ExecuteRecord(Reader& r, uint32_t end);  // false: stopped (a wait)
   // A draw's initiator taken (VGT_DRAW_INITIATOR) and its call started; then, its indices set, it goes to the
   // renderer unless the visibility query kills it (or as a copy in EDRAM copy mode).
   struct DrawCall StartDraw(uint32_t initiator);

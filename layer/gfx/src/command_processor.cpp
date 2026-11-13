@@ -675,7 +675,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
       Draw(r, opcode, end);
       break;
     case record::kOpcode:
-      ExecuteRecord(r, end);
+      if (!ExecuteRecord(r, end)) return false;
       break;
     case pm4::SET_CONSTANT:
       if (has(1)) {
@@ -872,47 +872,72 @@ void CommandProcessor::SetDrawIndices(DrawCall& draw, uint32_t base, uint32_t si
   draw.index_bytes = (size & 0x00FFFFFF) * (draw.index_32 ? 4 : 2);
 }
 
-void CommandProcessor::ExecuteRecord(Reader& r, uint32_t end) {
-  if (r.offset >= end) return;
+bool CommandProcessor::ExecuteRecord(Reader& r, uint32_t end) {
+  if (r.offset >= end) return true;
   const uint32_t head = NextRaw(r), kind = head & 0xFF, argument = head >> 8;
   switch (kind) {
     case record::kRegisters: {
       const uint32_t count = end - r.offset;
-      if (argument + count > reg::kRegisterCount) return;
+      if (argument + count > reg::kRegisterCount) return true;
       for (uint32_t i = 0; i < count; ++i) SetRegister(argument + i, NextRaw(r));
-      return;
+      return true;
     }
     case record::kDraw: {
-      if (r.offset >= end) return;
+      if (r.offset >= end) return true;
       DrawCall draw = StartDraw(NextRaw(r));
       if (draw.source == DrawSource::kDma) {
-        if (end - r.offset < 2) return;
+        if (end - r.offset < 2) return true;
         const uint32_t base = NextRaw(r), size = NextRaw(r);
         SetDrawIndices(draw, base, size);
       } else if (draw.source != DrawSource::kAuto) {
-        return;
+        return true;
       }
       SubmitDraw(draw);
-      return;
+      return true;
     }
     case record::kBins: {
-      if (r.offset >= end || argument > 3) return;
+      if (r.offset >= end || argument > 3) return true;
       const uint64_t value = NextRaw(r);
       uint64_t& bins = argument < 2 ? bin_mask_ : bin_select_;
       bins = (argument & 1) ? (bins & 0xFFFFFFFFull) | value << 32 : (bins & 0xFFFFFFFF00000000ull) | value;
-      return;
+      return true;
     }
     case record::kEvent: {
       if (argument != pm4::EVENT_WRITE && argument != pm4::EVENT_WRITE_SHD && argument != pm4::EVENT_WRITE_EXT &&
           argument != pm4::EVENT_WRITE_ZPD)
-        return;
+        return true;
       uint32_t w[3] = {}, n = 0;
       while (n < 3 && r.offset < end) w[n++] = NextRaw(r);
       Event(argument, w, n);
-      return;
+      return true;
+    }
+    case record::kShader: {
+      // The microcode as in memory, gathered when it wraps around the ring's end (as IM_LOAD_IMMEDIATE's).
+      const uint32_t dwords = end - r.offset, at = r.offset % r.capacity;
+      if (argument > 1) return true;
+      if (at + dwords <= r.capacity) {
+        LoadShader(argument, r.base + 4 * at, dwords);
+      } else {
+        const uint32_t first = r.capacity - at;
+        wrapped_shader_.resize(dwords);
+        std::memcpy(wrapped_shader_.data(), Host(r.base + 4 * at), 4 * size_t(first));
+        std::memcpy(wrapped_shader_.data() + first, Host(r.base), 4 * size_t(dwords - first));
+        LoadShader(argument, r.base + 4 * at, dwords, wrapped_shader_.data());
+      }
+      r.remaining -= dwords;
+      r.offset += dwords;
+      return true;
+    }
+    case record::kInvalidate:
+      return true;  // as INVALIDATE_STATE: nothing kept here to invalidate
+    case record::kWait: {
+      if (end - r.offset < 5) return true;
+      uint32_t w[5];
+      for (uint32_t& v : w) v = NextRaw(r);
+      return Wait(w[0], w[1], w[2], w[3], w[4]);
     }
     default:
-      return;  // a kind this build does not know: skipped
+      return true;  // a kind this build does not know: skipped
   }
 }
 

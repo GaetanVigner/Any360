@@ -283,7 +283,8 @@ inline void CanonicalCommands(CallSetup& s, uint32_t cursor = 0) {
     const uint32_t count = ((h >> 16) & 0x3FFF) + 1;
     switch (h >> 30) {
       case 0:
-        for (uint32_t i = 0; i < count; ++i, at += 4) out.insert(out.end(), {0, (h & 0x8000) ? (h & 0x7FFF) : (h & 0x7FFF) + i, Get32(s, at)});
+        for (uint32_t i = 0; i < count; ++i, at += 4)
+          out.insert(out.end(), {0, (h & 0x8000) ? (h & 0x7FFF) : (h & 0x7FFF) + i, Get32(s, at)});
         break;
       case 1:
         out.insert(out.end(), {0, h & 0x7FF, Get32(s, at), 0, (h >> 11) & 0x7FF, Get32(s, at + 4)});
@@ -307,11 +308,38 @@ inline void CanonicalCommands(CallSetup& s, uint32_t cursor = 0) {
             uint32_t v;
             std::memcpy(&v, s.Host(at + 4 * i), 4);
             out.insert(out.end(), {0, (raw[0] >> 8) + i - 1, v});
+            if (predicated) out.push_back(1);
           }
         } else if (opcode == 0x22 && count == 4) {  // DRAW_INDX with DMA indices: its query dword is not drawn
           out.insert(out.end(), {1, Get32(s, at + 4), Get32(s, at + 8), Get32(s, at + 12), predicated});
         } else if (opcode == 0x22 && count == 2) {  // DRAW_INDX with auto indices
           out.insert(out.end(), {1, Get32(s, at + 4), 0, 0, predicated});
+        } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kShader) {
+          out.insert(out.end(), {5, raw[0] >> 8, count - 1, predicated});
+          for (uint32_t i = 1; i < count; ++i) out.push_back(Get32(s, at + 4 * i));
+        } else if (opcode == 0x2B && count >= 2) {  // IM_LOAD_IMMEDIATE
+          const uint32_t dwords = Get32(s, at + 4) & 0xFFFF;
+          out.insert(out.end(), {5, Get32(s, at), dwords, predicated});
+          for (uint32_t i = 0; i < dwords && 2 + i < count; ++i) out.push_back(Get32(s, at + 8 + 4 * i));
+        } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kInvalidate) {
+          out.insert(out.end(), {6, raw[1], predicated});
+        } else if (opcode == 0x3B && count == 1) {  // INVALIDATE_STATE
+          out.insert(out.end(), {6, Get32(s, at), predicated});
+        } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kWait) {
+          out.insert(out.end(), {7, raw[1], raw[2], raw[3], raw[4], raw[5], predicated});
+        } else if (opcode == 0x3C && count == 5) {  // WAIT_REG_MEM
+          out.insert(out.end(), {7, Get32(s, at), Get32(s, at + 4), Get32(s, at + 8), Get32(s, at + 12), Get32(s, at + 16),
+                                 predicated});
+        } else if (opcode == 0x2D && count >= 1) {  // SET_CONSTANT: registers from its type's base
+          static constexpr uint32_t kBase[] = {0x4000, 0x4800, 0x4900, 0x4908, 0x2000};
+          const uint32_t offset_type = Get32(s, at), type = (offset_type >> 16) & 0xFF;
+          const uint32_t first = (type < 5 ? kBase[type] : 0) + (offset_type & 0x7FF);
+          for (uint32_t i = 1; i < count; ++i) {
+            out.insert(out.end(), {0, first + i - 1, Get32(s, at + 4 * i)});
+            if (predicated) out.push_back(1);
+          }
+        } else if (opcode == 0x36 && count == 1) {  // DRAW_INDX_2 with auto indices
+          out.insert(out.end(), {1, Get32(s, at), 0, 0, predicated});
         } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kEvent) {
           out.insert(out.end(), {4, raw[0] >> 8, count - 1, predicated});
           for (uint32_t i = 1; i < count && i < 8; ++i) out.push_back(raw[i]);
@@ -459,8 +487,12 @@ struct Query {
 // The clear (d3d_draw.h): the draws' device (its bound surfaces the title's: the runtime's target clear reads them),
 // the viewport's floats (now and then NaN or huge: fctiwz), the scissor, the rect, the flags, the colors (none: the
 // default), the depth surface absent one call in four.
+template <bool kRecords>
 struct ClearCase {
-  static bool Native(PPCContext& ctx, uint8_t* base) { return d3d_draw::Clear(ctx, base, SelfTestMemory()); }
+  static bool Native(PPCContext& ctx, uint8_t* base) { return d3d_draw::Clear(ctx, base, SelfTestMemory(), kRecords); }
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
+  }
   static void Setup(CallSetup& s, PPCContext& ctx) {
     DrawIndexed<false>::Setup(s, ctx);
     std::mt19937_64& rng = *s.rng;
@@ -496,8 +528,12 @@ struct ClearCase {
 // a destination texture made in the scratch (format, pitch, size, tiling, endianness, kind), level and slice 0, the
 // source rect, point and clear color given or not, the color and depth clears after the copy one call in eight each,
 // the caller's two stack arguments set.
+template <bool kRecords>
 struct ResolveCase {
-  static bool Native(PPCContext& ctx, uint8_t* base) { return d3d_draw::Resolve(ctx, base, SelfTestMemory()); }
+  static bool Native(PPCContext& ctx, uint8_t* base) { return d3d_draw::Resolve(ctx, base, SelfTestMemory(), kRecords); }
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
+  }
   static void Setup(CallSetup& s, PPCContext& ctx) {
     DrawIndexed<false>::Setup(s, ctx);
     std::mt19937_64& rng = *s.rng;

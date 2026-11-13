@@ -598,6 +598,23 @@ void Records() {
       raw(s.ring, 0x12345678);
   s.ring.Run();
   CHECK(Big(kData + 64) == 0x12345678);
+  // A shader record loads the microcode IM_LOAD_IMMEDIATE does (the same hash); invalidate and wait records pass.
+  pm4_side.recorder.shaders = 0, s.recorder.shaders = 0;
+  const uint32_t microcode[3] = {0x11223344u, 0x55667788u, 0x99AABBCCu};
+  pm4_side.ring.Put({Type3(pm4::IM_LOAD_IMMEDIATE, 5), 1, 3, microcode[0], microcode[1], microcode[2]});
+  pm4_side.ring.Run();
+  s.ring.Put(record::Header(4));
+  raw(s.ring, record::KindWord(record::kShader, 1));
+  for (uint32_t w : microcode) s.ring.Put(w);  // as in memory: big-endian, as the packet carries it
+  s.ring.Put(record::Header(2));
+  raw(s.ring, record::KindWord(record::kInvalidate, 0)), raw(s.ring, 256);
+  s.ring.Put(record::Header(6));
+  raw(s.ring, record::KindWord(record::kWait, 0));
+  for (uint32_t w : {3u, uint32_t(reg::SCRATCH_REG0), 0u, 0u, 1u}) raw(s.ring, w);
+  s.ring.Put({Type0(0x2501, 1), 0x9A});
+  s.ring.Run();
+  CHECK(s.recorder.shaders == 1 && pm4_side.recorder.shaders == 1 && s.recorder.last_hash == pm4_side.recorder.last_hash);
+  CHECK(s.cp.reg(0x2501) == 0x9A);
 }
 
 int main() {
