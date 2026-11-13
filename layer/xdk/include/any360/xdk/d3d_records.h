@@ -1,0 +1,32 @@
+// Any360's own command records (docs/D3D.md, phase D2): what Any360's native D3D writes into a title's command
+// buffer in place of PM4, in the host's byte order. A record is a type-3 packet (its header big-endian, as every packet
+// the command processor reads, so that records and the runtime's PM4 still in the same buffer keep their order) with
+// an opcode no XDK runtime emits; its words follow in the host's byte order, the first being the record's kind and
+// argument:
+//
+//   kRegisters  argument: the first register. Then the registers' values (what a type-0 packet of the same registers
+//               sets, without its byte swap).
+//   kDraw       argument: the draw's source as in the initiator (0 DMA indices, 2 auto). Then the initiator (as
+//               VGT_DRAW_INITIATOR) and, for DMA indices, VGT_DMA_BASE and VGT_DMA_SIZE: what DRAW_INDX draws, without
+//               its visibility query dword (the command processor reads the query from PA_SC_VIZ_QUERY).
+//
+// The writers (any360/xdk/d3d_state.h and the host's D3D natives) and the command processor (layer/gfx) share this
+// header only; it has no dependency.
+#pragma once
+
+#include <cstdint>
+
+namespace any360::xdk::record {
+
+constexpr uint32_t kOpcode = 0x7E;
+enum Kind : uint32_t { kRegisters = 1, kDraw = 2 };
+
+// The packet's header for `words` words after it (the kind word included).
+constexpr uint32_t Header(uint32_t words) { return (3u << 30) | ((words - 1) << 16) | (kOpcode << 8); }
+constexpr uint32_t KindWord(Kind kind, uint32_t argument) { return uint32_t(kind) | (argument << 8); }
+
+// The words after the header of a register record of `count` registers, and of a draw record (the kind word included).
+constexpr uint32_t RegistersWords(uint32_t count) { return 1 + count; }
+constexpr uint32_t DrawWords(bool dma) { return dma ? 4 : 2; }
+
+}  // namespace any360::xdk::record

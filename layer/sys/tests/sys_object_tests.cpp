@@ -2476,6 +2476,20 @@ void ProfileSettingsKept() {
 
 // The input queue: changes sampled faster than polls arrive, none lost; a step takes changes of different inputs
 // together, a second change of the same input waits for the next step; the sticks queue nothing and are live.
+// The input script: presses at their times for their hold, several buttons, entries it cannot read reported.
+void InputScriptTests() {
+  using namespace std::chrono_literals;
+  std::string error;
+  const InputScript s = InputScript::Parse("20:start,24.5:a/500,30:a+x,bad,31:nope,-1:a,40:b/0", &error);
+  CHECK(s.presses().size() == 3);
+  CHECK(s.ButtonsAt(19999ms) == 0 && s.ButtonsAt(20s) == 0x0010 && s.ButtonsAt(20199ms) == 0x0010 &&
+        s.ButtonsAt(20200ms) == 0);
+  CHECK(s.ButtonsAt(24500ms) == 0x1000 && s.ButtonsAt(24999ms) == 0x1000 && s.ButtonsAt(25s) == 0);
+  CHECK(s.ButtonsAt(30100ms) == (0x1000 | 0x4000));
+  CHECK(error == "bad, 31:nope, -1:a, 40:b/0");
+  CHECK(InputScript::Parse("").empty());
+}
+
 void InputQueueTests() {
   using namespace std::chrono_literals;
   const InputQueue::Clock::time_point t0{};
@@ -2567,6 +2581,7 @@ void InputQueueTests() {
 
 int main() {
   InputQueueTests();
+  InputScriptTests();
   ProfileSettingsKept();
   ConcurrentDispatcher();
   SimpsonsTests();

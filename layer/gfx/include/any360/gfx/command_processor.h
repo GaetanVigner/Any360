@@ -225,6 +225,8 @@ class CommandProcessor : public sys::GpuBackend {
     uint32_t base, capacity, offset, remaining;  // dwords, wrapping at capacity
   };
   uint32_t Next(Reader& r) const;
+  // The next dword as it is in memory (an Any360 record's words are in the host's byte order: d3d_records.h).
+  uint32_t NextRaw(Reader& r) const;
   bool ExecutePacket(Reader& r, int depth);
   bool ExecuteType3(Reader& r, uint32_t packet, int depth);
   void SetRegister(uint32_t index, uint32_t value);
@@ -233,6 +235,13 @@ class CommandProcessor : public sys::GpuBackend {
   bool Test(uint32_t wait_info, uint32_t poll, uint32_t reference, uint32_t mask, bool coherent);
   void MakeCoherent();
   void Draw(Reader& r, uint32_t opcode, uint32_t end);
+  // An Any360 record (any360/xdk/d3d_records.h): registers or a draw.
+  void ExecuteRecord(Reader& r, uint32_t end);
+  // A draw's initiator taken (VGT_DRAW_INITIATOR) and its call started; then, its indices set, it goes to the
+  // renderer unless the visibility query kills it (or as a copy in EDRAM copy mode).
+  struct DrawCall StartDraw(uint32_t initiator);
+  void SetDrawIndices(struct DrawCall& draw, uint32_t base, uint32_t size);
+  void SubmitDraw(struct DrawCall& draw);
   // `words`: the guest (big-endian) microcode when it is not contiguous at `address` (an immediate load wrapping
   // around the ring's end, gathered).
   void LoadShader(uint32_t type, uint32_t address, uint32_t dwords, const uint32_t* words = nullptr);

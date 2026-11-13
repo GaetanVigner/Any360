@@ -42,6 +42,9 @@ struct Case {
   void (*setup)(CallSetup& s, PPCContext& ctx) = nullptr;
   // The first register the two sides leave different, or null (default: r3 only).
   const char* (*differs)(const PPCContext& a, const PPCContext& b) = nullptr;
+  // Run on each side's result before the comparison, when the replacement writes what the original does in another
+  // form (Any360's records for PM4): turns both into the same canonical form. Null: compared as they are.
+  void (*normalize)(CallSetup& s, PPCContext& after) = nullptr;
   uint32_t calls = 3000;
 };
 
@@ -49,6 +52,14 @@ struct Case {
 // title's bindings run on theirs.
 inline any360::xdk::Memory g_selftest_memory;
 inline const any360::xdk::Memory& SelfTestMemory() { return g_selftest_memory; }
+
+// A kind's Normalize, when it has one.
+using NormalizeFunction = void (*)(CallSetup&, PPCContext&);
+template <class Kind>
+constexpr NormalizeFunction NormalizeOf() {
+  if constexpr (requires { Kind::Normalize; }) return &Kind::Normalize;
+  return nullptr;
+}
 
 // Registers a case (from a static initializer).
 bool Register(const Case& c);
@@ -72,4 +83,5 @@ inline void SawDevice(const PPCContext& ctx, uint8_t* base, uint32_t device) {
 #define ANY360_D3D_CASE(id, name_text, original_function, ...)                                           \
   [[maybe_unused]] static const bool any360_d3d_case_##id = ::any360::host::rexglue::d3d::Register(       \
       {name_text, &original_function, &::any360::host::rexglue::d3d::__VA_ARGS__::Native,               \
-       &::any360::host::rexglue::d3d::__VA_ARGS__::Setup, ::any360::host::rexglue::d3d::__VA_ARGS__::Differs})
+       &::any360::host::rexglue::d3d::__VA_ARGS__::Setup, ::any360::host::rexglue::d3d::__VA_ARGS__::Differs,    \
+       ::any360::host::rexglue::d3d::NormalizeOf<::any360::host::rexglue::d3d::__VA_ARGS__>()})

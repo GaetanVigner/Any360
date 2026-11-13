@@ -81,13 +81,19 @@ What a case must never do: let the original reach a path that writes the title's
 device copy still holds (making room in the command buffer, a new release-list block), give an upload a mask of 0 or
 a count the runtime loops on, or a range whose end is below its start.
 
+## Reaching a title's game without a player
+
+`--any360_input_script="12:start,16:a,20:a,24:a"` (any360::sys InputScript) adds button presses to the first
+controller's samples at set times, so its state and keystrokes both see them: Crackdown reaches the city from the title
+screen with Start then A every 4 s, minimized, no one at the controller.
+
 ## Phases
 
 | # | Phase | Done when |
 |---|---|---|
 | D0 | Done (2026-11-12). Inventory: `tools/d3d_inventory.py`, `titles/crackdown/d3d_inventory.json`. Roles: `tools/d3d_roles.py` writes `titles/crackdown/d3d.json`, each of the 227 entry and flush functions with its argument registers, the offsets it reads and writes in r3's object, its PM4 and calls, and a name (`titles/crackdown/d3d_names.json`: 37 read so far, the most called) or a role made from those | every entry and flush function of Crackdown's runtime has a name and a role |
 | D1 | In progress: 22 bound native in Crackdown (blend, constants, SetTexture, SetStreamSource, samplers, vertex declaration, shader binds, CPU range flush: `any360/xdk/d3d_state.h`), each checked by the in-game self-test (`--any360_d3d_selftest`) and `--any360_xdk_verify`, every one at least 1.1x its original. Entry functions native, group by group (constants and fetch setters first: `sub_826B2F68` is already one, `xdk::D3dSetShaderConstants`), verified in game | the 163 entry functions run natively in Crackdown, `--any360_xdk_verify` clean |
-| D2 | The record packet in the command processor and the renderer; the first flush function native (indexed draw `sub_826B9FF8`), compare mode against PM4 | its draws match the PM4 ones, the image unchanged |
+| D2 | In progress (2026-11-12): the record packet is `any360/xdk/d3d_records.h` (a type-3 header, opcode 0x7E, then words in the host's order: registers, draws), executed by the command processor (`ExecuteRecord`, unit-tested against the PM4 it replaces); DrawIndexedVertices (`sub_826B9FF8`) native in `any360/host/d3d_draw.h`, its dirty state flushed through the runtime's upload helpers and its draw written as a record (`--any360_d3d_records`, default on; `--any360_d3d_native_draws`), compared with the runtime's code by the self-test (PM4 byte for byte, records through a canonical decoding), and in the city: the same 2,326 draws a frame, 0 failed. Still to do: the other three draws. The record packet in the command processor and the renderer; the first flush function native (indexed draw `sub_826B9FF8`), compare mode against PM4 | its draws match the PM4 ones, the image unchanged |
 | D3 | Every draw, clear, resolve, swap, query and fence native | no PM4 from the runtime but command buffer replays and ring setup |
 | D4 | Command buffers recorded and replayed as record lists | no PM4 from the runtime at all |
 | D5 | The engine's PM4 (`sub_828BB*`) native | the ring carries only record packets |

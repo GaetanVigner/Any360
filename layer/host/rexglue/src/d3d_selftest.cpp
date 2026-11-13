@@ -41,6 +41,8 @@ REXCVAR_DEFINE_BOOL(any360_d3d_selftest, false, "GPU",
                     "on generated inputs (compared, then timed), write d3d_selftest.txt and end the process");
 REXCVAR_DEFINE_INT32(any360_d3d_selftest_slice_ms, 3, "GPU",
                      "Any360: the D3D self-test's work a frame, in milliseconds (the title keeps running)");
+REXCVAR_DEFINE_STRING(any360_d3d_selftest_only, "", "GPU",
+                      "Any360: the D3D self-test runs only the cases whose name contains this text (empty: all)");
 REXCVAR_DEFINE_INT32(any360_d3d_selftest_after, 2000, "GPU",
                      "Any360: the D3D self-test starts at this call of the D3D function that triggers it (the "
                      "title draws by then)");
@@ -222,6 +224,7 @@ void OneCall(Runner& run, const Case& c) {
     Result& r = run.r;
     PPCContext own = call;
     c.original(own, base);
+    if (c.normalize) c.normalize(s, own);
     const std::vector<uint8_t> own_bytes = Read(regions);
     Write(restored, before);
     PPCContext mine = call;
@@ -231,6 +234,7 @@ void OneCall(Runner& run, const Case& c) {
       Write(restored, before);
       return;
     }
+    if (c.normalize) c.normalize(s, mine);
     const std::vector<uint8_t> mine_bytes = Read(regions);
     Write(restored, before);
     uint32_t where = 0;
@@ -372,6 +376,10 @@ void FirstDevice(const PPCContext& ctx, uint8_t* base, uint32_t device) {
   if (run.last_slice_end && double(now - run.last_slice_end) * ns < 16e6) return;
   const uint64_t budget = uint64_t(double(std::max(REXCVAR_GET(any360_d3d_selftest_slice_ms), 1)) * 1e6 / ns);
   while (Ticks() - now < budget) {
+    const std::string only = REXCVAR_GET(any360_d3d_selftest_only);
+    while (run.index < Cases().size() && !run.in_case && !only.empty() &&
+           std::string(Cases()[run.index].name).find(only) == std::string::npos)
+      ++run.index;
     if (run.index >= Cases().size()) Finish(run.report);
     const Case& c = Cases()[run.index];
     if (!run.in_case) StartCase(run, c);

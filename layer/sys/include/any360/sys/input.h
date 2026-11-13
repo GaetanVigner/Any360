@@ -20,6 +20,8 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <string>
+#include <vector>
 
 namespace any360::sys {
 
@@ -73,6 +75,33 @@ class InputQueue {
   uint16_t repeat_key_ = 0;
   Clock::time_point repeat_at_{};
   Clock::time_point last_sample_{};
+};
+
+// Button presses played at set times, for tests that reach a title's game without a player: "20:start,24:a/500,
+// 30:a+x" presses Start 20 s after the script starts (for kPressDefault), A at 24 s for 500 ms, A and X at 30 s. The
+// buttons are added to the first controller's (XInputGetState); names: a b x y start back up down left right lb rb ls
+// rs. An entry it cannot read is skipped (`error` says which).
+class InputScript {
+ public:
+  using Clock = std::chrono::steady_clock;
+  static constexpr Clock::duration kPressDefault = std::chrono::milliseconds(200);
+  struct Press {
+    Clock::duration at, hold;
+    uint16_t buttons;
+  };
+  static InputScript Parse(const std::string& text, std::string* error = nullptr);
+  bool empty() const { return presses_.empty(); }
+  const std::vector<Press>& presses() const { return presses_; }
+  // The buttons held `since` after the script started.
+  uint16_t ButtonsAt(Clock::duration since) const {
+    uint16_t buttons = 0;
+    for (const Press& p : presses_)
+      if (since >= p.at && since < p.at + p.hold) buttons |= p.buttons;
+    return buttons;
+  }
+
+ private:
+  std::vector<Press> presses_;
 };
 
 }  // namespace any360::sys

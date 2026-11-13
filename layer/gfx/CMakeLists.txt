@@ -3,7 +3,7 @@
 # Built from layer/sys/CMakeLists.txt, which adds this directory; `gfx_cp_tests` needs no reference runtime.
 add_library(any360_gfx STATIC src/command_processor.cpp src/capture.cpp src/async_renderer.cpp)
 target_include_directories(any360_gfx PUBLIC include)
-target_link_libraries(any360_gfx PUBLIC any360_sys)
+target_link_libraries(any360_gfx PUBLIC any360_sys any360_xdk)  # any360_xdk: the D3D records' format (d3d_records.h)
 target_compile_options(any360_gfx PRIVATE -Wall -Wextra)
 target_compile_definitions(any360_gfx PRIVATE $<$<BOOL:${WIN32}>:_CRT_SECURE_NO_WARNINGS>)
 

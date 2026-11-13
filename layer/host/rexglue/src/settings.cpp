@@ -53,6 +53,9 @@ REXCVAR_DEFINE_INT32(any360_sys_wait_look_ms, 16, "Kernel",
 REXCVAR_DEFINE_INT32(any360_sys_wait_first_look_ms, 16, "Kernel",
                      "Any360: how long a sleeping wait goes before its first look at its objects (each next one twice "
                      "as late, up to any360_sys_wait_look_ms)");
+REXCVAR_DEFINE_STRING(any360_input_script, "", "Kernel",
+                      "Any360: button presses played on the first controller, for tests without a player: "
+                      "\"20:start,24:a/500,30:a+x\" (seconds:buttons[/ms held], from the start)");
 REXCVAR_DEFINE_INT32(any360_input_step_us, 16683, "Kernel",
                      "Any360 input group: polls step through the queued changes at most this often (one console frame), so "
                      "each stays visible for a frame; 0: every poll steps");
@@ -171,6 +174,13 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
     }
     if (group == SysGroup::kInput) {
       any360::sys::XamState().SetInputStep(std::chrono::microseconds(std::max(0, REXCVAR_GET(any360_input_step_us))));
+      if (const std::string text = REXCVAR_GET(any360_input_script); !text.empty()) {
+        std::string error;
+        any360::sys::InputScript script = any360::sys::InputScript::Parse(text, &error);
+        if (!error.empty()) REXLOG_WARN("Any360 system: input script entries not understood: {}", error);
+        REXLOG_INFO("Any360 system: input script of {} presses on the first controller", script.presses().size());
+        any360::sys::XamState().SetInputScript(std::move(script));
+      }
       if (REXCVAR_GET(any360_input_sample_us) > 0) {
         any360::sys::XamState().StartInputSampling(std::chrono::microseconds(REXCVAR_GET(any360_input_sample_us)));
       }

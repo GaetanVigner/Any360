@@ -178,6 +178,13 @@ class Xam {
   void StartInputSampling(std::chrono::microseconds period = std::chrono::microseconds(1000));
   void StopInputSampling();
   void SetInputStep(std::chrono::steady_clock::duration step) { input_step_ = step; }
+  // Button presses added to the first controller's samples (InputScript: its state and keystrokes), timed from this
+  // call.
+  void SetInputScript(InputScript script) {
+    std::lock_guard lock(pads_mutex_);
+    input_script_ = std::move(script);
+    input_script_start_ = std::chrono::steady_clock::now();
+  }
   uint32_t InputGetCapabilities(Guest g, uint32_t user, uint32_t flags, uint32_t caps);
   uint32_t InputGetState(Guest g, uint32_t user, uint32_t flags, uint32_t state);
   uint32_t InputSetState(Guest g, uint32_t user, uint32_t vibration);
@@ -298,6 +305,8 @@ class Xam {
   std::array<Pad, 4> pads_{};
   std::mutex pads_mutex_;
   std::chrono::steady_clock::duration input_step_ = InputQueue::kConsoleFrame;
+  InputScript input_script_;
+  std::chrono::steady_clock::time_point input_script_start_{};
   std::thread sampler_;
   std::atomic<bool> sampling_{false};
   bool Connected(uint32_t user) const;

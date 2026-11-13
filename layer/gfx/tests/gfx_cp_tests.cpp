@@ -12,9 +12,11 @@
 
 #include "any360/gfx/capture.h"
 #include "any360/gfx/command_processor.h"
+#include "any360/xdk/d3d_records.h"
 #include "any360/sys/graphics.h"
 
 namespace {
+namespace record = any360::xdk::record;
 
 using namespace any360;
 using namespace any360::gfx;
@@ -395,7 +397,7 @@ void ReferenceDetails() {
   ring.Run();
   CHECK(recorder.draws.size() == 1);
   // An opcode no title emits stops the rest of what was kicked; the read pointer still moves to the write pointer.
-  ring.Put({Type3(0x7E, 2), 1, 2, Type0(0x2061, 1), 0x62});
+  ring.Put({Type3(0x7D, 2), 1, 2, Type0(0x2061, 1), 0x62});  // (0x7E is Any360's records: d3d_records.h)
   ring.Run();
   CHECK(cp.reg(0x2061) == 0 && cp.read_pointer() == ring.write);
   ring.Put({Type0(0x2062, 1), 0x63});
@@ -496,6 +498,76 @@ void CaptureWhileBusy() {
   std::filesystem::remove(path, error);
 }
 
+// Any360's records (any360/xdk/d3d_records.h) against the PM4 they replace: the same registers and draws, in order with PM4 around
+// them, in the ring and in an indirect buffer, across the ring's end.
+void Records() {
+  struct Side {
+    CommandProcessor cp{g_physical.data()};
+    Recorder recorder;
+    Ring ring{cp};
+  };
+  Side pm4_side, record_side;
+  for (Side* s : {&pm4_side, &record_side}) s->cp.SetRenderer(&s->recorder);
+  const auto raw = [](Ring& ring, uint32_t dword) {
+    std::memcpy(g_physical.data() + kRing + 4 * ring.write, &dword, 4);
+    ring.write = (ring.write + 1) % ring.cp.ring_dwords();
+  };
+  const uint32_t values[5] = {0x11111111, 0x80000022, 0x3300FF00, 0x44, 0x55555555};
+  const uint32_t dma_initiator = (6u << 16) | (0u << 6) | 4;          // 6 indices, DMA, triangle list
+  const uint32_t auto_initiator = (3u << 16) | (2u << 6) | 4;         // 3 vertices, auto
+  for (int round = 0; round < 3; ++round) {
+    for (Side* s : {&pm4_side, &record_side}) {
+      std::memset(g_physical.data(), 0, g_physical.size());
+      s->cp.InitializeRingBuffer({}, kRing, kRingLog2);
+      s->cp.EnableReadPointerWriteBack({}, kWriteBack, 6);
+      s->ring.write = round == 2 ? 2045 : 0;  // the third round crosses the ring's end
+      s->cp.WriteRegister(reg::CP_RB_WPTR, s->ring.write);
+      CHECK(s->cp.Execute());
+      s->recorder.draws.clear();
+    }
+    // PM4: registers, an indexed draw, a register, an auto draw.
+    Ring& a = pm4_side.ring;
+    a.Put({Type0(0x2300 + round, 5), values[0], values[1], values[2], values[3], values[4]});
+    a.Put({Type3(pm4::DRAW_INDX, 4), 0, dma_initiator, 0x00100000, 0x40000006, Type0(0x2400, 1), 0x77});
+    a.Put({Type3(pm4::DRAW_INDX, 2), 0, auto_initiator});
+    a.Run();
+    // Records: the same, with a PM4 type-0 write between them (records and PM4 mixed keep their order).
+    Ring& b = record_side.ring;
+    b.Put(record::Header(record::RegistersWords(5)));
+    raw(b, record::KindWord(record::kRegisters, 0x2300 + round));
+    for (uint32_t v : values) raw(b, v);
+    b.Put(record::Header(record::DrawWords(true)));
+    raw(b, record::KindWord(record::kDraw, 0));
+    raw(b, dma_initiator), raw(b, 0x00100000), raw(b, 0x40000006);
+    b.Put({Type0(0x2400, 1), 0x77});
+    b.Put(record::Header(record::DrawWords(false)));
+    raw(b, record::KindWord(record::kDraw, 2));
+    raw(b, auto_initiator);
+    b.Run();
+    for (uint32_t i = 0; i < 5; ++i) CHECK(record_side.cp.reg(0x2300 + round + i) == values[i]);
+    for (uint32_t r : {uint32_t(0x2300 + round), uint32_t(0x2304 + round), 0x2400u, uint32_t(reg::VGT_DRAW_INITIATOR),
+                       uint32_t(reg::VGT_DMA_BASE), uint32_t(reg::VGT_DMA_SIZE)})
+      CHECK(pm4_side.cp.reg(r) == record_side.cp.reg(r));
+    CHECK(pm4_side.recorder.draws.size() == 2 && record_side.recorder.draws.size() == 2);
+    for (size_t i = 0; i < 2 && i < record_side.recorder.draws.size() && i < pm4_side.recorder.draws.size(); ++i) {
+      const DrawCall &x = pm4_side.recorder.draws[i], &y = record_side.recorder.draws[i];
+      CHECK(x.primitive_type == y.primitive_type && x.source == y.source && x.index_count == y.index_count &&
+            x.index_32 == y.index_32 && x.index_base == y.index_base && x.index_bytes == y.index_bytes &&
+            x.index_endian == y.index_endian);
+    }
+    CHECK(record_side.cp.opcode_counts()[record::kOpcode] == 3u * (round + 1) && Big(kWriteBack) == record_side.ring.write);
+  }
+  // An unknown kind and registers past the file are skipped, the packets after them run.
+  Side& s = record_side;
+  s.ring.Put(record::Header(2));
+  raw(s.ring, record::KindWord(record::Kind(99), 0)), raw(s.ring, 0xDEAD);
+  s.ring.Put(record::Header(record::RegistersWords(1)));
+  raw(s.ring, record::KindWord(record::kRegisters, reg::kRegisterCount)), raw(s.ring, 0xBEEF);
+  s.ring.Put({Type0(0x2500, 1), 0x99});
+  s.ring.Run();
+  CHECK(s.cp.reg(0x2500) == 0x99);
+}
+
 int main() {
   ReferenceDetails();
   GammaRamp();
@@ -508,6 +580,7 @@ int main() {
   GuestWaits(true);
   Kernel();
   CaptureWhileBusy();
+  Records();
   std::printf("gfx_cp_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;
 }

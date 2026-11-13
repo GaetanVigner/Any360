@@ -6,10 +6,13 @@
 #include <algorithm>
 #include <bit>
 #include <cstdint>
+#include <cstring>
 #include <random>
+#include <vector>
 
 #include "any360/xdk/d3d.h"
 #include "d3d_selftest.h"
+#include "d3d_draw.h"
 #include "xdk_natives.h"
 
 namespace any360::host::rexglue::d3d {
@@ -252,6 +255,109 @@ struct FlushRange {
     std::mt19937_64& rng = *s.rng;
     ctx.r3.u64 = rng() % 4 == 0 ? 0x7F100000u + uint32_t(rng() % 0x1000000) : s.scratch + uint32_t(rng() % 0x40000);
     ctx.r4.u64 = ctx.r3.u64 + rng() % (1u << 20);
+  }
+};
+// D3D's DrawIndexedVertices (d3d_draw.h). Its dirty groups: only the uploads (float constants, registers of a word),
+// not the groups that load shaders, flush state or wait (they follow pointers the device copy shares with the title).
+// The command buffer in the scratch, its start kept in the scratch's first word for Normalize; room to its end.
+inline uint32_t Get32(CallSetup& s, uint32_t address) {
+  const uint8_t* p = s.Host(address);
+  return uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
+}
+inline void Put64(CallSetup& s, uint32_t address, uint64_t value) {
+  Put32(s, address, uint32_t(value >> 32));
+  Put32(s, address + 4, uint32_t(value));
+}
+// The command buffer from the start to the cursor, decoded into register writes and draws in the order they come, in
+// place of the buffer (the rest of its room zeroed); the cursor made the list's end. PM4 and Any360's records of the
+// same writes and draws give the same list.
+inline void CanonicalCommands(CallSetup& s) {
+  namespace record = any360::xdk::record;
+  const uint32_t start = Get32(s, s.scratch), cursor = Get32(s, s.device + 48);
+  std::vector<uint32_t> out;
+  uint32_t at = start + 4;
+  while (at <= cursor && out.size() < 0x4000) {
+    const uint32_t h = Get32(s, at);
+    at += 4;
+    const uint32_t count = ((h >> 16) & 0x3FFF) + 1;
+    switch (h >> 30) {
+      case 0:
+        for (uint32_t i = 0; i < count; ++i, at += 4) out.insert(out.end(), {0, (h & 0x8000) ? (h & 0x7FFF) : (h & 0x7FFF) + i, Get32(s, at)});
+        break;
+      case 1:
+        out.insert(out.end(), {0, h & 0x7FF, Get32(s, at), 0, (h >> 11) & 0x7FF, Get32(s, at + 4)});
+        at += 8;
+        break;
+      case 2:
+        break;
+      default: {
+        const uint32_t opcode = (h >> 8) & 0x7F;
+        uint32_t raw[8] = {};
+        for (uint32_t i = 0; i < 8 && i < count; ++i) std::memcpy(&raw[i], s.Host(at + 4 * i), 4);
+        if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kDraw && count == record::DrawWords(true)) {
+          out.insert(out.end(), {1, raw[1], raw[2], raw[3]});
+        } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kRegisters) {
+          for (uint32_t i = 1; i < count; ++i) {
+            uint32_t v;
+            std::memcpy(&v, s.Host(at + 4 * i), 4);
+            out.insert(out.end(), {0, (raw[0] >> 8) + i - 1, v});
+          }
+        } else if (opcode == 0x22 && count == 4) {  // DRAW_INDX with DMA indices: its query dword is not drawn
+          out.insert(out.end(), {1, Get32(s, at + 4), Get32(s, at + 8), Get32(s, at + 12)});
+        } else {
+          out.insert(out.end(), {2, opcode, count});
+          for (uint32_t i = 0; i < count; ++i) out.push_back(Get32(s, at + 4 * i));
+        }
+        at += 4 * count;
+      }
+    }
+  }
+  std::memset(s.Host(start + 4), 0, s.scratch + 0x30000 - (start + 4));
+  std::memcpy(s.Host(start + 4), out.data(), 4 * out.size());
+  Put32(s, s.device + 48, uint32_t(out.size()));
+}
+// kHelpers: every dirty group, the title's shader, state, misc and wait helpers called too (they read through the
+// device copy's pointers, which are the title's: shaders and buffers, read only by them).
+template <bool kRecords, bool kHelpers = false>
+struct DrawIndexed {
+  static bool Native(PPCContext& ctx, uint8_t* base) {
+    return d3d_draw::DrawIndexed(ctx, base, SelfTestMemory(), kRecords);
+  }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t start = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
+    Put32(s, s.scratch, start);
+    Put32(s, s.device + 48, start);
+    Put32(s, s.device + 52, s.scratch + 0x30000);
+    Put32(s, s.device + 56, s.scratch + 0x2F000);
+    Put64(s, s.device + 0, rng() % 2 ? RandomMask(rng) : 0);
+    Put64(s, s.device + 8, rng() % 2 ? RandomMask(rng) : 0);
+    const uint32_t busy_hi = Get32(s, s.device + 40), busy_lo = Get32(s, s.device + 44);
+    const uint64_t busy = uint64_t(busy_hi) << 32 | busy_lo;
+    // Sparse masks too (a bit, a run, a few bits): a group's test and its upload's mask must agree bit for bit.
+    if (kHelpers) {
+      Put64(s, s.device + 16, rng() % 2 ? RandomMask(rng) : 0);
+      Put64(s, s.device + 24, rng() % 2 ? RandomMask(rng) : 0);
+      Put64(s, s.device + 32, rng() % 2 ? RandomMask(rng) : 0);
+    } else {
+      Put64(s, s.device + 16, rng() % 2 ? RandomMask(rng) & ~uint64_t(0x001E0000) & ~busy : 0);
+      Put64(s, s.device + 24, rng() % 2 ? RandomMask(rng) & 0x007FFFFC00000000ull : 0);
+      Put64(s, s.device + 32, rng() % 2 ? RandomMask(rng) & (0x0000003FFFFFFFFFull | 0x00003FC000000000ull | (uint64_t(1) << 56)) : 0);
+    }
+    s.Host(s.device + 10812)[0] &= 0xFD;
+    s.Host(s.device + 11907)[0] = uint8_t(rng() % 4);
+    const uint32_t declaration = s.scratch + 0x8000 + 4 * uint32_t(rng() % 64);
+    Put32(s, s.device + 12156, declaration);
+    static constexpr uint32_t kPrimitives[] = {1, 2, 3, 4, 5, 6, 8, 13};
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = kPrimitives[rng() % 8];
+    ctx.r5.u64 = uint32_t(rng());
+    ctx.r6.u64 = rng() % 0x10000;
+    ctx.r7.u64 = rng() % 16 == 0 ? 65536 + rng() % 200000 : 1 + rng() % 3000;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
   }
 };
 // SetPixelShaderConstantF: as SetShaderConstants.

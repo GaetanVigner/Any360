@@ -1,6 +1,57 @@
 #include "any360/sys/input.h"
 
+#include <algorithm>
+#include <cstdlib>
+
 namespace any360::sys {
+
+InputScript InputScript::Parse(const std::string& text, std::string* error) {
+  static constexpr struct {
+    const char* name;
+    uint16_t bit;
+  } kButtons[] = {{"up", 0x0001},     {"down", 0x0002}, {"left", 0x0004}, {"right", 0x0008}, {"start", 0x0010},
+                  {"back", 0x0020},   {"ls", 0x0040},   {"rs", 0x0080},   {"lb", 0x0100},    {"rb", 0x0200},
+                  {"a", 0x1000},      {"b", 0x2000},    {"x", 0x4000},    {"y", 0x8000}};
+  InputScript script;
+  size_t at = 0;
+  while (at < text.size()) {
+    const size_t end = std::min(text.find(',', at), text.size());
+    const std::string entry = text.substr(at, end - at);
+    at = end + 1;
+    const size_t colon = entry.find(':');
+    bool ok = colon != std::string::npos && colon > 0;
+    Press press{};
+    press.hold = kPressDefault;
+    if (ok) {
+      char* rest = nullptr;
+      const double seconds = std::strtod(entry.c_str(), &rest);
+      ok = rest == entry.c_str() + colon && seconds >= 0;
+      press.at = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(seconds));
+    }
+    std::string buttons = ok ? entry.substr(colon + 1) : std::string();
+    if (const size_t slash = buttons.find('/'); ok && slash != std::string::npos) {
+      const long ms = std::strtol(buttons.c_str() + slash + 1, nullptr, 10);
+      ok = ms > 0;
+      press.hold = std::chrono::milliseconds(ms);
+      buttons.resize(slash);
+    }
+    for (size_t b = 0; ok && b < buttons.size();) {
+      const size_t plus = std::min(buttons.find('+', b), buttons.size());
+      const std::string name = buttons.substr(b, plus - b);
+      b = plus + 1;
+      bool known = false;
+      for (const auto& k : kButtons)
+        if (name == k.name) press.buttons |= k.bit, known = true;
+      ok = known;
+    }
+    if (ok && press.buttons) {
+      script.presses_.push_back(press);
+    } else if (error && !entry.empty()) {
+      *error += (error->empty() ? "" : ", ") + entry;
+    }
+  }
+  return script;
+}
 
 namespace {
 

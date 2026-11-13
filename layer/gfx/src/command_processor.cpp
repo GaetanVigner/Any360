@@ -1,4 +1,5 @@
 #include "any360/gfx/command_processor.h"
+#include "any360/xdk/d3d_records.h"
 
 #include "any360/gfx/capture.h"
 
@@ -29,6 +30,7 @@
 #endif
 
 namespace any360::gfx {
+namespace record = any360::xdk::record;
 
 namespace {
 constexpr int kMaxIndirectDepth = 8;
@@ -404,6 +406,14 @@ uint32_t CommandProcessor::Next(Reader& r) const {
   return value;
 }
 
+uint32_t CommandProcessor::NextRaw(Reader& r) const {
+  const uint32_t at = r.offset >= r.capacity ? r.offset - r.capacity : r.offset;
+  const uint32_t value = *reinterpret_cast<const uint32_t*>(Host(r.base + 4 * at));
+  ++r.offset;
+  --r.remaining;
+  return value;
+}
+
 bool CommandProcessor::Execute() {
   const uint32_t write = write_index_;
   const uint32_t read = read_index_;
@@ -705,6 +715,9 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     case pm4::DRAW_INDX_BIN:
       Draw(r, opcode, end);
       break;
+    case record::kOpcode:
+      ExecuteRecord(r, end);
+      break;
     case pm4::SET_CONSTANT:
       if (has(1)) {
         const uint32_t offset_type = Next(r);
@@ -809,21 +822,11 @@ void CommandProcessor::Draw(Reader& r, uint32_t opcode, uint32_t end) {
     if (!has(2)) return;
     Next(r), Next(r);
   }
-  SetRegister(reg::VGT_DRAW_INITIATOR, initiator);
-  DrawCall draw;
-  draw.primitive_type = initiator & 0x3F;
-  draw.source = DrawSource((initiator >> 6) & 3);
-  draw.major_mode_explicit = ((initiator >> 8) & 3) != 0;
-  draw.index_32 = (initiator >> 11) & 1;
-  draw.index_count = initiator >> 16;
+  DrawCall draw = StartDraw(initiator);
   if (draw.source == DrawSource::kDma) {
     if (!has(2)) return;
     const uint32_t base = Next(r), size = Next(r);
-    SetRegister(reg::VGT_DMA_BASE, base);
-    SetRegister(reg::VGT_DMA_SIZE, size);
-    draw.index_base = base & 0x1FFFFFFF & ~(draw.index_32 ? 3u : 1u);
-    draw.index_endian = Endian(size >> 30);
-    draw.index_bytes = (size & 0x00FFFFFF) * (draw.index_32 ? 4 : 2);
+    SetDrawIndices(draw, base, size);
   } else if (draw.source == DrawSource::kImmediate) {
     // Indices inside the packet (no known title emits them; the reference does not draw them): the renderer stages
     // them as DMA indices.
@@ -831,6 +834,57 @@ void CommandProcessor::Draw(Reader& r, uint32_t opcode, uint32_t end) {
   } else if (draw.source != DrawSource::kAuto) {
     return;
   }
+  SubmitDraw(draw);
+}
+
+DrawCall CommandProcessor::StartDraw(uint32_t initiator) {
+  SetRegister(reg::VGT_DRAW_INITIATOR, initiator);
+  DrawCall draw;
+  draw.primitive_type = initiator & 0x3F;
+  draw.source = DrawSource((initiator >> 6) & 3);
+  draw.major_mode_explicit = ((initiator >> 8) & 3) != 0;
+  draw.index_32 = (initiator >> 11) & 1;
+  draw.index_count = initiator >> 16;
+  return draw;
+}
+
+void CommandProcessor::SetDrawIndices(DrawCall& draw, uint32_t base, uint32_t size) {
+  SetRegister(reg::VGT_DMA_BASE, base);
+  SetRegister(reg::VGT_DMA_SIZE, size);
+  draw.index_base = base & 0x1FFFFFFF & ~(draw.index_32 ? 3u : 1u);
+  draw.index_endian = Endian(size >> 30);
+  draw.index_bytes = (size & 0x00FFFFFF) * (draw.index_32 ? 4 : 2);
+}
+
+void CommandProcessor::ExecuteRecord(Reader& r, uint32_t end) {
+  if (r.offset >= end) return;
+  const uint32_t head = NextRaw(r), kind = head & 0xFF, argument = head >> 8;
+  switch (kind) {
+    case record::kRegisters: {
+      const uint32_t count = end - r.offset;
+      if (argument + count > reg::kRegisterCount) return;
+      for (uint32_t i = 0; i < count; ++i) SetRegister(argument + i, NextRaw(r));
+      return;
+    }
+    case record::kDraw: {
+      if (r.offset >= end) return;
+      DrawCall draw = StartDraw(NextRaw(r));
+      if (draw.source == DrawSource::kDma) {
+        if (end - r.offset < 2) return;
+        const uint32_t base = NextRaw(r), size = NextRaw(r);
+        SetDrawIndices(draw, base, size);
+      } else if (draw.source != DrawSource::kAuto) {
+        return;
+      }
+      SubmitDraw(draw);
+      return;
+    }
+    default:
+      return;  // a kind this build does not know: skipped
+  }
+}
+
+void CommandProcessor::SubmitDraw(DrawCall& draw) {
   // A visibility query that kills the pixels draws nothing.
   const uint32_t viz = reg(reg::PA_SC_VIZ_QUERY);
   if ((viz & 1) && (viz & 0x80)) return;
