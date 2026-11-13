@@ -661,6 +661,19 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& requested)
         f.vkCmdClearColorImage(cb, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
       }
     }
+    // The clears before whatever writes or reads the image next (a copy into it in the same layout gets no
+    // transition, so no barrier of its own).
+    {
+      VkMemoryBarrier2 cleared{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+      cleared.srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+      cleared.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+      cleared.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+      cleared.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+      VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+      dependency.memoryBarrierCount = 1;
+      dependency.pMemoryBarriers = &cleared;
+      f.vkCmdPipelineBarrier2(cb, &dependency);
+    }
   }
   // Its EDRAM group: same pitch, format and kind, bases a whole number of tile rows apart.
   {
@@ -4474,6 +4487,19 @@ bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t p
     const VkClearColorValue zero{};
     VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     device_.fn().vkCmdClearColorImage(cb, grown.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
+    // The clears before whatever writes or reads the image next (a copy into it in the same layout gets no
+    // transition, so no barrier of its own).
+    {
+      VkMemoryBarrier2 cleared{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+      cleared.srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+      cleared.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+      cleared.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+      cleared.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+      VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+      dependency.memoryBarrierCount = 1;
+      dependency.pMemoryBarriers = &cleared;
+      device_.fn().vkCmdPipelineBarrier2(cb, &dependency);
+    }
   }
   if (keep) {
     // What earlier resolves to this base wrote stays (a second rectangle below the first, say).

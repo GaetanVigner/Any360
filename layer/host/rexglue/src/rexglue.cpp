@@ -31,6 +31,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <thread>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -309,6 +310,14 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   }
 
   void SetScreenshotPath(std::string path) { screenshot_path_ = std::move(path); }
+  ~PresentingRenderer() override {
+    {
+      std::lock_guard lock(burst_mutex_);
+      burst_stop_ = true;  // what is queued is still written
+    }
+    burst_ready_.notify_one();
+    if (burst_writer_.joinable()) burst_writer_.join();
+  }
 
  private:
   std::pair<uint32_t, uint32_t> Size() const {
@@ -331,10 +340,28 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
 #endif
   }
 
-  // The presented frame as a PNG when the trigger file appears (looked for every 15 frames).
+  // The presented frame as a PNG when the trigger file appears (looked for every 15 frames). A burst: when
+  // <path>.burst appears, the next frames it names (900 if it is empty) at half size, as raw PPM files in
+  // <path>_burst, written by a thread of their own (what flickers for a frame or two is caught that way).
   void Screenshot() {
-    if (screenshot_path_.empty() || ++screenshot_poll_ % 15) return;
+    if (screenshot_path_.empty()) return;
+    if (burst_left_) BurstFrame();
+    if (++screenshot_poll_ % 15) return;
     std::error_code error;
+    const std::filesystem::path burst_trigger = screenshot_path_ + ".burst";
+    if (!burst_left_ && std::filesystem::exists(burst_trigger, error)) {
+      uint32_t frames = 900;
+      if (std::FILE* file = std::fopen(burst_trigger.string().c_str(), "rb")) {
+        unsigned n = 0;
+        if (std::fscanf(file, "%u", &n) == 1 && n) frames = n;
+        std::fclose(file);
+      }
+      std::filesystem::remove(burst_trigger, error);
+      burst_dir_ = screenshot_path_ + "_burst";
+      std::filesystem::create_directories(burst_dir_, error);
+      burst_left_ = frames, burst_index_ = 0;
+      if (log_) log_("Any360: recording " + std::to_string(frames) + " frames into " + burst_dir_);
+    }
     const std::filesystem::path trigger = screenshot_path_ + ".go";
     if (!std::filesystem::exists(trigger, error)) return;
     std::filesystem::remove(trigger, error);
@@ -345,6 +372,59 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       log_(ok ? "Any360: screenshot written to " + screenshot_path_ + " (" + std::to_string(frame().width) + "x" +
                     std::to_string(frame().height) + ")"
               : "Any360: no screenshot (the frame could not be read back)");
+    }
+  }
+
+  // One frame of a burst: read back, halved (2x2 averaged), queued for the writer thread.
+  void BurstFrame() {
+    std::vector<uint32_t> pixels;
+    const uint32_t w = frame().width, h = frame().height;
+    if (!ReadFrame(pixels) || pixels.size() != size_t(w) * h || w < 2 || h < 2) return;
+    BurstImage image;
+    image.width = w / 2, image.height = h / 2;
+    image.rgb.resize(size_t(image.width) * image.height * 3);
+    for (uint32_t y = 0; y < image.height; ++y) {
+      for (uint32_t x = 0; x < image.width; ++x) {
+        const uint32_t* p = &pixels[size_t(2 * y) * w + 2 * x];
+        const uint32_t q[4] = {p[0], p[1], p[w], p[w + 1]};
+        for (uint32_t c = 0; c < 3; ++c) {
+          uint32_t sum = 0;
+          for (uint32_t v : q) sum += (v >> (8 * c)) & 0xFF;
+          image.rgb[(size_t(y) * image.width + x) * 3 + c] = uint8_t(sum / 4);
+        }
+      }
+    }
+    char name[64];
+    std::snprintf(name, sizeof(name), "/frame_%05u.ppm", burst_index_++);
+    image.path = burst_dir_ + name;
+    {
+      std::lock_guard lock(burst_mutex_);
+      if (burst_queue_.size() < 64) burst_queue_.push_back(std::move(image));
+      else ++burst_dropped_;
+    }
+    burst_ready_.notify_one();
+    if (!burst_writer_.joinable()) {
+      burst_writer_ = std::thread([this] {
+        for (;;) {
+          BurstImage next;
+          {
+            std::unique_lock lock(burst_mutex_);
+            burst_ready_.wait(lock, [this] { return burst_stop_ || !burst_queue_.empty(); });
+            if (burst_queue_.empty()) return;
+            next = std::move(burst_queue_.front());
+            burst_queue_.pop_front();
+          }
+          if (std::FILE* file = std::fopen(next.path.c_str(), "wb")) {
+            std::fprintf(file, "P6\n%u %u\n255\n", next.width, next.height);
+            std::fwrite(next.rgb.data(), 1, next.rgb.size(), file);
+            std::fclose(file);
+          }
+        }
+      });
+    }
+    if (--burst_left_ == 0 && log_) {
+      log_("Any360: burst of " + std::to_string(burst_index_) + " frames recorded (" + std::to_string(burst_dropped_) +
+           " dropped: the writer fell behind)");
     }
   }
 
@@ -613,6 +693,19 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
  public:
   std::string screenshot_path_;
   uint32_t screenshot_poll_ = 0;
+  // A burst of frames (Screenshot): the frames left, the folder, and the writer thread with its queue.
+  struct BurstImage {
+    std::string path;
+    uint32_t width = 0, height = 0;
+    std::vector<uint8_t> rgb;
+  };
+  uint32_t burst_left_ = 0, burst_index_ = 0, burst_dropped_ = 0;
+  std::string burst_dir_;
+  std::mutex burst_mutex_;
+  std::condition_variable burst_ready_;
+  std::deque<BurstImage> burst_queue_;
+  bool burst_stop_ = false;
+  std::thread burst_writer_;
   bool show_fps_ = false;
  private:
   uint64_t overlay_frames_ = 0, overlay_busy_ = 0;

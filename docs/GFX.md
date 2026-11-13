@@ -542,3 +542,20 @@ target, or a texture reading part of a destination, before the first clear or re
 colours (Black Ops at the start of a match, where its targets are created). The test API's ClearColor and
 ClearDepthStencil take the surface before flushing, so its zeros come first. Test: `gfx_render_tests` (three fresh
 targets read back as zeros). The reference captures replay unchanged.
+
+### Sync validation of the replays; a frame burst for flicker (2026-11-13)
+
+The zero clears of new images were followed in the same layout by copies into them with no barrier (write after
+write): `Transition` adds none when the layout does not change. A barrier now follows the clears. Found with the
+Vulkan SDK's validation layer and its synchronization validation over gfx_replay:
+
+    VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation VK_LAYER_VALIDATE_SYNC=1 VK_LAYER_PATH=<SDK>/Bin
+    gfx_replay CAPTURE --scale 2 --msaa 4 [--async --threads 4]
+
+Black Ops's four reference captures replay with no validation error, at 1x and at 2x with 4x host MSAA, with and
+without the asynchronous renderer and parallel recording.
+
+The rexglue host's screenshot option records a burst: when `<screenshot>.burst` appears (its text: the frame count,
+900 if empty), the next presented frames are written at half size as raw PPM files into `<screenshot>_burst` by a
+thread of their own (frames are dropped when it falls behind, and the log says how many). A light missing for one
+frame at the start of a Black Ops match was found that way; a capture slows the title too much to show it.
