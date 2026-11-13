@@ -456,6 +456,42 @@ struct Query {
   }
 };
 
+// The clear (d3d_draw.h): the draws' device (its bound surfaces the title's: the runtime's target clear reads them),
+// the viewport's floats (now and then NaN or huge: fctiwz), the scissor, the rect, the flags, the colors (none: the
+// default), the depth surface absent one call in four.
+struct ClearCase {
+  static bool Native(PPCContext& ctx, uint8_t* base) { return d3d_draw::Clear(ctx, base, SelfTestMemory()); }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    DrawIndexed<false>::Setup(s, ctx);
+    std::mt19937_64& rng = *s.rng;
+    // The target clear takes blocks through the runtime's allocator: a segment in the scratch (as for the Begin
+    // draws), never failing (without one it waits for the GPU on the title's ring).
+    const uint32_t segment = s.scratch + 0x7000;
+    Put32(s, s.device + 13140, segment);
+    Put32(s, segment + 152, 1);
+    Put32(s, s.device + 14540, s.scratch + 0x2E000);
+    s.Host(s.device + 10813)[0] &= ~0x40;
+    const auto coordinate = [&] { return uint32_t(int32_t(rng() % 1500) - 100); };
+    for (uint32_t k = 0; k < 4; ++k) {
+      float f = float(rng() % 1400);
+      if (rng() % 32 == 0) f = rng() % 2 ? std::bit_cast<float>(0x7FC00000u) : 3.0e9f;
+      Put32(s, s.device + 12368 + 4 * k, std::bit_cast<uint32_t>(f));
+      Put32(s, s.device + 12396 + 4 * k, coordinate());
+    }
+    Put32(s, s.device + 11576, rng() % 2);
+    if (rng() % 4 == 0) Put32(s, s.device + 12176, 0);
+    const uint32_t rect = s.scratch + 0x6100;
+    for (uint32_t k = 0; k < 4; ++k) Put32(s, rect + 4 * k, coordinate());
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = rng() % 64;
+    ctx.r5.u64 = rect;
+    ctx.r6.u64 = rng() % 3 == 0 ? 0 : s.scratch + 0x6200;
+    ctx.r8.u64 = rng() % 256;
+    ctx.f1.f64 = double(rng() % 1000) / 1000.0;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+};
+
 template <bool kRecords, bool kIndexed>
 void Begin<kRecords, kIndexed>::Setup(CallSetup& s, PPCContext& ctx) {
   DrawIndexed<kRecords, true>::Setup(s, ctx);

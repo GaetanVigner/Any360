@@ -7,7 +7,9 @@
 // list) stays the runtime's own code.
 #pragma once
 
+#include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 
 #include "any360/xdk/d3d_records.h"
@@ -30,7 +32,12 @@ struct Runtime {
   GuestFunction query_occlusion = nullptr;   // r3 device, r4 the query, r5 1 begin / 0 end (occlusion queries)
   GuestFunction allocate = nullptr;          // r3 device, r4 dwords, r5 alignment -> r3 the block (0: none) at the end
                                              // of the command buffer's segment (BeginVertices' vertices and indices)
+  GuestFunction clear_target = nullptr;      // the clear's draw of one target (or of the depth alone)
+  GuestFunction restore_viewport = nullptr;  // r3 device, r4-r7 the viewport's corners (after a clear)
   uint32_t primitive_table = 0;              // guest address: [divisor, overlap] a primitive type
+  // The clear's vertex shader (27 dwords) and pixel shader (9 dwords), and the color it clears to when given none
+  // (one float for the four channels): guest addresses in the title's image.
+  uint32_t clear_vertex_shader = 0, clear_pixel_shader = 0, clear_default_color = 0;
 };
 inline Runtime g_runtime;
 // any360_d3d_native_draws and any360_d3d_records (d3d_draw.cpp).
@@ -415,6 +422,149 @@ inline bool SetPredication(PPCContext& ctx, uint8_t* base, const any360::xdk::Me
   }
   return true;
 }
+namespace detail {
+// fctiwz as the recompiled code does it: NaN to 0x80000000, INT_MAX and above to INT_MAX, else truncated (0x80000000
+// below INT_MIN).
+inline int32_t Fctiwz(float f) {
+  const double v = f;
+  if (std::isnan(v)) return int32_t(0x80000000u);
+  if (v >= 2147483647.0) return 2147483647;
+  if (v < -2147483648.0) return int32_t(0x80000000u);
+  return int32_t(v);
+}
+inline float AtFloat(const uint8_t* p) { return std::bit_cast<float>(At32(p)); }
+}  // namespace detail
+
+// The clear (the runtime's Clear under its rect wrapper): r3 device, r4 the flags (bits 0-3 color targets, 4-5 depth
+// and stencil), r5 the rect (x1, y1, x2, y2), r6 the colors (4 floats; 0: the default color), f1 the depth, r8 the
+// stencil. The rect clipped by the viewport and (when on) the scissor; nothing when empty or when only depth is asked
+// with no depth surface. Uploads the dirty state the clear's draws use, loads the clear's shaders (IM_LOAD_IMMEDIATE),
+// sets the state of a clear, then draws each target through the runtime's own target clear and restores the viewport.
+// PM4 only for now (records: the shader loads and invalidation need record kinds).
+inline bool Clear(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+  using namespace detail;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32, rect = ctx.r5.u32, caller_r1 = ctx.r1.u32;
+  uint32_t flags = ctx.r4.u32;
+  if (!rt.make_room || !rt.clear_target || !rt.restore_viewport || !rt.clear_vertex_shader ||
+      !any360::xdk::IsPlainMemory(device, 16384) || !any360::xdk::IsPlainMemory(rect, 16) ||
+      !any360::xdk::IsPlainMemory(caller_r1 - 256, 256))
+    return false;
+  uint8_t* d = m.Host(device);
+  const double depth = ctx.f1.f64;
+  const uint32_t stencil = ctx.r8.u32;
+  uint32_t colors = ctx.r6.u32;
+  const uint32_t frame = caller_r1 - 240;  // the function's own frame (its callees' ninth argument at +92)
+  if (!colors) {
+    colors = frame + 112;
+    const uint32_t c = At32(m.Host(rt.clear_default_color));
+    for (int i = 0; i < 4; ++i) Set32(m.Host(colors + 4 * i), c);
+  }
+  if (At32(d + 12176) == 0) {
+    flags &= ~0x30u;
+    if (!flags) return true;
+  }
+  const uint8_t* r = m.Host(rect);
+  const int32_t vx = Fctiwz(AtFloat(d + 12368)), vy = Fctiwz(AtFloat(d + 12372));
+  const int32_t vw = Fctiwz(AtFloat(d + 12376)), vh = Fctiwz(AtFloat(d + 12380));
+  int32_t left = std::max(int32_t(At32(r)), vx), top = std::max(int32_t(At32(r + 4)), vy);
+  int32_t right = std::min(int32_t(At32(r + 8)), int32_t(uint32_t(vw) + uint32_t(vx)));
+  int32_t bottom = std::min(int32_t(At32(r + 12)), int32_t(uint32_t(vh) + uint32_t(vy)));
+  if (At32(d + 11576) != 0) {
+    left = std::max(left, int32_t(At32(d + 12396))), top = std::max(top, int32_t(At32(d + 12400)));
+    right = std::min(right, int32_t(At32(d + 12404))), bottom = std::min(bottom, int32_t(At32(d + 12408)));
+  }
+  if (right <= left || bottom <= top) return true;
+  ctx.r1.u64 = frame;
+  // The dirty state the clear's draws use, the bits uploaded cleared (not the whole words).
+  if (const uint64_t state = At64(d + 16)) {
+    if (At64(d + 40) & state) Set64(d + 16, Call(ctx, base, rt.flush_state, device, state, At32(d + 10432)));
+    uint64_t s = At64(d + 16);
+    if (s & 0xFFFu) Call(ctx, base, rt.upload_words, device, s << 52, 8704, device + 10420), Set64(d + 16, At64(d + 16) & ~0xFFFull);
+    s = At64(d + 16);
+    if (uint32_t(s) & 0x0001F000u)
+      Call(ctx, base, rt.upload_words, device, Rldicr(s, 47, 4), 8576, device + 10400), Set64(d + 16, At64(d + 16) & ~0x1F000ull);
+    s = At64(d + 16);
+    if (s & 0x03FFFC0000000000ull)
+      Call(ctx, base, rt.upload_words, device, Rldicr(s, 6, 15), 8192, device + 10240),
+          Set64(d + 16, At64(d + 16) & ~0x03FFFC0000000000ull);
+    s = At64(d + 16);
+    if (s & 0x000003FFFFE00000ull)
+      Call(ctx, base, rt.upload_words, device, Rldicr(s, 22, 20), 8448, device + 10316),
+          Set64(d + 16, At64(d + 16) & ~0x000003FFFFE00000ull);
+  }
+  if (const uint64_t other = At64(d + 24); other & 0x007FFFFC00000000ull)
+    Call(ctx, base, rt.upload_words, device, Rldicr(other, 9, 20), 8832, device + 10468),
+        Set64(d + 24, At64(d + 24) & ~0x007FFFFC00000000ull);
+  if (const uint64_t misc = At64(d + 32); misc & 0x0000003FFFFFFFFFull)
+    Call(ctx, base, rt.upload_words, device, misc << 26, 8960, device + 10552),
+        Set64(d + 32, At64(d + 32) & ~0x0000003FFFFFFFFFull);
+  const auto room = [&] {
+    const uint32_t cursor = At32(d + 48);
+    return cursor > At32(d + 56) ? uint32_t(Call(ctx, base, rt.make_room, device)) : cursor;
+  };
+  // The bin mask, an invalidation, the clear's vertex shader.
+  uint32_t cursor = room();
+  uint8_t* out = m.Host(cursor + 4);
+  Set32(out, 0xC0006000u), Set32(out + 4, At32(d + 12428)), Set32(out + 8, 0xC0003B00u), Set32(out + 12, 768);
+  Set32(out + 16, 0xC01C2B00u), Set32(out + 20, 0), Set32(out + 24, 27);
+  std::memcpy(out + 28, m.Host(rt.clear_vertex_shader), 108);
+  Set32(d + 48, cursor + 136);
+  // Its pixel shader, and VGT 0x2180-0x2181.
+  cursor = room();
+  out = m.Host(cursor + 4);
+  Set32(out, 0xC00A2B00u), Set32(out + 4, 1), Set32(out + 8, 9);
+  std::memcpy(out + 12, m.Host(rt.clear_pixel_shader), 36);
+  Set32(out + 48, 0x00012180u), Set32(out + 52, 0x10010001u), Set32(out + 56, 0);
+  Set32(d + 48, cursor + 60);
+  // The state of a clear.
+  cursor = room();
+  out = m.Host(cursor + 4);
+  static constexpr uint32_t kState[12] = {0x00022100u, 0xFFFF, 0, 0, 0x00022204u, 0x10000, 0x10000, 768, 8978, 0xFFFF, 8205, 0};
+  for (int i = 0; i < 12; ++i) Set32(out + 4 * i, kState[i]);
+  Set64(d + 16, At64(d + 16) | (uint64_t(1) << 41) | (uint64_t(1) << 40) | (uint64_t(1) << 44) | 0xE0 | 0x180000);
+  Set64(d + 32, At64(d + 32) | 0x80000);
+  Set32(d + 48, cursor + 48);
+  const auto clear_target = [&](uint32_t target) {
+    Set32(m.Host(frame + 92), stencil);
+    // The rect as the runtime holds it: words loaded, zero-extended.
+    ctx.r3.u64 = device, ctx.r4.u64 = flags, ctx.r5.s64 = int32_t(target), ctx.r6.u64 = uint32_t(left);
+    ctx.r7.u64 = uint32_t(top), ctx.r8.u64 = uint32_t(right), ctx.r9.u64 = uint32_t(bottom), ctx.r10.u64 = colors;
+    ctx.f1.f64 = depth;
+    rt.clear_target(ctx, base);
+  };
+  if (!(flags & 0xF)) {
+    clear_target(0xFFFFFFFFu);
+  } else {
+    cursor = room();
+    out = m.Host(cursor + 4);
+    static constexpr uint32_t kTargets[6] = {8452, 0xFFFF, 8706, 0, 8705, 0x00010001u};
+    for (int i = 0; i < 6; ++i) Set32(out + 4 * i, kTargets[i]);
+    Set32(d + 48, cursor + 24);
+    Set64(d + 16, At64(d + 16) | (uint64_t(1) << 37) | 512 | 1024);
+    for (uint32_t target = 0; target < 4; ++target) {
+      if (!((1u << target) & flags) || !At32(d + 12160 + 4 * target)) continue;
+      clear_target(target);
+      flags &= ~0x30u;
+    }
+  }
+  // The viewport's corners: two signed 15-bit fields of each of two device words.
+  const uint32_t vy2 = At32(d + 10312), vx2 = At32(d + 10308);
+  ctx.r3.u64 = device;
+  ctx.r4.s64 = int32_t(vx2 << 17) >> 17, ctx.r5.s64 = int32_t(vx2 << 1) >> 17;
+  ctx.r6.s64 = int32_t(vy2 << 17) >> 17, ctx.r7.s64 = int32_t(vy2 << 1) >> 17;
+  rt.restore_viewport(ctx, base);
+  d[10813] |= 8;
+  Set64(d + 16, At64(d + 16) | 0x20000);
+  ctx.r1.u64 = caller_r1;
+  return true;
+}
+inline void ClearOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && Clear(ctx, base, m)) return;
+  original(ctx, base);
+}
+
 // IDirect3DQuery9::Issue: r3 the query (+0 its device, +4 its type, +16 its state, +20 its fence, +24 its result
 // blocks, +144 how many), r4 D3DISSUE_BEGIN (2) or END (1). Begin: the block count (the device's tile count when it
 // tiles), the blocks marked unwritten (0xFFFFFEED), and an occlusion query (type 9) begun by the runtime's helper or
