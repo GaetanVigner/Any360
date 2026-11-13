@@ -1093,30 +1093,6 @@ int main(int argc, char** argv) {
                 msaa == 2 ? 4 : 2, exact, kSize * kSize);
     CHECK(exact == kSize * kSize);
   }
-  // Clipping off (PA_CL_CLIP_CNTL clip_disable): a quad beyond the far plane (z 1.5) is drawn at it, its depth
-  // clamped (as the reference does: a shadow map's occluders behind the light's near plane still cast shadows); with
-  // clipping on it is not drawn.
-  {
-    WriteQuad(12, 1.5f);
-    WriteQuad(13, 0.9f);
-    const uint32_t color = Rgba(90, 30, 160, 255);
-    uint32_t drawn[3] = {};
-    for (const uint32_t clip_disable : {0u, 1u, 2u}) {
-      Pixels p = scenario("depth clamp", nullptr, [&] {
-        s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
-        s.Reg(0x2204, (clip_disable & 1) << 16);
-        s.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 7u << 4);  // z_enable, z_write, ALWAYS
-        s.Vertices(clip_disable == 2 ? 13 : 12);
-        s.Color(90, 30, 160, 255);
-        s.DrawAuto(kTriangleStrip, 4);
-        s.Reg(0x2204, 0);
-      });
-      drawn[clip_disable] = p.Count(color);
-    }
-    std::printf("gfx_render_tests: depth clamp: a quad beyond the far plane %u pixels clipped, %u with clipping off "
-                "(%u in range)\n", drawn[0], drawn[1], drawn[2]);
-    CHECK(drawn[0] == 0 && drawn[1] == kSize * kSize && drawn[2] == kSize * kSize);
-  }
   // The colour exponent bias of RB_COLOR_INFO: +1 doubles what the shader writes (0.2 -> 0.4).
   {
     Pixels p = scenario("exponent bias", nullptr, [&] {

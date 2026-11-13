@@ -342,7 +342,7 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t color_masks;       // RB_COLOR_MASK of the bound targets
     uint32_t primitive_restart; // strips cut where the index buffer holds the reset index
     uint32_t samples;           // host MSAA samples of the pass's targets
-    uint32_t depth_clamp;       // PA_CL_CLIP_CNTL clip_disable: depth clamped to the viewport's range, not clipped
+    uint32_t reserved;          // zero (keeps the key free of implicit padding: it is compared with memcmp)
     bool operator<(const PipelineKey& other) const { return std::memcmp(this, &other, sizeof(*this)) < 0; }
     bool operator==(const PipelineKey& other) const { return std::memcmp(this, &other, sizeof(*this)) == 0; }
   };
@@ -363,7 +363,7 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t topology, cull_mode, front_face_clockwise, polygon_mode, depth_control, depth_format;
     uint32_t color_formats[4], blend_controls[4], color_masks, primitive_restart;
     uint32_t samples;  // 0 one sample with host MSAA on, 1 the host MSAA, 2 not known (recorded without host MSAA)
-    uint32_t depth_clamp;  // as the key's (0 in recipes saved before it)
+    uint32_t reserved;
     bool operator==(const PipelineRecipe& o) const { return std::memcmp(this, &o, sizeof(*this)) == 0; }
   };
   void RecordRecipe(const PipelineKey& key);  // the renderer's thread

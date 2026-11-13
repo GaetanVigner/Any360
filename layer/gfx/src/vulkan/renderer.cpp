@@ -1205,7 +1205,6 @@ void VulkanRenderer::RecordRecipe(const PipelineKey& key) {
   std::memcpy(r.blend_controls, key.blend_controls, sizeof(r.blend_controls));
   r.color_masks = key.color_masks, r.primitive_restart = key.primitive_restart;
   r.samples = samples_ == VK_SAMPLE_COUNT_1_BIT ? 2 : key.samples > 1 ? 1 : 0;
-  r.depth_clamp = key.depth_clamp;
   std::lock_guard lock(recipes_mutex_);
   if (!recipe_set_.insert(r).second) return;
   recipe_list_.push_back(r);
@@ -1301,7 +1300,6 @@ size_t VulkanRenderer::WarmUpPipelines(std::chrono::microseconds budget) {
     std::memcpy(key.color_formats, r.color_formats, sizeof(key.color_formats));
     std::memcpy(key.blend_controls, r.blend_controls, sizeof(key.blend_controls));
     key.color_masks = r.color_masks, key.primitive_restart = r.primitive_restart;
-    key.depth_clamp = device_.depth_clamp() ? r.depth_clamp : 0;
     // The sample counts this run draws the recipe with: one recorded without host MSAA may be either now.
     uint32_t counts[2] = {1, 0};
     if (samples_ > VK_SAMPLE_COUNT_1_BIT) {
@@ -1345,7 +1343,6 @@ VkPipeline VulkanRenderer::CreatePipeline(const PipelineKey& key) {
   raster.cullMode = key.cull_mode;
   raster.frontFace = key.front_face_clockwise ? VK_FRONT_FACE_CLOCKWISE : VK_FRONT_FACE_COUNTER_CLOCKWISE;
   raster.depthBiasEnable = VK_TRUE;  // the bias itself is dynamic
-  raster.depthClampEnable = key.depth_clamp ? VK_TRUE : VK_FALSE;
   raster.lineWidth = 1.0f;
   VkPipelineMultisampleStateCreateInfo multisample{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
   multisample.rasterizationSamples = VkSampleCountFlagBits(key.samples ? key.samples : 1);
@@ -1702,8 +1699,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   std::memcpy(target_key + 22, &ps_module, 8);
   std::memcpy(target_key + 24, &pipeline_layout, 8);
   std::memcpy(target_key + 26, &ps, sizeof(ps));
-  static_assert(sizeof(ps) <= 8 && 29 <= TargetMemo::kWords);
-  target_key[28] = regs[kPaClClipCntl] >> 16 & 1;  // depth clamped (the pipeline's)
+  static_assert(sizeof(ps) <= 8 && 28 <= TargetMemo::kWords);
   Surface* colors[4] = {};
   uint32_t color_infos[4] = {};
   Surface* depth_surface = nullptr;
@@ -1836,9 +1832,6 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
   key.depth_control = depth_control;
   key.depth_format = depth_surface ? depth_format_ : VK_FORMAT_UNDEFINED;
-  // Clipping off (PA_CL_CLIP_CNTL clip_disable): what lies beyond the near or far plane is drawn at it, as the
-  // reference does (a shadow map's occluders behind the light's near plane still cast their shadow).
-  key.depth_clamp = depth_surface && device_.depth_clamp() && ((regs[kPaClClipCntl] >> 16) & 1) ? 1 : 0;
   key.samples = uint32_t(pass_samples);
   for (uint32_t i = 0; i < 4; ++i) {
     key.color_formats[i] = colors[i] ? colors[i]->image.format : VK_FORMAT_UNDEFINED;
