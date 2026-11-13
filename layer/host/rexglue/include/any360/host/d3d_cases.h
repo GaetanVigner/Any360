@@ -423,6 +423,12 @@ struct DrawIndexed {
     const uint64_t busy = uint64_t(busy_hi) << 32 | busy_lo;
     // Sparse masks too (a bit, a run, a few bits): a group's test and its upload's mask must agree bit for bit.
     if (kHelpers) {
+      // The frame the GPU is done with (*+10768), read once into the scratch: the shader helper's cache test reads it,
+      // and the title's GPU moves it between the two sides.
+      if (const uint32_t fence = Get32(s, s.device + 10768); any360::xdk::IsPlainMemory(fence, 4)) {
+        Put32(s, s.scratch + 0x7E00, Get32(s, fence));
+        Put32(s, s.device + 10768, s.scratch + 0x7E00);
+      }
       Put64(s, s.device + 16, rng() % 2 ? RandomMask(rng) : 0);
       Put64(s, s.device + 24, rng() % 2 ? RandomMask(rng) : 0);
       Put64(s, s.device + 32, rng() % 2 ? RandomMask(rng) : 0);
@@ -659,6 +665,48 @@ struct StateHelper {
 // random, no pixel shader a third of the time, no vertex shader now and then. The calls that would patch or link the
 // shaders (sub_826C6B00, sub_826C68E0: they write the title's shaders, its shader counter, and allocate) are kept
 // from happening: their dirty bits cleared, or +11540 zeroed.
+// The vertex fetch patcher's inputs (sub_826C6010): the fetch count and list of the shader's part `which` (list words:
+// the destination index below `indexes`, usage keys in 0-3, group bits half the time) and the patch set's elements
+// (state offsets under 200, keys in 0-3).
+inline void PutFetchInputs(CallSetup& s, std::mt19937_64& rng, uint32_t vs, uint32_t which, uint32_t patch,
+                           uint32_t indexes) {
+  const uint32_t part = vs + Get32(s, vs + 896 + 8 * which) + 872;
+  const uint32_t n = uint32_t(rng() % 31), list_offset = uint32_t(rng() % 4);
+  Put32(s, part + 24, list_offset);
+  Put32(s, part + 28, n);
+  for (uint32_t k = 0; k < n; ++k) {
+    const uint32_t groups = rng() % 2 ? 0 : uint32_t(rng() % 4) << 20;
+    Put32(s, part + 4 * (list_offset + 9) + 4 * k,
+          (uint32_t(rng()) & 0xFFC00000u) | groups | uint32_t(rng() % 4) << 16 | uint32_t(rng() % 4) << 12 |
+              uint32_t(rng() % indexes));
+  }
+  const uint32_t count = uint32_t(rng() % 9);
+  Put32(s, patch + 24, count);
+  for (uint32_t i = 0; i < count; ++i) {
+    const uint32_t e = patch + 52 + 12 * i;
+    Put32(s, e, uint32_t(rng() % 200) << 16 | uint32_t(rng() & 0xFFFF));
+    Put32(s, e + 4, uint32_t(rng()));
+    Put32(s, e + 8, uint32_t(rng() % 4) << 16 | uint32_t(rng() % 4) << 8 | (uint32_t(rng()) & 0xFF0000FFu));
+  }
+}
+// sub_826C6010 on its own: a shader and a patch set in the scratch, the destination there.
+struct FetchPatch {
+  static bool Native(PPCContext& ctx, uint8_t*) { return d3d_draw::PatchVertexFetches(ctx, SelfTestMemory()); }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t vs = s.scratch + 0x2000, patch = s.scratch + 0x7000, which = uint32_t(rng() % 2);
+    Put32(s, vs + 896, 0x500);
+    Put32(s, vs + 904, 0x600);
+    PutFetchInputs(s, rng, vs, which, patch, 64);
+    ctx.r3.u64 = vs;
+    ctx.r4.u64 = s.scratch + 0x9000;
+    ctx.r5.u64 = patch;
+    ctx.r6.u64 = s.device + 12248;
+    ctx.r7.u64 = which;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+};
+
 template <bool kRecords>
 struct ShaderHelper {
   static bool Native(PPCContext& ctx, uint8_t* base) {
@@ -676,6 +724,16 @@ struct ShaderHelper {
   }
   static void Setup(CallSetup& s, PPCContext& ctx) {
     std::mt19937_64& rng = *s.rng;
+    // "Microcode" for a copy into the command buffer, read only: the page of the title's command buffer its device
+    // was writing (physical memory, as shaders are), looked up at the case's first call (the device copy as the
+    // title's).
+    static uint32_t real_code = 0, real_bytes = 0;
+    static bool looked = false;
+    if (!looked) {
+      looked = true;
+      const uint32_t page = Get32(s, s.device + 48) & ~0xFFFu;
+      if (page >= 0xA0000000u && any360::xdk::IsPlainMemory(page, 0x600)) real_code = page, real_bytes = 0x600;
+    }
     const uint32_t cursor = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
     Put32(s, s.scratch, cursor);
     Put32(s, s.device + 48, cursor);
@@ -730,8 +788,16 @@ struct ShaderHelper {
           Put32(s, done, now - 100);
           const uint32_t which = (!has_ps && (Get32(s, vs + 872) & 0x20)) ? 1 : 0;
           const auto at64 = [&](uint32_t a) { return uint64_t(Get32(s, a)) << 32 | Get32(s, a + 4); };
+          // The first copy busy now and then: the runtime patches a new one into the command buffer.
+          const bool copy = real_bytes && rng() % 3 == 0;
+          if (copy) {
+            const uint32_t entry = vs + Get32(s, vs + 896 + 8 * which);
+            Put32(s, entry + 872, real_code - Get32(s, vs + 32));
+            Put32(s, entry + 876, real_bytes);
+            PutFetchInputs(s, rng, vs, which, patch, std::min<uint32_t>(real_bytes / 12, 64));
+          }
           for (uint32_t e : {vs, vs + 416}) {
-            const bool busy = e != vs + 416 * which && rng() % 3 == 0;
+            const bool busy = e != vs + 416 * which ? rng() % 3 == 0 : copy;
             Put32(s, e + 40, busy ? ~Get32(s, patch + 48) : Get32(s, patch + 48));
             Put64(s, e + 48, at64(s.device + 12248) ^ (rng() & ~at64(patch + 32)));
             Put64(s, e + 56, at64(s.device + 12256) ^ (rng() & ~at64(patch + 40)));

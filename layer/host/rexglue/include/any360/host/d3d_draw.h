@@ -40,6 +40,8 @@ struct Runtime {
   GuestFunction release_block = nullptr;     // r3 device -> a new release-list block (the binders decline it)
   GuestFunction constant_list = nullptr;     // r3 device, r4 a shader part, r5 its data's base: the part's literal
                                              // constants (LOAD_ALU_CONSTANT; a title may hook it)
+  // The vertex fetch patcher's swizzle table (8 half-words) and fetch format sizes (64 bytes): guest addresses.
+  uint32_t fetch_swizzles = 0, fetch_sizes = 0;
   // The resolve's format table (a half-word a format), default destination point, copy pixel shader (15 dwords) and
   // vertex offset float: guest addresses in the title's image.
   uint32_t resolve_format_table = 0, resolve_default_point = 0, resolve_pixel_shader = 0, resolve_offset_float = 0;
@@ -890,6 +892,199 @@ inline void UsePatchedCopy(const any360::xdk::Memory& m, uint8_t* d, uint32_t vs
 }
 }  // namespace detail
 
+namespace detail {
+// PowerPC's rotate-and-mask (mb..me in its bit order, bit 0 the top; mb > me wraps).
+constexpr uint32_t Mask32(int mb, int me) {
+  const uint32_t low = ~0u >> mb, high = ~0u << (31 - me);
+  return mb <= me ? (low & high) : (low | high);
+}
+constexpr uint32_t Rlwinm(uint32_t v, int sh, int mb, int me) { return std::rotl(v, sh) & Mask32(mb, me); }
+constexpr uint32_t Rlwimi(uint32_t a, uint32_t s, int sh, int mb, int me) {
+  return (std::rotl(s, sh) & Mask32(mb, me)) | (a & ~Mask32(mb, me));
+}
+
+// A vertex shader's fetch instructions as sub_826C6010 makes them: three words a fetch, in the order of its list.
+struct VertexFetches {
+  static constexpr uint32_t kMost = 41;  // the runtime's stack buffer (480 bytes)
+  uint32_t count = 0, list = 0;
+  uint32_t words[kMost][3];
+};
+// sub_826C6010 (r3 vs, r4 destination, r5 the patch set, r6 the device's state bytes (+12248), r7 which copy): each
+// fetch of the shader's copy `which` (its original three words at vs + which * 416 + 68 on, its list at its part
+// (+896 + 8 * which) + 36 + 4 * part[+24], part[+28] of them) remade from the patch set's element of the same usage
+// (+52 on, 12 bytes each, +24 of them; none: the default), the swizzle through the title's table, then each group
+// of fetches (between list words with bits 20-21) sorted by offset and merged into mini-fetches. `frame`: the
+// runtime's stack frame (it reads an unset halfword at +80, of which one bit reaches the swizzle masks: read here as
+// the runtime reads it). False when the inputs are not plain memory or there are more fetches than its buffer holds.
+inline bool ComputeVertexFetches(const any360::xdk::Memory& m, uint32_t vs, uint32_t patch, uint32_t state,
+                                 uint32_t which, uint32_t frame, VertexFetches& out) {
+  using any360::xdk::IsPlainMemory;
+  const Runtime& rt = g_runtime;
+  const auto L32 = [&](uint32_t a) { return At32(m.Host(a)); };
+  const auto L16 = [&](uint32_t a) { const uint8_t* p = m.Host(a); return uint32_t(p[0]) << 8 | p[1]; };
+  const auto L8 = [&](uint32_t a) { return uint32_t(m.Host(a)[0]); };
+  if (!rt.fetch_swizzles || !rt.fetch_sizes || !IsPlainMemory(rt.fetch_swizzles, 16) || !IsPlainMemory(rt.fetch_sizes, 64) ||
+      !IsPlainMemory(patch + 24, 4) || !IsPlainMemory(vs + 896 + 8 * which, 4))
+    return false;
+  const uint32_t elements = L32(patch + 24);
+  if (elements > 1024 || (elements && !IsPlainMemory(patch + 52, 12 * elements))) return false;
+  const uint32_t part = vs + L32(vs + 896 + 8 * which) + 872;
+  if (!IsPlainMemory(part + 24, 8)) return false;
+  const uint32_t n = L32(part + 28), list = part + 4 * (L32(part + 24) + 9), originals = vs + which * 416 + 68;
+  if (n > VertexFetches::kMost) return false;
+  if (n && (!IsPlainMemory(list, 4 * n) || !IsPlainMemory(originals, 12 * n) || !IsPlainMemory(frame + 80, 2))) return false;
+  for (uint32_t i = 0; i < elements; ++i)
+    if (!IsPlainMemory(state + L16(patch + 52 + 12 * i), 1)) return false;
+  if (!IsPlainMemory(state, 1)) return false;
+  out.count = n, out.list = list;
+  const auto swizzle = [&](uint32_t offset) { return L16(rt.fetch_swizzles + offset); };
+  const auto size = [&](uint32_t format) { return L8(rt.fetch_sizes + (format & 0x3F)); };
+  uint32_t carry = n ? L16(frame + 80) : 0;  // the runtime's r8: the previous fetch's mask bits
+  for (uint32_t k = 0; k < n; ++k) {
+    uint32_t w0 = L32(originals + 12 * k), w1 = L32(originals + 12 * k + 4), w2 = L32(originals + 12 * k + 8);
+    const uint32_t word = L32(list + 4 * k);
+    uint32_t element = 0;
+    for (uint32_t i = 0; i < elements && !element; ++i) {
+      const uint32_t e = patch + 52 + 12 * i;
+      if (L8(e + 9) == ((word >> 12) & 0xF) && L8(e + 10) == ((word >> 16) & 0xF)) element = e;
+    }
+    uint32_t bits, control, last;
+    if (!element) {
+      bits = (carry & 0xF) | 0x9250;
+      w0 = Rlwimi(w0, 95, 20, 2, 11);
+      control = (w1 & 0xBFC6CFFFu) | 0x60000;
+      last = (w2 & 0x80000000u) | L8(state);
+    } else {
+      const uint32_t format = L32(element + 4);
+      uint32_t t = Rlwinm(format, 22, 26, 28) | Rlwinm(format, 16, 29, 31);
+      t = Rlwinm(t, 3, 0, 28) | Rlwinm(format, 13, 29, 31);
+      t = Rlwinm(t, 1, 0, 30) | Rlwinm(format, 0, 16, 21);
+      bits = (Rlwinm(t, 3, 0, 28) | (carry & 0xF)) & 0xFFFF;
+      if (Rlwinm(format, 0, 24, 25) == 64) {
+        uint32_t v = bits;
+        if ((v & 0xE000) <= 0x6000) bits = ((v & 0xE000) ^ 0x2000) | (v & 0x1FFF);
+        v = bits;
+        if ((v & 0x1C00) <= 0xC00) bits = ((v & 0x1C00) ^ 0x400) | (v & 0xE3FF);
+        v = bits;
+        if ((v & 0x380) <= 0x180) bits = ((v & 0x380) ^ 0x80) | (v & 0xFC7F);
+        v = bits;
+        if ((v & 0x70) <= 0x30) bits = ((v & 0x70) ^ 0x10) | (v & 0xFF8F);
+      }
+      const uint32_t offset = L16(element), stride = L16(element + 2);
+      control = Rlwinm(Rlwinm(format, 12, 14, 19) | Rlwinm(format, 0, 22, 23), 4, 0, 27) | (w1 & 0xBFC0CFFFu);
+      const uint32_t product = (95 - offset) * 0x01560056u;
+      last = Rlwinm(stride, 6, 1, 23) | L8(state + offset) | (w2 & 0x80000000u);
+      w0 = Rlwinm(Rlwimi(w0, Rlwimi(product, product, 11, 8, 12), 1, 5, 11), 0, 5, 1);
+    }
+    bits &= 0xFFFF;
+    const uint32_t mask = (bits | 14) & 0xFFFF;
+    carry = bits | 14;
+    // The four swizzle fields through the title's table, each its bits spread over the field.
+    uint32_t x = swizzle(Rlwinm(control, 1, 28, 30)) & mask;
+    uint32_t y = (x >> 3) | x;
+    y = (y >> 3) | x, y = (y >> 3) | x, y = (y >> 3) | x;
+    control = Rlwimi(control, y, 31, 29, 31);
+    const uint32_t first = control;
+    x = swizzle(Rlwinm(first, 30, 28, 30)) & mask;
+    y = (x >> 3) | x, y = (y >> 3) | x, y = (y >> 3) | x;
+    control = Rlwimi((y >> 1) | (x << 2), first, 0, 29, 25);
+    x = swizzle(Rlwinm(control, 27, 28, 30)) & mask;
+    y = (x >> 3) | x, y = (y >> 3) | x;
+    const uint32_t third = Rlwimi((y >> 1) | (((x << 3) | x) << 2), control, 0, 26, 22);
+    x = swizzle(Rlwinm(third, 24, 28, 30)) & mask;
+    const uint32_t fourth = ((((x << 3) | x) << 3 | x) << 2) | (((x >> 3) | x) >> 1);
+    out.words[k][0] = w0, out.words[k][1] = Rlwimi(fourth, third, 0, 23, 19), out.words[k][2] = last;
+  }
+  // The groups: from a list word with bits 20-21 to the next one, sorted then merged.
+  const auto group_bit = [&](uint32_t k) { return (L32(list + 4 * k) & 0x300000u) != 0; };
+  const auto key = [](uint32_t w) { return Rlwinm(w, 14, 25, 29) | Rlwinm(w, 7, 30, 31); };
+  const auto offset_of = [](uint32_t w) { return uint32_t(int32_t(w << 1) >> 9); };
+  uint32_t at = 0;
+  while (at < n) {
+    while (at < n && !group_bit(at)) ++at;
+    if (at >= n || at + 1 >= n) break;
+    const uint32_t start = at;
+    uint32_t end = at + 1;
+    while (end < n && !group_bit(end)) ++end;
+    if (end >= n) break;
+    const uint32_t span = end - start + 1;
+    at = end + 1;
+    int32_t fixed = -1;
+    uint32_t sorted = span, passes = span - 1;
+    if ((L32(list + 4 * end) & 0x300000u) == 0x300000u) {
+      fixed = int32_t(key(out.words[end][0]));
+      sorted = span - 1, passes = span - 2;
+    }
+    for (uint32_t pass = 1, i = start; passes && pass <= passes; ++pass, ++i) {
+      if (pass >= sorted) continue;
+      for (uint32_t j = i + 1, left = sorted - pass; left; --left, ++j) {
+        const uint32_t a = key(out.words[i][0]), b = key(out.words[j][0]);
+        int32_t order = int32_t(b - a);
+        bool swap;
+        if (order == 0) {
+          order = int32_t(offset_of(out.words[i][2]) - offset_of(out.words[j][2]));
+          if (order == 0) order = int32_t(size(out.words[i][1] >> 16)) - int32_t(size(out.words[j][1] >> 16));
+          swap = order > 0;
+        } else if (fixed == int32_t(a)) {
+          swap = true;
+        } else if (fixed == int32_t(b)) {
+          swap = false;
+        } else {
+          swap = order > 0;
+        }
+        if (swap) std::swap(out.words[i], out.words[j]);
+      }
+    }
+    for (uint32_t base = start, i = start + 1; i < start + span; ++i) {
+      const uint32_t a = out.words[base][0], b = out.words[i][0];
+      bool merged = false;
+      if ((Rlwimi(a, a, 25, 12, 13) & Mask32(7, 13)) == (Rlwimi(b, b, 25, 12, 13) & Mask32(7, 13))) {
+        const uint32_t from = offset_of(out.words[base][2]), to = offset_of(out.words[i][2]);
+        if (from <= to) {
+          uint32_t reach = size(out.words[i][1] >> 16) - from + to;
+          if (reach <= 8) {
+            const uint32_t now = Rlwinm(a, 5, 29, 31);
+            reach -= 1;
+            if (now > reach) reach = now;
+            out.words[base][0] = Rlwimi(a, reach, 27, 2, 4);
+            out.words[i][1] |= 0x40000000u;
+            merged = true;
+          }
+        }
+      }
+      if (!merged) base = i;
+    }
+  }
+  return true;
+}
+// Whether every fetch's destination (its list word's low 12 bits, 12 bytes each from `to`) is plain memory within
+// `bytes` of `to`.
+inline bool VertexFetchesFit(const any360::xdk::Memory& m, const VertexFetches& f, uint32_t to, uint32_t bytes) {
+  for (uint32_t k = 0; k < f.count; ++k) {
+    const uint32_t index = At32(m.Host(f.list + 4 * k)) & 0xFFF;
+    if (12 * index + 12 > bytes || !any360::xdk::IsPlainMemory(to + 12 * index, 12)) return false;
+  }
+  return true;
+}
+inline void WriteVertexFetches(const any360::xdk::Memory& m, uint32_t to, const VertexFetches& f) {
+  for (uint32_t k = 0; k < f.count; ++k) {
+    uint8_t* p = m.Host(to + 12 * (At32(m.Host(f.list + 4 * k)) & 0xFFF));
+    Set32(p, f.words[k][0]), Set32(p + 4, f.words[k][1]), Set32(p + 8, f.words[k][2]);
+  }
+}
+}  // namespace detail
+
+// sub_826C6010 as a function (the self-test's): r3 vs, r4 the destination, r5 the patch set, r6 the state bytes,
+// r7 which copy.
+inline bool PatchVertexFetches(PPCContext& ctx, const any360::xdk::Memory& m) {
+  detail::VertexFetches f;
+  if (!detail::ComputeVertexFetches(m, ctx.r3.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r1.u32 - 592, f) ||
+      !detail::VertexFetchesFit(m, f, ctx.r4.u32, ~0u))
+    return false;
+  detail::WriteVertexFetches(m, ctx.r4.u32, f);
+  return true;
+}
+
 // sub_826C6C48 (the draws' shader flush): r3 device, r4 the state's dirty bits (bits 17-20 the shaders'); r3 back:
 // the bits left. The vertex shader (+12416; none: nothing) and the pixel shader (+12412, may be none): the pixel
 // shader's constant list and IM_LOAD (bit 20), the vertex shader's (bit 19), the interpolation control 0x2208 and the
@@ -897,10 +1092,12 @@ inline void UsePatchedCopy(const any360::xdk::Memory& m, uint8_t* d, uint32_t vs
 // odd tiles), the device's copies of them (+10400, +10404, +10408, +10452, +12420). Bit 17 first: the shader control
 // (detail::UpdateShaderControl). The constant lists through the title's function (Runtime::constant_list: titles hook
 // it).
-// The vertex shader's patched copies (+11540 a patch set) native when cached (detail::CheckPatchCache). Declines,
-// before anything is written, when a copy must be patched again or the shaders linked (sub_826C68E0, sub_826C6010:
-// the vertex shader's outputs differ from the pixel shader's inputs, +10813 bit 0, +10812 bit 7, a copy the cache
-// misses), when the cursor would need room, or when the shaders' memory is not plain.
+// The vertex shader's patched copies (+11540 a patch set) native: used when cached (detail::CheckPatchCache); when
+// the cached one is still read by the GPU, a new copy patched into the command buffer (sub_826C68E0: an
+// INVALIDATE_STATE, the microcode as IM_LOAD_IMMEDIATE, its fetches remade by detail::ComputeVertexFetches). Declines,
+// before anything is written, when the shader's own copy must be patched again or the shaders linked (sub_826C6B00's
+// patch, sub_826C68E0 with a link: the vertex shader's outputs differ from the pixel shader's inputs, +10813 bit 0,
+// +10812 bit 7), when the cursor would need room, or when the shaders' memory is not plain.
 inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
   using namespace detail;
   using any360::xdk::IsPlainMemory;
@@ -917,6 +1114,8 @@ inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
   int entries = 0;
   uint32_t part = 0;  // the vertex shader's part the interpolators come from
   bool patched = false, odd_patched = false;  // the patched copies used (sub_826C6B00's cache hits)
+  bool copied = false;                         // the first copy busy: a new one in the command buffer
+  uint32_t copy_from = 0, copy_dwords = 0;
   if (vs) {
     if (!IsPlainMemory(vs, 912)) return false;
     const uint32_t first = vs + R(vs + 896), second = vs + R(vs + 904);
@@ -936,8 +1135,20 @@ inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
       if ((d[10812] & 0x80) || !IsPlainMemory(At32(d + 11540) + 32, 24) || !IsPlainMemory(At32(d + 10768), 4))
         return false;
       const uint32_t which = (!ps && (R(vs + 872) & 0x20)) ? 1 : 0;
-      if (CheckPatchCache(m, d, vs, which) != kHit) return false;
-      patched = true;
+      const PatchCache first = CheckPatchCache(m, d, vs, which);
+      if (first == kPatch) return false;
+      patched = first == kHit, copied = first == kBusy;
+      if (copied) {
+        const uint32_t entry = vs + R(vs + 896 + 8 * which);
+        const uint32_t bytes = R(entry + 876);
+        copy_dwords = bytes >> 2;
+        copy_from = GpuAddress(R(entry + 872) + R(vs + 32), 0x1FFFFFFFu) + 0xC0000000u;
+        VertexFetches fetches;
+        if ((bytes & 3) || copy_dwords > 0x3FFE || !IsPlainMemory(copy_from, bytes) ||
+            !ComputeVertexFetches(m, vs, At32(d + 11540), device + 12248, which, ctx.r1.u32 - 1040, fetches) ||
+            !VertexFetchesFit(m, fetches, copy_from, bytes))
+          return false;
+      }
       // The interpolation mode as the runtime will have it (its odd tiles' copy wanted when it changes).
       uint32_t before = At32(d + 10452);
       if (!ps && (before & 7) != 5) before = (before & ~7u) | 5;
@@ -948,7 +1159,7 @@ inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
         five = !(At32(d + 10428) & 8) && !(f & 0x10) && !(f & 0x20);
       }
       if (five && (before & 7) != 5 && (R(vs + 872) & 0x20)) {
-        const PatchCache odd = which == 1 ? kHit : CheckPatchCache(m, d, vs, 1);
+        const PatchCache odd = which == 1 ? first : CheckPatchCache(m, d, vs, 1);
         if (odd == kPatch) return false;
         odd_patched = odd == kHit;
       }
@@ -958,8 +1169,8 @@ inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
     if (pixel_entries < 0 || vertex_entries < 0) return false;
     entries = pixel_entries + vertex_entries;
   }
-  const uint32_t most = 4 * (64 + 5 * uint32_t(entries));
-  if (uint64_t(cursor) + most > limit || !IsPlainMemory(cursor + 4, most)) return false;
+  const uint32_t most = 4 * (64 + 5 * uint32_t(entries) + (copied ? copy_dwords + 5 : 0));
+  if (uint64_t(cursor) + most > std::min(limit, At32(d + 52)) || !IsPlainMemory(cursor + 4, most)) return false;
 
   Out out{m, cursor, records};
   const auto constant_list = [&](uint32_t part, uint32_t data) {
@@ -1012,6 +1223,18 @@ inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
     vertex_load = (R(vs + 872) & 0x20) && !ps ? 1 : 0;
     if (patched) {
       UsePatchedCopy(m, d, vs, vertex_load);
+      if (odd_patched) UsePatchedCopy(m, d, vs, 1), odd_load = 1, d[10814] |= 0x80;
+    } else if (copied) {
+      // sub_826C68E0: the copy loaded from the command buffer, not from the shader (no IM_LOAD of it after).
+      const uint32_t which = vertex_load;
+      vertex_load = kNone;
+      out.Invalidate(0x100);
+      out.Shader(0, copy_from, copy_dwords);
+      d[10813] &= 0xFE;
+      VertexFetches fetches;
+      ComputeVertexFetches(m, vs, At32(d + 11540), device + 12248, which, ctx.r1.u32 - 1040, fetches);
+      WriteVertexFetches(m, out.cursor - 4 * copy_dwords + 4, fetches);
+      std::memcpy(d + 11552, d + 12248, 16);
       if (odd_patched) UsePatchedCopy(m, d, vs, 1), odd_load = 1, d[10814] |= 0x80;
     } else if (((interpolation ^ before) & 7) && (R(vs + 872) & 0x20)) {
       odd_load = 1, d[10814] |= 0x80;
