@@ -661,55 +661,14 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
       }
       break;
     case pm4::EVENT_WRITE:
-      if (has(1)) SetRegister(reg::VGT_EVENT_INITIATOR, Next(r) & 0x3F);
-      break;
     case pm4::EVENT_WRITE_SHD:
-      if (has(3)) {
-        // A fence: the value, or the vertical blank counter, written once the shaders are done.
-        const uint32_t initiator = Next(r), address = Next(r), value = Next(r);
-        SetRegister(reg::VGT_EVENT_INITIATOR, initiator & 0x3F);
-        const uint32_t fence = GpuSwap((initiator >> 31) ? counter_.load() : value, Endian(address & 3));
-        StoreAfterDraws(address, {fence}, true);
-      }
-      break;
     case pm4::EVENT_WRITE_EXT:
-      if (has(2)) {
-        // The screen extents of the previous draws, as big-endian halves: the whole surface.
-        const uint32_t initiator = Next(r), address = Next(r) & ~3u;
-        SetRegister(reg::VGT_EVENT_INITIATOR, initiator & 0x3F);
-        static constexpr uint16_t kExtents[] = {0 >> 3, 8192 >> 3, 0 >> 3, 8192 >> 3, 0, 1};
-        for (uint32_t i = 0; i < 6; ++i) {
-          const uint16_t big = std::byteswap(kExtents[i]);
-          std::memcpy(Host(address + 2 * i), &big, 2);
-        }
-        if (memory_written_) memory_written_(address & 0x1FFFFFFF, (address & 0x1FFFFFFF) + 12);
-      }
+    case pm4::EVENT_WRITE_ZPD: {
+      uint32_t w[3] = {}, n = 0;
+      while (n < 3 && r.offset < end) w[n++] = Next(r);
+      Event(opcode, w, n);
       break;
-    case pm4::EVENT_WRITE_ZPD:
-      if (has(1)) {
-        // An occlusion query: counts at RB_SAMPLE_COUNT_ADDR (Total, ZFail, ZPass, StencilFail; A and B each).
-        SetRegister(reg::VGT_EVENT_INITIATOR, Next(r) & 0x3F);
-        const uint32_t counts = reg(reg::RB_SAMPLE_COUNT_ADDR) & 0x1FFFFFFF;
-        const bool ended = LoadBig(counts + 16) == kQueryFinished || LoadBig(counts + 20) == kQueryFinished ||
-                           LoadBig(counts + 8) == kQueryFinished || LoadBig(counts + 12) == kQueryFinished;
-        if (renderer_ && renderer_->CountsSamples()) {
-          // D3D subtracts a begin block from an end block: the begin reads zero, the end waits for the renderer.
-          if (!ended) {
-            std::memset(Host(counts), 0, 32);
-            if (memory_written_) memory_written_(counts, counts + 32);
-          }
-          renderer_->OcclusionQuery(ended, counts);
-          break;
-        }
-        std::memset(Host(counts), 0, 32);
-        if (memory_written_) memory_written_(counts, counts + 32);
-        if (ended) {
-          StoreRaw(counts + 0, kFakeSampleCount);   // Total_A
-          StoreRaw(counts + 16, kFakeSampleCount);  // ZPass_A
-          NotifyProgress();
-        }
-      }
-      break;
+    }
     case pm4::DRAW_INDX:
     case pm4::DRAW_INDX_2:
     case pm4::DRAW_INDX_BIN:
@@ -808,6 +767,63 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
   return true;
 }
 
+void CommandProcessor::Event(uint32_t opcode, const uint32_t* w, uint32_t n) {
+  switch (opcode) {
+    case pm4::EVENT_WRITE:
+      if (n >= 1) SetRegister(reg::VGT_EVENT_INITIATOR, w[0] & 0x3F);
+      break;
+    case pm4::EVENT_WRITE_SHD:
+      if (n >= 3) {
+        // A fence: the value, or the vertical blank counter, written once the shaders are done.
+        const uint32_t initiator = w[0], address = w[1], value = w[2];
+        SetRegister(reg::VGT_EVENT_INITIATOR, initiator & 0x3F);
+        const uint32_t fence = GpuSwap((initiator >> 31) ? counter_.load() : value, Endian(address & 3));
+        StoreAfterDraws(address, {fence}, true);
+      }
+      break;
+    case pm4::EVENT_WRITE_EXT:
+      if (n >= 2) {
+        // The screen extents of the previous draws, as big-endian halves: the whole surface.
+        const uint32_t initiator = w[0], address = w[1] & ~3u;
+        SetRegister(reg::VGT_EVENT_INITIATOR, initiator & 0x3F);
+        static constexpr uint16_t kExtents[] = {0 >> 3, 8192 >> 3, 0 >> 3, 8192 >> 3, 0, 1};
+        for (uint32_t i = 0; i < 6; ++i) {
+          const uint16_t big = std::byteswap(kExtents[i]);
+          std::memcpy(Host(address + 2 * i), &big, 2);
+        }
+        if (memory_written_) memory_written_(address & 0x1FFFFFFF, (address & 0x1FFFFFFF) + 12);
+      }
+      break;
+    case pm4::EVENT_WRITE_ZPD:
+      if (n >= 1) {
+        // An occlusion query: counts at RB_SAMPLE_COUNT_ADDR (Total, ZFail, ZPass, StencilFail; A and B each).
+        SetRegister(reg::VGT_EVENT_INITIATOR, w[0] & 0x3F);
+        const uint32_t counts = reg(reg::RB_SAMPLE_COUNT_ADDR) & 0x1FFFFFFF;
+        const bool ended = LoadBig(counts + 16) == kQueryFinished || LoadBig(counts + 20) == kQueryFinished ||
+                           LoadBig(counts + 8) == kQueryFinished || LoadBig(counts + 12) == kQueryFinished;
+        if (renderer_ && renderer_->CountsSamples()) {
+          // D3D subtracts a begin block from an end block: the begin reads zero, the end waits for the renderer.
+          if (!ended) {
+            std::memset(Host(counts), 0, 32);
+            if (memory_written_) memory_written_(counts, counts + 32);
+          }
+          renderer_->OcclusionQuery(ended, counts);
+          break;
+        }
+        std::memset(Host(counts), 0, 32);
+        if (memory_written_) memory_written_(counts, counts + 32);
+        if (ended) {
+          StoreRaw(counts + 0, kFakeSampleCount);   // Total_A
+          StoreRaw(counts + 16, kFakeSampleCount);  // ZPass_A
+          NotifyProgress();
+        }
+      }
+      break;
+    default:
+      break;
+  }
+}
+
 void CommandProcessor::Draw(Reader& r, uint32_t opcode, uint32_t end) {
   auto has = [&](uint32_t n) { return end - r.offset >= n; };
   if (opcode == pm4::DRAW_INDX || opcode == pm4::DRAW_INDX_BIN) {
@@ -884,6 +900,15 @@ void CommandProcessor::ExecuteRecord(Reader& r, uint32_t end) {
       const uint64_t value = NextRaw(r);
       uint64_t& bins = argument < 2 ? bin_mask_ : bin_select_;
       bins = (argument & 1) ? (bins & 0xFFFFFFFFull) | value << 32 : (bins & 0xFFFFFFFF00000000ull) | value;
+      return;
+    }
+    case record::kEvent: {
+      if (argument != pm4::EVENT_WRITE && argument != pm4::EVENT_WRITE_SHD && argument != pm4::EVENT_WRITE_EXT &&
+          argument != pm4::EVENT_WRITE_ZPD)
+        return;
+      uint32_t w[3] = {}, n = 0;
+      while (n < 3 && r.offset < end) w[n++] = NextRaw(r);
+      Event(argument, w, n);
       return;
     }
     default:

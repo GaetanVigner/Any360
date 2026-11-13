@@ -235,6 +235,8 @@ class CommandProcessor : public sys::GpuBackend {
   bool Test(uint32_t wait_info, uint32_t poll, uint32_t reference, uint32_t mask, bool coherent);
   void MakeCoherent();
   void Draw(Reader& r, uint32_t opcode, uint32_t end);
+  // EVENT_WRITE, EVENT_WRITE_SHD, EVENT_WRITE_EXT, EVENT_WRITE_ZPD (or the event record of one): its `n` words.
+  void Event(uint32_t opcode, const uint32_t* w, uint32_t n);
   // An Any360 record (any360/xdk/d3d_records.h): registers or a draw.
   void ExecuteRecord(Reader& r, uint32_t end);
   // A draw's initiator taken (VGT_DRAW_INITIATOR) and its call started; then, its indices set, it goes to the

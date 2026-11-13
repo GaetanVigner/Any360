@@ -584,6 +584,20 @@ void Records() {
   predicated_draw();
   s.ring.Run();
   CHECK(s.recorder.draws.size() == 2);
+  // Event records as the packets: EVENT_WRITE's initiator, EVENT_WRITE_EXT's extents, EVENT_WRITE_SHD's fence.
+  s.ring.Put(record::Header(record::EventWords(1)));
+  raw(s.ring, record::KindWord(record::kEvent, pm4::EVENT_WRITE)), raw(s.ring, 25);
+  s.ring.Run();
+  CHECK(s.cp.reg(reg::VGT_EVENT_INITIATOR) == 25);
+  s.ring.Put(record::Header(record::EventWords(2)));
+  raw(s.ring, record::KindWord(record::kEvent, pm4::EVENT_WRITE_EXT)), raw(s.ring, 26), raw(s.ring, kData | 1);
+  s.ring.Run();
+  CHECK(s.cp.reg(reg::VGT_EVENT_INITIATOR) == 26 && Big(kData) == (8192u >> 3));
+  s.ring.Put(record::Header(record::EventWords(3)));
+  raw(s.ring, record::KindWord(record::kEvent, pm4::EVENT_WRITE_SHD)), raw(s.ring, 7), raw(s.ring, (kData + 64) | 2),
+      raw(s.ring, 0x12345678);
+  s.ring.Run();
+  CHECK(Big(kData + 64) == 0x12345678);
 }
 
 int main() {

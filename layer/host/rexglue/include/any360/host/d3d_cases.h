@@ -312,6 +312,12 @@ inline void CanonicalCommands(CallSetup& s, uint32_t cursor = 0) {
           out.insert(out.end(), {1, Get32(s, at + 4), Get32(s, at + 8), Get32(s, at + 12), predicated});
         } else if (opcode == 0x22 && count == 2) {  // DRAW_INDX with auto indices
           out.insert(out.end(), {1, Get32(s, at + 4), 0, 0, predicated});
+        } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kEvent) {
+          out.insert(out.end(), {4, raw[0] >> 8, count - 1, predicated});
+          for (uint32_t i = 1; i < count && i < 8; ++i) out.push_back(raw[i]);
+        } else if (opcode == 0x46 || opcode == 0x58 || opcode == 0x5A || opcode == 0x5B) {  // the events
+          out.insert(out.end(), {4, opcode, count, predicated});
+          for (uint32_t i = 0; i < count && i < 7; ++i) out.push_back(Get32(s, at + 4 * i));
         } else if (opcode >= 0x60 && opcode <= 0x63 && count == 1) {  // SET_BIN_MASK_LO/HI, SET_BIN_SELECT_LO/HI
           out.insert(out.end(), {3, opcode - 0x60, Get32(s, at), predicated});
         } else {
@@ -415,6 +421,34 @@ struct Predication {
     }
     ctx.r3.u64 = s.device;
     ctx.r4.u64 = rng() % 3 == 0 ? 0 : uint32_t(rng());
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
+  }
+};
+
+// IDirect3DQuery9::Issue (d3d_draw.h): a query in the scratch on the device copy, of type 8, 9 (occlusion: the
+// runtime's helper writes its packets), 10 (event) or another, its result blocks in the scratch, begun, ended or
+// neither; the device tiling (its block count from +12468) now and then.
+template <bool kRecords>
+struct Query {
+  static bool Native(PPCContext& ctx, uint8_t* base) { return d3d_draw::QueryIssue(ctx, base, SelfTestMemory(), kRecords); }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    DrawIndexed<kRecords>::Setup(s, ctx);
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t query = s.scratch + 0x5000;
+    Put32(s, query, s.device);
+    static constexpr uint32_t kTypes[] = {8, 9, 10, 10, 4};
+    Put32(s, query + 4, kTypes[rng() % 5]);
+    for (uint32_t i = 0; i < 30; ++i) Put32(s, query + 24 + 4 * i, s.scratch + 0x5800 + 16 * i);
+    Put32(s, query + 144, 1 + uint32_t(rng() % 4));  // the blocks a begin counted (an end's helper walks them)
+    uint8_t& tiling = s.Host(s.device + 10812)[0];
+    tiling = rng() % 3 == 0 ? tiling | 0x20 : tiling & ~0x20;
+    Put32(s, s.device + 12468, 1 + uint32_t(rng() % 4));
+    static constexpr uint32_t kFlags[] = {1, 2, 3, 0};
+    ctx.r3.u64 = query;
+    ctx.r4.u64 = kFlags[rng() % 4];
   }
   static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
   static void Normalize(CallSetup& s, PPCContext&) {

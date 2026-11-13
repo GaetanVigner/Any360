@@ -11,6 +11,9 @@
 //               its visibility query dword (the command processor reads the query from PA_SC_VIZ_QUERY).
 //   kBins       argument: 0 the bin mask's low half, 1 its high half, 2 the bin select's low half, 3 its high half
 //               (SET_BIN_MASK_LO and the others). Then the value.
+//   kEvent      argument: the PM4 event packet it stands for (EVENT_WRITE 0x46, EVENT_WRITE_SHD 0x58,
+//               EVENT_WRITE_EXT 0x5A, EVENT_WRITE_ZPD 0x5B). Then that packet's words: the initiator, and the
+//               address and value it writes.
 //
 // A record is predicated as PM4 is: bit 0 of its header (the runtime predicates its draws, which run only for the
 // tiles that the bin select and mask both have).
@@ -24,7 +27,7 @@
 namespace any360::xdk::record {
 
 constexpr uint32_t kOpcode = 0x7E;
-enum Kind : uint32_t { kRegisters = 1, kDraw = 2, kBins = 3 };
+enum Kind : uint32_t { kRegisters = 1, kDraw = 2, kBins = 3, kEvent = 4 };
 
 // The packet's header for `words` words after it (the kind word included), `predicated` or not.
 constexpr uint32_t Header(uint32_t words, bool predicated = false) {
@@ -36,5 +39,6 @@ constexpr uint32_t KindWord(Kind kind, uint32_t argument) { return uint32_t(kind
 constexpr uint32_t RegistersWords(uint32_t count) { return 1 + count; }
 constexpr uint32_t DrawWords(bool dma) { return dma ? 4 : 2; }
 constexpr uint32_t kBinsWords = 2;
+constexpr uint32_t EventWords(uint32_t packet_words) { return 1 + packet_words; }
 
 }  // namespace any360::xdk::record

@@ -27,6 +27,7 @@ struct Runtime {
   GuestFunction flush_state = nullptr;       // r3 device, r4 dirty bits, r5 a device word -> r3 the bits left
   GuestFunction flush_misc = nullptr;        // r3 device, r4 the bits (the misc state's group)
   GuestFunction flush_waits = nullptr;       // r3 device, r4 the bits (the group with waits)
+  GuestFunction query_occlusion = nullptr;   // r3 device, r4 the query, r5 1 begin / 0 end (occlusion queries)
   GuestFunction allocate = nullptr;          // r3 device, r4 dwords, r5 alignment -> r3 the block (0: none) at the end
                                              // of the command buffer's segment (BeginVertices' vertices and indices)
   uint32_t primitive_table = 0;              // guest address: [divisor, overlap] a primitive type
@@ -41,6 +42,7 @@ bool DrawHelpers();
 
 namespace detail {
 using any360::xdk::detail::At32;
+using any360::xdk::detail::Overlap;
 using any360::xdk::detail::Set32;
 inline uint64_t At64(const uint8_t* p) { return any360::xdk::detail::ByteSwap64(any360::xdk::detail::Load64(p)); }
 inline void Set64(uint8_t* p, uint64_t v) { any360::xdk::detail::Store64(p, any360::xdk::detail::ByteSwap64(v)); }
@@ -413,6 +415,104 @@ inline bool SetPredication(PPCContext& ctx, uint8_t* base, const any360::xdk::Me
   }
   return true;
 }
+// IDirect3DQuery9::Issue: r3 the query (+0 its device, +4 its type, +16 its state, +20 its fence, +24 its result
+// blocks, +144 how many), r4 D3DISSUE_BEGIN (2) or END (1). Begin: the block count (the device's tile count when it
+// tiles), the blocks marked unwritten (0xFFFFFEED), and an occlusion query (type 9) begun by the runtime's helper or
+// an event query (10) as EVENT_WRITE 25; state 2. End: the occlusion query ended by the helper or the event query's
+// EVENT_WRITE_EXT 26 into its block; state 1 (not for type 8) and the device's pending fence. The events as PM4 or as
+// Any360's event records.
+inline bool QueryIssue(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  namespace record = any360::xdk::record;
+  const Runtime& rt = g_runtime;
+  const uint32_t query = ctx.r3.u32, flags = ctx.r4.u32, caller_r1 = ctx.r1.u32;
+  if (!rt.make_room || !rt.query_occlusion || !any360::xdk::IsPlainMemory(query, 148)) return false;
+  uint8_t* q = m.Host(query);
+  const uint32_t device = At32(q);
+  if (!any360::xdk::IsPlainMemory(device, 16384) || Overlap(query, 148, device, 16384) ||
+      !any360::xdk::IsPlainMemory(caller_r1 - 48, 12))
+    return false;
+  uint8_t* d = m.Host(device);
+  const uint32_t type = At32(q + 4);
+  const bool begin = (flags & 2) != 0, end = !begin && (flags & 1);
+  const uint32_t blocks = begin ? ((d[10812] & 0x20) ? At32(d + 12468) : 1) : 0;
+  if (begin && type == 9) {
+    if (blocks > 30) return false;
+    for (uint32_t i = 0; i < blocks; ++i) {
+      const uint32_t block = At32(q + 24 + 4 * i);
+      if (!any360::xdk::IsPlainMemory(block, 16) || Overlap(block, 16, query, 148) || Overlap(block, 16, device, 16384))
+        return false;
+    }
+  }
+  const uint32_t event_block = At32(q + 24);
+  if (begin && type == 10 &&
+      (!any360::xdk::IsPlainMemory(event_block, 4) || Overlap(event_block, 4, query, 148) ||
+       Overlap(event_block, 4, device, 16384)))
+    return false;
+  if (!begin && !end) return true;
+  Set32(m.Host(caller_r1 - 48), device), Set32(m.Host(caller_r1 - 44), query);  // the function's own stack words
+  ctx.r1.u64 = caller_r1 - 128;
+  const auto cursor_now = [&] {
+    const uint32_t cursor = At32(d + 48);
+    return cursor > At32(d + 56) ? uint32_t(Call(ctx, base, rt.make_room, device)) : cursor;
+  };
+  if (begin) {
+    Set32(q + 144, blocks);
+    if (type == 9) {
+      for (uint32_t i = 0; i < blocks; ++i) {
+        uint8_t* block = m.Host(At32(q + 24 + 4 * i));
+        for (int k = 0; k < 4; ++k) Set32(block + 4 * k, 0xFFFFFEEDu);
+      }
+      Call(ctx, base, rt.query_occlusion, device, query, 1);
+    } else if (type == 10) {
+      Set32(m.Host(event_block), 0xFFFFFEEDu);
+      Set32(m.Host(caller_r1 - 40), event_block);
+      const uint32_t cursor = cursor_now();
+      uint8_t* out = m.Host(cursor + 4);
+      if (records) {
+        Set32(out, record::Header(record::EventWords(1)));
+        const uint32_t words[2] = {record::KindWord(record::kEvent, 0x46), 25};
+        std::memcpy(out + 4, words, 8);
+        Set32(d + 48, cursor + 12);
+      } else {
+        Set32(out, 0xC0004600u), Set32(out + 4, 25);
+        Set32(d + 48, cursor + 8);
+      }
+      d[10814] |= 1;
+    }
+    Set32(q + 16, 2);
+  } else {
+    if (type != 8) {
+      if (type == 9) {
+        Call(ctx, base, rt.query_occlusion, device, query, 0);
+      } else if (type == 10) {
+        const uint32_t cursor = cursor_now();
+        const uint32_t address = GpuAddress(At32(q + 24), 0x1FFFFFFEu) | 1u;
+        uint8_t* out = m.Host(cursor + 4);
+        if (records) {
+          Set32(out, record::Header(record::EventWords(2)));
+          const uint32_t words[3] = {record::KindWord(record::kEvent, 0x5A), 26, address};
+          std::memcpy(out + 4, words, 12);
+          Set32(d + 48, cursor + 16);
+        } else {
+          Set32(out, 0xC0015A00u), Set32(out + 4, 26), Set32(out + 8, address);
+          Set32(d + 48, cursor + 12);
+        }
+        d[10814] &= 0xFE;
+      }
+      Set32(q + 16, 1);
+    }
+    Set32(q + 20, At32(d + 10780));
+  }
+  ctx.r1.u64 = caller_r1;
+  return true;
+}
+inline void QueryIssueOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && QueryIssue(ctx, base, m, DrawRecords())) return;
+  original(ctx, base);
+}
+
 inline void SetPredicationOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && SetPredication(ctx, base, m, DrawRecords())) return;
