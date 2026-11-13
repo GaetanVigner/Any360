@@ -492,6 +492,53 @@ struct ClearCase {
   static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
 };
 
+// The resolve (d3d_draw.h): the draws' device with an allocator segment in the scratch (the copy's rect vertices),
+// a destination texture made in the scratch (format, pitch, size, tiling, endianness, kind), level and slice 0, the
+// source rect, point and clear color given or not, the color and depth clears after the copy one call in eight each,
+// the caller's two stack arguments set.
+struct ResolveCase {
+  static bool Native(PPCContext& ctx, uint8_t* base) { return d3d_draw::Resolve(ctx, base, SelfTestMemory()); }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    DrawIndexed<false>::Setup(s, ctx);
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t segment = s.scratch + 0x7000;
+    Put32(s, s.device + 13140, segment);
+    Put32(s, segment + 152, 1);
+    Put32(s, s.device + 14540, s.scratch + 0x2E000);
+    s.Host(s.device + 10813)[0] &= ~0x40;
+    const uint32_t texture = s.scratch + 0x6400;
+    Put32(s, texture + 28, (uint32_t(1 + rng() % 64) << 22) | (uint32_t(rng() % 4) << 2));
+    Put32(s, texture + 32, (s.scratch & 0xFFFFF000u) | uint32_t(rng() % 64) | (uint32_t(rng() % 4) << 6));
+    Put32(s, texture + 36, uint32_t(rng() % 1280) | (uint32_t(rng() % 720) << 13));
+    Put32(s, texture + 40, uint32_t(rng()));
+    Put32(s, texture + 48, uint32_t(rng() % 4) << 9);
+    uint32_t flags = uint32_t(rng() % 5);
+    const uint32_t surface = flags == 4 ? Get32(s, s.device + 12176) : Get32(s, s.device + 12160 + 4 * flags);
+    if (rng() % 2 || !surface) flags |= uint32_t(1 + rng() % 7) << 4;
+    if (rng() % 8 == 0) flags |= 0x100;
+    if (rng() % 8 == 0) flags |= 0x200;
+    if (rng() % 4 == 0) flags |= 0x2000;
+    flags |= uint32_t(rng() % 64) << 26;
+    const uint32_t rect = s.scratch + 0x6500, point = s.scratch + 0x6520, colors = s.scratch + 0x6540;
+    Put32(s, rect, uint32_t(rng() % 640)), Put32(s, rect + 4, uint32_t(rng() % 360));
+    Put32(s, rect + 8, uint32_t(640 + rng() % 640)), Put32(s, rect + 12, uint32_t(360 + rng() % 360));
+    Put32(s, point, uint32_t(rng() % 64)), Put32(s, point + 4, uint32_t(rng() % 64));
+    // The tenth argument: a surface for the clears or 0 (the destination texture made here as one).
+    Put32(s, s.stack + 92, uint32_t(rng() % 256)), Put32(s, s.stack + 100, rng() % 2 ? 0 : texture);
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = flags;
+    ctx.r5.u64 = rng() % 3 ? rect : 0;
+    ctx.r6.u64 = texture;
+    ctx.r7.u64 = rng() % 2 ? point : 0;
+    // Level and slice 0: the runtime's level helper (the other levels' geometry) follows the texture's fields, which a
+    // texture made here does not fill as a real one does. That path calls the helper with the same arguments.
+    ctx.r8.u64 = 0, ctx.r9.u64 = 0;
+    ctx.r10.u64 = rng() % 2 ? colors : 0;
+    ctx.f1.f64 = double(rng() % 1000) / 1000.0;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+};
+
 template <bool kRecords, bool kIndexed>
 void Begin<kRecords, kIndexed>::Setup(CallSetup& s, PPCContext& ctx) {
   DrawIndexed<kRecords, true>::Setup(s, ctx);

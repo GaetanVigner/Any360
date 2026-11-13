@@ -34,6 +34,13 @@ struct Runtime {
                                              // of the command buffer's segment (BeginVertices' vertices and indices)
   GuestFunction clear_target = nullptr;      // the clear's draw of one target (or of the depth alone)
   GuestFunction restore_viewport = nullptr;  // r3 device, r4-r7 the viewport's corners (after a clear)
+  GuestFunction surface_level = nullptr;     // the resolve: a texture's level and slice geometry (11 arguments)
+  GuestFunction resolve_clear_color = nullptr;  // the resolve's color clear after the copy (v1 the color)
+  GuestFunction resolve_clear_depth = nullptr;  // the resolve's depth clear after the copy (f1 the depth)
+  GuestFunction release_block = nullptr;     // r3 device -> a new release-list block (the binders decline it)
+  // The resolve's format table (a half-word a format), default destination point, copy pixel shader (15 dwords) and
+  // vertex offset float: guest addresses in the title's image.
+  uint32_t resolve_format_table = 0, resolve_default_point = 0, resolve_pixel_shader = 0, resolve_offset_float = 0;
   uint32_t primitive_table = 0;              // guest address: [divisor, overlap] a primitive type
   // The clear's vertex shader (27 dwords) and pixel shader (9 dwords), and the color it clears to when given none
   // (one float for the four channels): guest addresses in the title's image.
@@ -562,6 +569,305 @@ inline bool Clear(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) 
 inline void ClearOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && Clear(ctx, base, m)) return;
+  original(ctx, base);
+}
+
+namespace detail {
+// What the clear and the resolve upload of the dirty state before their own draws: the state group's helper and four
+// word uploads, the misc group's and other's first uploads, each clearing only the bits it uploaded.
+inline void FlushOverlayState(PPCContext& ctx, uint8_t* base, uint32_t device, uint8_t* d) {
+  const Runtime& rt = g_runtime;
+  if (const uint64_t state = At64(d + 16)) {
+    if (At64(d + 40) & state) Set64(d + 16, Call(ctx, base, rt.flush_state, device, state, At32(d + 10432)));
+    uint64_t s = At64(d + 16);
+    if (s & 0xFFFu) Call(ctx, base, rt.upload_words, device, s << 52, 8704, device + 10420), Set64(d + 16, At64(d + 16) & ~0xFFFull);
+    s = At64(d + 16);
+    if (uint32_t(s) & 0x0001F000u)
+      Call(ctx, base, rt.upload_words, device, Rldicr(s, 47, 4), 8576, device + 10400), Set64(d + 16, At64(d + 16) & ~0x1F000ull);
+    s = At64(d + 16);
+    if (s & 0x03FFFC0000000000ull)
+      Call(ctx, base, rt.upload_words, device, Rldicr(s, 6, 15), 8192, device + 10240),
+          Set64(d + 16, At64(d + 16) & ~0x03FFFC0000000000ull);
+    s = At64(d + 16);
+    if (s & 0x000003FFFFE00000ull)
+      Call(ctx, base, rt.upload_words, device, Rldicr(s, 22, 20), 8448, device + 10316),
+          Set64(d + 16, At64(d + 16) & ~0x000003FFFFE00000ull);
+  }
+  if (const uint64_t other = At64(d + 24); other & 0x007FFFFC00000000ull)
+    Call(ctx, base, rt.upload_words, device, Rldicr(other, 9, 20), 8832, device + 10468),
+        Set64(d + 24, At64(d + 24) & ~0x007FFFFC00000000ull);
+  if (const uint64_t misc = At64(d + 32); misc & 0x0000003FFFFFFFFFull)
+    Call(ctx, base, rt.upload_words, device, misc << 26, 8960, device + 10552),
+        Set64(d + 32, At64(d + 32) & ~0x0000003FFFFFFFFFull);
+}
+// The device's render targets tile together (the bound surfaces the tiled ones, or the device always tiling).
+inline bool TiledTargets(const uint8_t* d) {
+  const uint8_t flags = d[10812];
+  if (flags & 0x10) return true;
+  if (!(flags & 0x20)) return false;
+  for (uint32_t k = 0; k < 5; ++k) {
+    const uint32_t bound = At32(d + 12160 + 4 * k);
+    if (At32(d + 12448 + 4 * k) != bound && bound != 0) return false;
+  }
+  return true;
+}
+// The viewport restore after the clear and the resolve: the device's two words of signed 15-bit corners.
+inline void RestoreViewport(PPCContext& ctx, uint8_t* base, uint32_t device, const uint8_t* d) {
+  const uint32_t vy2 = At32(d + 10312), vx2 = At32(d + 10308);
+  ctx.r3.u64 = device;
+  ctx.r4.s64 = int32_t(vx2 << 17) >> 17, ctx.r5.s64 = int32_t(vx2 << 1) >> 17;
+  ctx.r6.s64 = int32_t(vy2 << 17) >> 17, ctx.r7.s64 = int32_t(vy2 << 1) >> 17;
+  g_runtime.restore_viewport(ctx, base);
+}
+inline float Frsp(double v) { return float(v); }
+}  // namespace detail
+
+// The resolve (D3DDevice_Resolve): r3 device, r4 flags (bits 0-2 the source: color target 0-3 or 4 the depth;
+// 0x70 the surface's EDRAM format, completed from the surface when none; 0x100 clear the color after, 0x200 the
+// depth; 0x2000 ...), r5 the source rect or 0, r6 the destination texture, r7 the destination point or 0, r8 its
+// level, r9 its slice, r10 the clear color or 0, f1 the clear depth, the caller's words at +92 and +100 the clear's
+// stencil arguments. The copy registers from the texture's format, pitch and the point; the clears; the viewport
+// widened over the rect; the dirty state; the tiles' copy addresses when tiled; the copy shader, the state of a copy,
+// a rect of three vertices taken through the runtime's allocator and drawn in copy mode; the copy's cache events and
+// wait; the texture's fence or release. PM4 only for now.
+inline bool Resolve(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+  using namespace detail;
+  const Runtime& rt = g_runtime;
+  using any360::xdk::IsPlainMemory;
+  const uint32_t device = ctx.r3.u32, caller_r1 = ctx.r1.u32, frame = caller_r1 - 384;
+  uint32_t flags = ctx.r4.u32, rect = ctx.r5.u32;
+  const uint32_t texture = ctx.r6.u32, level = ctx.r8.u32, slice = ctx.r9.u32;
+  uint32_t point = ctx.r7.u32, colors = ctx.r10.u32;
+  const double depth = ctx.f1.f64;
+  if (!rt.make_room || !rt.surface_level || !rt.resolve_clear_color || !rt.resolve_clear_depth || !rt.allocate ||
+      !rt.restore_viewport || !rt.release_block || !IsPlainMemory(device, 16384) || !IsPlainMemory(texture, 52) ||
+      !IsPlainMemory(frame, 384 + 104) || Overlap(texture, 52, device, 16384) ||
+      (rect && !IsPlainMemory(rect, 16)) || (point && !IsPlainMemory(point, 8)) || (colors && !IsPlainMemory(colors & ~0xFu, 16)))
+    return false;
+  uint8_t* d = m.Host(device);
+  uint8_t* f = m.Host(frame);
+  const uint8_t* t = m.Host(texture);
+  const uint32_t source = flags & 7;
+  if (!(flags & 0x70)) {
+    const uint32_t surface = source == 4 ? At32(d + 12176) : At32(d + 12160 + 4 * source);
+    if (!IsPlainMemory(surface + 24, 2)) return false;
+    const uint32_t kind = (uint32_t(m.Host(surface + 24)[0]) << 8 | m.Host(surface + 25)[0]) & 3;
+    flags |= kind == 0 ? 16 : kind == 1 ? 80 : 112;
+  }
+  // The texture's format word, size and tiling.
+  const uint32_t t48 = At32(t + 48), t40 = At32(t + 40), t36 = At32(t + 36), t32 = At32(t + 32), t28 = At32(t + 28);
+  const uint32_t tiling = (t48 >> 9) & 3;
+  const uint32_t extra = ((t40 >> 31) << 1) + 1;
+  uint32_t samples, width, height;
+  if (tiling == 2) samples = 8, width = t36 & 0x7FF, height = (t36 >> 11) & 0x7FF;
+  else samples = 1, width = t36 & 0x1FFF, height = (t36 >> 13) & 0x1FFF;
+  height += extra, width += extra;
+  const uint32_t format = t32 & 0x3F;
+  uint32_t pitch = ((t28 >> 22) & 0x1FF) << 5;
+  const uint32_t format_table_at = rt.resolve_format_table + 2 * format;
+  if (!IsPlainMemory(format_table_at, 2)) return false;
+  const uint32_t bytes = (uint32_t(m.Host(format_table_at)[0]) << 8 | m.Host(format_table_at + 1)[0]) >> 3 & 0x1F;
+  if ((level || slice) && bytes == 0) return false;  // the runtime traps (twllei)
+  // The function's own frame, as the runtime fills it (the level helper writes into it, and the release reads it).
+  Set32(m.Host(caller_r1 + 44), texture);
+  Set32(f + 132, source), Set32(f + 124, samples), Set32(f + 112, height), Set32(f + 116, width);
+  Set32(f + 120, t32 & 0xFFFFF000u), Set32(f + 140, bytes), Set32(f + 136, rt.resolve_offset_float);
+  const float default_color = AtFloat(m.Host(rt.clear_default_color));
+  ctx.r1.u64 = frame;
+  if (!colors) {
+    colors = frame + 192;
+    for (int i = 0; i < 4; ++i) Set32(f + 192 + 4 * i, std::bit_cast<uint32_t>(default_color));
+  }
+  uint32_t address_base = t32 & 0xFFFFF000u;
+  if (level || slice) {
+    Set32(f + 84, frame + 112), Set32(f + 92, frame + 144), Set32(f + 100, frame + 120);
+    ctx.r3.u64 = texture, ctx.r4.u64 = slice & ~(samples - 1), ctx.r5.u64 = level, ctx.r6.u64 = frame + 128;
+    ctx.r7.u64 = frame + 176, ctx.r8.u64 = frame + 160, ctx.r9.u64 = frame + 152, ctx.r10.u64 = frame + 116;
+    rt.surface_level(ctx, base);
+    height = At32(f + 112);
+    address_base = At32(f + 120);
+    pitch = At32(f + 128) / bytes;
+  }
+  if (!rect) {
+    rect = frame + 176;
+    Set32(f + 176, 0), Set32(f + 180, 0), Set32(f + 188, height), Set32(f + 184, At32(f + 116));
+  }
+  if (!point) point = rt.resolve_default_point;
+  const uint8_t* r = m.Host(rect);
+  const uint8_t* p = m.Host(point);
+  const uint32_t px = At32(p), py = At32(p + 4), rx = At32(r), ry = At32(r + 4);
+  const uint32_t rows_left = height - py;
+  Set32(f + 128, rows_left);
+  const uint32_t texture_kind = (t28 >> 2) & 3;
+  const uint32_t address = ((py - ry) * pitch + (((px - rx) << 5) & ~0x1Fu)) * bytes +
+                           ((((address_base >> 20) & 0xFFF) + 512) & 0x1000u) + (address_base & 0x1FFFFFFFu);
+  const uint32_t endian_bits = t40 & 0xE;
+  uint32_t copy_format = format;
+  switch (format) {
+    case 54: copy_format = 7; break;
+    case 55: copy_format = 16; break;
+    case 56: copy_format = 17; break;
+    case 27: copy_format = 30; break;
+    case 28: copy_format = 31; break;
+    case 29: copy_format = 32; break;
+    case 22: case 23: copy_format = 6; break;
+    default: break;
+  }
+  uint32_t swap = texture_kind == 1 ? 1 : 0;
+  if ((t40 & 1) == 1) swap += 2;
+  switch (copy_format) {
+    case 30: case 31: case 32: case 36: case 37: case 38: case 57: case 63: swap = 7; break;
+    default: break;
+  }
+  uint32_t mode = ((flags >> 26) & 0x3F) | ((endian_bits != 0 ? 1u : 0u) << 8);
+  swap = (swap & 7) | (((mode & 0x13F) << 3) & ~7u);
+  uint32_t dest_info = (((copy_format & 0x3F) | ((swap << 6) & ~0x3Fu)) << 7) & ~0x7Fu;
+  dest_info |= (t32 >> 6) & 3;
+  const uint32_t dest_pitch = ((rows_left << 16) & 0x3FFF0000u) | (pitch & 0x3FFF);
+  if (tiling == 2) {
+    Set32(d + 10692, pitch * height);
+    dest_info |= (((samples - 1) & slice) << 4) & 0x70;
+    Set64(d + 32, At64(d + 32) | 4);
+    dest_info |= 8;
+  }
+  const uint32_t sample_select = (flags & 0x2000) ? 3 : (source == 4 ? 0 : 1);
+  const uint32_t copy_control = ((sample_select << 20) & 0x300000u) | ((flags & 0x377) - 16);
+  Set32(d + 10660, dest_info), Set32(d + 10652, address), Set32(d + 10656, dest_pitch), Set32(d + 10648, copy_control);
+  Set64(d + 32, At64(d + 32) | 0x3C00);
+  const bool clear_depth = (flags & 0x200) != 0;
+  if (clear_depth) {
+    ctx.r3.u64 = device, ctx.r4.u64 = At32(m.Host(caller_r1 + 100)), ctx.r5.u64 = t40 & 1;
+    ctx.r6.u64 = At32(m.Host(caller_r1 + 92)), ctx.f1.f64 = depth;
+    rt.resolve_clear_depth(ctx, base);
+  }
+  if (flags & 0x100) {
+    const uint8_t* c = m.Host(colors & ~0xFu);
+    for (int i = 0; i < 16; ++i) ctx.v1.u8[i] = c[15 - i];
+    ctx.r3.u64 = device, ctx.r4.u64 = At32(m.Host(caller_r1 + 100)), ctx.r5.u64 = copy_control & 7;
+    rt.resolve_clear_color(ctx, base);
+  }
+  // The viewport widened over the rect, rounded to 8 pixels.
+  const int32_t x1 = int32_t(At32(r)), y1 = int32_t(At32(r + 4));
+  const int32_t x2 = int32_t((At32(r + 8) + 7) & ~7u), y2 = int32_t((At32(r + 12) + 7) & ~7u);
+  bool viewport = false;
+  {
+    const uint32_t v1 = At32(d + 10308), v2 = At32(d + 10312);
+    if (x1 < (int32_t(v1 << 17) >> 17) || y1 < (int32_t(v1 << 1) >> 17) || x2 > (int32_t(v2 << 17) >> 17) ||
+        y2 > (int32_t(v2 << 1) >> 17)) {
+      ctx.r3.u64 = device, ctx.r4.u64 = uint32_t(x1), ctx.r5.u64 = uint32_t(y1), ctx.r6.u64 = uint32_t(x2), ctx.r7.u64 = uint32_t(y2);
+      rt.restore_viewport(ctx, base);
+      viewport = true;
+    }
+  }
+  FlushOverlayState(ctx, base, device, d);
+  const auto room = [&](uint32_t cursor) {
+    return cursor > At32(d + 56) ? uint32_t(Call(ctx, base, rt.make_room, device)) : cursor;
+  };
+  const auto put = [&](uint32_t& cursor, uint32_t v) { cursor += 4, Set32(m.Host(cursor), v); };
+  uint32_t cursor = At32(d + 48);
+  if (TiledTargets(d)) {
+    cursor = room(cursor);
+    put(cursor, 0xC0006100u), put(cursor, 0);
+    for (uint32_t tile = 0; tile < At32(d + 12468); ++tile) {
+      const uint32_t tx = At32(d + 12712 + 8 * tile), ty = At32(d + 12712 + 8 * tile + 4);
+      put(cursor, 0xC0006000u), put(cursor, 3u << (2 * tile)), put(cursor, 0xC0012D01u), put(cursor, 0x00040319u);
+      put(cursor, (ty * pitch + ((tx << 5) & ~0x1Fu)) * bytes + address);
+      Set32(d + 48, cursor);
+      cursor = room(cursor);
+    }
+    put(cursor, 0xC0006000u), put(cursor, At32(d + 12428)), put(cursor, 0xC0006100u), put(cursor, At32(d + 12432));
+    Set32(d + 48, cursor);
+  }
+  cursor = room(At32(d + 48));
+  if (d[10814] & 0x10) {
+    for (int i = 0; i < 3; ++i) put(cursor, 0xC0004600u), put(cursor, 6);
+    d[10814] &= 0xEF;
+  }
+  put(cursor, 0xC0003B00u), put(cursor, 256), put(cursor, 0xC0102B00u), put(cursor, 0), put(cursor, 15);
+  std::memcpy(m.Host(cursor + 4), m.Host(rt.resolve_pixel_shader), 60);
+  cursor += 60;
+  for (uint32_t v : {0x00012180u, 0x00010002u, 0u, 8712u, 6u, 8704u, 0u}) put(cursor, v);
+  uint32_t depth_state = 0;
+  if (clear_depth) {
+    const uint8_t b = d[10814];
+    d[10813] |= 8;
+    const uint32_t mixed = (b & ~0x10u) | ((b >> 2) & 0x10u);
+    depth_state = ((mixed >> 4) & 7 & ~2u) | (At32(d + 10432) & ~0xFu);
+    Set64(d + 16, At64(d + 16) | 0x20000);
+  }
+  put(cursor, 1480), put(cursor, 0x00020000u);
+  Set32(d + 48, cursor);
+  Call(ctx, base, rt.flush_state, device, 256, depth_state);
+  cursor = room(At32(d + 48));
+  static constexpr uint32_t kState[12] = {0x00022100u, 0xFFFF, 0, 0, 0x00022204u, 0x10000, 0x10000, 768, 8978, 0xFFFF, 8205, 0};
+  for (uint32_t v : kState) put(cursor, v);
+  Set64(d + 16, At64(d + 16) | (uint64_t(1) << 41) | (uint64_t(1) << 40) | (uint64_t(1) << 44) | 0xE0);
+  Set64(d + 32, At64(d + 32) | 0x80000);
+  Set32(d + 48, cursor);
+  if (texture_kind == 3 && source != 4) {
+    const uint32_t target = source == 0 ? 0 : source + 1;
+    const uint32_t info = At32(d + 10244 + 4 * target);
+    if ((info & 0x000F0000u) == 0x10000u) {
+      cursor = room(cursor);
+      put(cursor, 8193 + target), put(cursor, (info & 0x03FFFFFFu) & ~0x000FF000u);
+      Set64(d + 16, At64(d + 16) | ((uint64_t(1) << 63) >> ((target + 7) & 0xFF)));
+      Set32(d + 48, cursor);
+    }
+  }
+  cursor = room(cursor);
+  const uint32_t vertices = uint32_t(Call(ctx, base, rt.allocate, device, 6, 4));
+  if (!vertices) {
+    Set32(d + 48, cursor);
+    ctx.r1.u64 = caller_r1;
+    return true;
+  }
+  const float offset = (At32(d + 10560) & 1) ? default_color : AtFloat(m.Host(rt.resolve_offset_float));
+  const float fx = Frsp(double(int64_t(x1))), fy = Frsp(double(int64_t(y1)));
+  const float fw = Frsp(double(int64_t(int32_t(uint32_t(x2) - uint32_t(x1))))), fh = Frsp(double(int64_t(int32_t(uint32_t(y2) - uint32_t(y1)))));
+  const float left = float(double(fx) - double(offset)), top = float(double(fy) - double(offset));
+  const float right = float(double(fw) + double(left)), bottom = float(double(fh) + double(top));
+  uint8_t* vx = m.Host(vertices);
+  const float v[6] = {left, top, right, top, right, bottom};
+  for (int i = 0; i < 6; ++i) Set32(vx + 4 * i, std::bit_cast<uint32_t>(v[i]));
+  const uint32_t vertex_address = GpuAddress(vertices, 0x1FFFFFFFu) | 3u;
+  for (uint32_t w : {0x00054800u, vertex_address, 0x1000001Au, 0u, 0u, 0u, 0u, 0x00025000u, 0u, 0u, 0u})
+    put(cursor, w);
+  put(cursor, At32(d + 12436) | 0xC0003600u), put(cursor, 0x00030088u);
+  Set32(d + 48, cursor);
+  cursor = room(cursor);
+  put(cursor, 0xC0004600u), put(cursor, 6), put(cursor, 8199), put(cursor, At32(d + 10268));
+  Set32(d + 48, cursor);
+  if (viewport) RestoreViewport(ctx, base, device, d);
+  const uint32_t copied = At32(f + 128) * pitch * At32(f + 140) * At32(f + 124);
+  uint8_t* tex = m.Host(texture);
+  Set32(tex + 8, At32(d + 10780));
+  Set64(d + 16, At64(d + 16) | 0x80000 | 8);
+  Set64(d + 24, At64(d + 24) | 0x80000000ull);
+  Set64(d + 16, At64(d + 16) | 0x18000 | 2048 | 256);
+  cursor = room(At32(d + 48));
+  for (uint32_t w : {2609u, 0x03000100u, 0x00010A2Fu, (copied + 8191) & ~0xFFFu, address & ~0xFFFu, 0xC0043C00u, 3u, 2609u,
+                     0u, 0x80000000u, 8u})
+    put(cursor, w);
+  Set32(d + 10648, 0), Set32(d + 10660, 0);
+  for (uint32_t w : {8984u, 0u, 8987u, 0u}) put(cursor, w);
+  Set32(d + 48, cursor);
+  const uint32_t fence = At32(d + 10780);
+  if (fence) {
+    Set32(tex + 8, fence), Set32(tex + 12, fence);
+  } else if (At32(d + 10784) & At32(tex)) {
+    uint32_t record = At32(d + 13148);
+    if (record >= At32(d + 13152)) record = uint32_t(Call(ctx, base, rt.release_block, device));
+    const uint32_t first = (At32(f + 176) & 0x80000000u) | 0x40000000u | (texture >> 2);
+    Set32(f + 176, first), Set32(f + 180, 0xFFFFFFFFu);
+    Set32(m.Host(record), first), Set32(m.Host(record + 4), 0xFFFFFFFFu);
+    Set32(d + 13148, record + 8);
+  }
+  ctx.r1.u64 = caller_r1;
+  return true;
+}
+inline void ResolveOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && Resolve(ctx, base, m)) return;
   original(ctx, base);
 }
 
