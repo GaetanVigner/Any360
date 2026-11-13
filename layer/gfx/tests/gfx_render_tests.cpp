@@ -2502,6 +2502,52 @@ int main(int argc, char** argv) {
                   4 * kSize * kSize);
       CHECK(red == 0 && green >= (2 * kSize - 1) * (2 * kSize - 1));
     }
+    // A scaled resolve read back into guest memory holds, for each guest pixel, a value the console's pixel could
+    // hold: one of its host pixels, not their average. A red quad whose right edge is a quarter into guest pixel 16
+    // covers one of that pixel's two host pixels at 2x; written back, the pixel is red or black, never a blend (a
+    // colour grading table drawn at 2x turned black into pink that way).
+    {
+      const uint32_t half_quad = kVertices + 0xF00, written_back = 0xE0000;
+      const float right = 16.25f / 32.0f - 1.0f;
+      const float q[4][4] = {{-1, -1, 0.5f, 1}, {right, -1, 0.5f, 1}, {-1, 1, 0.5f, 1}, {right, 1, 0.5f, 1}};
+      for (uint32_t i = 0; i < 4; ++i) {
+        for (uint32_t c = 0; c < 4; ++c) SetBig(half_quad + 16 * i + 4 * c, Bits(q[i][c]));
+      }
+      const float rv[3][2] = {{0, 0}, {float(kSize), 0}, {float(kSize), float(kSize)}};
+      for (uint32_t i = 0; i < 3; ++i) {
+        SetBig(rect + 8 * i, Bits(rv[i][0]));
+        SetBig(rect + 8 * i + 4, Bits(rv[i][1]));
+      }
+      std::memset(g_memory + written_back, 0x55, 64 * 64 * 4);
+      CHECK(scaled.ClearColor(color0, clear));
+      w.Defaults();
+      w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, half_quad | 3, 2u | 16u << 2});
+      w.Color(255, 0, 0, 255);
+      w.DrawAuto(kTriangleStrip, 4);
+      w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});
+      w.Put({Type0(0x2318, 4), 0u, written_back, 64u | 64u << 16, 2u | 6u << 7});  // colour 0, k_8_8_8_8
+      w.Reg(0x2208, 6);
+      w.DrawAuto(8, 3);
+      w.Reg(0x2208, 4);
+      w.Run();
+      scaled.WriteBackForTools(written_back);
+      scaled.WaitIdle();
+      auto texel = [&](uint32_t x, uint32_t y) {
+        uint32_t v;
+        std::memcpy(&v, g_memory + written_back + vk::TiledOffset2D(int32_t(x), int32_t(y), 64, 2), 4);
+        return v;
+      };
+      const uint32_t red = texel(4, 10), black = texel(60, 10);
+      uint32_t blends = 0;
+      for (uint32_t y = 0; y < 64; ++y) {
+        for (uint32_t x = 0; x < 64; ++x) {
+          const bool blend = texel(x, y) != red && texel(x, y) != black;
+          blends += blend;
+        }
+      }
+      std::printf("gfx_render_tests: scaled resolve written back: %u of 4096 texels a blend of red and black\n", blends);
+      CHECK(red != black && blends == 0);
+    }
   }
   // Pipeline warm-up: a run with asynchronous pipelines and one sample records its pipelines' recipes beside the
   // pipeline cache; the next run, at 4x host MSAA (pipelines the driver's cache of the first run cannot hold),

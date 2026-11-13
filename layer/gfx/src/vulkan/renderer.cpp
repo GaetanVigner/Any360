@@ -4460,8 +4460,12 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   Image* source = &r.image;
   if (r.scale > 1) {
-    // A scaled resolve: averaged down to one texel a guest texel (a linear blit by an integer factor; depth: one
-    // texel taken) into a small image of its own, read back from there.
+    // A scaled resolve: down to one texel a guest texel, into a small image of its own read back from there. What a
+    // title reads back as data (a colour grading table drawn as a target, a luminance chain the CPU reads) takes one
+    // of the guest pixel's host pixels, a value the console's pixel could hold: an average made values no guest
+    // pixel has (at 2x, Call of Duty: Black Ops's colour table blended its entries across the edges of the blocks
+    // it is drawn from, and black came out pink). A front buffer presented from guest memory is averaged (an image
+    // to look at). Depth: one texel taken.
     const uint32_t small_width = r.image.width / r.scale, small_height = r.image.height / r.scale;
     if (!r.small.image || r.small.format != r.image.format || r.small.width < small_width || r.small.height < small_height) {
       if (r.small.image) {
@@ -4485,7 +4489,7 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
     blit.dstOffsets[0] = {int32_t(r.x), int32_t(r.y), 0};
     blit.dstOffsets[1] = {int32_t(r.x + r.width), int32_t(r.y + r.height), 1};
     device_.fn().vkCmdBlitImage(cb, r.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, r.small.image,
-                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, w.depth ? VK_FILTER_NEAREST : VK_FILTER_LINEAR);
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, (w.depth || !front_buffers_.count(base)) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR);
     Transition(cb, r.small, r.small_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
     source = &r.small;
   }

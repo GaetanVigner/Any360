@@ -504,9 +504,19 @@ PA_CL_CLIP_CNTL clip_disable is not honoured yet: the reference clamps depth the
 day; no Black Ops reference capture changed with it, and an in-game report of dark walls first blamed on it was the
 scaled post-processing below, so it stays out until a capture shows a draw that needs it.
 
-Open at a resolution scale of 2 (not at 1x, with or without host MSAA): Black Ops's final composite lights dark
-areas the reference leaves black (flat lavender debris; the scene resolve 1E9D0000 itself is the same at both
-scales). Reference capture `ref_debris` (7.24% of pixels off at 2x, 0.76% at 1x).
+### Scaled resolves read back: one host pixel a guest pixel (2026-11-13)
+
+A resolve kept on the GPU at a resolution scale above 1 and written back into guest memory (what the CPU or a texture
+read from memory consumes) takes one of each guest pixel's host pixels (a nearest blit), no longer their average; a
+front buffer presented from guest memory is still averaged. Black Ops draws a 32x32x32 colour grading table as a
+32x1024 target and reads it back as a 3D texture: at 2x each host pixel samples a quarter of a guest pixel off the
+centre, so near the edges of the blocks the table is drawn from the two host pixels of a guest pixel took different
+source texels, and their average was an entry no 1x render holds (black became 31,24,28: dark debris came out flat
+lavender where the reference is black). Reference capture `ref_debris` at 2x: 7.24% to 1.78% of pixels off (0.76% at
+1x); the other captures change little to the eye (the spawn view a little brighter: an exposure chain read back the
+same way averaged closer). Rendering such small data targets at 1x would be exact for both; the scale is global
+today. Test: `gfx_render_tests` (at 2x, a red quad ending a quarter into a guest pixel, resolved and written back:
+every texel red or black).
 
 Polygon offset's slope factor is multiplied by the resolution scale (the guest's unit is 1/16 of a guest pixel; a
 host pixel is a fraction of one), as the reference does: less bias at 2x let shadow maps fight with their receivers.
