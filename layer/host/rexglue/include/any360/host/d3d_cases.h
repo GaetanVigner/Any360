@@ -765,6 +765,44 @@ inline void PutFetchInputs(CallSetup& s, std::mt19937_64& rng, uint32_t vs, uint
     Put32(s, e + 8, uint32_t(rng() % 4) << 16 | uint32_t(rng() % 4) << 8 | (uint32_t(rng()) & 0xFF0000FFu));
   }
 }
+// The shaders' link's inputs (sub_826C67A0): the vertex shader's part (after its fetch list: 0-8 outputs, semantics
+// ascending, each with a list of 1-3 export instructions below `entries`) and the pixel shader's (0 to as many inputs
+// as outputs, their semantics among the outputs', ascending), each's no-link bit now and then.
+inline void PutLinkInputs(CallSetup& s, std::mt19937_64& rng, uint32_t part, uint32_t pixel, uint32_t entries) {
+  const uint32_t outputs = uint32_t(rng() % 9), words = Get32(s, part + 28) + Get32(s, part + 24) + 9;
+  Put32(s, part + 20, (uint32_t(rng()) & ~0x403E0u) | outputs << 5 | (rng() % 16 == 0 ? 0x40000u : 0));
+  uint32_t semantics[8], semantic = uint32_t(rng() % 3);
+  for (uint32_t i = 0; i < outputs; ++i, semantic += 1 + uint32_t(rng() % 3)) {
+    semantics[i] = semantic;
+    Put32(s, part + 4 * (words + i), (uint32_t(rng()) & 0xF000F000u) | (3 * i) << 16 | uint32_t(rng() % 16) << 8 | semantic);
+    const uint32_t n = 1 + uint32_t(rng() % 3);
+    for (uint32_t k = 0; k < n; ++k)
+      Put32(s, part + 4 * (words + outputs + 3 * i + k),
+            (uint32_t(rng()) & 0xFFFFE000u) | (k + 1 == n ? 0x1000u : 0) | uint32_t(rng() % entries));
+  }
+  if (!pixel) return;
+  uint32_t inputs = 0;
+  for (uint32_t i = 0; i < outputs; ++i)
+    if (rng() % 2) Put32(s, pixel + 32 + 4 * inputs++, (uint32_t(rng()) & 0xFFFFF000u) | uint32_t(rng() % 16) << 8 | semantics[i]);
+  Put32(s, pixel + 20, (uint32_t(rng()) & ~0x203FFu) | inputs << 5 | uint32_t(rng() % 16) | (rng() % 16 == 0 ? 0x20000u : 0));
+}
+// sub_826C67A0 on its own: the parts in the scratch, the copy there (64 instructions), the program word there.
+struct ShaderLink {
+  static bool Native(PPCContext& ctx, uint8_t*) { return d3d_draw::LinkShaders(ctx, SelfTestMemory()); }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t part = s.scratch + 0x2000, pixel = s.scratch + 0x5000;
+    Put32(s, part + 24, uint32_t(rng() % 4)), Put32(s, part + 28, uint32_t(rng() % 8));
+    const bool has_pixel = rng() % 4 != 0;
+    PutLinkInputs(s, rng, part, has_pixel ? pixel : 0, 64);
+    ctx.r3.u64 = part;
+    ctx.r4.u64 = s.scratch + 0x9000;
+    ctx.r5.u64 = s.scratch + 0x7F00;
+    ctx.r6.u64 = has_pixel ? pixel : 0;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+};
+
 // sub_826C6010 on its own: a shader and a patch set in the scratch, the destination there.
 struct FetchPatch {
   static bool Native(PPCContext& ctx, uint8_t*) { return d3d_draw::PatchVertexFetches(ctx, SelfTestMemory()); }
@@ -848,7 +886,22 @@ struct ShaderHelper {
       if (has_ps && (will & 0x100000) && mode != 4) will |= 0x80008;
       const uint32_t mismatch = has_ps ? (pixel_mask ^ Get32(s, part + 20)) & 0x7FFFFu : Get32(s, part + 20) & 0x1Fu;
       const bool linked = (s.Host(s.device + 10813)[0] & 1) || mismatch;
-      if (linked && (will & 0x180000)) {
+      if (linked && (will & 0x180000) && real_bytes && rng() % 2) {
+        // The link path: a copy of "microcode" linked and patched (a patch set, the fetches, the link's inputs).
+        const uint32_t which = (!has_ps && (Get32(s, vs + 872) & 0x20)) ? 1 : 0;
+        const uint32_t patch = s.scratch + 0x7000, entry = vs + Get32(s, vs + 896 + 8 * which);
+        Put32(s, s.device + 11540, patch);
+        Put32(s, entry + 872, real_code - Get32(s, vs + 32));
+        Put32(s, entry + 876, real_bytes);
+        PutFetchInputs(s, rng, vs, which, patch, std::min<uint32_t>(real_bytes / 12, 64));
+        if (mismatch) {
+          PutLinkInputs(s, rng, part, has_ps ? ps + 0x100 + 40 : 0, std::min<uint32_t>(real_bytes / 12, 64));
+          // The counts live in the interpolator masks: kept differing (else the runtime would take another path).
+          const uint32_t mine = Get32(s, part + 20);
+          if (has_ps && !((mine ^ Get32(s, ps + 0x100 + 40 + 20)) & 0x7FFFFu)) Put32(s, part + 20, mine ^ 0x400u);
+          if (!has_ps && !(mine & 0x1Fu)) Put32(s, part + 20, mine | 1u);
+        }
+      } else if (linked && (will & 0x180000)) {
         bits &= ~uint64_t(0x180000);
         if (!has_ps) Put32(s, s.device + 10452, (interpolation & ~7u) | 5);
       } else if (!linked && (will & 0x80000) && !(Get32(s, vs + 872) & 0x40)) {

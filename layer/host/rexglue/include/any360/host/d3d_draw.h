@@ -1128,6 +1128,84 @@ inline bool PatchVertexFetches(PPCContext& ctx, const any360::xdk::Memory& m) {
   return true;
 }
 
+namespace detail {
+// sub_826C67A0 (the shaders' link, on a vertex shader copy at `code`, `bytes` of it): `part` the vertex shader's part
+// (+20: its outputs' count in bits 5-9, bit 18 none to link; its outputs' words after its fetch list: byte 3 the
+// semantic, bits 8-11 the register, the high half's low 12 bits the offset of the list of export instructions that
+// write it), `pixel` the pixel shader's part or 0 (+20: its inputs' count in bits 5-9, the last interpolator + 1 in
+// bits 0-4, bit 17 none to link; its inputs' words from +32). Each output whose semantic no input reads has its export
+// instructions emptied (sub_826C6618); each input's output has its exports' register made the input's
+// (sub_826C66E8); the outputs past the last input are emptied; the program word gets the last interpolator in bits
+// 20-23. `write` false: only checks that every instruction it would touch is in the copy and every word it reads is
+// plain memory (nothing written).
+inline bool LinkShaders(const any360::xdk::Memory& m, uint32_t part, uint32_t code, uint32_t bytes, uint32_t pixel,
+                        uint32_t& program, bool write) {
+  using any360::xdk::IsPlainMemory;
+  const auto L32 = [&](uint32_t a) { return At32(m.Host(a)); };
+  if (!IsPlainMemory(part + 20, 12) || (pixel && !IsPlainMemory(pixel + 20, 4))) return false;
+  const uint32_t flags = L32(part + 20);
+  if ((flags & 0x40000u) || (pixel && (L32(pixel + 20) & 0x20000u))) return true;
+  const uint32_t outputs = (flags >> 5) & 0x1F, words = L32(part + 28) + L32(part + 24) + 9;
+  // An output's export instructions: the list at the output word's offset, to its word with bit 12.
+  const auto exports = [&](uint32_t output, auto&& each) {
+    uint32_t at = part + 4 * (((L32(output) >> 16) & 0xFFF) + outputs + words);
+    for (int k = 0; k < 4096; ++k, at += 4) {
+      if (!IsPlainMemory(at, 4)) return false;
+      const uint32_t w = L32(at), index = w & 0xFFF;
+      if (12 * index + 12 > bytes) return false;
+      each(code + 12 * index);
+      if (w & 0x1000) return true;
+    }
+    return false;
+  };
+  const auto empty = [&](uint32_t output) {
+    return exports(output, [&](uint32_t at) {
+      if (write) Set32(m.Host(at), 0xC8000000u), Set32(m.Host(at + 4), 0), Set32(m.Host(at + 8), 0x02000000u);
+    });
+  };
+  const auto remap = [&](uint32_t output, uint32_t input) {
+    const uint32_t reg = (L32(input) >> 8) & 0xF;
+    return exports(output, [&](uint32_t at) {
+      if (write) Set32(m.Host(at), (At32(m.Host(at)) & ~0xFu) | reg);
+    });
+  };
+  uint32_t output = part + 4 * words, input = pixel ? pixel + 32 : 0, inputs = 0, last = 0, done = 0;
+  if (pixel) {
+    const uint32_t pf = L32(pixel + 20);
+    last = pf & 0x1F, inputs = (pf >> 5) & 0x1F;
+    if (last) --last;
+  }
+  for (uint32_t i = 0; i < inputs; ++i, output += 4, input += 4, ++done) {
+    if (!IsPlainMemory(input, 4)) return false;
+    const uint32_t semantic = m.Host(input)[3];
+    for (; done < outputs; ++done, output += 4) {
+      if (!IsPlainMemory(output, 4)) return false;
+      if (m.Host(output)[3] >= semantic) break;
+      if (!empty(output)) return false;
+    }
+    if (!IsPlainMemory(output, 4)) return false;
+    if (((L32(output) ^ L32(input)) & 0xF00u) && !remap(output, input)) return false;
+  }
+  for (; done < outputs; ++done, output += 4)
+    if (!empty(output)) return false;
+  if (write) program = (program & ~0x00F00000u) | ((last << 20) & 0x00F00000u);
+  return true;
+}
+}  // namespace detail
+
+// sub_826C67A0 as a function (the self-test's): r3 the vertex shader's part, r4 the copy, r5 the program word's
+// address, r6 the pixel shader's part or 0. Declines what it cannot check (an instruction past 64 KB).
+inline bool LinkShaders(PPCContext& ctx, const any360::xdk::Memory& m) {
+  uint32_t program = 0;
+  if (!any360::xdk::IsPlainMemory(ctx.r4.u32, 0x10000) || !any360::xdk::IsPlainMemory(ctx.r5.u32, 4) ||
+      !detail::LinkShaders(m, ctx.r3.u32, ctx.r4.u32, 0x10000, ctx.r6.u32, program, false))
+    return false;
+  program = detail::At32(m.Host(ctx.r5.u32));
+  detail::LinkShaders(m, ctx.r3.u32, ctx.r4.u32, 0x10000, ctx.r6.u32, program, true);
+  detail::Set32(m.Host(ctx.r5.u32), program);
+  return true;
+}
+
 // sub_826C6C48 (the draws' shader flush): r3 device, r4 the state's dirty bits (bits 17-20 the shaders'); r3 back:
 // the bits left. The vertex shader (+12416; none: nothing) and the pixel shader (+12412, may be none): the pixel
 // shader's constant list and IM_LOAD (bit 20), the vertex shader's (bit 19), the interpolation control 0x2208 and the
@@ -1138,9 +1216,10 @@ inline bool PatchVertexFetches(PPCContext& ctx, const any360::xdk::Memory& m) {
 // The vertex shader's patched copies (+11540 a patch set) native: used when cached (detail::CheckPatchCache); when
 // the cached one is still read by the GPU, a new copy patched into the command buffer (sub_826C68E0: an
 // INVALIDATE_STATE, the microcode as IM_LOAD_IMMEDIATE, its fetches remade by detail::ComputeVertexFetches). Declines,
-// before anything is written, when the shader's own copy must be patched again or the shaders linked (sub_826C6B00's
-// patch, sub_826C68E0 with a link: the vertex shader's outputs differ from the pixel shader's inputs, +10813 bit 0,
-// +10812 bit 7), when the cursor would need room, or when the shaders' memory is not plain.
+// before anything is written, when the shader's own copy must be patched again (sub_826C6B00's patch) or linked
+// from the runtime's link path (+10812 bit 7), when the cursor would need room, or when the shaders' memory is not
+// plain. The vertex shader's outputs differing from the pixel shader's inputs (or +10813 bit 0): a copy into the
+// command buffer, linked (detail::LinkShaders) then patched.
 inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
   using namespace detail;
   using any360::xdk::IsPlainMemory;
@@ -1158,6 +1237,7 @@ inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
   uint32_t part = 0;  // the vertex shader's part the interpolators come from
   bool patched = false, odd_patched = false;  // the patched copies used (sub_826C6B00's cache hits)
   bool copied = false;                         // the first copy busy: a new one in the command buffer
+  bool linked_copy = false, link = false;      // the shaders differ: a copy linked into the command buffer
   uint32_t copy_from = 0, copy_dwords = 0;
   if (vs) {
     if (!IsPlainMemory(vs, 912)) return false;
@@ -1171,7 +1251,23 @@ inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
     const uint32_t mismatch =
         ps ? (R(ps + R(ps + 64) + 40 + 20) ^ R(part + 20)) & 0x7FFFFu : R(part + 20) & 0x1Fu;
     const bool linked = (d[10813] & 1) || mismatch;
-    if (linked && (will & 0x180000)) return false;
+    if (linked && (will & 0x180000)) {
+      // sub_826C68E0 with the link (when they differ): the copy, its link, its fetches patched.
+      linked_copy = true, link = mismatch != 0;
+      const uint32_t which = (!ps && (R(vs + 872) & 0x20)) ? 1 : 0;
+      const uint32_t entry = vs + R(vs + 896 + 8 * which);
+      const uint32_t bytes = R(entry + 876);
+      copy_dwords = bytes >> 2;
+      copy_from = GpuAddress(R(entry + 872) + R(vs + 32), 0x1FFFFFFFu) + 0xC0000000u;
+      VertexFetches fetches;
+      uint32_t program = 0;
+      if ((bytes & 3) || copy_dwords > 0x3FFE || !IsPlainMemory(copy_from, bytes) ||
+          !ComputeVertexFetches(m, vs, At32(d + 11540), device + 12248, which, ctx.r1.u32 - 1040, fetches) ||
+          !VertexFetchesFit(m, fetches, copy_from, bytes) ||
+          (link && (m.Host(part + 8)[0] & 7) != 7 &&
+           !LinkShaders(m, part, copy_from, bytes, ps ? ps + R(ps + 64) + 40 : 0, program, false)))
+        return false;
+    }
     const bool own_list = !linked && (will & 0x80000);
     if (own_list && At32(d + 11540) && !(R(vs + 872) & 0x40)) {
       // The patched copies (sub_826C6B00): native when they are cached; a patch or a link is the runtime's.
@@ -1212,7 +1308,7 @@ inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
     if (pixel_entries < 0 || vertex_entries < 0) return false;
     entries = pixel_entries + vertex_entries;
   }
-  const uint32_t most = 4 * (64 + 5 * uint32_t(entries) + (copied ? copy_dwords + 5 : 0));
+  const uint32_t most = 4 * (64 + 5 * uint32_t(entries) + (copied || linked_copy ? copy_dwords + 5 : 0));
   if (uint64_t(cursor) + most > std::min(limit, At32(d + 52)) || !IsPlainMemory(cursor + 4, most)) return false;
 
   Out out{m, cursor, records};
@@ -1250,7 +1346,8 @@ inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
   const uint32_t mismatch = ps ? (R(pixel_part + 20) ^ R(part + 20)) & 0x7FFFFu : R(part + 20) & 0x1Fu;
   const uint32_t before = At32(d + 10452);
   uint32_t interpolation = before;
-  const uint32_t vertex_program = R(part + 8), vertex_extra = R(part + 12);
+  uint32_t vertex_program = R(part + 8);
+  const uint32_t vertex_extra = R(part + 12);
   if (d[10812] & 0x40) {
     bool five = true;
     if (ps) {
@@ -1282,6 +1379,22 @@ inline bool FlushShaders(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
     } else if (((interpolation ^ before) & 7) && (R(vs + 872) & 0x20)) {
       odd_load = 1, d[10814] |= 0x80;
     }
+  } else if (linked_copy) {
+    // sub_826C68E0 with the link: the vertex shader's literals, its copy into the command buffer, linked to the pixel
+    // shader (the program word's interpolators), its fetches patched.
+    d[10814] &= 0x7F;
+    constant_list(vs + 872, R(vs + 32));
+    const uint32_t which = (!ps && (R(vs + 872) & 0x20)) ? 1 : 0;
+    out.Invalidate(0x100);
+    out.Shader(0, copy_from, copy_dwords);
+    const uint32_t code = out.cursor - 4 * copy_dwords + 4;
+    if (link && (m.Host(part + 8)[0] & 7) != 7)
+      LinkShaders(m, part, code, 4 * copy_dwords, pixel_part, vertex_program, true);
+    d[10813] = uint8_t((d[10813] & 0xFE) | (link ? 1 : 0));
+    VertexFetches fetches;
+    ComputeVertexFetches(m, vs, At32(d + 11540), device + 12248, which, ctx.r1.u32 - 1040, fetches);
+    WriteVertexFetches(m, code, fetches);
+    std::memcpy(d + 11552, d + 12248, 16);
   }
   uint32_t program = kNone, program_extra = kNone;
   if (bits & 0x180000) {
