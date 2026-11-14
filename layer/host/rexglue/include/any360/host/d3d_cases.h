@@ -359,6 +359,10 @@ inline void CanonicalCommands(CallSetup& s, uint32_t cursor = 0) {
         } else if (opcode == 0x46 || opcode == 0x58 || opcode == 0x5A || opcode == 0x5B) {  // the events
           out.insert(out.end(), {4, opcode, count, predicated});
           for (uint32_t i = 0; i < count && i < 7; ++i) out.push_back(Get32(s, at + 4 * i));
+        } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kIndirect) {
+          out.insert(out.end(), {10, raw[1], raw[2], predicated});
+        } else if (opcode == 0x3F && count == 2) {  // INDIRECT_BUFFER
+          out.insert(out.end(), {10, Get32(s, at), Get32(s, at + 4), predicated});
         } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kShaderLoad) {
           out.insert(out.end(), {8, raw[1], raw[2], predicated});
         } else if (opcode == 0x27 && count == 2) {  // IM_LOAD
@@ -598,6 +602,74 @@ struct ClearTargetCase {
     ctx.r6.u64 = x1, ctx.r7.u64 = y1, ctx.r8.u64 = x2, ctx.r9.u64 = y2;
     ctx.r10.u64 = s.scratch + 0x6200;
     ctx.f1.f64 = double(rng() % 1000) / 1000.0;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+};
+
+// A recorded command buffer's replay (sub_826C3750): the draws' device and dirty groups as the helpers' draw case
+// makes them, a buffer in the scratch (its masks, 1-3 segment nodes of 1-4 segments, 0-2 resource nodes with
+// objects there, a fence now and then, its flags at random: room only, occlusion predication, bins back), the
+// device's two lists with room, its tiling and predicate words at random, a bin select or none.
+template <bool kRecords>
+struct ReplayCase {
+  static bool Native(PPCContext& ctx, uint8_t* base) {
+    return d3d_draw::ReplayCommandBuffer(ctx, base, SelfTestMemory(), kRecords);
+  }
+  // Records: the +12960 list's entry (the address of the bin select's value, which records before it move) compared
+  // by what it points at: a SET_BIN_SELECT_HI's value, or something else.
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) {
+      const uint32_t entry = s.scratch + 0xB000, mark = Get32(s, entry);
+      if (mark >= s.scratch + 4 && mark < s.scratch + 0x30000)
+        Put32(s, entry, Get32(s, mark - 4) == 0xC0006300u ? Get32(s, mark) : 0xFFFFFFFFu);
+      CanonicalCommands(s);
+    }
+  }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    DrawIndexed<false, true>::Setup(s, ctx);
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t buffer = s.scratch + 0xA000;
+    const auto mask = [&] { return rng() % 3 == 0 ? ~uint64_t(0) : RandomMask(rng); };
+    for (uint32_t k = 0; k < 5; ++k) Put64(s, buffer + 24 + 8 * k, mask()), Put64(s, buffer + 64 + 8 * k, rng());
+    if (rng() % 2) Put64(s, buffer + 96, rng() | uint64_t(7) << 46);  // the viewport kept
+    Put32(s, buffer + 108, (uint32_t(rng()) & ~0x860u) | (rng() % 16 == 0 ? 0x20u : 0) | (rng() % 3 == 0 ? 0x800u : 0) |
+                               (rng() % 2 ? 0x40u : 0));
+    // The segments: nodes at +0x100 on, 0x40 apart.
+    const uint32_t nodes = 1 + uint32_t(rng() % 3);
+    for (uint32_t n = 0; n < nodes; ++n) {
+      const uint32_t node = buffer + 0x100 + 0x40 * n, count = 1 + uint32_t(rng() % 4);
+      Put32(s, node, n + 1 < nodes ? node + 0x40 : 0);
+      Put32(s, node + 4, count);
+      for (uint32_t i = 0; i < count; ++i)
+        Put32(s, node + 8 + 8 * i, uint32_t(rng())), Put32(s, node + 12 + 8 * i, uint32_t(rng() % 0x10000));
+    }
+    Put32(s, buffer + 116, buffer + 0x100);
+    // The resources: nodes at +0x200, objects at +0x400 on.
+    const uint32_t resources = uint32_t(rng() % 3);
+    for (uint32_t n = 0; n < resources; ++n) {
+      const uint32_t node = buffer + 0x200 + 0x80 * n, count = uint32_t(rng() % 6);
+      Put32(s, node, n + 1 < resources ? node + 0x80 : 0);
+      Put32(s, node + 4, (uint32_t(rng()) & 0x80000000u) | count);
+      for (uint32_t i = 0; i < count; ++i) {
+        const uint32_t object = rng() % 6 == 0 ? 0 : buffer + 0x400 + 0x20 * (8 * n + i);
+        Put32(s, node + 8 + 8 * i, (object >> 2) | (rng() % 2 ? 0x40000000u : 0));
+        Put32(s, node + 12 + 8 * i, uint32_t(rng()));
+      }
+    }
+    Put32(s, buffer + 112, resources ? buffer + 0x200 : 0);
+    Put32(s, buffer + 120, rng() % 2 ? uint32_t(rng()) : 0);
+    Put32(s, buffer + 8, rng() % 4 == 0 ? Get32(s, s.device + 10780) : uint32_t(rng()));
+    // The device: its lists with room, the tile recording's struct, the words the replay reads.
+    for (const uint32_t list : {12960u, 12980u}) {
+      const uint32_t block = s.scratch + (list == 12960u ? 0xB000 : 0xB400);
+      Put32(s, s.device + list + 8, block), Put32(s, s.device + list + 12, block + 0x200);
+    }
+    Put32(s, s.device + 13140, s.scratch + 0x7000);
+    Put32(s, s.device + 12436, rng() % 4 == 0 ? uint32_t(rng()) & 0x0000FF01u : uint32_t(rng() % 2));
+    s.Host(s.device + 10812)[0] = uint8_t((s.Host(s.device + 10812)[0] & 0x5D) | (rng() % 4 == 0 ? 0x80 : 0) |
+                                          (rng() % 2 ? 0x20 : 0) | (rng() % 3 == 0 ? 0x02 : 0));
+    ctx.r4.u64 = buffer;
+    ctx.r5.u64 = rng() % 2 ? 0 : uint32_t(rng());
   }
   static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
 };

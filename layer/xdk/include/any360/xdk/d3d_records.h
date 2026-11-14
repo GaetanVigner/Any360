@@ -23,6 +23,8 @@
 //               (0 vertex, 1 pixel), and its size in dwords.
 //   kConstantLoad argument: 0. Then LOAD_ALU_CONSTANT's three words: the values' address, the offset and type of the
 //               first constant (as SET_CONSTANT's), the dwords.
+//   kIndirect   argument: 0. Then INDIRECT_BUFFER's two words: the buffer's address and its size in dwords (a recorded
+//               command buffer, PM4 or records, run where the record is).
 //
 // A record is predicated as PM4 is: bit 0 of its header (the runtime predicates its draws, which run only for the
 // tiles that the bin select and mask both have).
@@ -46,6 +48,7 @@ enum Kind : uint32_t {
   kWait = 7,
   kShaderLoad = 8,
   kConstantLoad = 9,
+  kIndirect = 10,
 };
 
 // The packet's header for `words` words after it (the kind word included), `predicated` or not.
@@ -61,5 +64,6 @@ constexpr uint32_t kBinsWords = 2;
 constexpr uint32_t EventWords(uint32_t packet_words) { return 1 + packet_words; }
 constexpr uint32_t kShaderLoadWords = 3;
 constexpr uint32_t kConstantLoadWords = 4;
+constexpr uint32_t kIndirectWords = 3;
 
 }  // namespace any360::xdk::record

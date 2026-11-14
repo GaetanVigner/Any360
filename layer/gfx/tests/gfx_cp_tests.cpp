@@ -631,6 +631,20 @@ void Records() {
   CHECK(s.recorder.shaders == 2 && pm4_side.recorder.shaders == 2 && s.recorder.last_hash == pm4_side.recorder.last_hash);
   for (uint32_t i = 0; i < 4; ++i)
     CHECK(s.cp.reg(0x4000 + 0x48 + i) == 0xA0000000u + i && pm4_side.cp.reg(0x4000 + 0x48 + i) == 0xA0000000u + i);
+  // An indirect record runs its buffer as INDIRECT_BUFFER does: PM4 and a record inside it alike.
+  SetBig(kIb, Type0(0x2503, 1)), SetBig(kIb + 4, 0xBEEF);
+  SetBig(kIb + 8, record::Header(record::RegistersWords(1)));
+  {
+    const uint32_t kind = record::KindWord(record::kRegisters, 0x2504), value = 0xCAFE;
+    std::memcpy(g_physical.data() + kIb + 12, &kind, 4), std::memcpy(g_physical.data() + kIb + 16, &value, 4);
+  }
+  pm4_side.ring.Put({Type3(pm4::INDIRECT_BUFFER, 2), kIb, 5});
+  pm4_side.ring.Run();
+  s.ring.Put(record::Header(record::kIndirectWords));
+  raw(s.ring, record::KindWord(record::kIndirect, 0)), raw(s.ring, kIb), raw(s.ring, 5);
+  s.ring.Run();
+  for (Side* side : {&pm4_side, &record_side})
+    CHECK(side->cp.reg(0x2503) == 0xBEEF && side->cp.reg(0x2504) == 0xCAFE);
 }
 
 int main() {

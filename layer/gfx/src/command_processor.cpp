@@ -680,7 +680,7 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
       Draw(r, opcode, end);
       break;
     case record::kOpcode:
-      if (!ExecuteRecord(r, end)) return false;
+      if (!ExecuteRecord(r, end, depth)) return false;
       break;
     case pm4::SET_CONSTANT:
       if (has(1)) {
@@ -877,7 +877,7 @@ void CommandProcessor::SetDrawIndices(DrawCall& draw, uint32_t base, uint32_t si
   draw.index_bytes = (size & 0x00FFFFFF) * (draw.index_32 ? 4 : 2);
 }
 
-bool CommandProcessor::ExecuteRecord(Reader& r, uint32_t end) {
+bool CommandProcessor::ExecuteRecord(Reader& r, uint32_t end, int depth) {
   if (r.offset >= end) return true;
   const uint32_t head = NextRaw(r), kind = head & 0xFF, argument = head >> 8;
   switch (kind) {
@@ -951,6 +951,17 @@ bool CommandProcessor::ExecuteRecord(Reader& r, uint32_t end) {
       if (end - r.offset < 2) return true;
       const uint32_t address_type = NextRaw(r), start_size = NextRaw(r);
       if ((address_type & 3) <= 1) LoadShader(address_type & 3, address_type & ~3u, start_size & 0xFFFF);
+      return true;
+    }
+    case record::kIndirect: {
+      // As INDIRECT_BUFFER: the buffer run in place, PM4 and records alike.
+      if (end - r.offset < 2) return true;
+      const uint32_t address = NextRaw(r) & 0x1FFFFFFF, dwords = NextRaw(r) & 0xFFFFF;
+      if (depth < kMaxIndirectDepth && dwords) {
+        Reader ib{address, dwords, 0, dwords};
+        while (ib.remaining && ExecutePacket(ib, depth + 1) && !stopping_) {
+        }
+      }
       return true;
     }
     case record::kConstantLoad: {

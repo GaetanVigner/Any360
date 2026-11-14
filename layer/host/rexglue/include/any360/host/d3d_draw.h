@@ -45,6 +45,7 @@ struct Runtime {
   // The target clear's color packer (r3 the format kind, r4 its bits 20-25, r5/r6 the packed words out, v1 the
   // color), and the doubles that make a fast clear's depth from its packed color: guest addresses.
   GuestFunction clear_color_pack = nullptr;
+  GuestFunction list_block = nullptr;  // r3 one of the device's lists (+12960, +12980) -> r3 its new block's cursor
   uint32_t clear_depth_offset = 0, clear_depth_scale = 0;
   // The resolve's format table (a half-word a format), default destination point, copy pixel shader (15 dwords) and
   // vertex offset float: guest addresses in the title's image.
@@ -512,15 +513,24 @@ struct Out {
       Word(0xC0006000u + (which << 8)), Word(value);
     }
   }
-  void Event(uint32_t opcode, std::initializer_list<uint32_t> words) {
+  void Event(uint32_t opcode, std::initializer_list<uint32_t> words, bool predicated = false) {
     const uint32_t n = uint32_t(words.size());
     if (records) {
-      Word(any360::xdk::record::Header(any360::xdk::record::EventWords(n)));
+      Word(any360::xdk::record::Header(any360::xdk::record::EventWords(n), predicated));
       Host(any360::xdk::record::KindWord(any360::xdk::record::kEvent, opcode));
       for (uint32_t v : words) Host(v);
     } else {
-      Word(0xC0000000u | ((n - 1) << 16) | (opcode << 8));
+      Word(0xC0000000u | ((n - 1) << 16) | (opcode << 8) | (predicated ? 1u : 0u));
       for (uint32_t v : words) Word(v);
+    }
+  }
+  // INDIRECT_BUFFER of `dwords` at `address`, its header's other bits `bits` (bit 0 the predicate; any other: PM4).
+  void Indirect(uint32_t address, uint32_t dwords, uint32_t bits) {
+    if (records && !(bits & ~1u)) {
+      Word(any360::xdk::record::Header(any360::xdk::record::kIndirectWords, bits & 1));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kIndirect, 0)), Host(address), Host(dwords);
+    } else {
+      Word(0xC0013F00u | bits), Word(address), Word(dwords);
     }
   }
   void Invalidate(uint32_t value) {
@@ -1765,6 +1775,155 @@ inline void ClearTargetOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction 
   original(ctx, base);
 }
 
+// sub_826C3750 (D3D's RunCommandBuffer): r3 device, r4 a recorded command buffer, r5 the bins it selects (0: all).
+// The device's dirty state as the buffer leaves it to the device (its +24..+56 masks the groups, then the draws'
+// flush), then: the bin select (unless the device records tiles, +10812 bit 7), each recorded segment (the buffer's
+// +116 list: next, count, then address and size pairs) as an INDIRECT_BUFFER (predicated as +12436 says), or, for an
+// occlusion-predicated buffer (+10812 bit 1, the buffer's +108 bit 11), under all bins with its start kept in the
+// device's +12960 list and an EVENT_WRITE_EXT 26 / EVENT_WRITE 25 after; the device's bins back when the buffer
+// changed them (bit 6); a buffer +108 bit 5: only room made. Then the tile recording's flags, or the buffer's fence
+// (+120, kept in the +12980 list once a frame) and frame (+8), the frame stamped in the resources it uses (+112 list),
+// the viewport put back unless the buffer kept it, the dirty masks the buffer's +64..+96 inverted. The title's
+// helpers (make room, the flush's uploads, the lists' new blocks, the viewport) called from the runtime's frame.
+// Declines what it cannot check: a segment list empty or with an empty node, memory not plain.
+inline bool ReplayCommandBuffer(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  using any360::xdk::IsPlainMemory;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32, buffer = ctx.r4.u32, select = ctx.r5.u32, entry = ctx.r1.u32;
+  if (!rt.make_room || !rt.restore_viewport || !rt.list_block || !rt.upload_constants || !rt.upload_words ||
+      !rt.flush_shaders || !rt.flush_state || !rt.flush_misc || !rt.flush_waits || !IsPlainMemory(device, 16384) ||
+      !IsPlainMemory(buffer, 124) || !IsPlainMemory(entry - 1024, 1024))
+    return false;
+  uint8_t* d = m.Host(device);
+  uint8_t* b = m.Host(buffer);
+  const uint32_t flags = At32(b + 108);
+  // What it will read, checked first.
+  if (!(flags & 0x20)) {
+    uint32_t node = At32(b + 116);
+    if (!node) return false;
+    for (int n = 0; node; ++n, node = At32(m.Host(node))) {
+      if (n > 4096 || !IsPlainMemory(node, 8)) return false;
+      const uint32_t count = At32(m.Host(node + 4));
+      if (!count || count > 0x10000 || !IsPlainMemory(node + 8, 8 * count)) return false;
+    }
+  }
+  for (const uint32_t list : {device + 12960, device + 12980})
+    if (!IsPlainMemory(At32(m.Host(list + 8)), 16)) return false;
+  if ((d[10812] & 0x80) && !IsPlainMemory(At32(d + 13140) + 108, 4)) return false;
+  {
+    uint32_t node = At32(b + 112);
+    for (int n = 0; node; ++n, node = At32(m.Host(node))) {
+      if (n > 4096 || !IsPlainMemory(node, 8)) return false;
+      const uint32_t count = At32(m.Host(node + 4)) & 0x7FFFFFFF;
+      if (count > 0x10000 || !IsPlainMemory(node + 8, 8 * count)) return false;
+      for (uint32_t i = 0; i < count; ++i)
+        if (const uint32_t object = At32(m.Host(node + 8 + 8 * i)) << 2; object && !IsPlainMemory(object + 8, 8))
+          return false;
+    }
+  }
+  const uint32_t frame = entry - 176;
+  ctx.r1.u64 = frame;
+  for (uint32_t k = 0; k < 5; ++k) Set64(d + 8 * k, At64(d + 8 * k) & At64(b + 24 + 8 * k));
+  FlushDirtyState(ctx, base, m, device);
+  const auto room = [&] {
+    ctx.r1.u64 = frame;
+    const uint32_t cursor = At32(d + 48);
+    return cursor > At32(d + 56) ? uint32_t(Call(ctx, base, rt.make_room, device)) : cursor;
+  };
+  if (flags & 0x20) {
+    ctx.r1.u64 = frame;
+    Call(ctx, base, rt.make_room, device);
+  } else {
+    Out out{m, room(), records};
+    // The occlusion-predicated replay keeps where its bin select's value is (the device's +12960 list, given to the
+    // GPU at the tiles' end): that select stays PM4, its value a big-endian word as the runtime leaves it.
+    const bool occlusion = (d[10812] & 2) && (flags & 0x800);
+    if (!(d[10812] & 0x80)) {
+      Out select_out{m, out.cursor, records && !occlusion};
+      select_out.Bins(3, select);
+      out.cursor = select_out.cursor;
+    }
+    const uint32_t start = out.cursor;
+    uint32_t node = At32(b + 116), index = 0;
+    // The next segment; false when it was the last.
+    const auto segment = [&](uint32_t predicate) {
+      const uint8_t* e = m.Host(node + 8 * (index + 1));
+      out.Indirect(At32(e), At32(e + 4), predicate);
+      if (++index == At32(m.Host(node + 4))) {
+        node = At32(m.Host(node)), index = 0;
+        if (!node) return false;
+      }
+      Set32(d + 48, out.cursor);
+      out.cursor = room();
+      return true;
+    };
+    if (occlusion) {
+      uint32_t list = At32(d + 12968);
+      if (list + 16 > At32(d + 12972)) {
+        ctx.r1.u64 = frame;
+        list = uint32_t(Call(ctx, base, rt.list_block, device + 12960));
+      }
+      Set32(m.Host(list), start);
+      Set32(d + 12968, list + 16);
+      out.Bins(0, ~0u);
+      while (segment(1)) {
+      }
+      out.Bins(0, 0x80000000u);
+      out.Event(0x5A, {26, GpuAddress(list + 4, 0x1FFFFFFEu) | 1}, true);
+      out.Event(0x46, {25}, true);
+    } else {
+      const uint32_t predicate = At32(d + 12436);
+      while (segment(predicate)) {
+      }
+    }
+    if (flags & 0x40) out.Bins(0, At32(d + 12428)), out.Bins(1, At32(d + 12432));
+    Set32(d + 48, out.cursor);
+  }
+  if (d[10812] & 0x80) {
+    uint8_t* tiles = m.Host(At32(d + 13140));
+    Set32(tiles + 108, ((At32(tiles + 108) | 0x20) & ~0x40u) | (flags & 0x40));
+  } else {
+    const uint32_t fence = At32(b + 120);
+    if (fence && (d[10812] & 0x20) && At32(b + 8) != At32(d + 10780)) {
+      uint32_t list = At32(d + 12988);
+      if (list + 4 > At32(d + 12992)) {
+        ctx.r1.u64 = frame;
+        list = uint32_t(Call(ctx, base, rt.list_block, device + 12980));
+      }
+      Set32(m.Host(list), fence);
+      Set32(d + 12988, list + 4);
+    }
+    const uint32_t now = At32(d + 10780), wanted = select ? select : ~0u;
+    Set32(b + 8, now);
+    for (uint32_t node = At32(b + 112); node; node = At32(m.Host(node))) {
+      const uint32_t count = At32(m.Host(node + 4)) & 0x7FFFFFFF;
+      for (uint32_t i = 0; i < count; ++i) {
+        const uint8_t* e = m.Host(node + 8 + 8 * i);
+        const uint32_t object = At32(e) << 2;
+        if (!object) continue;
+        if (At32(e + 4) & wanted) Set32(m.Host(object + 8), now);
+        if (At32(e) & 0x40000000u) Set32(m.Host(object + 12), now);
+      }
+    }
+  }
+  if ((At64(b + 96) & 0x0001C00000000000ull) != 0x0001C00000000000ull) {
+    const uint32_t vy2 = At32(d + 10312), vx2 = At32(d + 10308);
+    ctx.r1.u64 = frame;
+    ctx.r3.u64 = device;
+    ctx.r4.s64 = int32_t(vx2 << 17) >> 17, ctx.r5.s64 = int32_t(vx2 << 1) >> 17;
+    ctx.r6.s64 = int32_t(vy2 << 17) >> 17, ctx.r7.s64 = int32_t(vy2 << 1) >> 17;
+    rt.restore_viewport(ctx, base);
+  }
+  for (uint32_t k = 0; k < 5; ++k) Set64(d + 8 * k, ~At64(b + 64 + 8 * k));
+  ctx.r1.u64 = entry;
+  return true;
+}
+inline void ReplayCommandBufferOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && ReplayCommandBuffer(ctx, base, m, DrawRecords())) return;
+  original(ctx, base);
+}
 inline void ClearOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && Clear(ctx, base, m, DrawRecords())) return;
