@@ -654,6 +654,38 @@ void Records() {
   CHECK(interrupts.size() == 2 && interrupts[0] == std::make_pair(1u, 1u) && interrupts[1] == std::make_pair(1u, 4u));
 }
 
+// A direct submission (D6) runs where the ring's INDIRECT_BUFFER would: the same registers, in ring order with the
+// ring's own packets, the read pointer written back after its 3 dwords as after the packet's.
+void DirectSubmission() {
+  CommandProcessor a(g_physical.data()), b(g_physical.data());
+  Ring ra{a}, rb{b};
+  for (CommandProcessor* cp : {&a, &b}) {
+    Ring& ring = cp == &a ? ra : rb;
+    Fresh(*cp, ring);
+    SetBig(kIb, Type0(0x2506, 1)), SetBig(kIb + 4, 0x11);
+    ring.Put({Type0(0x2506, 1), 0x10, Type0(0x2507, 1), 0x20});
+    if (cp == &a) {
+      ring.Put({Type3(pm4::INDIRECT_BUFFER, 2), kIb, 2});
+    } else {
+      CHECK(cp->SubmitIndirect(ring.write, kIb, 2));
+      ring.write = (ring.write + 3) % cp->ring_dwords();
+    }
+    CHECK(cp->reg(0x2506) != 0x11);
+    ring.Put({Type0(0x2507, 1), 0x21});
+    ring.Run();
+    CHECK(cp->reg(0x2506) == 0x11 && cp->reg(0x2507) == 0x21 && Big(kWriteBack) == ring.write);
+  }
+  CHECK(a.reg(reg::CP_RB_RPTR) == b.reg(reg::CP_RB_RPTR));
+  // Across the ring's end (type-2 padding up to its last dword first).
+  Fresh(b, rb);
+  for (uint32_t i = 0; i + 1 < b.ring_dwords(); ++i) rb.Put(0x80000000u);
+  rb.Run();
+  SetBig(kIb, Type0(0x2506, 1)), SetBig(kIb + 4, 0x12);  // Fresh cleared it
+  CHECK(b.SubmitIndirect(rb.write, kIb, 2));
+  rb.write = (rb.write + 3) % b.ring_dwords();
+  CHECK(b.Execute() && b.reg(0x2506) == 0x12 && Big(kWriteBack) == rb.write);
+}
+
 int main() {
   ReferenceDetails();
   GammaRamp();
@@ -667,6 +699,7 @@ int main() {
   Kernel();
   CaptureWhileBusy();
   Records();
+  DirectSubmission();
   std::printf("gfx_cp_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;
 }

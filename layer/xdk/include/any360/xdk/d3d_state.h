@@ -383,6 +383,23 @@ namespace detail {
 struct ShaderProgram {
   uint32_t header = 0, program = 0, end = 0, highest = 0;  // highest: the last byte read
   uint32_t write_low = ~0u, write_high = 0;  // the fetch constant bytes written, from fetch_constants
+  // The writes the walk found, in order (the run replays them without walking again); more than kOps: walked again.
+  struct Op {
+    uint32_t source;
+    uint16_t place, count;
+    bool masked;
+  };
+  static constexpr uint32_t kOps = 16;
+  Op ops[kOps];
+  uint32_t op_count = 0;
+  bool ops_overflow = false;
+  void Note(uint32_t source, uint32_t place, uint32_t count, bool masked) {
+    if (op_count < kOps) {
+      ops[op_count++] = {source, uint16_t(place), uint16_t(count), masked};
+    } else {
+      ops_overflow = true;
+    }
+  }
 };
 // Walks the program as the runtime does, reading only; false when it would read past `limit` bytes, write outside
 // the device, loop for ever (an odd count) or read the device.
@@ -411,6 +428,7 @@ inline bool PlanShaderProgram(const Memory& m, const D3dLayout& l, uint32_t devi
       if (words == 0) break;
       if (!in(at, 4 * words) || place + 4 * words > l.device_bytes - l.fetch_constants) return false;
       p.write_low = std::min(p.write_low, place), p.write_high = std::max(p.write_high, place + 4 * words);
+      p.Note(at, place, words, false);
       at += 4 * words;
       if (at >= p.end) break;
     }
@@ -422,6 +440,7 @@ inline bool PlanShaderProgram(const Memory& m, const D3dLayout& l, uint32_t devi
       if (count & 1u) return false;
       if (!in(at, 4 * count) || place + 2 * count > l.device_bytes - l.fetch_constants) return false;
       p.write_low = std::min(p.write_low, place), p.write_high = std::max(p.write_high, place + 2 * count);
+      p.Note(at, place, count, true);
       at += 4 * count;
     }
   }
@@ -432,6 +451,21 @@ inline bool PlanShaderProgram(const Memory& m, const D3dLayout& l, uint32_t devi
 inline void RunShaderProgram(const Memory& m, const D3dLayout& l, uint8_t* d, const ShaderProgram& p) {
   const auto half = [&](uint32_t at) { return uint32_t(m.Host(at)[0]) << 8 | m.Host(at)[1]; };
   uint8_t* constants = d + l.fetch_constants;
+  if (!p.ops_overflow) {
+    for (uint32_t i = 0; i < p.op_count; ++i) {
+      const ShaderProgram::Op& op = p.ops[i];
+      if (!op.masked) {
+        std::memcpy(constants + op.place, m.Host(op.source), 4 * size_t(op.count));
+        continue;
+      }
+      uint8_t* word = constants + op.place;
+      const uint8_t* pairs = m.Host(op.source);
+      for (uint32_t k = 0; k < op.count / 2u; ++k, word += 4, pairs += 8) {
+        Store32(word, (Load32(word) & Load32(pairs)) | Load32(pairs + 4));  // byte order kept: AND and OR are bytewise
+      }
+    }
+    return;
+  }
   uint32_t at = p.program;
   while (at < p.end) {
     const uint32_t count = half(at + 2);
@@ -500,6 +534,13 @@ inline bool D3dSetShader(const Memory& m, const D3dLayout& l, uint32_t device, u
                       (release.kind == detail::Release::kRecord && detail::Overlap(program.header, 24, release.record, 8)) ||
                       (release.kind == detail::Release::kFence && detail::Overlap(program.header, 24, release.old + 8, 4))))
     return false;
+  if (has_program) {  // the release writes the program the run reads after it: walked again, not replayed
+    const uint32_t from = program.program, bytes = program.highest - program.program;
+    if (detail::Overlap(from, bytes, stack_word, 8) ||
+        (release.kind == detail::Release::kRecord && detail::Overlap(from, bytes, release.record, 8)) ||
+        (release.kind == detail::Release::kFence && detail::Overlap(from, bytes, release.old + 8, 4)))
+      program.ops_overflow = true;
+  }
   uint8_t* state = d + l.state_dirty;
   const auto or_state = [&](uint64_t bits) { detail::Store64(state, detail::ByteSwap64(detail::ByteSwap64(detail::Load64(state)) | bits)); };
   if (vertex && shader) or_state(0x80000);

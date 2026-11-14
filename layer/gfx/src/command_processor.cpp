@@ -145,6 +145,25 @@ void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
   }
 }
 
+bool CommandProcessor::SubmitIndirect(uint32_t position, uint32_t address, uint32_t dwords) {
+  if (!ring_dwords_) return false;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    position %= ring_dwords_;
+    // A capture replays the ring: it gets the INDIRECT_BUFFER the title would have written.
+    if (capture_ || capture_requested_.load(std::memory_order_acquire)) {
+      const uint32_t words[3] = {3u << 30 | 1u << 16 | pm4::INDIRECT_BUFFER << 8, address, dwords};
+      for (uint32_t i = 0; i < 3; ++i) StoreBig(ring_base_ + 4 * ((position + i) % ring_dwords_), words[i]);
+    }
+    direct_.push_back({position, address, dwords});
+    has_direct_.store(true, std::memory_order_release);
+    write_index_ = (position + 3) % ring_dwords_;
+  }
+  NotifyProgress();
+  kicked_.notify_all();
+  return true;
+}
+
 uint32_t CommandProcessor::ReadRegister(uint32_t index) {
   switch (index) {
     case reg::RB_EDRAM_TIMING: return 0x08100748;
@@ -441,6 +460,26 @@ bool CommandProcessor::Execute() {
   Reader r{ring_base_, ring_dwords_, read, (write + ring_dwords_ - read) % ring_dwords_};
   bool ok = true;
   while (r.remaining && ok) {
+    // A direct submission where the read reaches it: its buffer run, its 3 ring dwords skipped.
+    if (has_direct_.load(std::memory_order_acquire) && r.remaining >= 3) {
+      Direct d{};
+      bool here = false;
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!direct_.empty() && direct_.front().position == r.offset % ring_dwords_) {
+          d = direct_.front(), here = true;
+          direct_.pop_front();
+          has_direct_.store(!direct_.empty(), std::memory_order_release);
+        }
+      }
+      if (here) {
+        r.offset += 3, r.remaining -= 3;
+        ++direct_kicks_;
+        RunIndirect(d.address, d.dwords, 0);
+        if (stopping_) break;
+        continue;
+      }
+    }
     ok = ExecutePacket(r, 0);
     if (stopping_) break;
   }
@@ -602,12 +641,8 @@ bool CommandProcessor::ExecuteType3(Reader& r, uint32_t packet, int depth) {
     case pm4::INDIRECT_BUFFER:
     case pm4::INDIRECT_BUFFER_PFD:
       if (has(2)) {
-        const uint32_t address = Next(r) & 0x1FFFFFFF, dwords = Next(r) & 0xFFFFF;
-        if (depth < kMaxIndirectDepth && dwords) {
-          Reader ib{address, dwords, 0, dwords};
-          while (ib.remaining && ExecutePacket(ib, depth + 1) && !stopping_) {
-          }
-        }
+        const uint32_t address = Next(r), dwords = Next(r);
+        RunIndirect(address, dwords, depth);
       }
       break;
     case pm4::WAIT_REG_MEM:
@@ -877,6 +912,14 @@ void CommandProcessor::SetDrawIndices(DrawCall& draw, uint32_t base, uint32_t si
   draw.index_bytes = (size & 0x00FFFFFF) * (draw.index_32 ? 4 : 2);
 }
 
+void CommandProcessor::RunIndirect(uint32_t address, uint32_t dwords, int depth) {
+  address &= 0x1FFFFFFF, dwords &= 0xFFFFF;
+  if (depth >= kMaxIndirectDepth || !dwords) return;
+  Reader ib{address, dwords, 0, dwords};
+  while (ib.remaining && ExecutePacket(ib, depth + 1) && !stopping_) {
+  }
+}
+
 bool CommandProcessor::ExecuteRecord(Reader& r, uint32_t end, int depth) {
   if (r.offset >= end) return true;
   const uint32_t head = NextRaw(r), kind = head & 0xFF, argument = head >> 8;
@@ -956,12 +999,8 @@ bool CommandProcessor::ExecuteRecord(Reader& r, uint32_t end, int depth) {
     case record::kIndirect: {
       // As INDIRECT_BUFFER: the buffer run in place, PM4 and records alike.
       if (end - r.offset < 2) return true;
-      const uint32_t address = NextRaw(r) & 0x1FFFFFFF, dwords = NextRaw(r) & 0xFFFFF;
-      if (depth < kMaxIndirectDepth && dwords) {
-        Reader ib{address, dwords, 0, dwords};
-        while (ib.remaining && ExecutePacket(ib, depth + 1) && !stopping_) {
-        }
-      }
+      const uint32_t address = NextRaw(r), dwords = NextRaw(r);
+      RunIndirect(address, dwords, depth);
       return true;
     }
     case record::kInterrupt: {

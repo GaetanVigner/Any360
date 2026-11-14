@@ -61,5 +61,6 @@
  "0x826C68E0": ["D3D_CopyPatchedShader", "a vertex shader copy into the command buffer (IM_LOAD_IMMEDIATE), linked and patched there"],
  "0x826C8488": ["D3D_GpuTimestamp", "the GPU profiling ring's timestamp (EVENT_WRITE_SHD)"],
  "0x826C6618": ["D3D_EmptyShaderExports", "an unread output's export instructions emptied"],
- "0x826C66E8": ["D3D_RemapShaderExports", "an output's export instructions given the input's register"]
+ "0x826C66E8": ["D3D_RemapShaderExports", "an output's export instructions given the input's register"],
+ "0x826BAD58": ["D3D_RingSubmit", "a kicked segment into the primary ring: ring space waited for, an INDIRECT_BUFFER, CP_RB_WPTR (Any360: handed to the command processor directly)"]
 }

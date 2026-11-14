@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -116,6 +117,7 @@ class CommandProcessor : public sys::GpuBackend {
   void InitializeRingBuffer(sys::Guest g, uint32_t base, uint32_t size_log2) override;
   void EnableReadPointerWriteBack(sys::Guest g, uint32_t address, uint32_t block_log2) override;
   void WriteRegister(uint32_t index, uint32_t value) override;
+  bool SubmitIndirect(uint32_t position, uint32_t address, uint32_t dwords) override;
   uint32_t ReadRegister(uint32_t index) override;
   void Vblank() override;
   void GuestProgress() override { NotifyProgress(); }
@@ -199,6 +201,7 @@ class CommandProcessor : public sys::GpuBackend {
   uint64_t ns_busy() const { return ns_busy_; }
   uint64_t ns_waiting() const { return ns_waiting_; }
   uint64_t kicks() const { return kicks_; }
+  uint64_t direct_kicks() const { return direct_kicks_; }  // direct submissions run (SubmitIndirect)
   // For diagnostics: the WAIT_REG_MEM packets by what they poll (bit 4 of wait_info: memory), how often, how long
   // they held the ring, and how many a write queued after earlier draws satisfied ahead of the GPU. Taken and reset.
   struct WaitSite {
@@ -229,6 +232,8 @@ class CommandProcessor : public sys::GpuBackend {
   uint32_t NextRaw(Reader& r) const;
   bool ExecutePacket(Reader& r, int depth);
   bool ExecuteType3(Reader& r, uint32_t packet, int depth);
+  // An indirect buffer run as INDIRECT_BUFFER runs it (`depth` the caller's).
+  void RunIndirect(uint32_t address, uint32_t dwords, int depth);
   void SetRegister(uint32_t index, uint32_t value);
   void GammaRampWrite(uint32_t index);  // after a DC_LUT_* register write
   bool Wait(uint32_t wait_info, uint32_t poll, uint32_t reference, uint32_t mask, uint32_t interval);
@@ -320,6 +325,13 @@ class CommandProcessor : public sys::GpuBackend {
   uint32_t gamma_component_ = 0;  // the next red, green or blue of DC_LUT_SEQ_COLOR / DC_LUT_PWL_DATA
   std::mutex mutex_;
   std::condition_variable kicked_;
+  // Direct submissions (SubmitIndirect) in ring order, under mutex_; has_direct_ when any waits.
+  struct Direct {
+    uint32_t position, address, dwords;
+  };
+  std::deque<Direct> direct_;
+  std::atomic<bool> has_direct_{false};
+  std::atomic<uint64_t> direct_kicks_{0};
   std::mutex progress_mutex_;
   std::condition_variable progress_cv_;
   std::atomic<uint64_t> progress_{0};

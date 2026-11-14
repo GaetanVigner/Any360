@@ -117,6 +117,9 @@ struct GraphicsOptions {
 void StartSampling(const std::string& path);
 
 bool StartGraphics(const GraphicsOptions& options, std::string& error);
+// A command buffer the title kicks, handed to the command processor without the ring (docs/D3D.md, D6): it runs
+// where the ring's INDIRECT_BUFFER at dword `position` would. False when the GPU in use takes no direct submission.
+bool SubmitIndirect(uint32_t position, uint32_t address, uint32_t dwords);
 // Changes the vertical blanks' rate while bound (a title pacing its videos on them: 60 while one plays, the unlocked
 // rate after); 0: back to the rate StartGraphics chose. Nothing while not bound.
 #define ANY360_REXGLUE_SET_VBLANK_HZ 1

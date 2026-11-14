@@ -208,9 +208,9 @@
    "total": 1842
   },
   "xdk": {
-   "native": 85,
+   "native": 86,
    "ported": 0,
-   "total": 107
+   "total": 108
   },
   "gpu": {
    "native": 283,

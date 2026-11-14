@@ -49,6 +49,7 @@ struct Runtime {
   uint32_t swap_word = 0;              // the swap packet's fence word (a title address the runtime passes)
   uint32_t device_slot = 0;            // the title's global that leads to the device (**slot)
   GuestFunction block_on_fence = nullptr;  // r3 device, r4 a fence, r5 an argument: waits until the GPU passed it
+  GuestFunction ring_space = nullptr;  // r3 device, r4 the ring's write index, r5 dwords: waits for that ring space
   uint32_t clear_depth_offset = 0, clear_depth_scale = 0;
   // The resolve's format table (a half-word a format), default destination point, copy pixel shader (15 dwords) and
   // vertex offset float: guest addresses in the title's image.
@@ -62,6 +63,7 @@ inline Runtime g_runtime;
 // any360_d3d_native_draws and any360_d3d_records (d3d_draw.cpp).
 bool NativeDraws();
 bool DrawRecords();
+bool DirectSubmit();  // any360_direct_submit (d3d_draw.cpp)
 // any360_d3d_native_draw_helpers off (a diagnostic): draws that need the title's helpers besides its uploads (shader
 // loads, state, misc and wait groups) are declined.
 bool DrawHelpers();
@@ -1942,33 +1944,68 @@ inline void ReplayCommandBufferOrOriginal(PPCContext& ctx, uint8_t* base, GuestF
 // counter (+10772) to reach it, a predicated INTERRUPT, 0x45E; the wait after: the counter at 0, 0x57C = 0x0BADF00D.
 // The device's +10815 bit 4 kept as the runtime keeps it. Declines when the room after the cursor is not plain.
 namespace detail {
-inline void WriteFence(uint8_t* d, Out& out, uint32_t flags, uint32_t first, uint32_t second) {
+// The fence's words as they lie in memory, for one form (written at once: no writer per word).
+template <bool kRecords>
+inline uint32_t FenceWords(uint32_t* w, uint8_t* d, uint32_t flags, uint32_t first, uint32_t second) {
+  namespace record = any360::xdk::record;
+  uint32_t n = 0;
+  const auto registers = [&](uint32_t index, uint32_t count, uint32_t a, uint32_t b) {
+    if constexpr (kRecords) {
+      w[n++] = std::byteswap(record::Header(record::RegistersWords(count)));
+      w[n++] = record::KindWord(record::kRegisters, index);
+      w[n++] = a;
+      if (count > 1) w[n++] = b;
+    } else {
+      w[n++] = std::byteswap(((count - 1) << 16) | index);
+      w[n++] = std::byteswap(a);
+      if (count > 1) w[n++] = std::byteswap(b);
+    }
+  };
+  const auto wait = [&](uint32_t counter, uint32_t reference) {
+    const uint32_t v[5] = {19, counter, reference, 0xFFFFFFFFu, 256};
+    if constexpr (kRecords) {
+      w[n++] = std::byteswap(record::Header(6, true));
+      w[n++] = record::KindWord(record::kWait, 0);
+      for (uint32_t x : v) w[n++] = x;
+    } else {
+      w[n++] = std::byteswap(0xC0043C01u);
+      for (uint32_t x : v) w[n++] = std::byteswap(x);
+    }
+  };
   const uint32_t value = (flags >> 24) & 0x3F ? (flags >> 24) & 0x3F : 4;
   if (!(flags & 6)) flags |= 6;
   const uint32_t counter = GpuAddress(At32(d + 10772), 0x1FFFFFFFu) | 2;
   if (flags & 2) {
     d[10815] |= 0x10;
-    if (!(flags & 1)) out.Registers(0x5C8, {0x20000});
-    out.Registers(0x57C, {first, second});
-    out.Registers(0x578, {value});
-    out.Wait(19, counter, value, 0xFFFFFFFFu, 256, true);
-    out.Interrupt(value, true);
-    out.Registers(0x45E, {value});
+    if (!(flags & 1)) registers(0x5C8, 1, 0x20000, 0);
+    registers(0x57C, 2, first, second);
+    registers(0x578, 1, value, 0);
+    wait(counter, value);
+    if constexpr (kRecords) {
+      w[n++] = std::byteswap(record::Header(2, true)), w[n++] = record::KindWord(record::kInterrupt, 0), w[n++] = value;
+    } else {
+      w[n++] = std::byteswap(0xC0005401u), w[n++] = std::byteswap(value);
+    }
+    registers(0x45E, 1, value, 0);
   }
   if (flags & 4) {
     d[10815] &= 0xEF;
-    out.Wait(19, counter, 0, 0xFFFFFFFFu, 256, true);
-    out.Registers(0x57C, {0x0BADF00Du});
+    wait(counter, 0);
+    registers(0x57C, 1, 0x0BADF00Du, 0);
   }
+  return n;
 }
 }  // namespace detail
 inline bool Fence(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
   using namespace detail;
   const uint32_t device = ctx.r3.u32, cursor = ctx.r4.u32;
   if (!any360::xdk::IsPlainMemory(device, 16384) || !any360::xdk::IsPlainMemory(cursor + 4, 200)) return false;
-  Out out{m, cursor, records};
-  WriteFence(m.Host(device), out, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
-  ctx.r3.u64 = out.cursor;
+  uint32_t words[48];
+  uint8_t* d = m.Host(device);
+  const uint32_t n = records ? FenceWords<true>(words, d, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32)
+                             : FenceWords<false>(words, d, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+  std::memcpy(m.Host(cursor + 4), words, 4 * size_t(n));
+  ctx.r3.u64 = cursor + 4 * n;
   return true;
 }
 inline void FenceOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
@@ -2021,9 +2058,12 @@ inline bool SwapPacket(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory
   if (!quiet) out.Registers(0x579, {1}), out.Wait(19, second, 1, 0xFFFFFFFFu, 256);
   {
     // The fence as the title's bound fence writes it (any360_d3d_records).
-    Out fence{m, out.cursor, DrawRecords()};
-    WriteFence(d, fence, 0, rt.swap_word, ((At32(d + 11572) >> 23) & 0x7F) | (mode << 8) | quiet);
-    out.cursor = fence.cursor;
+    uint32_t words[48];
+    const uint32_t second_word = ((At32(d + 11572) >> 23) & 0x7F) | (mode << 8) | quiet;
+    const uint32_t n = DrawRecords() ? FenceWords<true>(words, d, 0, rt.swap_word, second_word)
+                                     : FenceWords<false>(words, d, 0, rt.swap_word, second_word);
+    std::memcpy(m.Host(out.cursor + 4), words, 4 * size_t(n));
+    out.cursor += 4 * n;
   }
   if (!quiet) out.Wait(19, second, 0, 0xFFFFFFFFu, 256);
   Set32(d + 48, out.cursor);
@@ -2123,6 +2163,35 @@ inline bool ResourceLock(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
 inline void ResourceLockOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && ResourceLock(ctx, base, m, DrawRecords())) return;
+  original(ctx, base);
+}
+// sub_826BAD58 (the kick's submit to the primary ring): r3 device, r4 the segment (+0 its dwords, +4 its address). Ring
+// space waited for through the title's helper (+10824 the ring's write index, 3 dwords), then the segment handed to
+// the command processor directly (D6: no INDIRECT_BUFFER in the ring, no CP_RB_WPTR write), the write index moved as
+// the runtime moves it (+14524 the ring's mask). Declines (the runtime writes the ring) with any360_direct_submit off,
+// when the device records for a capture tool (+10813 bit 2) or has its callbacks (+21156, +21296), or when the GPU in
+// use takes no direct submission.
+inline bool RingSubmit(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+  using namespace detail;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32, segment = ctx.r4.u32, entry = ctx.r1.u32;
+  if (!DirectSubmit() || !rt.ring_space || !any360::xdk::IsPlainMemory(device, 21300) ||
+      !any360::xdk::IsPlainMemory(segment, 8) || !any360::xdk::IsPlainMemory(entry - 1024, 1024))
+    return false;
+  uint8_t* d = m.Host(device);
+  if ((d[10813] & 4) || At32(d + 21156) || At32(d + 21296)) return false;
+  const uint32_t position = At32(d + 10824), mask = At32(d + 14524);
+  const uint32_t dwords = At32(m.Host(segment)), address = At32(m.Host(segment + 4));
+  ctx.r1.u64 = entry - 160;
+  Call(ctx, base, rt.ring_space, device, position, 3);
+  ctx.r1.u64 = entry;
+  if (!SubmitIndirect(position, address, dwords)) return false;
+  Set32(d + 10824, (position + 3) & mask);
+  return true;
+}
+inline void RingSubmitOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && RingSubmit(ctx, base, m)) return;
   original(ctx, base);
 }
 inline void ClearOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {

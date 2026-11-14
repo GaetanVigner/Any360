@@ -911,6 +911,15 @@
   "note": ""
  },
  {
+  "name": "D3D_RingSubmit",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826BAD58"
+  },
+  "note": "a kicked segment into the primary ring: ring space waited for, an INDIRECT_BUFFER, CP_RB_WPTR (Any360: handed to the command processor directly)"
+ },
+ {
   "name": "D3D_SwapPacket",
   "library": "D3D",
   "any360": "native",

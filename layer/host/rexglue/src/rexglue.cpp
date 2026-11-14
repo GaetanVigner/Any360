@@ -479,6 +479,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       // What accumulated meanwhile is not reported: the next period starts clean.
       if (cp_) {
         last_busy_ = cp_->ns_busy(), last_waiting_ = cp_->ns_waiting(), last_kicks_ = cp_->kicks();
+        last_direct_ = cp_->direct_kicks();
         cp_->TakeWaitSites();
         cp_->TakeWaitTraces();
         for (uint32_t op = 0; op < 129; ++op) last_opcode_ticks_[op] = cp_->opcode_ticks(op);
@@ -537,15 +538,15 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       log_(kinds);
     }
     if (cp_) {
-      const uint64_t busy = cp_->ns_busy(), waiting = cp_->ns_waiting(), kicks = cp_->kicks();
-      char line_cp[256];
+      const uint64_t busy = cp_->ns_busy(), waiting = cp_->ns_waiting(), kicks = cp_->kicks(), direct = cp_->direct_kicks();
+      char line_cp[300];
       std::snprintf(line_cp, sizeof(line_cp),
                     "Any360: command processor per frame: %.2f ms running the ring (%.2f ms of it in WAIT_REG_MEM), "
-                    "%.1f kicks; %.1f%% of the time with nothing to run",
+                    "%.1f kicks (%.1f command buffers submitted directly); %.1f%% of the time with nothing to run",
                     (busy - last_busy_) / ms, (waiting - last_waiting_) / ms, (kicks - last_kicks_) / n,
-                    100.0 * (1.0 - (busy - last_busy_) / 1e9 / seconds));
+                    (direct - last_direct_) / n, 100.0 * (1.0 - (busy - last_busy_) / 1e9 / seconds));
       log_(line_cp);
-      last_busy_ = busy, last_waiting_ = waiting, last_kicks_ = kicks;
+      last_busy_ = busy, last_waiting_ = waiting, last_kicks_ = kicks, last_direct_ = direct;
       auto sites = cp_->TakeWaitSites();
       std::sort(sites.begin(), sites.end(), [](const auto& a, const auto& b) { return a.ns > b.ns; });
       std::string waits = "Any360: WAIT_REG_MEM per frame by site:";
@@ -715,7 +716,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
  public:
   gfx::CommandProcessor* cp_ = nullptr;  // for the report: where the command processor's time goes
  private:
-  uint64_t last_busy_ = 0, last_waiting_ = 0, last_kicks_ = 0;
+  uint64_t last_busy_ = 0, last_waiting_ = 0, last_kicks_ = 0, last_direct_ = 0;
   uint64_t last_tsc_ = 0;
   uint64_t last_swapped_[5] = {};
   double last_on_fps_ = 0;
@@ -935,6 +936,11 @@ void WriteGpuRegister(void*, void*, uint32_t address, uint32_t value) {
 }
 
 }  // namespace
+
+bool SubmitIndirect(uint32_t position, uint32_t address, uint32_t dwords) {
+  if (g_binding) CaptureAtKick(*g_binding);
+  return sys::Graphics().SubmitIndirect(position, address, dwords);
+}
 
 void StartSampling(const std::string& path) {
   static std::unique_ptr<Sampler> sampler;
