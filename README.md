@@ -1,14 +1,12 @@
 # Any360
 
-**A toolkit for turning Xbox 360 games into portable native codebases.** Start from a static recompilation
-([ReXGlue](https://github.com/rexglue/rexglue-sdk)), which gives a running game on day one and serves as the oracle;
-replace its emulated system calls and GPU with native, portable implementations; decompile the game's own code
-function by function, each proven against the original; end with a codebase that builds for Windows, Linux, macOS,
-Android, x86-64, ARM64 and WebAssembly from reconstructed source and the player's own copy of the game data, the way
-the projects on [awesome-decomp-games](https://submitgame.github.io/awesome-decomp-games/) do. What one title needed
-is reused by the next; one database lists every function of the platform a native port must provide, and one global
-progress page says how much of it is native. Titles are sources, not the unit of progress: their own repositories
-track how native each game is.
+**A toolkit for turning Xbox 360 games into portable native codebases.** It starts from a static recompilation
+([ReXGlue](https://github.com/rexglue/rexglue-sdk)), which runs the game on day one and serves as the reference,
+then replaces, piece by piece, what the recompilation still simulates, and finally the game's own code, each piece
+checked against the original. The goal is a game that builds natively for Windows, Linux, macOS, Android, x86-64,
+ARM64 and WebAssembly from the player's own copy of the game data, the way the projects on
+[awesome-decomp-games](https://submitgame.github.io/awesome-decomp-games/) do. What one title needed is reused by
+the next: Any360 lists every function of the platform a port must provide, and how much of it is native.
 
 Started from the [Crackdown port](https://github.com/GaetanVigner/CrackdownRewrite) (ReXGlue v0.10.0, 120 SDK patches,
 native Vulkan renderer in progress, 103 functions already rewritten). Next title:
@@ -32,107 +30,34 @@ server's sockets, kept on the machine).
 hashes, addresses and public API names. A title's reconstructed source lives in that title's own repository. Bring
 your own copy of the game.
 
-## The path
+## How it works
 
-| Stage | What runs | What Any360 provides |
-|---|---|---|
-| 0 | ReXGlue static recomp: generated PowerPC-context C++, emulated kernel and GPU | pinned SDK + patch series, coverage and census tools, the oracle for everything below |
-| 1 | the same generated code over `any360::sys` (native system calls) and `any360::gfx` (draw records → Vulkan) | the portable system layer and the native renderer; nothing of ReXGlue's runtime left |
-| 2 | reconstructed C++ bound over the generated functions, verified in the sandbox | REA pipeline: symbol recovery, library recognition, decompile + bind + golden |
-| 3 | a native codebase, no PPC context, no guest memory | platform layer (SDL3, Vulkan / Metal / WebGPU), asset conversion at install |
+A static recompilation already runs an Xbox 360 game on a PC: the game's code is translated once. But every frame
+the PC still pretends to be an Xbox 360 (left): it simulates the console's system and its graphics chip,
+re-reading each graphics command the game writes and redrawing the scene tile by tile, as the console's video
+memory required. Any360 keeps the same game code and replaces these simulated parts with code written for the PC
+(right), one function at a time, each checked against the original before the game uses it.
 
-Details, boundaries and milestones: [docs/DESIGN.md](docs/DESIGN.md).
+That is where the performance comes from: graphics commands prepared up to 4.4 times faster (measured function by
+function, none slower), no Xbox graphics chip left to simulate, and no simulation layer between the game and
+Windows or Linux. Once nothing is simulated, the game's own code is rewritten the same way, until it builds as an
+ordinary native codebase. The stages and milestones are in [docs/DESIGN.md](docs/DESIGN.md).
 
-## What is here
+<table>
+<tr><th>ReXGlue alone: the PC simulates an Xbox 360</th><th>Any360: the simulated parts replaced</th></tr>
+<tr>
+<td><img src="docs/img/how-it-works-rexglue.svg" width="440" alt="The game talks to a simulated Xbox system and a simulated graphics chip that re-reads each command and redraws the scene per tile"></td>
+<td><img src="docs/img/how-it-works-any360.svg" width="440" alt="The same game talks to a native system and native drawing read by a Vulkan renderer without translation, with three numbered gains"></td>
+</tr>
+</table>
 
-| | |
-|---|---|
-| [docs/DESIGN.md](docs/DESIGN.md) | The path from static recomp to native codebase; what Any360 holds and what a game's repository holds; how a title uses it; counting rules; milestones |
-| [db/](db/) | **The database**: every function of the Xbox 360 platform surface a native port must provide, whatever the title: [system_calls.json](db/system_calls.json) (2,900 exports of xboxkrnl / xam / xbdm with library, ordinal, area, reference state, Any360 state, the known titles importing each), [instructions.json](db/instructions.json) (1,842 CPU instruction ids by family), [xdk.json](db/xdk.json) (statically linked XDK library functions known by name, from [xdk_seed.json](db/xdk_seed.json)); built by [tools/build_db.py](tools/build_db.py) |
-| [docs/progress.html](docs/progress.html) | Global progress page in the AnyPS5 style: one square per system call, instruction id and XDK function, filterable tables of the database, the known titles as sources, toolkit by stage, history ([progress.json](docs/progress.json), [progress.svg](docs/progress.svg)) |
-| [docs/coverage/](docs/coverage/) | Source reports per known title (what feeds the database): [crackdown](docs/coverage/crackdown.md), [simpsons](docs/coverage/simpsons.md), [comparison](docs/coverage/COMPARISON-crackdown-vs-simpsons.md), Crackdown [SDK patch inventory](docs/coverage/patches-crackdown.json) |
-| [docs/COMPARISON.md](docs/COMPARISON.md) | What the comparison says: where a second title costs effort (the GPU, twice the functions), where it does not (kernel, CPU) |
-| [layer/sys/](layer/sys/) | **`any360::sys`**, the native system layer (stage 1): portable C++ implementations of the system calls ([include/any360/sys/](layer/sys/include/any360/sys/)), their PowerPC ABI adapters a recompiled title binds in place of the runtime's ([ppc/exports.cpp](layer/sys/ppc/exports.cpp)), and two oracles: [sys_io_tests](layer/sys/tests/sys_io_tests.cpp) runs each stateless call against the reference runtime's implementation on random inputs, [sys_runtime_tests](layer/sys/tests/sys_runtime_tests.cpp) sets the reference kernel up and runs the thread-bound ones (IRQL, spinlocks, critical sections, TLS...) on a real guest thread, comparing registers, memory, PCR, KTHREAD and KPROCESS (`.\layer\sys	est.ps1`) |
-| [layer/gfx/](layer/gfx/) | **`any360::gfx`**, the GPU side of stage 1: the command processor that executes the title's PM4 (ring buffer kicked through `CP_RB_WPTR`, indirect buffers, register and constant writes, `WAIT_REG_MEM` and the fences the CPU waits on, interrupts, shader microcode loads, bin predication) behind `any360::sys`'s `GpuBackend`, handing draws, resolves and swaps to a graphics-API-agnostic `Renderer`; the Vulkan renderer's first pieces: the Xenos microcode to SPIR-V translator vendored from the ReXGlue SDK (Xenia's, BSD-3, [third_party/xenos_shader](layer/gfx/third_party/xenos_shader/NOTICE.md)) and a Vulkan device loaded at run time ([docs/GFX.md](docs/GFX.md); tests in [gfx_cp_tests](layer/gfx/tests/gfx_cp_tests.cpp), [gfx_shader_tests](layer/gfx/tests/gfx_shader_tests.cpp) and [gfx_vulkan_tests](layer/gfx/tests/gfx_vulkan_tests.cpp), run by `.\layer\sys	est.ps1`) |
-| [docs/SYS.md](docs/SYS.md) | The system layer: layout, the two oracles, what is verified, where the reference stops being an oracle and what comes next |
-| [layer/host/rexglue/](layer/host/rexglue/) | The binding of a title still built on the ReXGlue runtime to Any360's layers, a piece at a time: graphics first (the Vd* system calls and the GPU MMIO to `any360::sys`, `any360::gfx` behind), tested inside the reference runtime by [host_rexglue_tests](layer/host/rexglue/tests/host_rexglue_tests.cpp) ([docs/GFX.md](docs/GFX.md), step 9) |
-| [layer/status.json](layer/status.json) | Components by stage, where each comes from, its state |
-| [docs/TITLE_BUNDLE.md](docs/TITLE_BUNDLE.md) | A ported title's bundle for launchers: one folder per title outside the repositories (manifest, 600x900 cover and 1920x620 banner made by [tools/title_art.py](tools/title_art.py), and its name, icon and achievements read from the XEX's SPA by [tools/title_metadata.py](tools/title_metadata.py), the pipeline's `metadata` step), later zipped as a `.any360` file |
-| [docs/PIPELINE.md](docs/PIPELINE.md) | The decompile → bind → verify → recompile pipeline, driven by [pipeline/any360.py](pipeline/any360.py) and one `titles/<title>/pipeline.json` per game |
-| [tools/inventory.py](tools/inventory.py) | Every function of a title with its state (native / verified / library / recompiled) and the functions the port already translated; the per-function dump stays local (`docs/data/`, ignored), the summary feeds the database's library ranges |
-| [tools/coverage.py](tools/coverage.py) | Given a recomp's generated code and an SDK tree: imports (implemented / stub / missing), instruction mnemonics (handled or not), native functions; `--compare` two titles |
-| [tools/patch_inventory.py](tools/patch_inventory.py) | Classifies an SDK patch set by SDK area |
-| [tools/build_db.py](tools/build_db.py) | Rebuilds `db/` from the reference SDK's tables, the title reports and the hand-kept seeds |
-| [tools/progress_page.py](tools/progress_page.py) | Regenerates the progress page from `db/` |
+## Progress
 
 [![Any360 progress](docs/progress.svg)](https://gaetanvigner.github.io/Any360/progress.html)
 
 Live page: **https://gaetanvigner.github.io/Any360/** (click the map).
 
-## Running the tools
-
-Standard-library Python 3.11+. Paths below are the Crackdown and Simpsons checkouts next to this repository.
-
-```bash
-python tools/coverage.py --name crackdown --generated ../crackdown-xbox360-recompiled/generated/default --sdk ../crackdown-xbox360-recompiled/out/rexglue-sdk-src --port-src ../crackdown-xbox360-recompiled/src
-```
-
-```bash
-python tools/coverage.py --name simpsons --generated ../TheSimpsonsGameRewrite/simpsons/generated/default --sdk ../TheSimpsonsGameRewrite/tools/rexglue-sdk --port-src ../TheSimpsonsGameRewrite/simpsons/src
-```
-
-```bash
-python tools/coverage.py --compare docs/coverage/crackdown.json docs/coverage/simpsons.json
-```
-
-```bash
-python tools/patch_inventory.py --name crackdown --patches ../crackdown-xbox360-recompiled/patches/rexglue-sdk --purposes ../crackdown-xbox360-recompiled/docs/rexglue-patches.md --game-words crackdown
-```
-
-```bash
-python tools/inventory.py --name crackdown --generated ../crackdown-xbox360-recompiled/generated/default --port-src ../crackdown-xbox360-recompiled/src --golden ../crackdown-xbox360-recompiled/tests/golden
-```
-
-```bash
-python tools/progress_page.py
-```
-
-The pipeline (Ghidra project, decompile, bind, verify) is described in [docs/PIPELINE.md](docs/PIPELINE.md):
-
-```bash
-python pipeline/any360.py crackdown status
-```
-
-The system layer builds with the titles' toolchain (Visual Studio's clang++) against a ReXGlue SDK install named by
-`reference_sdk` in a `titles/<title>/pipeline.json`, and verifies every system call it provides against that runtime:
-
-```bash
-powershell -File layer/sys/test.ps1
-```
-
-Before every commit: `python tools/build_db.py` then `python tools/progress_page.py`.
-
-Native replacements of the library functions titles link (`layer/xdk`: the C runtime's `memcpy`, `memmove` and
-`memset`, the XDK's vector copy) are Any360's, shared by every title; the titles are where they are checked and
-measured. They follow one rule, [docs/NATIVE_FUNCTIONS.md](docs/NATIVE_FUNCTIONS.md): a reference model, unit tests against it, a
-benchmark, then the check and the measure in game (`--any360_xdk_verify=true`, `--any360_xdk_bench=true`) before a
-function is bound, and optimization only with the tests passing and the benchmark confirming it.
-
-```bash
-out/sys/xdk/xdk_crt_tests      # and xdk_xapi_tests: run by layer/sys/test.ps1
-out/sys/xdk/xdk_crt_bench      # and xdk_xapi_bench: nanoseconds a call, size by size and on the titles' measured mixes
-```
-
-Each title's own repository carries its progress report (a picture, the tables, a roadmap of what is missing and the
-state of every function), generated from here and described by `titles/<title>/progress.json`:
-
-```bash
-python tools/title_progress.py crackdown     # writes <title repo>/docs/progress and refreshes its README block
-```
-
-`--generated` is the ReXGlue codegen output (`*_init.cpp` for the import table, `*_recomp.*.cpp` for the instruction
-comments); `--sdk` an SDK source tree. Generated code is never committed here: run the tools against your local tree
-and commit the reports.
+The database, the layers, the tools and how to run them: [docs/REPOSITORY.md](docs/REPOSITORY.md).
 
 ## State
 
