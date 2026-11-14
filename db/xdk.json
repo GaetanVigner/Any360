@@ -666,6 +666,15 @@
   "note": ""
  },
  {
+  "name": "D3D_BeginTiledRecording",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826CE1C8"
+  },
+  "note": "a tiled recording opened: the segment kicked, its state saved, the tile ops, constant and resource lists started with the tile rects"
+ },
+ {
   "name": "D3D_BeginVizQuery",
   "library": "D3D",
   "any360": "todo",
@@ -736,6 +745,15 @@
    "crackdown": "0x826C6618"
   },
   "note": "an unread output's export instructions emptied"
+ },
+ {
+  "name": "D3D_EndTiledRecording",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826CE360"
+  },
+  "note": "a tiled recording closed: a fence whose interrupt hands its lists to the DPC, the lists ended, the work submitted as pending"
  },
  {
   "name": "D3D_EndVizQuery",
@@ -963,6 +981,15 @@
    "crackdown": "0x826BC568"
   },
   "note": "the swap's PM4"
+ },
+ {
+  "name": "D3D_TileSelect",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826CD7D8"
+  },
+  "note": "a tile's bin select (SET_BIN_SELECT_LO) into the ring before its segments' replay (Any360: handed to the command processor)"
  },
  {
   "name": "D3D_UpdateShaderControl",

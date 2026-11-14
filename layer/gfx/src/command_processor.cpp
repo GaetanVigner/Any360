@@ -164,6 +164,19 @@ bool CommandProcessor::SubmitIndirect(uint32_t position, uint32_t address, uint3
   return true;
 }
 
+bool CommandProcessor::SubmitBins(uint32_t position, uint32_t which, uint32_t value) {
+  if (!ring_dwords_ || which > 3) return false;
+  std::lock_guard<std::mutex> lock(mutex_);
+  position %= ring_dwords_;
+  if (capture_ || capture_requested_.load(std::memory_order_acquire)) {
+    const uint32_t words[2] = {3u << 30 | (pm4::SET_BIN_MASK_LO + which) << 8, value};
+    for (uint32_t i = 0; i < 2; ++i) StoreBig(ring_base_ + 4 * ((position + i) % ring_dwords_), words[i]);
+  }
+  direct_.push_back({position, which, value, true});
+  has_direct_.store(true, std::memory_order_release);
+  return true;
+}
+
 uint32_t CommandProcessor::ReadRegister(uint32_t index) {
   switch (index) {
     case reg::RB_EDRAM_TIMING: return 0x08100748;
@@ -461,16 +474,25 @@ bool CommandProcessor::Execute() {
   bool ok = true;
   while (r.remaining && ok) {
     // A direct submission where the read reaches it: its buffer run, its 3 ring dwords skipped.
-    if (has_direct_.load(std::memory_order_acquire) && r.remaining >= 3) {
+    if (has_direct_.load(std::memory_order_acquire) && r.remaining >= 2) {
       Direct d{};
       bool here = false;
       {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!direct_.empty() && direct_.front().position == r.offset % ring_dwords_) {
+        if (!direct_.empty() && direct_.front().position == r.offset % ring_dwords_ &&
+            r.remaining >= (direct_.front().bins ? 2u : 3u)) {
           d = direct_.front(), here = true;
           direct_.pop_front();
           has_direct_.store(!direct_.empty(), std::memory_order_release);
         }
+      }
+      if (here && d.bins) {
+        r.offset += 2, r.remaining -= 2;
+        ++direct_bins_;
+        uint64_t& bins = d.address < 2 ? bin_mask_ : bin_select_;
+        bins = (d.address & 1) ? (bins & 0xFFFFFFFFull) | uint64_t(d.dwords) << 32
+                               : (bins & 0xFFFFFFFF00000000ull) | d.dwords;
+        continue;
       }
       if (here) {
         r.offset += 3, r.remaining -= 3;

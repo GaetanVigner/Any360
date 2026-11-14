@@ -29,6 +29,10 @@ class GpuBackend {
   // would, at ring dword `position` (the 3 dwords it would take are skipped, never read), and the write pointer moves
   // after it, as the title's CP_RB_WPTR write would move it. False: not supported (the title writes the ring).
   virtual bool SubmitIndirect(uint32_t /*position*/, uint32_t /*address*/, uint32_t /*dwords*/) { return false; }
+  // A bin mask or select the title would write into the ring at dword `position` (SET_BIN_MASK_LO 0, _HI 1,
+  // SET_BIN_SELECT_LO 2, _HI 3 in `which`): applied there, its 2 dwords skipped, never read. The write pointer stays:
+  // the title moves it with its next submission. False: not supported (the title writes the ring).
+  virtual bool SubmitBins(uint32_t /*position*/, uint32_t /*which*/, uint32_t /*value*/) { return false; }
   virtual uint32_t ReadRegister(uint32_t /*index*/) { return 0; }
   // A vertical blank, before the title's interrupt callback runs (the GPU's vblank counter moves).
   virtual void Vblank() {}
@@ -70,6 +74,9 @@ class GraphicsKernel {
   uint32_t ReadRegister(uint32_t index) { return backend_ ? backend_->ReadRegister(index) : 0; }
   bool SubmitIndirect(uint32_t position, uint32_t address, uint32_t dwords) {
     return backend_ && backend_->SubmitIndirect(position, address, dwords);
+  }
+  bool SubmitBins(uint32_t position, uint32_t which, uint32_t value) {
+    return backend_ && backend_->SubmitBins(position, which, value);
   }
 
   // Runs the title's interrupt callback for `source` (0 vertical blank, 1 command processor). Returns false when no

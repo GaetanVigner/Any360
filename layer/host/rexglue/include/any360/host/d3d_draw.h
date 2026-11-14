@@ -53,6 +53,9 @@ struct Runtime {
   GuestFunction ring_submit = nullptr;     // r3 device, r4 the segment's {dwords, address}, r5 1 (RingSubmit's)
   GuestFunction segment_submit = nullptr;  // r3 device, r4 end, r5 address, r6 dwords, r7 count, r8 list (SegmentSubmit's)
   GuestFunction segment_room = nullptr;    // r3 device, r4 0: a new segment from the allocator (the command buffer full)
+  GuestFunction pending_segment = nullptr;  // r3 device, r4 -> its address, r5 -> its dwords: the segment written so far
+  GuestFunction fence = nullptr;            // r3 device, r4 cursor, r5 flags, r6 r7 the interrupt's words (Fence's)
+  uint32_t tiled_callback = 0;              // the interrupt callback a tiled recording's end fence names (its lists)
   uint32_t clear_depth_offset = 0, clear_depth_scale = 0;
   // The resolve's format table (a half-word a format), default destination point, copy pixel shader (15 dwords) and
   // vertex offset float: guest addresses in the title's image.
@@ -68,6 +71,7 @@ bool NativeDraws();
 bool DrawRecords();
 bool DirectSubmit();  // any360_direct_submit (d3d_draw.cpp)
 bool NativeSegments();  // any360_native_segments (d3d_draw.cpp)
+bool NativeTiling();  // any360_native_tiling (d3d_draw.cpp)
 // any360_d3d_native_draw_helpers off (a diagnostic): draws that need the title's helpers besides its uploads (shader
 // loads, state, misc and wait groups) are declined.
 bool DrawHelpers();
@@ -2347,6 +2351,168 @@ inline bool SegmentClose(PPCContext& ctx, uint8_t* base, const any360::xdk::Memo
 inline void SegmentCloseOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && NativeSegments() && SegmentClose(ctx, base, m, DrawRecords())) return;
+  original(ctx, base);
+}
+
+// The tiled recording (D6, docs/D3D.md). BeginTiling opens it (BeginTiledRecording, Crackdown sub_826CE1C8): the
+// segment kicked, the device's segment state saved, and three lists started (+13000 the tiles' ops, +12960 and
+// +12980), the first holding the tile rects. EndTiling closes it (EndTiledRecording, sub_826CE360): a fence whose
+// interrupt hands the lists to the runtime's DPC, the lists ended, the work submitted as one pending segment. The DPC
+// interprets the ops (sub_826CDAF8): each recorded segment submitted once a tile, each tile's bin select first
+// (TileSelect, sub_826CD7D8), which the runtime writes into the ring: handed to the command processor here.
+namespace detail {
+// TileSelect's mask from the interpreter's flags (+40: bit 31 the odd tiles' bits, bit 30 the even ones', bit 29 one
+// tile, +44, alone) and the tile.
+inline uint32_t TileMask(uint32_t flags, uint32_t tile) {
+  uint32_t mask = (flags & 0x80000000u) ? 0x2AAAAAAAu : (flags & 0x40000000u) ? 0x15555555u : 0xFFFFFFFFu;
+  if (flags & 0x20000000u) {
+    const uint32_t shift = (tile << 1) & 63;  // slw: 0 from 32 on
+    mask &= shift < 32 ? 3u << shift : 0;
+    if (!tile && !(flags & 0x80000000u)) mask |= 0x80000000u;
+  }
+  return mask;
+}
+}  // namespace detail
+// TileSelect (sub_826CD7D8): r3 the interpreter's state (+364 the bin select in force). A new select goes where the
+// runtime writes SET_BIN_SELECT_LO into the ring (after waiting for its room), handed to the command processor
+// (SubmitBins), or written into the ring when it takes none. Declines with a ring callback (+21156, +21296) or
+// any360_direct_submit off.
+inline bool TileSelect(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+  using namespace detail;
+  const Runtime& rt = g_runtime;
+  const uint32_t state = ctx.r3.u32, entry = ctx.r1.u32;
+  if (!DirectSubmit() || !rt.ring_space || !rt.device_slot || !any360::xdk::IsPlainMemory(state, 368) ||
+      !any360::xdk::IsPlainMemory(rt.device_slot, 4) || !any360::xdk::IsPlainMemory(entry - 1024, 1024))
+    return false;
+  const uint32_t slot = At32(m.Host(rt.device_slot));
+  if (!any360::xdk::IsPlainMemory(slot, 4)) return false;
+  const uint32_t device = At32(m.Host(slot));
+  if (!any360::xdk::IsPlainMemory(device, 21300)) return false;
+  uint8_t* s = m.Host(state);
+  uint8_t* d = m.Host(device);
+  const uint32_t mask = TileMask(At32(s + 40), At32(s + 44));
+  if (mask == At32(s + 364)) return true;
+  if (At32(d + 21156) || At32(d + 21296)) return false;
+  Set32(s + 364, mask);
+  const uint32_t position = At32(d + 10824), ring_mask = At32(d + 14524);
+  ctx.r1.u64 = entry - 144;
+  Call(ctx, base, rt.ring_space, device, position, 2);
+  ctx.r1.u64 = entry;
+  if (!SubmitBins(position, 2, mask)) {
+    const uint32_t ring = At32(d + 14520);
+    Set32(m.Host(ring + 4 * position), 0xC0006200u), Set32(m.Host(ring + 4 * ((position + 1) & ring_mask)), mask);
+  }
+  Set32(d + 10824, (position + 2) & ring_mask);
+  return true;
+}
+inline void TileSelectOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && NativeTiling() && TileSelect(ctx, base, m)) return;
+  original(ctx, base);
+}
+// BeginTiledRecording (sub_826CE1C8): r3 the device -> r3 the tile ops list's cursor. The tile ops' first op: 0x80000000,
+// +12908, the tile count (+12468) and each tile's rect (+12472, 16 bytes a tile) less the screen offset (+12712,
+// +12716), 252 bytes in all.
+inline bool BeginTiledRecording(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+  using namespace detail;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32, entry = ctx.r1.u32;
+  if (!rt.make_room || !rt.list_block || !any360::xdk::IsPlainMemory(device, 21300) ||
+      !any360::xdk::IsPlainMemory(entry - 1024, 1024))
+    return false;
+  uint8_t* d = m.Host(device);
+  if (At32(d + 12468) > 15) return false;  // more rects than the op's 252 bytes hold
+  ctx.r1.u64 = entry - 128;
+  Call(ctx, base, rt.make_room, device);
+  static constexpr uint32_t kSaved[6] = {48, 52, 14552, 14548, 14540, 14544};
+  for (uint32_t i = 0; i < 6; ++i) Set32(d + 13040 + 4 * i, At32(d + kSaved[i]));
+  const uint32_t ends = At32(d + 12956) + 1;
+  Set32(d + 12944, At32(d + 12952)), Set32(d + 12948, ends);
+  for (uint32_t i = 0; i < 5; ++i) Set32(d + 13020 + 4 * i, At32(d + 13000 + 4 * i));
+  for (const uint32_t list : {13000u, 12960u, 12980u}) {
+    Set32(d + list + 16, device), Set32(d + list + 8, 0), Set32(d + list + 12, 0), Set32(d + list + 4, 0);
+    Call(ctx, base, rt.list_block, device + list);
+    Set32(d + list, At32(d + list + 4));
+  }
+  uint32_t cursor = At32(d + 13008);
+  if (cursor + 252 > At32(d + 13012)) cursor = uint32_t(Call(ctx, base, rt.list_block, device + 13000));
+  ctx.r1.u64 = entry;
+  uint8_t* op = m.Host(cursor);
+  Set32(op, 0x80000000u), Set32(op + 4, At32(d + 12908)), Set32(op + 8, At32(d + 12468));
+  const uint32_t x = At32(d + 12712), y = At32(d + 12716);
+  for (uint32_t i = 0; i < At32(d + 12468); ++i) {
+    const uint8_t* rect = d + 12472 + 16 * i;
+    Set32(op + 12 + 16 * i, At32(rect) - x), Set32(op + 16 + 16 * i, At32(rect + 4) - y);
+    Set32(op + 20 + 16 * i, At32(rect + 8) - x), Set32(op + 24 + 16 * i, At32(rect + 12) - y);
+  }
+  Set32(d + 13008, cursor + 252);
+  ctx.r3.u64 = cursor;
+  return true;
+}
+inline void BeginTiledRecordingOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && NativeTiling() && BeginTiledRecording(ctx, base, m)) return;
+  original(ctx, base);
+}
+// EndTiledRecording (sub_826CE360): r3 the device, r5 the fence's flags -> r3 1 when the device had no segment (+10813
+// bit 6: its saved state put back, the lists left), 0 otherwise. The segment written so far taken; in a block of 100
+// dwords, a fence whose interrupt calls Runtime::tiled_callback with the ops list's physical address; the three lists
+// ended (their link set, 0xC0000000 at their cursor); the segment so far and then the fence's block submitted as
+// pending work (+13020 the saved ops list), the block unless the device writes its scratch itself.
+inline bool EndTiledRecording(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+  using namespace detail;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32, flags = ctx.r5.u32, entry = ctx.r1.u32, frame = entry - 176;
+  if (!rt.pending_segment || !rt.allocate || !rt.fence || !rt.segment_submit || !rt.tiled_callback ||
+      !any360::xdk::IsPlainMemory(device, 21300) || !any360::xdk::IsPlainMemory(entry - 1024, 1024))
+    return false;
+  uint8_t* d = m.Host(device);
+  ctx.r1.u64 = frame;
+  if (!(d[10813] & 0x40)) Call(ctx, base, rt.pending_segment, device, frame + 84, frame + 80);
+  const uint32_t block = uint32_t(Call(ctx, base, rt.allocate, device, 100, 32));
+  uint32_t block_end;
+  if (block) {
+    const uint32_t head = At32(d + 13000);
+    ctx.r7.u64 = head ? GpuAddress(head, 0x1FFFFFFFu) - 0x40000000u : 0;
+    block_end = uint32_t(Call(ctx, base, rt.fence, device, block - 4, flags | 1, rt.tiled_callback)) + 4;
+  } else {
+    block_end = At32(m.Host(frame + 84));
+  }
+  uint32_t end = uint32_t(Call(ctx, base, rt.allocate, device, 32, 4));
+  if (!end) end = At32(m.Host(frame + 84));
+  const uint8_t state = d[10813];
+  Set32(d + 12944, 0), Set32(d + 12948, 0);
+  const uint32_t no_segment = (state >> 6) & 1;
+  if (no_segment) {
+    static constexpr uint32_t kSaved[6] = {48, 52, 14552, 14548, 14540, 14544};
+    for (uint32_t i = 0; i < 6; ++i) Set32(d + kSaved[i], At32(d + 13040 + 4 * i));
+    d[10813] = state & 0xBF;
+    Set32(d + 56, At32(d + 13044) - 160);
+  } else {
+    const uint32_t pending = At32(m.Host(frame + 80));
+    for (const uint32_t list : {13000u, 12960u, 12980u}) {
+      const uint32_t cursor = At32(d + list + 8);
+      Set32(m.Host(At32(d + list + 4)), GpuAddress(cursor, 0x1FFFFFFFu) - 0x40000000u);
+      Set32(m.Host(At32(d + list + 8)), 0xC0000000u);
+      Set32(d + list + 12, 0);
+    }
+    if (pending) {
+      ctx.r7.u64 = 0, ctx.r8.u64 = device + 13020;
+      end = uint32_t(Call(ctx, base, rt.segment_submit, device, end, At32(m.Host(frame + 84)), pending));
+    }
+    if (At32(d + 21156) || !(d[10813] & 4)) {
+      ctx.r7.u64 = 1, ctx.r8.u64 = device + 13020;
+      Call(ctx, base, rt.segment_submit, device, end, GpuAddress(block, 0x1FFFFFFFu),
+           uint32_t(int32_t(block_end - block) >> 2));
+    }
+  }
+  ctx.r1.u64 = entry;
+  ctx.r3.u64 = no_segment;
+  return true;
+}
+inline void EndTiledRecordingOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && NativeTiling() && EndTiledRecording(ctx, base, m)) return;
   original(ctx, base);
 }
 inline void ClearOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {

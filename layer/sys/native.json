@@ -92,6 +92,9 @@
   "D3D_SegmentClose",
   "D3D_SegmentEnd",
   "D3D_SegmentSubmit",
-  "D3D_ChainSegment"
+  "D3D_ChainSegment",
+  "D3D_BeginTiledRecording",
+  "D3D_EndTiledRecording",
+  "D3D_TileSelect"
  ]
 }

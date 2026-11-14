@@ -6,6 +6,7 @@ crackdown, 2026-11-14: the in-game self-test (`--any360_d3d_selftest=true`, docs
 
 In game:
 
+- D6 step 3 (native tiled recording): the city uncapped at 314-320 FPS with it, 318-321 without at the same view (~2,320 draws; 4 scripted launches each); 2.0 tile bin selects and 14 command buffers a frame handed to the command processor directly, the tiling writing nothing into the ring any more. Its three functions submit to the GPU, so the self-test cannot run them.
 - D6 step 2 (native segments): the city uncapped at 301-337 FPS with them, 296-332 without (5 scripted launches each, same route); 15.5 command buffers a frame submitted directly, none written into the ring.
 - D6 step 1 (direct submission): the city uncapped at 307-373 FPS; frames identical with it on or off.
 - SegmentClose and SegmentSubmit submit to the GPU, so the self-test cannot run them: checked by those launches (no hang, the same frame rate and draws).

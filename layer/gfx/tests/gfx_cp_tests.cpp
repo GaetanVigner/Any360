@@ -684,6 +684,31 @@ void DirectSubmission() {
   CHECK(b.SubmitIndirect(rb.write, kIb, 2));
   rb.write = (rb.write + 3) % b.ring_dwords();
   CHECK(b.Execute() && b.reg(0x2506) == 0x12 && Big(kWriteBack) == rb.write);
+  // A tile's bin select handed over (SubmitBins) where the title writes SET_BIN_SELECT_LO into the ring without moving
+  // the write pointer, then a command buffer of predicated constants submitted after it: the same tile drawn.
+  for (CommandProcessor* cp : {&a, &b}) {
+    Ring& ring = cp == &a ? ra : rb;
+    Fresh(*cp, ring);
+    ring.Put({Type3(pm4::SET_BIN_MASK, 2), 0, 0x2, Type3(pm4::SET_BIN_SELECT_LO, 1), 0x1});
+    ring.Run();
+    SetBig(kIb, Type3(pm4::SET_CONSTANT, 2, true)), SetBig(kIb + 4, 4 << 16 | 0x10), SetBig(kIb + 8, 0xBEEF);
+    for (uint32_t tile : {0x1u, 0x2u}) {
+      if (cp == &a) {
+        ring.Put({Type3(pm4::SET_BIN_SELECT_LO, 1), tile});
+        ring.Put({Type3(pm4::INDIRECT_BUFFER, 2), kIb, 3});
+      } else {
+        CHECK(cp->SubmitBins(ring.write, 2, tile));
+        ring.write = (ring.write + 2) % cp->ring_dwords();
+        CHECK(cp->SubmitIndirect(ring.write, kIb, 3));
+        ring.write = (ring.write + 3) % cp->ring_dwords();
+      }
+      CHECK(tile == 0x2 || cp->reg(0x2010) != 0xBEEF);
+      ring.Run();
+      CHECK((cp->reg(0x2010) == 0xBEEF) == (tile == 0x2));
+    }
+    CHECK(Big(kWriteBack) == ring.write);
+  }
+  CHECK(!b.SubmitBins(0, 4, 0));
 }
 
 int main() {

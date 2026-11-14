@@ -118,6 +118,7 @@ class CommandProcessor : public sys::GpuBackend {
   void EnableReadPointerWriteBack(sys::Guest g, uint32_t address, uint32_t block_log2) override;
   void WriteRegister(uint32_t index, uint32_t value) override;
   bool SubmitIndirect(uint32_t position, uint32_t address, uint32_t dwords) override;
+  bool SubmitBins(uint32_t position, uint32_t which, uint32_t value) override;
   uint32_t ReadRegister(uint32_t index) override;
   void Vblank() override;
   void GuestProgress() override { NotifyProgress(); }
@@ -202,6 +203,7 @@ class CommandProcessor : public sys::GpuBackend {
   uint64_t ns_waiting() const { return ns_waiting_; }
   uint64_t kicks() const { return kicks_; }
   uint64_t direct_kicks() const { return direct_kicks_; }  // direct submissions run (SubmitIndirect)
+  uint64_t direct_bins() const { return direct_bins_; }    // bin writes handed over (SubmitBins), applied
   // For diagnostics: the WAIT_REG_MEM packets by what they poll (bit 4 of wait_info: memory), how often, how long
   // they held the ring, and how many a write queued after earlier draws satisfied ahead of the GPU. Taken and reset.
   struct WaitSite {
@@ -325,13 +327,16 @@ class CommandProcessor : public sys::GpuBackend {
   uint32_t gamma_component_ = 0;  // the next red, green or blue of DC_LUT_SEQ_COLOR / DC_LUT_PWL_DATA
   std::mutex mutex_;
   std::condition_variable kicked_;
-  // Direct submissions (SubmitIndirect) in ring order, under mutex_; has_direct_ when any waits.
+  // Direct submissions (SubmitIndirect, SubmitBins) in ring order, under mutex_; has_direct_ when any waits. A bin
+  // write: `bins` set, `address` which one (as the kBins record's argument), `dwords` its value.
   struct Direct {
     uint32_t position, address, dwords;
+    bool bins = false;
   };
   std::deque<Direct> direct_;
   std::atomic<bool> has_direct_{false};
   std::atomic<uint64_t> direct_kicks_{0};
+  std::atomic<uint64_t> direct_bins_{0};
   std::mutex progress_mutex_;
   std::condition_variable progress_cv_;
   std::atomic<uint64_t> progress_{0};
