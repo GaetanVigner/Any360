@@ -47,6 +47,8 @@ struct Runtime {
   GuestFunction clear_color_pack = nullptr;
   GuestFunction list_block = nullptr;  // r3 one of the device's lists (+12960, +12980) -> r3 its new block's cursor
   uint32_t swap_word = 0;              // the swap packet's fence word (a title address the runtime passes)
+  uint32_t device_slot = 0;            // the title's global that leads to the device (**slot)
+  GuestFunction block_on_fence = nullptr;  // r3 device, r4 a fence, r5 an argument: waits until the GPU passed it
   uint32_t clear_depth_offset = 0, clear_depth_scale = 0;
   // The resolve's format table (a half-word a format), default destination point, copy pixel shader (15 dwords) and
   // vertex offset float: guest addresses in the title's image.
@@ -2033,6 +2035,94 @@ inline bool SwapPacket(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory
 inline void SwapPacketOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && SwapPacket(ctx, base, m, DrawRecords())) return;
+  original(ctx, base);
+}
+namespace detail {
+// A big-endian guest word changed atomically (as the runtime's lwarx/stwcx. and ldarx/stdcx. loops do).
+template <class T, class F>
+inline void AtomicBigEndian(uint8_t* p, F change) {
+  auto& word = *reinterpret_cast<std::atomic<T>*>(p);
+  T old = word.load(std::memory_order_relaxed);
+  for (;;) {
+    const T now = sizeof(T) == 8 ? T(any360::xdk::detail::ByteSwap64(uint64_t(old))) : T(std::byteswap(uint32_t(old)));
+    const T next = change(now);
+    const T stored = sizeof(T) == 8 ? T(any360::xdk::detail::ByteSwap64(uint64_t(next))) : T(std::byteswap(uint32_t(next)));
+    if (word.compare_exchange_weak(old, stored, std::memory_order_acq_rel)) return;
+  }
+}
+}  // namespace detail
+
+// sub_826AC8F0 (D3D's resource lock for the CPU): r3 the resource, r4 the fence wait's argument, r5-r7 the resource's
+// bases, r8 the address locked, r9 its size, r10 the flags, the caller's +84 the coherency control. The device the
+// title's global (Runtime::device_slot). Waits for the resource's fence (+8, or +12 for a write lock; a texture's
+// parent's) through the title's helper; unless the flags say no flush (bits 1, 4): on the device's own thread a
+// cache flush of the range's pages (COHER_SIZE/BASE 0xA2F, 0xA31 the control, a wait for 0xA31), from another thread
+// the range merged into the device's pending one (+11544, atomically). Then (flag 4 or the resource's bit 21) the
+// locked lines (128 bytes) widened in the resource's +20 (+24 for a mip tail), the address turned into the GPU view
+// (flag 4); the lock count (+0, 256 a lock) raised. r3 back: the address.
+inline bool ResourceLock(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  using any360::xdk::IsPlainMemory;
+  const Runtime& rt = g_runtime;
+  const uint32_t resource = ctx.r3.u32, wait = ctx.r4.u32, has_tail = ctx.r5.u32, head_base = ctx.r6.u32,
+                 tail_base = ctx.r7.u32, size = ctx.r9.u32, flags = ctx.r10.u32, entry = ctx.r1.u32;
+  uint32_t address = ctx.r8.u32;
+  if (!rt.device_slot || !rt.block_on_fence || !rt.make_room || !IsPlainMemory(resource, 28) ||
+      !IsPlainMemory(entry + 84, 4) || !IsPlainMemory(entry - 1024, 1024) || !IsPlainMemory(rt.device_slot, 4))
+    return false;
+  const uint32_t slot = At32(m.Host(rt.device_slot));
+  if (!IsPlainMemory(slot, 4) || !IsPlainMemory(At32(m.Host(slot)), 16384) || !IsPlainMemory(ctx.r13.u32 + 256, 4) ||
+      !IsPlainMemory(At32(m.Host(ctx.r13.u32 + 256)) + 332, 4))
+    return false;
+  uint8_t* r = m.Host(resource);
+  uint32_t holder = resource;
+  if ((At32(r) & 0xF) == 4 && (At32(r) & 0x40000000u) && At32(r + 24)) holder = At32(r + 24);
+  if (!IsPlainMemory(holder + 8, 8)) return false;
+  const uint32_t frame = entry - 176;
+  if (const uint32_t fence = At32(m.Host(holder + ((flags & 0x1010) ? 12 : 8)))) {
+    ctx.r1.u64 = frame;
+    Call(ctx, base, rt.block_on_fence, At32(m.Host(At32(m.Host(rt.device_slot)))), fence, wait);
+  }
+  if (!(flags & 0x12)) {
+    const uint32_t device = At32(m.Host(At32(m.Host(rt.device_slot))));
+    uint8_t* d = m.Host(device);
+    const uint32_t start = GpuAddress(address, 0x1FFFFFFFu), end = start + size;
+    const uint32_t thread = At32(m.Host(At32(m.Host(ctx.r13.u32 + 256)) + 332));
+    if (At32(d + 10760) != thread) {
+      AtomicBigEndian<uint64_t>(d + 11544, [&](uint64_t pending) {
+        const uint32_t low = std::min(start, uint32_t(pending)), high = std::max(end, uint32_t(pending >> 32));
+        return uint64_t(high) << 32 | low;
+      });
+    } else {
+      ctx.r1.u64 = frame;
+      const uint32_t cursor = At32(d + 48) > At32(d + 56) ? uint32_t(Call(ctx, base, rt.make_room, device)) : At32(d + 48);
+      Out out{m, cursor, records};
+      const uint32_t first = start & 0xFFFFF000u, last = (end + 4095) & 0xFFFFF000u;
+      out.Registers(0xA31, {At32(m.Host(entry + 84))});
+      out.Registers(0xA2F, {last - first, first});
+      out.Wait(3, 0xA31, 0, 0x80000000u, 8);
+      Set32(d + 48, out.cursor);
+    }
+  }
+  const bool gpu_view = flags & 0x10;
+  if (gpu_view || (At32(r) & 0x00200000u)) {
+    if (!(flags & 1)) {
+      const bool tail = has_tail && tail_base;
+      const uint32_t offset = address - (tail ? tail_base : head_base);
+      uint8_t* lines = r + (tail ? 24 : 20);
+      const uint32_t first = offset >> 7, last = (offset + size + 127) >> 7, now = At32(lines);
+      Set32(lines, (std::min(first, now >> 16) << 16) | std::max(last, now & 0xFFFF));
+    }
+    if (gpu_view) address = GpuAddress(address, 0x1FFFFFFFu) + 0xC0000000u;
+  }
+  AtomicBigEndian<uint32_t>(r, [](uint32_t count) { return count + 256; });
+  ctx.r3.u64 = address;
+  ctx.r1.u64 = entry;
+  return true;
+}
+inline void ResourceLockOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && ResourceLock(ctx, base, m, DrawRecords())) return;
   original(ctx, base);
 }
 inline void ClearOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
