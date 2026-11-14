@@ -42,6 +42,10 @@ struct Runtime {
                                              // constants (LOAD_ALU_CONSTANT; a title may hook it)
   // The vertex fetch patcher's swizzle table (8 half-words) and fetch format sizes (64 bytes): guest addresses.
   uint32_t fetch_swizzles = 0, fetch_sizes = 0;
+  // The target clear's color packer (r3 the format kind, r4 its bits 20-25, r5/r6 the packed words out, v1 the
+  // color), and the doubles that make a fast clear's depth from its packed color: guest addresses.
+  GuestFunction clear_color_pack = nullptr;
+  uint32_t clear_depth_offset = 0, clear_depth_scale = 0;
   // The resolve's format table (a half-word a format), default destination point, copy pixel shader (15 dwords) and
   // vertex offset float: guest addresses in the title's image.
   uint32_t resolve_format_table = 0, resolve_default_point = 0, resolve_pixel_shader = 0, resolve_offset_float = 0;
@@ -1431,6 +1435,223 @@ inline bool Clear(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, 
   ctx.r1.u64 = caller_r1;
   return true;
 }
+namespace detail {
+// The clear's draw arguments the runtime passes down (sub_826BF8C0 -> sub_826BF670 -> sub_826BF380).
+struct ClearDrawArguments {
+  uint32_t colors;       // 4 floats
+  uint32_t control;      // 0x2000's value (its bits 16-17: 0x2301's mode)
+  double depth;
+  uint32_t format;       // 0x2001's value (the target's format word)
+  uint32_t edges_2200;   // 0x2200 for the edges (and a rect the tiles cannot align)
+  uint32_t inner_2200;   // 0x2200 for the aligned inside
+  uint32_t edges_2208;   // 0x2208 for the edges
+  uint32_t inner_2208;   // 0x2208 for the aligned inside
+};
+// sub_826BF380: `count` rects (x1, y1, x2, y2) as rect-list triangles (3 vertices of 7 floats each: x, y less the
+// half-pixel bias, depth, the color) in a block of the runtime's allocator; fetch constant 0 at them, 0x5000-0x5002,
+// 0x2000-0x2001, 0x2301, 0x2200, 0x2208, a predicated auto draw; the groups it changed marked dirty. No block (the
+// allocator failed): nothing drawn. `frame`: its stack frame (the allocator's and make-room's caller).
+inline void ClearRects(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records, uint32_t frame,
+                       uint32_t device, uint32_t count, const int32_t (*rects)[4], const ClearDrawArguments& a,
+                       uint32_t control, uint32_t value_2200, uint32_t value_2208) {
+  const Runtime& rt = g_runtime;
+  uint8_t* d = m.Host(device);
+  const float bias =
+      std::bit_cast<float>(At32(m.Host((At32(d + 10560) & 1) ? rt.clear_default_color : rt.resolve_offset_float)));
+  ctx.r1.u64 = frame;
+  uint32_t cursor = At32(d + 48);
+  if (cursor > At32(d + 56)) cursor = uint32_t(Call(ctx, base, rt.make_room, device));
+  const uint32_t block = uint32_t(Call(ctx, base, rt.allocate, device, 21 * count, 4));
+  if (!block) {
+    Set32(d + 48, cursor);
+    return;
+  }
+  // The color loaded and stored as floats (lfs, stfs): a signaling NaN comes out quiet, as the title's code makes it.
+  uint32_t color[4];
+  for (int k = 0; k < 4; ++k) {
+    color[k] = At32(m.Host(a.colors + 4 * k));
+    if ((color[k] & 0x7F800000u) == 0x7F800000u && (color[k] & 0x7FFFFFu)) color[k] |= 0x400000u;
+  }
+  const uint32_t z = std::bit_cast<uint32_t>(float(a.depth));
+  uint8_t* v = m.Host(block);
+  for (uint32_t i = 0; i < count; ++i, v += 84) {
+    const uint32_t x1 = std::bit_cast<uint32_t>(float(rects[i][0]) - bias), y1 = std::bit_cast<uint32_t>(float(rects[i][1]) - bias);
+    const uint32_t x2 = std::bit_cast<uint32_t>(float(rects[i][2]) - bias), y2 = std::bit_cast<uint32_t>(float(rects[i][3]) - bias);
+    const uint32_t corners[3][2] = {{x1, y1}, {x2, y1}, {x2, y2}};
+    for (int c = 0; c < 3; ++c) {
+      uint8_t* p = v + 28 * c;
+      Set32(p, corners[c][0]), Set32(p + 4, corners[c][1]), Set32(p + 8, z);
+      for (int k = 0; k < 4; ++k) Set32(p + 12 + 4 * k, color[k]);
+    }
+  }
+  const uint32_t mode = (control >> 16) & 3;
+  Out out{m, cursor, records};
+  out.Registers(0x4800, {GpuAddress(block, 0x1FFFFFFFu) | 3, 0x10000002u | ((21 * count << 2) & 0x03FFFFFCu), 0, 0, 0, 0});
+  out.Registers(0x5000, {0, 0, 0});
+  out.Registers(0x2000, {control, a.format});
+  out.Registers(0x2301, {mode == 0 ? 0u : mode == 1 ? 0x8001u : 0xC003u});
+  out.Registers(0x2200, {value_2200});
+  out.Registers(0x2208, {value_2208});
+  out.AutoDraw(((count * 0x30000u) & 0xFFFF0000u) | 0x88, true);
+  Set32(d + 48, out.cursor);
+  Set64(d + 24, At64(d + 24) | 0x80000000u);
+  Set64(d + 16, At64(d + 16) | uint64_t(1) << 57 | uint64_t(1) << 56 | 2048 | 8);
+  Set64(d + 32, At64(d + 32) | uint64_t(1) << 36);
+}
+// sub_826BF670: the rect's inside aligned to the EDRAM tiles (80x16, 80x8 or 40x8 pixels by the multisampling in
+// `control` bits 16-17) drawn at the tiles' scale (the control's sizes and mode changed to match), the edges outside it
+// drawn as they are (up to four rects); a rect too small for a tile drawn as it is.
+inline void ClearDraw(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records, uint32_t frame,
+                      uint32_t device, int32_t x1, int32_t y1, int32_t x2, int32_t y2, const ClearDrawArguments& a) {
+  const uint32_t mode = (a.control >> 16) & 3;
+  const uint32_t shift_x = mode <= 1 ? 1 : 0, shift_y = mode == 0 ? 1 : 0;
+  const uint32_t w = 40u << shift_x, h = 8u << shift_y;
+  const int32_t right = int32_t((uint32_t(x2) / w) * w), left = int32_t(((uint32_t(x1) + w - 1) / w) * w);
+  const int32_t bottom = int32_t((uint32_t(y2) / h) * h), top = int32_t(((uint32_t(y1) + h - 1) / h) * h);
+  const uint32_t inner_frame = frame - 224;
+  if (left >= right || top >= bottom) {
+    const int32_t whole[1][4] = {{x1, y1, x2, y2}};
+    ClearRects(ctx, base, m, records, inner_frame, device, 1, whole, a, a.control, a.edges_2200, a.edges_2208);
+    return;
+  }
+  int32_t edges[4][4];
+  uint32_t n = 0;
+  if (left > x1) edges[n][0] = x1, edges[n][1] = y1, edges[n][2] = left, edges[n][3] = y2, ++n;
+  if (right < x2) edges[n][0] = right, edges[n][1] = y1, edges[n][2] = x2, edges[n][3] = y2, ++n;
+  if (top > y1) edges[n][0] = left, edges[n][1] = y1, edges[n][2] = right, edges[n][3] = top, ++n;
+  if (bottom < y2) edges[n][0] = left, edges[n][1] = bottom, edges[n][2] = right, edges[n][3] = y2, ++n;
+  if (n) ClearRects(ctx, base, m, records, inner_frame, device, n, edges, a, a.control, a.edges_2200, a.edges_2208);
+  const int32_t inside[1][4] = {{left >> shift_x, top >> shift_y, right >> shift_x, bottom >> shift_y}};
+  uint32_t control = (a.control & ~0x30000u) | 0x20000u;
+  control = (control & 0xFFFFC000u) | ((control & 0x3FFFu) >> shift_x);
+  control = (control & 0x3FFFFu) | ((((control >> 18) & 0x3FFFu) >> shift_x) << 18);
+  ClearRects(ctx, base, m, records, inner_frame, device, 1, inside, a, control, a.inner_2200, a.inner_2208);
+}
+}  // namespace detail
+
+// sub_826BF8C0 (a clear's draw of one target, -1 the depth alone): r3 device, r4 the clear's flags, r5 the target,
+// r6-r9 the rect, r10 the colors, f1 the depth, the stencil value its tenth argument (the caller's +92). The stencil
+// reference (flag 0x20), the state group through the title's helper, VGT 0x2080-0x2082; a target with a format the
+// EDRAM clears fast and a rect of a tile or more: its color packed by the title's sub_826BE110 into 0x2002/0x210D and
+// the depth derived from it; then the draws (detail::ClearDraw), under each tile's bins when the device tiles. The
+// title's helpers (make room, state, allocator, color packing) called from the frames the runtime's own calls have.
+inline bool ClearTarget(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  using any360::xdk::IsPlainMemory;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32, flags = ctx.r4.u32, colors = ctx.r10.u32, entry = ctx.r1.u32;
+  const int32_t target = ctx.r5.s32, x1 = ctx.r6.s32, y1 = ctx.r7.s32, x2 = ctx.r8.s32, y2 = ctx.r9.s32;
+  const double depth = ctx.f1.f64;  // the title's helpers called below may change f1
+  if (!rt.make_room || !rt.flush_state || !rt.allocate || !rt.clear_color_pack || !rt.clear_depth_offset ||
+      !rt.clear_depth_scale || !IsPlainMemory(device, 16384) || !IsPlainMemory(entry - 1200, 1300) ||
+      !IsPlainMemory(colors & ~15u, 16) || (target != -1 && uint32_t(target) >= 4))
+    return false;
+  uint8_t* d = m.Host(device);
+  // Records take more room than PM4: near the segment's top the runtime's allocator (a block above the cursor + 164)
+  // could refuse a rect's block the PM4 would have had; there, PM4.
+  if (records && (!At32(d + 14540) || At32(d + 14540) < At32(d + 48) + 0x4000)) records = false;
+  const uint32_t control = At32(d + 10240);
+  uint32_t format = 0, count = 5;
+  if (target != -1) {
+    const uint32_t surface = At32(d + 12160 + 4 * uint32_t(target));
+    if (!IsPlainMemory(surface + 28, 4)) return false;
+    count = 4;
+    format = At32(m.Host(surface + 28));
+    if ((format & 0xF0000u) == 0xA0000u) format = (format & ~0xF0000u) | 0x20000u;
+    if ((format & 0xF0000u) == 0xC0000u) format = (format & ~0xF0000u) | 0x30000u;
+  }
+  if ((d[10812] & 0x20) && At32(d + 12468) > 16) return false;
+  // The fast clear (no stencil or depth flags, a format the EDRAM clears fast, a rect of a tile or more): the title's
+  // packer returns an unset stack word for formats 8, 9, 11 and 13 (a register some earlier callee saved there), which
+  // only the runtime's own calls reproduce: those are its.
+  const uint32_t kind = (format >> 16) & 0xF, multisample = (control >> 16) & 3;
+  const bool fast = !(flags & 0x30) && kind != 5 && kind != 7 && kind != 15 &&
+                    int32_t(uint32_t(x2) - uint32_t(x1)) >= (multisample >= 2 ? 40 : 80) &&
+                    int32_t(uint32_t(y2) - uint32_t(y1)) >= (multisample == 0 ? 16 : 8);
+  if (fast && (kind == 8 || kind == 9 || kind == 11 || kind == 13)) return false;
+  // The rect kept in the caller's parameter area, as the runtime keeps it (+44, +52, +60, +68).
+  Set32(m.Host(entry + 44), uint32_t(x1)), Set32(m.Host(entry + 52), uint32_t(y1));
+  Set32(m.Host(entry + 60), uint32_t(x2)), Set32(m.Host(entry + 68), uint32_t(y2));
+  const uint32_t frame = entry - 304;  // the runtime's frame: its callees' (the color packer writes its caller's +32)
+  ctx.r1.u64 = frame;
+  const auto room = [&] {
+    ctx.r1.u64 = frame;
+    const uint32_t cursor = At32(d + 48);
+    return cursor > At32(d + 56) ? uint32_t(Call(ctx, base, rt.make_room, device)) : cursor;
+  };
+  uint32_t state = At32(d + 10432) & 0xFFFFFFF0u, edges_2200 = 0;
+  if (flags & 0x10) edges_2200 = 118, state |= 1;
+  if (flags & 0x20) {
+    edges_2200 |= 0x8701, state |= 4;
+    Out out{m, room(), records};
+    out.Registers(0x210D, {0x00FF0000u | (At32(m.Host(entry + 92)) & 0xFF)});
+    Set32(d + 48, out.cursor);
+    Set64(d + 16, At64(d + 16) | 0x10000000u);
+  }
+  ctx.r1.u64 = frame;
+  Call(ctx, base, rt.flush_state, device, 256, state);
+  Out out{m, room(), records};
+  out.Registers(0x2080, {0, 0, 0x20002000u});
+  ClearDrawArguments a{colors, control, depth, format, edges_2200, edges_2200, count, count};
+  const uint32_t clearing = flags & 0x30;
+  if (fast) {
+    // The color as the target holds it (sub_826BE110, v1 the colors as lvx128 loads them).
+    const uint8_t* c = m.Host(colors & ~15u);
+    for (int i = 0; i < 16; ++i) ctx.v1.u8[i] = c[15 - i];
+    ctx.r1.u64 = frame;
+    Call(ctx, base, rt.clear_color_pack, kind, (format >> 20) & 0x3F, frame + 132, frame + 136);
+    const uint32_t packed = At32(m.Host(frame + 132));
+    out.Registers(0x2203, {0}), out.Registers(0x2002, {format & 0xFFF});
+    out.Registers(0x210D, {0x00FF0000u | (packed & 0xFF)});
+    const double offset = std::bit_cast<double>(At64(m.Host(rt.clear_depth_offset)));
+    const double scale = std::bit_cast<double>(At64(m.Host(rt.clear_depth_scale)));
+    a.depth = double(float((double(packed >> 8) - offset) * scale));
+    a.inner_2200 = 0x8777, a.inner_2208 = 5;
+    Set64(d + 16, At64(d + 16) | 256 | uint64_t(1) << 55 | 0x10000000u);
+  }
+  Set32(d + 48, out.cursor);
+  const uint32_t draw_frame = frame - 288;
+  if (!(d[10812] & 0x20)) {
+    ClearDraw(ctx, base, m, records, draw_frame, device, x1, y1, x2, y2, a);
+    ctx.r1.u64 = entry;
+    return true;
+  }
+  uint32_t bins = At32(d + 12428);
+  if ((d[10815] & 0x40) && (d[10812] & 0x40) && (bins & 0x15555555u)) {
+    if (clearing) {
+      Out first{m, room(), records};
+      first.Bins(0, bins & 0x15555555u);
+      Set32(d + 48, first.cursor);
+      const uint32_t shifted = (control & 0x3FFFFu) | (At32(d + 12892) << 18);
+      ClearDrawArguments whole = a;
+      whole.control = (shifted & 0xFFFFC000u) | (At32(d + 12896) & 0x3FFFu);
+      whole.inner_2200 = edges_2200, whole.edges_2208 = 5, whole.inner_2208 = 5;
+      const int32_t ox = int32_t(At32(d + 12712)), oy = int32_t(At32(d + 12716));
+      ClearDraw(ctx, base, m, records, draw_frame, device, x1 - ox, y1 - oy, x2 - ox, y2 - oy, whole);
+    }
+    bins &= 0xEAAAAAAAu;
+  }
+  for (uint32_t i = 0; i < At32(d + 12468); ++i) {
+    const uint8_t* r = d + 12472 + 16 * i;
+    const int32_t tx1 = std::max(x1, int32_t(At32(r))), ty1 = std::max(y1, int32_t(At32(r + 4)));
+    const int32_t tx2 = std::min(x2, int32_t(At32(r + 8))), ty2 = std::min(y2, int32_t(At32(r + 12)));
+    const uint32_t mask = (2 * i < 32 ? 3u << (2 * i) : 0u) & bins;
+    if (tx1 >= tx2 || ty1 >= ty2 || !mask) continue;
+    Out tile{m, room(), records};
+    tile.Bins(0, mask);
+    Set32(d + 48, tile.cursor);
+    const int32_t ox = int32_t(At32(d + 12712 + 8 * i)), oy = int32_t(At32(d + 12716 + 8 * i));
+    ClearDraw(ctx, base, m, records, draw_frame, device, tx1 - ox, ty1 - oy, tx2 - ox, ty2 - oy, a);
+  }
+  ctx.r1.u64 = entry;
+  return true;
+}
+inline void ClearTargetOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && ClearTarget(ctx, base, m, DrawRecords())) return;
+  original(ctx, base);
+}
+
 inline void ClearOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && Clear(ctx, base, m, DrawRecords())) return;

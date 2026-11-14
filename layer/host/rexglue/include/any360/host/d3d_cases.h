@@ -551,6 +551,57 @@ struct ClearCase {
   static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
 };
 
+// A clear's target draw (sub_826BF8C0, d3d_draw.h): the draws' device with an allocator segment in the scratch, the
+// four targets' surfaces made there (their format words at random, the EDRAM's fast-clear kinds and the converted
+// ones often), the device's tiling (0-4 tiles, their rects and offsets), bins and flags at random, a rect from empty
+// to wide, the depth alone one call in five, the stencil (the caller's +92) at random.
+template <bool kRecords>
+struct ClearTargetCase {
+  static bool Native(PPCContext& ctx, uint8_t* base) {
+    return d3d_draw::ClearTarget(ctx, base, SelfTestMemory(), kRecords);
+  }
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
+  }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    DrawIndexed<false>::Setup(s, ctx);
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t segment = s.scratch + 0x7000;
+    Put32(s, s.device + 13140, segment);
+    Put32(s, segment + 152, 1);
+    Put32(s, s.device + 14540, s.scratch + 0x2E000);
+    s.Host(s.device + 10813)[0] &= ~0x40;
+    const uint32_t kinds[] = {0xA, 0xC, 5, 7, 15, 6, 0, 1};
+    for (uint32_t t = 0; t < 4; ++t) {
+      const uint32_t surface = s.scratch + 0x6400 + 0x40 * t;
+      Put32(s, s.device + 12160 + 4 * t, surface);
+      Put32(s, surface + 28, (uint32_t(rng()) & ~0xF0000u) | (rng() % 2 ? kinds[rng() % 8] : uint32_t(rng() % 16)) << 16);
+    }
+    for (uint32_t at : {10240u, 10432u, 10560u, 12428u, 12892u, 12896u}) Put32(s, s.device + at, uint32_t(rng()));
+    s.Host(s.device + 10812)[0] = uint8_t(rng());
+    s.Host(s.device + 10815)[0] = uint8_t(rng());
+    const uint32_t tiles = uint32_t(rng() % 5);
+    Put32(s, s.device + 12468, tiles);
+    for (uint32_t i = 0; i < tiles; ++i) {
+      const uint32_t x = uint32_t(rng() % 1280), y = uint32_t(rng() % 720);
+      Put32(s, s.device + 12472 + 16 * i, x), Put32(s, s.device + 12476 + 16 * i, y);
+      Put32(s, s.device + 12480 + 16 * i, x + uint32_t(rng() % 800)), Put32(s, s.device + 12484 + 16 * i, y + uint32_t(rng() % 400));
+      Put32(s, s.device + 12712 + 8 * i, x / 2), Put32(s, s.device + 12716 + 8 * i, y / 2);
+    }
+    Put32(s, s.stack + 92, uint32_t(rng()));
+    const uint32_t x1 = uint32_t(rng() % 1300), y1 = uint32_t(rng() % 720);
+    const uint32_t x2 = rng() % 8 ? x1 + uint32_t(rng() % 600) : x1 - uint32_t(rng() % 40);
+    const uint32_t y2 = rng() % 8 ? y1 + uint32_t(rng() % 300) : y1 - uint32_t(rng() % 20);
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = rng() % 64;
+    ctx.r5.s64 = rng() % 5 == 0 ? -1 : int64_t(rng() % 4);
+    ctx.r6.u64 = x1, ctx.r7.u64 = y1, ctx.r8.u64 = x2, ctx.r9.u64 = y2;
+    ctx.r10.u64 = s.scratch + 0x6200;
+    ctx.f1.f64 = double(rng() % 1000) / 1000.0;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+};
+
 // The resolve (d3d_draw.h): the draws' device with an allocator segment in the scratch (the copy's rect vertices),
 // a destination texture made in the scratch (format, pitch, size, tiling, endianness, kind), level and slice 0, the
 // source rect, point and clear color given or not, the color and depth clears after the copy one call in eight each,
