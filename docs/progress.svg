@@ -5020,9 +5020,9 @@
 <text x="170" y="555" font-size="11" fill="#8b949e">reference (recompiler)</text>
 <rect x="318" y="546" width="10" height="10" rx="2" fill="#f85149"/>
 <text x="332" y="555" font-size="11" fill="#8b949e">missing</text>
-<text x="0" y="577" font-size="16" fill="#c9d1d9" font-weight="600">XDK library functions native: 80.9% (93/115) <tspan font-size="12" font-weight="400" fill="#8b949e">· named by signature so far · one square per function</tspan></text>
+<text x="0" y="577" font-size="16" fill="#c9d1d9" font-weight="600">XDK library functions native: 82.6% (95/115) <tspan font-size="12" font-weight="400" fill="#8b949e">· named by signature so far · one square per function</tspan></text>
 <rect x="0" y="586" width="1000" height="140" fill="#0d1117"/>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#xdk"><g class="blk"><title>D3D: 80 (75% native/ported; 60 native, 20 todo)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#xdk"><g class="blk"><title>D3D: 80 (78% native/ported; 62 native, 18 todo)</title>
 <rect x="0.00" y="586.00" width="34.28" height="34.50" fill="#2ea043"/>
 <rect x="34.78" y="586.00" width="34.28" height="34.50" fill="#2ea043"/>
 <rect x="69.57" y="586.00" width="34.28" height="34.50" fill="#2ea043"/>
@@ -5083,8 +5083,8 @@
 <rect x="591.30" y="656.00" width="34.28" height="34.50" fill="#2ea043"/>
 <rect x="626.09" y="656.00" width="34.28" height="34.50" fill="#2ea043"/>
 <rect x="660.87" y="656.00" width="34.28" height="34.50" fill="#2ea043"/>
-<rect x="0.00" y="691.00" width="34.28" height="34.50" fill="#f85149"/>
-<rect x="34.78" y="691.00" width="34.28" height="34.50" fill="#f85149"/>
+<rect x="0.00" y="691.00" width="34.28" height="34.50" fill="#2ea043"/>
+<rect x="34.78" y="691.00" width="34.28" height="34.50" fill="#2ea043"/>
 <rect x="69.57" y="691.00" width="34.28" height="34.50" fill="#f85149"/>
 <rect x="104.35" y="691.00" width="34.28" height="34.50" fill="#f85149"/>
 <rect x="139.13" y="691.00" width="34.28" height="34.50" fill="#f85149"/>

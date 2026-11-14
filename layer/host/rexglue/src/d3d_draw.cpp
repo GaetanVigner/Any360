@@ -22,6 +22,8 @@ REXCVAR_DEFINE_BOOL(any360_d3d_native_draw_helpers, true, "GPU",
                     "Any360: native draws call the title's shader, state, misc and wait helpers (off: those draws are the "
                     "runtime's own code; a diagnostic)");
 
+#include <atomic>
+
 namespace any360::host::rexglue::d3d_draw {
 
 bool NativeDraws() { return REXCVAR_GET(any360_d3d_native_draws); }
@@ -30,5 +32,15 @@ bool DrawHelpers() { return REXCVAR_GET(any360_d3d_native_draw_helpers); }
 bool DirectSubmit() { return REXCVAR_GET(any360_direct_submit); }
 bool NativeSegments() { return REXCVAR_GET(any360_native_segments); }
 bool NativeTiling() { return REXCVAR_GET(any360_native_tiling); }
+
+namespace {
+std::atomic<uint64_t> g_brackets[2];
+}  // namespace
+void CountBracket(bool native) { g_brackets[native ? 1 : 0].fetch_add(1, std::memory_order_relaxed); }
+
+}  // namespace any360::host::rexglue::d3d_draw
+
+namespace any360::host::rexglue {
+uint64_t TilingBrackets(bool native) { return d3d_draw::g_brackets[native ? 1 : 0].load(std::memory_order_relaxed); }
 
 }  // namespace any360::host::rexglue::d3d_draw

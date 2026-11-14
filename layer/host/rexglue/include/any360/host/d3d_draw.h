@@ -56,6 +56,18 @@ struct Runtime {
   GuestFunction pending_segment = nullptr;  // r3 device, r4 -> its address, r5 -> its dwords: the segment written so far
   GuestFunction fence = nullptr;            // r3 device, r4 cursor, r5 flags, r6 r7 the interrupt's words (Fence's)
   uint32_t tiled_callback = 0;              // the interrupt callback a tiled recording's end fence names (its lists)
+  // BeginTiling / EndTiling's helpers (the runtime's or Any360's where bound).
+  GuestFunction set_predication = nullptr;     // r3 device, r4 the predication mask
+  GuestFunction tile_samples = nullptr;        // r3 device, r4 the samples' bits (+11572)
+  GuestFunction resolve = nullptr;             // the resolve (D3D Resolve's)
+  GuestFunction viewport_of = nullptr;         // r3 device, r4 a surface: the viewport and scissor set to it
+  GuestFunction scissor_of = nullptr;          // r3 device, r4 a rect
+  GuestFunction set_viewport = nullptr;        // r3 device, f1-f6 and r10 the viewport (+12368's copy)
+  GuestFunction clear = nullptr;               // the clear's rect wrapper
+  GuestFunction tiling_failed = nullptr;       // r3 device, r4 0: after a tiled recording the device could not end
+  GuestFunction begin_tiled_recording = nullptr, end_tiled_recording = nullptr;
+  uint32_t tiling_surface = 0, tiling_rect = 0;  // the runtime's whole-screen surface and rect
+  uint32_t pix_slot = 0, pix_slot_2 = 0;         // the profiler's globals (a callback set there: the runtime's)
   uint32_t clear_depth_offset = 0, clear_depth_scale = 0;
   // The resolve's format table (a half-word a format), default destination point, copy pixel shader (15 dwords) and
   // vertex offset float: guest addresses in the title's image.
@@ -72,6 +84,7 @@ bool DrawRecords();
 bool DirectSubmit();  // any360_direct_submit (d3d_draw.cpp)
 bool NativeSegments();  // any360_native_segments (d3d_draw.cpp)
 bool NativeTiling();  // any360_native_tiling (d3d_draw.cpp)
+void CountBracket(bool native);  // a BeginTiling taken by Any360 or left to the runtime (TilingBrackets)
 // any360_d3d_native_draw_helpers off (a diagnostic): draws that need the title's helpers besides its uploads (shader
 // loads, state, misc and wait groups) are declined.
 bool DrawHelpers();
@@ -2513,6 +2526,272 @@ inline bool EndTiledRecording(PPCContext& ctx, uint8_t* base, const any360::xdk:
 inline void EndTiledRecordingOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && NativeTiling() && EndTiledRecording(ctx, base, m)) return;
+  original(ctx, base);
+}
+
+namespace detail {
+// The XDK's tile-wide state BeginTiling and EndTiling both set at the end: whether the render targets are the ones the
+// bracket saved (+10812 bit 1), the device's predication words cleared.
+inline void TilingTargetsBit(uint8_t* d, bool same) {
+  bool on = same;
+  if (on) {
+    if (d[10812] & 0x08) on = false;
+    else if (!(d[10815] & 0x40)) on = !d[11841] && !d[11907];
+  }
+  uint8_t b = d[10812];
+  b = uint8_t((b & ~0x02) | (on ? 0x02 : 0));
+  Set32(d + 12432, 0), Set32(d + 10804, 0), Set32(d + 10808, 0), Set32(d + 12428, 0xFFFFFFFFu);
+  d[10812] = b;
+}
+// A word appended to the tile ops list (+13000), a new block taken when it is full.
+inline uint32_t TileOps(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, uint32_t device, uint32_t bytes) {
+  uint8_t* d = m.Host(device);
+  uint32_t cursor = At32(d + 13008);
+  if (cursor + bytes > At32(d + 13012)) cursor = uint32_t(Call(ctx, base, g_runtime.list_block, device + 13000));
+  return cursor;
+}
+inline bool PixCallbackSet(const any360::xdk::Memory& m) {
+  const Runtime& rt = g_runtime;
+  if (!any360::xdk::IsPlainMemory(rt.pix_slot, 4) || !any360::xdk::IsPlainMemory(rt.pix_slot_2, 4)) return true;
+  const uint32_t a = At32(m.Host(rt.pix_slot));
+  if (!any360::xdk::IsPlainMemory(a, 4)) return true;
+  if (const uint32_t b = At32(m.Host(a))) return !any360::xdk::IsPlainMemory(b, 4) || At32(m.Host(b)) != 0;
+  const uint32_t c = At32(m.Host(rt.pix_slot_2));
+  return !any360::xdk::IsPlainMemory(c, 4) || At32(m.Host(c)) != 0;
+}
+}  // namespace detail
+// BeginTiling (Crackdown sub_826BD488): r3 the device, r4 flags (bit 0: no clear, bit 1: the tiles' EDRAM layout set
+// here, bit 2 with it), r5 the tile count, r6 the rects (x1, y1, x2, y2), r7 the clear color (16 bytes) or 0, f1 the
+// clear depth, r9 the stencil. The rects kept (+12472) with their 32-aligned corners (+12712); with bit 1 the EDRAM
+// tile layout (+12832 each tile's base, +12892 the pitch, +10240's top bits, +12896 the rows); without bit 0 the tiles'
+// largest rect cleared under the whole-screen surface; the clear values (+12912 color, +12928 depth, +12932 stencil),
+// the render targets saved (+12444 on), the tiled recording opened with its loop op (0x87000000) and an EVENT_WRITE
+// of 25 into the command buffer (a record with any360_d3d_records); the viewport put back, every dirty bit set.
+// Declines when the profiler's callback is set or for more than 15 tiles.
+inline bool BeginTiling(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32, flags = ctx.r4.u32, count = ctx.r5.u32, rects = ctx.r6.u32, color = ctx.r7.u32;
+  const uint32_t stencil = ctx.r9.u32, entry = ctx.r1.u32, frame = entry - 272;
+  const double depth = ctx.f1.f64;
+  if (!rt.set_predication || !rt.viewport_of || !rt.scissor_of || !rt.set_viewport || !rt.clear ||
+      !rt.restore_viewport || !rt.begin_tiled_recording || !rt.list_block || !rt.make_room || !rt.tiling_surface ||
+      !rt.tiling_rect || count > 15 || !any360::xdk::IsPlainMemory(device, 21300) ||
+      !any360::xdk::IsPlainMemory(entry - 1024, 1024 + 40) || !any360::xdk::IsPlainMemory(rects, 16 * count + 4) ||
+      any360::xdk::detail::Overlap(rects, 16 * count + 4, device, 21300) ||
+      (color && !any360::xdk::IsPlainMemory(color & ~15u, 16)) || PixCallbackSet(m))
+    return false;
+  uint8_t* d = m.Host(device);
+  Set32(m.Host(entry + 36), count);
+  Set32(d + 12468, count);
+  uint32_t right = 0, bottom = 0;
+  for (uint32_t i = 0; i < count; ++i) {
+    const uint8_t* r = m.Host(rects + 16 * i);
+    right = std::max(right, At32(r + 8)), bottom = std::max(bottom, At32(r + 12));
+    for (uint32_t k = 0; k < 4; ++k) Set32(d + 12472 + 16 * i + 4 * k, At32(r + 4 * k));
+    Set32(d + 12712 + 8 * i, At32(r) & ~31u), Set32(d + 12716 + 8 * i, At32(r + 4) & ~31u);
+  }
+  if (flags & 2) {
+    d[10815] |= 0x40;
+    if (flags & 4) d[10815] |= 0x20;
+    const uint32_t samples = (uint32_t(d[10240]) << 8 | d[10241]) & 3;
+    const uint32_t row = samples == 0 ? 16 : 8, column = samples <= 1 ? 32 : 16, rows = samples <= 1 ? 80 : 40;
+    const uint32_t pitch = (column + right - 1) & ~(column - 1), across = pitch / column;
+    for (uint32_t i = 0; i < count; ++i)
+      Set32(d + 12832 + 4 * i, At32(d + 12716 + 8 * i) / row * across + At32(d + 12712 + 8 * i) / column);
+    const uint32_t height = (rows + right - 1) / rows * rows;
+    Set32(d + 12892, pitch);
+    Set32(d + 10240, (At32(d + 10240) & 0x0003FFFFu) | (pitch << 18));
+    Set64(d + 16, At64(d + 16) | 0x100);
+    Set32(d + 12896, height);
+    if (!(d[10815] & 0x40) && (At32(d + 11572) & 0x000E0000u) == 0x40000u) {
+      Set64(d + 40, At64(d + 40) & ~uint64_t(0x100));
+    } else {
+      Set64(d + 40, At64(d + 40) | 0x100);
+    }
+  }
+  Set32(d + 12900, right), Set32(d + 12904, bottom), Set32(d + 12908, flags);
+  ctx.r1.u64 = frame;
+  if (!(flags & 1) && !(d[10815] & 0x40)) {
+    uint32_t width = 0, height = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+      width = std::max(width, At32(d + 12480 + 16 * i) - At32(d + 12712 + 8 * i));
+      height = std::max(height, At32(d + 12484 + 16 * i) - At32(d + 12716 + 8 * i));
+    }
+    Set32(m.Host(frame + 112), 0), Set32(m.Host(frame + 116), 0), Set32(m.Host(frame + 120), width);
+    Set32(m.Host(frame + 124), height);
+    std::memcpy(m.Host(frame + 144), d + 12368, 28);
+    std::memcpy(m.Host(frame + 128), d + 12396, 16);
+    ctx.r3.u64 = device, ctx.r4.u64 = rt.tiling_surface;
+    rt.viewport_of(ctx, base);
+    ctx.r3.u64 = device, ctx.r4.u64 = rt.tiling_rect;
+    rt.scissor_of(ctx, base);
+    ctx.r3.u64 = device, ctx.r4.u64 = 63, ctx.r5.u64 = frame + 112, ctx.r6.u64 = color, ctx.r8.u64 = stencil;
+    ctx.f1.f64 = depth;
+    rt.clear(ctx, base);
+    const auto single = [&](uint32_t at) {
+      const uint32_t bits = At32(m.Host(at));
+      float f;
+      std::memcpy(&f, &bits, 4);
+      return double(f);
+    };
+    ctx.r3.u64 = device, ctx.r10.u64 = At32(m.Host(frame + 168));
+    ctx.f1.f64 = single(frame + 144), ctx.f2.f64 = single(frame + 148), ctx.f3.f64 = single(frame + 152);
+    ctx.f4.f64 = single(frame + 156), ctx.f5.f64 = single(frame + 160), ctx.f6.f64 = single(frame + 164);
+    rt.set_viewport(ctx, base);
+    ctx.r3.u64 = device, ctx.r4.u64 = frame + 128;
+    rt.scissor_of(ctx, base);
+  }
+  if (color) {
+    std::memcpy(m.Host((device + 12912) & ~15u), m.Host(color & ~15u), 16);  // lvx128 / stvx: 16-byte aligned
+  } else {
+    std::memset(d + 12912, 0, 16);
+  }
+  {
+    const float z = float(depth);
+    uint32_t bits;
+    std::memcpy(&bits, &z, 4);
+    Set32(d + 12928, bits);
+  }
+  Set32(d + 12932, stencil);
+  const uint32_t target = At32(d + 12160);
+  Set32(d + 12448, target), Set32(d + 12444, target ? target : At32(d + 12176));
+  for (uint32_t i = 0; i < 4; ++i) Set32(d + 12452 + 4 * i, At32(d + 12164 + 4 * i));
+  Set32(d + 12440, 2), Set32(d + 12436, 0);
+  d[10812] |= 0x20;
+  TilingTargetsBit(d, true);
+  ctx.r3.u64 = device;
+  rt.begin_tiled_recording(ctx, base);
+  const uint32_t op = TileOps(ctx, base, m, device, 4);
+  Set32(m.Host(op), 0x87000000u);
+  Set32(d + 13008, op + 4);
+  uint32_t cursor = At32(d + 48);
+  if (cursor > At32(d + 56)) cursor = uint32_t(Call(ctx, base, rt.make_room, device));
+  Out out{m, cursor, records};
+  out.Event(0x46, {25});
+  Set32(d + 48, out.cursor);
+  ctx.r3.u64 = device, ctx.r4.u64 = rt.tiling_surface;
+  rt.viewport_of(ctx, base);
+  const uint32_t a = At32(d + 10308), b = At32(d + 10312);
+  ctx.r3.u64 = device;
+  const auto field = [](uint32_t word) { return uint64_t(int64_t(int32_t(word) >> 17)); };  // srawi: sign-extended
+  ctx.r4.u64 = field(a << 17), ctx.r5.u64 = field(a << 1), ctx.r6.u64 = field(b << 17), ctx.r7.u64 = field(b << 1);
+  rt.restore_viewport(ctx, base);
+  std::memset(d, 0xFF, 40);
+  ctx.r1.u64 = entry;
+  return true;
+}
+inline void BeginTilingOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && NativeTiling() && BeginTiling(ctx, base, m, DrawRecords())) {
+    CountBracket(true);
+    return;
+  }
+  CountBracket(false);
+  original(ctx, base);
+}
+// EndTiling (Crackdown sub_826BDA38): r3 the device, r4 the resolve's flags, r5 the resolve rects (0: the tiles'), r6 the
+// resolve's target (0: no resolve), r7 its last tile's clear color, f1 its depth, r9 r10 its stencil and more. Each
+// tile resolved under its predication (a rect ending on the surface's edge rounded up to 8), the bracket's clear values
+// for each but the last; the predication off; the segment kicked; with several tiles, a fence whose interrupt hands
+// the tile lists to the DPC (its flags +12908's, or the device's from +11196), the ops 0x8C000000 0x80000000 and
+// 0x8B000000 with the other two lists; the loop's end op (0x88000000); the bracket's flags and targets dropped; the
+// tiled recording ended -> r3 0, or 0x8007000E (and the runtime's tiling_failed) when the device had no segment.
+inline bool EndTiling(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+  using namespace detail;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32, flags = ctx.r4.u32, target = ctx.r6.u32, color = ctx.r7.u32;
+  const uint32_t r9 = ctx.r9.u32, r10 = ctx.r10.u32, entry = ctx.r1.u32, frame = entry - 224;
+  uint32_t rects = ctx.r5.u32;
+  const double depth = ctx.f1.f64;
+  if (!rt.set_predication || !rt.tile_samples || !rt.resolve || !rt.make_room || !rt.fence || !rt.list_block ||
+      !rt.end_tiled_recording || !rt.viewport_of || !rt.tiling_failed || !rt.tiled_callback || !rt.tiling_surface ||
+      !any360::xdk::IsPlainMemory(device, 21300) || !any360::xdk::IsPlainMemory(entry - 1024, 1024))
+    return false;
+  uint8_t* d = m.Host(device);
+  if (!rects && target) rects = device + 12472;
+  if (target && At32(d + 12468) &&
+      (!any360::xdk::IsPlainMemory(rects, 16 * At32(d + 12468)) || !any360::xdk::IsPlainMemory(At32(d + 12444) + 36, 4)))
+    return false;
+  ctx.r1.u64 = frame;
+  if (target) {
+    for (uint32_t i = 0; i < At32(d + 12468); ++i) {
+      const uint32_t rect = rects + 16 * i, scratch = frame + 112;
+      const uint32_t surface = At32(m.Host(At32(d + 12444) + 36));
+      std::memcpy(m.Host(scratch), m.Host(rect), 16);
+      if (At32(m.Host(scratch + 8)) == ((surface >> 18) & 0x3FFF) + 1)
+        Set32(m.Host(scratch + 8), (At32(m.Host(scratch + 8)) + 7) & ~7u);
+      if (At32(m.Host(scratch + 12)) == ((surface >> 3) & 0x7FFF) + 1)
+        Set32(m.Host(scratch + 12), (At32(m.Host(scratch + 12)) + 7) & ~7u);
+      Call(ctx, base, rt.set_predication, device, 2 * i < 32 ? 3u << (2 * i) : 0);
+      Call(ctx, base, rt.tile_samples, device, (d[10815] & 0x40) ? 0 : 2);
+      uint32_t bits = flags;
+      ctx.r3.u64 = device, ctx.r5.u64 = scratch, ctx.r6.u64 = target, ctx.r7.u64 = rect, ctx.r8.u64 = 0, ctx.r9.u64 = 0;
+      if (i + 1 < At32(d + 12468)) {
+        if (At32(d + 12160)) bits |= 0x100;
+        if (At32(d + 12176)) bits |= 0x200;
+        const uint32_t z = At32(d + 12928);
+        float f;
+        std::memcpy(&f, &z, 4);
+        Set32(m.Host(frame + 100), 0), Set32(m.Host(frame + 92), At32(d + 12932));
+        ctx.r10.u64 = device + 12912, ctx.f1.f64 = double(f);
+      } else {
+        Set32(m.Host(frame + 100), r10), Set32(m.Host(frame + 92), r9);
+        ctx.r10.u64 = color, ctx.f1.f64 = depth;
+      }
+      ctx.r4.u64 = bits;
+      rt.resolve(ctx, base);
+    }
+  }
+  Call(ctx, base, rt.set_predication, device, 0);
+  Call(ctx, base, rt.tile_samples, device, 2);
+  Call(ctx, base, rt.make_room, device);
+  const uint32_t shift = At32(d + 11196);
+  uint32_t fence_flags = shift < 32 ? 0x01000000u << shift : 0;
+  if (At32(d + 12908) & 0x3F000000u) fence_flags = At32(d + 12908) & 0x3F000000u;
+  const auto physical = [&](uint32_t list) { return list ? GpuAddress(list, 0x1FFFFFFFu) - 0x40000000u : 0u; };
+  if (At32(d + 12468) != 1) {
+    Call(ctx, base, rt.set_predication, device, 0x80000000u);
+    const uint32_t lists = physical(At32(d + 13000));
+    uint32_t cursor = At32(d + 48);
+    if (cursor > At32(d + 56)) cursor = uint32_t(Call(ctx, base, rt.make_room, device));
+    ctx.r7.u64 = lists;
+    Set32(d + 48, uint32_t(Call(ctx, base, rt.fence, device, cursor, fence_flags, rt.tiled_callback)));
+    Call(ctx, base, rt.set_predication, device, 0);
+    Call(ctx, base, rt.make_room, device);
+    uint32_t op = TileOps(ctx, base, m, device, 8);
+    Set32(m.Host(op + 4), 0x80000000u), Set32(m.Host(op), 0x8C000000u);
+    Set32(d + 13008, op + 8);
+    op = TileOps(ctx, base, m, device, 12);
+    Set32(m.Host(op), 0x8B000000u);
+    Set32(m.Host(op + 4), physical(At32(d + 12960)));
+    Set32(m.Host(op + 8), physical(At32(d + 12980)));
+    Set32(d + 13008, op + 12);
+  } else {
+    Call(ctx, base, rt.make_room, device);
+  }
+  const uint32_t op = TileOps(ctx, base, m, device, 4);
+  Set32(m.Host(op), 0x88000000u);
+  const uint8_t bits_12 = d[10812] & 0xDF, bits_15 = d[10815] & 0x9F;
+  Set32(d + 13008, op + 4), Set32(d + 12444, 0), Set32(d + 12436, 0);
+  d[10812] = bits_12, d[10815] = bits_15;
+  TilingTargetsBit(d, (bits_12 & 0x10) != 0);
+  const uint32_t failed =
+      uint32_t(Call(ctx, base, rt.end_tiled_recording, device, At32(d + 12468), fence_flags));
+  ctx.r3.u64 = device, ctx.r4.u64 = rt.tiling_surface;
+  rt.viewport_of(ctx, base);
+  if (failed) {
+    Call(ctx, base, rt.tiling_failed, device, 0);
+    ctx.r3.u64 = 0x8007000Eu;
+  } else {
+    ctx.r3.u64 = 0;
+  }
+  ctx.r1.u64 = entry;
+  return true;
+}
+inline void EndTilingOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && NativeTiling() && EndTiling(ctx, base, m)) return;
   original(ctx, base);
 }
 inline void ClearOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {

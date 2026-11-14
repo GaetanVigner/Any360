@@ -69,5 +69,7 @@
  "0x826BA5C8": ["D3D_ChainSegment", "a segment's 16-byte header written and linked after the last pending one"],
  "0x826CE1C8": ["D3D_BeginTiledRecording", "a tiled recording opened: the segment kicked, its state saved, the tile ops, constant and resource lists started with the tile rects"],
  "0x826CE360": ["D3D_EndTiledRecording", "a tiled recording closed: a fence whose interrupt hands its lists to the DPC, the lists ended, the work submitted as pending"],
- "0x826CD7D8": ["D3D_TileSelect", "a tile's bin select (SET_BIN_SELECT_LO) into the ring before its segments' replay (Any360: handed to the command processor)"]
+ "0x826CD7D8": ["D3D_TileSelect", "a tile's bin select (SET_BIN_SELECT_LO) into the ring before its segments' replay (Any360: handed to the command processor)"],
+ "0x826BD488": ["D3DDevice_BeginTiling", "the predicated tiling bracket opened: rects, EDRAM tile layout, the clear, the clear values and targets saved, the tiled recording and its loop op, an EVENT_WRITE"],
+ "0x826BDA38": ["D3DDevice_EndTiling", "the predicated tiling bracket closed: each tile resolved under its predication, the DPC's fence and ops, the tiled recording ended"]
 }

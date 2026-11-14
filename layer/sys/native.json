@@ -95,6 +95,8 @@
   "D3D_ChainSegment",
   "D3D_BeginTiledRecording",
   "D3D_EndTiledRecording",
-  "D3D_TileSelect"
+  "D3D_TileSelect",
+  "D3DDevice_BeginTiling",
+  "D3DDevice_EndTiling"
  ]
 }
