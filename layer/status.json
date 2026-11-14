@@ -94,10 +94,10 @@
   },
   {
    "area": "stage 1: native graphics (any360::gfx)",
-   "name": "Draw record model: RecordKind, DrawRecord, shared immutable state blocks",
-   "state": "planned",
-   "source": "crackdown: src/hle_records.h",
-   "note": "source-agnostic: filled by XDK hooks (Crackdown) or by a PM4 decode (Simpsons plan)"
+   "name": "Command records: Any360's packets in place of PM4 (registers, draws, bins, events, shader and constant loads, invalidations, waits, indirect buffers, interrupts)",
+   "state": "in progress",
+   "source": "any360: layer/xdk/include/any360/xdk/d3d_records.h (11 kinds), run by layer/gfx's command processor (gfx_cp_tests: each against the PM4 it replaces)",
+   "note": "written by the native D3D runtime in the title's command buffer, in order with the PM4 still there; Crackdown's ring carries mostly records (2026-11-14: the frame's pacing wait included). The titles' precompiled command buffers stay PM4 data until the Vulkan renderer"
   },
   {
    "area": "stage 1: native graphics (any360::gfx)",
@@ -150,10 +150,17 @@
   },
   {
    "area": "stage 1: native graphics (any360::gfx)",
+   "name": "Native D3D runtime: the XDK's D3D replaced by native code that writes command records (docs/D3D.md, D0-D6)",
+   "state": "in progress",
+   "source": "any360: layer/xdk/include/any360/xdk/d3d_state.h, layer/host/rexglue/include/any360/host/d3d_draw.h, the in-game self-test (d3d_selftest.cpp, d3d_cases.h); crackdown: src/guest_bindings_base.cpp",
+   "note": "Crackdown, 2026-11-14: 48 runtime functions native (state setters, the four draws, clear and its target draws, resolve, the draws' flush helpers with the vertex shader patcher and link, queries, RunCommandBuffer, the fence, the swap's packet, the resource lock), 85 of the database's 107 named XDK functions; each compared with the runtime's by the self-test (or a dual run in game), 1.1x-4.4x faster. D0-D3 done, D4/D5 in progress (the tiled recording's orchestration left), D6 (the ring out of the path) planned"
+  },
+  {
+   "area": "stage 1: native graphics (any360::gfx)",
    "name": "XDK D3D runtime binding by signature (roles: draw, clear, resolve, RunCommandBuffer, GPR flush, shader bind)",
-   "state": "planned",
-   "source": "crackdown: docs/progress/d3d_entry_points.txt (209 addresses); simpsons: re/d3d_method_table.md (174 signature matches)",
-   "note": "hashes and roles only; makes the hooks portable between titles of the same XDK"
+   "state": "in progress",
+   "source": "any360: tools/d3d_roles.py, titles/crackdown/d3d.json and d3d_names.json (every entry and flush function's role, the read ones named); crackdown: docs/progress/d3d_entry_points.txt; simpsons: re/d3d_method_table.md (174 signature matches)",
+   "note": "roles and names done for Crackdown (docs/D3D.md D0); the binding is by address in Crackdown so far, by signature still to do (makes the natives portable between titles of the same XDK)"
   },
   {
    "area": "stage 2: decompilation",
@@ -230,7 +237,7 @@
    "name": "any360::sys: the system calls, verified against the reference runtime",
    "state": "in progress",
    "source": "any360: layer/sys (any360_sys, any360_sys_ppc, sys_io_tests)",
-   "note": "255 system calls native: 77 equal to the reference, 178 proven against the NT / XDK semantics by scenario tests. Sonic '06: all 200 of its system calls native (MVP 178/178, plus the kernel side of graphics and audio over GpuBackend / AudioSink / XmaBackend interfaces); Crackdown 205/248, TDU 232/278, Simpsons 212/317"
+   "note": "606 system calls native (db/summary.json, 2026-11-14): every one the five known titles import (Crackdown 248/248, The Simpsons Game 317/317, Test Drive Unlimited 278/278, Call of Duty: Black Ops 255/255, Sonic '06 200/200), each verified against the reference or proven against the NT / XDK semantics by scenario tests"
   }
  ]
 }

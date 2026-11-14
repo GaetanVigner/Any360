@@ -306,6 +306,15 @@
   "note": "the copy of a title's shader constants into the device: count vectors from any alignment (lvlx, lvrx) to device + (first + 112) * 16, four then one at a time, then the dirty bits or-ed into the device's first doubleword; saves r7 at r1 + 48. The same steps in another order in both runtimes. Named after what it does. Any360: xdk::D3dSetShaderConstants, bound in both"
  },
  {
+  "name": "D3DDevice_BeginIndexedVertices",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B96D0"
+  },
+  "note": "flushes, takes vertex and index blocks, writes the fetch constant and an indexed draw; returns an HRESULT"
+ },
+ {
   "name": "D3DDevice_BeginTiling",
   "library": "D3D",
   "any360": "todo",
@@ -317,18 +326,20 @@
  {
   "name": "D3DDevice_BeginVertices",
   "library": "D3D",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
-   "simpsons": "0x8244C450"
+   "simpsons": "0x8244C450",
+   "crackdown": "0x826B91E0"
   },
   "note": ""
  },
  {
   "name": "D3DDevice_Clear",
   "library": "D3D",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
-   "simpsons": "0x82453C30"
+   "simpsons": "0x82453C30",
+   "crackdown": "0x826BFD88"
   },
   "note": ""
  },
@@ -362,18 +373,20 @@
  {
   "name": "D3DDevice_DrawIndexedVertices",
   "library": "D3D",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
-   "simpsons": "0x8244D360"
+   "simpsons": "0x8244D360",
+   "crackdown": "0x826B9FF8"
   },
   "note": ""
  },
  {
   "name": "D3DDevice_DrawVertices",
   "library": "D3D",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
-   "simpsons": "0x8244CF78"
+   "simpsons": "0x8244CF78",
+   "crackdown": "0x826B9C08"
   },
   "note": ""
  },
@@ -416,47 +429,187 @@
  {
   "name": "D3DDevice_Resolve",
   "library": "D3D",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
-   "simpsons": "0x82455570"
+   "simpsons": "0x82455570",
+   "crackdown": "0x826BE578"
   },
   "note": ""
  },
  {
   "name": "D3DDevice_SetPixelShader",
   "library": "D3D",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
-   "simpsons": "0x82445578"
+   "simpsons": "0x82445578",
+   "crackdown": "0x826B3458"
   },
   "note": ""
+ },
+ {
+  "name": "D3DDevice_SetPixelShaderConstantB",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B31D8"
+  },
+  "note": "a bit a register at word 2500"
+ },
+ {
+  "name": "D3DDevice_SetPixelShaderConstantF",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B3070"
+  },
+  "note": "16-byte registers at (first + 368) * 16, dirty bits at +8"
  },
  {
   "name": "D3DDevice_SetPredication",
   "library": "D3D",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
-   "simpsons": "0x82467450"
+   "simpsons": "0x82467450",
+   "crackdown": "0x826BD300"
   },
   "note": ""
+ },
+ {
+  "name": "D3DDevice_SetRenderState_AlphaBlendEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AF950"
+  },
+  "note": "blend flags bit 31; render targets' blend words"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_BlendOp",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AF9E0"
+  },
+  "note": "blend word bits 5-7"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_BlendOpAlpha",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFB90"
+  },
+  "note": "blend word bits 21-23"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_DestBlend",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFB00"
+  },
+  "note": "blend word bits 8-12"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_DestBlendAlpha",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFC70"
+  },
+  "note": "blend word bits 24-28"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_SeparateAlphaBlendEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFCE0"
+  },
+  "note": "blend flags bit 30; render targets' blend words"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_SrcBlend",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFA70"
+  },
+  "note": "blend word bits 0-4"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_SrcBlendAlpha",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFC00"
+  },
+  "note": "blend word bits 16-20"
+ },
+ {
+  "name": "D3DDevice_SetSamplerState_MagFilter",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1308"
+  },
+  "note": "fetch constant words 3-4: mag filter and anisotropy"
+ },
+ {
+  "name": "D3DDevice_SetSamplerState_MinFilter",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1180"
+  },
+  "note": "fetch constant words 3-4: min filter and anisotropy"
+ },
+ {
+  "name": "D3DDevice_SetStreamSource",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1D30"
+  },
+  "note": "stream's vertex fetch constant, stride byte; old buffer released"
  },
  {
   "name": "D3DDevice_SetTexture",
   "library": "D3D",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
-   "simpsons": "0x824408E0"
+   "simpsons": "0x824408E0",
+   "crackdown": "0x826AF038"
   },
   "note": ""
  },
  {
+  "name": "D3DDevice_SetVertexDeclaration",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1E50"
+  },
+  "note": "declaration kept at +12156; old one released"
+ },
+ {
   "name": "D3DDevice_SetVertexShader",
   "library": "D3D",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
-   "simpsons": "0x82445278"
+   "simpsons": "0x82445278",
+   "crackdown": "0x826B3848"
   },
   "note": ""
+ },
+ {
+  "name": "D3DDevice_SetVertexShaderConstantB",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B3178"
+  },
+  "note": "a bit a register at word 2496"
  },
  {
   "name": "D3DDevice_Swap",
@@ -466,6 +619,24 @@
    "simpsons": "0x824544F0"
   },
   "note": ""
+ },
+ {
+  "name": "D3DQuery_Issue",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C0B38"
+  },
+  "note": "r3 a query, r4 D3DISSUE_BEGIN (2) / END (1): occlusion queries (type 9) through sub_826C05C8, event queries (10) as EVENT_WRITE / EVENT_WRITE_EXT"
+ },
+ {
+  "name": "D3DResource_LockCpu",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AC8F0"
+  },
+  "note": "CPU lock of a resource: its fence waited, the locked pages' cache flushed (or the range added to the device's pending one from another thread), the locked lines widened, the lock count raised"
  },
  {
   "name": "D3DVertexBuffer_Lock",
@@ -522,6 +693,42 @@
   "note": ""
  },
  {
+  "name": "D3D_ClearDraw",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826BF670"
+  },
+  "note": "a clear rect split into an inside aligned to the EDRAM tiles (drawn at their scale) and its edges"
+ },
+ {
+  "name": "D3D_ClearRects",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826BF380"
+  },
+  "note": "clear rects as rect-list vertices in an allocator block, the clear registers and a predicated auto draw"
+ },
+ {
+  "name": "D3D_CopyPatchedShader",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C68E0"
+  },
+  "note": "a vertex shader copy into the command buffer (IM_LOAD_IMMEDIATE), linked and patched there"
+ },
+ {
+  "name": "D3D_EmptyShaderExports",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C6618"
+  },
+  "note": "an unread output's export instructions emptied"
+ },
+ {
   "name": "D3D_EndVizQuery",
   "library": "D3D",
   "any360": "todo",
@@ -531,11 +738,75 @@
   "note": ""
  },
  {
+  "name": "D3D_FlushCpuCacheRange",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C4C70"
+  },
+  "note": "dcbf over [r3, r4) then sync (no-ops recompiled)"
+ },
+ {
+  "name": "D3D_FlushFetchConstants",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C5D40"
+  },
+  "note": "the draws' fetch constants (6 dwords a slot) and 0x5000-0x5002"
+ },
+ {
+  "name": "D3D_FlushShaders",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C6C48"
+  },
+  "note": "the draws' shader flush: constant lists, IM_LOAD, the programs, the patched vertex shader copies"
+ },
+ {
+  "name": "D3D_FlushStateGroup",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C5768"
+  },
+  "note": "the draws' state group: 0x2203 per tile under its bins, 0x2000, 0x2104"
+ },
+ {
+  "name": "D3D_FlushWaitGroup",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C5BC0"
+  },
+  "note": "the draws' wait group: VGT 0x2007, the copy registers, a wait, the group's registers"
+ },
+ {
+  "name": "D3D_GpuTimestamp",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C8488"
+  },
+  "note": "the GPU profiling ring's timestamp (EVENT_WRITE_SHD)"
+ },
+ {
+  "name": "D3D_InsertFenceInterrupt",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826BB5C8"
+  },
+  "note": "fence and CP interrupt"
+ },
+ {
   "name": "D3D_InternalClearDraw",
   "library": "D3D",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
-   "simpsons": "0x82453B08"
+   "simpsons": "0x82453B08",
+   "crackdown": "0x826BF8C0"
   },
   "note": ""
  },
@@ -549,13 +820,50 @@
   "note": ""
  },
  {
+  "name": "D3D_LinkShaders",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C67A0"
+  },
+  "note": "the vertex shader's exports matched to the pixel shader's inputs (unread ones emptied, registers remapped)"
+ },
+ {
   "name": "D3D_LoadShaderLiterals",
   "library": "D3D",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
-   "simpsons": "0x8245F810"
+   "simpsons": "0x8245F810",
+   "crackdown": "0x826C6A50"
   },
   "note": ""
+ },
+ {
+  "name": "D3D_OcclusionQueryBeginEnd",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C05C8"
+  },
+  "note": "an occlusion query's begin or end: its result address per tile, EVENT_WRITE_ZPD"
+ },
+ {
+  "name": "D3D_PatchVertexFetches",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C6010"
+  },
+  "note": "a vertex shader's fetches remade from the declaration, swizzled, sorted and merged into mini-fetches"
+ },
+ {
+  "name": "D3D_PatchedShaderCache",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C6B00"
+  },
+  "note": "a vertex shader's patched copy for the device's state: cache hit, still in use, or patched again"
  },
  {
   "name": "D3D_PollGpuProgress",
@@ -565,6 +873,24 @@
    "simpsons": "0x82452018"
   },
   "note": ""
+ },
+ {
+  "name": "D3D_RemapShaderExports",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C66E8"
+  },
+  "note": "an output's export instructions given the input's register"
+ },
+ {
+  "name": "D3D_ReplayCommandBuffer",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C3750"
+  },
+  "note": "a recorded command buffer's dirty state and replay"
  },
  {
   "name": "D3D_RingAlloc",
@@ -583,6 +909,24 @@
    "simpsons": "0x82457CC8"
   },
   "note": ""
+ },
+ {
+  "name": "D3D_SwapPacket",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826BC568"
+  },
+  "note": "the swap's PM4"
+ },
+ {
+  "name": "D3D_UpdateShaderControl",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C5580"
+  },
+  "note": "the shader control bits (+10432) and the EVENT_WRITE that follows a change"
  },
  {
   "name": "strcmp (loop of bytes)",
