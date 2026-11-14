@@ -665,6 +665,31 @@ struct StateHelper {
 // random, no pixel shader a third of the time, no vertex shader now and then. The calls that would patch or link the
 // shaders (sub_826C6B00, sub_826C68E0: they write the title's shaders, its shader counter, and allocate) are kept
 // from happening: their dirty bits cleared, or +11540 zeroed.
+// The occlusion query helper (sub_826C05C8): a query in the scratch with 0-5 tiles mostly, up to 19 (over 16 the
+// native declines), its buffers anywhere, either slot.
+template <bool kRecords>
+struct OcclusionHelper {
+  static bool Native(PPCContext& ctx, uint8_t*) { return d3d_draw::QueryOcclusion(ctx, SelfTestMemory(), kRecords); }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t cursor = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
+    Put32(s, s.scratch, cursor);
+    Put32(s, s.device + 48, cursor);
+    Put32(s, s.device + 52, s.scratch + 0x30000);
+    Put32(s, s.device + 56, s.scratch + 0x2F000);
+    const uint32_t query = s.scratch + 0x3000;
+    Put32(s, query + 144, rng() % 8 == 0 ? uint32_t(rng() % 20) : uint32_t(rng() % 6));
+    for (uint32_t at : {12428u, 12432u}) Put32(s, s.device + at, uint32_t(rng()));
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = query;
+    ctx.r5.u64 = rng() % 2;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
+  }
+};
+
 // The vertex fetch patcher's inputs (sub_826C6010): the fetch count and list of the shader's part `which` (list words:
 // the destination index below `indexes`, usage keys in 0-3, group bits half the time) and the patch set's elements
 // (state offsets under 200, keys in 0-3).

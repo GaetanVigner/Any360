@@ -775,6 +775,45 @@ inline void FlushStateOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction o
   original(ctx, base);
 }
 
+// sub_826C05C8 (the occlusion query's begin and end): r3 device, r4 the query, r5 the slot (0 end, 1 begin). The
+// query's mode registers (0x2208 = 6, 0x2000-0x2001), the address its sample count goes to (0x2325: the query's
+// buffer, +24 on, a tile each when it has more than one (+144), each predicated under its tile's bins, the device's
+// bins put back after; 32 bytes a slot), an EVENT_WRITE_ZPD (21), then the state groups it changed marked dirty.
+// Declines when the cursor needs room first or would during the tiles, or the query has more than 16 tiles.
+inline bool QueryOcclusion(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  using any360::xdk::IsPlainMemory;
+  const uint32_t device = ctx.r3.u32, query = ctx.r4.u32, slot = ctx.r5.u32 << 5;
+  if (!IsPlainMemory(device, 16384) || !IsPlainMemory(query, 148)) return false;
+  uint8_t* d = m.Host(device);
+  const uint8_t* q = m.Host(query);
+  const uint32_t cursor = At32(d + 48), limit = At32(d + 56), tiles = At32(q + 144);
+  if (cursor > limit || tiles > 16 || (tiles > 1 && !IsPlainMemory(query + 24, 4 * tiles))) return false;
+  const uint32_t per_tile = records ? 6 : 5, most = 4 * (32 + per_tile * tiles);
+  if (tiles > 1 && uint64_t(cursor) + 4 * ((records ? 3 : 2) + 4 + per_tile * tiles) > limit) return false;
+  if (uint64_t(cursor) + most > At32(d + 52) || !IsPlainMemory(cursor + 4, most)) return false;
+  Out out{m, cursor, records};
+  out.Registers(0x2208, {6}), out.Registers(0x2000, {0x20000, 0});
+  if (tiles <= 1) {
+    out.Registers(0x2325, {GpuAddress(At32(q + 24) + slot, 0x1FFFFFFFu)});
+  } else {
+    out.Bins(1, 0);
+    for (uint32_t i = 0; i < tiles; ++i)
+      out.Bins(0, 3u << (2 * i)), out.ContextConstant(0x325, GpuAddress(At32(q + 24 + 4 * i) + slot, 0x1FFFFFFFu));
+    out.Bins(0, At32(d + 12428)), out.Bins(1, At32(d + 12432));
+  }
+  out.Event(0x5B, {21});
+  Set32(d + 48, out.cursor);
+  Set64(d + 16, At64(d + 16) | 8 | uint64_t(1) << 57 | uint64_t(1) << 56);
+  Set64(d + 32, At64(d + 32) | 0x2000);
+  return true;
+}
+inline void QueryOcclusionOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && QueryOcclusion(ctx, m, DrawRecords())) return;
+  original(ctx, base);
+}
+
 namespace detail {
 // sub_826C6A50's constant list of a shader part at `part` (its +20: the list's offset from the part; the list: +16
 // its entries' bytes, the entries from +20, 8 bytes each: u16 the first constant (in 4-dword units), u16 the dwords
