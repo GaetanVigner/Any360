@@ -278,14 +278,6 @@ bool Device::Create(const DeviceOptions& options) {
         reinterpret_cast<PFN_vkGetQueueCheckpointDataNV>(fn_.vkGetDeviceProcAddr(device_, "vkGetQueueCheckpointDataNV"));
     if (!set_checkpoint_ || !get_checkpoints_) set_checkpoint_ = nullptr, get_checkpoints_ = nullptr;
   }
-
-  VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-  pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-  pool_info.queueFamilyIndex = queue_family_;
-  if (fn_.vkCreateCommandPool(device_, &pool_info, nullptr, &pool_) != VK_SUCCESS) {
-    error_ = "vkCreateCommandPool failed";
-    return false;
-  }
   return true;
 }
 
@@ -336,7 +328,12 @@ void Device::Destroy() {
       std::lock_guard queue_lock(queue_mutex_);
       fn_.vkDeviceWaitIdle(device_);
     }
-    if (pool_) fn_.vkDestroyCommandPool(device_, pool_, nullptr);
+    for (const std::unique_ptr<OneTime>& one : one_times_) {
+      if (one->fence) fn_.vkDestroyFence(device_, one->fence, nullptr);
+      if (one->pool) fn_.vkDestroyCommandPool(device_, one->pool, nullptr);
+    }
+    one_times_.clear();
+    idle_one_times_.clear();
     fn_.vkDestroyDevice(device_, nullptr);
   }
   if (surface_ && instance_) fn_.vkDestroySurfaceKHR(instance_, surface_, nullptr);
@@ -349,7 +346,6 @@ void Device::Destroy() {
   physical_ = VK_NULL_HANDLE;
   device_ = VK_NULL_HANDLE;
   queue_ = VK_NULL_HANDLE;
-  pool_ = VK_NULL_HANDLE;
 }
 
 uint32_t Device::MemoryType(uint32_t type_bits, VkMemoryPropertyFlags flags) const {
@@ -359,13 +355,42 @@ uint32_t Device::MemoryType(uint32_t type_bits, VkMemoryPropertyFlags flags) con
   return UINT32_MAX;
 }
 
-VkCommandBuffer Device::BeginOneTime() {
-  VkCommandBufferAllocateInfo info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-  info.commandPool = pool_;
-  info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  info.commandBufferCount = 1;
-  VkCommandBuffer cb = VK_NULL_HANDLE;
-  if (fn_.vkAllocateCommandBuffers(device_, &info, &cb) != VK_SUCCESS) return VK_NULL_HANDLE;
+Device::OneTime* Device::BeginOneTime() {
+  OneTime* one = nullptr;
+  {
+    std::lock_guard lock(one_time_mutex_);
+    if (!idle_one_times_.empty()) {
+      one = idle_one_times_.back();
+      idle_one_times_.pop_back();
+    }
+  }
+  if (one) {
+    fn_.vkResetCommandPool(device_, one->pool, 0);
+  } else {
+    auto made = std::make_unique<OneTime>();
+    VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    pool_info.queueFamilyIndex = queue_family_;
+    VkFenceCreateInfo fence_info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    bool made_ok = fn_.vkCreateCommandPool(device_, &pool_info, nullptr, &made->pool) == VK_SUCCESS;
+    if (made_ok) {
+      VkCommandBufferAllocateInfo info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+      info.commandPool = made->pool;
+      info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+      info.commandBufferCount = 1;
+      made_ok = fn_.vkAllocateCommandBuffers(device_, &info, &made->cb) == VK_SUCCESS &&
+                fn_.vkCreateFence(device_, &fence_info, nullptr, &made->fence) == VK_SUCCESS;
+    }
+    if (!made_ok) {
+      if (made->fence) fn_.vkDestroyFence(device_, made->fence, nullptr);
+      if (made->pool) fn_.vkDestroyCommandPool(device_, made->pool, nullptr);
+      return nullptr;
+    }
+    one = made.get();
+    std::lock_guard lock(one_time_mutex_);
+    one_times_.push_back(std::move(made));
+  }
+  VkCommandBuffer cb = one->cb;
   VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
   begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
   fn_.vkBeginCommandBuffer(cb, &begin);
@@ -378,20 +403,28 @@ VkCommandBuffer Device::BeginOneTime() {
   dependency.memoryBarrierCount = 1;
   dependency.pMemoryBarriers = &barrier;
   fn_.vkCmdPipelineBarrier2(cb, &dependency);
-  return cb;
+  return one;
 }
 
-bool Device::EndOneTime(VkCommandBuffer cb) {
-  fn_.vkEndCommandBuffer(cb);
+bool Device::EndOneTime(OneTime* one) {
+  fn_.vkEndCommandBuffer(one->cb);
+  fn_.vkResetFences(device_, 1, &one->fence);
   VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
   submit.commandBufferCount = 1;
-  submit.pCommandBuffers = &cb;
+  submit.pCommandBuffers = &one->cb;
   bool ok;
   {
     std::lock_guard queue_lock(queue_mutex_);
-    ok = fn_.vkQueueSubmit(queue_, 1, &submit, VK_NULL_HANDLE) == VK_SUCCESS && fn_.vkQueueWaitIdle(queue_) == VK_SUCCESS;
+    ok = fn_.vkQueueSubmit(queue_, 1, &submit, one->fence) == VK_SUCCESS;
   }
-  fn_.vkFreeCommandBuffers(device_, pool_, 1, &cb);
+  // The fence of a vkQueueSubmit covers every command submitted before it too (and the barrier BeginOneTime records
+  // orders them): once signalled, the queue has run everything up to this submit, as vkQueueWaitIdle did, without
+  // holding the queue from other threads while it waits.
+  if (ok && fn_.vkWaitForFences(device_, 1, &one->fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+    return false;  // the command buffer may still be pending (a lost device): not given back, freed with the device
+  }
+  std::lock_guard lock(one_time_mutex_);
+  idle_one_times_.push_back(one);
   return ok;
 }
 

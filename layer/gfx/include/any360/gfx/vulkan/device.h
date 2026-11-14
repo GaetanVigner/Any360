@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <source_location>
 #include <mutex>
 #include <string>
@@ -75,18 +76,29 @@ class Device {
   // A memory type with the bits of `type_bits` and all of `flags`, or UINT32_MAX.
   uint32_t MemoryType(uint32_t type_bits, VkMemoryPropertyFlags flags) const;
 
-  // Records commands into a one-time command buffer, submits it and waits.
+  // Records commands into a one-time command buffer, submits it and waits until it and everything submitted before
+  // it has run. Callable from several threads at once: each submit in flight records into a command pool of its own.
   template <typename Record>
   bool Submit(Record&& record) {
-    VkCommandBuffer cb = BeginOneTime();
-    if (!cb) return false;
-    record(cb);
-    return EndOneTime(cb);
+    OneTime* one = BeginOneTime();
+    if (!one) return false;
+    record(one->cb);
+    return EndOneTime(one);
   }
 
  private:
-  VkCommandBuffer BeginOneTime();
-  bool EndOneTime(VkCommandBuffer cb);
+  // A command pool, its command buffer and the fence its submit signals. Vulkan wants a pool, and every command
+  // buffer recorded from it, used by one thread at a time: one shared pool, allocated from, recorded and freed by a
+  // renderer's read-back and another thread's one-time submit at once, crashed in the driver now and then; and a
+  // lock around a shared pool let a thread submitting in a loop starve the other (std::mutex is not fair). So each
+  // submit takes an idle one (or makes one) and gives it back, and holds the queue only for vkQueueSubmit.
+  struct OneTime {
+    VkCommandPool pool = VK_NULL_HANDLE;
+    VkCommandBuffer cb = VK_NULL_HANDLE;
+    VkFence fence = VK_NULL_HANDLE;
+  };
+  OneTime* BeginOneTime();
+  bool EndOneTime(OneTime* one);
 
   void* library_ = nullptr;
   Functions fn_;
@@ -103,7 +115,9 @@ class Device {
   PFN_vkGetDeviceFaultInfoEXT get_fault_ = nullptr;
   PFN_vkCmdSetCheckpointNV set_checkpoint_ = nullptr;
   PFN_vkGetQueueCheckpointDataNV get_checkpoints_ = nullptr;
-  VkCommandPool pool_ = VK_NULL_HANDLE;
+  std::mutex one_time_mutex_;                         // guards the two lists below (not held while recording)
+  std::vector<std::unique_ptr<OneTime>> one_times_;  // every one made, destroyed with the device
+  std::vector<OneTime*> idle_one_times_;              // those no submit is using
   VkPhysicalDeviceProperties properties_{};
   VkPhysicalDeviceMemoryProperties memory_{};
   std::string error_;
