@@ -88,6 +88,10 @@
   "D3D_GpuTimestamp",
   "D3D_EmptyShaderExports",
   "D3D_RemapShaderExports",
-  "D3D_RingSubmit"
+  "D3D_RingSubmit",
+  "D3D_SegmentClose",
+  "D3D_SegmentEnd",
+  "D3D_SegmentSubmit",
+  "D3D_ChainSegment"
  ]
 }

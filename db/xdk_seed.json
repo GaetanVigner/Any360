@@ -108,6 +108,10 @@
   {"name": "D3D_GpuTimestamp", "library": "D3D", "titles": {"crackdown": "0x826C8488"}, "note": "the GPU profiling ring's timestamp (EVENT_WRITE_SHD)"},
   {"name": "D3D_EmptyShaderExports", "library": "D3D", "titles": {"crackdown": "0x826C6618"}, "note": "an unread output's export instructions emptied"},
   {"name": "D3D_RemapShaderExports", "library": "D3D", "titles": {"crackdown": "0x826C66E8"}, "note": "an output's export instructions given the input's register"},
-  {"name": "D3D_RingSubmit", "library": "D3D", "titles": {"crackdown": "0x826BAD58"}, "note": "a kicked segment into the primary ring: ring space waited for, an INDIRECT_BUFFER, CP_RB_WPTR (Any360: handed to the command processor directly)"}
+  {"name": "D3D_RingSubmit", "library": "D3D", "titles": {"crackdown": "0x826BAD58"}, "note": "a kicked segment into the primary ring: ring space waited for, an INDIRECT_BUFFER, CP_RB_WPTR (Any360: handed to the command processor directly)"},
+  {"name": "D3D_SegmentClose", "library": "D3D", "titles": {"crackdown": "0x826BB1A0"}, "note": "the kick's segment closed (its end packets, its submit) and the next one opened, or a new one from the allocator"},
+  {"name": "D3D_SegmentEnd", "library": "D3D", "titles": {"crackdown": "0x826BB0C0"}, "note": "a segment's end packets: INVALIDATE_STATE, the segment's end and count into the device's scratch (EVENT_WRITE_SHD)"},
+  {"name": "D3D_SegmentSubmit", "library": "D3D", "titles": {"crackdown": "0x826BB348"}, "note": "a segment submitted: straight to the ring's submit, or chained after the pending ones under the kernel's lock"},
+  {"name": "D3D_ChainSegment", "library": "D3D", "titles": {"crackdown": "0x826BA5C8"}, "note": "a segment's 16-byte header written and linked after the last pending one"}
  ]
 }

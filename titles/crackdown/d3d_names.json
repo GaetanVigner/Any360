@@ -62,5 +62,9 @@
  "0x826C8488": ["D3D_GpuTimestamp", "the GPU profiling ring's timestamp (EVENT_WRITE_SHD)"],
  "0x826C6618": ["D3D_EmptyShaderExports", "an unread output's export instructions emptied"],
  "0x826C66E8": ["D3D_RemapShaderExports", "an output's export instructions given the input's register"],
- "0x826BAD58": ["D3D_RingSubmit", "a kicked segment into the primary ring: ring space waited for, an INDIRECT_BUFFER, CP_RB_WPTR (Any360: handed to the command processor directly)"]
+ "0x826BAD58": ["D3D_RingSubmit", "a kicked segment into the primary ring: ring space waited for, an INDIRECT_BUFFER, CP_RB_WPTR (Any360: handed to the command processor directly)"],
+ "0x826BB1A0": ["D3D_SegmentClose", "the kick's segment closed (its end packets, its submit) and the next one opened, or a new one from the allocator"],
+ "0x826BB0C0": ["D3D_SegmentEnd", "a segment's end packets: INVALIDATE_STATE, the segment's end and count into the device's scratch (EVENT_WRITE_SHD)"],
+ "0x826BB348": ["D3D_SegmentSubmit", "a segment submitted: straight to the ring's submit, or chained after the pending ones under the kernel's lock"],
+ "0x826BA5C8": ["D3D_ChainSegment", "a segment's 16-byte header written and linked after the last pending one"]
 }

@@ -662,6 +662,49 @@ struct FenceCase {
   }
 };
 
+// A segment's end packets (sub_826BB0C0): the cursor, the scratch (in the scratch area, now and then over the
+// words), the counter and the words beside them at random, the scratch written at once or not.
+template <bool kRecords>
+struct SegmentEndCase {
+  static bool Native(PPCContext& ctx, uint8_t*) { return d3d_draw::SegmentEnd(ctx, SelfTestMemory(), kRecords); }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t at = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
+    const uint32_t scratch = !kRecords && rng() % 8 == 0 ? at + 4 * uint32_t(rng() % 14) : s.scratch + 0x8000 + 4 * uint32_t(rng() % 64);
+    Put32(s, s.scratch, at - 4);  // the words' start, for CanonicalCommands
+    Put32(s, s.device + 10768, scratch);
+    Put32(s, s.device + 21156, rng() % 3 == 0 ? uint32_t(rng()) : 0);
+    s.Host(s.device + 10813)[0] = uint8_t(rng());
+    Put32(s, s.device + 14544, uint32_t(rng()));
+    Put32(s, s.device + 48, uint32_t(rng()) & ~3u);
+    Put32(s, s.device + 10780, uint32_t(rng()));
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = at;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = kRecords ? &NoRegisterDiffers : nullptr;
+  static void Normalize(CallSetup& s, PPCContext& after) {
+    if constexpr (kRecords) CanonicalCommands(s, after.r3.u32 - 4);  // r3 past the words, the cursor their last
+  }
+};
+
+// A segment chained after the pending ones (sub_826BA5C8): the chain, the header and the last link in the scratch,
+// now and then over each other; the dwords and the tag at random.
+struct ChainSegmentCase {
+  static bool Native(PPCContext& ctx, uint8_t*) { return d3d_draw::ChainSegment(ctx, SelfTestMemory()); }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t header = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
+    const uint32_t chain = rng() % 8 == 0 ? header + 4 * uint32_t(rng() % 4) : s.scratch + 0x9000 + 4 * uint32_t(rng() % 16);
+    const uint32_t link = rng() % 8 == 0 ? header + 4 * uint32_t(rng() % 4) : s.scratch + 0xA000 + 4 * uint32_t(rng() % 64);
+    Put32(s, chain + 8, link);
+    ctx.r3.u64 = chain;
+    ctx.r4.u64 = header;
+    ctx.r5.u64 = uint32_t(rng()), ctx.r6.u64 = uint32_t(rng());
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = nullptr;
+  static void Normalize(CallSetup&, PPCContext&) {}
+};
+
 // A recorded command buffer's replay (sub_826C3750): the draws' device and dirty groups as the helpers' draw case
 // makes them, a buffer in the scratch (its masks, 1-3 segment nodes of 1-4 segments, 0-2 resource nodes with
 // objects there, a fence now and then, its flags at random: room only, occlusion predication, bins back), the

@@ -50,6 +50,9 @@ struct Runtime {
   uint32_t device_slot = 0;            // the title's global that leads to the device (**slot)
   GuestFunction block_on_fence = nullptr;  // r3 device, r4 a fence, r5 an argument: waits until the GPU passed it
   GuestFunction ring_space = nullptr;  // r3 device, r4 the ring's write index, r5 dwords: waits for that ring space
+  GuestFunction ring_submit = nullptr;     // r3 device, r4 the segment's {dwords, address}, r5 1 (RingSubmit's)
+  GuestFunction segment_submit = nullptr;  // r3 device, r4 end, r5 address, r6 dwords, r7 count, r8 list (SegmentSubmit's)
+  GuestFunction segment_room = nullptr;    // r3 device, r4 0: a new segment from the allocator (the command buffer full)
   uint32_t clear_depth_offset = 0, clear_depth_scale = 0;
   // The resolve's format table (a half-word a format), default destination point, copy pixel shader (15 dwords) and
   // vertex offset float: guest addresses in the title's image.
@@ -64,6 +67,7 @@ inline Runtime g_runtime;
 bool NativeDraws();
 bool DrawRecords();
 bool DirectSubmit();  // any360_direct_submit (d3d_draw.cpp)
+bool NativeSegments();  // any360_native_segments (d3d_draw.cpp)
 // any360_d3d_native_draw_helpers off (a diagnostic): draws that need the title's helpers besides its uploads (shader
 // loads, state, misc and wait groups) are declined.
 bool DrawHelpers();
@@ -2192,6 +2196,157 @@ inline bool RingSubmit(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory
 inline void RingSubmitOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && RingSubmit(ctx, base, m)) return;
+  original(ctx, base);
+}
+
+// The segments of the command buffer (D6, docs/D3D.md). The kick (Crackdown sub_826BB408) closes the segment being
+// written (SegmentClose, sub_826BB1A0): its end packets (SegmentEnd, sub_826BB0C0), its submit (SegmentSubmit,
+// sub_826BB348: straight to the ring's submit, or chained after the segments still pending, ChainSegment,
+// sub_826BA5C8, under the kernel's lock), then the next segment opened 32-byte aligned after it, or a new one from the
+// allocator when the command buffer is full (the runtime's sub_826BAAD0).
+namespace detail {
+// SegmentEnd's words: INVALIDATE_STATE 0x7FFF, then two EVENT_WRITE_SHD of event 3: `end` (the segment's end) into
+// the device's scratch + 4, `counter` (the segments so far) into the scratch.
+template <bool kRecords>
+inline uint32_t SegmentEndWords(uint32_t* w, uint32_t scratch, uint32_t end, uint32_t counter) {
+  namespace record = any360::xdk::record;
+  const uint32_t first = GpuAddress(scratch + 4, 0x1FFFFFFFu) | 2, second = GpuAddress(scratch, 0x1FFFFFFFu) | 2;
+  if constexpr (kRecords) {
+    w[0] = std::byteswap(record::Header(2)), w[1] = record::KindWord(record::kInvalidate, 0), w[2] = 0x7FFF;
+    w[3] = std::byteswap(record::Header(record::EventWords(3))), w[4] = record::KindWord(record::kEvent, 0x58);
+    w[5] = 3, w[6] = first, w[7] = end;
+    w[8] = w[3], w[9] = w[4], w[10] = 3, w[11] = second, w[12] = counter;
+    return 13;
+  } else {
+    const uint32_t v[10] = {0xC0003B00u, 0x7FFF, 0xC0025800u, 3, first, end, 0xC0025800u, 3, second, counter};
+    for (uint32_t i = 0; i < 10; ++i) w[i] = std::byteswap(v[i]);
+    return 10;
+  }
+}
+}  // namespace detail
+// SegmentEnd (sub_826BB0C0): r3 the device, r4 where the words go -> r3 past them. Also: +12956 the word at +14544,
+// +12952 the cursor (+48), the segment counter (+10780) up by 2; when the device writes its scratch itself (+10813
+// bit 2, +21156 zero), the two values into the scratch (+10768) at once.
+inline bool SegmentEnd(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  const uint32_t device = ctx.r3.u32, at = ctx.r4.u32;
+  if (!any360::xdk::IsPlainMemory(device, 21300) || !any360::xdk::IsPlainMemory(at, 52) ||
+      any360::xdk::detail::Overlap(at, 52, device, 21300))
+    return false;
+  uint8_t* d = m.Host(device);
+  const uint32_t scratch = At32(d + 10768);
+  const bool direct = !At32(d + 21156) && (d[10813] & 4);
+  if (direct && (!any360::xdk::IsPlainMemory(scratch, 8) || any360::xdk::detail::Overlap(scratch, 8, device, 21300)))
+    return false;
+  const uint32_t word = At32(d + 14544), cursor = At32(d + 48), counter = At32(d + 10780);
+  const uint32_t end = (word & 3) | cursor;
+  Set32(d + 12956, word), Set32(d + 12952, cursor);
+  uint32_t w[13];
+  const uint32_t n = records ? SegmentEndWords<true>(w, scratch, end, counter) : SegmentEndWords<false>(w, scratch, end, counter);
+  std::memcpy(m.Host(at), w, 4 * size_t(n));
+  if (direct) Set32(m.Host(scratch), counter), Set32(m.Host(scratch + 4), end);
+  Set32(d + 10780, counter + 2);
+  ctx.r3.u64 = at + 4 * n;
+  return true;
+}
+inline void SegmentEndOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && NativeSegments() && SegmentEnd(ctx, m, DrawRecords())) return;
+  original(ctx, base);
+}
+// ChainSegment (sub_826BA5C8): r3 the chain ({+4 the last segment, +8 the word to link the next one through}), r4 the
+// segment's header, r5 its dwords, r6 its tag -> r3 the header's end. The header: its data's address in the
+// physical view (past the 16 bytes), 0x82000000 | dwords, the tag, 0xC0000000 (its link, set by the next one); the
+// last segment's link set to the header (its CPU flushes do nothing in recompiled code).
+inline bool ChainSegment(PPCContext& ctx, const any360::xdk::Memory& m) {
+  using namespace detail;
+  const uint32_t chain = ctx.r3.u32, header = ctx.r4.u32;
+  if (!any360::xdk::IsPlainMemory(chain + 4, 8) || !any360::xdk::IsPlainMemory(header, 16)) return false;
+  const uint32_t link = At32(m.Host(chain + 8));
+  if (!any360::xdk::IsPlainMemory(link, 4)) return false;
+  const uint32_t physical = GpuAddress(header, 0x1FFFFFFFu) - 0x40000000u;
+  uint8_t* h = m.Host(header);
+  Set32(h + 8, ctx.r6.u32), Set32(h + 12, 0xC0000000u), Set32(h + 4, ctx.r5.u32 | 0x82000000u), Set32(h, physical + 16);
+  Set32(m.Host(chain + 8), header + 12), Set32(m.Host(chain + 4), header);
+  Set32(m.Host(link), physical);
+  ctx.r3.u64 = header + 16;
+  return true;
+}
+inline void ChainSegmentOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && NativeSegments() && ChainSegment(ctx, m)) return;
+  original(ctx, base);
+}
+// SegmentSubmit (sub_826BB348): r3 the device, r4 the segment's end (returned), r5 its address, r6 its dwords, r7
+// added to the pending count (+10872), r8 the chain. With no segment pending, the segment goes to the ring's submit
+// (its {dwords, address} in the runtime's frame); otherwise it is chained under the kernel's lock: the runtime's.
+inline bool SegmentSubmit(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+  using namespace detail;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32, end = ctx.r4.u32, entry = ctx.r1.u32;
+  if (!rt.ring_submit || !any360::xdk::IsPlainMemory(device, 21300) || !any360::xdk::IsPlainMemory(entry - 1024, 1024))
+    return false;
+  uint8_t* d = m.Host(device);
+  if (At32(d + 10872)) return false;
+  Set32(d + 10872, ctx.r7.u32);
+  const uint32_t segment = entry - 96;
+  Set32(m.Host(segment), ctx.r6.u32), Set32(m.Host(segment + 4), ctx.r5.u32);
+  ctx.r1.u64 = entry - 176;
+  Call(ctx, base, rt.ring_submit, device, segment, 1);
+  ctx.r1.u64 = entry;
+  ctx.r3.u64 = end;
+  return true;
+}
+inline void SegmentSubmitOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && NativeSegments() && SegmentSubmit(ctx, base, m)) return;
+  original(ctx, base);
+}
+// SegmentClose (sub_826BB1A0): r3 the device. Its segment (from +14552 to the cursor +48) ended and submitted, unless
+// the device has none (+10813 bit 6); the next one opened at the cursor 32-byte aligned (+14552, the cursor before
+// it), or taken from the allocator past the command buffer's end (+56); with a replay pending (+21156), its mark
+// (+14540) rounded up to a page. The command buffer being recorded (+10812 bit 7) or tiled (+12944): the runtime's.
+inline bool SegmentClose(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32, entry = ctx.r1.u32;
+  if (!rt.segment_submit || !rt.segment_room || !any360::xdk::IsPlainMemory(device, 21300) ||
+      !any360::xdk::IsPlainMemory(entry - 1024, 1024))
+    return false;
+  uint8_t* d = m.Host(device);
+  uint32_t cursor = At32(d + 48) + 4;
+  if (!(d[10813] & 0x40)) {
+    if ((d[10812] & 0x80) || At32(d + 12944)) return false;
+    const uint32_t start = At32(d + 14552);
+    ctx.r3.u64 = device, ctx.r4.u64 = cursor;
+    if (!SegmentEnd(ctx, m, records)) {
+      ctx.r3.u64 = device;
+      return false;
+    }
+    const uint32_t end = ctx.r3.u32;
+    ctx.r1.u64 = entry - 128;
+    ctx.r7.u64 = 0, ctx.r8.u64 = device + 13000;
+    cursor = uint32_t(Call(ctx, base, rt.segment_submit, device, end, GpuAddress(start, 0x1FFFFFFFu),
+                           uint32_t(int32_t(end - start) >> 2)));
+    ctx.r1.u64 = entry;
+  }
+  const uint32_t next = (cursor + 31) & ~31u;
+  if (next > At32(d + 56)) {
+    Set32(d + 48, cursor - 4);
+    ctx.r1.u64 = entry - 128;
+    Call(ctx, base, rt.segment_room, device, 0);
+    ctx.r1.u64 = entry;
+    return true;
+  }
+  Set32(d + 14552, next), Set32(d + 48, next - 4);
+  if (At32(d + 21156))
+    if (const uint32_t mark = At32(d + 14540)) Set32(d + 14540, (mark + 4095) & ~4095u);
+  ctx.r3.u64 = cursor;
+  return true;
+}
+inline void SegmentCloseOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && NativeSegments() && SegmentClose(ctx, base, m, DrawRecords())) return;
   original(ctx, base);
 }
 inline void ClearOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
