@@ -46,6 +46,7 @@ struct Runtime {
   // color), and the doubles that make a fast clear's depth from its packed color: guest addresses.
   GuestFunction clear_color_pack = nullptr;
   GuestFunction list_block = nullptr;  // r3 one of the device's lists (+12960, +12980) -> r3 its new block's cursor
+  uint32_t swap_word = 0;              // the swap packet's fence word (a title address the runtime passes)
   uint32_t clear_depth_offset = 0, clear_depth_scale = 0;
   // The resolve's format table (a half-word a format), default destination point, copy pixel shader (15 dwords) and
   // vertex offset float: guest addresses in the title's image.
@@ -1938,20 +1939,15 @@ inline void ReplayCommandBufferOrOriginal(PPCContext& ctx, uint8_t* base, GuestF
 // 0x57C-0x57D; r3 back: the cursor after. The fence: the scratch value (0x578), a predicated wait for the GPU's
 // counter (+10772) to reach it, a predicated INTERRUPT, 0x45E; the wait after: the counter at 0, 0x57C = 0x0BADF00D.
 // The device's +10815 bit 4 kept as the runtime keeps it. Declines when the room after the cursor is not plain.
-inline bool Fence(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
-  using namespace detail;
-  const uint32_t device = ctx.r3.u32, cursor = ctx.r4.u32;
-  if (!any360::xdk::IsPlainMemory(device, 16384) || !any360::xdk::IsPlainMemory(cursor + 4, 200)) return false;
-  uint8_t* d = m.Host(device);
-  uint32_t flags = ctx.r5.u32;
+namespace detail {
+inline void WriteFence(uint8_t* d, Out& out, uint32_t flags, uint32_t first, uint32_t second) {
   const uint32_t value = (flags >> 24) & 0x3F ? (flags >> 24) & 0x3F : 4;
   if (!(flags & 6)) flags |= 6;
   const uint32_t counter = GpuAddress(At32(d + 10772), 0x1FFFFFFFu) | 2;
-  Out out{m, cursor, records};
   if (flags & 2) {
     d[10815] |= 0x10;
     if (!(flags & 1)) out.Registers(0x5C8, {0x20000});
-    out.Registers(0x57C, {ctx.r6.u32, ctx.r7.u32});
+    out.Registers(0x57C, {first, second});
     out.Registers(0x578, {value});
     out.Wait(19, counter, value, 0xFFFFFFFFu, 256, true);
     out.Interrupt(value, true);
@@ -1962,12 +1958,81 @@ inline bool Fence(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
     out.Wait(19, counter, 0, 0xFFFFFFFFu, 256, true);
     out.Registers(0x57C, {0x0BADF00Du});
   }
+}
+}  // namespace detail
+inline bool Fence(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  const uint32_t device = ctx.r3.u32, cursor = ctx.r4.u32;
+  if (!any360::xdk::IsPlainMemory(device, 16384) || !any360::xdk::IsPlainMemory(cursor + 4, 200)) return false;
+  Out out{m, cursor, records};
+  WriteFence(m.Host(device), out, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
   ctx.r3.u64 = out.cursor;
   return true;
 }
 inline void FenceOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && Fence(ctx, m, DrawRecords())) return;
+  original(ctx, base);
+}
+
+// sub_826BC568 (the swap's packet): r3 device, r4 1 without the waits. The GPU timestamps around it (sub_826C8488,
+// when the device profiles: +21272 2, an EVENT_WRITE_SHD of 0xDEADBEEF into the +21268 ring's next slot, its two
+// halves the start and the end), the previous frame's wait (scratch 0x579 = 1, the counter's second word at 1), the
+// fence with the present mode (+13220) and the title's swap word, the wait for the second word back at 0; +10813 bit
+// 5. The title's make-room called where the runtime calls it. Declines a present mode it does not know (the runtime
+// reads an unset stack word there).
+inline bool SwapPacket(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  const Runtime& rt = g_runtime;
+  const uint32_t device = ctx.r3.u32, quiet = ctx.r4.u32, entry = ctx.r1.u32;
+  if (!rt.make_room || !rt.swap_word || !any360::xdk::IsPlainMemory(device, 21284) ||
+      !any360::xdk::IsPlainMemory(entry - 1024, 1024))
+    return false;
+  uint8_t* d = m.Host(device);
+  uint32_t mode;
+  switch (At32(d + 13220)) {
+    case 0: case 1: mode = 1; break;
+    case 2: mode = 2; break;
+    case 4: mode = 3; break;
+    case 0x80000000u: mode = 0; break;
+    default: return false;
+  }
+  if (At32(d + 21272) == 2 && !any360::xdk::IsPlainMemory(At32(d + 21268), 32)) return false;
+  const uint32_t frame = entry - 128;
+  const auto room = [&] {
+    ctx.r1.u64 = frame;
+    const uint32_t cursor = At32(d + 48);
+    return cursor > At32(d + 56) ? uint32_t(Call(ctx, base, rt.make_room, device)) : cursor;
+  };
+  const auto timestamp = [&](bool start) {
+    if (At32(d + 21272) != 2) return;
+    const uint32_t slot = At32(d + 21280) == 3 ? 0 : At32(d + 21280) + 1;
+    if (slot == At32(d + 21276)) return;
+    Out out{m, room(), records};
+    out.Event(0x58, {0x80000003u, GpuAddress(At32(d + 21268) + 4 * (2 * slot + (start ? 0 : 1)), 0x1FFFFFFFu) | 2,
+                     0xDEADBEEFu});
+    Set32(d + 48, out.cursor);
+  };
+  timestamp(true);
+  Out out{m, room(), records};
+  const uint32_t second = GpuAddress(At32(d + 10772) + 4, 0x1FFFFFFFu) | 2;
+  if (!quiet) out.Registers(0x579, {1}), out.Wait(19, second, 1, 0xFFFFFFFFu, 256);
+  {
+    // The fence as the title's bound fence writes it (any360_d3d_records).
+    Out fence{m, out.cursor, DrawRecords()};
+    WriteFence(d, fence, 0, rt.swap_word, ((At32(d + 11572) >> 23) & 0x7F) | (mode << 8) | quiet);
+    out.cursor = fence.cursor;
+  }
+  if (!quiet) out.Wait(19, second, 0, 0xFFFFFFFFu, 256);
+  Set32(d + 48, out.cursor);
+  timestamp(false);
+  d[10813] |= 0x20;
+  ctx.r1.u64 = entry;
+  return true;
+}
+inline void SwapPacketOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && SwapPacket(ctx, base, m, DrawRecords())) return;
   original(ctx, base);
 }
 inline void ClearOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {

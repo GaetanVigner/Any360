@@ -610,6 +610,36 @@ struct ClearTargetCase {
   static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
 };
 
+// The swap's packet (sub_826BC568): the draws' cursor room, the profiling ring on or off (its slots at random,
+// sometimes full), every present mode the runtime knows (and others now and then: declined), the waits on or off.
+template <bool kRecords>
+struct SwapPacketCase {
+  static bool Native(PPCContext& ctx, uint8_t* base) { return d3d_draw::SwapPacket(ctx, base, SelfTestMemory(), kRecords); }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t cursor = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
+    Put32(s, s.scratch, cursor);
+    Put32(s, s.device + 48, cursor);
+    Put32(s, s.device + 52, s.scratch + 0x30000);
+    Put32(s, s.device + 56, s.scratch + 0x2F000);
+    Put32(s, s.device + 10772, uint32_t(rng()));
+    Put32(s, s.device + 11572, uint32_t(rng()));
+    const uint32_t modes[] = {0, 1, 2, 4, 0x80000000u, 3, uint32_t(rng())};
+    Put32(s, s.device + 13220, modes[rng() % 16 == 0 ? 5 + rng() % 2 : rng() % 5]);
+    Put32(s, s.device + 21272, rng() % 2 ? 2 : uint32_t(rng() % 4));
+    Put32(s, s.device + 21268, s.scratch + 0x7F00);
+    Put32(s, s.device + 21276, uint32_t(rng() % 4)), Put32(s, s.device + 21280, uint32_t(rng() % 4));
+    s.Host(s.device + 10813)[0] = uint8_t(rng());
+    s.Host(s.device + 10815)[0] = uint8_t(rng());
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = rng() % 2;
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
+  }
+};
+
 // A fence (sub_826BB5C8): the cursor in the scratch, every flag shape, the value, the two words, the device's
 // counter address at random. PM4: the cursor back compared; records: through the canonical list (its length).
 template <bool kRecords>
