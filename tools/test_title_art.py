@@ -78,8 +78,9 @@ class Build(unittest.TestCase):
         settings = title_art.build('demo', self.source, 0.4, None, out)
         art = out / 'art'
         self.assertEqual(sorted(p.name for p in art.iterdir()), ['art.json', 'cover.jpg', 'hero.jpg', 'source.png'])
-        self.assertEqual(Image.open(art / 'cover.jpg').size, (600, 900))
-        self.assertEqual(Image.open(art / 'hero.jpg').size, (1920, 620))
+        for name, size in (('cover.jpg', (600, 900)), ('hero.jpg', (1920, 620))):
+            with Image.open(art / name) as image:
+                self.assertEqual(image.size, size)
         self.assertTrue(settings['art_top_detected'])
         self.assertEqual(json.loads((art / 'art.json').read_text(encoding='utf-8'))['focus'], 0.4)
 

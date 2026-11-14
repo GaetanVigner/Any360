@@ -49,7 +49,7 @@ def load(title):
         sys.exit(f'no {path}: describe the title first (see the module docstring)')
     cfg = json.loads(path.read_text(encoding='utf-8'))
     cfg['title'] = title
-    for key in ('image', 'generated', 'port_src', 'golden', 'project_dir', 'decomp_dir', 'ghidra'):
+    for key in ('image', 'xex', 'generated', 'port_src', 'golden', 'project_dir', 'decomp_dir', 'ghidra'):
         if key in cfg:
             cfg[key] = Path(os.path.expandvars(cfg[key]))
     return cfg
@@ -76,6 +76,13 @@ def step_inventory(cfg, args):
     if cfg.get('sdk'):
         run([PYTHON, '-I', TOOLS / 'coverage.py', '--name', cfg['title'], '--generated', cfg['generated'],
              '--sdk', cfg['sdk'], '--port-src', cfg['port_src']])
+
+
+def step_metadata(cfg, args):
+    """The title's name, icon and achievements from its XEX (tools/title_metadata.py), into its bundle folder."""
+    if not cfg.get('xex'):
+        sys.exit(f'{cfg["title"]}: set "xex" (the original default.xex) in titles/{cfg["title"]}/pipeline.json')
+    run([PYTHON, TOOLS / 'title_metadata.py', cfg['title'], cfg['xex']] + (['--out', args.out] if args.out else []))
 
 
 def functions_file(cfg):
@@ -264,6 +271,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('title')
     sub = parser.add_subparsers(dest='step', required=True)
+    p = sub.add_parser('metadata')
+    p.add_argument('--out', help='bundle folder (default: <ANY360_HOME>/titles/<title>)')
     sub.add_parser('inventory')
     sub.add_parser('functions')
     p = sub.add_parser('import')

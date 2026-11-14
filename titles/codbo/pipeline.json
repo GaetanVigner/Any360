@@ -1,5 +1,6 @@
 {
  "_comment": "Where the Call of Duty: Black Ops pipeline finds the title (nothing of it is in this repository): the ReXGlue codegen output of the campaign and Zombies executable (default.xex; default_mp.xex, the multiplayer, is not recompiled yet) in the CoDBoRewrite checkout, generated from the player's own disc.",
+ "xex": "F:/COD BO/game/default.xex",
  "generated": "F:/COD BO/CoDBoRewrite/generated/default",
  "port_src": "F:/COD BO/CoDBoRewrite/src",
  "sdk": "F:/The simpsons/recomp-sys/tools/rexglue-sdk",

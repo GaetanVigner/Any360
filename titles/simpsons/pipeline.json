@@ -1,5 +1,6 @@
 {
  "_comment": "Where The Simpsons Game pipeline finds the title (nothing of it is in this repository). image: the decrypted default.xex image is not available here yet (the port's tools/xex_info.py and the ReXGlue codegen produce it from the player's own copy); project_dir and decomp_dir inside the title's checkout. Paths point at the scratch clone used for the coverage reports; replace with the TheSimpsonsGameRewrite checkout.",
+ "xex": "F:/The simpsons/recomp/gamedata/default.xex",
  "image": "F:/Crackdown/TheSimpsonsGameRewrite/simpsons/extracted/default_image.bin",
  "image_base": "0x82000000",
  "generated": "F:/The simpsons/recomp-sys/simpsons/generated/default",

@@ -13,11 +13,11 @@ publishers' artwork, never committed):
     hero.jpg            1920x620 wide banner
     source.<ext>        the cover both were made from
     art.json            settings to make them again (tools/title_art.py --rebuild)
-  title.json            from the XEX: title id, names per language, version    (to do, below)
-  achievements.json     from the XEX: every achievement                        (to do, below)
+  title.json            from the XEX: title id, names per language, version
+  achievements.json     from the XEX: every achievement
   icons/
-    title.png           64x64 title icon, from the XEX                         (to do)
-    achievements/<id>.png
+    title.png           64x64 title icon, from the XEX
+    achievements/<image id>.png
 ```
 
 `<id>` is the short id used everywhere else (`crackdown`, `simpsons`, `tdu`,
@@ -56,35 +56,44 @@ python tools/title_art.py crackdown --rebuild          # same files again from a
 
 Tests: `python -m unittest discover -s tools -p "test_*.py"`.
 
-## From the XEX (to do: pipeline step `any360.py <title> metadata`)
+## From the XEX: name, icon, achievements
 
-Every Xbox 360 title carries its own metadata in its executable: the **SPA**
-resource, an XDBF file. Extract it rather than typing anything by hand.
+The XEX is the Xbox 360's executable format: the disc's `default.xex`, which the
+recompiler starts from. Every one carries the title's own metadata in a
+resource named after its title id: the **SPA**, an XDBF database the dashboard
+read for the title's name, icon and achievements. The ReXGlue runtime reads
+that same resource when the game loads (`rex/system/util/xdbf_utils.h`, from
+Xenia), which is where the ports' in-game achievements come from.
 
-1. **Find it.** In the XEX optional headers, key `0x000002FF` (resource info)
-   lists resources as `name[8]`, `address`, `size` (big-endian). The SPA is the
-   resource named after the title id in hex (e.g. `4D5307D6`). Its address is
-   in the *decrypted, decompressed* image (the one `pipeline.json` `image`
-   points at, base `image_base`).
-2. **Read the XDBF.** Header: magic `XDBF`, version, entry table length, entry
-   count, free table length, free count (u32 each, big-endian). Then entries of
-   `namespace u16, id u64, offset u32, length u32`, the free table, and the
-   data the offsets are relative to.
-   - namespace 1, metadata: `XTHD` (title id, version), `XACH` (achievements:
-     id, label / description / unachieved string ids, image id, gamerscore,
-     flags), `XSTC` (default language), `XPRP`/`XCXT` (presence, contexts, later).
-   - namespace 2, images: PNGs by id; the title icon is id `0x8000`, each
-     achievement names its own.
-   - namespace 3, strings: one `XSTR` table per language id; the title name is
-     string `0x8000`.
-3. **Write** `title.json` (`titleId`, `version`, `names` by language,
-   `defaultLanguage`), `achievements.json` (`id`, `name`, `description`,
-   `lockedDescription`, `gamerscore`, `secret`, `icon`), and the PNGs under
-   `icons/`, in the title's bundle folder. Set `achievementsTotal` in
-   `any360.game.json` from it. Same rule as art: nothing from it is committed.
-4. **Test** the XDBF reader on a synthetic file (entries in every namespace,
-   two languages, a missing image), and check the four titles' outputs
-   against what their dashboards showed (achievement count and gamerscore).
+**This is a step of a title's initial reverse, right after it is described:**
+
+```bash
+python pipeline/any360.py <title> metadata        # "xex" in titles/<title>/pipeline.json
+python tools/title_metadata.py <title> <default.xex>   # same, without a pipeline.json yet
+```
+
+It writes `title.json` (title id, version, name in every language, default
+language), `achievements.json` (`id`, `name`, `description`,
+`lockedDescription`, `gamerscore`, `secret`, `icon`) and the PNGs under
+`icons/` into the title's bundle, and sets `titleId` and `achievementsTotal` in
+its `any360.game.json`. Nothing is typed by hand; nothing is committed.
+
+How: the XEX header gives the title id (execution info), the resource's
+address and size (resource info), the image's load address and key (security
+info) and how the image is stored (file format: AES-128-CBC with the public
+retail key, "basic" compression in data and zero runs). Only the resource's
+bytes are decrypted — CBC decrypts any block from the one before it — then the
+XDBF is read: namespace 1 metadata (`XSTC` default language, `XACH`
+achievements), 2 images (title icon `0x8000`), 3 one string table per
+language (title name `0x8000`). pycryptodome is used when installed; a small
+pure-Python AES does it otherwise. LZX-compressed executables are not
+supported yet. Tests: `tools/test_title_metadata.py` (FIPS-197 and NIST CBC
+vectors, a synthetic XDBF and XEX with a zero run inside the resource).
+
+Checked on the four titles of this machine (2026-11-14): Crackdown 43
+achievements / 900 G (the resource is byte-equal to the port's decrypted
+image), The Simpsons Game 44 / 1000 G, Call of Duty: Black Ops 50 / 1000 G,
+Test Drive Unlimited 46 / 1000 G, each with its title icon.
 
 The launcher's achievements (its roadmap, phase 4) read `achievements.json`;
 unlocks will come from the runtime (`XamUserWriteAchievements` in any360::sys).

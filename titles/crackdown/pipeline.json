@@ -1,5 +1,6 @@
 {
  "_comment": "Where the Crackdown pipeline finds the title (nothing of it is in this repository). image: the decrypted default.xex image (dump_image in the port); project_dir: the Ghidra project; decomp_dir: where decompiled C and bindings are written, inside the title's repository. reference_sdk: the ReXGlue SDK install (include/, lib/, bin/) layer/sys/test.ps1 links the reference runtime from.",
+ "xex": "F:/Crackdown/Crackdown-v0.4.0-windows-x64/game/default.xex",
  "image": "F:/Crackdown/re/image.bin",
  "image_base": "0x82000000",
  "generated": "F:/Crackdown/crackdown-xbox360-recompiled/generated/default",

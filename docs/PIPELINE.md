@@ -23,6 +23,7 @@ its files are in `titles/<title>/pipeline.json` (nothing of the game enters this
 
 | Step | Command | Produces |
 |---|---|---|
+| metadata | `python pipeline/any360.py <title> metadata` | the title's name, icon and achievements read from its XEX's SPA resource, into its bundle folder outside the repository ([TITLE_BUNDLE.md](TITLE_BUNDLE.md)); first step of a new title, needs only `xex` in its `pipeline.json` |
 | inventory | `python pipeline/any360.py <title> inventory` | `docs/data/functions-<title>.json` (local, ignored by git: every function with address, instructions, state N native / V verified / L library / R recompiled, handler, file), `docs/coverage/inventory-<title>.json` (modules, translated functions, imports: the title's contribution to `db/`) |
 | import | `python pipeline/any360.py <title> import` | the Ghidra project: `BinaryLoader` at the image base, `SeedFunctions.java` creates and names every function the recompiler found (so cross-references and the decompiler work on the same function boundaries as the generated code), then Ghidra's auto-analysis |
 | decompile | `python pipeline/any360.py <title> decompile sub_826B9C08 826C3750 "XDK D3D runtime"` | `Decompile.java` writes the C of each function (or of every function of a module from `titles/<title>/modules.json`) to `<decomp_dir>/raw/` |
