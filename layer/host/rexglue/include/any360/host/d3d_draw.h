@@ -552,14 +552,23 @@ struct Out {
     std::memcpy(m.Host(cursor + 4), m.Host(from), 4 * size_t(dwords));
     cursor += 4 * dwords;
   }
-  void Wait(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e) {
+  void Wait(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, bool predicated = false) {
     if (records) {
-      Word(any360::xdk::record::Header(6));
+      Word(any360::xdk::record::Header(6, predicated));
       Host(any360::xdk::record::KindWord(any360::xdk::record::kWait, 0));
       for (uint32_t v : {a, b, c, d, e}) Host(v);
     } else {
-      Word(0xC0043C00u);
+      Word(0xC0043C00u | (predicated ? 1u : 0u));
       for (uint32_t v : {a, b, c, d, e}) Word(v);
+    }
+  }
+  // INTERRUPT of the CPUs `cpus` names.
+  void Interrupt(uint32_t cpus, bool predicated) {
+    if (records) {
+      Word(any360::xdk::record::Header(2, predicated));
+      Host(any360::xdk::record::KindWord(any360::xdk::record::kInterrupt, 0)), Host(cpus);
+    } else {
+      Word(0xC0005400u | (predicated ? 1u : 0u)), Word(cpus);
     }
   }
   // DRAW_INDX_2 with auto indices (`predicated` its header's bit 0).
@@ -1922,6 +1931,43 @@ inline bool ReplayCommandBuffer(PPCContext& ctx, uint8_t* base, const any360::xd
 inline void ReplayCommandBufferOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && ReplayCommandBuffer(ctx, base, m, DrawRecords())) return;
+  original(ctx, base);
+}
+// sub_826BB5C8 (a fence): r3 device, r4 the cursor to write after, r5 the flags (bit 1 the fence, bit 2 the wait
+// after it, neither: both; bit 0 without the 0x5C8 write; bits 24-29 the value, 0: 4), r6/r7 two words for
+// 0x57C-0x57D; r3 back: the cursor after. The fence: the scratch value (0x578), a predicated wait for the GPU's
+// counter (+10772) to reach it, a predicated INTERRUPT, 0x45E; the wait after: the counter at 0, 0x57C = 0x0BADF00D.
+// The device's +10815 bit 4 kept as the runtime keeps it. Declines when the room after the cursor is not plain.
+inline bool Fence(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
+  using namespace detail;
+  const uint32_t device = ctx.r3.u32, cursor = ctx.r4.u32;
+  if (!any360::xdk::IsPlainMemory(device, 16384) || !any360::xdk::IsPlainMemory(cursor + 4, 200)) return false;
+  uint8_t* d = m.Host(device);
+  uint32_t flags = ctx.r5.u32;
+  const uint32_t value = (flags >> 24) & 0x3F ? (flags >> 24) & 0x3F : 4;
+  if (!(flags & 6)) flags |= 6;
+  const uint32_t counter = GpuAddress(At32(d + 10772), 0x1FFFFFFFu) | 2;
+  Out out{m, cursor, records};
+  if (flags & 2) {
+    d[10815] |= 0x10;
+    if (!(flags & 1)) out.Registers(0x5C8, {0x20000});
+    out.Registers(0x57C, {ctx.r6.u32, ctx.r7.u32});
+    out.Registers(0x578, {value});
+    out.Wait(19, counter, value, 0xFFFFFFFFu, 256, true);
+    out.Interrupt(value, true);
+    out.Registers(0x45E, {value});
+  }
+  if (flags & 4) {
+    d[10815] &= 0xEF;
+    out.Wait(19, counter, 0, 0xFFFFFFFFu, 256, true);
+    out.Registers(0x57C, {0x0BADF00Du});
+  }
+  ctx.r3.u64 = out.cursor;
+  return true;
+}
+inline void FenceOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && Fence(ctx, m, DrawRecords())) return;
   original(ctx, base);
 }
 inline void ClearOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {

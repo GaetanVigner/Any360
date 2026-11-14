@@ -359,6 +359,10 @@ inline void CanonicalCommands(CallSetup& s, uint32_t cursor = 0) {
         } else if (opcode == 0x46 || opcode == 0x58 || opcode == 0x5A || opcode == 0x5B) {  // the events
           out.insert(out.end(), {4, opcode, count, predicated});
           for (uint32_t i = 0; i < count && i < 7; ++i) out.push_back(Get32(s, at + 4 * i));
+        } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kInterrupt) {
+          out.insert(out.end(), {11, raw[1], predicated});
+        } else if (opcode == 0x54 && count == 1) {  // INTERRUPT
+          out.insert(out.end(), {11, Get32(s, at), predicated});
         } else if (opcode == record::kOpcode && (raw[0] & 0xFF) == record::kIndirect) {
           out.insert(out.end(), {10, raw[1], raw[2], predicated});
         } else if (opcode == 0x3F && count == 2) {  // INDIRECT_BUFFER
@@ -604,6 +608,28 @@ struct ClearTargetCase {
     ctx.f1.f64 = double(rng() % 1000) / 1000.0;
   }
   static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+};
+
+// A fence (sub_826BB5C8): the cursor in the scratch, every flag shape, the value, the two words, the device's
+// counter address at random. PM4: the cursor back compared; records: through the canonical list (its length).
+template <bool kRecords>
+struct FenceCase {
+  static bool Native(PPCContext& ctx, uint8_t*) { return d3d_draw::Fence(ctx, SelfTestMemory(), kRecords); }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t cursor = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
+    Put32(s, s.scratch, cursor);
+    Put32(s, s.device + 10772, uint32_t(rng()));
+    s.Host(s.device + 10815)[0] = uint8_t(rng());
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = cursor;
+    ctx.r5.u64 = uint32_t(rng() % 8) | (rng() % 2 ? uint32_t(rng() % 64) << 24 : 0) | (uint32_t(rng()) & 0xC0FFFFF8u);
+    ctx.r6.u64 = uint32_t(rng()), ctx.r7.u64 = uint32_t(rng());
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = kRecords ? &NoRegisterDiffers : nullptr;
+  static void Normalize(CallSetup& s, PPCContext& after) {
+    if constexpr (kRecords) CanonicalCommands(s, after.r3.u32);
+  }
 };
 
 // A recorded command buffer's replay (sub_826C3750): the draws' device and dirty groups as the helpers' draw case

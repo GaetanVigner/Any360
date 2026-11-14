@@ -645,6 +645,13 @@ void Records() {
   s.ring.Run();
   for (Side* side : {&pm4_side, &record_side})
     CHECK(side->cp.reg(0x2503) == 0xBEEF && side->cp.reg(0x2504) == 0xCAFE);
+  // An interrupt record as INTERRUPT: the CPUs its bits name.
+  std::vector<std::pair<uint32_t, uint32_t>> interrupts;
+  s.cp.SetInterruptHandler([&](uint32_t source, uint32_t cpu) { interrupts.push_back({source, cpu}); });
+  s.ring.Put(record::Header(2));
+  raw(s.ring, record::KindWord(record::kInterrupt, 0)), raw(s.ring, 0x12);
+  s.ring.Run();
+  CHECK(interrupts.size() == 2 && interrupts[0] == std::make_pair(1u, 1u) && interrupts[1] == std::make_pair(1u, 4u));
 }
 
 int main() {

@@ -964,6 +964,14 @@ bool CommandProcessor::ExecuteRecord(Reader& r, uint32_t end, int depth) {
       }
       return true;
     }
+    case record::kInterrupt: {
+      if (r.offset >= end) return true;
+      const uint32_t cpus = NextRaw(r);
+      for (uint32_t cpu = 0; cpu < 6; ++cpu) {
+        if (cpus & (1u << cpu)) AfterDraws([this, cpu] { Interrupt(1, cpu); });
+      }
+      return true;
+    }
     case record::kConstantLoad: {
       if (end - r.offset < 3) return true;
       const uint32_t address = NextRaw(r) & 0x3FFFFFFF, offset_type = NextRaw(r), dwords = NextRaw(r) & 0xFFF;

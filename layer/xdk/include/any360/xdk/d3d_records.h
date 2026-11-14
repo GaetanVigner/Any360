@@ -25,6 +25,7 @@
 //               first constant (as SET_CONSTANT's), the dwords.
 //   kIndirect   argument: 0. Then INDIRECT_BUFFER's two words: the buffer's address and its size in dwords (a recorded
 //               command buffer, PM4 or records, run where the record is).
+//   kInterrupt  argument: 0. Then INTERRUPT's word: the CPUs interrupted (a bit each).
 //
 // A record is predicated as PM4 is: bit 0 of its header (the runtime predicates its draws, which run only for the
 // tiles that the bin select and mask both have).
@@ -49,6 +50,7 @@ enum Kind : uint32_t {
   kShaderLoad = 8,
   kConstantLoad = 9,
   kIndirect = 10,
+  kInterrupt = 11,
 };
 
 // The packet's header for `words` words after it (the kind word included), `predicated` or not.
