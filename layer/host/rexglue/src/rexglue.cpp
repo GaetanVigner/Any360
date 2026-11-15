@@ -22,6 +22,7 @@
 #include <intrin.h>
 
 #include <algorithm>
+#include <string>
 #include <bit>
 #include <cstring>
 #include <array>
@@ -428,6 +429,22 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     }
   }
 
+  // The period's frame times (taken: the next period starts empty): the median, and the 10% and 1% lows (the frame
+  // rates of the 90th and 99th percentile frame times: the stutter the averages hide).
+  std::string TakeFrameTimes() {
+    std::vector<float>& v = intervals_;
+    char text[160] = "frame times: none";
+    if (!v.empty()) {
+      std::sort(v.begin(), v.end());
+      const auto at = [&](double q) { return double(v[size_t(q * double(v.size() - 1) + 0.5)]); };
+      const double median = at(0.5), p90 = at(0.9), p99 = at(0.99);
+      std::snprintf(text, sizeof(text), "frame times: median %.2f ms (%.1f FPS), 10%% low %.1f FPS, 1%% low %.1f FPS",
+                    median, 1e3 / median, 1e3 / p90, 1e3 / p99);
+    }
+    v.clear();
+    return text;
+  }
+
   // Frames per second and the renderer's cost per frame since the last report.
   void Report() {
     ++frames_;
@@ -436,6 +453,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     if (frames_ > 1) {
       const double interval = std::chrono::duration<double, std::milli>(now - last_frame_).count();
       worst_ms_ = std::max(worst_ms_, interval);
+      if (log_) intervals_.push_back(float(interval));  // taken by each report
       slow_frames_ += interval > 1000.0 / 60.0;
       very_slow_frames_ += interval > 1000.0 / 20.0;
     }
@@ -465,11 +483,12 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       const uint64_t watch_writes = g_watch_writes.load(), watch_bytes = g_watch_bytes.load();
       char off[768];
       std::snprintf(off, sizeof(off),
-                    "Any360: %.1f FPS with the diagnostics off (%.1f with them, the period before: %+.0f%%); byte swapping "
-                    "%.2f MB a frame, ~%.2f ms over plain copies: without it ~%.0f FPS (the command processor's thread bound); "
-                    "slowest frame %.1f ms, %u over 16.7 ms, %u over 50 ms; %.1f watched writes a frame (%.2f MB "
+                    "Any360: %.1f FPS with the diagnostics off (%.1f with them, the period before: %+.0f%%); %s; byte "
+                    "swapping %.2f MB a frame, ~%.2f ms over plain copies: without it ~%.0f FPS (the command processor's "
+                    "thread bound); slowest frame %.1f ms, %u over 16.7 ms, %u over 50 ms; %.1f watched writes a frame (%.2f MB "
                     "invalidated); %.0f MB private, %zu textures, %zu targets, %zu resolves kept, %zu pipelines",
-                    fps, last_on_fps_, last_on_fps_ > 0 ? 100.0 * (fps / last_on_fps_ - 1.0) : 0.0, swap_bytes / 1e6, swap_ms,
+                    fps, last_on_fps_, last_on_fps_ > 0 ? 100.0 * (fps / last_on_fps_ - 1.0) : 0.0,
+                    TakeFrameTimes().c_str(), swap_bytes / 1e6, swap_ms,
                     1e3 / std::max(0.1, frame_ms - swap_ms), worst_ms_, slow_frames_, very_slow_frames_,
                     double(watch_writes - last_watch_writes_) / n, double(watch_bytes - last_watch_bytes_) / n / 1e6,
                     double(PrivateBytes()) / 1e6, texture_cache() ? texture_cache()->texture_count() : size_t(0),
@@ -515,7 +534,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
                   (s.ns_pipelines - last_.ns_pipelines) / ms, (s.ns_memory - last_.ns_memory) / ms,
                   (s.ns_submit - last_.ns_submit) / ms, (s.ns_resolves - last_.ns_resolves) / ms,
                   (s.ns_swaps - last_.ns_swaps) / ms, guest_memory_in_place() ? "in place" : "copied");
-    log_(line);
+    log_(std::string(line) + "; " + TakeFrameTimes());
     {
       const double batches = double(s.gpu_batches - last_.gpu_batches);
       char gpu[256];
@@ -753,6 +772,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     return 0;
   }
   double worst_ms_ = 0;
+  std::vector<float> intervals_;  // the period's frame times (ms)
   uint32_t slow_frames_ = 0, very_slow_frames_ = 0;
   gfx::vk::RendererStats last_;
 

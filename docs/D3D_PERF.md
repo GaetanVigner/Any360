@@ -6,13 +6,14 @@ crackdown, 2026-11-15: the in-game self-test (`--any360_d3d_selftest=true`, docs
 
 In game:
 
-- D6 step 6 (the ring out of the path): 0.0 ring kicks a frame from the title (14.1 with direct submission off), 14.1 command buffers and 2.0 tile bin selects handed over, the command processor woken 1.9 times a frame instead of 4.0; the city uncapped at 235-280 FPS with it, 260-277 without (6 launches alternating, a busy machine), the same draws and resolves.
-- D6 step 5 (native tile ops interpreter): the bracket's run (1.0 a frame) Any360's; the city uncapped at 276-283 FPS with it, 249-283 without (6 launches alternating, off first; a busier machine than the steps before), the same draws and resolves. It submits, so the self-test cannot run it: unit-tested in xdk_d3d_state_tests.
-- D6 step 4 (native BeginTiling / EndTiling): the scene's tiled bracket (1.0 a frame) Any360's; the city uncapped at 328-332 FPS with it, 327-334 without (4 scripted launches each, the same draws and resolves). Both kick and submit, so the self-test cannot run them.
-- D6 step 3 (native tiled recording): the city uncapped at 314-320 FPS with it, 318-321 without at the same view (~2,320 draws; 4 scripted launches each); 2.0 tile bin selects and 14 command buffers a frame handed to the command processor directly. Its three functions submit to the GPU, so the self-test cannot run them.
-- D6 step 2 (native segments): the city uncapped at 301-337 FPS with them, 296-332 without (5 scripted launches each, same route); 15.5 command buffers a frame submitted directly.
-- D6 step 1 (direct submission): the city uncapped at 307-373 FPS; frames identical with it on or off.
-- SegmentClose and SegmentSubmit submit to the GPU, so the self-test cannot run them: checked by those launches (no hang, the same frame rate and draws).
+- D6 frame times (2026-11-15; tools/frame_lows.py over the report's periods without diagnostics, 15 launches alternating, 5 a variant, 110 s each on the same scripted route into the city, the first period in play skipped; 25 steady periods of 10 s a variant): everything native 246.0 FPS, 10% low 212.8, 1% low 183.7; direct submission off (steps 1 and 6) 246.5 / 212.7 / 181.5 (no difference: z 0.0-0.3); native tiling off (steps 3-5) 232.8 / 197.2 / 166.2, so the native tiling gives +5.7% FPS, +7.9% 10% low, +10.5% 1% low (z about 2.5).
+- Each launch has one period of texture streaming (0.2-0.3 uploads a frame, 1-4 frames of 30-36 ms) at the same place of the route, in every variant: 1% low 84 / 83 / 76 there. The renderer's, not D6's.
+- D6 step 6 (the ring out of the path): 0.0 ring kicks a frame from the title (14.1 with direct submission off), 14.1 command buffers and 2.0 tile bin selects handed over, the command processor woken 1.9 times a frame instead of 4.0.
+- D6 step 5 (native tile ops interpreter): the bracket's run (1.0 a frame) Any360's; it submits, so the self-test cannot run it: unit-tested in xdk_d3d_state_tests.
+- D6 step 4 (native BeginTiling / EndTiling): the scene's tiled bracket (1.0 a frame) Any360's. Both kick and submit, so the self-test cannot run them.
+- D6 step 3 (native tiled recording): 2.0 tile bin selects and 14 command buffers a frame handed to the command processor directly. Its three functions submit to the GPU, so the self-test cannot run them.
+- D6 step 2 (native segments): 15.5 command buffers a frame submitted directly. SegmentClose and SegmentSubmit submit to the GPU, so the self-test cannot run them.
+- D6 step 1 (direct submission): frames identical with it on or off.
 
 | Case | Calls | Declined | Different | Title (ns) | Any360 (ns) | Speed-up |
 |---|---:|---:|---:|---:|---:|---:|
