@@ -6,10 +6,11 @@ crackdown, 2026-11-15: the in-game self-test (`--any360_d3d_selftest=true`, docs
 
 In game:
 
+- D6 step 6 (the ring out of the path): 0.0 ring kicks a frame from the title (14.1 with direct submission off), 14.1 command buffers and 2.0 tile bin selects handed over, the command processor woken 1.9 times a frame instead of 4.0; the city uncapped at 235-280 FPS with it, 260-277 without (6 launches alternating, a busy machine), the same draws and resolves.
 - D6 step 5 (native tile ops interpreter): the bracket's run (1.0 a frame) Any360's; the city uncapped at 276-283 FPS with it, 249-283 without (6 launches alternating, off first; a busier machine than the steps before), the same draws and resolves. It submits, so the self-test cannot run it: unit-tested in xdk_d3d_state_tests.
 - D6 step 4 (native BeginTiling / EndTiling): the scene's tiled bracket (1.0 a frame) Any360's; the city uncapped at 328-332 FPS with it, 327-334 without (4 scripted launches each, the same draws and resolves). Both kick and submit, so the self-test cannot run them.
-- D6 step 3 (native tiled recording): the city uncapped at 314-320 FPS with it, 318-321 without at the same view (~2,320 draws; 4 scripted launches each); 2.0 tile bin selects and 14 command buffers a frame handed to the command processor directly, the tiling writing nothing into the ring any more. Its three functions submit to the GPU, so the self-test cannot run them.
-- D6 step 2 (native segments): the city uncapped at 301-337 FPS with them, 296-332 without (5 scripted launches each, same route); 15.5 command buffers a frame submitted directly, none written into the ring.
+- D6 step 3 (native tiled recording): the city uncapped at 314-320 FPS with it, 318-321 without at the same view (~2,320 draws; 4 scripted launches each); 2.0 tile bin selects and 14 command buffers a frame handed to the command processor directly. Its three functions submit to the GPU, so the self-test cannot run them.
+- D6 step 2 (native segments): the city uncapped at 301-337 FPS with them, 296-332 without (5 scripted launches each, same route); 15.5 command buffers a frame submitted directly.
 - D6 step 1 (direct submission): the city uncapped at 307-373 FPS; frames identical with it on or off.
 - SegmentClose and SegmentSubmit submit to the GPU, so the self-test cannot run them: checked by those launches (no hang, the same frame rate and draws).
 

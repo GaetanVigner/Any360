@@ -25,13 +25,14 @@ class GpuBackend {
   // The GPU registers as the CPU sees them: MMIO at 0x7FC80000 + 4 * index (the title kicks the ring by writing
   // CP_RB_WPTR there).
   virtual void WriteRegister(uint32_t /*index*/, uint32_t /*value*/) {}
-  // A command buffer the title kicks without the ring (docs/D3D.md, D6): it runs where the ring's INDIRECT_BUFFER
-  // would, at ring dword `position` (the 3 dwords it would take are skipped, never read), and the write pointer moves
-  // after it, as the title's CP_RB_WPTR write would move it. False: not supported (the title writes the ring).
+  // A command buffer the title kicks without the ring (docs/D3D.md, D6): `position` is the title's ring write index,
+  // which must be the one it last kicked (no ring words of its own waiting); the buffer runs once the ring's read
+  // reaches it, after everything kicked before, and takes no ring dword: the title's ring and its write index stay
+  // its own. False: not taken (no direct submission, unkicked ring words, a capture of the ring): the title writes
+  // the ring.
   virtual bool SubmitIndirect(uint32_t /*position*/, uint32_t /*address*/, uint32_t /*dwords*/) { return false; }
-  // A bin mask or select the title would write into the ring at dword `position` (SET_BIN_MASK_LO 0, _HI 1,
-  // SET_BIN_SELECT_LO 2, _HI 3 in `which`): applied there, its 2 dwords skipped, never read. The write pointer stays:
-  // the title moves it with its next submission. False: not supported (the title writes the ring).
+  // A bin mask or select (SET_BIN_MASK_LO 0, _HI 1, SET_BIN_SELECT_LO 2, _HI 3 in `which`) the title would write
+  // into the ring, handed over as SubmitIndirect hands a buffer: applied in order, taking no ring dword.
   virtual bool SubmitBins(uint32_t /*position*/, uint32_t /*which*/, uint32_t /*value*/) { return false; }
   virtual uint32_t ReadRegister(uint32_t /*index*/) { return 0; }
   // A vertical blank, before the title's interrupt callback runs (the GPU's vblank counter moves).

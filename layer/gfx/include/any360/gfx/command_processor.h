@@ -204,6 +204,7 @@ class CommandProcessor : public sys::GpuBackend {
   uint64_t kicks() const { return kicks_; }
   uint64_t direct_kicks() const { return direct_kicks_; }  // direct submissions run (SubmitIndirect)
   uint64_t direct_bins() const { return direct_bins_; }    // bin writes handed over (SubmitBins), applied
+  uint64_t ring_writes() const { return ring_writes_; }    // the title's CP_RB_WPTR writes (its ring kicks)
   // For diagnostics: the WAIT_REG_MEM packets by what they poll (bit 4 of wait_info: memory), how often, how long
   // they held the ring, and how many a write queued after earlier draws satisfied ahead of the GPU. Taken and reset.
   struct WaitSite {
@@ -327,16 +328,20 @@ class CommandProcessor : public sys::GpuBackend {
   uint32_t gamma_component_ = 0;  // the next red, green or blue of DC_LUT_SEQ_COLOR / DC_LUT_PWL_DATA
   std::mutex mutex_;
   std::condition_variable kicked_;
-  // Direct submissions (SubmitIndirect, SubmitBins) in ring order, under mutex_; has_direct_ when any waits. A bin
-  // write: `bins` set, `address` which one (as the kBins record's argument), `dwords` its value.
+  // Direct submissions (SubmitIndirect, SubmitBins) in ring order, under mutex_; has_direct_ when any waits. Each runs
+  // where the ring's read reaches `position`, the ring's write index when it was handed over, taking no ring dword. A
+  // bin write: `bins` set, `address` which one (as the kBins record's argument), `dwords` its value.
   struct Direct {
     uint32_t position, address, dwords;
     bool bins = false;
   };
+  bool SubmitDirect(const Direct& d);
+  bool DirectAt(uint32_t offset);  // under mutex_: the next direct submission runs at this ring offset
   std::deque<Direct> direct_;
   std::atomic<bool> has_direct_{false};
   std::atomic<uint64_t> direct_kicks_{0};
   std::atomic<uint64_t> direct_bins_{0};
+  std::atomic<uint64_t> ring_writes_{0};
   std::mutex progress_mutex_;
   std::condition_variable progress_cv_;
   std::atomic<uint64_t> progress_{0};

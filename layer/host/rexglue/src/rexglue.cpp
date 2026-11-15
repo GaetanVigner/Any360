@@ -481,7 +481,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
         last_busy_ = cp_->ns_busy(), last_waiting_ = cp_->ns_waiting(), last_kicks_ = cp_->kicks();
         last_direct_ = cp_->direct_kicks(), last_bins_ = cp_->direct_bins();
         last_brackets_ = TilingBrackets(true), last_runtime_brackets_ = TilingBrackets(false);
-        last_runs_ = TileOpRuns(true), last_runtime_runs_ = TileOpRuns(false);
+        last_runs_ = TileOpRuns(true), last_runtime_runs_ = TileOpRuns(false), last_ring_writes_ = cp_->ring_writes();
         cp_->TakeWaitSites();
         cp_->TakeWaitTraces();
         for (uint32_t op = 0; op < 129; ++op) last_opcode_ticks_[op] = cp_->opcode_ticks(op);
@@ -541,22 +541,25 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     }
     if (cp_) {
       const uint64_t busy = cp_->ns_busy(), waiting = cp_->ns_waiting(), kicks = cp_->kicks(), direct = cp_->direct_kicks();
+      const uint64_t ring_writes = cp_->ring_writes();
       const uint64_t bins = cp_->direct_bins(), brackets = TilingBrackets(true), runtime_brackets = TilingBrackets(false);
       const uint64_t runs = TileOpRuns(true), runtime_runs = TileOpRuns(false);
-      char line_cp[400];
+      char line_cp[640];
       std::snprintf(line_cp, sizeof(line_cp),
                     "Any360: command processor per frame: %.2f ms running the ring (%.2f ms of it in WAIT_REG_MEM), "
-                    "%.1f kicks (%.1f command buffers and %.1f tile bin selects submitted directly), %.1f tiled brackets (%.1f "
-                    "the runtime's), %.1f tile op runs (%.1f the runtime's); %.1f%% of the time with nothing to run",
+                    "%.1f kicks (%.1f through the title's ring; %.1f command buffers and %.1f tile bin selects submitted "
+                    "directly), %.1f tiled brackets (%.1f the runtime's), %.1f tile op runs (%.1f the runtime's); %.1f%% "
+                    "of the time with nothing to run",
                     (busy - last_busy_) / ms, (waiting - last_waiting_) / ms, (kicks - last_kicks_) / n,
-                    (direct - last_direct_) / n, (bins - last_bins_) / n,
+                    (ring_writes - last_ring_writes_) / n, (direct - last_direct_) / n, (bins - last_bins_) / n,
                     (brackets + runtime_brackets - last_brackets_ - last_runtime_brackets_) / n,
                     (runtime_brackets - last_runtime_brackets_) / n,
-                    (runs + runtime_runs - last_runs_ - last_runtime_runs_) / n, (runtime_runs - last_runtime_runs_) / n, 100.0 * (1.0 - (busy - last_busy_) / 1e9 / seconds));
+                    (runs + runtime_runs - last_runs_ - last_runtime_runs_) / n, (runtime_runs - last_runtime_runs_) / n,
+                    100.0 * (1.0 - (busy - last_busy_) / 1e9 / seconds));
       log_(line_cp);
       last_busy_ = busy, last_waiting_ = waiting, last_kicks_ = kicks, last_direct_ = direct, last_bins_ = bins;
       last_brackets_ = brackets, last_runtime_brackets_ = runtime_brackets;
-      last_runs_ = runs, last_runtime_runs_ = runtime_runs;
+      last_runs_ = runs, last_runtime_runs_ = runtime_runs, last_ring_writes_ = ring_writes;
       auto sites = cp_->TakeWaitSites();
       std::sort(sites.begin(), sites.end(), [](const auto& a, const auto& b) { return a.ns > b.ns; });
       std::string waits = "Any360: WAIT_REG_MEM per frame by site:";
@@ -726,7 +729,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
  public:
   gfx::CommandProcessor* cp_ = nullptr;  // for the report: where the command processor's time goes
  private:
-  uint64_t last_busy_ = 0, last_waiting_ = 0, last_kicks_ = 0, last_direct_ = 0, last_bins_ = 0, last_brackets_ = 0, last_runtime_brackets_ = 0, last_runs_ = 0, last_runtime_runs_ = 0;
+  uint64_t last_busy_ = 0, last_waiting_ = 0, last_kicks_ = 0, last_direct_ = 0, last_bins_ = 0, last_brackets_ = 0, last_runtime_brackets_ = 0, last_runs_ = 0, last_runtime_runs_ = 0, last_ring_writes_ = 0;
   uint64_t last_tsc_ = 0;
   uint64_t last_swapped_[5] = {};
   double last_on_fps_ = 0;

@@ -117,11 +117,11 @@ struct GraphicsOptions {
 void StartSampling(const std::string& path);
 
 bool StartGraphics(const GraphicsOptions& options, std::string& error);
-// A command buffer the title kicks, handed to the command processor without the ring (docs/D3D.md, D6): it runs
-// where the ring's INDIRECT_BUFFER at dword `position` would. False when the GPU in use takes no direct submission.
+// A command buffer the title kicks, handed to the command processor without the ring (docs/D3D.md, D6): `position`
+// the title's ring write index (its ring untouched). False when not taken (sys::GpuBackend::SubmitIndirect).
 bool SubmitIndirect(uint32_t position, uint32_t address, uint32_t dwords);
-// A bin mask or select (0-3: SET_BIN_MASK_LO, _HI, SET_BIN_SELECT_LO, _HI) the title would write into the ring at dword
-// `position`, handed to the command processor instead; the write pointer stays. False: not supported.
+// A bin mask or select (0-3: SET_BIN_MASK_LO, _HI, SET_BIN_SELECT_LO, _HI) the title would write into the ring,
+// handed to the command processor instead, as SubmitIndirect hands a buffer. False: not taken.
 bool SubmitBins(uint32_t position, uint32_t which, uint32_t value);
 // The title's tiled brackets (BeginTiling) so far, Any360's native ones or the runtime's (d3d_draw.cpp).
 uint64_t TilingBrackets(bool native);

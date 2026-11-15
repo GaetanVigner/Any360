@@ -2195,33 +2195,26 @@ inline void ResourceLockOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction
   if (m.base == base && NativeDraws() && ResourceLock(ctx, base, m, DrawRecords())) return;
   original(ctx, base);
 }
-// sub_826BAD58 (the kick's submit to the primary ring): r3 device, r4 the segment (+0 its dwords, +4 its address). Ring
-// space waited for through the title's helper (+10824 the ring's write index, 3 dwords), then the segment handed to
-// the command processor directly (D6: no INDIRECT_BUFFER in the ring, no CP_RB_WPTR write), the write index moved as
-// the runtime moves it (+14524 the ring's mask). Declines (the runtime writes the ring) with any360_direct_submit off,
-// when the device records for a capture tool (+10813 bit 2) or has its callbacks (+21156, +21296), or when the GPU in
-// use takes no direct submission.
-inline bool RingSubmit(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+// sub_826BAD58 (the kick's submit to the primary ring): r3 device, r4 the segment (+0 its dwords, +4 its address). The
+// segment handed to the command processor directly at the title's ring write index (+10824), which stays: no ring
+// space waited for, no INDIRECT_BUFFER in the ring, no CP_RB_WPTR write (D6). Declines (the runtime writes the ring)
+// with any360_direct_submit off, when the device records for a capture tool (+10813 bit 2) or has its callbacks
+// (+21156, +21296), or when the command processor does not take it (ring words not kicked yet, a capture of the ring).
+inline bool RingSubmit(PPCContext& ctx, const any360::xdk::Memory& m) {
   using namespace detail;
-  const Runtime& rt = g_runtime;
   const uint32_t device = ctx.r3.u32, segment = ctx.r4.u32, entry = ctx.r1.u32;
-  if (!DirectSubmit() || !rt.ring_space || !any360::xdk::IsPlainMemory(device, 21300) ||
-      !any360::xdk::IsPlainMemory(segment, 8) || !any360::xdk::IsPlainMemory(entry - 1024, 1024))
+  if (!DirectSubmit() || !any360::xdk::IsPlainMemory(device, 21300) || !any360::xdk::IsPlainMemory(segment, 8) ||
+      !any360::xdk::IsPlainMemory(entry - 1024, 1024))
     return false;
   uint8_t* d = m.Host(device);
   if ((d[10813] & 4) || At32(d + 21156) || At32(d + 21296)) return false;
-  const uint32_t position = At32(d + 10824), mask = At32(d + 14524);
+  // Handed over at the title's ring write index, which stays (no room waited for: the ring is not written).
   const uint32_t dwords = At32(m.Host(segment)), address = At32(m.Host(segment + 4));
-  ctx.r1.u64 = entry - 160;
-  Call(ctx, base, rt.ring_space, device, position, 3);
-  ctx.r1.u64 = entry;
-  if (!SubmitIndirect(position, address, dwords)) return false;
-  Set32(d + 10824, (position + 3) & mask);
-  return true;
+  return SubmitIndirect(At32(d + 10824), address, dwords);
 }
 inline void RingSubmitOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
-  if (m.base == base && NativeDraws() && RingSubmit(ctx, base, m)) return;
+  if (m.base == base && NativeDraws() && RingSubmit(ctx, m)) return;
   original(ctx, base);
 }
 
@@ -2404,13 +2397,13 @@ inline bool TileSelect(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory
   if (At32(d + 21156) || At32(d + 21296)) return false;
   Set32(s + 364, mask);
   const uint32_t position = At32(d + 10824), ring_mask = At32(d + 14524);
+  if (SubmitBins(position, 2, mask)) return true;  // the ring and its write index untouched
+  // Not taken (a capture of the ring, ring words not kicked yet): the runtime's way, into the ring.
   ctx.r1.u64 = entry - 144;
   Call(ctx, base, rt.ring_space, device, position, 2);
   ctx.r1.u64 = entry;
-  if (!SubmitBins(position, 2, mask)) {
-    const uint32_t ring = At32(d + 14520);
-    Set32(m.Host(ring + 4 * position), 0xC0006200u), Set32(m.Host(ring + 4 * ((position + 1) & ring_mask)), mask);
-  }
+  const uint32_t ring = At32(d + 14520);
+  Set32(m.Host(ring + 4 * position), 0xC0006200u), Set32(m.Host(ring + 4 * ((position + 1) & ring_mask)), mask);
   Set32(d + 10824, (position + 2) & ring_mask);
   return true;
 }

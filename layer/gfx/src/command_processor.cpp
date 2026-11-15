@@ -119,6 +119,11 @@ void CommandProcessor::InitializeRingBuffer(sys::Guest, uint32_t base, uint32_t 
   ring_dwords_ = (1u << (size_log2 + 3)) / 4;
   read_index_ = 0;
   write_index_ = 0;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    direct_.clear();  // handed over against the old ring
+    has_direct_.store(false, std::memory_order_release);
+  }
   SetRegister(reg::CP_RB_BASE, ring_base_);
   SetRegister(reg::CP_RB_CNTL, size_log2);
 }
@@ -137,6 +142,7 @@ void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
   if (index >= reg::DC_LUT_RW_INDEX && index <= reg::DC_LUT_30_COLOR) GammaRampWrite(index);
   NotifyProgress();
   if (index == reg::CP_RB_WPTR) {
+    ring_writes_.fetch_add(1, std::memory_order_relaxed);
     {
       std::lock_guard<std::mutex> lock(mutex_);
       write_index_ = ring_dwords_ ? value % ring_dwords_ : value;
@@ -145,36 +151,32 @@ void CommandProcessor::WriteRegister(uint32_t index, uint32_t value) {
   }
 }
 
-bool CommandProcessor::SubmitIndirect(uint32_t position, uint32_t address, uint32_t dwords) {
+bool CommandProcessor::SubmitDirect(const Direct& d) {
   if (!ring_dwords_) return false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    position %= ring_dwords_;
-    // A capture replays the ring: it gets the INDIRECT_BUFFER the title would have written.
-    if (capture_ || capture_requested_.load(std::memory_order_acquire)) {
-      const uint32_t words[3] = {3u << 30 | 1u << 16 | pm4::INDIRECT_BUFFER << 8, address, dwords};
-      for (uint32_t i = 0; i < 3; ++i) StoreBig(ring_base_ + 4 * ((position + i) % ring_dwords_), words[i]);
-    }
-    direct_.push_back({position, address, dwords});
+    // A capture replays the ring (the title writes it then); ring words the title has not kicked yet come first.
+    if (capture_ || capture_requested_.load(std::memory_order_acquire) || d.position % ring_dwords_ != write_index_)
+      return false;
+    direct_.push_back(d);
+    direct_.back().position %= ring_dwords_;
     has_direct_.store(true, std::memory_order_release);
-    write_index_ = (position + 3) % ring_dwords_;
   }
   NotifyProgress();
   kicked_.notify_all();
   return true;
 }
 
+bool CommandProcessor::SubmitIndirect(uint32_t position, uint32_t address, uint32_t dwords) {
+  return SubmitDirect({position, address, dwords});
+}
+
 bool CommandProcessor::SubmitBins(uint32_t position, uint32_t which, uint32_t value) {
-  if (!ring_dwords_ || which > 3) return false;
-  std::lock_guard<std::mutex> lock(mutex_);
-  position %= ring_dwords_;
-  if (capture_ || capture_requested_.load(std::memory_order_acquire)) {
-    const uint32_t words[2] = {3u << 30 | (pm4::SET_BIN_MASK_LO + which) << 8, value};
-    for (uint32_t i = 0; i < 2; ++i) StoreBig(ring_base_ + 4 * ((position + i) % ring_dwords_), words[i]);
-  }
-  direct_.push_back({position, which, value, true});
-  has_direct_.store(true, std::memory_order_release);
-  return true;
+  return which <= 3 && SubmitDirect({position, which, value, true});
+}
+
+bool CommandProcessor::DirectAt(uint32_t offset) {
+  return has_direct_.load(std::memory_order_acquire) && !direct_.empty() && direct_.front().position == offset;
 }
 
 uint32_t CommandProcessor::ReadRegister(uint32_t index) {
@@ -449,7 +451,11 @@ uint32_t CommandProcessor::NextRaw(Reader& r) const {
 bool CommandProcessor::Execute() {
   const uint32_t write = write_index_;
   const uint32_t read = read_index_;
-  if (!ring_dwords_ || write == read) return true;
+  if (!ring_dwords_) return true;
+  if (write == read) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!DirectAt(read)) return true;
+  }
   busy_ = true;
   ++kicks_;
   const auto busy_start = std::chrono::steady_clock::now();
@@ -472,22 +478,21 @@ bool CommandProcessor::Execute() {
   if (capture_) capture_->Kick(ring_base_, ring_dwords_, read, write);
   Reader r{ring_base_, ring_dwords_, read, (write + ring_dwords_ - read) % ring_dwords_};
   bool ok = true;
-  while (r.remaining && ok) {
-    // A direct submission where the read reaches it: its buffer run, its 3 ring dwords skipped.
-    if (has_direct_.load(std::memory_order_acquire) && r.remaining >= 2) {
+  for (;;) {
+    // A direct submission where the read reaches the ring's write index it was handed over at: run there, taking no
+    // ring dword.
+    if (has_direct_.load(std::memory_order_acquire)) {
       Direct d{};
       bool here = false;
       {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (!direct_.empty() && direct_.front().position == r.offset % ring_dwords_ &&
-            r.remaining >= (direct_.front().bins ? 2u : 3u)) {
+        if (DirectAt(r.offset % ring_dwords_)) {
           d = direct_.front(), here = true;
           direct_.pop_front();
           has_direct_.store(!direct_.empty(), std::memory_order_release);
         }
       }
       if (here && d.bins) {
-        r.offset += 2, r.remaining -= 2;
         ++direct_bins_;
         uint64_t& bins = d.address < 2 ? bin_mask_ : bin_select_;
         bins = (d.address & 1) ? (bins & 0xFFFFFFFFull) | uint64_t(d.dwords) << 32
@@ -495,13 +500,13 @@ bool CommandProcessor::Execute() {
         continue;
       }
       if (here) {
-        r.offset += 3, r.remaining -= 3;
         ++direct_kicks_;
         RunIndirect(d.address, d.dwords, 0);
         if (stopping_) break;
         continue;
       }
     }
+    if (!r.remaining || !ok) break;
     ok = ExecutePacket(r, 0);
     if (stopping_) break;
   }
@@ -1131,7 +1136,7 @@ void CommandProcessor::Start() {
   worker_ = std::thread([this] {
     std::unique_lock<std::mutex> lock(mutex_);
     while (!stopping_) {
-      kicked_.wait(lock, [this] { return stopping_ || write_index_ != read_index_; });
+      kicked_.wait(lock, [this] { return stopping_ || write_index_ != read_index_ || DirectAt(read_index_); });
       if (stopping_) break;
       lock.unlock();
       Execute();

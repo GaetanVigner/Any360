@@ -657,6 +657,8 @@ void Records() {
 // A direct submission (D6) runs where the ring's INDIRECT_BUFFER would: the same registers, in ring order with the
 // ring's own packets, the read pointer written back after its 3 dwords as after the packet's.
 void DirectSubmission() {
+  // A command buffer handed over at the ring's write index runs there, after what was kicked before and before what
+  // is kicked after, taking no ring dword: the same registers as through the ring's INDIRECT_BUFFER.
   CommandProcessor a(g_physical.data()), b(g_physical.data());
   Ring ra{a}, rb{b};
   for (CommandProcessor* cp : {&a, &b}) {
@@ -667,25 +669,28 @@ void DirectSubmission() {
     if (cp == &a) {
       ring.Put({Type3(pm4::INDIRECT_BUFFER, 2), kIb, 2});
     } else {
+      CHECK(!cp->SubmitIndirect(ring.write, kIb, 2));  // ring words not kicked yet: they come first
+      ring.Kick();
       CHECK(cp->SubmitIndirect(ring.write, kIb, 2));
-      ring.write = (ring.write + 3) % cp->ring_dwords();
     }
     CHECK(cp->reg(0x2506) != 0x11);
     ring.Put({Type0(0x2507, 1), 0x21});
     ring.Run();
     CHECK(cp->reg(0x2506) == 0x11 && cp->reg(0x2507) == 0x21 && Big(kWriteBack) == ring.write);
   }
-  CHECK(a.reg(reg::CP_RB_RPTR) == b.reg(reg::CP_RB_RPTR));
-  // Across the ring's end (type-2 padding up to its last dword first).
+  CHECK(b.reg(reg::CP_RB_RPTR) + 3 == a.reg(reg::CP_RB_RPTR));  // the ring three dwords shorter
+  // Handed over with the ring idle: run with nothing kicked after it; then the ring goes on from there.
   Fresh(b, rb);
-  for (uint32_t i = 0; i + 1 < b.ring_dwords(); ++i) rb.Put(0x80000000u);
+  rb.Put({Type0(0x2506, 1), 0x30});
   rb.Run();
   SetBig(kIb, Type0(0x2506, 1)), SetBig(kIb + 4, 0x12);  // Fresh cleared it
   CHECK(b.SubmitIndirect(rb.write, kIb, 2));
-  rb.write = (rb.write + 3) % b.ring_dwords();
   CHECK(b.Execute() && b.reg(0x2506) == 0x12 && Big(kWriteBack) == rb.write);
-  // A tile's bin select handed over (SubmitBins) where the title writes SET_BIN_SELECT_LO into the ring without moving
-  // the write pointer, then a command buffer of predicated constants submitted after it: the same tile drawn.
+  rb.Put({Type0(0x2506, 1), 0x31});
+  rb.Run();
+  CHECK(b.reg(0x2506) == 0x31);
+  // A tile's bin select then a command buffer of predicated constants, for each of two tiles: the same tiles drawn
+  // as through the ring's SET_BIN_SELECT_LO and INDIRECT_BUFFER.
   for (CommandProcessor* cp : {&a, &b}) {
     Ring& ring = cp == &a ? ra : rb;
     Fresh(*cp, ring);
@@ -696,19 +701,17 @@ void DirectSubmission() {
       if (cp == &a) {
         ring.Put({Type3(pm4::SET_BIN_SELECT_LO, 1), tile});
         ring.Put({Type3(pm4::INDIRECT_BUFFER, 2), kIb, 3});
+        ring.Run();
       } else {
         CHECK(cp->SubmitBins(ring.write, 2, tile));
-        ring.write = (ring.write + 2) % cp->ring_dwords();
         CHECK(cp->SubmitIndirect(ring.write, kIb, 3));
-        ring.write = (ring.write + 3) % cp->ring_dwords();
+        CHECK(cp->Execute());
       }
-      CHECK(tile == 0x2 || cp->reg(0x2010) != 0xBEEF);
-      ring.Run();
       CHECK((cp->reg(0x2010) == 0xBEEF) == (tile == 0x2));
     }
     CHECK(Big(kWriteBack) == ring.write);
   }
-  CHECK(!b.SubmitBins(0, 4, 0));
+  CHECK(!b.SubmitBins(rb.write, 4, 0));
 }
 
 int main() {
