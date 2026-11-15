@@ -11,9 +11,12 @@
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <thread>
 
 #include "any360/xdk/d3d_records.h"
 #include "any360/xdk/d3d_state.h"
+#include "any360/xdk/d3d_tiling.h"
 #include "rexglue.h"
 #include "xdk_natives.h"
 
@@ -68,6 +71,11 @@ struct Runtime {
   GuestFunction begin_tiled_recording = nullptr, end_tiled_recording = nullptr;
   uint32_t tiling_surface = 0, tiling_rect = 0;  // the runtime's whole-screen surface and rect
   uint32_t pix_slot = 0, pix_slot_2 = 0;         // the profiler's globals (a callback set there: the runtime's)
+  // The tile ops interpreter's (any360/xdk/d3d_tiling.h).
+  GuestFunction tile_select = nullptr;     // r3 the interpreter's state (TileSelect's)
+  GuestFunction tile_resources = nullptr;  // r3 the header, r4 a resource list, r5 1: flushed (sub_826CD9F8)
+  GuestFunction tile_wait = nullptr;       // r3 the interpreter's state: the GPU waited for (sub_826CD950)
+  GuestFunction lock_l2 = nullptr, unlock_l2 = nullptr;  // KeLockL2, KeUnlockL2
   uint32_t clear_depth_offset = 0, clear_depth_scale = 0;
   // The resolve's format table (a half-word a format), default destination point, copy pixel shader (15 dwords) and
   // vertex offset float: guest addresses in the title's image.
@@ -85,6 +93,7 @@ bool DirectSubmit();  // any360_direct_submit (d3d_draw.cpp)
 bool NativeSegments();  // any360_native_segments (d3d_draw.cpp)
 bool NativeTiling();  // any360_native_tiling (d3d_draw.cpp)
 void CountBracket(bool native);  // a BeginTiling taken by Any360 or left to the runtime (TilingBrackets)
+void CountTileRun(bool native);  // a tile ops run, Any360's or the runtime's (TileOpRuns)
 // any360_d3d_native_draw_helpers off (a diagnostic): draws that need the title's helpers besides its uploads (shader
 // loads, state, misc and wait groups) are declined.
 bool DrawHelpers();
@@ -2373,19 +2382,6 @@ inline void SegmentCloseOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction
 // interrupt hands the lists to the runtime's DPC, the lists ended, the work submitted as one pending segment. The DPC
 // interprets the ops (sub_826CDAF8): each recorded segment submitted once a tile, each tile's bin select first
 // (TileSelect, sub_826CD7D8), which the runtime writes into the ring: handed to the command processor here.
-namespace detail {
-// TileSelect's mask from the interpreter's flags (+40: bit 31 the odd tiles' bits, bit 30 the even ones', bit 29 one
-// tile, +44, alone) and the tile.
-inline uint32_t TileMask(uint32_t flags, uint32_t tile) {
-  uint32_t mask = (flags & 0x80000000u) ? 0x2AAAAAAAu : (flags & 0x40000000u) ? 0x15555555u : 0xFFFFFFFFu;
-  if (flags & 0x20000000u) {
-    const uint32_t shift = (tile << 1) & 63;  // slw: 0 from 32 on
-    mask &= shift < 32 ? 3u << shift : 0;
-    if (!tile && !(flags & 0x80000000u)) mask |= 0x80000000u;
-  }
-  return mask;
-}
-}  // namespace detail
 // TileSelect (sub_826CD7D8): r3 the interpreter's state (+364 the bin select in force). A new select goes where the
 // runtime writes SET_BIN_SELECT_LO into the ring (after waiting for its room), handed to the command processor
 // (SubmitBins), or written into the ring when it takes none. Declines with a ring callback (+21156, +21296) or
@@ -2403,7 +2399,7 @@ inline bool TileSelect(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory
   if (!any360::xdk::IsPlainMemory(device, 21300)) return false;
   uint8_t* s = m.Host(state);
   uint8_t* d = m.Host(device);
-  const uint32_t mask = TileMask(At32(s + 40), At32(s + 44));
+  const uint32_t mask = any360::xdk::TileMask(At32(s + 40), At32(s + 44));
   if (mask == At32(s + 364)) return true;
   if (At32(d + 21156) || At32(d + 21296)) return false;
   Set32(s + 364, mask);
@@ -2788,6 +2784,60 @@ inline bool EndTiling(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory&
   }
   ctx.r1.u64 = entry;
   return true;
+}
+// The tile ops interpreter (Crackdown sub_826CDAF8, any360/xdk/d3d_tiling.h): r3 the ops, r4 its state -> r3 where the
+// run stopped. Its calls are the title's (TileSelect and the ring's submit Any360's where bound), from the
+// interpreter's frame (a segment's {dwords, address} at +80).
+inline bool TileOps(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+  using namespace detail;
+  const Runtime& rt = g_runtime;
+  const uint32_t ops = ctx.r3.u32, state = ctx.r4.u32, entry = ctx.r1.u32, frame = entry - 160;
+  if (!rt.tile_select || !rt.ring_submit || !rt.tile_resources || !rt.tile_wait || !rt.lock_l2 || !rt.unlock_l2 ||
+      !rt.device_slot || !any360::xdk::IsPlainMemory(rt.device_slot, 4) || !any360::xdk::IsPlainMemory(state, 380) ||
+      !any360::xdk::IsPlainMemory(ops, 4) || !any360::xdk::IsPlainMemory(entry - 1024, 1024))
+    return false;
+  const uint32_t slot = At32(m.Host(rt.device_slot));
+  if (!any360::xdk::IsPlainMemory(slot, 4)) return false;
+  const uint32_t device = At32(m.Host(slot));
+  struct Calls : any360::xdk::TileOpsCalls {
+    PPCContext& ctx;
+    uint8_t* base;
+    const any360::xdk::Memory& m;
+    const Runtime& rt;
+    uint32_t device, frame;
+    Calls(PPCContext& c, uint8_t* b, const any360::xdk::Memory& mem, const Runtime& r, uint32_t d, uint32_t f)
+        : ctx(c), base(b), m(mem), rt(r), device(d), frame(f) {}
+    void Select(uint32_t state) override { Call(ctx, base, rt.tile_select, state); }
+    void Submit(uint32_t dwords, uint32_t address) override {
+      Set32(m.Host(frame + 80), dwords), Set32(m.Host(frame + 84), address);
+      Call(ctx, base, rt.ring_submit, device, frame + 80, 1);
+    }
+    void Resources(uint32_t header, uint32_t list, bool flush) override {
+      Call(ctx, base, rt.tile_resources, header, list, flush ? 1 : 0);
+    }
+    void Wait(uint32_t state) override { Call(ctx, base, rt.tile_wait, state); }
+    void LockL2() override {
+      ctx.r7.u64 = 1;
+      Call(ctx, base, rt.lock_l2, 0, 0x7F100000u, 0x20000, 1);
+      std::memset(m.Host(0x7F100000u), 0, 0x20000);  // dcbzl over the locked lines
+    }
+    void UnlockL2() override { Call(ctx, base, rt.unlock_l2, 0); }
+    void Again() override { std::this_thread::yield(); }
+  } calls(ctx, base, m, rt, device, frame);
+  ctx.r1.u64 = frame;
+  const uint32_t stop = any360::xdk::RunTileOps(m, ops, state, calls);
+  ctx.r1.u64 = entry;
+  ctx.r3.u64 = stop;
+  return true;
+}
+inline void TileOpsOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && NativeTiling() && TileOps(ctx, base, m)) {
+    CountTileRun(true);
+    return;
+  }
+  CountTileRun(false);
+  original(ctx, base);
 }
 inline void EndTilingOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;

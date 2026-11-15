@@ -985,6 +985,15 @@
   "note": "the swap's PM4"
  },
  {
+  "name": "D3D_TileOps",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826CDAF8"
+  },
+  "note": "the DPC's tile ops interpreter: each recorded segment submitted once a tile, each tile's bin select, the resources' visibility (any360/xdk/d3d_tiling.h)"
+ },
+ {
   "name": "D3D_TileSelect",
   "library": "D3D",
   "any360": "native",

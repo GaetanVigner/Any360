@@ -97,6 +97,7 @@
   "D3D_EndTiledRecording",
   "D3D_TileSelect",
   "D3DDevice_BeginTiling",
-  "D3DDevice_EndTiling"
+  "D3DDevice_EndTiling",
+  "D3D_TileOps"
  ]
 }

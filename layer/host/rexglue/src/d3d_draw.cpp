@@ -34,13 +34,15 @@ bool NativeSegments() { return REXCVAR_GET(any360_native_segments); }
 bool NativeTiling() { return REXCVAR_GET(any360_native_tiling); }
 
 namespace {
-std::atomic<uint64_t> g_brackets[2];
+std::atomic<uint64_t> g_brackets[2], g_tile_runs[2];
 }  // namespace
 void CountBracket(bool native) { g_brackets[native ? 1 : 0].fetch_add(1, std::memory_order_relaxed); }
+void CountTileRun(bool native) { g_tile_runs[native ? 1 : 0].fetch_add(1, std::memory_order_relaxed); }
 
 }  // namespace any360::host::rexglue::d3d_draw
 
 namespace any360::host::rexglue {
 uint64_t TilingBrackets(bool native) { return d3d_draw::g_brackets[native ? 1 : 0].load(std::memory_order_relaxed); }
+uint64_t TileOpRuns(bool native) { return d3d_draw::g_tile_runs[native ? 1 : 0].load(std::memory_order_relaxed); }
 
 }  // namespace any360::host::rexglue::d3d_draw

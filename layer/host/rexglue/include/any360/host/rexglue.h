@@ -125,6 +125,8 @@ bool SubmitIndirect(uint32_t position, uint32_t address, uint32_t dwords);
 bool SubmitBins(uint32_t position, uint32_t which, uint32_t value);
 // The title's tiled brackets (BeginTiling) so far, Any360's native ones or the runtime's (d3d_draw.cpp).
 uint64_t TilingBrackets(bool native);
+// The tile ops runs (the DPC's interpreter) so far, Any360's or the runtime's.
+uint64_t TileOpRuns(bool native);
 // Changes the vertical blanks' rate while bound (a title pacing its videos on them: 60 while one plays, the unlocked
 // rate after); 0: back to the rate StartGraphics chose. Nothing while not bound.
 #define ANY360_REXGLUE_SET_VBLANK_HZ 1

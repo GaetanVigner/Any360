@@ -71,5 +71,6 @@
  "0x826CE360": ["D3D_EndTiledRecording", "a tiled recording closed: a fence whose interrupt hands its lists to the DPC, the lists ended, the work submitted as pending"],
  "0x826CD7D8": ["D3D_TileSelect", "a tile's bin select (SET_BIN_SELECT_LO) into the ring before its segments' replay (Any360: handed to the command processor)"],
  "0x826BD488": ["D3DDevice_BeginTiling", "the predicated tiling bracket opened: rects, EDRAM tile layout, the clear, the clear values and targets saved, the tiled recording and its loop op, an EVENT_WRITE"],
- "0x826BDA38": ["D3DDevice_EndTiling", "the predicated tiling bracket closed: each tile resolved under its predication, the DPC's fence and ops, the tiled recording ended"]
+ "0x826BDA38": ["D3DDevice_EndTiling", "the predicated tiling bracket closed: each tile resolved under its predication, the DPC's fence and ops, the tiled recording ended"],
+ "0x826CDAF8": ["D3D_TileOps", "the DPC's tile ops interpreter: each recorded segment submitted once a tile, each tile's bin select, the resources' visibility (any360/xdk/d3d_tiling.h)"]
 }

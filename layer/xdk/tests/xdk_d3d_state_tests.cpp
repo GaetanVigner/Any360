@@ -5,10 +5,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <random>
+#include <string>
 #include <vector>
 
 #include "any360/xdk/d3d_reference.h"
 #include "any360/xdk/d3d_state.h"
+#include "any360/xdk/d3d_tiling.h"
 #include "xdk_test.h"
 
 namespace {
@@ -318,6 +320,75 @@ void TestSetShader(const xdk::D3dLayout& l, uint32_t seed) {
   CHECK(xdk::D3dFlushCpuRange());
 }
 
+// The tile ops interpreter (any360/xdk/d3d_tiling.h): a bracket of two tiles (each segment submitted once a tile, each
+// tile's select before its segments, the resources walked under the first tile's select only), a predicated jump not
+// taken, an op read again until written, the run's end; and a list ended by 0xC0000000.
+struct TileCalls : xdk::TileOpsCalls {
+  const xdk::Memory& m;
+  std::vector<std::string> log;
+  uint32_t again_at = 0, agains = 0;
+  explicit TileCalls(const xdk::Memory& memory) : m(memory) {}
+  uint32_t Word(uint32_t a) const { return xdk::detail::At32(m.Host(a)); }
+  void Note(const char* what, uint32_t a, uint32_t b) {
+    char line[64];
+    std::snprintf(line, sizeof line, "%s %X %X", what, a, b);
+    log.push_back(line);
+  }
+  void Select(uint32_t state) override {
+    const uint32_t mask = xdk::TileMask(Word(state + 40), Word(state + 44));
+    if (mask == Word(state + 364)) return;
+    xdk::detail::Set32(m.Host(state + 364), mask);
+    Note("select", mask, 0);
+  }
+  void Submit(uint32_t dwords, uint32_t address) override { Note("submit", dwords, address); }
+  void Resources(uint32_t header, uint32_t list, bool flush) override { Note("resources", list, flush ? 1 : 0); (void)header; }
+  void Wait(uint32_t state) override { Note("wait", state, 0); }
+  void LockL2() override { Note("lock", 0, 0); }
+  void UnlockL2() override { Note("unlock", 0, 0); }
+  void Again() override {
+    if (++agains == 3) xdk::detail::Set32(m.Host(again_at), 0x82000007u);  // written now: a segment of 7 dwords
+  }
+};
+
+void TestTileOps() {
+  Pair p(77);
+  const xdk::Memory& m = p.a;
+  constexpr uint32_t kState = 0x30000, kOps = 0x40000, kList = 0x50000;
+  const auto put = [&](uint32_t a, uint32_t v) { xdk::detail::Set32(m.Host(a), v); };
+  for (uint32_t a = kState; a < kState + 0x200; a += 4) put(a, 0);
+  uint32_t at = kOps;
+  const auto op = [&](std::initializer_list<uint32_t> words) {
+    for (uint32_t w : words) put(at, w), at += 4;
+  };
+  op({0x80000000u});
+  put(at, 2), put(at + 4, 2);  // the header: flags (bit 1), 2 tiles
+  for (uint32_t i = 2; i < 62; ++i) put(at + 4 * i, 0);
+  at += 248;
+  op({0x87000000u, 0x82000003u, 0xA000, 0x8B000000u, 0x11111, kList, 0x8C000000u, 0x40000000u, 0x82000005u, 0xB000});
+  const uint32_t again = at;
+  op({0x83000000u, 0x0000C000u, 0x88000000u, 0x89000000u, 0x8A000000u, 0x81000000u});
+  put(kList, kList + 12), put(kList + 4, 0x22222), put(kList + 8, 0x33333), put(kList + 12, 0xC0000000u);
+  TileCalls calls(m);
+  calls.again_at = again;
+  const uint32_t stop = xdk::RunTileOps(m, kOps, kState, calls);
+  const std::vector<std::string> want = {
+      "select 80000003 0", "submit 3 A000", "resources 11111 0", "resources 22222 1", "resources 33333 1",
+      "submit 5 B000",     "submit 7 C000", "select C 0",        "submit 3 A000",     "submit 5 B000",
+      "submit 7 C000",     "select FFFFFFFF 0", "lock 0 0", "wait 30000 0", "unlock 0 0"};
+  CHECK(calls.log == want);
+  CHECK(stop == at - 4 && calls.agains == 3);
+  CHECK(xdk::detail::At32(m.Host(kState + 44)) == 2 && xdk::detail::At32(m.Host(kState + 376)) == kOps + 252);
+  // A list's end.
+  put(kOps, 0xC0000000u);
+  TileCalls end(m);
+  CHECK(xdk::RunTileOps(m, kOps, kState, end) == kOps && end.log.empty());
+  // The masks: the even and odd tiles' halves, one tile alone, past 16 tiles nothing.
+  CHECK(xdk::TileMask(0, 0) == 0xFFFFFFFFu && xdk::TileMask(0x80000000u, 3) == 0x2AAAAAAAu);
+  CHECK(xdk::TileMask(0x40000000u, 3) == 0x15555555u && xdk::TileMask(0x20000000u, 2) == 0x30u);
+  CHECK(xdk::TileMask(0x20000000u, 0) == 0x80000003u && xdk::TileMask(0xA0000000u, 0) == 0x2u);
+  CHECK(xdk::TileMask(0x20000000u, 16) == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -340,5 +411,6 @@ int main() {
   TestSetVertexDeclaration(shifted, 1600);
   TestSetShader(standard, 1700);
   TestSetShader(shifted, 1800);
+  TestTileOps();
   return xdk_test::Finish("xdk_d3d_state_tests");
 }

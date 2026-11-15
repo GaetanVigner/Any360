@@ -115,6 +115,7 @@
   {"name": "D3D_ChainSegment", "library": "D3D", "titles": {"crackdown": "0x826BA5C8"}, "note": "a segment's 16-byte header written and linked after the last pending one"},
   {"name": "D3D_BeginTiledRecording", "library": "D3D", "titles": {"crackdown": "0x826CE1C8"}, "note": "a tiled recording opened: the segment kicked, its state saved, the tile ops, constant and resource lists started with the tile rects"},
   {"name": "D3D_EndTiledRecording", "library": "D3D", "titles": {"crackdown": "0x826CE360"}, "note": "a tiled recording closed: a fence whose interrupt hands its lists to the DPC, the lists ended, the work submitted as pending"},
-  {"name": "D3D_TileSelect", "library": "D3D", "titles": {"crackdown": "0x826CD7D8"}, "note": "a tile's bin select (SET_BIN_SELECT_LO) into the ring before its segments' replay (Any360: handed to the command processor)"}
+  {"name": "D3D_TileSelect", "library": "D3D", "titles": {"crackdown": "0x826CD7D8"}, "note": "a tile's bin select (SET_BIN_SELECT_LO) into the ring before its segments' replay (Any360: handed to the command processor)"},
+  {"name": "D3D_TileOps", "library": "D3D", "titles": {"crackdown": "0x826CDAF8"}, "note": "the DPC's tile ops interpreter: each recorded segment submitted once a tile, each tile's bin select, the resources' visibility (any360/xdk/d3d_tiling.h)"}
  ]
 }
