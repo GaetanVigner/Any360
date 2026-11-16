@@ -26,7 +26,7 @@ not bound in any title.
 |---|---|---|---|
 | 1 | a reference model | `layer/xdk/include/any360/xdk/<library>_reference.h` | it is the function's work written the plainest way, read from the function's own code (what it writes, what it returns, what it leaves on the stack) |
 | 2 | unit tests against the model | `layer/xdk/tests/xdk_<library>_tests.cpp`, run by `layer/sys/test.ps1` | every accepted call leaves memory exactly as the model does, every declined call leaves it untouched, and a call is declined only for the reasons the header gives |
-| 3 | a benchmark | `layer/xdk/tests/xdk_<library>_bench.cpp` | it prints nanoseconds a call, size by size, for the model, the version first written (kept in the benchmark as the fixed point) and the current one, then one figure for each measured title's mix |
+| 3 | a benchmark | `layer/xdk/tests/xdk_<library>_bench.cpp` | it prints nanoseconds a call, size by size, for the model, the version first written (kept in the benchmark as the fixed point) and the current one, then one figure for each measured title's mix, and the host memory allocated a call (`xdk_bench::PrintAllocated`, from `any360/sys/alloc_meter.h`): 0 B is the rule |
 | 4 | the check in game | `--any360_xdk_verify=true` | each title that binds it runs with every call done both ways and compared (the bytes written, the value returned, the stack slot of a leaf function, and the bytes next to the destination, which neither side should change), and its log reports 0 different |
 | 5 | the measure in game | `--any360_xdk_bench=true` | the log gives, size class by size class, the calls and the nanoseconds of the function's own code and of the native one, and the sizes the title passes most |
 
@@ -35,6 +35,9 @@ Then, and only then, optimization:
 - A change to a native function is kept when the benchmark shows it faster on the measured titles' mixes (all of
   them: see above) **and** the unit tests still pass **and** the check in game still reports 0 different. The unit
   tests run before the benchmark is read.
+- A native function allocates nothing on the host heap per call: buffers it needs are the caller's, reused members or
+  pools (the target devices have little memory). The benchmarks and the in-game D3D self-test report the bytes and
+  allocations a call; anything above 0 is explained or removed.
 - A change the benchmark does not confirm is taken out, however reasonable it looks. Measured numbers, not expected
   ones, go in commit messages and in this file.
 - The mixes come from step 5, not from a guess: the sizes titles really pass decide which path is worth writing by
