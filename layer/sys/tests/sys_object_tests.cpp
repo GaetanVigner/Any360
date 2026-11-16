@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "any360/sys/activity.h"
 #include "any360/sys/audio.h"
 #include "any360/sys/files.h"
 #include "any360/sys/graphics.h"
@@ -861,6 +862,85 @@ void MemoryTests() {
   const uint32_t x = gm.Load32(io + 8);
   CHECK(x != 0 && x % 0x1000 == 0 && Memory().QueryAllocationSize(x) == 0x1000 && memory[x] == 0);
   CHECK(Memory().XamFree(gm, x) == 0 && Memory().QueryAllocationSize(x) == 0);
+  // The search on random fragmentation, both directions, against what a page-by-page search would find:
+  // - bottom up (AllocatePages, 4 KB pages, unbounded): no free run of the size below the address it returns (or
+  //   anywhere when it fails), read back through QueryRegion;
+  // - top down, physical, bounded and aligned (the 4 KB view, its physical pages shared with the 64 KB view): no aligned
+  //   window above the address it returns, inside the bounds, that a one-window request would get.
+  {
+    Memory().Reset({{0x00000000, 0x100000, 0x1000, false}, {0x100000, 0x40000, 0x1000, true}, {0x140000, 0x80000, 0x10000, true}});
+    gm.Store32(io, io & ~0xFFFu);
+    gm.Store32(io + 4, 0x1000);
+    CHECK(Memory().AllocateVirtual(gm, io, io + 4, kMemReserve, kPageReadWrite, 0) == 0);  // the in/out words' page
+    uint32_t seed = 0x2026u;
+    auto random = [&](uint32_t n) {
+      seed = seed * 1664525u + 1013904223u;
+      return (seed >> 8) % n;
+    };
+    // A free run of at least `bytes` in [from, to) of the 4 KB virtual heap.
+    auto free_run = [&](uint32_t from, uint32_t to, uint32_t bytes) {
+      RegionInfo info;
+      for (uint32_t a = from; a < to && Memory().QueryRegion(a, info) && info.region_size;) {
+        if (info.state == kMemFree && std::min(info.region_size, to - a) >= bytes) return true;
+        a += info.region_size;
+      }
+      return false;
+    };
+    constexpr uint32_t kAlignments[] = {0, 0x2000, 0x4000};
+    std::vector<uint32_t> pages, small, large;
+    int bottom_up = 0, top_down = 0, missed = 0, out_of_bounds = 0, failed = 0;
+    const uint64_t allocs_before = SysActivity().memory_allocs.load();
+    for (int step = 0; step < 3000; ++step) {
+      const uint32_t what = random(10);
+      if (what < 3) {  // bottom up
+        const uint32_t bytes = (1 + random(6)) * 0x1000;
+        const uint32_t a = Memory().AllocatePages(gm, bytes);
+        ++bottom_up;
+        if (a) pages.push_back(a);
+        else ++failed;
+        if (free_run(0x1000, a ? a : 0x100000, bytes)) ++missed;
+      } else if (what < 6) {  // top down, physical, bounded, aligned
+        const uint32_t bytes = (1 + random(4)) * 0x1000, alignment = kAlignments[random(3)];
+        const uint32_t min = random(64) * 0x1000, max = std::min<uint32_t>(0x3FFFF, min + random(64) * 0x1000 + 0xFFF);
+        const uint32_t step_bytes = std::max<uint32_t>(alignment, 0x1000);
+        const uint32_t a = Memory().AllocatePhysical(gm, 0, bytes, kPageReadWrite, min, max, alignment);
+        ++top_down;
+        const uint32_t physical = a ? a - 0x100000 : 0;
+        if (a) {
+          small.push_back(a);
+          if (physical % step_bytes || physical < min || physical + bytes - 1 > max) ++out_of_bounds;
+        } else {
+          ++failed;
+        }
+        // Every aligned window above the result (or every one when it failed), alone.
+        for (uint32_t c = a ? physical + step_bytes : (std::max<uint32_t>(min, 0x1000) + step_bytes - 1) / step_bytes * step_bytes;
+             c + bytes - 1 <= max; c += step_bytes) {
+          if (const uint32_t probe = Memory().AllocatePhysical(gm, 0, bytes, kPageReadWrite, c, c + bytes - 1, alignment)) {
+            ++missed;
+            Memory().FreePhysical(0, probe);
+          }
+        }
+      } else if (what < 7) {  // 64 KB pages over the shared physical range
+        const uint32_t min = random(4) * 0x10000;
+        if (const uint32_t a = Memory().AllocatePhysical(gm, 0, 0x10000, kPageReadWrite | kMemLargePages, min, 0x3FFFF, 0)) large.push_back(a);
+      } else {  // free something
+        std::vector<uint32_t>& list = what < 8 ? pages : what < 9 ? small : large;
+        if (!list.empty()) {
+          const size_t i = random(uint32_t(list.size()));
+          if (&list == &pages) Memory().FreePages(list[i]);
+          else Memory().FreePhysical(0, list[i]);
+          list[i] = list.back();
+          list.pop_back();
+        }
+      }
+    }
+    CHECK(missed == 0 && out_of_bounds == 0);
+    CHECK(failed > 0 && bottom_up > 500 && top_down > 500);  // the heaps did fill up
+    CHECK(SysActivity().memory_allocs.load() > allocs_before + uint64_t(top_down));  // the activity counter counts calls
+    std::printf("sys_object_tests: allocation search on random fragmentation: %d bottom up, %d top down (bounded, aligned), "
+                "%d failed, %d missed windows, %d out of bounds\n",
+                bottom_up, top_down, failed, missed, out_of_bounds);
+  }
   Memory().Reset();
 }
 

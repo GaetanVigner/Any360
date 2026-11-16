@@ -17,10 +17,11 @@ What the slowest frames left after the texture-load work (2026-11-16-texture-loa
   Fixed: a window that holds a taken page (heap or physical) makes the search skip every window holding it
   (unit test: the fragmented heap in `sys_object_tests`).
 - `hitch_before_fix_1.txt` / `_3.txt` (city frames of 20-120 ms): title code in 0x82A6E938-0x82A88750, the range
-  `titles/crackdown/modules.json` leaves unnamed as "zlib, libpng and XeCrypt users": probably inflating streamed
-  data. A candidate for a generic native (inflate), not done yet.
+  `titles/crackdown/modules.json` leaves unnamed as "zlib, libpng and XeCrypt users", in two distinct call stacks.
+  Inflating streamed data is the guess, to confirm before anything is written: if it holds, a generic native
+  (inflate) is the candidate.
 - Also seen: `NtQueryVirtualMemory` under sub_82380C78 (a free): probably the texture cache's write-watch faults,
-  a renderer topic.
+  a renderer topic (unverified).
 - Loading frames still show about 78 physical allocations taking 45 ms, mostly zeroing the pages; left as it is
   (skipping the zeroing is not safe while the physical space is shared).
 
@@ -34,6 +35,13 @@ What the slowest frames left after the texture-load work (2026-11-16-texture-loa
 | 10% low mean | 252.2 | 261.1 |
 | 1% low mean | 203.2 | 220.8 (rank test z 2.06) |
 | dip 1% low mean | 145.8 | 172.2 |
+| dip slowest frame mean | 17.8 ms | 21.7 ms |
+| dip frames over 16.7 ms mean | 0.4 | 0.8 |
 | private memory mean | 2915 MB | 2898 MB |
 
+Read with care: only the steady 1% low passes the rank test (z 2.06, over about 25 periods from 5 launches a side,
+so marginal); the mean (z 0.55) and the dips (z 1.15) do not. The single slowest frame of a dip got worse: a frame of
+about 25 ms in 4 of 5 launches after, against 2 of 5 before. Those are the title's own frames (above), which this fix
+does not touch. The direct evidence is the hitch reports: the 215 ms loading frame spent 29 of 46 samples in
+AllocRange and its zeroing before; after it, physical allocations take 0.1-0.7 ms in the city's slowest frames.
 The old build hung once in the series (not counted).
