@@ -670,3 +670,14 @@ GPUs have this multiply natively (AMD's v_mul_legacy_f32, D3D9's rule), but SPIR
 a * b) -> fmulz(a,b)`), and RADV sets `has_fmulz` for every AMD GPU (`ac_nir.c`), with `ffmaz` from GFX10.3, the
 Steam Deck's: on the primary target's driver the rule is one instruction, and the 30% is the Windows driver's. To
 confirm on a Steam Deck or another RADV machine (the same capture's per-shader times), not to work around here.
+
+### What the resolves cost (2026-11-16)
+
+Crackdown's city on the Radeon iGPU: 33 colour resolves (0.95 ms a frame) and 6 depth resolves (0.7 ms). Sized on the
+city capture (timing only): the colour resolves' blits are 0.75 ms a frame, the depth resolves' compute pass 0.73 ms;
+a copy instead of the blit where no conversion is needed costs the same. The depth resolves move about 4.2 M pixels
+a frame at 8 bytes each (34 MB in 0.73 ms), the iGPU's shared memory bandwidth: they are at their floor. Every resolve
+is read by a texture before the next one replaces it, but the front buffer's (1280x720, read by the presenter only).
+What is left: presenting from the front buffer's source surface (the resolve's red/blue swap and the front buffer's
+blue-green-red fetch cancel out), one 1280x720 blit a frame, about 1%; anything more needs textures to read the EDRAM
+surfaces themselves until they are drawn into again.

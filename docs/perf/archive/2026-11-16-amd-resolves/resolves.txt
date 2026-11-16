@@ -1,0 +1,13 @@
+Crackdown city capture (29 frames) replayed with gfx_replay --bench --repeat 3 on the AMD Radeon iGPU, cores 8-15;
+timing-only switches (removed after). GPU ms over the 29 frames (pass 2), total | resolves kind | depth resolves kind.
+
+  as shipped                    612.4 / 617.4 | 28.5 / 29.1 | 21.6 / 21.7
+  colour blits skipped          541.3 | 6.7  | 21.2   (draws also cheaper: content changes, not comparable)
+  depth compute skipped         545.5 | 29.3 | 0.4
+  both                          521.1 | 6.9  | 0.4
+  copy instead of blit (same format)        607.2 / 611.8 against 602.0 / 601.7 as shipped: resolves 28.6 / 27.5
+  copy everywhere (swap ignored, timing)    593.0 / 585.6: resolves 28.2 / 26.9 (no gain in the resolves themselves)
+
+Census over 4 replays of the capture (resolve destinations replaced unread / read by a texture first):
+  every destination read before being replaced, but the front buffer 1F6E7000 1280x720 BGRA (59 unread, read 0:
+  presented only); 19561000 and 19931000 1280x720: 2 unread at the capture's start.
