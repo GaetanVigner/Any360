@@ -3,6 +3,7 @@
 # benchmark for every function (docs/NATIVE_FUNCTIONS.md). Built with layer/sys.
 add_library(any360_xdk INTERFACE)
 target_include_directories(any360_xdk INTERFACE include)
+target_link_libraries(any360_xdk INTERFACE any360_alloc_meter)  # allocations per call in the benches
 
 enable_testing()
 add_executable(xdk_crt_tests tests/xdk_crt_tests.cpp)

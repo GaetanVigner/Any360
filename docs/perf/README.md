@@ -1,0 +1,13 @@
+# Performance archive
+
+Every step's measured results, kept for later optimization passes: the self-test report (time and allocations per call against the title's), its published table, and the in-game A/B runs with their frame-time analysis (`tools/frame_lows.py`). Each folder is one step, newest last. The A/B runs files list each launch's log (`=== <variant> (<log>)`) with its last frame-rate lines; the logs themselves stay in the title's build folder.
+
+- [2026-11-14-d6-step1-direct-submit](archive/2026-11-14-d6-step1-direct-submit/): D6 step 1: command buffers submitted directly (published as of Any360 018eb50)
+- [2026-11-14-d6-step2-segments](archive/2026-11-14-d6-step2-segments/): D6 step 2: the kick's segments native (68-case self-test report; segments on/off A/B) (published as of Any360 659be0c)
+- [2026-11-14-d6-step3-tiled-recording](archive/2026-11-14-d6-step3-tiled-recording/): D6 step 3: tiled recording native, tile bin selects direct (published as of Any360 42712f8)
+- [2026-11-14-d6-step4-begin-end-tiling](archive/2026-11-14-d6-step4-begin-end-tiling/): D6 step 4: BeginTiling / EndTiling native (published as of Any360 c02cff0)
+- [2026-11-15-d6-step5-tile-ops](archive/2026-11-15-d6-step5-tile-ops/): D6 step 5: the DPC's tile ops interpreter native (published as of Any360 2057e5c)
+- [2026-11-15-d6-step6-ring-out](archive/2026-11-15-d6-step6-ring-out/): D6 step 6: the ring out of Crackdown's path (published as of Any360 b832638)
+- [2026-11-15-d6-frame-lows](archive/2026-11-15-d6-frame-lows/): D6 measured with median and 10% / 1% lows: 15 launches, three variants (frame_lows.txt) (published as of Any360 d57d69a)
+- [2026-11-16-texture-loads](archive/2026-11-16-texture-loads/): texture loads of 1 and 2-byte texels, tiled and linear; the dip's slowest frames broken down (NOTES.md)
+- [2026-11-16-d3d-alloc-per-call](archive/2026-11-16-d3d-alloc-per-call/): the 68-case self-test with host allocations a call on each side (BenchmarkDotNet style), and the published table

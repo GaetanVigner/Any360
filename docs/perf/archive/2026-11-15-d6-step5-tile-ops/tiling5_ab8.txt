@@ -1,0 +1,40 @@
+﻿=== --any360_native_tiling=true --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_339.log)
+hangs: 0; errors: 0
+Any360: 231.2 FPS; per frame: 2320 draws, 192 skipped, 0 failed, 33 resolves, 0.2 texture uploads, 31.0 textur
+Any360: 220.1 FPS; per frame: 2317 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 3.36 ms running the ring (0.09 ms of it in WAIT_REG_MEM), 3.9 kicks (14.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 26.0% of the time with nothing to run
+=== --any360_native_tiling=false --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_340.log)
+hangs: 0; errors: 0
+Any360: 263.4 FPS; per frame: 2320 draws, 192 skipped, 0 failed, 33 resolves, 0.2 texture uploads, 31.0 textur
+Any360: 302.2 FPS; per frame: 2317 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.44 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 3.9 kicks (14.0 command buffers and 0.0 tile bin selects submitted directly), 1.0 tiled brackets (1.0 the runtime's), 1.0 tile op runs (1.0 the runtime's); 26.1% of the time with nothing to run
+=== --any360_native_tiling=true --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_341.log)
+hangs: 0; errors: 0
+Any360: 271.7 FPS; per frame: 2321 draws, 192 skipped, 0 failed, 33 resolves, 0.2 texture uploads, 31.0 textur
+Any360: 280.7 FPS; per frame: 2319 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.54 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 3.9 kicks (14.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 28.7% of the time with nothing to run
+=== --any360_native_tiling=false --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_342.log)
+hangs: 0; errors: 0
+Any360: 263.8 FPS; per frame: 2321 draws, 192 skipped, 0 failed, 33 resolves, 0.2 texture uploads, 31.0 textur
+Any360: 289.2 FPS; per frame: 2319 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.56 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 3.9 kicks (14.0 command buffers and 0.0 tile bin selects submitted directly), 1.0 tiled brackets (1.0 the runtime's), 1.0 tile op runs (1.0 the runtime's); 25.9% of the time with nothing to run
+=== --any360_native_tiling=true --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_343.log)
+hangs: 0; errors: 0
+Any360: 263.6 FPS; per frame: 2320 draws, 192 skipped, 0 failed, 33 resolves, 0.2 texture uploads, 31.0 textur
+Any360: 294.0 FPS; per frame: 2317 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.51 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 3.9 kicks (14.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 26.3% of the time with nothing to run
+=== --any360_native_tiling=false --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_344.log)
+hangs: 0; errors: 0
+Any360: 263.3 FPS; per frame: 2320 draws, 192 skipped, 0 failed, 33 resolves, 0.2 texture uploads, 31.0 textur
+Any360: 292.5 FPS; per frame: 2319 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.53 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 3.9 kicks (14.0 command buffers and 0.0 tile bin selects submitted directly), 1.0 tiled brackets (1.0 the runtime's), 1.0 tile op runs (1.0 the runtime's); 25.9% of the time with nothing to run
+=== --any360_native_tiling=true --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_345.log)
+hangs: 0; errors: 0
+Any360: 80.0 FPS; per frame: 30 draws, 91 skipped, 0 failed, 9 resolves, 0.0 texture uploads, 6.3 texture copi
+Any360: 663.1 FPS; per frame: 55 draws, 144 skipped, 0 failed, 14 resolves, 0.3 texture uploads, 10.0 texture 
+Any360: command processor per frame: 0.15 ms running the ring (0.00 ms of it in WAIT_REG_MEM), 4.1 kicks (9.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 90.1% of the time with nothing to run
+=== --any360_native_tiling=false --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_346.log)
+hangs: 0; errors: 0
+Any360: 270.3 FPS; per frame: 2321 draws, 192 skipped, 0 failed, 33 resolves, 0.2 texture uploads, 31.0 textur
+Any360: 299.1 FPS; per frame: 2317 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.38 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 4.0 kicks (14.0 command buffers and 0.0 tile bin selects submitted directly), 1.0 tiled brackets (1.0 the runtime's), 1.0 tile op runs (1.0 the runtime's); 28.7% of the time with nothing to run

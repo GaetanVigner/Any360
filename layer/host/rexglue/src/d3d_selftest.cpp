@@ -1,4 +1,5 @@
 #include "any360/host/d3d_selftest.h"
+#include "any360/sys/alloc_meter.h"
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
@@ -134,6 +135,10 @@ struct Result {
   std::string name;
   uint64_t calls = 0, declined = 0, different = 0;
   double original_ns = 0, native_ns = 0;
+  // Host heap allocations of each side over its compared calls (any360/sys/alloc_meter.h); the title's guest heap is
+  // guest memory, not counted here.
+  any360::sys::AllocCounts original_alloc, native_alloc;
+  uint64_t native_calls = 0;  // the compared calls the replacement took
   std::string first_difference;
 };
 
@@ -224,17 +229,25 @@ void OneCall(Runner& run, const Case& c) {
   if (run.phase == 0) {
     Result& r = run.r;
     PPCContext own = call;
+    const any360::sys::AllocCounts own_start = any360::sys::ThreadAllocations();
     c.original(own, base);
+    const any360::sys::AllocCounts own_spent = any360::sys::ThreadAllocations() - own_start;
     if (c.normalize) c.normalize(s, own);
     const std::vector<uint8_t> own_bytes = Read(regions);
     Write(restored, before);
     PPCContext mine = call;
     ++r.calls;
-    if (!c.native(mine, base)) {
+    const any360::sys::AllocCounts mine_start = any360::sys::ThreadAllocations();
+    const bool taken = c.native(mine, base);
+    const any360::sys::AllocCounts mine_spent = any360::sys::ThreadAllocations() - mine_start;
+    if (!taken) {
       ++r.declined;
       Write(restored, before);
       return;
     }
+    r.original_alloc.bytes += own_spent.bytes, r.original_alloc.count += own_spent.count;
+    r.native_alloc.bytes += mine_spent.bytes, r.native_alloc.count += mine_spent.count;
+    ++r.native_calls;
     if (c.normalize) c.normalize(s, mine);
     const std::vector<uint8_t> mine_bytes = Read(regions);
     Write(restored, before);
@@ -282,13 +295,17 @@ void EndCase(Runner& run) {
     r.original_ns = std::max(Median(run.own_ticks) - overhead, 0.0) * NsPerTick() / kRepeat;
     r.native_ns = std::max(Median(run.mine_ticks) - overhead, 0.0) * NsPerTick() / kRepeat;
   }
-  char line[512];
+  // Allocated per call, as BenchmarkDotNet reports it: bytes and allocations, each side (the calls both made).
+  const double n = double(std::max<uint64_t>(r.native_calls, 1));
+  char line[640];
   std::snprintf(line, sizeof line,
-                "%-28s %6llu calls, %llu declined, %llu different; median original %.1f ns, native %.1f ns (%.2fx faster)%s%s\n",
+                "%-28s %6llu calls, %llu declined, %llu different; median original %.1f ns, native %.1f ns (%.2fx faster); "
+                "allocated per call: original %.1f B in %.2f, native %.1f B in %.2f%s%s\n",
                 r.name.c_str(), static_cast<unsigned long long>(r.calls), static_cast<unsigned long long>(r.declined),
                 static_cast<unsigned long long>(r.different), r.original_ns, r.native_ns,
-                r.native_ns > 0 ? r.original_ns / r.native_ns : 0.0, r.first_difference.empty() ? "" : "; first: ",
-                r.first_difference.c_str());
+                r.native_ns > 0 ? r.original_ns / r.native_ns : 0.0, double(r.original_alloc.bytes) / n,
+                double(r.original_alloc.count) / n, double(r.native_alloc.bytes) / n, double(r.native_alloc.count) / n,
+                r.first_difference.empty() ? "" : "; first: ", r.first_difference.c_str());
   run.report += line;
   run.in_case = false;
   ++run.index;

@@ -11,6 +11,7 @@
 #include "any360/xdk/d3d_reference.h"
 #include "any360/xdk/d3d_state.h"
 #include "any360/xdk/d3d_tiling.h"
+#include "any360/sys/alloc_meter.h"
 #include "xdk_test.h"
 
 namespace {
@@ -350,6 +351,21 @@ struct TileCalls : xdk::TileOpsCalls {
   }
 };
 
+// The allocation meter (any360/sys/alloc_meter.h) the benches and the self-test report with: a vector's buffer is
+// counted on its thread, nothing on another thread's, and RunTileOps itself allocates nothing.
+void TestAllocMeter() {
+  const any360::sys::AllocCounts before = any360::sys::ThreadAllocations();
+  {
+    std::vector<uint32_t> v(1000);
+    v[999] = 1;
+    CHECK(v[999] == 1);
+  }
+  const any360::sys::AllocCounts spent = any360::sys::ThreadAllocations() - before;
+  CHECK(spent.bytes >= 4000 && spent.count >= 1);
+  const any360::sys::AllocCounts quiet = any360::sys::ThreadAllocations();
+  CHECK((any360::sys::ThreadAllocations() - quiet).count == 0);
+}
+
 void TestTileOps() {
   Pair p(77);
   const xdk::Memory& m = p.a;
@@ -376,6 +392,28 @@ void TestTileOps() {
       "submit 5 B000",     "submit 7 C000", "select C 0",        "submit 3 A000",     "submit 5 B000",
       "submit 7 C000",     "select FFFFFFFF 0", "lock 0 0", "wait 30000 0", "unlock 0 0"};
   CHECK(calls.log == want);
+  // The same run with calls that only count: the interpreter itself allocates nothing.
+  struct Counting : xdk::TileOpsCalls {
+    const xdk::Memory* m = nullptr;
+    uint32_t n = 0;
+    void Select(uint32_t state) override {  // the select kept in force, as TileSelect keeps it
+      xdk::detail::Set32(m->Host(state + 364), xdk::TileMask(xdk::detail::At32(m->Host(state + 40)),
+                                                             xdk::detail::At32(m->Host(state + 44))));
+      ++n;
+    }
+    void Submit(uint32_t, uint32_t) override { ++n; }
+    void Resources(uint32_t, uint32_t, bool) override { ++n; }
+    void Wait(uint32_t) override { ++n; }
+    void LockL2() override { ++n; }
+    void UnlockL2() override { ++n; }
+    void Again() override {}
+  } counting;
+  counting.m = &m;
+  for (uint32_t a = kState; a < kState + 0x200; a += 4) put(a, 0);
+  const any360::sys::AllocCounts run_start = any360::sys::ThreadAllocations();
+  xdk::RunTileOps(m, kOps, kState, counting);
+  const any360::sys::AllocCounts run_spent = any360::sys::ThreadAllocations() - run_start;
+  CHECK(counting.n >= 13 && run_spent.count == 0 && run_spent.bytes == 0);
   CHECK(stop == at - 4 && calls.agains == 3);
   CHECK(xdk::detail::At32(m.Host(kState + 44)) == 2 && xdk::detail::At32(m.Host(kState + 376)) == kOps + 252);
   // A list's end.
@@ -411,6 +449,7 @@ int main() {
   TestSetVertexDeclaration(shifted, 1600);
   TestSetShader(standard, 1700);
   TestSetShader(shifted, 1800);
+  TestAllocMeter();
   TestTileOps();
   return xdk_test::Finish("xdk_d3d_state_tests");
 }

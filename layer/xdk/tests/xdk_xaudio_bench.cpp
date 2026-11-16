@@ -8,6 +8,8 @@
 #include <cstdlib>
 #include <vector>
 
+#include "xdk_bench.h"
+
 #include <immintrin.h>
 
 #include "any360/xdk/xaudio.h"
@@ -19,9 +21,15 @@ namespace xdk = any360::xdk;
 
 template <class F>
 double NsPerCall(F&& f, int calls) {
+  const any360::sys::AllocCounts before = any360::sys::ThreadAllocations();
   const auto start = std::chrono::steady_clock::now();
   for (int i = 0; i < calls; ++i) f();
-  return std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count() / calls;
+  const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count() / calls;
+  const any360::sys::AllocCounts spent = any360::sys::ThreadAllocations() - before;
+  xdk_bench::Allocated& a = xdk_bench::g_allocated;
+  a.calls += uint64_t(calls), a.bytes += spent.bytes, a.count += spent.count;
+  a.max_bytes_a_call = std::max(a.max_bytes_a_call, double(spent.bytes) / double(calls));
+  return ns;
 }
 
 }  // namespace
@@ -51,5 +59,6 @@ int main(int argc, char** argv) {
                   native / samples, model, model / native);
     }
   }
+  xdk_bench::PrintAllocated("xdk_xaudio_bench");
   return 0;
 }

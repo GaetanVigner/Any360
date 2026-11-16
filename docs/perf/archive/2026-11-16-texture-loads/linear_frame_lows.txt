@@ -1,0 +1,17 @@
+@exe:crackdown_linear_before.exe: 5 launches
+  crackdown_402.log: dip 1% low 93 FPS, slowest 11.9 ms, 0 over 16.7 ms, texture loading up to 0.09 ms a frame; steady FPS 326-360
+  crackdown_404.log: dip 1% low 152 FPS, slowest 15.6 ms, 0 over 16.7 ms, texture loading up to 0.27 ms a frame; steady FPS 302-332
+  crackdown_406.log: dip 1% low 102 FPS, slowest 28.3 ms, 1 over 16.7 ms, texture loading up to 0.29 ms a frame; steady FPS 230-320
+  crackdown_408.log: dip 1% low 100 FPS, slowest 28.1 ms, 1 over 16.7 ms, texture loading up to 0.29 ms a frame; steady FPS 295-322
+  crackdown_410.log: dip 1% low 197 FPS, slowest 8.9 ms, 0 over 16.7 ms, texture loading up to 0.23 ms a frame; steady FPS 314-325
+  steady (26 periods): FPS mean 313.1 (median 319.4, min 230.1), 10% low mean 271.8 (median 278.8, min 207.5), 1% low mean 220.6 (median 228.6, min 120.2); process private memory mean 2913 MB, max 2948 MB
+  dips (5): 1% low mean 128.9, slowest frame mean 18.6 ms, over 16.7 ms mean 0.4, texture loading mean 0.23 ms a frame
+@exe:crackdown.exe: 5 launches
+  crackdown_403.log: dip 1% low 230 FPS, slowest 9.8 ms, 0 over 16.7 ms, texture loading up to 0.01 ms a frame; steady FPS 328-338
+  crackdown_405.log: dip 1% low 175 FPS, slowest 24.7 ms, 1 over 16.7 ms, texture loading up to 0.01 ms a frame; steady FPS 331-340
+  crackdown_407.log: dip 1% low 102 FPS, slowest 23.5 ms, 3 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 277-315
+  crackdown_409.log: dip 1% low 254 FPS, slowest 8.6 ms, 0 over 16.7 ms, texture loading up to 0.01 ms a frame; steady FPS 332-337
+  crackdown_411.log: dip 1% low 225 FPS, slowest 8.0 ms, 0 over 16.7 ms, texture loading up to 0.01 ms a frame; steady FPS 321-336
+  steady (25 periods): FPS mean 325.4 (median 332.5, min 276.7), 10% low mean 282.7 (median 292.6, min 205.9), 1% low mean 236.5 (median 249.1, min 130.8); process private memory mean 2906 MB, max 2937 MB
+  dips (5): 1% low mean 197.3, slowest frame mean 14.9 ms, over 16.7 ms mean 0.8, texture loading mean 0.01 ms a frame
+@exe:crackdown_linear_before.exe against @exe:crackdown.exe: steady fps z -3.14, p10 z -2.76, p1 z -2.58; dips 1% low z -1.98, slowest z +1.15

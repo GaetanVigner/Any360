@@ -4,9 +4,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstdint>
 #include <utility>
 #include <vector>
+
+#include "any360/sys/alloc_meter.h"
 
 // Each version is measured as a function of its own, as a title's binding makes it (one function a bound address).
 #if defined(__clang__) || defined(__GNUC__)
@@ -48,15 +51,36 @@ inline std::vector<Call> CallsOfSize(uint32_t size, uint32_t seed) {
 
 inline volatile uint32_t g_sink = 0;
 
+// The host heap allocations of every timed run (any360/sys/alloc_meter.h): the calls timed, the bytes and allocations
+// they made, and the most bytes a call of one run made.
+struct Allocated {
+  uint64_t calls = 0, bytes = 0, count = 0;
+  double max_bytes_a_call = 0;
+};
+inline Allocated g_allocated;
+
+// The bench's allocations line, BenchmarkDotNet's "Allocated": 0 B a call is the rule for native functions.
+inline void PrintAllocated(const char* bench) {
+  const Allocated& a = g_allocated;
+  std::printf("%s: allocated per call %.2f B in %.4f allocations over %llu timed calls (at most %.2f B a call in a run)\n",
+              bench, a.calls ? double(a.bytes) / double(a.calls) : 0.0, a.calls ? double(a.count) / double(a.calls) : 0.0,
+              static_cast<unsigned long long>(a.calls), a.max_bytes_a_call);
+}
+
 // One run over the calls, `rounds` times: nanoseconds a call.
 template <typename F>
 double Run(const std::vector<Call>& calls, uint32_t rounds, F&& f) {
   uint32_t done = 0;
+  const any360::sys::AllocCounts before = any360::sys::ThreadAllocations();
   const auto start = std::chrono::steady_clock::now();
   for (uint32_t round = 0; round < rounds; ++round) {
     for (const Call& c : calls) done += f(c);
   }
   const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count();
+  const any360::sys::AllocCounts spent = any360::sys::ThreadAllocations() - before;
+  const uint64_t n = uint64_t(rounds) * calls.size();
+  g_allocated.calls += n, g_allocated.bytes += spent.bytes, g_allocated.count += spent.count;
+  g_allocated.max_bytes_a_call = std::max(g_allocated.max_bytes_a_call, n ? double(spent.bytes) / double(n) : 0.0);
   g_sink = g_sink + done;
   return ns / (double(rounds) * double(calls.size()));
 }

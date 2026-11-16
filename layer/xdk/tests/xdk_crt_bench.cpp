@@ -316,5 +316,6 @@ int main(int argc, char** argv) {
     std::printf("  all %zu title%s measured,  %s: first %.2f, now %.2f (%.2fx the first)\n", titles, titles == 1 ? "" : "s",
                 f ? "memset" : "memcpy", all[f][1] / double(titles), all[f][2] / double(titles), all[f][1] / all[f][2]);
   }
+  xdk_bench::PrintAllocated("xdk_crt_bench");
   return int(g_sink & 0);
 }

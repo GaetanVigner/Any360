@@ -1,0 +1,26 @@
+--any360_direct_submit=true --any360_native_tiling=true: 5 launches
+  crackdown_362.log: dip 1% low 89 FPS, slowest 31.2 ms, 1 over 16.7 ms, texture loading up to 0.31 ms a frame; steady FPS 243-267
+  crackdown_365.log: dip 1% low 79 FPS, slowest 34.6 ms, 2 over 16.7 ms, texture loading up to 0.38 ms a frame; steady FPS 232-262
+  crackdown_368.log: dip 1% low 82 FPS, slowest 32.6 ms, 1 over 16.7 ms, texture loading up to 0.37 ms a frame; steady FPS 222-251
+  crackdown_371.log: dip 1% low 84 FPS, slowest 33.3 ms, 1 over 16.7 ms, texture loading up to 0.34 ms a frame; steady FPS 251-258
+  crackdown_374.log: dip 1% low 86 FPS, slowest 30.9 ms, 2 over 16.7 ms, texture loading up to 0.34 ms a frame; steady FPS 233-257
+  steady (25 periods): FPS mean 246.0 (median 249.5, min 222.2), 10% low mean 212.8 (median 215.3, min 189.8), 1% low mean 183.7 (median 187.0, min 159.4); process private memory mean 2888 MB, max 2898 MB
+  dips (5): 1% low mean 83.7, slowest frame mean 32.5 ms, over 16.7 ms mean 1.4, texture loading mean 0.35 ms a frame
+--any360_direct_submit=false --any360_native_tiling=true: 5 launches
+  crackdown_363.log: dip 1% low 80 FPS, slowest 33.3 ms, 1 over 16.7 ms, texture loading up to 0.36 ms a frame; steady FPS 235-245
+  crackdown_366.log: dip 1% low 76 FPS, slowest 37.0 ms, 2 over 16.7 ms, texture loading up to 0.43 ms a frame; steady FPS 251-259
+  crackdown_369.log: dip 1% low 85 FPS, slowest 33.0 ms, 1 over 16.7 ms, texture loading up to 0.34 ms a frame; steady FPS 231-251
+  crackdown_372.log: dip 1% low 85 FPS, slowest 39.9 ms, 2 over 16.7 ms, texture loading up to 0.32 ms a frame; steady FPS 216-269
+  crackdown_375.log: dip 1% low 88 FPS, slowest 30.9 ms, 1 over 16.7 ms, texture loading up to 0.32 ms a frame; steady FPS 246-260
+  steady (25 periods): FPS mean 246.5 (median 248.0, min 216.4), 10% low mean 212.7 (median 214.2, min 182.4), 1% low mean 181.5 (median 185.9, min 121.9); process private memory mean 2885 MB, max 2892 MB
+  dips (5): 1% low mean 82.7, slowest frame mean 34.8 ms, over 16.7 ms mean 1.4, texture loading mean 0.35 ms a frame
+--any360_direct_submit=true --any360_native_tiling=false: 5 launches
+  crackdown_364.log: dip 1% low 70 FPS, slowest 36.5 ms, 4 over 16.7 ms, texture loading up to 0.47 ms a frame; steady FPS 236-243
+  crackdown_367.log: dip 1% low 77 FPS, slowest 35.7 ms, 1 over 16.7 ms, texture loading up to 0.41 ms a frame; steady FPS 204-221
+  crackdown_370.log: dip 1% low 79 FPS, slowest 35.1 ms, 1 over 16.7 ms, texture loading up to 0.37 ms a frame; steady FPS 246-268
+  crackdown_373.log: dip 1% low 83 FPS, slowest 32.9 ms, 1 over 16.7 ms, texture loading up to 0.37 ms a frame; steady FPS 231-250
+  crackdown_376.log: dip 1% low 71 FPS, slowest 35.2 ms, 5 over 16.7 ms, texture loading up to 0.41 ms a frame; steady FPS 185-234
+  steady (25 periods): FPS mean 232.8 (median 236.5, min 185.2), 10% low mean 197.2 (median 205.8, min 148.3), 1% low mean 166.2 (median 173.1, min 123.2); process private memory mean 2910 MB, max 2991 MB
+  dips (5): 1% low mean 76.1, slowest frame mean 35.1 ms, over 16.7 ms mean 2.4, texture loading mean 0.41 ms a frame
+--any360_direct_submit=true --any360_native_tiling=true against --any360_direct_submit=false --any360_native_tiling=true: steady fps z -0.02, p10 z +0.26, p1 z +0.33; dips 1% low z +0.31, slowest z -0.94
+--any360_direct_submit=true --any360_native_tiling=true against --any360_direct_submit=true --any360_native_tiling=false: steady fps z +2.41, p10 z +2.55, p1 z +2.51; dips 1% low z +2.19, slowest z -2.19

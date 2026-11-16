@@ -116,5 +116,6 @@ int main(int argc, char** argv) {
     all[0] += sum[1], all[1] += sum[2];
   }
   std::printf("  all the titles measured: %.2fx the first\n", all[0] / all[1]);
+  xdk_bench::PrintAllocated("xdk_xapi_bench");
   return int(g_sink & 0);
 }

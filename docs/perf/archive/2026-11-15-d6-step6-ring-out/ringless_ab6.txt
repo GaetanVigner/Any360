@@ -1,0 +1,30 @@
+﻿=== --any360_direct_submit=false --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_354.log)
+hangs: 0; errors: 0
+Any360: 265.7 FPS; per frame: 2319 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 260.8 FPS; per frame: 2319 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.76 ms running the ring (0.08 ms of it in WAIT_REG_MEM), 4.0 kicks (14.1 through the title's ring; 0.0 command buffers and 0.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 27.9% of the time with nothing to run
+=== --any360_direct_submit=true --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_355.log)
+hangs: 0; errors: 0
+Any360: 279.5 FPS; per frame: 2319 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 279.1 FPS; per frame: 2317 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.63 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 1.8 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 26.5% of the time with nothing to run
+=== --any360_direct_submit=false --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_356.log)
+hangs: 0; errors: 0
+Any360: 260.4 FPS; per frame: 2319 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 277.0 FPS; per frame: 2317 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.66 ms running the ring (0.08 ms of it in WAIT_REG_MEM), 3.9 kicks (14.1 through the title's ring; 0.0 command buffers and 0.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 26.4% of the time with nothing to run
+=== --any360_direct_submit=true --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_357.log)
+hangs: 0; errors: 0
+Any360: 254.7 FPS; per frame: 2319 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 235.5 FPS; per frame: 2317 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.99 ms running the ring (0.08 ms of it in WAIT_REG_MEM), 2.0 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 29.6% of the time with nothing to run
+=== --any360_direct_submit=false --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_358.log)
+hangs: 0; errors: 0
+Any360: 277.2 FPS; per frame: 2318 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 275.4 FPS; per frame: 2317 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.65 ms running the ring (0.08 ms of it in WAIT_REG_MEM), 4.0 kicks (14.1 through the title's ring; 0.0 command buffers and 0.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 27.0% of the time with nothing to run
+=== --any360_direct_submit=true --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_359.log)
+hangs: 0; errors: 0
+Any360: 273.1 FPS; per frame: 2317 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 269.7 FPS; per frame: 2315 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.74 ms running the ring (0.08 ms of it in WAIT_REG_MEM), 1.9 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 26.0% of the time with nothing to run
