@@ -59,4 +59,5 @@ owner adds a rule, it goes here (or into a skill under `.claude/skills/`) in the
 - Warn the owner before a visible launch. Minimized launches are for measuring only (they get no gamepad input).
 - Never capture the screen to grab a game window (it captured the owner's desktop once).
 - After each run, stop only the stray processes your own launch arguments identify.
-- How to build and launch each title: the title repository's `CLAUDE.md` and `docs/` (Crackdown: its `CLAUDE.md`).
+- How to build and launch each title: the title repository's docs (Crackdown: `docs/ANY360.md` in its repository,
+  `F:\Crackdown\crackdown-any360-sys` here, with `tools/any360-ab.ps1` for A/B launches).
