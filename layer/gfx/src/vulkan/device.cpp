@@ -93,6 +93,25 @@ bool Device::Create(const DeviceOptions& options) {
     }
   }
   std::vector<const char*> extensions = options.instance_extensions;
+  // Object names for validation messages (Device::Name): with the validation layer, asked for here or through the
+  // loader's VK_INSTANCE_LAYERS, or with ANY360_GPU_NAMES=1.
+  bool names = options.validation;
+  if (const char* env = std::getenv("ANY360_GPU_NAMES"); env && *env == '1') names = true;
+  if (const char* env = std::getenv("VK_INSTANCE_LAYERS"); env && std::strstr(env, "validation")) names = true;
+  if (names) {
+    names = false;
+    if (auto enumerate = reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
+            load_global("vkEnumerateInstanceExtensionProperties"))) {
+      uint32_t count = 0;
+      enumerate(nullptr, &count, nullptr);
+      std::vector<VkExtensionProperties> available(count);
+      enumerate(nullptr, &count, available.data());
+      for (const VkExtensionProperties& e : available) {
+        if (std::strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0) names = true;
+      }
+    }
+    if (names) extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+  }
   VkInstanceCreateFlags instance_flags = 0;
 #if defined(__APPLE__)
   // MoltenVK is a portability implementation: listed only when asked for.
@@ -199,6 +218,8 @@ bool Device::Create(const DeviceOptions& options) {
   enabled.features.vertexPipelineStoresAndAtomics = supported.features.vertexPipelineStoresAndAtomics;
   enabled.features.samplerAnisotropy = supported.features.samplerAnisotropy;
   enabled.features.occlusionQueryPrecise = supported.features.occlusionQueryPrecise;
+  enabled.features.fillModeNonSolid = supported.features.fillModeNonSolid;  // wireframe (line polygon mode)
+  fill_mode_non_solid_ = supported.features.fillModeNonSolid;
   occlusion_query_precise_ = supported.features.occlusionQueryPrecise;
   enabled.features.fullDrawIndexUint32 = supported.features.fullDrawIndexUint32;
   enabled.features.independentBlend = supported.features.independentBlend;
@@ -269,6 +290,7 @@ bool Device::Create(const DeviceOptions& options) {
 #include "any360/gfx/vulkan/functions.inc"
 #undef ANY360_VK_FN
   fn_.vkGetDeviceQueue(device_, queue_family_, 0, &queue_);
+  if (names) set_name_ = reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(get(instance_, "vkSetDebugUtilsObjectNameEXT"));
   if (device_fault_) {
     get_fault_ = reinterpret_cast<PFN_vkGetDeviceFaultInfoEXT>(fn_.vkGetDeviceProcAddr(device_, "vkGetDeviceFaultInfoEXT"));
   }
@@ -483,6 +505,13 @@ bool CreateBuffer(const Device& d, VkDeviceSize size, VkBufferUsageFlags usage, 
   if (alloc.memoryTypeIndex == UINT32_MAX) alloc.memoryTypeIndex = d.MemoryType(req.memoryTypeBits, flags);
   if (alloc.memoryTypeIndex == UINT32_MAX || f.vkAllocateMemory(d.device(), &alloc, nullptr, &out.memory) != VK_SUCCESS) return false;
   f.vkBindBufferMemory(d.device(), out.buffer, out.memory, 0);
+  if (d.naming()) {
+    std::string file = where.file_name();
+    char name[160];
+    std::snprintf(name, sizeof name, "buffer %llu B usage 0x%X at %s:%u", static_cast<unsigned long long>(size), usage,
+                  file.substr(file.find_last_of("/\\") + 1).c_str(), unsigned(where.line()));
+    d.Name(VK_OBJECT_TYPE_BUFFER, uint64_t(out.buffer), name);
+  }
   if (host_visible) f.vkMapMemory(d.device(), out.memory, 0, VK_WHOLE_SIZE, 0, &out.mapped);
   out.size = size;
   return true;
@@ -527,6 +556,13 @@ bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat fo
   if (alloc.memoryTypeIndex == UINT32_MAX || f.vkAllocateMemory(d.device(), &alloc, nullptr, &out.memory) != VK_SUCCESS) return false;
   f.vkBindImageMemory(d.device(), out.image, out.memory, 0);
   Created("image", req.size, width, height, uint32_t(format), usage, where);
+  if (d.naming()) {
+    std::string file = where.file_name();
+    char name[160];
+    std::snprintf(name, sizeof name, "image %ux%u format %u samples %u usage 0x%X at %s:%u", width, height, unsigned(format),
+                  unsigned(samples), usage, file.substr(file.find_last_of("/\\") + 1).c_str(), unsigned(where.line()));
+    d.Name(VK_OBJECT_TYPE_IMAGE, uint64_t(out.image), name);
+  }
   out.format = format;
   out.width = width;
   out.height = height;

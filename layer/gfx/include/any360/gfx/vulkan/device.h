@@ -62,11 +62,23 @@ class Device {
   uint32_t queue_family() const { return queue_family_; }
   const VkPhysicalDeviceProperties& properties() const { return properties_; }
   bool occlusion_query_precise() const { return occlusion_query_precise_; }  // exact sample counts
+  bool fill_mode_non_solid() const { return fill_mode_non_solid_; }  // line and point polygon modes (wireframe)
   // After VK_ERROR_DEVICE_LOST: what the driver says faulted (VK_EXT_device_fault), or why it cannot say.
   std::string DescribeFault() const;
   // Diagnostics (ANY360_GPU_CHECKPOINTS=1, VK_NV_device_diagnostic_checkpoints): a marker the GPU passes in `cb`, and
   // after a lost device the last marker each pipeline stage passed (stage flags, marker).
   bool checkpoints() const { return set_checkpoint_ != nullptr; }
+  // Diagnostics: with the validation layer (or ANY360_GPU_NAMES=1), images and buffers carry the place that created
+  // them (file:line, size, format) as their debug name, so a validation message says which one it is.
+  bool naming() const { return set_name_ != nullptr; }
+  void Name(VkObjectType type, uint64_t handle, const char* name) const {
+    if (!set_name_ || !handle) return;
+    VkDebugUtilsObjectNameInfoEXT info{VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT};
+    info.objectType = type;
+    info.objectHandle = handle;
+    info.pObjectName = name;
+    set_name_(device_, &info);
+  }
   void SetCheckpoint(VkCommandBuffer cb, uint64_t marker) const {
     if (set_checkpoint_) set_checkpoint_(cb, reinterpret_cast<const void*>(uintptr_t(marker)));
   }
@@ -111,9 +123,11 @@ class Device {
   VkDeviceSize host_pointer_alignment_ = 0;
   uint32_t queue_family_ = 0;
   bool occlusion_query_precise_ = false;
+  bool fill_mode_non_solid_ = false;
   bool device_fault_ = false;
   PFN_vkGetDeviceFaultInfoEXT get_fault_ = nullptr;
   PFN_vkCmdSetCheckpointNV set_checkpoint_ = nullptr;
+  PFN_vkSetDebugUtilsObjectNameEXT set_name_ = nullptr;
   PFN_vkGetQueueCheckpointDataNV get_checkpoints_ = nullptr;
   std::mutex one_time_mutex_;                         // guards the two lists below (not held while recording)
   std::vector<std::unique_ptr<OneTime>> one_times_;  // every one made, destroyed with the device

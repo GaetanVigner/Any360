@@ -217,12 +217,20 @@ int main(int argc, char** argv) {
                                                std::to_string(stores) + " stores to xe_var_jump_skip)");
     }
 
+    // The shaders gfx_vulkan_tests runs on whatever device it finds: every feature but the float controls, which the
+    // renderer sets as each device reports them (a mode a device lacks is invalid: NVIDIA has no 32-bit denormal flush).
+    SpirvShaderTranslator::Features portable_features(true);
+    portable_features.denorm_flush_to_zero_float32 = false;
+    portable_features.signed_zero_inf_nan_preserve_float32 = false;
+    portable_features.rounding_mode_rte_float32 = false;
+    SpirvShaderTranslator portable(portable_features, true, true, false);
+    SpirvShaderTranslator portable_fsi(portable_features, true, true, true);
     std::error_code ec;
     std::filesystem::create_directories(out_dir, ec);
-    WriteSpv(out_dir, "smoke_vs.spv", vs_full.spirv);
-    WriteSpv(out_dir, "smoke_vs_reg.spv", vs_reg_full.spirv);
-    WriteSpv(out_dir, "smoke_ps.spv", ps_full.spirv);
-    WriteSpv(out_dir, "smoke_ps_fsi.spv", ps_fsi.spirv);
+    WriteSpv(out_dir, "smoke_vs.spv", Translate(portable, xenos::ShaderType::kVertex, vs_const, 0x5A0001, "vs_const/portable").spirv);
+    WriteSpv(out_dir, "smoke_vs_reg.spv", Translate(portable, xenos::ShaderType::kVertex, vs_reg, 0x5A0002, "vs_reg/portable").spirv);
+    WriteSpv(out_dir, "smoke_ps.spv", Translate(portable, xenos::ShaderType::kPixel, ps_const, 0x5A0003, "ps_const/portable").spirv);
+    WriteSpv(out_dir, "smoke_ps_fsi.spv", Translate(portable_fsi, xenos::ShaderType::kPixel, ps_const, 0x5A0003, "ps_const/portable fsi").spirv);
 
     std::printf("gfx_shader_tests: SPIR-V words vs=%zu vs_reg=%zu ps=%zu (min: vs=%zu ps=%zu) ps_fsi=%zu, written to %s\n",
                 vs_full.spirv.size(), vs_reg_full.spirv.size(), ps_full.spirv.size(), vs_min.spirv.size(),

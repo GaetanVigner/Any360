@@ -3,16 +3,23 @@
   Builds any360::sys and runs sys_io_tests against the reference runtime, with Visual Studio's clang++ (the toolchain
   the titles use). The reference SDK install (include/, lib/, bin/ of a ReXGlue SDK) comes from -ReferenceSdk or from
   the first titles/<title>/pipeline.json that names "reference_sdk".
+  When the Vulkan validation layer is installed (the Vulkan SDK), the GPU tests run once more under it, on each GPU
+  of -Gpus (a substring of the device name; '' is the one the tests choose), and any validation message fails the
+  run: what one driver lets through another refuses (AMD's refused a descriptor pool NVIDIA's did not).
 .EXAMPLE
   .\layer\sys\test.ps1
   .\layer\sys\test.ps1 -ReferenceSdk F:\...\tools\rexglue\win-amd64 -Trials 200
+  .\layer\sys\test.ps1 -Gpus NVIDIA,Radeon
 #>
 param(
     [string]$ReferenceSdk,
     [int]$Trials = 64,
-    [string]$BuildDir
+    [string]$BuildDir,
+    [string[]]$Gpus = @(''),
+    [switch]$NoValidation
 )
 $ErrorActionPreference = 'Stop'
+$Gpus = @($Gpus | ForEach-Object { $_ -split ',' })  # -File passes NVIDIA,Radeon as one string
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildDir) { $BuildDir = Join-Path $Root 'out\sys' }
 if (-not $ReferenceSdk) {
@@ -73,6 +80,28 @@ try {
     if ($LASTEXITCODE) { throw "gfx_render_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_replay.exe') $capture | Out-Host
     if ($LASTEXITCODE) { throw "gfx_replay failed ($LASTEXITCODE)" }
+    # The GPU tests under the Vulkan validation layer, on each GPU asked for: no validation message allowed.
+    $layers = @()
+    $key = 'HKLM:\SOFTWARE\Khronos\Vulkan\ExplicitLayers'
+    if (Test-Path $key) { $layers = @((Get-Item $key).Property | Where-Object { $_ -like '*VkLayer_khronos_validation.json' }) }
+    if (-not $NoValidation -and $layers.Count) {
+        $env:VK_INSTANCE_LAYERS = 'VK_LAYER_KHRONOS_validation'
+        try {
+            foreach ($gpu in $Gpus) {
+                foreach ($test in 'gfx_vulkan_tests', 'gfx_render_tests', 'gfx_resource_tests') {
+                    $test_args = @(); if ($gpu) { $test_args += $gpu }
+                    $out = & (Join-Path $BuildDir "gfx/$test.exe") @test_args 2>&1 | ForEach-Object { "$_" }
+                    if ($LASTEXITCODE) { $out | Out-Host; throw "$test failed under validation on '$gpu' ($LASTEXITCODE)" }
+                    $errors = @($out | Select-String -SimpleMatch 'Validation Error')
+                    $device = ($out | Select-String -Pattern '(NVIDIA|AMD|Intel|Radeon)[^,(]*' | Select-Object -First 1).Matches.Value
+                    "$($test): validation layer on $(if ($device) { $device } elseif ($gpu) { $gpu } else { 'the default GPU' }), $($errors.Count) validation messages" | Out-Host
+                    if ($errors.Count) { ($out | Select-String -SimpleMatch 'VUID' | Select-Object -First 5) | Out-Host; throw "$($test): validation errors on '$gpu'" }
+                }
+            }
+        } finally {
+            Remove-Item Env:VK_INSTANCE_LAYERS -ErrorAction SilentlyContinue
+        }
+    }
     & (Join-Path $BuildDir 'sys_io_tests.exe') --trials $Trials | Out-Host
     if ($LASTEXITCODE) { throw "sys_io_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_runtime_tests.exe') --trials $Trials | Out-Host

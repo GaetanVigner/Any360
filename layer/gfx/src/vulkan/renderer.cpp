@@ -230,6 +230,16 @@ VulkanRenderer::~VulkanRenderer() {
     f.vkDeviceWaitIdle(d);
   }
   for (Batch& b : batches_) {
+    // What a batch still holds for after its run (the GPU is idle now): textures dropped from the cache, staging
+    // buffers, write-backs' read-back buffers.
+    for (Image& image : b.retired) DestroyImage(device_, image);
+    b.retired.clear();
+    for (VkImageView view : b.retired_views) f.vkDestroyImageView(d, view, nullptr);
+    b.retired_views.clear();
+    for (Buffer& staging : b.staging) DestroyBuffer(device_, staging);
+    b.staging.clear();
+    for (PendingWriteBack& w : b.write_backs) DestroyBuffer(device_, w.buffer);
+    b.write_backs.clear();
     if (b.fence) f.vkDestroyFence(d, b.fence, nullptr);
     if (timestamps_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, timestamps_, nullptr);
     if (query_pool_ && &b == &batches_[0]) f.vkDestroyQueryPool(d, query_pool_, nullptr);
@@ -1009,9 +1019,11 @@ bool VulkanRenderer::ClearDepthStencil(const SurfaceKey& key, float depth, uint3
 }
 
 bool VulkanRenderer::ReadBack(const SurfaceKey& key, uint32_t width, uint32_t height, std::vector<uint8_t>& bytes) {
+  // A surface made here is cleared in the open batch: made before the flush, so that its clear runs before the
+  // copy below (a separate submission).
+  Surface* s = GetSurface(key);
   Flush();  // what was drawn before comes first
   WaitIdle();  // and guest memory has what the batches write into it
-  Surface* s = GetSurface(key);
   if (!s || key.depth || width > s->image.width || height > s->image.height) return false;
   if (SyncAliases(*s)) {  // what was drawn over the same EDRAM at another base, in it before it is read
     Flush();
@@ -1864,7 +1876,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       uint32_t type = 2;
       if (!(mode_cntl & 1)) type = std::min(type, (mode_cntl >> 5) & 7);
       if (!(mode_cntl & 2)) type = std::min(type, (mode_cntl >> 8) & 7);
-      if (type < 2) key.polygon_mode = VK_POLYGON_MODE_LINE;
+      if (type < 2 && device_.fill_mode_non_solid()) key.polygon_mode = VK_POLYGON_MODE_LINE;  // else filled
     }
   }
   key.depth_control = depth_control;
@@ -4978,8 +4990,11 @@ bool VulkanRenderer::GammaPass() {
   const VkResult created = f.vkCreateComputePipelines(d, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &gamma_pipeline_);
   f.vkDestroyShaderModule(d, module, nullptr);
   if (created != VK_SUCCESS) return Fail("gamma pipeline");
-  const VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
-                                         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}};
+  // One of each descriptor a frame's set (the pool must hold them all: AMD's driver refuses the sets past its sizes,
+  // where NVIDIA's lets them through).
+  const VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kGammaFrames},
+                                         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kGammaFrames},
+                                         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kGammaFrames}};
   VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
   pool_info.maxSets = kGammaFrames;
   pool_info.poolSizeCount = 3;
