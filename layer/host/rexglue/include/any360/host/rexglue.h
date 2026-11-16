@@ -2,7 +2,8 @@
 //
 // First piece, the graphics: the title's GPU system calls (the Vd* exports below) go to any360::sys's GraphicsKernel
 // instead of the runtime's, and its GPU MMIO (0x7FC80000-0x7FC8FFFF: the ring's write pointer above all) to the same
-// kernel, whose backend is any360::gfx (CommandProcessor and VulkanRenderer), presenting into a window of its own.
+// kernel, whose backend is any360::gfx (CommandProcessor and VulkanRenderer), presenting into the title's own window
+// (the runtime's display window, taken from its presenter at our first frame; none in tool mode: rendered only).
 // The rest of the kernel stays the runtime's for now: the title's guest threads are the runtime's, so the graphics
 // interrupt callback runs on a runtime host thread (an interrupt dispatch), not on a context of the layer's. The end
 // state is the whole title on Any360's layers; every piece moved here is one less the runtime provides.
@@ -37,7 +38,7 @@ namespace any360::host::rexglue {
 
 struct GraphicsOptions {
   std::string gpu;  // a substring of the Vulkan device name to prefer ("NVIDIA", "Radeon"); else discrete first
-  uint32_t width = 1280, height = 720;  // the display mode the GPU reports, and the window's first size
+  uint32_t width = 1280, height = 720;  // the display mode the GPU reports
   // Vertical blanks a second; 0: as the runtime's own GPU does (60 with its vsync setting on, else 1000: titles pace
   // their presents on vertical blanks, and the runtime runs them uncapped that way).
   double vblank_hz = 0.0;
@@ -51,10 +52,6 @@ struct GraphicsOptions {
   // Pipelines compiled on threads of their own: a draw whose pipeline is not ready is left out a frame or so
   // rather than stalling the frame.
   bool async_pipelines = true;
-  // Frames drawn inside the title's own window (the visible top-level window of the thread calling StartGraphics,
-  // the runtime's UI thread), as a child covering its client area that leaves input and focus to it: the runtime's
-  // input (SDL) only reads controllers while one of its windows has the focus. False: a window of its own.
-  bool embed = true;
   // Fences, memory writes and interrupts of the command stream: false, as the runtime's own GPU, when the stream
   // reaches them (the CPU may see a fence before the draws before it are on screen, never waits on the GPU); true,
   // once those draws have run (what the CPU reads after them is there, at the cost of a GPU round trip each).

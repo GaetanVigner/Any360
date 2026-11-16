@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -49,6 +50,8 @@ std::atomic<bool> g_done{false};
 std::atomic<int> g_interrupts[2] = {0, 0};
 std::atomic<uint32_t> g_user_data{0}, g_placeholder_writes{0};
 std::atomic<bool> g_on_runtime_thread{true};
+std::mutex g_log_mutex;
+std::string g_log;  // the binding's log lines (it keeps the logger for its whole life)
 
 uint32_t PlaceholderRead(void*, void*, uint32_t) { return 0; }
 void PlaceholderWrite(void*, void*, uint32_t, uint32_t) { ++g_placeholder_writes; }
@@ -89,6 +92,11 @@ void Entry(PPCContext& ctx, uint8_t* base) {
   options.gpu = g_gpu;
   options.width = 320, options.height = 180;
   options.vblank_hz = 200.0;
+  // Tool mode has no display window: the binding renders and says it presents nowhere.
+  options.log = [](const std::string& line) {
+    std::lock_guard lock(g_log_mutex);
+    g_log += line + "\n";
+  };
   std::string error;
   if (!StartGraphics(options, error)) {
     std::printf("host_rexglue_tests: StartGraphics: %s\n", error.c_str());
@@ -97,6 +105,10 @@ void Entry(PPCContext& ctx, uint8_t* base) {
     return;
   }
   CHECK(GraphicsBound());
+  {
+    std::lock_guard lock(g_log_mutex);
+    CHECK(g_log.find("no display window; frames are rendered, not presented") != std::string::npos);
+  }
 
   // The title's side: a 64 KB ring and the write-back word in physical memory, the callback, then an INTERRUPT
   // packet for CPU 2 and padding, kicked through the GPU MMIO.

@@ -69,8 +69,9 @@ if(ANY360_REFERENCE_SDK)
             target_link_libraries(any360_sys_xma PUBLIC "${ANY360_REFERENCE_SDK}/lib/libavcodec${_ffmpeg_suffix}.lib"
                                   "${ANY360_REFERENCE_SDK}/lib/libavutil${_ffmpeg_suffix}.lib" bcrypt)
         else()
-            target_link_libraries(any360_sys_xma PUBLIC "${ANY360_REFERENCE_SDK}/lib/libavcodec.a"
-                                  "${ANY360_REFERENCE_SDK}/lib/libavutil.a")
+            # The SDK's archives are named after their CMake targets (libavcodec): liblibavcodec.a.
+            target_link_libraries(any360_sys_xma PUBLIC "${ANY360_REFERENCE_SDK}/lib/liblibavcodec.a"
+                                  "${ANY360_REFERENCE_SDK}/lib/liblibavutil.a")
         endif()
         add_executable(xma_tests tests/xma_tests.cpp)
         target_link_libraries(xma_tests PRIVATE any360_sys_xma)

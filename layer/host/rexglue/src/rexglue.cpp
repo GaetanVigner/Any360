@@ -1,8 +1,9 @@
 // any360::host::rexglue: see the header. The graphics binding inside a ReXGlue title: any360::sys's GraphicsKernel and
 // any360::gfx behind the title's Vd* calls and GPU MMIO, interrupts run on a runtime host thread, frames presented
-// into a window of the binding's own (a plain Win32 window for now: the runtime has its own SDL inside its library,
-// and a second copy in the title would be a second SDL in the process; its messages are pumped by the runtime's UI
-// thread, which creates it).
+// into the title's own window, the runtime's display window, on every system: a Vulkan surface on it from the start
+// (Win32 on Windows; elsewhere through the runtime's SDL, exported by its library: X11 or Wayland), and at our first
+// frame the runtime's presenter is detached from it (its supported "detached" state) so the swapchain is ours. Input
+// and focus stay the title window's, as before.
 #include "any360/host/rexglue.h"
 #include "any360/sys/activity.h"
 #include "any360/host/hitch_tracer.h"
@@ -22,7 +23,11 @@
 #include <rex/system/xmemory.h>
 #include <rex/system/xthread.h>
 
+#ifdef _WIN32
 #include <intrin.h>
+#else
+#include <x86intrin.h>
+#endif
 
 #include <algorithm>
 #include <string>
@@ -61,12 +66,16 @@
 #include <vulkan/vulkan_win32.h>
 #else
 #include <dlfcn.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 #endif
+#include <rex/ui/window.h>
+#include <rex/ui/windowed_app_context.h>
 
 #ifdef _WIN32
 using Window = HWND;
 #else
-using Window = void*;
+using Window = SDL_Window*;
 #endif
 
 namespace any360::host::rexglue {
@@ -83,6 +92,7 @@ struct SwapCost {
 // Samples every thread of the process (the title's, the runtime's, ours) every 2 ms while the diagnostics are off:
 // where each is, as offsets in the executable, or, in another module (waits in ntdll, the driver), the first caller in
 // the executable (bit 63 set), with the leaf's module counted apart.
+#ifdef _WIN32
 class Sampler {
  public:
   // `always`: sampled whether the diagnostics are on or not (no binding alternates them).
@@ -242,6 +252,15 @@ class Sampler {
   std::map<std::pair<DWORD, std::string>, uint64_t> outside_;
   std::map<DWORD, std::string> names_;
 };
+#else
+// No thread sampling outside Windows yet (the profile option does nothing there): the samples need the Win32
+// thread snapshot and unwinder.
+class Sampler {
+ public:
+  explicit Sampler(std::string, bool = false) {}
+  void Write() {}
+};
+#endif
 
 SwapCost MeasureSwapCost() {
   constexpr size_t kWords = size_t(4) << 20;  // 16 MB
@@ -276,11 +295,11 @@ std::atomic<uint64_t> g_watch_writes{0}, g_watch_bytes{0};
 // The renderer that presents each frame it swaps, on the command processor's thread (the thread that renders).
 class PresentingRenderer : public gfx::vk::VulkanRenderer {
  public:
-  // `parent`: the title's window `window` is a child of, kept covering its client area (null: none).
-  PresentingRenderer(gfx::vk::Device& device, uint8_t* physical, Window window, Window parent,
+  // `window`: the title's window (`title`, the runtime's), presented to from our first frame on.
+  PresentingRenderer(gfx::vk::Device& device, uint8_t* physical, Window window, rex::ui::Window* title,
                      std::function<void(const std::string&)> log, double stats_seconds, uint32_t resolution_scale)
       : VulkanRenderer(device, physical, kPhysicalBytes, resolution_scale), log_(std::move(log)), stats_seconds_(stats_seconds),
-        presenter_(device), window_(window), parent_(parent) {}
+        presenter_(device), window_(window), title_(title) {}
 
   bool Resize() {
     const auto [w, h] = Size();
@@ -291,6 +310,18 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
 
   void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* registers) override {
     VulkanRenderer::Swap(frontbuffer, width, height, registers);
+    if (!title_) {  // no window (tool mode): rendered, not presented
+      Screenshot();
+      Report();
+      return;
+    }
+    // The window stays the runtime's (its launcher) until our first frame; then its presenter lets go of it on the UI
+    // thread, and the frames after that are presented here.
+    if (!owned_->load(std::memory_order_acquire)) {
+      TakeWindow();
+      Report();
+      return;
+    }
     const auto [w, h] = Size();
     if ((w != width_ || h != height_) && !Resize()) return;
     const Frame& f = frame();
@@ -300,15 +331,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
                                                             VkOffset3D b) { RecordFrameBlit(cb, target, a, b); },
                                                      f.width, f.height)
                                 : presenter_.Present(f.pixels.data(), f.width, f.height);
-    if (!shown) {
-      Resize();  // out of date: the next frame goes to a new swapchain
-    } else if (parent_ && !visible_) {
-      // Shown over the title's window from its first frame on: until then the runtime draws there (its launcher).
-#ifdef _WIN32
-      ShowWindowAsync(window_, SW_SHOWNA);
-#endif
-      visible_ = true;
-    }
+    if (!shown) Resize();  // out of date: the next frame goes to a new swapchain
     Screenshot();
     Report();
   }
@@ -324,25 +347,38 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   }
 
  private:
+  // The title's window in pixels, once it is ours (before that: no swapchain, the runtime's presenter has it).
   std::pair<uint32_t, uint32_t> Size() const {
+    if (!owned_->load(std::memory_order_acquire)) return {0, 0};
 #ifdef _WIN32
     RECT r{};
-    if (parent_) {
-      // The child follows the title's window (asynchronously: the window belongs to the UI thread).
-      if (!IsWindow(parent_) || !GetClientRect(parent_, &r)) return {0, 0};
-      RECT own{};
-      GetClientRect(window_, &own);
-      if (own.right != r.right || own.bottom != r.bottom) {
-        SetWindowPos(window_, nullptr, 0, 0, r.right, r.bottom, SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
-      }
-      return {uint32_t(r.right), uint32_t(r.bottom)};
-    }
     if (!IsWindow(window_) || !GetClientRect(window_, &r)) return {0, 0};
     return {uint32_t(r.right - r.left), uint32_t(r.bottom - r.top)};
 #else
-    return {0, 0};
+    int w = 0, h = 0;
+    if (!SDL_GetWindowSizeInPixels(window_, &w, &h)) return {0, 0};
+    return {uint32_t(std::max(w, 0)), uint32_t(std::max(h, 0))};
 #endif
   }
+
+  // Asks the runtime's UI thread, once, to detach its presenter from the title's window (Window::SetPresenter(nullptr),
+  // its detached mode): a native window takes one swapchain at a time. The flag is shared with the UI thread's call,
+  // which may run after this renderer is gone.
+  void TakeWindow() {
+    if (take_asked_) return;
+    take_asked_ = true;
+    rex::ui::Window* window = title_;
+    auto owned = owned_;
+    if (!window || !window->app_context().CallInUIThread([window, owned] {
+          window->SetPresenter(nullptr);
+          owned->store(true, std::memory_order_release);
+        })) {
+      owned->store(true, std::memory_order_release);
+    }
+    if (log_) log_("Any360: presenting in the title's window (the runtime's presenter detached from it)");
+  }
+  std::shared_ptr<std::atomic<bool>> owned_ = std::make_shared<std::atomic<bool>>(false);
+  bool take_asked_ = false;
 
   // The presented frame as a PNG when the trigger file appears (looked for every 15 frames). A burst: when
   // <path>.burst appears, the next frames it names (900 if it is empty) at half size, as raw PPM files in
@@ -867,37 +903,28 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   gfx::vk::RendererStats last_;
 
   gfx::vk::Presenter presenter_;
-  Window window_, parent_;
+  Window window_;
+  rex::ui::Window* title_;
   uint32_t width_ = 0, height_ = 0;
-  bool visible_ = false;
 };
 
-#ifdef _WIN32
-// The child window lets the mouse through to the title's window under it.
-LRESULT CALLBACK ChildWindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
-  if (message == WM_NCHITTEST) return HTTRANSPARENT;
-  return DefWindowProcA(hwnd, message, wparam, lparam);
-}
-
-// The title's window: the largest visible top-level window of the calling thread.
-HWND FindTitleWindow() {
-  struct Best {
-    HWND hwnd = nullptr;
-    LONG area = 0;
-  } best;
-  EnumThreadWindows(
-      GetCurrentThreadId(),
-      [](HWND hwnd, LPARAM user) -> BOOL {
-        auto& b = *reinterpret_cast<Best*>(user);
-        RECT r{};
-        if (IsWindowVisible(hwnd) && !GetWindow(hwnd, GW_OWNER) && GetClientRect(hwnd, &r) &&
-            r.right * r.bottom > b.area) {
-          b = {hwnd, r.right * r.bottom};
-        }
-        return TRUE;
-      },
-      reinterpret_cast<LPARAM>(&best));
-  return best.hwnd;
+#ifndef _WIN32
+// The title's window: the runtime's largest visible SDL window (the one it presents to).
+SDL_Window* FindTitleWindow() {
+  int count = 0;
+  SDL_Window** windows = SDL_GetWindows(&count);
+  SDL_Window* best = nullptr;
+  int64_t area = 0;
+  for (int i = 0; i < count; ++i) {
+    int w = 0, h = 0;
+    if (!(SDL_GetWindowFlags(windows[i]) & SDL_WINDOW_HIDDEN) && SDL_GetWindowSizeInPixels(windows[i], &w, &h) &&
+        int64_t(w) * h > area) {
+      best = windows[i];
+      area = int64_t(w) * h;
+    }
+  }
+  SDL_free(windows);
+  return best;
 }
 #endif
 
@@ -962,7 +989,7 @@ class InterruptThread {
 };
 
 struct Binding {
-  Window window = nullptr, parent = nullptr;
+  Window window = nullptr;  // the title's (the runtime's window: nothing of ours to destroy)
   gfx::vk::Device device;
   std::unique_ptr<PresentingRenderer> renderer;
   std::unique_ptr<gfx::CommandProcessor> cp;
@@ -1090,55 +1117,58 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   // The window and the device that presents to it.
   gfx::vk::DeviceOptions device_options;
   device_options.prefer = options.gpu;
-#ifdef _WIN32
-  const HINSTANCE instance = GetModuleHandleA(nullptr);
-  WNDCLASSEXA window_class{sizeof(WNDCLASSEXA)};
-  window_class.style = CS_HREDRAW | CS_VREDRAW;
-  window_class.lpfnWndProc = ChildWindowProc;
-  window_class.hInstance = instance;
-  window_class.hCursor = LoadCursorA(nullptr, IDC_ARROW);
-  window_class.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
-  window_class.lpszClassName = "Any360Window";
-  RegisterClassExA(&window_class);  // fails harmlessly when already registered
-  binding->parent = options.embed ? FindTitleWindow() : nullptr;
-  if (binding->parent) {
-    // Inside the title's window: its own painting must leave the child alone.
-    SetWindowLongPtrA(binding->parent, GWL_STYLE, GetWindowLongPtrA(binding->parent, GWL_STYLE) | WS_CLIPCHILDREN);
-    RECT client{};
-    GetClientRect(binding->parent, &client);
-    binding->window = CreateWindowExA(WS_EX_NOPARENTNOTIFY, "Any360Window", "", WS_CHILD | WS_DISABLED,
-                                      0, 0, client.right, client.bottom, binding->parent, nullptr, instance, nullptr);
+  // The title's own window, the runtime's display window, on every system: the frames go there from our first one on
+  // (see PresentingRenderer::TakeWindow); until then the runtime draws its own (its launcher). Only the surface and the
+  // size are read per system.
+  rex::Runtime* const runtime_for_window = rex::Runtime::instance();
+  rex::ui::Window* const title_window = runtime_for_window ? runtime_for_window->display_window() : nullptr;
+  if (!title_window) {
+    // Tool mode (tests, tools): no window, frames rendered and not presented.
+    if (options.log) options.log("Any360: the runtime has no display window; frames are rendered, not presented");
   } else {
-    RECT frame{0, 0, LONG(options.width), LONG(options.height)};
-    AdjustWindowRect(&frame, WS_OVERLAPPEDWINDOW, FALSE);
-    binding->window = CreateWindowExA(0, "Any360Window", "Any360 - any360::gfx", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                                      CW_USEDEFAULT, CW_USEDEFAULT, frame.right - frame.left, frame.bottom - frame.top,
-                                      nullptr, nullptr, instance, nullptr);
-  }
-  if (!binding->window) {
-    error = "window: CreateWindowEx failed (" + std::to_string(GetLastError()) + ")";
-    return false;
-  }
-  const HWND window = binding->window;
-  device_options.instance_extensions = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
-  device_options.make_surface = [window](VkInstance instance) {
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-    auto get = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
-        reinterpret_cast<void*>(GetProcAddress(GetModuleHandleA("vulkan-1.dll"), "vkGetInstanceProcAddr")));
-    auto create = get ? reinterpret_cast<PFN_vkCreateWin32SurfaceKHR>(get(instance, "vkCreateWin32SurfaceKHR")) : nullptr;
-    VkWin32SurfaceCreateInfoKHR info{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
-    info.hinstance = GetModuleHandleA(nullptr);
-    info.hwnd = window;
-    if (!create || create(instance, &info, nullptr, &surface) != VK_SUCCESS) return VkSurfaceKHR(VK_NULL_HANDLE);
-    return surface;
-  };
+#ifdef _WIN32
+    const HWND window = static_cast<HWND>(title_window->GetNativeWindowHandle());
+    if (!window || !IsWindow(window)) {
+      error = "window: the runtime's display window has no Win32 handle";
+      return false;
+    }
+    device_options.instance_extensions = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
+    device_options.make_surface = [window](VkInstance instance) {
+      VkSurfaceKHR surface = VK_NULL_HANDLE;
+      auto get = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+          reinterpret_cast<void*>(GetProcAddress(GetModuleHandleA("vulkan-1.dll"), "vkGetInstanceProcAddr")));
+      auto create = get ? reinterpret_cast<PFN_vkCreateWin32SurfaceKHR>(get(instance, "vkCreateWin32SurfaceKHR")) : nullptr;
+      VkWin32SurfaceCreateInfoKHR info{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
+      info.hinstance = GetModuleHandleA(nullptr);
+      info.hwnd = window;
+      if (!create || create(instance, &info, nullptr, &surface) != VK_SUCCESS) return VkSurfaceKHR(VK_NULL_HANDLE);
+      return surface;
+    };
 #else
-  error = "window surfaces other than Win32 are not wired yet";
-  return false;
+    // The runtime's SDL (exported by its library) gives the window's SDL handle and the surface: X11 or Wayland.
+    SDL_Window* const window = FindTitleWindow();
+    if (!window) {
+      error = "window: the runtime has no visible SDL window to draw in";
+      return false;
+    }
+    Uint32 extension_count = 0;
+    const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extension_count);
+    if (!extensions) {
+      error = std::string("window: SDL_Vulkan_GetInstanceExtensions failed (") + SDL_GetError() + ")";
+      return false;
+    }
+    device_options.instance_extensions.assign(extensions, extensions + extension_count);
+    device_options.make_surface = [window](VkInstance instance) {
+      // SDL calls the same loader (libvulkan.so.1) any360::gfx loaded: the instance is valid for it.
+      VkSurfaceKHR surface = VK_NULL_HANDLE;
+      if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface)) return VkSurfaceKHR(VK_NULL_HANDLE);
+      return surface;
+    };
 #endif
+    binding->window = window;
+  }
   if (!binding->device.Create(device_options)) {
     error = "Vulkan: " + binding->device.error();
-    DestroyWindow(binding->window);
     return false;
   }
 
@@ -1148,7 +1178,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->capture_path = options.capture_path;
   binding->capture_kicks = std::max(1u, options.capture_kicks);
   binding->log = options.log;
-  binding->renderer = std::make_unique<PresentingRenderer>(binding->device, physical, binding->window, binding->parent,
+  binding->renderer = std::make_unique<PresentingRenderer>(binding->device, physical, binding->window, title_window,
                                                           options.log, options.stats_seconds, options.resolution_scale);
   binding->renderer->SetPipelineCache(options.pipeline_cache_path);
   binding->renderer->SetScreenshotPath(options.screenshot_path);
@@ -1161,7 +1191,6 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   if (!binding->renderer->Initialize() || !binding->renderer->Resize()) {
     error = "renderer: " + binding->renderer->last_error();
     binding->renderer.reset();
-    DestroyWindow(binding->window);
     return false;
   }
   if (options.log && binding->renderer->recipes_loaded()) {

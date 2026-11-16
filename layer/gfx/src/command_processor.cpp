@@ -3,7 +3,11 @@
 
 #include "any360/gfx/capture.h"
 
+#ifdef _WIN32
 #include <intrin.h>
+#else
+#include <x86intrin.h>
+#endif
 
 #include <algorithm>
 

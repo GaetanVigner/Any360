@@ -410,9 +410,10 @@ missing, not a feature.
      interrupt dispatch (`SetInterruptDispatch`), and the binding runs the callback on a runtime host thread through
      `ExecuteInterrupt`, synchronously for the thread that raised it (the command processor's, the vertical
      blank's), as the reference does.
-   - `StartGraphics` makes a Vulkan device presenting to a plain Win32 window of its own (the runtime has its own
-     SDL inside its library), the renderer over the guest's physical memory, the command processor (on its worker
-     thread), and starts vertical blanks; each swap is presented on the command processor's thread.
+   - `StartGraphics` makes a Vulkan device presenting to the title's own window (see "The title's window, on every
+     system" below; at first a plain Win32 window of its own), the renderer over the guest's physical memory, the
+     command processor (on its worker thread), and starts vertical blanks; each swap is presented on the command
+     processor's thread.
    `host_rexglue_tests` runs it inside the reference runtime (tool mode): before the binding the overrides reach the
    runtime's exports; after it, a ring set up through the Vd* calls and kicked through the MMIO handler runs, its
    read pointer is written back, and the title's callback (a guest function) runs on a runtime thread for the
@@ -706,3 +707,27 @@ cost"); `ANY360_ZERO_MULTIPLY=min|compare` forces a form.
 Tests: `gfx_shader_tests` (a vector mul and a scalar muls: the comparisons with the feature, the reference's minimum
 without), `gfx_render_tests` (the ALU cases 0 * inf, NaN * 0, -0 * inf, 0 * inf + c in a mad, 0 * inf terms in a dp4,
 0 * inf in a muls), which `test.ps1` runs with both forms on the machine's GPU.
+
+### The title's window, on every system (2026-11-17)
+
+The binding presented into a Win32 window of its own, a child kept over the title's window, so it could not present
+anywhere but Windows ("window surfaces other than Win32 are not wired yet"). It now presents into the title's own
+window on every system: the runtime's display window (`rex::Runtime::display_window()`, an SDL window everywhere). The
+Vulkan surface is made on it at the start (Win32: its HWND; elsewhere through the runtime's SDL, which its library
+exports: `SDL_Vulkan_CreateSurface`, X11 or Wayland, with SDL's instance extensions), but the swapchain only at our
+first frame: then the runtime's UI thread detaches its presenter from the window (`Window::SetPresenter(nullptr)`,
+the runtime's own "detached" mode), since a native window takes one swapchain at a time, and the next frames are
+presented there. Until that frame the runtime keeps drawing its own screens (a title's launcher). Input and focus stay
+the title window's, as before; the child window, its window class and the `embed` option (no title turned it off)
+are gone. Without a display window (tool mode: tests, tools) frames are rendered and not presented.
+
+Measured on Crackdown (Windows, NVIDIA, 60 FPS cap, the scripted route into the city), against the same build with
+the child window: the same frame rate, median 16.6 ms and 1% lows around 55 FPS in both. On Linux (WSL) the binding
+makes its surface and device; its frames could not be looked at there: WSL offers only llvmpipe, whose 128 MB storage
+buffer range the renderer does not handle yet (a real GPU, RADV on a Steam Deck included, has 4 GB).
+
+Linux build fixes that came with it: `__rdtsc` from `<x86intrin.h>` outside Windows; the SDK's FFmpeg archives on
+Linux are `liblibavcodec.a` / `liblibavutil.a` (named after their CMake targets); the thread sampler (the profile
+option) needs the Win32 thread snapshot and unwinder, so it is an empty stub elsewhere.
+
+Test: `host_rexglue_tests` (tool mode: no display window, the frames rendered and not presented, said once in the log).
