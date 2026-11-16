@@ -1139,6 +1139,6 @@
    "crackdown": "0x82A88378",
    "simpsons": "0x82C16628"
   },
-  "note": "zlib 1.1.4's inflate_fast (inffast.c), the decoding loop under inflate_codes: the same instructions in Crackdown's two copies (0x82A88378, under libpng 1.0.5 in the PNG loader; 0x8281BE00, the copy D3DX links) and The Simpsons Game's. Any360: xdk::InflateFast (invalid codes handed back to the function's own code), bound in Crackdown (both copies)"
+  "note": "zlib 1.1.4's inflate_fast (inffast.c), the decoding loop under inflate_codes: the same instructions in Crackdown's two copies (0x82A88378, under libpng 1.0.5 in the PNG loader; 0x8281BE00, the copy D3DX links) and The Simpsons Game's. Any360: xdk::InflateFast (invalid codes handed back to the function's own code), bound in Crackdown at 0x82A88378 (D3DX's copy not called on the route: not bound); not in The Simpsons Game yet"
  }
 ]

@@ -1,6 +1,6 @@
 // The reference model of zlib 1.1.4's inflate_fast (any360/xdk/zlib.h has the native one): the function's own
-// PowerPC written out step by step, register by register, the plainest way, as the titles' builds have it (Crackdown
-// 0x82A88378 and 0x8281BE00, The Simpsons Game 0x82C16628: the same instructions). The unit tests hold the native one
+// PowerPC written out step by step, register by register, the plainest way, as the titles' builds have it (the same
+// instructions in every copy read so far: db/xdk_seed.json). The unit tests hold the native one
 // to it.
 //
 // r3 bl, r4 bd: the literal/length and distance tables' lookup bits; r5 tl, r6 td: the tables (8-byte entries: the

@@ -627,7 +627,7 @@ messages.
 
 | Function | Library | Handler | Declines | Hands back | Crackdown | The Simpsons Game |
 |---|---|---|---|---|---|---|
-| `inflate_fast` | zlib 1.1.4 | `ZlibInflateFast` | a state zlib does not give it (under 258 bytes of room or 10 of input, pointers outside the window, memory that is not plain) | invalid codes; and from corrupted tables only: links past the mask table or in a loop, copies of under 3 bytes or past the room, distances before address 0 | bound (both copies): 18,047 calls, 0 different | not bound yet |
+| `inflate_fast` | zlib 1.1.4 | `ZlibInflateFast` | a state zlib does not give it (under 258 bytes of room or 10 of input, pointers outside the window, memory that is not plain) | invalid codes; and from corrupted tables only: links past the mask table or in a loop, copies of under 3 bytes or past the room, distances before address 0 | bound (the PNG loader's copy): 18,047 calls, 0 different; D3DX's copy not called: not bound | not bound: the same mnemonics, its operands not read yet |
 
 What is new in it:
 
@@ -657,9 +657,18 @@ Measured (docs/perf/archive/2026-11-16-zlib-inflate-fast):
 - In game, A/B of 5 launches a variant on the same route (`frame_lows.py`; cores 0-7, NVIDIA). The steady periods
   move within noise: mean 317.8 -> 321.4 FPS (z 1.44), 10% low 275.6 -> 282.9 (z 1.37), 1% low 232.3 -> 232.8
   (z 0.20), private memory 2,912 -> 2,910 MB. In the dip after the city shows, the 1% low goes 176.0 -> 207.1 FPS
-  (z 0.94), and the slowest frame 14.6 -> 9.4 ms (z 1.98). Frames over 16.7 ms: 0.2 -> 0 a launch. The calls are
-  in the dip, so the dip is where it shows; the remaining title-side cost of those frames is libpng's row work
-  (the next candidate: its row filter, 0x82A7F5D0 in Crackdown, 0x82BFA728 in The Simpsons Game).
+  (z 0.94), and the slowest frame 14.6 -> 9.4 ms (z 1.98). Frames over 16.7 ms: 0.2 -> 0 a launch. That 5 ms is
+  more than the native one can give: about 1,500 calls in the city's first seconds, 1.4 to 1.8 us saved each, are 2
+  to 3 ms in all even if every one fell in the same frame. And the "before" build had a frame over 16.7 ms in 1
+  launch of 5 where the same code had one in 4 of 5 the series before (2026-11-16-hitches). So the frame effect is
+  within noise, at most 2 to 3 ms expected at the city's entry; what is measured is the 1.4x a call. (The commit
+  that bound it says otherwise; this is the reading that stands.) The rest of those frames' title-side cost is
+  libpng's row work: its row filter is the next candidate (db/xdk_seed.json will hold its addresses).
+- D3DX's copy (0x8281BE00): a run with it bound alone made 0 calls to it on the route into the city, so it is not
+  bound (the rule: a function no run has called is not bound there).
+- The unit test's "0 different" leaves out 99 runs it cannot compare: 90 where the model's own run does not end (a
+  copy loop that never ends, a corrupted link chain: the function would not end either) and 9 handed back after
+  the bit count wrapped (zlib.h says why those differ). The benchmark's mixes are synthetic streams, not a title's.
 
 ### Found on the way
 

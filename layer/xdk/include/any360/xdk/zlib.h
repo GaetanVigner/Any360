@@ -1,5 +1,5 @@
-// zlib 1.1.4's inflate_fast, native: the decoding loop titles run on every compressed byte they read (Crackdown's
-// PNG images: libpng 1.0.5 over zlib 1.1.4, and the copy D3DX links; The Simpsons Game's). Its model, the function's
+// zlib 1.1.4's inflate_fast, native: the decoding loop titles run on every compressed byte they read (PNG images
+// through libpng, D3DX's own copy; where each title has it: db/xdk_seed.json). Its model, the function's
 // own PowerPC step by step, is any360/xdk/zlib_reference.h; the registers and the layout are described there.
 //
 // What it takes and what it leaves:
