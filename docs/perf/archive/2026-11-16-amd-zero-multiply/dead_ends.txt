@@ -1,0 +1,11 @@
+﻿Tried after the comparisons form landed (Crackdown city capture, gfx_replay --bench --repeat 3, Radeon iGPU, GPU ms
+over 29 frames); both reverted.
+
+1. Uniform operands of the multiply rule tested on their bits ((bits & 0x7F800000) == 0, hoping for the scalar unit
+   on RDNA2, which has no scalar float compare): 544.4 / 533.2 ms before, 575.1 / 574.7 ms after (+7%, worse). The
+   test is applied to the operand after its absolute value and swizzle, which the compiler keeps in vector
+   registers: the integer test only added instructions.
+2. Occlusion queries: about 22% of the draws are inside the title's query brackets (15000 of 67702) and get a
+   host query each; skipping them (timing only): 545.0 / 542.8 ms with, 546.2 / 541.1 ms without. They cost nothing
+   measurable. Per-draw state (pipeline, sets, viewport, scissor, depth bias, blend, stencil) is already recorded
+   only when it changes.
