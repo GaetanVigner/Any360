@@ -85,6 +85,7 @@ struct RendererStats {
   uint32_t render_targets = 0;
   uint32_t texture_uploads = 0;
   uint32_t texture_gpu_copies = 0;  // textures copied from a resolve kept on the GPU
+  uint32_t texture_direct_views = 0;  // textures that sampled a resolve's image in place (no copy)
   uint32_t resolves = 0;
   uint32_t resolves_on_gpu = 0, resolves_read_back = 0, resolves_depth = 0;  // kinds of resolves among them
   uint32_t resolves_superseded = 0;  // resolves kept on the GPU the CPU wrote over before they were written back
@@ -552,6 +553,13 @@ class VulkanRenderer : public gfx::Renderer {
   // resolves wrote there (copied in the batch; the old image freed once the batch has run).
   bool EnsureResolveImage(Resolved& r, VkFormat format, uint32_t pitch, uint32_t rows, VkImageUsageFlags usage);
   bool QueueWriteBack(uint32_t base, Resolved& r);
+  // Textures sampling a resolve's image in place (TextureCache::SetSourceView): the destination's Resolved while
+  // `image` is still its image, its views by format and components, and the image put in a layout for the next use.
+  Resolved* SourceResolved(uint32_t base, VkImage image);
+  VkImageView SourceView(uint32_t base, VkImage image, VkFormat format, VkComponentMapping components);
+  bool SourceLayout(uint32_t base, VkImage image, VkImageLayout layout);
+  // A resolve image no batch recorded from now on uses: freed with its sampled views once the batch has run.
+  void RetireResolveImage(Image& image);
   struct PendingWriteBack {
     Buffer buffer;
     Resolved* resolved;
@@ -668,6 +676,8 @@ class VulkanRenderer : public gfx::Renderer {
   static constexpr uint32_t kDepthSets = 64;
   uint32_t depth_sets_ = 0;
   std::map<uint32_t, Resolved> resolved_;
+  // The views textures sample resolve images through, by image: (format << 32 | components, view).
+  std::unordered_map<VkImage, std::vector<std::pair<uint64_t, VkImageView>>> source_views_;
   std::map<uint32_t, uint32_t> resolve_formats_;  // destination base: format of the last resolve there
  public:
   // For diagnostics: resolves by path taken (GPU or CPU, source and destination formats, what kept it off the GPU).

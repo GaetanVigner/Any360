@@ -801,6 +801,7 @@ void TextureCache::Evict(uint64_t frames, std::vector<Image>& images, std::vecto
 
 VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::string& error, bool is_signed) {
   last_view_scaled_ = false;
+  last_view_direct_ = false;
   last_used_ = nullptr;
   if (any_changed_.load(std::memory_order_acquire)) {
     // Ranges reported from other threads (CPU writes watched, resolves written into guest memory).
@@ -875,7 +876,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
             info->format == VK_FORMAT_A2B10G10R10_UNORM_PACK32));
       if (!same_bytes || it->second.depth != depth_texture || it->second.pitch != t.pitch ||
           it->second.endian != t.endian || (!sources.empty() && it->second.scale != sources[0]->scale) ||
-          t.width * it->second.scale > it->second.width || t.height * it->second.scale > it->second.height) {
+          t.width * it->second.scale > it->second.width ||
+          t.height * it->second.scale > ((it->second.height / it->second.scale + 31) & ~31u) * it->second.scale) {
         sources.clear();
         break;
       }
@@ -887,6 +889,30 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   // Texels a guest texel along each axis: a scaled source's (its texture is a slot of its own, never one read from
   // memory at the guest resolution).
   const uint32_t scale = source ? sources[0]->scale : 1;
+  if (source && sources.size() == 1 && source_view_ && sources[0]->width == t.width * scale &&
+      sources[0]->height == t.height * scale && (!is_signed || info->signed_format == info->format)) {
+    // One slice of the source's exact size: sampled in place. The bytes as a copy would carry them: the same format,
+    // or a red/blue swapped one (a resolve with the swap) whose view swaps red and blue back.
+    const GpuSource& s = *sources[0];
+    const bool swap_red_blue = (s.format == VK_FORMAT_B8G8R8A8_UNORM && info->format == VK_FORMAT_R8G8B8A8_UNORM) ||
+                               (s.format == VK_FORMAT_A2R10G10B10_UNORM_PACK32 &&
+                                info->format == VK_FORMAT_A2B10G10R10_UNORM_PACK32);
+    if (s.format == info->format || swap_red_blue) {
+      VkComponentSwizzle c[4];
+      for (uint32_t i = 0; i < 4; ++i) {
+        const uint32_t guest = (t.swizzle >> (3 * i)) & 7;
+        uint32_t host = guest >= 4 ? (guest & 5) : (info->swizzle >> (3 * guest)) & 7;
+        if (swap_red_blue && (host == 0 || host == 2)) host ^= 2;
+        c[i] = Component(host);
+      }
+      if (VkImageView view = source_view_(s, s.format, {c[0], c[1], c[2], c[3]})) {
+        last_view_scaled_ = scale > 1;
+        last_view_direct_ = true;
+        ++direct_views_;
+        return view;  // not kept in fast_: valid for the draws recorded next only
+      }
+    }
+  }
   const std::array<uint32_t, 5> key = {fetch[0] & 0xFFC00003, fetch[1], fetch[2], fetch[5] & 0xFFFFFE00,
                                        (fetch[4] & 0x3FC) | (scale > 1 ? 1u : 0u)};
   auto& slot = textures_[key];
@@ -957,10 +983,15 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   if (source) {
     if (slot->gpu_generation != source_generation) {
       Image& image = slot->image;
+      if (source_for_copy_) {
+        for (const GpuSource* s : sources) source_for_copy_(*s);
+      }
+      uint32_t copy_height = t.height * scale;  // the rows every slice's source holds
+      for (const GpuSource* s : sources) copy_height = std::min(copy_height, s->height);
       auto copy = [&](VkCommandBuffer cb) {
         VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT;
         barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -971,12 +1002,26 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
         dependency.imageMemoryBarrierCount = 1;
         dependency.pImageMemoryBarriers = &barrier;
         f.vkCmdPipelineBarrier2(cb, &dependency);
+        if (copy_height < t.height * scale) {
+          // Rows below the source (within its last tile): zeros, then the copy over the rest.
+          const VkClearColorValue zero{};
+          f.vkCmdClearColorImage(cb, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &barrier.subresourceRange);
+          VkMemoryBarrier2 cleared{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+          cleared.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+          cleared.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+          cleared.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+          cleared.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+          VkDependencyInfo after_clear{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+          after_clear.memoryBarrierCount = 1;
+          after_clear.pMemoryBarriers = &cleared;
+          f.vkCmdPipelineBarrier2(cb, &after_clear);
+        }
         // The destination's bytes as they are (a B8G8R8A8 or A2R10G10B10 source is a resolve with the red/blue swap).
         for (uint32_t slice = 0; slice < uint32_t(sources.size()); ++slice) {
           VkImageCopy region{};
           region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
           region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, slice, 1};
-          region.extent = {t.width * scale, t.height * scale, 1};
+          region.extent = {t.width * scale, copy_height, 1};
           f.vkCmdCopyImage(cb, sources[slice]->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         }

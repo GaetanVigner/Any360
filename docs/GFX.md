@@ -605,3 +605,41 @@ register gradients, every sample keeps them; without the feature, every sample h
 
 Crackdown takes `--any360_gpu_capture=<file>` (creating `<file>.go` records the next `--any360_gpu_capture_kicks`
 kicks) to capture a frame in game for `gfx_replay`.
+
+### Resolves sampled in place (2026-11-16)
+
+A texture over a resolve kept on the GPU was copied out of the resolve's image into an image of its own each time
+the resolve changed: about 24 MB a frame in Crackdown's city (four 1280x720 colour and depth resolves, the two
+1024x1024 slices of the shadow map, smaller ones), 1.3 ms of the iGPU's frame. On the city capture, skipping every
+such copy (timing only) saved 5.6% of the GPU time and skipping those of single-slice textures 4.5%; the copies
+were bytes, not barriers (narrowing their barriers saved nothing).
+
+- **In place.** A one-slice texture of exactly the resolve image's size, in its format or its red/blue swapped one,
+  samples the image itself: `TextureCache::SetSourceView` asks the renderer for a 2D-array view of it (by format and
+  components, the swap undone in the components), and the renderer puts the image in SHADER_READ_ONLY_OPTIMAL before
+  the draws recorded next. Its views are retired with the image (`RetireResolveImage`: a scale change, an evicted
+  spare, growth, a containing image), and such a view is never kept by fetch constant (`last_view_direct`), the
+  image's layout changing with the next resolve or write-back; a write-back puts a sampled image back in
+  SHADER_READ_ONLY_OPTIMAL after its copy. Copies out of a source (`SetSourceForCopy`) put it in TRANSFER_SRC_OPTIMAL
+  first. Signed views of another format, stacked slices and textures narrower than the pitch are still copied.
+- **Exact heights.** Resolve images were as tall as the resolved rows rounded up to 32 (1280x736 for 720 rows), so no
+  texture matched one. They are now as tall as resolved; a texture reaching to the end of the last 32-row tile is
+  still copied, the rows below the resolve cleared to zeros (what the taller image held).
+- A growing resolve image's copy of its earlier rows was followed in the same layout by the blit into it with no
+  barrier (write after write); synchronization validation found it once images grew more often, and a barrier now
+  follows the copy.
+
+Measured on the Radeon iGPU (cores 8-15):
+
+- Capture replay: 626.9 -> 603.3 ms of GPU time for 29 frames (-3.8%), texture copies 38.4 -> 14.4 ms; before and
+  after give the same images (0 pixels differ on the Radeon and NVIDIA, at 1x and 2x); 0 synchronization errors on
+  both GPUs (1x; 2x with the asynchronous renderer and 4 threads; 2x with 4x MSAA).
+- In game, 5 launches a build alternating: 47.8 -> 49.6 FPS (median 47.4 -> 49.4), 10% low 47.1 -> 48.9, 1% low
+  46.1 -> 47.9 (rank test z -5.1, -5.1, -5.5); private memory 2687 -> 2652 MB (the copies' images); the dips
+  unchanged (1% low 44.3 -> 44.8; their slowest frame 32.1 -> 42.5 ms, z -1.6: the same streaming hitches of 42-49 ms
+  in both builds, inside or outside the period counted as the dip). Archived in
+  `docs/perf/archive/2026-11-16-amd-resolve-views/`.
+
+Tests: `gfx_render_tests` (a chain of five resolves to one address, each sampled back in the same batch, with a
+red/blue swapped one between them: every pixel right, sampled in place, no copy; a 64-row texture over a 40-row
+resolve: copied, the rows below zeros), under the validation layer on NVIDIA and AMD.

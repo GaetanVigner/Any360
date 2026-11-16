@@ -578,11 +578,11 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     char line[768];
     std::snprintf(line, sizeof(line),
                   "Any360: %.1f FPS; per frame: %.0f draws, %.0f skipped, %.0f failed, %.0f resolves, %.1f texture uploads, "
-                  "%.1f texture copies from resolves, %.1f translations, %.1f pipelines (%.1f draws waiting), %.1f flushes; ms: draws %.2f (textures %.2f, shaders %.2f, "
+                  "%.1f texture copies from resolves (%.1f sampled in place), %.1f translations, %.1f pipelines (%.1f draws waiting), %.1f flushes; ms: draws %.2f (textures %.2f, shaders %.2f, "
                   "pipelines %.2f, guest memory %.2f, submit %.2f), resolves %.2f, swaps %.2f; guest memory %s",
                   n / seconds, (s.draws - last_.draws) / n, (s.skipped - last_.skipped) / n, (s.failed - last_.failed) / n,
                   (s.resolves - last_.resolves) / n, (s.texture_uploads - last_.texture_uploads) / n,
-                  (s.texture_gpu_copies - last_.texture_gpu_copies) / n,
+                  (s.texture_gpu_copies - last_.texture_gpu_copies) / n, (s.texture_direct_views - last_.texture_direct_views) / n,
                   (s.translations - last_.translations) / n, (s.pipelines - last_.pipelines) / n,
                   (s.pipeline_waits - last_.pipeline_waits) / n,
                   (s.flushes - last_.flushes) / n, (s.ns_draws - last_.ns_draws) / ms,

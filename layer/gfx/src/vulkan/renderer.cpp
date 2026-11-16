@@ -299,6 +299,10 @@ VulkanRenderer::~VulkanRenderer() {
     DestroyImage(device_, surface->image);
     DestroyImage(device_, surface->ms);
   }
+  for (auto& [image, views] : source_views_) {
+    for (auto& [key, view] : views) f.vkDestroyImageView(d, view, nullptr);
+  }
+  source_views_.clear();
   for (auto& [base, r] : resolved_) {
     DestroyImage(device_, r.image);
     DestroyImage(device_, r.small);
@@ -374,6 +378,14 @@ bool VulkanRenderer::Initialize() {
     cb = Record();
     GpuMark(batch(), cb, kGpuTextureCopies);
     return cb;
+  });
+  // Textures of a resolve's exact size sample its image in place (no copy); copies out of it find it in
+  // TRANSFER_SRC_OPTIMAL whatever sampled it before.
+  textures_->SetSourceView([this](const TextureCache::GpuSource& s, VkFormat format, VkComponentMapping components) {
+    return SourceView(s.base, s.image, format, components);
+  });
+  textures_->SetSourceForCopy([this](const TextureCache::GpuSource& s) {
+    SourceLayout(s.base, s.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
   });
   // Texture sets: allocated per draw, each batch's pool reset once the batch has run.
   VkDescriptorPoolSize draw_sizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kDrawDescriptors}, {VK_DESCRIPTOR_TYPE_SAMPLER, kDrawDescriptors}};
@@ -1686,7 +1698,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
           const uint32_t component = (t.swizzle >> (3 * i)) & 7;
           if (component < 4) signs |= ((t.signs >> (2 * component)) & 3) << (2 * i);
         }
-        if (memo) {
+        if (memo && textures_->last_view_direct()) {
+          memo->view = VK_NULL_HANDLE;  // a resolve's image sampled in place: View again for each draw (its layout)
+        } else if (memo) {
           std::memcpy(memo->fetch, fetch, sizeof(memo->fetch));
           memo->version = textures_->version(), memo->epoch = textures_->epoch();
           memo->view = view, memo->signs = signs, memo->scaled = scaled;
@@ -1718,6 +1732,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
   stats_.texture_uploads = textures_->uploads();
   stats_.texture_gpu_copies = textures_->gpu_copies();
+  stats_.texture_direct_views = textures_->direct_views();
   stats_.ns_texture_hash = textures_->ns_hash();
   stats_.ns_texture_load = textures_->ns_load();
   const uint32_t layout_counts[4] = {uint32_t(stage_textures[0].views.size()), uint32_t(stage_textures[0].samplers.size()),
@@ -3740,13 +3755,15 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   // Within the destination's pitch (the image is that wide).
   if (dx0 < 0 || dy0 < 0 || uint32_t(dx0) >= pitch) return Fail("resolve outside its destination");
   width = std::min<uint32_t>(width, pitch - uint32_t(dx0));
-  const uint32_t rows = (uint32_t(dy0) + height + 31) & ~31u;
+  // As many rows as resolved (textures sample the image in place when it is exactly theirs; a texture reaching to
+  // the end of the 32-row tile is copied with zeros there).
+  const uint32_t rows = uint32_t(dy0) + height;
   Resolved& r = resolved_[dest_base];
   // Scaled as the surface is: textures copied from it keep the resolution.
   const int32_t s = int32_t(scale_);
   if (r.image.image && r.scale != scale_) {
     Record();
-    batch().retired.push_back(r.image);  // another scale (a depth resolve there before): nothing of it is kept
+    RetireResolveImage(r.image);  // another scale (a depth resolve there before): nothing of it is kept
     r.image = Image{};
     r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
   }
@@ -4030,10 +4047,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
         // An image of its own from before: superseded (its texels now live in the containing one).
         if (own->second.stale) WriteBackResolved(own->first, own->second);
         Record();
-        batch().retired.push_back(own->second.image);
+        RetireResolveImage(own->second.image);
         if (own->second.small.image) batch().retired.push_back(own->second.small);
         for (Resolved::Spare& s : own->second.spares) {
-          batch().retired.push_back(s.image);
+          RetireResolveImage(s.image);
           if (s.small.image) batch().retired.push_back(s.small);
         }
         resolved_.erase(own);
@@ -4478,13 +4495,13 @@ bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t p
         continue;
       }
       Record();
-      batch().retired.push_back(r.spares[i].image);  // batches may still read it: freed after this one has run
+      RetireResolveImage(r.spares[i].image);  // batches may still read it: freed after this one has run
       if (r.spares[i].small.image) batch().retired.push_back(r.spares[i].small);
       r.spares.erase(r.spares.begin() + ptrdiff_t(i));
     }
     if (r.spares.size() >= Resolved::kSpares) {
       Record();
-      batch().retired.push_back(r.spares.front().image);
+      RetireResolveImage(r.spares.front().image);
       if (r.spares.front().small.image) batch().retired.push_back(r.spares.front().small);
       r.spares.erase(r.spares.begin());
     }
@@ -4496,7 +4513,7 @@ bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t p
   }
   Image grown;
   const bool keep = r.image.image && r.image.format == format;
-  if (!CreateImage2D(device_, std::max(pitch, keep ? r.image.width : 0u), std::max({rows, 32u, keep ? r.image.height : 0u}),
+  if (!CreateImage2D(device_, std::max(pitch, keep ? r.image.width : 0u), std::max({rows, 1u, keep ? r.image.height : 0u}),
                      format, usage, VK_IMAGE_ASPECT_COLOR_BIT, grown)) {
     DestroyImage(device_, grown);
     return false;
@@ -4536,14 +4553,72 @@ bool VulkanRenderer::EnsureResolveImage(Resolved& r, VkFormat format, uint32_t p
     region.extent = {r.image.width, r.image.height, 1};
     device_.fn().vkCmdCopyImage(cb, r.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, grown.image,
                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    // The copy before the resolve's blit into it, in the same layout (no transition, so no barrier of its own).
+    VkMemoryBarrier2 copied{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    copied.srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+    copied.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    copied.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    copied.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependency.memoryBarrierCount = 1;
+    dependency.pMemoryBarriers = &copied;
+    device_.fn().vkCmdPipelineBarrier2(cb, &dependency);
   }
   if (r.image.image) {
     Record();
-    batch().retired.push_back(r.image);  // batches may still read it: freed after this one has run
+    RetireResolveImage(r.image);  // batches may still read it: freed after this one has run
   }
   r.image = grown;
   r.layout = grown_layout;
   return true;
+}
+
+void VulkanRenderer::RetireResolveImage(Image& image) {
+  if (!image.image) return;
+  batch().retired.push_back(image);
+  if (const auto it = source_views_.find(image.image); it != source_views_.end()) {
+    for (auto& [key, view] : it->second) batch().retired_views.push_back(view);
+    source_views_.erase(it);
+  }
+}
+
+VulkanRenderer::Resolved* VulkanRenderer::SourceResolved(uint32_t base, VkImage image) {
+  const auto it = resolved_.find(base);
+  return it != resolved_.end() && it->second.image.image == image ? &it->second : nullptr;
+}
+
+bool VulkanRenderer::SourceLayout(uint32_t base, VkImage image, VkImageLayout layout) {
+  Resolved* r = SourceResolved(base, image);
+  if (!r) return false;
+  if (r->layout != layout) {
+    EndRendering();  // barriers outside rendering
+    VkCommandBuffer cb = Record();
+    Transition(cb, r->image, r->layout, layout, VK_IMAGE_ASPECT_COLOR_BIT);
+  }
+  return true;
+}
+
+VkImageView VulkanRenderer::SourceView(uint32_t base, VkImage image, VkFormat format, VkComponentMapping c) {
+  if (!SourceResolved(base, image)) return VK_NULL_HANDLE;
+  const uint64_t key = uint64_t(format) << 32 | uint64_t(c.r) | uint64_t(c.g) << 8 | uint64_t(c.b) << 16 | uint64_t(c.a) << 24;
+  std::vector<std::pair<uint64_t, VkImageView>>& views = source_views_[image];
+  VkImageView view = VK_NULL_HANDLE;
+  for (const auto& [k, v] : views) {
+    if (k == key) view = v;
+  }
+  if (!view) {
+    // 2D textures are declared arrayed: a one-layer array view.
+    VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vi.image = image;
+    vi.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    vi.format = format;
+    vi.components = c;
+    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    if (device_.fn().vkCreateImageView(device_.device(), &vi, nullptr, &view) != VK_SUCCESS) return VK_NULL_HANDLE;
+    views.push_back({key, view});
+  }
+  if (!SourceLayout(base, image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) return VK_NULL_HANDLE;
+  return view;
 }
 
 bool VulkanRenderer::WriteBackResolved(uint32_t base, Resolved& r) {
@@ -4572,6 +4647,7 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
   EndRendering();
   VkCommandBuffer cb = Record();
   GpuMark(batch(), cb, kGpuWriteBacks);
+  const VkImageLayout sampled = r.layout;  // SHADER_READ_ONLY_OPTIMAL: textures sample it in place (put back after)
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   Image* source = &r.image;
   if (r.scale > 1) {
@@ -4611,6 +4687,9 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
   region.imageOffset = {int32_t(r.x), int32_t(r.y), 0};
   region.imageExtent = {r.width, r.height, 1};
   device_.fn().vkCmdCopyImageToBuffer(cb, source->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, w.buffer.buffer, 1, &region);
+  if (sampled == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+    Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+  }
   r.pending = true;
   batch().write_backs.push_back(w);
   return true;
@@ -4883,7 +4962,7 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
     vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
     if (f.vkCreateImageView(d, &vi, nullptr, &surface.depth_view) != VK_SUCCESS) return Fail("depth resolve view");
   }
-  const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = (uint32_t(y0) + height + 31) & ~31u;
+  const uint32_t pitch = (dest_pitch + 31) & ~31u, rows = uint32_t(y0) + height;  // rows as resolved (see ResolveOnGpu)
   Resolved& r = resolved_[dest_base];
   // At the guest resolution whatever the resolution scale (one host pixel of each guest pixel or sample): a depth
   // texture is data a title samples texel by texel, a shadow map's percentage-closer filter with offsets of one guest
@@ -4892,7 +4971,7 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   const uint32_t s = 1;
   if (r.image.image && r.scale != s) {
     Record();
-    batch().retired.push_back(r.image);  // another scale: nothing of it is kept
+    RetireResolveImage(r.image);  // another scale: nothing of it is kept
     r.image = Image{};
     r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
   }

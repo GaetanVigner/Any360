@@ -1,0 +1,20 @@
+Crackdown city capture (60 kicks, 29 frames) replayed with gfx_replay --bench --repeat 4 on the AMD Radeon iGPU
+(cores 8-15); GPU ms over the 29 frames of the last pass, by kind.
+
+Sizing (timing-only toggles, images wrong, not kept):
+  baseline (twice)                         626.5 / 627.3 ms total; texture copies 38.2 / 38.5
+  1 every texture copy skipped (ceiling)   591.8 (-35 ms, -5.6%)
+  2 only exact-extent copies skipped       629.8 (no gain: the 128x128 chain is cheap)
+  3 the copy's barriers narrowed           642.4 (worse, dropped)
+  4 single-slice copies skipped            598.9 (-28 ms, -4.5%)
+  5 stacked (2-slice shadow map) skipped   622.9 (-4 ms)
+Copies a frame (census): 1280x720 BGRA8 x2, 1280x720 R32F depth x2 (all from 1280x736 images: rows rounded to 32),
+1024x1024 R32F x2 slices (stacked shadow map), 640x360 from a 1280-pitch image, 320x180 from 320x192 images, 128x128.
+
+After (resolve images as tall as resolved, single-slice textures of the image's exact size sampled in place):
+  run 1: 604.1 ms total, texture copies 14.4; run 2: 602.6 ms, texture copies 14.5   (-3.8%, ~0.8 ms a frame)
+
+Images: before against after, 29 frames: 0 pixels differ on Radeon and NVIDIA, at --scale 1 and --scale 2.
+Sync validation (VK_LAYER_VALIDATE_SYNC=1): 0 errors on Radeon (1x; 2x --async --threads 4) and NVIDIA (1x; 2x --msaa 4)
+after a barrier added between a growing resolve image's copy and the blit into it (a write-after-write the
+validation layer found once images grew more often).

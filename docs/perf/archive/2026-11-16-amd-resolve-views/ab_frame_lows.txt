@@ -1,0 +1,17 @@
+@exe:crackdown_before.exe: 5 launches
+  crackdown_024.log: dip 1% low 45 FPS, slowest 34.6 ms, 261 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 46-47
+  crackdown_026.log: dip 1% low 45 FPS, slowest 22.4 ms, 234 over 16.7 ms, texture loading up to 0.10 ms a frame; steady FPS 47-54
+  crackdown_028.log: dip 1% low 45 FPS, slowest 22.3 ms, 238 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 47-54
+  crackdown_030.log: dip 1% low 42 FPS, slowest 45.5 ms, 264 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 48-48
+  crackdown_032.log: dip 1% low 44 FPS, slowest 35.8 ms, 263 over 16.7 ms, texture loading up to 0.09 ms a frame; steady FPS 47-48
+  steady (25 periods): FPS mean 47.8 (median 47.4, min 46.3), 10% low mean 47.1 (median 46.9, min 45.9), 1% low mean 46.1 (median 46.0, min 44.7); process private memory mean 2687 MB, max 2726 MB
+  dips (5): 1% low mean 44.3, slowest frame mean 32.1 ms, over 16.7 ms mean 252.0, texture loading mean 0.08 ms a frame
+--any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a: 5 launches
+  crackdown_025.log: dip 1% low 44 FPS, slowest 48.5 ms, 266 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 49-49
+  crackdown_027.log: dip 1% low 44 FPS, slowest 49.2 ms, 262 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 49-50
+  crackdown_029.log: dip 1% low 45 FPS, slowest 44.8 ms, 245 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 50-50
+  crackdown_031.log: dip 1% low 45 FPS, slowest 44.4 ms, 247 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 49-50
+  crackdown_033.log: dip 1% low 46 FPS, slowest 25.4 ms, 248 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 48-55
+  steady (25 periods): FPS mean 49.6 (median 49.4, min 48.1), 10% low mean 48.9 (median 49.0, min 47.6), 1% low mean 47.9 (median 48.0, min 46.4); process private memory mean 2652 MB, max 2656 MB
+  dips (5): 1% low mean 44.8, slowest frame mean 42.5 ms, over 16.7 ms mean 253.6, texture loading mean 0.08 ms a frame
+@exe:crackdown_before.exe against --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a: steady fps z -5.08, p10 z -5.10, p1 z -5.46; dips 1% low z -0.52, slowest z -1.57

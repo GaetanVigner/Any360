@@ -154,10 +154,12 @@ class TextureCache {
   // MemoryChanged from another thread (the renderer's completion thread): applied before the next texture use.
   void QueueMemoryChanged(uint32_t begin, uint32_t end);
 
-  // Guest memory a resolve left on the GPU (its texels at their coordinates in `image`, kept in TRANSFER_SRC_OPTIMAL
-  // layout): a texture that reads exactly that destination (same base, pitch, host format and endianness; tiled 2D,
-  // one level) is copied from the image on the GPU instead of being read from memory, which a large resolve does not
-  // write. A new resolve to the base replaces it (with a new generation); DropGpuSources forgets those in a range.
+  // Guest memory a resolve left on the GPU (its texels at their coordinates in `image`, the renderer's): a texture
+  // that reads exactly that destination (same base, pitch, host format and endianness; tiled 2D, one level) is
+  // sampled from the image itself when it is one slice of the image's exact size in a format a view can show the
+  // bytes in (SetSourceView), else copied from it on the GPU (rows past the image, within its last 32-row tile, as
+  // zeros), instead of being read from memory, which a large resolve does not write. A new resolve to the base
+  // replaces it (with a new generation); DropGpuSources forgets those in a range.
   struct GpuSource {
     VkImage image = VK_NULL_HANDLE;
     VkFormat format = VK_FORMAT_UNDEFINED;
@@ -167,6 +169,18 @@ class TextureCache {
     uint32_t scale = 1;  // host texels a guest texel along each axis (a resolution-scaled resolve)
   };
   void SetGpuSource(const GpuSource& source);
+  // Sampling a source's image itself instead of a copy (the renderer owns the image and its layout): a 2D-array view
+  // of `source.image` in `format` with `components`, the image put in SHADER_READ_ONLY_OPTIMAL before the draws
+  // recorded next. VK_NULL_HANDLE: copied instead (the image is no longer the destination's).
+  void SetSourceView(std::function<VkImageView(const GpuSource&, VkFormat, VkComponentMapping)> source_view) {
+    source_view_ = std::move(source_view);
+  }
+  // Before a copy out of a source: its image put in TRANSFER_SRC_OPTIMAL (it may be sampled in place since).
+  void SetSourceForCopy(std::function<void(const GpuSource&)> source_for_copy) { source_for_copy_ = std::move(source_for_copy); }
+  // Whether the last view View returned is a source's own image: valid only for the draws recorded next (its layout
+  // changes with the next resolve or write-back), so not to be kept by fetch constant.
+  bool last_view_direct() const { return last_view_direct_; }
+  uint32_t direct_views() const { return direct_views_; }
   // Called before a texture's memory [begin, end) is read on the CPU: the renderer writes there what a resolve left
   // on the GPU only, when the texture does not read it as it is (another layout, stacked slices...).
   void SetBeforeMemoryRead(std::function<void(uint32_t, uint32_t)> callback) { before_read_ = std::move(callback); }
@@ -228,7 +242,10 @@ class TextureCache {
     bool scaled;
     uint64_t* used;
   };
-  bool last_view_scaled_ = false;
+  bool last_view_scaled_ = false, last_view_direct_ = false;
+  uint32_t direct_views_ = 0;
+  std::function<VkImageView(const GpuSource&, VkFormat, VkComponentMapping)> source_view_;
+  std::function<void(const GpuSource&)> source_for_copy_;
   uint64_t* last_used_ = nullptr;
   std::unordered_map<std::array<uint32_t, 8>, FastView, FastKeyHash> fast_;
   std::function<VkCommandBuffer()> recorder_;

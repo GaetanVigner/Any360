@@ -1314,6 +1314,66 @@ int main(int argc, char** argv) {
     }
     std::printf("gfx_render_tests: resolve: sampled back, %u of %u pixels wrong\n", wrong, kSize * kSize);
     CHECK(wrong == 0);
+    // Textures of a resolve's exact size sample its image in place (no copy). A chain at one address (a luminance or
+    // bloom chain): each step resolves the target, cleared to its own colour, to one address and samples it back in the
+    // same batch; the image goes from sampled to resolved into and back each step. Between two steps the destination
+    // is resolved with the red/blue swap (another image format, B8G8R8A8: the R8G8B8A8 image kept as a spare, its
+    // views with it), sampled in place as k_8_8_8_8 with red and blue exchanged as a copy of its bytes shows them.
+    {
+      auto resolve_to = [&](uint32_t base, uint32_t info, uint32_t rectangle, uint32_t rows) {
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rectangle | 3, 2u | 6u << 2});  // vf0: the copy rectangle
+        s.Put({Type0(0x2318, 4), 0u, base, 64u | rows << 16, info});                     // no clear
+        s.Reg(0x2208, 6);
+        s.DrawAuto(8, 3);
+        s.Reg(0x2208, 4);
+      };
+      const uint32_t chain_base = 0x150000;  // its own address: `resolved` keeps the quadrant for the swap below
+      const uint32_t direct_before = renderer.stats().texture_direct_views, copies_before = renderer.stats().texture_gpu_copies;
+      uint32_t chain_wrong = 0;
+      for (uint32_t step = 0; step < 5; ++step) {
+        if (step == 3) {
+          const float orange[4] = {200 / 255.0f, 100 / 255.0f, 30 / 255.0f, 1.0f};
+          const Pixels swapped = scenario("resolve chain: red/blue swap", orange, [&] {
+            resolve_to(chain_base, 2u | 6u << 7 | 1u << 24, rect, 64);
+            textured(chain_base, 64);
+          });
+          chain_wrong += kSize * kSize - swapped.Count(Rgba(30, 100, 200, 255));
+        }
+        const uint32_t colour = Rgba(40 * step + 20, 250 - 50 * step, 60 * step, 255);
+        const float clear[4] = {(40 * step + 20) / 255.0f, (250 - 50 * step) / 255.0f, (60 * step) / 255.0f, 1.0f};
+        const Pixels chain = scenario("resolve chain", clear, [&] {
+          resolve_to(chain_base, 2u | 6u << 7, rect, 64);
+          textured(chain_base, 64);
+        });
+        chain_wrong += kSize * kSize - chain.Count(colour);
+      }
+      const uint32_t direct = renderer.stats().texture_direct_views - direct_before;
+      const uint32_t copies = renderer.stats().texture_gpu_copies - copies_before;
+      std::printf("gfx_render_tests: resolve chain: 5 steps and a swapped one at one address, %u pixels wrong, %u sampled in place, %u copies\n",
+                  chain_wrong, direct, copies);
+      CHECK(chain_wrong == 0 && direct >= 6 && copies == 0);
+      // A texture taller than the resolve, within its last 32-row tile (64 rows over 40 resolved, at an address of its
+      // own): copied, the rows below the resolve zeros.
+      const uint32_t short_rect = kVertices + 0xB00, short_base = 0x140000;
+      const float sv[3][2] = {{0, 0}, {float(kSize), 0}, {float(kSize), 40}};
+      for (uint32_t i = 0; i < 3; ++i) {
+        SetBig(short_rect + 8 * i, Bits(sv[i][0]));
+        SetBig(short_rect + 8 * i + 4, Bits(sv[i][1]));
+      }
+      const uint32_t copies_short = renderer.stats().texture_gpu_copies;
+      const Pixels tall = scenario("texture taller than its resolve", nullptr, [&] {
+        textured(0x60000, 32);
+        resolve_to(short_base, 2u | 6u << 7, short_rect, 64);
+        textured(short_base, 64);
+      });
+      uint32_t tall_wrong = 0;
+      for (uint32_t y = 0; y < kSize; ++y) {
+        for (uint32_t x = 0; x < kSize; ++x) tall_wrong += tall.At(x, y) != (y < 40 ? quadrant[quadrant_of(x, y, 32)] : 0u);
+      }
+      std::printf("gfx_render_tests: texture of 64 rows over a 40-row resolve: %u of %u pixels wrong, %u copies\n", tall_wrong,
+                  kSize * kSize, renderer.stats().texture_gpu_copies - copies_short);
+      CHECK(tall_wrong == 0 && renderer.stats().texture_gpu_copies - copies_short == 1);
+    }
     // Swap: what VdSwap writes, the front buffer's fetch constant 0 then XE_SWAP; the presented frame is the
     // resolved image.
     s.Put({Type0(0x4800, 6), 2u | 2u << 10 | 2u << 13 | 2u << 22 | 1u << 31, 6u | 2u << 6 | resolved, 63u | 63u << 13,
@@ -1415,9 +1475,9 @@ int main(int argc, char** argv) {
   // Render targets: colour 0, depth, colour 1, the 16_16_16_16_FLOAT target, the float24 depth surface and the nine
   // render target formats, of which the two AS_ ones share their base format's surface (12, not 14), as k_8_8_8_8
   // shares k_8_8_8_8_GAMMA's; and the three fresh targets read back as zeros (15).
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 15 && stats.texture_uploads == 6 && stats.resolves == 3);
-  // (The resolved texture is copied from the resolve on the GPU, not uploaded: 6 uploads, not 7. Two resolves: that one and
-  // the k_16_16_16_16 one.)
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 15 && stats.texture_uploads == 6 && stats.resolves == 10);
+  // (The resolved texture is read from the resolve on the GPU, not uploaded: 6 uploads, not 7. Ten resolves: the three
+  // of the scenarios before, the chain's six and the 40-row one.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.
   // The float24 conversions round-trip first.
