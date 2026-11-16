@@ -49,7 +49,13 @@ owner adds a rule, it goes here (or into a skill under `.claude/skills/`) in the
   `git push origin HEAD:main`. Never stash, commit or revert files another session left (for example
   `docs/GLYPHS.md` while it is untracked). Commit only your own files.
 - Commit messages end with the co-author line the session's instructions give.
-- Run the whole suite (`layer\sys\test.ps1`) before committing; say so if anything fails.
+- Run the whole suite (`layer\sys\test.ps1`) before committing; say so if anything fails. GPU changes run it with
+  `-Gpus NVIDIA,Radeon`: the GPU tests run again under the Vulkan validation layer on each GPU and must give 0
+  validation messages (one driver lets through what another refuses).
+- When the owner splits the machine between sessions, each keeps to the cores and the GPU it was given (for
+  example the GPU session: cores 8-15, the AMD Radeon): builds and tests through `start /affinity <mask>`, game
+  launches with `tools/any360-ab.ps1 -Affinity <mask> -Device <name>`, and its own worktree and build folders so
+  that builds, executables and logs never collide.
 - Delete captures, dumps and replay outputs once they are no longer needed; keep only reference captures.
 - For rendering decisions, show side-by-side images (original | before | after, same crop), not only percentages.
 
