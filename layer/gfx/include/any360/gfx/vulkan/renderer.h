@@ -276,6 +276,7 @@ class VulkanRenderer : public gfx::Renderer {
   // draw's interval may hold some of its neighbours' work.
   struct ShaderTime {
     uint64_t ns = 0, draws = 0, vertex_hash = 0;
+    uint64_t indices = 0;  // the draws' vertices (indices), to tell vertex-bound draws from small ones
   };
   std::map<uint64_t, ShaderTime> shader_times() const {
     std::lock_guard lock(shader_times_mutex_);
@@ -580,6 +581,7 @@ class VulkanRenderer : public gfx::Renderer {
     VkCommandBuffer cb = VK_NULL_HANDLE;
     std::atomic<uint32_t> marks{0};          // GpuMark time stamps written (recording and submitting threads)
     std::vector<std::pair<uint64_t, uint64_t>> timing_keys;  // ANY360_DRAW_TIMING: each draw's pixel / vertex hash
+    std::vector<uint32_t> timing_indices;                     // and its index count
     std::vector<std::pair<uint64_t, uint64_t>> shader_pairs;  // the vertex / pixel shaders it draws with (stall report)
     uint32_t memexport_dispatches = 0;                        // compute dispatches for memexport it records
     std::vector<std::string> checkpoints;  // its draws marked for the GPU, described (ANY360_GPU_CHECKPOINTS)

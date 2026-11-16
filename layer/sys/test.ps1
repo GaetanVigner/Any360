@@ -77,6 +77,17 @@ try {
     if ($LASTEXITCODE) { throw "gfx_vulkan_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_render_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "gfx_render_tests failed ($LASTEXITCODE)" }
+    # The other form of the Xenos multiply rule than the driver gets (Features::zero_multiply_by_comparisons): both
+    # give the same results; the ALU cases check them on this machine's GPU.
+    foreach ($form in 'min', 'compare') {
+        $env:ANY360_ZERO_MULTIPLY = $form
+        try {
+            & (Join-Path $BuildDir 'gfx/gfx_render_tests.exe') | Select-String 'failing checks|\.cpp:[0-9]+:' | Out-Host
+            if ($LASTEXITCODE) { throw "gfx_render_tests failed with the '$form' multiply rule ($LASTEXITCODE)" }
+        } finally {
+            Remove-Item Env:ANY360_ZERO_MULTIPLY -ErrorAction SilentlyContinue
+        }
+    }
     $capture = Join-Path $BuildDir 'gfx/gfx_render_tests.a360cap'
     & (Join-Path $BuildDir 'gfx/gfx_render_tests.exe') --copy --capture $capture | Out-Host
     if ($LASTEXITCODE) { throw "gfx_render_tests failed ($LASTEXITCODE)" }

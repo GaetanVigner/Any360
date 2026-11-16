@@ -279,6 +279,41 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Features::zero_multiply_by_comparisons: the Xenos multiply rule (+0 times anything is +0) of a vector mul and a
+    // scalar muls written as (a == 0 || b == 0) ? 0 : a * b (OpLogicalOr of two OpFOrdEqual) instead of the
+    // reference's min(|a|, |b|) == 0 (GLSLstd450NMin), which stays without the feature (the form Mesa folds into one
+    // instruction). Their results on the GPU, both forms: gfx_render_tests' "shader ALU" multiply-rule cases.
+    {
+        auto count_ops = [](const std::vector<uint32_t>& spirv, uint32_t& nmin, uint32_t& logical_or) {
+            nmin = logical_or = 0;
+            for (size_t i = 5; i < spirv.size();) {
+                const uint32_t count = spirv[i] >> 16, opcode = spirv[i] & 0xFFFF;
+                if (!count || i + count > spirv.size()) break;
+                if (opcode == 12 /* OpExtInst */ && count >= 5 && spirv[i + 4] == 79 /* GLSLstd450NMin */) ++nmin;
+                if (opcode == 166 /* OpLogicalOr */) ++logical_or;
+                i += count;
+            }
+        };
+        SpirvShaderTranslator::Features compare_features(true);
+        compare_features.zero_multiply_by_comparisons = true;
+        SpirvShaderTranslator compare(compare_features, true, true, false);
+        Alu vector_mul, scalar_mul;
+        vector_mul.vector = uc::AluVectorOpcode::kMul, vector_mul.vector_mask = 0b1111, vector_mul.dest = kColor0;
+        vector_mul.is_export = true, vector_mul.src1 = {0, true}, vector_mul.src2 = c0;
+        scalar_mul.scalar = uc::AluScalarOpcode::kMuls, scalar_mul.scalar_mask = 0b1111, scalar_mul.dest = kColor0;
+        scalar_mul.is_export = true, scalar_mul.src3 = {0, true};  // r0.w * r0.x
+        for (const auto& [name, alu] : {std::pair{"vector mul", vector_mul}, std::pair{"scalar muls", scalar_mul}}) {
+            const std::vector<uint32_t> ps = BuildAluPixelShader({alu});
+            uint32_t nmin_on, or_on, nmin_off, or_off;
+            count_ops(Translate(compare, xenos::ShaderType::kPixel, ps, 0x5A0020, std::string(name) + "/compare").spirv, nmin_on, or_on);
+            count_ops(Translate(full, xenos::ShaderType::kPixel, ps, 0x5A0020, std::string(name) + "/full").spirv, nmin_off, or_off);
+            Check(nmin_off >= 1 && nmin_on == nmin_off - 1 && or_on == or_off + 1,
+                  std::string(name) + ": the multiply rule by comparisons with the feature, by min(|a|, |b|) without (NMin " +
+                      std::to_string(nmin_on) + "/" + std::to_string(nmin_off) + ", OR " + std::to_string(or_on) + "/" +
+                      std::to_string(or_off) + ")");
+        }
+    }
+
     // The shaders gfx_vulkan_tests runs on whatever device it finds: every feature but the float controls, which the
     // renderer sets as each device reports them (a mode a device lacks is invalid: NVIDIA has no 32-bit denormal flush).
     SpirvShaderTranslator::Features portable_features(true);

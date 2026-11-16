@@ -1,0 +1,12 @@
+Crackdown city capture (60 kicks, 29 frames) replayed with gfx_replay --bench --repeat 3 on the AMD Radeon iGPU
+(Windows driver), cores 8-15; GPU ms over the 29 frames of pass 2. ANY360_ZERO_MULTIPLY forces the form.
+
+Sizing (experiment build, ANY360_DRAW_TIMING=1; us a draw of the costliest pixel shaders):
+  min(|a|,|b|) == 0 (reference)     622.4 / 623.2   6A6A 13.04, F97F 2369, 694E 3.27, 81BD 2.90
+  (a == 0 || b == 0)                535.5 / 538.2   6A6A 10.74, F97F 1964, 694E 2.91, 81BD 2.75
+Shipped build (Features::zero_multiply_by_comparisons, no draw timing):
+  min      607.8 / 604.6
+  compare  523.5 / 529.7     (-13%)
+Images, min against compare, 29 frames: 0 pixels differ on the Radeon and on NVIDIA.
+Depth-pass draws (694E/81BD, ~1100 a frame) are vertex-bound (556 and 961 indices a draw, 3 ns an index): their
+vertex shader is two vertex fetches and ~16 dot products, 917 GPU instructions, most of them the multiply rule.

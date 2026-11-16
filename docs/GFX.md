@@ -681,3 +681,28 @@ is read by a texture before the next one replaces it, but the front buffer's (12
 What is left: presenting from the front buffer's source surface (the resolve's red/blue swap and the front buffer's
 blue-green-red fetch cancel out), one 1280x720 blit a frame, about 1%; anything more needs textures to read the EDRAM
 surfaces themselves until they are drawn into again.
+
+### The multiply rule by comparisons (2026-11-16)
+
+The small draws of Crackdown's city (about 1100 a frame of two depth-pass shaders, 556 and 961 indices a draw, 3 ns
+an index) are vertex-bound: their vertex shader is two vertex fetches and about 16 dot products, 917 GPU instructions
+on AMD's Windows driver, most of them the Xenos multiply rule. Written `(a == 0 || b == 0) ? 0 : a * b` instead of
+`min(|a|, |b|) == 0 ? 0 : a * b`, the rule gives the same results (NaN, infinities and -0 included) and costs one
+instruction less a lane where an operand is uniform (a constant register: its test runs once a wave on the scalar
+unit). `Features::zero_multiply_by_comparisons` writes it so; the renderer turns it on unless the driver is one whose
+compiler folds the reference's form into one native multiply (RADV, Turnip, NVK: Mesa's fmulz, see "What the shaders
+cost"); `ANY360_ZERO_MULTIPLY=min|compare` forces a form.
+
+- City capture on the Radeon iGPU: 606 -> 526 ms of GPU time for 29 frames (-13%; the world shader 13.0 -> 10.7 us a
+  draw, the shadow pass 2.37 -> 1.96 ms, the depth-pass draws -5 to -11%); 0 pixels differ between the forms on the
+  Radeon and on NVIDIA.
+- In game on the Radeon (5 launches a form, alternating): 49.4 -> 56.4 FPS (median 49.5 -> 56.4), 10% low median
+  49.2 -> 55.7, 1% low median 48.5 -> 54.9 (rank test z -6.0, -4.9, -3.1); private memory 2662 -> 2692 MB (no
+  change of the renderer's, the launches' spread). The last two pairs of launches had stalls of 116-284 ms in both
+  forms at the same time (the machine, shared with another session's work): their lows pull both means down (1% low
+  mean 47.4 -> 49.5; the three clean pairs: steady 49-50 -> 56-58 FPS). Archived in
+  `docs/perf/archive/2026-11-16-amd-zero-multiply/`.
+
+Tests: `gfx_shader_tests` (a vector mul and a scalar muls: the comparisons with the feature, the reference's minimum
+without), `gfx_render_tests` (the ALU cases 0 * inf, NaN * 0, -0 * inf, 0 * inf + c in a mad, 0 * inf terms in a dp4,
+0 * inf in a muls), which `test.ps1` runs with both forms on the machine's GPU.

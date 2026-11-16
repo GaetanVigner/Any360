@@ -164,6 +164,15 @@ VulkanRenderer::VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirro
     features.denorm_flush_to_zero_float32 = v12.shaderDenormFlushToZeroFloat32;
     features.signed_zero_inf_nan_preserve_float32 = v12.shaderSignedZeroInfNanPreserveFloat32;
     features.rounding_mode_rte_float32 = v12.shaderRoundingModeRTEFloat32;
+    // The Xenos multiply rule written as the driver runs it fastest: Mesa's compilers fold the reference's pattern
+    // into one native instruction (RADV, Turnip, NVK); elsewhere the comparisons form costs fewer instructions.
+    const bool folds_zero_multiply = v12.driverID == VK_DRIVER_ID_MESA_RADV || v12.driverID == VK_DRIVER_ID_MESA_TURNIP ||
+                                     v12.driverID == VK_DRIVER_ID_MESA_NVK;
+    features.zero_multiply_by_comparisons = !folds_zero_multiply;
+  }
+  if (const char* form = std::getenv("ANY360_ZERO_MULTIPLY")) {  // "min" or "compare": a form forced, for A/B runs
+    if (std::strcmp(form, "min") == 0) features.zero_multiply_by_comparisons = false;
+    if (std::strcmp(form, "compare") == 0) features.zero_multiply_by_comparisons = true;
   }
   // Computed-LOD fetches as implicit-LOD samples (fewer texture address cycles than explicit gradients);
   // ANY360_EXPLICIT_GRADIENTS=1 goes back to the gradients, for A/B runs and image comparisons.
@@ -2224,6 +2233,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   if (draw_timing_ && batch().timing_keys.size() < kDrawTimings) {
     job.timing = kDrawTimings * current_ + uint32_t(batch().timing_keys.size());
     batch().timing_keys.push_back({draw.pixel_shader ? draw.pixel_shader->hash : 0, draw.vertex_shader->hash});
+    batch().timing_indices.push_back(draw.index_count);
   }
   job.index_type = VK_INDEX_TYPE_NONE_KHR;
   job.host_index_count = host_index_count;
@@ -3020,6 +3030,7 @@ VkCommandBuffer VulkanRenderer::Record() {
     if (draw_timing_) {
       f.vkCmdResetQueryPool(b.cb, draw_timing_, kDrawTimings * uint32_t(&b - batches_.data()), kDrawTimings);
       b.timing_keys.clear();
+      b.timing_indices.clear();
     }
     recorded_.valid = false;  // a new command buffer has no state
     batch_open_ = true;
@@ -3707,6 +3718,7 @@ void VulkanRenderer::FinishBatch(Batch& b) {
             ShaderTime& st = shader_times_[b.timing_keys[line[i].second].first];
             st.vertex_hash = b.timing_keys[line[i].second].second;
             ++st.draws;
+            st.indices += b.timing_indices[line[i].second];
             if (end > line[i].first) st.ns += uint64_t(double(end - line[i].first) * period);
           }
         }

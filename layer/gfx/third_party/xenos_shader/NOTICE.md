@@ -53,6 +53,11 @@ Each vendored file also keeps its original header.
   the reference's translation), a pixel shader's computed-LOD fetch without register gradients samples with the
   implicit LOD and the fetch's LOD as the bias, instead of the coarse derivatives scaled by 2^LOD as explicit
   gradients: the same level, fewer texture address cycles (docs/GFX.md, "Implicit-LOD sampling").
+- `spirv_translator.h` `Features::zero_multiply_by_comparisons`, `IsEitherZero`, and `spirv_translator_alu.cpp`
+  (`ZeroIfAnyOperandIsZero`, the vector mul/mad path): with it (off by default, the reference's form), the Xenos
+  multiply rule is `(a == 0 || b == 0) ? 0 : a * b` instead of `min(|a|, |b|) == 0 ? 0 : a * b`: the same results,
+  fewer instructions where the driver does not fold the reference's form into a native multiply (docs/GFX.md, "The
+  multiply rule by comparisons").
 
 ## Ours: `shim/include/rex/...`
 

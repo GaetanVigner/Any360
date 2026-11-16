@@ -417,6 +417,14 @@ class SpirvShaderTranslator : public ShaderTranslator {
     // for a 3D fetch). Not a device feature: off by default (ReXGlue's translation), the Vulkan renderer turns it on.
     // Register gradients (setGradientH/V) still sample with them.
     bool implicit_lod_sampling = false;
+
+    // any360: how the Xenos multiply rule (+0 or denormal times anything, infinity and NaN included, is +0) is
+    // written. Off (the reference's): `min(|a|, |b|) == 0 ? 0 : a * b`, the pattern Mesa's compilers fold into one
+    // native D3D9 multiply (fmulz: RADV, Turnip, NVK). On: `(a == 0 || b == 0) ? 0 : a * b`, the same results; where
+    // nothing folds it (AMD's and NVIDIA's own drivers), a test of a uniform operand (a constant register) runs once a
+    // wave on the scalar unit instead of with every lane's minimum (-14% of the GPU time over Crackdown's city on an
+    // AMD iGPU with AMD's Windows driver).
+    bool zero_multiply_by_comparisons = false;
   };
 
   SpirvShaderTranslator(const Features& features, bool native_2x_msaa_with_attachments,
@@ -672,6 +680,8 @@ class SpirvShaderTranslator : public ShaderTranslator {
   // For Shader Model 3 multiplication (+-0 or denormal * anything = +0),
   // replaces the value with +0 if the minimum of the two operands is 0. This
   // must be called with absolute values of operands - use GetAbsoluteOperand!
+  // any360: a == 0 || b == 0, a component each (Features::zero_multiply_by_comparisons).
+  spv::Id IsEitherZero(spv::Id operand_0, spv::Id operand_1);
   spv::Id ZeroIfAnyOperandIsZero(spv::Id value, spv::Id operand_0_abs, spv::Id operand_1_abs);
   // Conditionally discard the current fragment. Changes the build point.
   void KillPixel(spv::Id condition, uint8_t memexport_eM_potentially_written_before);

@@ -6,6 +6,7 @@
 #include <array>
 #include <bit>
 #include <cmath>
+#include <limits>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -1744,6 +1745,18 @@ int main(int argc, char** argv) {
     vname(vector(V::kTrunc, {1.75f, -1.75f}, {}, {}, 1, -1), V::kTrunc);
     vname(vector(V::kFloor, {1.75f, -1.25f}, {}, {}, 1, -2), V::kFloor);
     vname(vector(V::kMad, {2, 3}, {4, -1}, {0.5f, 0.5f}, 8.5f, -2.5f), V::kMad);
+    // The Xenos multiply rule: +0 times anything, infinity and NaN included, is +0 (whichever form the translator
+    // writes it in for the driver: Features::zero_multiply_by_comparisons; test.ps1 runs these with both).
+    const float kInf = std::numeric_limits<float>::infinity(), kNaN = std::numeric_limits<float>::quiet_NaN();
+    auto zero_rule = [&](Case* k, V op, const char* what) {
+      vname(k, op);
+      k->unit += what;
+    };
+    zero_rule(vector(V::kMul, {0, kInf}, {kInf, 0}, {}, 0, 0), V::kMul, " 0 * inf");
+    zero_rule(vector(V::kMul, {kNaN, 0}, {0, kNaN}, {}, 0, 0), V::kMul, " NaN * 0");
+    zero_rule(vector(V::kMul, {-0.0f, 3}, {kInf, -2}, {}, 0, -6), V::kMul, " -0 * inf");
+    zero_rule(vector(V::kMad, {0, kInf}, {kInf, 0}, {0.5f, -2}, 0.5f, -2), V::kMad, " 0 * inf + c");
+    zero_rule(vector(V::kDp4, {0, 1, 0, 2}, {kInf, 3, kNaN, 4}, {}, 11, 11), V::kDp4, " 0 * inf terms");
     vname(vector(V::kCndEq, {0, 1}, {5, 5}, {7, 7}, 5, 7), V::kCndEq);
     vname(vector(V::kCndGe, {0, -1}, {5, 5}, {7, 7}, 5, 7), V::kCndGe);
     vname(vector(V::kCndGt, {0, 1}, {5, 5}, {7, 7}, 7, 5), V::kCndGt);
@@ -1782,6 +1795,11 @@ int main(int argc, char** argv) {
     auto sname = [&](Case* k, S op) { k->unit += snames[uint32_t(op)]; };
     sname(scalar(S::kAdds, 1.5f, 2.25f, 3.75f), S::kAdds);
     sname(scalar(S::kMuls, 1.5f, -2, -3), S::kMuls);
+    {
+      Case* k = scalar(S::kMuls, 0, std::numeric_limits<float>::infinity(), 0);  // the multiply rule, scalar unit
+      sname(k, S::kMuls);
+      k->unit += " 0 * inf";
+    }
     sname(scalar(S::kMaxs, 1, 3, 3), S::kMaxs);
     sname(scalar(S::kMins, 1, 3, 1), S::kMins);
     sname(scalar(S::kSeqs, 0, 5, 1), S::kSeqs);

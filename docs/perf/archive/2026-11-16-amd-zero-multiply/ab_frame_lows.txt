@@ -1,0 +1,17 @@
+min: 5 launches
+  crackdown_034.log: dip 1% low 43 FPS, slowest 27.3 ms, 271 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 49-50
+  crackdown_036.log: dip 1% low 45 FPS, slowest 44.1 ms, 247 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 50-50
+  crackdown_038.log: dip 1% low 45 FPS, slowest 44.5 ms, 257 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 50-50
+  crackdown_040.log: dip 1% low 25 FPS, slowest 283.9 ms, 220 over 16.7 ms, texture loading up to 0.09 ms a frame; steady FPS 49-54
+  crackdown_042.log: dip 1% low 11 FPS, slowest 181.5 ms, 184 over 16.7 ms, texture loading up to 0.04 ms a frame; steady FPS 43-50
+  steady (25 periods): FPS mean 49.4 (median 49.5, min 42.8), 10% low mean 49.0 (median 49.2, min 45.9), 1% low mean 47.4 (median 48.5, min 36.7); process private memory mean 2662 MB, max 2706 MB
+  dips (5): 1% low mean 33.6, slowest frame mean 116.3 ms, over 16.7 ms mean 235.8, texture loading mean 0.07 ms a frame
+compare: 5 launches
+  crackdown_035.log: dip 1% low 49 FPS, slowest 40.2 ms, 110 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 56-56
+  crackdown_037.log: dip 1% low 50 FPS, slowest 40.1 ms, 82 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 57-58
+  crackdown_039.log: dip 1% low 41 FPS, slowest 47.8 ms, 200 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 56-56
+  crackdown_041.log: dip 1% low 41 FPS, slowest 25.6 ms, 253 over 16.7 ms, texture loading up to 0.10 ms a frame; steady FPS 56-60
+  crackdown_043.log: dip 1% low 16 FPS, slowest 116.7 ms, 187 over 16.7 ms, texture loading up to 0.12 ms a frame; steady FPS 50-60
+  steady (25 periods): FPS mean 56.4 (median 56.4, min 50.3), 10% low mean 53.6 (median 55.7, min 27.3), 1% low mean 49.5 (median 54.9, min 15.9); process private memory mean 2692 MB, max 2741 MB
+  dips (5): 1% low mean 39.4, slowest frame mean 54.1 ms, over 16.7 ms mean 166.4, texture loading mean 0.08 ms a frame
+min against compare: steady fps z -6.02, p10 z -4.86, p1 z -3.13; dips 1% low z -0.52, slowest z +0.94

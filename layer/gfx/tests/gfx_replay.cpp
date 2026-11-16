@@ -718,10 +718,11 @@ int main(int argc, char** argv) {
       std::printf("gfx_replay: draw time by pixel shader (%.2f ms in all, %zu shaders):\n", total / 1e6, times.size());
       for (size_t i = 0; i < std::min<size_t>(25, by_time.size()); ++i) {
         const auto& st = times.at(by_time[i].second);
-        std::printf("gfx_replay:   ps %016llX (vs %016llX) %6.2f%% %8.3f ms %6llu draws %7.2f us a draw\n",
+        std::printf("gfx_replay:   ps %016llX (vs %016llX) %6.2f%% %8.3f ms %6llu draws %7.2f us a draw, %.0f indices a draw\n",
                     (unsigned long long)by_time[i].second, (unsigned long long)st.vertex_hash,
                     100.0 * by_time[i].first / std::max<uint64_t>(1, total), by_time[i].first / 1e6,
-                    (unsigned long long)st.draws, st.draws ? by_time[i].first / 1e3 / st.draws : 0.0);
+                    (unsigned long long)st.draws, st.draws ? by_time[i].first / 1e3 / st.draws : 0.0,
+                    st.draws ? double(st.indices) / double(st.draws) : 0.0);
       }
     }
   }
