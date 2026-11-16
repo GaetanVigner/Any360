@@ -1139,7 +1139,7 @@
    "crackdown": "0x82A7F5D0",
    "simpsons": "0x82BFA728"
   },
-  "note": "libpng 1.0.5's png_read_filter_row (pngrutil.c): undoes a row's filter (Sub, Up, Average, Paeth); the same instructions in Crackdown's two copies (0x82A7F5D0, the PNG loader's; 0x8280F5C8, D3DX's) and The Simpsons Game's. Any360: xdk::PngReadFilterRow (Paeth a pixel at a time in SSE2), bound in Crackdown at 0x82A7F5D0 (D3DX's copy not bound); not in The Simpsons Game yet"
+  "note": "libpng 1.0.5's png_read_filter_row (pngrutil.c): undoes a row's filter (Sub, Up, Average, Paeth); the same instructions in Crackdown's two copies (0x82A7F5D0, the PNG loader's; 0x8280F5C8, D3DX's) and The Simpsons Game's. Any360: xdk::PngReadFilterRow (Paeth a pixel at a time in SSE2), bound in Crackdown at 0x82A7F5D0 (D3DX's copy not bound); The Simpsons Game's is D3DX's, read and not called in two scripted runs: not bound"
  },
  {
   "name": "zlib inflate_fast",
@@ -1149,6 +1149,6 @@
    "crackdown": "0x82A88378",
    "simpsons": "0x82C16628"
   },
-  "note": "zlib 1.1.4's inflate_fast (inffast.c), the decoding loop under inflate_codes: the same instructions in Crackdown's two copies (0x82A88378, under libpng 1.0.5 in the PNG loader; 0x8281BE00, the copy D3DX links) and The Simpsons Game's. Any360: xdk::InflateFast (invalid codes handed back to the function's own code), bound in Crackdown at 0x82A88378 (D3DX's copy not called on the route: not bound); not in The Simpsons Game yet"
+  "note": "zlib 1.1.4's inflate_fast (inffast.c), the decoding loop under inflate_codes: the same instructions in Crackdown's two copies (0x82A88378, under libpng 1.0.5 in the PNG loader; 0x8281BE00, the copy D3DX links) and The Simpsons Game's. Any360: xdk::InflateFast (invalid codes handed back to the function's own code), bound in Crackdown at 0x82A88378 (D3DX's copy not called on the route: not bound); The Simpsons Game's is D3DX's, read and not called in two scripted runs: not bound"
  }
 ]

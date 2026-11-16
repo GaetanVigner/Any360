@@ -627,7 +627,7 @@ messages.
 
 | Function | Library | Handler | Declines | Hands back | Crackdown | The Simpsons Game |
 |---|---|---|---|---|---|---|
-| `inflate_fast` | zlib 1.1.4 | `ZlibInflateFast` | a state zlib does not give it (under 258 bytes of room or 10 of input, pointers outside the window, memory that is not plain) | invalid codes; and from corrupted tables only: links past the mask table or in a loop, copies of under 3 bytes or past the room, distances before address 0 | bound (the PNG loader's copy): 18,047 calls, 0 different; D3DX's copy not called: not bound | not bound: the same mnemonics, its operands not read yet |
+| `inflate_fast` | zlib 1.1.4 | `ZlibInflateFast` | a state zlib does not give it (under 258 bytes of room or 10 of input, pointers outside the window, memory that is not plain) | invalid codes; and from corrupted tables only: links past the mask table or in a loop, copies of under 3 bytes or past the room, distances before address 0 | bound (the PNG loader's copy): 18,047 calls, 0 different; D3DX's copy not called: not bound | not bound: the same instructions (its operands read: zlib's standard mask table, its own messages), but here it is D3DX's copy, and no run has called it (below) |
 
 What is new in it:
 
@@ -678,7 +678,7 @@ and The Simpsons Game's (0x82BFA728). Model: the PowerPC step by step (`libpng_r
 
 | Function | Library | Handler | Declines | Crackdown | The Simpsons Game |
 |---|---|---|---|---|---|
-| `png_read_filter_row` | libpng 1.0.5 | `PngReadFilterRow` | a filter above 4 (the function warns), a pixel depth of 0, rows that are not plain memory or overlap, Average and Paeth with bpp above rowbytes (the function's loop does not end) | bound (the loader's copy): 12,452 calls, 0 different, none declined; D3DX's copy not bound (no run checked it) | not bound: the same mnemonics, its operands not read yet |
+| `png_read_filter_row` | libpng 1.0.5 | `PngReadFilterRow` | a filter above 4 (the function warns), a pixel depth of 0, rows that are not plain memory or overlap, Average and Paeth with bpp above rowbytes (the function's loop does not end) | bound (the loader's copy): 12,452 calls, 0 different, none declined; D3DX's copy not bound (no run checked it) | not bound: the same instructions (its operands read), D3DX's copy, no run has called it (below) |
 
 - The binding writes what the function leaves below r1: r29-r31 and the return address (`SaveGprLr`, now for any
   first register) and its 112-byte frame's back chain.
@@ -694,6 +694,17 @@ and The Simpsons Game's (0x82BFA728). Model: the PowerPC step by step (`libpng_r
   10 ms saved at its entry, over several frames. The A/B (5 launches a variant) is within noise: the steady figures
   moved (+7% on the 1% low) where the function is not called any more, in a series slower in both variants than
   the others. docs/perf/archive/2026-11-16-libpng-filter-row.
+
+### The two libpng and zlib functions in The Simpsons Game (2026-11-16)
+
+Both are the same instructions in The Simpsons Game: only the addresses they load differ, and those were read in
+its image (its inflate_mask is zlib's standard table, its messages its own strings). But there they are D3DX's
+copies, under its texture loader (D3DXCreateTextureFromFile's PNG path). The game reaches that loader only from two
+loaders of its own, one of them in xenon_util.cpp ("Failed to load %s"). Two scripted runs (the port's
+`tools/any360-ab.ps1`, a fresh profile, never the player's saves) went from the title screen through the menus and
+the first loading into gameplay, 4 and 6 minutes, with every bound function checked: neither function was called.
+So they are not bound there (the rule: a function no run has called is not bound). The route is kept
+(`tools/any360-route.txt` in the port) for when a run finds where the game loads a PNG.
 
 ### Found on the way
 
