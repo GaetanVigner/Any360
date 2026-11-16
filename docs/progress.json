@@ -1,5 +1,5 @@
 {
- "date": "2026-11-15",
+ "date": "2026-11-16",
  "reference": {
   "sdk": "ReXGlue",
   "version": "0.8.0"
@@ -66,8 +66,12 @@
   "unnamed_by_title": {
    "codbo": {},
    "crackdown": {
-    "XDK D3D runtime": 742,
-    "CRT register save/restore helpers": 22,
+    "XDK D3DX and XGraphics (shader compiler)": 4171,
+    "C runtime (CRT)": 595,
+    "XDK D3D runtime": 553,
+    "XDK audio (XAudio, XMA)": 484,
+    "XDK Xbox Live and voice (XOnline, XHV)": 378,
+    "XAPI (Win32 layer over the kernel and XAM)": 194,
     "kernel import thunks": 2
    },
    "simpsons": {
@@ -146,7 +150,7 @@
    "mnemonics": 340,
    "instructions": 2667844,
    "sdk": "0.10.0",
-   "unnamed_library_functions": 766,
+   "unnamed_library_functions": 6377,
    "source": "",
    "description": "",
    "sites": 1534,

@@ -8,6 +8,7 @@
  {"name": "Kynapse (AI)", "kind": "middleware", "from": "829FFC20", "to": "82A49000", "proof": "Kynogon|CPathFinder|Agent::|CEntityInfo"},
  {"name": "XDK audio (XAudio, XMA)", "kind": "library", "from": "82A49000", "to": "82A5F000", "proof": "tdu 826[A-D]|simpsons 82C[3-6]|XAudio|XMA"},
  {"name": "XDK audio (XAudio, XMA)", "kind": "library", "from": "82A66000", "to": "82A6F000", "proof": "tdu 826[A-D]|simpsons 82C[3-6]"},
+ {"name": "libpng 1.0.5 and zlib 1.1.4", "kind": "middleware", "from": "82A79000", "to": "82A88750", "proof": "simpsons 82(B[C-F]|C[01])|zlib|libpng|IHDR|row buffer|header check|compression method|block type|stored block|length or distance|bit length|literal/length|distance tree|distance code"},
  {"name": "XDK Xbox Live and voice (XOnline, XHV)", "kind": "library", "from": "82A88000", "to": "82A991D8", "proof": "tdu 827[5-8]|simpsons 826[7-8]|XamVoice|XNetLogon"},
  {"name": "Massive (in-game advertising)", "kind": "middleware", "from": "82A991D8", "to": "82AAA988", "proof": "Massive|MASSIVE|MAO"},
  {"name": "Havok Physics", "kind": "middleware", "from": "82AAA000", "to": "82AB5268", "proof": "tdu 827[0-5]|hk"},
