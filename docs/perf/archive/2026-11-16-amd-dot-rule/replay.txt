@@ -1,0 +1,15 @@
+Crackdown city capture (60 kicks, 29 frames) replayed with gfx_replay --bench --repeat 3 on the AMD Radeon iGPU
+(Windows driver), cores 8-15, ANY360_DRAW_TIMING=1; GPU ms over the 29 frames of pass 2; ANY360_DOT_RULE forces the
+dot product path (0: the rule on every product, 1: plain sum, the rule where it is zero or NaN). us a draw:
+
+  dot 0   544.3 / 534.3   6A6A 10.74/10.79, F97F 1973/1966, 694E 3.07/2.82, 81BD 2.81/2.75, B3D1 1142/1129, 9147 858/862
+  dot 1   527.9 / 518.4   6A6A 10.14/10.14, F97F 1965/1952, 694E 2.65/2.61, 81BD 2.61/2.56, B3D1 1136/1123, 9147 867/870
+                          (-3%; the depth-pass draws -7 to -14%, the world shader -6%)
+
+Depth-pass vertex shader (FBED, AMD disassembly): dot 0: 88 v_mul_f32, 119 v_add_f32, 103 v_cmp, 11 FMA;
+dot 1: 64 v_mul_f32, 175 v_add_f32, 151 v_cmp, 1 FMA (static counts: both paths of each dot are in the code).
+
+Images, dot 0 against dot 1, 29 frames: NVIDIA 0 pixels differ; Radeon 0.0001% (2 to 6 pixels in 8 frames, at one
+character's edge, x 1224-1227, y 326-333, up to 25/255): the reference path is the one AMD's compiler fuses into
+FMAs (11 against 1) despite NoContraction, so a vertex lands one rounding step away. Replays are deterministic
+(dot 1 twice: 0 pixels differ). Side by side: out/dot_rule_side_by_side.png (not kept in the repository).

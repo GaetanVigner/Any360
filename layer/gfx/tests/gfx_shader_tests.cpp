@@ -314,6 +314,34 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Features::dot_product_rule_on_zero_or_nan: a dp4 of different operands sums plain products, then tests the sum
+    // for zero or NaN (OpFUnordEqual) and applies the rule in a branch; without the feature, no such test (the rule on
+    // every product). Their results on the GPU: gfx_render_tests' dp4 cases (0 * inf terms, plain sums), which
+    // test.ps1 runs with and without the feature.
+    {
+        auto count_unord_equal = [](const std::vector<uint32_t>& spirv) {
+            uint32_t n = 0;
+            for (size_t i = 5; i < spirv.size();) {
+                const uint32_t count = spirv[i] >> 16, opcode = spirv[i] & 0xFFFF;
+                if (!count || i + count > spirv.size()) break;
+                if (opcode == 181 /* OpFUnordEqual */) ++n;
+                i += count;
+            }
+            return n;
+        };
+        SpirvShaderTranslator::Features dot_features(true);
+        dot_features.dot_product_rule_on_zero_or_nan = true;
+        SpirvShaderTranslator dot_translator(dot_features, true, true, false);
+        Alu dp4;
+        dp4.vector = uc::AluVectorOpcode::kDp4, dp4.vector_mask = 0b1111, dp4.dest = kColor0, dp4.is_export = true;
+        dp4.src1 = {0, true}, dp4.src2 = c0;
+        const std::vector<uint32_t> ps = BuildAluPixelShader({dp4});
+        const uint32_t on = count_unord_equal(Translate(dot_translator, xenos::ShaderType::kPixel, ps, 0x5A0030, "dp4/plain first").spirv);
+        const uint32_t off = count_unord_equal(Translate(full, xenos::ShaderType::kPixel, ps, 0x5A0030, "dp4/full").spirv);
+        Check(on == off + 1, "dp4: one zero-or-NaN test of the plain sum with the feature, none without (" +
+                                 std::to_string(on) + " / " + std::to_string(off) + ")");
+    }
+
     // The shaders gfx_vulkan_tests runs on whatever device it finds: every feature but the float controls, which the
     // renderer sets as each device reports them (a mode a device lacks is invalid: NVIDIA has no 32-bit denormal flush).
     SpirvShaderTranslator::Features portable_features(true);

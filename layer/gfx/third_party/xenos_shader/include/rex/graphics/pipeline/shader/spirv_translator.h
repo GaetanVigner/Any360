@@ -425,6 +425,13 @@ class SpirvShaderTranslator : public ShaderTranslator {
     // wave on the scalar unit instead of with every lane's minimum (-14% of the GPU time over Crackdown's city on an
     // AMD iGPU with AMD's Windows driver).
     bool zero_multiply_by_comparisons = false;
+
+    // any360: dot products (dp4, dp3, dp2add) computed with plain IEEE products first, the multiply rule applied only
+    // in the invocations whose plain sum is zero or NaN (a branch the others skip). Elsewhere the two agree exactly:
+    // the rule changes a product only where a factor is zero, to +0 where IEEE gives -0 or, with an infinite or NaN
+    // factor, NaN; a sign of zero cannot change a non-zero sum, and a NaN product makes the sum NaN. Off by default
+    // (the reference's: the rule on every product); for drivers that do not fold the rule into a native multiply.
+    bool dot_product_rule_on_zero_or_nan = false;
   };
 
   SpirvShaderTranslator(const Features& features, bool native_2x_msaa_with_attachments,

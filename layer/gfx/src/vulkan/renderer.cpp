@@ -169,7 +169,10 @@ VulkanRenderer::VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirro
     const bool folds_zero_multiply = v12.driverID == VK_DRIVER_ID_MESA_RADV || v12.driverID == VK_DRIVER_ID_MESA_TURNIP ||
                                      v12.driverID == VK_DRIVER_ID_MESA_NVK;
     features.zero_multiply_by_comparisons = !folds_zero_multiply;
+    // Dot products plain, the rule only where their sum is zero or NaN: where the rule is not one instruction.
+    features.dot_product_rule_on_zero_or_nan = !folds_zero_multiply;
   }
+  if (const char* dot = std::getenv("ANY360_DOT_RULE")) features.dot_product_rule_on_zero_or_nan = *dot == '1';  // A/B
   if (const char* form = std::getenv("ANY360_ZERO_MULTIPLY")) {  // "min" or "compare": a form forced, for A/B runs
     if (std::strcmp(form, "min") == 0) features.zero_multiply_by_comparisons = false;
     if (std::strcmp(form, "compare") == 0) features.zero_multiply_by_comparisons = true;

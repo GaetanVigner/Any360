@@ -471,25 +471,40 @@ spv::Id SpirvShaderTranslator::ProcessVectorAluOperation(
       }
       uint32_t different = component_mask & ~instr.vector_operands[0].GetIdenticalComponents(
                                                 instr.vector_operands[1]);
-      spv::Id result = spv::NoResult;
+      spv::Id operand_components[4][2];
       for (uint32_t i = 0; i < component_count; ++i) {
-        spv::Id operand_components[2];
         for (unsigned int j = 0; j < 2; ++j) {
-          operand_components[j] = builder_->createCompositeExtract(operands[j], type_float_, i);
+          operand_components[i][j] = builder_->createCompositeExtract(operands[j], type_float_, i);
         }
-        spv::Id product = builder_->createNoContractionBinOp(
-            spv::OpFMul, type_float_, operand_components[0], operand_components[1]);
-        if (different & (1 << i)) {
-          // Shader Model 3: +0 or denormal * anything = +-0.
-          product = ZeroIfAnyOperandIsZero(
-              product, GetAbsoluteOperand(operand_components[0], instr.vector_operands[0]),
-              GetAbsoluteOperand(operand_components[1], instr.vector_operands[1]));
+      }
+      // The products in order, summed (the multiply rule on the products of different components, or none).
+      auto dot = [&](uint32_t rule_components) {
+        spv::Id sum = spv::NoResult;
+        for (uint32_t i = 0; i < component_count; ++i) {
+          spv::Id product = builder_->createNoContractionBinOp(
+              spv::OpFMul, type_float_, operand_components[i][0], operand_components[i][1]);
+          if (rule_components & (1 << i)) {
+            // Shader Model 3: +0 or denormal * anything = +-0.
+            product = ZeroIfAnyOperandIsZero(
+                product, GetAbsoluteOperand(operand_components[i][0], instr.vector_operands[0]),
+                GetAbsoluteOperand(operand_components[i][1], instr.vector_operands[1]));
+          }
+          sum = i ? builder_->createNoContractionBinOp(spv::OpFAdd, type_float_, sum, product) : product;
         }
-        if (!i) {
-          result = product;
-          continue;
-        }
-        result = builder_->createNoContractionBinOp(spv::OpFAdd, type_float_, result, product);
+        return sum;
+      };
+      spv::Id result;
+      if (features_.dot_product_rule_on_zero_or_nan && different) {
+        // any360 (Features::dot_product_rule_on_zero_or_nan): the plain sum, and the rule's where it is 0 or NaN.
+        const spv::Id plain = dot(0);
+        SpirvBuilder::IfBuilder rule_if(
+            builder_->createBinOp(spv::OpFUnordEqual, type_bool_, plain, const_float_0_),
+            spv::SelectionControlDontFlattenMask, *builder_);
+        const spv::Id with_rule = dot(different);
+        rule_if.makeEndIf();
+        result = rule_if.createMergePhi(with_rule, plain);
+      } else {
+        result = dot(different);
       }
       if (instr.vector_opcode == ucode::AluVectorOpcode::kDp2Add) {
         result = builder_->createNoContractionBinOp(

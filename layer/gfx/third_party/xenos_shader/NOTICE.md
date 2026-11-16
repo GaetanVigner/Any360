@@ -58,6 +58,10 @@ Each vendored file also keeps its original header.
   multiply rule is `(a == 0 || b == 0) ? 0 : a * b` instead of `min(|a|, |b|) == 0 ? 0 : a * b`: the same results,
   fewer instructions where the driver does not fold the reference's form into a native multiply (docs/GFX.md, "The
   multiply rule by comparisons").
+- `spirv_translator.h` `Features::dot_product_rule_on_zero_or_nan` and `spirv_translator_alu.cpp` (dp4, dp3,
+  dp2add): with it (off by default), a dot product sums plain products, and only invocations whose sum is zero or
+  NaN compute it again with the multiply rule on each product (a branch the others skip); the results agree with the
+  rule's (docs/GFX.md, "Dot products: the rule where it can change the sum").
 
 ## Ours: `shim/include/rex/...`
 

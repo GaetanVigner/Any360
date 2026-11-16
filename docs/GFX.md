@@ -731,3 +731,28 @@ Linux are `liblibavcodec.a` / `liblibavutil.a` (named after their CMake targets)
 option) needs the Win32 thread snapshot and unwinder, so it is an empty stub elsewhere.
 
 Test: `host_rexglue_tests` (tool mode: no display window, the frames rendered and not presented, said once in the log).
+
+### Dot products: the rule where it can change the sum (2026-11-17)
+
+A Xenos dp4 was four products, each with the multiply rule (a multiply, two compares, an or and a select), and
+three adds: about 19 instructions a lane on AMD's Windows driver where the plain sum takes 7. The rule changes a
+product only where a factor is zero: to +0 where IEEE gives -0, or, with an infinite or NaN factor, where IEEE gives
+NaN. A -0 cannot change a non-zero sum and a NaN product makes the sum NaN, so the plain sum is the rule's sum unless
+it is zero or NaN. `Features::dot_product_rule_on_zero_or_nan` sums plain products (the same order, no contraction),
+tests the sum (OpFUnordEqual with 0) and computes the dot product again with the rule in a branch, which a wave skips
+when none of its invocations needs it. The renderer turns it on with `zero_multiply_by_comparisons` (where no driver
+folds the rule into one instruction); `ANY360_DOT_RULE=0|1` forces it.
+
+- City capture on the Radeon iGPU: 539 -> 523 ms of GPU time for 29 frames (-3%; the depth-pass draws -7 to -14%, the
+  world shader -6%). Images: 0 pixels differ on NVIDIA; on the Radeon 2 to 6 pixels in 8 of 29 frames, at one
+  character's edge, up to 25/255: AMD's compiler fuses the reference path's products and adds into FMAs (11 FMAs in
+  the depth pass's vertex shader against 1) despite NoContraction, a vertex lands one rounding step away. The new
+  path keeps the roundings SPIR-V asks for, as NVIDIA's driver does with both.
+- In game on the Radeon (5 launches a way, alternating): 57.7 -> 60.0 FPS (median 57.8 -> 60.1), 10% low 57.1 ->
+  59.3, 1% low median 56.5 -> 58.7 (rank test z -6.1, -5.6, -3.8); the dips unchanged (1% low 52.3 -> 51.3,
+  z +0.1); private memory 2682 -> 2677 MB. The GPU now runs 15.9-16.6 ms a frame: the city is at 60 FPS on the iGPU.
+  Archived in `docs/perf/archive/2026-11-16-amd-dot-rule/`.
+
+Tests: `gfx_shader_tests` (a dp4: the zero-or-NaN test of the plain sum with the feature, none without),
+`gfx_render_tests` (the dp4 cases: plain sums, and 0 * inf terms through the rule's branch), which `test.ps1` runs
+with each combination of the two rule features.

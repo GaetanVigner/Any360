@@ -79,15 +79,16 @@ try {
     if ($LASTEXITCODE) { throw "gfx_vulkan_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_render_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "gfx_render_tests failed ($LASTEXITCODE)" }
-    # The other form of the Xenos multiply rule than the driver gets (Features::zero_multiply_by_comparisons): both
-    # give the same results; the ALU cases check them on this machine's GPU.
-    foreach ($form in 'min', 'compare') {
-        $env:ANY360_ZERO_MULTIPLY = $form
+    # The forms of the Xenos multiply rule the driver does not get (Features::zero_multiply_by_comparisons,
+    # dot_product_rule_on_zero_or_nan): all give the same results; the ALU cases check them on this machine's GPU.
+    foreach ($forms in @('min', '0'), @('min', '1'), @('compare', '0'), @('compare', '1')) {
+        $env:ANY360_ZERO_MULTIPLY = $forms[0]
+        $env:ANY360_DOT_RULE = $forms[1]
         try {
             & (Join-Path $BuildDir 'gfx/gfx_render_tests.exe') | Select-String 'failing checks|\.cpp:[0-9]+:' | Out-Host
-            if ($LASTEXITCODE) { throw "gfx_render_tests failed with the '$form' multiply rule ($LASTEXITCODE)" }
+            if ($LASTEXITCODE) { throw "gfx_render_tests failed with the multiply rule '$($forms[0])', dot rule $($forms[1]) ($LASTEXITCODE)" }
         } finally {
-            Remove-Item Env:ANY360_ZERO_MULTIPLY -ErrorAction SilentlyContinue
+            Remove-Item Env:ANY360_ZERO_MULTIPLY, Env:ANY360_DOT_RULE -ErrorAction SilentlyContinue
         }
     }
     $capture = Join-Path $BuildDir 'gfx/gfx_render_tests.a360cap'
