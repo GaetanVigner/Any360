@@ -10,7 +10,7 @@
   {"start": "0x82A06D00", "end": "0x82A3DEC0", "name": "Kynapse (AI)", "kind": "middleware"},
   {"start": "0x82A495F8", "end": "0x82A5E988", "name": "XDK audio (XAudio, XMA)", "kind": "library"},
   {"start": "0x82A67628", "end": "0x82A6E938", "name": "XDK audio (XAudio, XMA)", "kind": "library"},
-  {"start": "0x82A7A550", "end": "0x82A88750", "name": "libpng 1.0.5 and zlib 1.1.4", "kind": "middleware"},
+  {"start": "0x82A7A550", "end": "0x82A88750", "name": "libpng 1.0.5 and zlib 1.1.4", "kind": "library"},
   {"start": "0x82A88750", "end": "0x82A991D8", "name": "XDK Xbox Live and voice (XOnline, XHV)", "kind": "library"},
   {"start": "0x82A991D8", "end": "0x82AA9270", "name": "Massive (in-game advertising)", "kind": "middleware"},
   {"start": "0x82AAA988", "end": "0x82AB4340", "name": "Havok Physics", "kind": "middleware"},

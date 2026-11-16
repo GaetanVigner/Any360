@@ -62,7 +62,7 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "D3D blend", "D3D bool constants", "D3D int constants",
                                             "D3D pixel shader constants", "D3D SetTexture", "D3D SetStreamSource",
                                             "D3D sampler filter", "D3D SetVertexDeclaration", "D3D SetShader",
-                                            "D3D CPU range flush"};
+                                            "D3D CPU range flush", "zlib inflate_fast"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -956,6 +956,54 @@ void RunFillSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_
   };
   s.call = fmt::format("block {:08X} floats {}", block, floats);
   RunSides(mode, s, ctx, base, original);
+}
+
+void RunInflateFastSlow(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  constexpr uint32_t f = uint32_t(Function::kInflateFast);
+  const Mode mode = SlowMode(f, base);
+  const any360::xdk::InflateFastCall call{ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32};
+  // The native side: the replacement, and the function's own code where it stops.
+  const auto native = [=](PPCContext& c) {
+    uint32_t result = 0;
+    if (any360::xdk::IsPlainMemory(c.r1.u32 - 88, 88) &&
+        any360::xdk::InflateFast(g_memory, call, result) == any360::xdk::InflateOutcome::kDone) {
+      SaveGprLr22(c);
+      c.r3.u64 = result;
+      return;
+    }
+    original(c, base);
+  };
+  if (mode == Mode::kNative) {
+    native(ctx);
+    return;
+  }
+  // What either side may write: the window, the state's bit buffer and write pointer, the stream's input fields and
+  // message, the register save. A call whose state cannot be read that far is the function's own.
+  const uint32_t s = call.s, z = call.z, r1 = ctx.r1.u32;
+  const bool readable = any360::xdk::IsPlainMemory(s, 56) && any360::xdk::IsPlainMemory(z, 28) &&
+                        any360::xdk::IsPlainMemory(r1 - 88, 88);
+  const uint32_t window = readable ? any360::xdk::detail::GuestLoad32(g_memory, s + 40) : 0;
+  const uint32_t end = readable ? any360::xdk::detail::GuestLoad32(g_memory, s + 44) : 0;
+  const uint32_t avail_in = readable ? any360::xdk::detail::GuestLoad32(g_memory, z + 4) : 0;
+  if (mode == Mode::kOriginal || !readable || window >= end || end - window > kMostChecked ||
+      !any360::xdk::IsPlainMemory(window, end - window)) {
+    original(ctx, base);
+    if (mode != Mode::kOriginal) g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  Sides sides;
+  sides.f = f;
+  sides.writes = {{window, end - window}, {s + 28, 8}, {s + 52, 4}, {z, 12}, {z + 24, 4}, {r1 - 88, 88}};
+  sides.work = avail_in;
+  sides.native = native;
+  sides.differs = [](const PPCContext& a, const PPCContext& b) -> const char* {
+    if (a.r3.u64 != b.r3.u64) return "r3";
+    if (a.r12.u32 != b.r12.u32) return "r12";
+    return nullptr;
+  };
+  sides.call = fmt::format("bl {} bd {} tl {:08X} td {:08X} s {:08X} z {:08X} window {:08X}-{:08X} in {}", call.bl,
+                           call.bd, call.tl, call.td, s, z, window, end, avail_in);
+  RunSides(mode, sides, ctx, base, original);
 }
 
 Counters GetCounters() { return {g_verified.load(), g_different.load()}; }

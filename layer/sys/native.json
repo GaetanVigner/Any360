@@ -18,6 +18,7 @@
   "XAudio fill 2048",
   "XAudio fill 4096",
   "XAudio mix ramp",
+  "zlib inflate_fast",
   "strchr",
   "strncmp",
   "strncpy",

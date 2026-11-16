@@ -614,6 +614,53 @@ with them (the five sizes, any alignment, signalling NaNs and denormals, decline
 times (at start), verified none different, 1,327 -> 86 ns a call (15.4x); Test Drive Unlimited and The Simpsons
 Game did not call them in their menus: not bound there.
 
+### zlib's inflate_fast (2026-11-16)
+
+The first native of a library that is not Microsoft's: zlib 1.1.4's `inflate_fast`, the loop that decodes the
+symbols of a deflate block. Crackdown's stalls in its city were its PNG loader (libpng 1.0.5 over zlib 1.1.4) on the
+main thread, `inflate_fast` at the top of the busiest stack (docs/perf/archive/2026-11-16-hitches). The range is
+`library` in `titles/crackdown/modules.json` ("libpng 1.0.5 and zlib 1.1.4"): a library titles link statically like
+the C runtime, not an engine's own code. The same instructions are in three places: Crackdown's PNG loader's copy
+(0x82A88378), the copy Crackdown's D3DX links (0x8281BE00) and The Simpsons Game's (0x82C16628). Only their
+addresses differ: the mask table each build loads (zlib's standard one in both of Crackdown's) and the two
+messages.
+
+| Function | Library | Handler | Declines | Hands back | Crackdown | The Simpsons Game |
+|---|---|---|---|---|---|---|
+| `inflate_fast` | zlib 1.1.4 | `ZlibInflateFast` | a state zlib does not give it (under 258 bytes of room or 10 of input, pointers outside the window, memory that is not plain) | invalid codes; and from corrupted tables only: links past the mask table or in a loop, copies of under 3 bytes or past the room, distances before address 0 | bound (both copies): 18,047 calls, 0 different | not bound yet |
+
+What is new in it:
+
+- **It hands back mid-way.** Lengths, distances and error exits come from the tables as the loop goes, so no check
+  at the start can cover them. `xdk::InflateFast` decodes each symbol whole before writing anything of it; one it
+  does not model, it leaves to the function's own code: it stores the state as the function does on leaving
+  (UNGRAB, UPDATE) as it was before that symbol and the binding calls the original, which loads it and goes on.
+  That is the uninterrupted function's result as long as the bit count does not wrap below 0, which only a
+  corrupted table makes it do. So the native one follows the PowerPC there instead (`srw` of 32 to 63 gives 0, the
+  count wraps). The unit test hands back at every symbol of 40 streams and compares with the model run alone.
+- **It writes the register save.** The function saves r22-r31 and its return address below r1 (`__savegprlr_22`);
+  `SaveGprLr22` writes the same 88 bytes, which the check in game compares with the rest.
+- **Its tests build zlib's tables.** `xdk_zlib_tests` builds tables as zlib 1.1.4's `huft_build` does (a port, in
+  `layer/xdk/tests/xdk_zlib_streams.h`), from random complete Huffman codes and the fixed ones. It codes streams of
+  random symbols with them and compares the native one with the model over the whole guest memory: 6,770 calls.
+  1,500 valid streams are taken whole, none handed back. 3,901 calls run with corrupted tables, handed back or
+  declined, never different.
+
+Measured (docs/perf/archive/2026-11-16-zlib-inflate-fast):
+
+- `xdk_zlib_bench`, 32 KB a call: 1.17 ns a byte written for mostly literals, 0.41 for mostly matches; 1.2 to 2.7
+  times the model; 0 B allocated.
+- In game (`--any360_xdk_bench=true`, Crackdown's route into its city): 18,047 calls, the function's own code
+  5,383 ns a call, the native one 3,963 ns (1.4x); faster in every size class of input (8 bytes: 168 -> 103 ns;
+  4 to 8 KB: 7,397 -> 5,601 ns). About 16,500 of the calls come before the city shows (start, menus, its load),
+  about 1,500 in its first seconds, where the frame rate dips; none after.
+- In game, A/B of 5 launches a variant on the same route (`frame_lows.py`; cores 0-7, NVIDIA). The steady periods
+  move within noise: mean 317.8 -> 321.4 FPS (z 1.44), 10% low 275.6 -> 282.9 (z 1.37), 1% low 232.3 -> 232.8
+  (z 0.20), private memory 2,912 -> 2,910 MB. In the dip after the city shows, the 1% low goes 176.0 -> 207.1 FPS
+  (z 0.94), and the slowest frame 14.6 -> 9.4 ms (z 1.98). Frames over 16.7 ms: 0.2 -> 0 a launch. The calls are
+  in the dip, so the dip is where it shows; the remaining title-side cost of those frames is libpng's row work
+  (the next candidate: its row filter, 0x82A7F5D0 in Crackdown, 0x82BFA728 in The Simpsons Game).
+
 ### Found on the way
 
 - Crackdown crashed after 40 to 55 seconds with a gamepad connected and the input group on `any360::sys`: its

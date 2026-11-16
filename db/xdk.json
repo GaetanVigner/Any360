@@ -1130,5 +1130,15 @@
    "tdu": "0x826B50B8"
   },
   "note": "XAudio's mix of a source into a destination with a volume ramp: four vectors of four samples at a time, vmaddfp with the gains kept in four running sums of four steps; named after what it does. Any360: xdk::XAudioMixRamp (fused, as the console and Crackdown's recompiled code), bound in Crackdown; not in Test Drive Unlimited, whose recompiled vmaddfp rounds twice and which barely calls it"
+ },
+ {
+  "name": "zlib inflate_fast",
+  "library": "zlib",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82A88378",
+   "simpsons": "0x82C16628"
+  },
+  "note": "zlib 1.1.4's inflate_fast (inffast.c), the decoding loop under inflate_codes: the same instructions in Crackdown's two copies (0x82A88378, under libpng 1.0.5 in the PNG loader; 0x8281BE00, the copy D3DX links) and The Simpsons Game's. Any360: xdk::InflateFast (invalid codes handed back to the function's own code), bound in Crackdown (both copies)"
  }
 ]

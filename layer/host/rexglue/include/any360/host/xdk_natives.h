@@ -32,6 +32,7 @@
 #include "any360/xdk/d3d.h"
 #include "any360/xdk/d3d_state.h"
 #include "any360/xdk/xaudio.h"
+#include "any360/xdk/zlib.h"
 #include "d3d_selftest.h"
 #include "any360/xdk/xapi.h"
 #include "rexglue.h"
@@ -47,7 +48,7 @@ enum class Function : uint32_t {
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
-  kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kCount
+  kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -67,6 +68,8 @@ void RunConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, ui
 void RunSetConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
 // And for XAudio's fill (XAudioFill below).
 void RunFillSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t floats);
+// And for zlib's inflate_fast (ZlibInflateFast below).
+void RunInflateFastSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
 // And for the D3D runtime's state setters (D3dState below): `native` the replacement on the registers (false: it
 // declines), `writes` what it may write (false: it declines).
 using D3dStateNative = bool (*)(const any360::xdk::Memory&, PPCContext&);
@@ -509,6 +512,39 @@ inline void XAudioFill(PPCContext& ctx, uint8_t* base, GuestFunction original, u
     return;
   }
   RunFillSlow(ctx, base, original, floats);
+}
+
+// What the register save of a function that keeps r22-r31 leaves below r1 (the CRT's __savegprlr_22): the ten
+// registers as doublewords from r1 - 88, the return address (mflr r12) as a word at r1 - 8. A replacement that does
+// the whole function writes it as the function would; r12 is left the return address, as its restore leaves it.
+inline void SaveGprLr22(PPCContext& ctx) {
+  const uint32_t r1 = ctx.r1.u32;
+  const uint64_t saved[10] = {ctx.r22.u64, ctx.r23.u64, ctx.r24.u64, ctx.r25.u64, ctx.r26.u64,
+                              ctx.r27.u64, ctx.r28.u64, ctx.r29.u64, ctx.r30.u64, ctx.r31.u64};
+  for (uint32_t i = 0; i < 10; ++i) {
+    any360::xdk::detail::Store64(g_memory.Host(r1 - 88 + 8 * i), any360::xdk::detail::ByteSwap64(saved[i]));
+  }
+  any360::xdk::detail::GuestStore32(g_memory, r1 - 8, uint32_t(ctx.lr));
+  ctx.r12.u64 = uint32_t(ctx.lr);
+}
+
+// zlib 1.1.4's inflate_fast (any360/xdk/zlib.h): r3 bl, r4 bd, r5 tl, r6 td, r7 the blocks state, r8 the stream;
+// returns r3 (0, 1). A call handed back mid-way (an invalid code) goes on in the function's own code from the state
+// the native one left; one declined is the function's own code from the start.
+inline void ZlibInflateFast(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    uint32_t result = 0;
+    const any360::xdk::InflateFastCall call{ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32};
+    if (any360::xdk::IsPlainMemory(ctx.r1.u32 - 88, 88) &&
+        any360::xdk::InflateFast(g_memory, call, result) == any360::xdk::InflateOutcome::kDone) [[likely]] {
+      SaveGprLr22(ctx);
+      ctx.r3.u64 = result;
+      return;
+    }
+    original(ctx, base);  // declined, or handed back: the function goes on from the state left
+    return;
+  }
+  RunInflateFastSlow(ctx, base, original);
 }
 
 // The D3D runtime's GPU wait step (any360/xdk/d3d.h): r3 the wait's state; returns nonzero while the wait goes on.
