@@ -52,6 +52,9 @@ struct GraphicsOptions {
   // Pipelines compiled on threads of their own: a draw whose pipeline is not ready is left out a frame or so
   // rather than stalling the frame.
   bool async_pipelines = true;
+  // No effect since frames always go to the title's own window (12445ad): kept so the titles that still set it from
+  // their any360_gpu_embed setting (TDU, Black Ops) build; remove once they drop that setting.
+  bool embed = true;
   // Fences, memory writes and interrupts of the command stream: false, as the runtime's own GPU, when the stream
   // reaches them (the CPU may see a fence before the draws before it are on screen, never waits on the GPU); true,
   // once those draws have run (what the CPU reads after them is there, at the cost of a GPU round trip each).

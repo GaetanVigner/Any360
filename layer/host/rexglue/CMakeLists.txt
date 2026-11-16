@@ -28,6 +28,10 @@ if(TARGET any360_sys_xma)
     target_link_libraries(any360_host_rexglue PUBLIC any360_sys_xma)
     target_compile_definitions(any360_host_rexglue PUBLIC ANY360_REXGLUE_AUDIO)
     target_compile_definitions(any360_host_rexglue_settings PRIVATE ANY360_REXGLUE_AUDIO)
+    # The settings start the audio group (StartAudio, in the binding's library): a cycle between the two static
+    # libraries, said so that CMake repeats them on the link line (GNU ld resolves archives in order; lld does not
+    # care).
+    target_link_libraries(any360_host_rexglue_settings PRIVATE any360_host_rexglue)
 endif()
 
 # The binding inside a running reference runtime (tool mode), with a ring, interrupts and vertical blanks.
