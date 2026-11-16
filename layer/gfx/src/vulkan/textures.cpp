@@ -376,10 +376,13 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
       std::memcpy(out, reinterpret_cast<const uint8_t*>(&v) + (address & 3), bpb);
     }
   };
-  if (t.dimension != 2 && t.tiled && bpb >= 4 && t.endian <= 3) {
-    // Tiled 2D levels of 4, 8 or 16-byte blocks: 16 bytes of a tiled row are contiguous from a block x aligned to their
-    // count (as for resolves written back): one tiled offset and one byte shuffle for them.
-    const uint32_t group = 16 / bpb;
+  const bool grouped = t.dimension != 2 && t.tiled && t.endian <= 3;
+  if (grouped) {
+    // Tiled 2D levels: the blocks of a tiled row are contiguous in groups from a block x aligned to their count (as for
+    // resolves written back): 16 bytes of 4, 8 or 16-byte blocks, 8 blocks of 2 or 1 byte (16 or 8 bytes; the 8th
+    // bit of x and the row's go elsewhere). One tiled offset and one byte shuffle a group (the words swapped as the
+    // GPU reads memory: what read() does word by word).
+    const uint32_t group = bpb >= 4 ? 16 / bpb : 8, group_bytes = group * bpb;
     const __m128i mask = _mm_load_si128(reinterpret_cast<const __m128i*>(kWordShuffles[t.endian]));
     for (uint32_t s = 0; s < slices; ++s) {
       for (uint32_t y = 0; y < bh; ++y) {
@@ -389,8 +392,12 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
           const uint32_t address = p.address + s * p.slice_stride +
                                    uint32_t(TiledOffset2D(int32_t(tx), int32_t(y + p.y), p.pitch_blocks, bpb_log2));
           if (tx % group == 0 && x + group <= bw && uint64_t(address) + 16 <= mirror_bytes_) {
-            const __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(physical_ + address));
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(row + size_t(x) * bpb), ShuffleBytes(v, mask));
+            const __m128i v = ShuffleBytes(_mm_loadu_si128(reinterpret_cast<const __m128i*>(physical_ + address)), mask);
+            if (group_bytes == 16) {
+              _mm_storeu_si128(reinterpret_cast<__m128i*>(row + size_t(x) * bpb), v);
+            } else {
+              _mm_storel_epi64(reinterpret_cast<__m128i*>(row + size_t(x) * bpb), v);
+            }
             x += group;
             continue;
           }
@@ -400,7 +407,29 @@ bool TextureCache::LoadLevel(const TextureFetch& t, const TextureFormatInfo& inf
       }
     }
   }
-  for (uint32_t s = 0; s < slices && !(t.dimension != 2 && t.tiled && bpb >= 4 && t.endian <= 3); ++s) {
+  // Linear levels: a row's blocks are contiguous (at the row pitch, from the level's x): 16 bytes at a time, one
+  // byte shuffle each (the words swapped as read() swaps them, from a word-aligned row), the row's last bytes block by
+  // block.
+  const bool rows = !t.tiled && t.endian <= 3;
+  if (rows) {
+    const __m128i mask = _mm_load_si128(reinterpret_cast<const __m128i*>(kWordShuffles[t.endian]));
+    const uint32_t row_bytes = bw * bpb;
+    for (uint32_t s = 0; s < slices; ++s) {
+      for (uint32_t y = 0; y < bh; ++y) {
+        uint8_t* row = &blocks[s * slice_bytes + size_t(y) * row_bytes];
+        const uint32_t start = p.address + s * p.slice_stride + (y + p.y) * p.row_pitch + p.x * bpb;
+        uint32_t i = 0;
+        if ((start & 3) == 0) {
+          for (; i + 16 <= row_bytes && uint64_t(start) + i + 16 <= mirror_bytes_; i += 16) {
+            const __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(physical_ + start + i));
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(row + i), ShuffleBytes(v, mask));
+          }
+        }
+        for (; i < row_bytes; i += bpb) read(start + i, row + i);
+      }
+    }
+  }
+  for (uint32_t s = 0; s < slices && !grouped && !rows; ++s) {
     for (uint32_t y = 0; y < bh; ++y) {
       for (uint32_t x = 0; x < bw; ++x) {
         uint32_t offset;
@@ -892,6 +921,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   }
   const Functions& f = device_.fn();
   if (!slot) {
+    const auto create_start = std::chrono::steady_clock::now();
     slot = std::make_unique<Texture>();
     VkImageCreateInfo info_ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     info_ci.flags = (cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0) | (mutable_format ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0);
@@ -915,6 +945,8 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       return error = "texture memory", VK_NULL_HANDLE;
     }
     f.vkBindImageMemory(device_.device(), slot->image.image, slot->image.memory, 0);
+    ++images_created_;
+    ns_create_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - create_start).count());
     slot->image.format = info->format;
     slot->image.width = t.width * scale;
     slot->image.height = t.height * scale;
@@ -968,7 +1000,6 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   } else if (slot->content_hash != hash) {
     slot->gpu_generation = 0;
     // Every level's blocks, one after the other (levels below the first are never sampled: left as they are).
-    if (Diagnosing()) ++upload_log_[{t.base & 0x1FFFFFFF, t.format, t.width, t.height}];
     const auto load_start = std::chrono::steady_clock::now();
     std::vector<uint8_t>& blocks = upload_blocks_;
     std::vector<VkBufferImageCopy>& regions = upload_regions_;
@@ -986,7 +1017,14 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       blocks.resize((blocks.size() + 15) & ~size_t(15));  // offsets aligned for any texel size
     }
     CountSwapped(g_swapped.textures, blocks.size());
-    ns_load_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - load_start).count());
+    const uint64_t load_ns =
+        uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - load_start).count());
+    ns_load_ += load_ns;
+    if (Diagnosing()) {
+      UploadStats& u = upload_log_[{t.base & 0x1FFFFFFF, t.format, t.width, t.height,
+                                    (t.tiled ? 1u : 0u) | (t.endian & 3) << 1 | (t.dimension & 3) << 3}];
+      ++u.count, u.ns += load_ns, u.ns_max = std::max(u.ns_max, load_ns);
+    }
     Buffer staging;
     if (!AcquireStaging(blocks.size(), staging)) {
       return error = "texture staging", VK_NULL_HANDLE;
@@ -1147,8 +1185,13 @@ bool TextureCache::AcquireStaging(VkDeviceSize size, Buffer& out) {
     }
   }
   // None: a new one, rounded up to a power of two (64 KB at least) so it serves other sizes later.
-  return CreateBuffer(device_, std::max<VkDeviceSize>(VkDeviceSize(1) << (64 - std::countl_zero(uint64_t(size - 1) | 0xFFFF)), size),
-                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, out);
+  const auto start = std::chrono::steady_clock::now();
+  const VkDeviceSize bytes =
+      std::max<VkDeviceSize>(VkDeviceSize(1) << (64 - std::countl_zero(uint64_t(size - 1) | 0xFFFF)), size);
+  const bool made = CreateBuffer(device_, bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, out);
+  ++staging_created_, staging_created_bytes_ += bytes;
+  ns_staging_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+  return made;
 }
 
 void TextureCache::RecycleStaging(std::vector<Buffer>& buffers) {

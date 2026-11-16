@@ -97,12 +97,28 @@ class TextureCache {
   bool DecodeRGBA8(const uint32_t fetch[6], uint32_t level, uint32_t& width, uint32_t& height, std::vector<uint32_t>& pixels,
                    std::string& error) const;
 
+  // The base level's blocks as uploads load them (host order, the format's conversion done): for checks and timings.
+  bool LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blocks, std::string& error) const;
+
   uint32_t uploads() const { return uploads_; }
   // Time spent hashing texture memory and loading levels for uploads (untiling, conversion), in nanoseconds.
   uint64_t ns_hash() const { return ns_hash_; }
   uint64_t ns_load() const { return ns_load_; }
-  // The textures uploaded, by (base, format, width, height): count, for finding what is uploaded again and again.
-  std::map<std::array<uint32_t, 4>, uint32_t>& upload_log() { return upload_log_; }
+  // Texture images created (vkCreateImage, its memory allocated and bound) and staging buffers made (none free fit):
+  // counts, time (ns) and bytes, for what a frame that stalls spent (cumulative; read between frames).
+  uint32_t images_created() const { return images_created_; }
+  uint64_t ns_create() const { return ns_create_; }
+  uint32_t staging_created() const { return staging_created_; }
+  uint64_t staging_created_bytes() const { return staging_created_bytes_; }
+  uint64_t ns_staging() const { return ns_staging_; }
+  // The textures uploaded while diagnosing, by (base, format, width, height, layout: bit 0 tiled, bits 1-2 the
+  // endianness, bits 3-4 the dimension): how many times and how long loading them took (all, the slowest), for
+  // finding what is uploaded again and again and what costs.
+  struct UploadStats {
+    uint32_t count = 0;
+    uint64_t ns = 0, ns_max = 0;
+  };
+  std::map<std::array<uint32_t, 5>, UploadStats>& upload_log() { return upload_log_; }
   // When guest memory may have changed, so a texture's content is hashed again before its next use (at most once
   // between two such events): a new frame (the CPU may have written anywhere), or [begin, end) written by the GPU
   // (a resolve) or reported by the title (coherency).
@@ -170,7 +186,6 @@ class TextureCache {
   // A level's blocks in host order, slice after slice (level 0: the base).
   bool LoadLevel(const TextureFetch& t, const TextureFormatInfo& info, uint32_t level, std::vector<uint8_t>& blocks,
                  std::string& error) const;
-  bool LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blocks, std::string& error) const;
 
   struct Texture {
     Image image;  // the view member is unused: views are per swizzle
@@ -192,7 +207,9 @@ class TextureCache {
   VkImageView Empty(ViewType type, std::string& error);
   uint32_t uploads_ = 0;
   uint64_t ns_hash_ = 0, ns_load_ = 0;
-  std::map<std::array<uint32_t, 4>, uint32_t> upload_log_;
+  uint32_t images_created_ = 0, staging_created_ = 0;
+  uint64_t ns_create_ = 0, staging_created_bytes_ = 0, ns_staging_ = 0;
+  std::map<std::array<uint32_t, 5>, UploadStats> upload_log_;
   uint64_t epoch_ = 1;
   std::function<void(uint32_t, uint32_t)> watch_;
   // Views already checked, by fetch constant, view type and signedness: valid until the next frame or the next change

@@ -445,19 +445,56 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     return text;
   }
 
+  // What a frame cost, from cumulative counters read at each frame: the command processor's busy time, texture
+  // uploads and their loading, images created, staging buffers made, pipelines created. Kept for each period's slowest
+  // frame, to tell a stall in the renderer from one in the title (the command processor then idle).
+  struct FrameMarks {
+    uint64_t cp_busy = 0, ns_load = 0, ns_create = 0, ns_staging = 0, staging_bytes = 0;
+    uint32_t uploads = 0, images = 0, staging = 0, pipelines = 0;
+  };
+  FrameMarks Marks() {
+    FrameMarks m;
+    if (cp_) m.cp_busy = cp_->ns_busy();
+    if (gfx::vk::TextureCache* t = texture_cache()) {
+      m.ns_load = t->ns_load(), m.ns_create = t->ns_create(), m.ns_staging = t->ns_staging();
+      m.staging_bytes = t->staging_created_bytes(), m.uploads = t->uploads(), m.images = t->images_created();
+      m.staging = t->staging_created();
+    }
+    m.pipelines = stats().pipelines;
+    return m;
+  }
+  std::string SlowestFrame() const {
+    const FrameMarks& w = worst_cost_;
+    char text[320];
+    std::snprintf(text, sizeof(text),
+                  "slowest frame %.1f ms (command processor busy %.1f ms; %u texture uploads, %.2f ms loading; %u images "
+                  "created, %.2f ms; %u staging buffers, %.1f MB, %.2f ms; %u pipelines created)",
+                  worst_ms_, double(w.cp_busy) / 1e6, w.uploads, double(w.ns_load) / 1e6, w.images, double(w.ns_create) / 1e6,
+                  w.staging, double(w.staging_bytes) / 1048576.0, double(w.ns_staging) / 1e6, w.pipelines);
+    return text;
+  }
+
   // Frames per second and the renderer's cost per frame since the last report.
   void Report() {
     ++frames_;
     const auto now = std::chrono::steady_clock::now();
     // The period's slowest frames (the averages hide drops).
+    const FrameMarks marks = log_ ? Marks() : FrameMarks{};
     if (frames_ > 1) {
       const double interval = std::chrono::duration<double, std::milli>(now - last_frame_).count();
+      if (log_ && interval > worst_ms_) {
+        const FrameMarks& l = last_marks_;
+        worst_cost_ = {marks.cp_busy - l.cp_busy,   marks.ns_load - l.ns_load,   marks.ns_create - l.ns_create,
+                       marks.ns_staging - l.ns_staging, marks.staging_bytes - l.staging_bytes, marks.uploads - l.uploads,
+                       marks.images - l.images,     marks.staging - l.staging,   marks.pipelines - l.pipelines};
+      }
       worst_ms_ = std::max(worst_ms_, interval);
       if (log_) intervals_.push_back(float(interval));  // taken by each report
       slow_frames_ += interval > 1000.0 / 60.0;
       very_slow_frames_ += interval > 1000.0 / 20.0;
     }
     last_frame_ = now;
+    last_marks_ = marks;
     if (show_fps_) Overlay(now);
     if (!log_) return;
     if (frames_ == 1) {
@@ -481,15 +518,15 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     if (!gfx::Diagnosing()) {
       const double fps = n / seconds, frame_ms = 1e3 / fps;
       const uint64_t watch_writes = g_watch_writes.load(), watch_bytes = g_watch_bytes.load();
-      char off[768];
+      char off[1280];
       std::snprintf(off, sizeof(off),
                     "Any360: %.1f FPS with the diagnostics off (%.1f with them, the period before: %+.0f%%); %s; byte "
                     "swapping %.2f MB a frame, ~%.2f ms over plain copies: without it ~%.0f FPS (the command processor's "
-                    "thread bound); slowest frame %.1f ms, %u over 16.7 ms, %u over 50 ms; %.1f watched writes a frame (%.2f MB "
+                    "thread bound); slowest frame %.1f ms, %u over 16.7 ms, %u over 50 ms (%s); %.1f watched writes a frame (%.2f MB "
                     "invalidated); %.0f MB private, %zu textures, %zu targets, %zu resolves kept, %zu pipelines",
                     fps, last_on_fps_, last_on_fps_ > 0 ? 100.0 * (fps / last_on_fps_ - 1.0) : 0.0,
                     TakeFrameTimes().c_str(), swap_bytes / 1e6, swap_ms,
-                    1e3 / std::max(0.1, frame_ms - swap_ms), worst_ms_, slow_frames_, very_slow_frames_,
+                    1e3 / std::max(0.1, frame_ms - swap_ms), worst_ms_, slow_frames_, very_slow_frames_, SlowestFrame().c_str(),
                     double(watch_writes - last_watch_writes_) / n, double(watch_bytes - last_watch_bytes_) / n / 1e6,
                     double(PrivateBytes()) / 1e6, texture_cache() ? texture_cache()->texture_count() : size_t(0),
                     surface_count(), resolved_count(), pipeline_count());
@@ -514,7 +551,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       frames_ = 1;
       since_ = now;
       last_ = s;
-      worst_ms_ = 0, slow_frames_ = very_slow_frames_ = 0;
+      worst_ms_ = 0, slow_frames_ = very_slow_frames_ = 0, worst_cost_ = {};
       if (sampler_) sampler_->Write();  // the samples so far (the title may end without StopGraphics)
       gfx::g_diagnostics = true;
       return;
@@ -534,7 +571,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
                   (s.ns_pipelines - last_.ns_pipelines) / ms, (s.ns_memory - last_.ns_memory) / ms,
                   (s.ns_submit - last_.ns_submit) / ms, (s.ns_resolves - last_.ns_resolves) / ms,
                   (s.ns_swaps - last_.ns_swaps) / ms, guest_memory_in_place() ? "in place" : "copied");
-    log_(std::string(line) + "; " + TakeFrameTimes());
+    log_(std::string(line) + "; " + TakeFrameTimes() + "; " + SlowestFrame());
     {
       const double batches = double(s.gpu_batches - last_.gpu_batches);
       char gpu[256];
@@ -642,16 +679,19 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
            std::to_string(audit_hits_in_use_.load()));
     }
     if (gfx::vk::TextureCache* textures = texture_cache()) {
-      // The textures uploaded most since the last report: base, format, size, and what last resolved there.
-      std::vector<std::pair<uint32_t, std::array<uint32_t, 4>>> top;
-      for (const auto& [key, count] : textures->upload_log()) top.emplace_back(count, key);
-      std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+      // The textures uploaded most since the last report (by loading time): base, format, size, tiled or linear,
+      // endianness and dimension, how many times, the loading time (all, the slowest), what last resolved there.
+      std::vector<std::pair<gfx::vk::TextureCache::UploadStats, std::array<uint32_t, 5>>> top;
+      for (const auto& [key, u] : textures->upload_log()) top.emplace_back(u, key);
+      std::sort(top.begin(), top.end(), [](const auto& a, const auto& b) { return a.first.ns > b.first.ns; });
       std::string uploads = "Any360: uploaded most:";
       for (size_t i = 0; i < top.size() && i < 10; ++i) {
-        const auto& [count, key] = top[i];
+        const auto& [u, key] = top[i];
         const uint32_t resolved = ResolveFormatAt(key[0]);
-        char item[160];
-        std::snprintf(item, sizeof(item), " %08X fmt %u %ux%u x%u%s;", key[0], key[1], key[2], key[3], count,
+        char item[200];
+        std::snprintf(item, sizeof(item), " %08X fmt %u %ux%u %s e%u d%u x%u, %.2f ms (slowest %.2f)%s;", key[0], key[1],
+                      key[2], key[3], (key[4] & 1) ? "tiled" : "linear", (key[4] >> 1) & 3, (key[4] >> 3) & 3, u.count,
+                      double(u.ns) / 1e6, double(u.ns_max) / 1e6,
                       resolved == UINT32_MAX ? "" : (resolved & 0x100 ? " (depth resolve dest)" : " (resolve dest)"));
         uploads += item;
       }
@@ -687,7 +727,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     frames_ = 1;
     since_ = now;
     last_ = s;
-    worst_ms_ = 0, slow_frames_ = very_slow_frames_ = 0;
+    worst_ms_ = 0, slow_frames_ = very_slow_frames_ = 0, worst_cost_ = {};
   }
 
   // The counter's text, every half second: frames per second, average / slowest frame (ms), the GPU's time per frame
@@ -772,6 +812,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     return 0;
   }
   double worst_ms_ = 0;
+  FrameMarks last_marks_, worst_cost_;  // the last frame's counters; the cost of the period's slowest frame
   std::vector<float> intervals_;  // the period's frame times (ms)
   uint32_t slow_frames_ = 0, very_slow_frames_ = 0;
   gfx::vk::RendererStats last_;

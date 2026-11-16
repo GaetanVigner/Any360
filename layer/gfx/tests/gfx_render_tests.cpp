@@ -22,6 +22,7 @@
 #include "any360/gfx/capture.h"
 #include "any360/gfx/command_processor.h"
 #include "any360/gfx/vulkan/renderer.h"
+#include "any360/sys/alloc_meter.h"
 #include "ucode_encode.h"
 
 namespace {
@@ -2724,6 +2725,115 @@ int main(int argc, char** argv) {
     }
     g_memory = saved;
     ::operator delete(full, std::align_val_t(65536));
+  }
+
+  // Texture loads from tiled memory (textures.cpp LoadLevel's groups: 8 blocks of 1 or 2 bytes, 16 bytes of larger
+  // ones): each texel as the tiled address formula places it, its words swapped as the GPU reads memory, in each byte
+  // order, at sizes whose rows end mid-group; and a 1280x720 k_8 load timed against reading it texel by texel (the
+  // way 1 and 2-byte texels were loaded before).
+  {
+    std::vector<uint8_t> saved_memory(g_memory, g_memory + kMemory);
+    std::mt19937 rng(7);
+    constexpr uint32_t kBase = 0x100000;
+    const auto byte_at = [](uint32_t address, uint32_t endian) {
+      uint32_t v;
+      std::memcpy(&v, g_memory + (address & ~3u), 4);
+      if (endian == 1) v = ((v & 0x00FF00FFu) << 8) | ((v >> 8) & 0x00FF00FFu);
+      if (endian == 2) v = std::byteswap(v);
+      if (endian == 3) v = (v << 16) | (v >> 16);
+      return reinterpret_cast<const uint8_t*>(&v)[address & 3];
+    };
+    const auto fetch_of = [](uint32_t format, uint32_t endian, uint32_t width, uint32_t height, uint32_t fetch[6],
+                             bool tiled = true) {
+      const uint32_t pitch = (width + 31) & ~31u;
+      const uint32_t words[6] = {2u | (pitch / 32) << 22 | uint32_t(tiled) << 31, format | endian << 6 | kBase,
+                                 (width - 1) | (height - 1) << 13, 0x688u << 1, 0, 1u << 9};
+      std::memcpy(fetch, words, sizeof(words));
+    };
+    struct Size {
+      uint32_t format, bytes, width, height;
+      bool tiled;
+    };
+    const Size sizes[] = {{2, 1, 640, 360, true},  {10, 2, 640, 360, true}, {6, 4, 320, 180, true}, {2, 1, 70, 37, true},
+                          {10, 2, 70, 37, true},   {6, 4, 70, 37, true},    {2, 1, 640, 360, false}, {10, 2, 640, 360, false},
+                          {6, 4, 320, 180, false}, {2, 1, 70, 37, false},   {10, 2, 70, 37, false},  {6, 4, 70, 37, false}};
+    uint32_t loads = 0, wrong_loads = 0, wrong_texels = 0;
+    for (const Size& z : sizes) {
+      for (uint32_t endian = 0; endian < 4; ++endian) {
+        const uint32_t pitch = (z.width + 31) & ~31u, rows = (z.height + 31) & ~31u;
+        for (uint32_t i = 0; i < pitch * rows * z.bytes; ++i) g_memory[kBase + i] = uint8_t(rng());
+        uint32_t fetch[6];
+        fetch_of(z.format, endian, z.width, z.height, fetch, z.tiled);
+        std::vector<uint8_t> blocks;
+        std::string error;
+        ++loads;
+        if (!renderer.texture_cache()->LoadBlocks(fetch, blocks, error) ||
+            blocks.size() != size_t(z.width) * z.height * z.bytes) {
+          ++wrong_loads;
+          continue;
+        }
+        const uint32_t log2 = uint32_t(std::countr_zero(z.bytes));
+        for (uint32_t y = 0; y < z.height; ++y) {
+          for (uint32_t x = 0; x < z.width; ++x) {
+            const uint32_t row_pitch = (pitch * z.bytes + 255) & ~255u;  // linear rows: 256-byte aligned
+            const uint32_t at = kBase + (z.tiled ? uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), pitch, log2))
+                                                 : y * row_pitch + x * z.bytes);
+            for (uint32_t b = 0; b < z.bytes; ++b) {
+              if (blocks[(size_t(y) * z.width + x) * z.bytes + b] != byte_at(at + b, endian)) {
+                ++wrong_texels;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    CHECK(wrong_loads == 0 && wrong_texels == 0);
+    // Timed: the best of 8 loads each way.
+    for (uint32_t i = 0; i < 1280 * 736; ++i) g_memory[kBase + i] = uint8_t(rng());
+    uint32_t fetch[6];
+    fetch_of(2, 2, 1280, 720, fetch);
+    std::vector<uint8_t> blocks, texels(1280 * 720);
+    std::string error;
+    double grouped = 1e9, by_texel = 1e9;
+    any360::sys::AllocCounts load_alloc;
+    for (int round = 0; round < 8; ++round) {
+      const any360::sys::AllocCounts alloc_start = any360::sys::ThreadAllocations();
+      auto start = std::chrono::steady_clock::now();
+      CHECK(renderer.texture_cache()->LoadBlocks(fetch, blocks, error));
+      if (round) load_alloc = any360::sys::ThreadAllocations() - alloc_start;  // the buffer already there
+      grouped = std::min(grouped, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+      start = std::chrono::steady_clock::now();
+      for (uint32_t y = 0; y < 720; ++y) {
+        for (uint32_t x = 0; x < 1280; ++x) {
+          texels[y * 1280 + x] = byte_at(kBase + uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), 1280, 0)), 2);
+        }
+      }
+      by_texel = std::min(by_texel, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+    }
+    CHECK(blocks == texels);
+    // The same texture linear (as titles keep the textures their CPU writes each frame: video frames, overlays).
+    fetch_of(2, 0, 1280, 720, fetch, false);
+    double linear = 1e9, linear_texel = 1e9;
+    for (int round = 0; round < 8; ++round) {
+      auto start = std::chrono::steady_clock::now();
+      CHECK(renderer.texture_cache()->LoadBlocks(fetch, blocks, error));
+      linear = std::min(linear, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+      start = std::chrono::steady_clock::now();
+      for (uint32_t y = 0; y < 720; ++y) {
+        for (uint32_t x = 0; x < 1280; ++x) texels[y * 1280 + x] = byte_at(kBase + y * 1280 + x, 0);
+      }
+      linear_texel = std::min(linear_texel, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+    }
+    CHECK(blocks == texels);
+    std::printf("gfx_render_tests: texture loads: %u of %u right (tiled and linear; 1, 2 and 4-byte texels, 4 byte orders; %u texels "
+                "wrong); 1280x720 k_8 in %.3f ms (texel by texel, like the old code: %.3f ms, %.1fx), allocated %llu B in "
+                "%llu a load into a reused buffer; linear: %.3f ms (texel by texel %.3f ms, %.1fx)\n",
+                loads - wrong_loads, loads, wrong_texels, grouped, by_texel, by_texel / grouped,
+                static_cast<unsigned long long>(load_alloc.bytes), static_cast<unsigned long long>(load_alloc.count), linear,
+                linear_texel, linear_texel / linear);
+    CHECK(load_alloc.count == 0);
+    std::memcpy(g_memory, saved_memory.data(), kMemory);
   }
 
   std::printf("gfx_render_tests: guest memory %s\n", renderer.guest_memory_in_place() ? "read in place" : "copied per draw");
