@@ -831,6 +831,27 @@ void MemoryTests() {
   CHECK(Memory().AllocatePhysical(gm, 0, 0x50000, kPageReadWrite, 0, 0xFFFFFFFF, 0) == 0);  // more than the 4 KB view holds
   Memory().FreePhysical(0, p);
   CHECK(Memory().QueryProtect(p) == 0 && Memory().PhysicalAddress(0x3F000) == 0xFFFFFFFF);
+  // A fragmented heap: every 4 KB page taken one by one (top down, around the 64 KB view's physical pages), then every
+  // other one released: no two free pages in a row; one more released makes a run of three, and the search, skipping
+  // whole windows past each taken page, finds the highest pair as a page-by-page search would.
+  {
+    std::vector<uint32_t> singles;
+    for (uint32_t a; (a = Memory().AllocatePhysical(gm, 0, 0x1000, kPageReadWrite, 0, 0xFFFFFFFF, 0)) != 0;) singles.push_back(a);
+    CHECK(singles.size() >= 8);
+    for (size_t i = 0; i < singles.size(); i += 2) Memory().FreePhysical(0, singles[i]);
+    CHECK(Memory().AllocatePhysical(gm, 0, 0x2000, kPageReadWrite, 0, 0xFFFFFFFF, 0) == 0);
+    const bool contiguous = singles.size() >= 3 && singles[0] - singles[2] == 0x2000;
+    CHECK(contiguous);
+    Memory().FreePhysical(0, singles[1]);
+    const uint32_t pair = Memory().AllocatePhysical(gm, 0, 0x2000, kPageReadWrite, 0, 0xFFFFFFFF, 0);
+    CHECK(pair == singles[1]);
+    // Aligned to 8 KB: the run [singles[2], singles[0]] holds one 8 KB-aligned pair, or none.
+    Memory().FreePhysical(0, pair);
+    const uint32_t aligned = Memory().AllocatePhysical(gm, 0, 0x2000, kPageReadWrite, 0, 0xFFFFFFFF, 0x2000);
+    CHECK(aligned == 0 || (aligned % 0x2000 == 0 && aligned >= singles[2] && aligned + 0x2000 <= singles[0] + 0x1000));
+    if (aligned) Memory().FreePhysical(0, aligned);
+    for (size_t i = 3; i < singles.size(); i += 2) Memory().FreePhysical(0, singles[i]);
+  }
   // Statistics and XamAlloc.
   gm.Store32(io + 0x40, 104);
   CHECK(Memory().QueryStatistics(gm, io + 0x40) == 0 && gm.Load32(io + 0x44) == 0x20000 && gm.Load32(io + 0x4C) < 0x20000);

@@ -1,5 +1,7 @@
 #include "any360/sys/files.h"
 
+#include "any360/sys/activity.h"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -455,6 +457,10 @@ struct FileSystem::HostFile {
   // Up to `length` bytes from `offset`; `usable` is false when the host file cannot be opened. Without `keep`, the
   // host file is opened for the call alone.
   uint32_t Read(const std::filesystem::path& host, uint64_t offset, uint8_t* to, uint32_t length, bool& usable, bool keep) {
+    Activity& activity = SysActivity();
+    const ActivityTimer timer(activity.file_ns);
+    activity.file_reads.fetch_add(1, std::memory_order_relaxed);
+    activity.file_bytes.fetch_add(length, std::memory_order_relaxed);
     if (!keep) {
       const intptr_t once = HostFileOpen(host);
       usable = once != -1;

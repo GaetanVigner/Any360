@@ -39,6 +39,11 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
 // (OnShutdown): a title that exits through the runtime's shutdown needs it, one that ends the process does not.
 void StopSystemFromSettings();
 
+// The hitch tracer's settings (any360/host/hitch_tracer.h): the frame time past which a frame's threads are sampled
+// (any360_hitch_trace_ms, 0: off) and the folder its reports go to (any360_hitch_trace_folder).
+int HitchTraceMs();
+std::string HitchTraceFolder();
+
 // A host folder over a guest folder on any360::sys's file system too (read-only), for the redirections a title sets
 // up on the runtime's file system (a mod or language folder). Nothing while the binding is off.
 void MountFolderIfStarted(const std::string& guest_folder, const std::filesystem::path& host);

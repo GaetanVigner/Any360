@@ -4,6 +4,9 @@
 // and a second copy in the title would be a second SDL in the process; its messages are pumped by the runtime's UI
 // thread, which creates it).
 #include "any360/host/rexglue.h"
+#include "any360/sys/activity.h"
+#include "any360/host/hitch_tracer.h"
+#include "any360/host/settings.h"
 
 #include "any360/gfx/png.h"
 #include "any360/gfx/async_renderer.h"
@@ -451,6 +454,8 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   struct FrameMarks {
     uint64_t cp_busy = 0, ns_load = 0, ns_create = 0, ns_staging = 0, staging_bytes = 0;
     uint32_t uploads = 0, images = 0, staging = 0, pipelines = 0;
+    // any360::sys's side (any360/sys/activity.h): file reads, sleeping waits, XMA decoding.
+    uint64_t file_reads = 0, file_bytes = 0, file_ns = 0, waits = 0, xma_ns = 0, memory_allocs = 0, memory_ns = 0;
   };
   FrameMarks Marks() {
     FrameMarks m;
@@ -461,21 +466,31 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       m.staging = t->staging_created();
     }
     m.pipelines = stats().pipelines;
+    const sys::Activity& a = sys::SysActivity();
+    m.file_reads = a.file_reads.load(std::memory_order_relaxed), m.file_bytes = a.file_bytes.load(std::memory_order_relaxed);
+    m.file_ns = a.file_ns.load(std::memory_order_relaxed), m.waits = a.waits_slept.load(std::memory_order_relaxed);
+    m.xma_ns = a.xma_ns.load(std::memory_order_relaxed);
+    m.memory_allocs = a.memory_allocs.load(std::memory_order_relaxed), m.memory_ns = a.memory_ns.load(std::memory_order_relaxed);
     return m;
   }
   std::string SlowestFrame() const {
     const FrameMarks& w = worst_cost_;
-    char text[320];
+    char text[560];
     std::snprintf(text, sizeof(text),
                   "slowest frame %.1f ms (command processor busy %.1f ms; %u texture uploads, %.2f ms loading; %u images "
-                  "created, %.2f ms; %u staging buffers, %.1f MB, %.2f ms; %u pipelines created)",
+                  "created, %.2f ms; %u staging buffers, %.1f MB, %.2f ms; %u pipelines created; files: %llu reads, %.2f MB, "
+                  "%.2f ms; %llu waits slept; XMA %.2f ms; %llu physical allocations, %.2f ms)",
                   worst_ms_, double(w.cp_busy) / 1e6, w.uploads, double(w.ns_load) / 1e6, w.images, double(w.ns_create) / 1e6,
-                  w.staging, double(w.staging_bytes) / 1048576.0, double(w.ns_staging) / 1e6, w.pipelines);
+                  w.staging, double(w.staging_bytes) / 1048576.0, double(w.ns_staging) / 1e6, w.pipelines,
+                  static_cast<unsigned long long>(w.file_reads), double(w.file_bytes) / 1048576.0, double(w.file_ns) / 1e6,
+                  static_cast<unsigned long long>(w.waits), double(w.xma_ns) / 1e6,
+                  static_cast<unsigned long long>(w.memory_allocs), double(w.memory_ns) / 1e6);
     return text;
   }
 
   // Frames per second and the renderer's cost per frame since the last report.
   void Report() {
+    if (hitch_) hitch_->Frame();
     ++frames_;
     const auto now = std::chrono::steady_clock::now();
     // The period's slowest frames (the averages hide drops).
@@ -486,7 +501,10 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
         const FrameMarks& l = last_marks_;
         worst_cost_ = {marks.cp_busy - l.cp_busy,   marks.ns_load - l.ns_load,   marks.ns_create - l.ns_create,
                        marks.ns_staging - l.ns_staging, marks.staging_bytes - l.staging_bytes, marks.uploads - l.uploads,
-                       marks.images - l.images,     marks.staging - l.staging,   marks.pipelines - l.pipelines};
+                       marks.images - l.images,     marks.staging - l.staging,   marks.pipelines - l.pipelines,
+                       marks.file_reads - l.file_reads, marks.file_bytes - l.file_bytes, marks.file_ns - l.file_ns,
+                       marks.waits - l.waits,       marks.xma_ns - l.xma_ns,     marks.memory_allocs - l.memory_allocs,
+                       marks.memory_ns - l.memory_ns};
       }
       worst_ms_ = std::max(worst_ms_, interval);
       if (log_) intervals_.push_back(float(interval));  // taken by each report
@@ -780,6 +798,10 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   bool burst_stop_ = false;
   std::thread burst_writer_;
   bool show_fps_ = false;
+  std::unique_ptr<diagnostics::HitchTracer> hitch_;  // any360_hitch_trace_ms
+  void StartHitchTracer(int threshold_ms, const std::string& folder) {
+    hitch_ = std::make_unique<diagnostics::HitchTracer>(double(threshold_ms), folder, 5, log_);
+  }
  private:
   uint64_t overlay_frames_ = 0, overlay_busy_ = 0;
   double overlay_worst_ = 0;
@@ -1104,6 +1126,9 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->renderer->SetPipelineCache(options.pipeline_cache_path);
   binding->renderer->SetScreenshotPath(options.screenshot_path);
   binding->renderer->show_fps_ = options.show_fps;
+  if (const int hitch_ms = HitchTraceMs(); hitch_ms > 0) {
+    binding->renderer->StartHitchTracer(hitch_ms, HitchTraceFolder());
+  }
   binding->renderer->SetAsyncPipelines(options.async_pipelines);
   binding->renderer->SetMsaa(options.msaa_samples);
   if (!binding->renderer->Initialize() || !binding->renderer->Resize()) {

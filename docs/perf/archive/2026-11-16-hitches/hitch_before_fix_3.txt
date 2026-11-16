@@ -1,0 +1,86 @@
+Hitch: a frame of 36.5 ms; 5 samples of 102 threads, every 2 ms
+
+Thread 14892 "Main XThread (F8000030)": 81.1 Mcycles (63% of the threads'), 5 samples
+  1 of 5 samples:
+    00007FF63939D290 crackdown!__imp__guest_base_sub_82A88378+0x0 (crackdown_recomp.32.cpp:32698)
+    00007FF63BAA98C0 crackdown!__imp__guest_base_sub_82A878E8+0x0 (crackdown_recomp.151.cpp:29719)
+    00007FF63B036AE0 crackdown!__imp__guest_base_sub_82A85390+0x0 (crackdown_recomp.119.cpp:31506)
+    00007FF638D60FD0 crackdown!__imp__guest_base_sub_82A7EA10+0x0 (crackdown_recomp.13.cpp:32153)
+  1 of 5 samples:
+    00007FF63BAA98C0 crackdown!__imp__guest_base_sub_82A878E8+0x0 (crackdown_recomp.151.cpp:29719)
+    00007FF63B036AE0 crackdown!__imp__guest_base_sub_82A85390+0x0 (crackdown_recomp.119.cpp:31506)
+    00007FF638D60FD0 crackdown!__imp__guest_base_sub_82A7EA10+0x0 (crackdown_recomp.13.cpp:32153)
+    00007FF63ADA3270 crackdown!__imp__guest_base_sub_82A7A5A0+0x0 (crackdown_recomp.111.cpp:32053)
+  1 of 5 samples:
+    00007FF63A403280 crackdown!__imp__guest_base_sub_82A7F5D0+0x0 (crackdown_recomp.82.cpp:31326)
+    00007FF63ADA3270 crackdown!__imp__guest_base_sub_82A7A5A0+0x0 (crackdown_recomp.111.cpp:32053)
+    00007FF63B80E650 crackdown!__imp__guest_base_sub_82A7AA18+0x0 (crackdown_recomp.143.cpp:31408)
+    00007FF63B8E6850 crackdown!__imp__guest_base_sub_8270BA70+0x0 (crackdown_recomp.146.cpp:21208)
+  1 of 5 samples:
+    00007FF63B958420 crackdown!__imp__guest_base_sub_82A7B310+0x0 (crackdown_recomp.147.cpp:31617)
+    00007FF63893B5D0 crackdown!__imp__guest_base_sub_82A7C3F0+0x0 (crackdown_recomp.0.cpp:32464)
+    00007FF63ADA3270 crackdown!__imp__guest_base_sub_82A7A5A0+0x0 (crackdown_recomp.111.cpp:32053)
+    00007FF63B80E650 crackdown!__imp__guest_base_sub_82A7AA18+0x0 (crackdown_recomp.143.cpp:31408)
+
+Thread 32436: 11.8 Mcycles (9% of the threads'), 5 samples
+  5 of 5 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63C477020 crackdown!_Cnd_timedwait_for_unchecked+0x0 (sharedmutex.cpp:78)
+    00007FF6386251B0 crackdown!any360::gfx::AsyncRenderer::Run+0x0 (async_renderer.cpp:195)
+    00007FF6386259F0 crackdown!std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-gpu\layer\gfx\src\async_renderer.cpp:28:25'>,0>+0x0 (thread:56)
+
+Thread 17284 "XThread4384 (F800005C)": 8.1 Mcycles (6% of the threads'), 5 samples
+  5 of 5 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63C477020 crackdown!_Cnd_timedwait_for_unchecked+0x0 (sharedmutex.cpp:78)
+    00007FF638578210 crackdown!std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x0 (condition_variable:119)
+    00007FF6385763E0 crackdown!any360::sys::ObjectManager::WaitRegistration::Sleep+0x0 (objects.cpp:655)
+
+Thread 36724 "XThread8F74 (F8000044)": 5.1 Mcycles (4% of the threads'), 5 samples
+  4 of 5 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63C477020 crackdown!_Cnd_timedwait_for_unchecked+0x0 (sharedmutex.cpp:78)
+    00007FF638578210 crackdown!std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x0 (condition_variable:119)
+    00007FF6385763E0 crackdown!any360::sys::ObjectManager::WaitRegistration::Sleep+0x0 (objects.cpp:655)
+  1 of 5 samples:
+    00007FF638FC6A90 crackdown!__imp__guest_base_sub_82268750+0x0 (crackdown_recomp.21.cpp:3575)
+    00007FF63920ECC0 crackdown!__imp__guest_base_sub_82255D80+0x0 (crackdown_recomp.28.cpp:3427)
+    00007FF639742CA0 crackdown!__imp__guest_base_sub_822579E0+0x0 (crackdown_recomp.44.cpp:3352)
+    00007FF6395A1FC0 crackdown!__imp__guest_base_sub_82255ED0+0x0 (crackdown_recomp.39.cpp:3509)
+
+Thread 39148 "XThread98EC (F800004C)": 4.9 Mcycles (4% of the threads'), 5 samples
+  5 of 5 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63C477020 crackdown!_Cnd_timedwait_for_unchecked+0x0 (sharedmutex.cpp:78)
+    00007FF638578210 crackdown!std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x0 (condition_variable:119)
+    00007FF6385763E0 crackdown!any360::sys::ObjectManager::WaitRegistration::Sleep+0x0 (objects.cpp:655)
+
+Thread 6140 "XThread17FC (F8000048)": 3.6 Mcycles (3% of the threads'), 5 samples
+  5 of 5 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63C477020 crackdown!_Cnd_timedwait_for_unchecked+0x0 (sharedmutex.cpp:78)
+    00007FF638578210 crackdown!std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x0 (condition_variable:119)
+    00007FF6385763E0 crackdown!any360::sys::ObjectManager::WaitRegistration::Sleep+0x0 (objects.cpp:655)
+
+Thread 19340: 3.1 Mcycles (2% of the threads'), 5 samples
+  5 of 5 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF638614750 crackdown!std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-gpu\layer\gfx\src\command_processor.cpp:1136:25'>,0>+0x0 (thread:56)
+
+Thread 35152: 0.6 Mcycles (0% of the threads'), 5 samples
+  5 of 5 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF6385D1C60 crackdown!any360::gfx::vk::VulkanRenderer::RecordLoop+0x0 (renderer.cpp:2793)
+    00007FF6385EE390 crackdown!std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-gpu\layer\gfx\src\vulkan\renderer.cpp:2962:74'>,0>+0x0 (thread:56)
+
+Thread 35232: 0.6 Mcycles (0% of the threads'), 5 samples
+  5 of 5 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF6385D2640 crackdown!any360::gfx::vk::VulkanRenderer::SubmitLoop+0x0 (renderer.cpp:2971)
+    00007FF6385EE3F0 crackdown!std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-gpu\layer\gfx\src\vulkan\renderer.cpp:2967:30'>,0>+0x0 (thread:56)
+
+Thread 14820: 0.6 Mcycles (0% of the threads'), 5 samples
+  5 of 5 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF6385D1C60 crackdown!any360::gfx::vk::VulkanRenderer::RecordLoop+0x0 (renderer.cpp:2793)
+    00007FF6385EE390 crackdown!std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-gpu\layer\gfx\src\vulkan\renderer.cpp:2962:74'>,0>+0x0 (thread:56)

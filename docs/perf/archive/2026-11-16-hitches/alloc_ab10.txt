@@ -1,0 +1,50 @@
+﻿=== @exe:crackdown_alloc_before.exe --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_417.log)
+hangs: 1; errors: 0
+Any360: 273.3 FPS; per frame: 2317 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 280.4 FPS; per frame: 2327 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.68 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 1.9 kicks (0.0 through the title's ring; 14.2 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 24.9% of the time with nothing to run
+=== @exe:crackdown.exe --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_418.log)
+hangs: 0; errors: 0
+Any360: 288.6 FPS; per frame: 2324 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 293.6 FPS; per frame: 2323 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.49 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 1.8 kicks (0.0 through the title's ring; 14.2 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 26.9% of the time with nothing to run
+=== @exe:crackdown_alloc_before.exe --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_419.log)
+hangs: 0; errors: 0
+Any360: 286.8 FPS; per frame: 2332 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 294.2 FPS; per frame: 2328 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.48 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 1.9 kicks (0.0 through the title's ring; 14.2 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 27.0% of the time with nothing to run
+=== @exe:crackdown.exe --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_420.log)
+hangs: 0; errors: 0
+Any360: 301.6 FPS; per frame: 2331 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 303.2 FPS; per frame: 2321 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.45 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 1.7 kicks (0.0 through the title's ring; 14.2 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 25.7% of the time with nothing to run
+=== @exe:crackdown_alloc_before.exe --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_421.log)
+hangs: 0; errors: 0
+Any360: 309.7 FPS; per frame: 2327 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 300.8 FPS; per frame: 2326 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.55 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 1.7 kicks (0.0 through the title's ring; 14.2 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 23.3% of the time with nothing to run
+=== @exe:crackdown.exe --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_422.log)
+hangs: 0; errors: 0
+Any360: 297.5 FPS; per frame: 2323 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 299.0 FPS; per frame: 2323 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.46 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 1.8 kicks (0.0 through the title's ring; 14.2 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 26.5% of the time with nothing to run
+=== @exe:crackdown_alloc_before.exe --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_423.log)
+hangs: 0; errors: 0
+Any360: 291.0 FPS; per frame: 2383 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 297.8 FPS; per frame: 2374 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.49 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 1.9 kicks (0.0 through the title's ring; 14.2 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 25.8% of the time with nothing to run
+=== @exe:crackdown.exe --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_424.log)
+hangs: 0; errors: 0
+Any360: 308.2 FPS; per frame: 2328 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 277.8 FPS; per frame: 2322 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.39 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 2.1 kicks (0.0 through the title's ring; 14.2 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 33.5% of the time with nothing to run
+=== @exe:crackdown_alloc_before.exe --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_425.log)
+hangs: 0; errors: 0
+Any360: 324.0 FPS; per frame: 2326 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 332.0 FPS; per frame: 2326 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.14 ms running the ring (0.06 ms of it in WAIT_REG_MEM), 2.1 kicks (0.0 through the title's ring; 14.2 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 29.0% of the time with nothing to run
+=== @exe:crackdown.exe --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_426.log)
+hangs: 0; errors: 0
+Any360: 322.8 FPS; per frame: 2378 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: 320.8 FPS; per frame: 2372 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 textur
+Any360: command processor per frame: 2.18 ms running the ring (0.06 ms of it in WAIT_REG_MEM), 2.0 kicks (0.0 through the title's ring; 14.2 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 30.0% of the time with nothing to run

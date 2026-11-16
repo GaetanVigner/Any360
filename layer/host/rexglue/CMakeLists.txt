@@ -1,10 +1,17 @@
 # any360_host_rexglue: binds a title built on the ReXGlue runtime (stage 0) to Any360's layers, a piece at a time
 # (include/any360/host/rexglue.h). Compiled in the title's build, against the runtime's headers; layer/sys adds it
 # when ANY360_REFERENCE_SDK names a runtime install. A title adds layer/sys with EXCLUDE_FROM_ALL and links this.
+# Diagnostics with no runtime or renderer behind them: thread stacks, the hitch tracer (any360/host/hitch_tracer.h).
+add_library(any360_host_diagnostics STATIC src/thread_stacks.cpp src/hitch_tracer.cpp)
+target_include_directories(any360_host_diagnostics PUBLIC include)
+target_compile_options(any360_host_diagnostics PRIVATE -Wall -Wextra)
+if(WIN32)
+  target_link_libraries(any360_host_diagnostics PUBLIC dbghelp psapi winmm)
+endif()
 add_library(any360_host_rexglue STATIC src/rexglue.cpp src/system.cpp)
 target_include_directories(any360_host_rexglue PUBLIC include)
 # The renderer stays private: its vendored headers (fmt among them) must not reach the title's sources.
-target_link_libraries(any360_host_rexglue PUBLIC any360_sys_ppc PRIVATE any360_gfx_vulkan)
+target_link_libraries(any360_host_rexglue PUBLIC any360_sys_ppc any360_host_diagnostics PRIVATE any360_gfx_vulkan)
 target_compile_options(any360_host_rexglue PRIVATE -Wall -Wextra)
 # The settings glue logs through the runtime's spdlog: kept apart from the renderer's vendored fmt (its namespace
 # renamed) so it compiles against the runtime's fmt. Titles get it with the binding. With it, the native replacements
@@ -41,4 +48,9 @@ if(WIN32)
                           "${ANY360_REFERENCE_SDK}/lib/spdlogrd.lib" "${ANY360_REFERENCE_SDK}/lib/fmtrd.lib")
     target_compile_options(host_system_tests PRIVATE -Wall -Wextra)
     add_test(NAME host_system_tests COMMAND host_system_tests)
+    # The hitch tracer's sampling on a thread spinning in a known function.
+    add_executable(host_diagnostics_tests tests/host_diagnostics_tests.cpp)
+    target_link_libraries(host_diagnostics_tests PRIVATE any360_host_diagnostics)
+    target_compile_options(host_diagnostics_tests PRIVATE -Wall -Wextra)
+    add_test(NAME host_diagnostics_tests COMMAND host_diagnostics_tests)
 endif()

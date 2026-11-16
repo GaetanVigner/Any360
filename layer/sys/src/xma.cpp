@@ -2,6 +2,8 @@
 // Xenia contributors; adapted for ReXGlue by Tom Clay), crediting koolkdev's libertyv xma2dec.
 #include "any360/sys/xma.h"
 
+#include "any360/sys/activity.h"
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -399,6 +401,7 @@ struct XmaDecoder::Context {
   }
 
   void Decode(ContextData* d) {
+    const ActivityTimer timer(SysActivity().xma_ns);
     if (!d->AnyInputValid() || remaining_subframes > 0) return;
     if (!d->CurrentInputValid()) {
       SwapInput(d);

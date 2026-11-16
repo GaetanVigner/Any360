@@ -1,4 +1,5 @@
 #include "any360/sys/objects.h"
+#include "any360/sys/activity.h"
 #include "any360/sys/scheduler.h"
 
 #include <algorithm>
@@ -793,6 +794,7 @@ uint32_t ObjectManager::WaitForObjects(Guest g, uint32_t count, const uint32_t* 
   const bool bounded = limit != std::chrono::nanoseconds::max();
   const auto deadline = bounded ? start + limit : std::chrono::steady_clock::time_point::max();
   ++wait_counts_.slept;
+  SysActivity().waits_slept.fetch_add(1, std::memory_order_relaxed);
   const WaitRegistration registration(*this, objects, count, thread);
   auto look = first_look_;
   for (;;) {
@@ -842,6 +844,7 @@ uint32_t ObjectManager::WaitForObject(Guest g, uint32_t object, uint32_t thread,
   const bool bounded = limit != std::chrono::nanoseconds::max();
   const auto deadline = bounded ? start + limit : std::chrono::steady_clock::time_point::max();
   ++wait_counts_.slept;
+  SysActivity().waits_slept.fetch_add(1, std::memory_order_relaxed);
   const WaitRegistration registration(*this, &object, 1, thread);
   auto look = first_look_;
   for (;;) {

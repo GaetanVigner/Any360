@@ -17,6 +17,10 @@ REXCVAR_DEFINE_STRING(any360_sys_groups, "", "Kernel",
                       "Any360: system call groups run on any360::sys, comma-separated (stateless, files, objects, threads, "
                       "memory, xam, input, audio), all (the eight) or none; empty: the title's default (none unless "
                       "the title sets one)");
+REXCVAR_DEFINE_INT32(any360_hitch_trace_ms, 0, "GPU",
+                     "Any360: a frame of play longer than this many milliseconds has every thread's stack sampled until "
+                     "it ends, and hitch_<n>.txt says what each thread did meanwhile (any360/host/hitch_tracer.h); 0: off");
+REXCVAR_DEFINE_STRING(any360_hitch_trace_folder, "logs", "GPU", "Any360: the folder the hitch tracer's reports go to");
 REXCVAR_DEFINE_BOOL(any360_sys_trace, false, "Kernel",
                     "Any360: log the first call of each system call that goes to any360::sys, and to the runtime");
 REXCVAR_DEFINE_BOOL(any360_sys_trace_all, false, "Kernel",
@@ -210,4 +214,9 @@ void MountFolderIfStarted(const std::string& guest_folder, const std::filesystem
   REXLOG_INFO("Any360 system: {} mounted at {}", guest_folder, host.string());
 }
 
+}  // namespace any360::host::rexglue
+
+namespace any360::host::rexglue {
+int HitchTraceMs() { return REXCVAR_GET(any360_hitch_trace_ms); }
+std::string HitchTraceFolder() { return REXCVAR_GET(any360_hitch_trace_folder); }
 }  // namespace any360::host::rexglue

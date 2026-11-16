@@ -1,0 +1,104 @@
+Hitch: a frame of 120.6 ms; 25 samples of 103 threads, every 2 ms
+
+Thread 14892 "Main XThread (F8000030)": 421.0 Mcycles (77% of the threads'), 25 samples
+  6 of 25 samples:
+    00007FF63939D290 crackdown!__imp__guest_base_sub_82A88378+0x0 (crackdown_recomp.32.cpp:32698)
+    00007FF63BAA98C0 crackdown!__imp__guest_base_sub_82A878E8+0x0 (crackdown_recomp.151.cpp:29719)
+    00007FF63B036AE0 crackdown!__imp__guest_base_sub_82A85390+0x0 (crackdown_recomp.119.cpp:31506)
+    00007FF638D60FD0 crackdown!__imp__guest_base_sub_82A7EA10+0x0 (crackdown_recomp.13.cpp:32153)
+  5 of 25 samples:
+    00007FF63A403280 crackdown!__imp__guest_base_sub_82A7F5D0+0x0 (crackdown_recomp.82.cpp:31326)
+    00007FF63ADA3270 crackdown!__imp__guest_base_sub_82A7A5A0+0x0 (crackdown_recomp.111.cpp:32053)
+    00007FF63B80E650 crackdown!__imp__guest_base_sub_82A7AA18+0x0 (crackdown_recomp.143.cpp:31408)
+    00007FF63B8E6850 crackdown!__imp__guest_base_sub_8270BA70+0x0 (crackdown_recomp.146.cpp:21208)
+  3 of 25 samples:
+    00007FFB2C1A6830 ntdll!NtQueryVirtualMemory+0x0
+    00007FF638CE2B90 crackdown!__imp__guest_base_sub_82380C78+0x0 (crackdown_recomp.12.cpp:8077)
+    00007FF639132730 crackdown!__imp__guest_base_sub_826AC6C8+0x0 (crackdown_recomp.25.cpp:18742)
+    00007FF638C57AA0 crackdown!__imp__guest_base_sub_826ACD08+0x0 (crackdown_recomp.10.cpp:18646)
+  1 of 25 samples:
+    00007FFB0197E570 VCRUNTIME140!memmove+0xA70
+    00007FF638CE2B90 crackdown!__imp__guest_base_sub_82380C78+0x0 (crackdown_recomp.12.cpp:8077)
+    00007FF639132730 crackdown!__imp__guest_base_sub_826AC6C8+0x0 (crackdown_recomp.25.cpp:18742)
+    00007FF638C57AA0 crackdown!__imp__guest_base_sub_826ACD08+0x0 (crackdown_recomp.10.cpp:18646)
+
+Thread 32436: 24.8 Mcycles (5% of the threads'), 25 samples
+  24 of 25 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63C477020 crackdown!_Cnd_timedwait_for_unchecked+0x0 (sharedmutex.cpp:78)
+    00007FF6386251B0 crackdown!any360::gfx::AsyncRenderer::Run+0x0 (async_renderer.cpp:195)
+    00007FF6386259F0 crackdown!std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-gpu\layer\gfx\src\async_renderer.cpp:28:25'>,0>+0x0 (thread:56)
+  1 of 25 samples:
+    00007FF63861D3C0 crackdown!any360::gfx::vk::TextureCache::View+0x0 (textures.cpp:802)
+    00007FF6385C6DC0 crackdown!any360::gfx::vk::VulkanRenderer::Draw+0x0 (renderer.cpp:1449)
+    00007FF6386256C0 crackdown!any360::gfx::AsyncRenderer::Execute+0x0 (async_renderer.cpp:235)
+    00007FF6386251B0 crackdown!any360::gfx::AsyncRenderer::Run+0x0 (async_renderer.cpp:195)
+
+Thread 6140 "XThread17FC (F8000048)": 20.0 Mcycles (4% of the threads'), 25 samples
+  22 of 25 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63C477020 crackdown!_Cnd_timedwait_for_unchecked+0x0 (sharedmutex.cpp:78)
+    00007FF638578210 crackdown!std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x0 (condition_variable:119)
+    00007FF6385763E0 crackdown!any360::sys::ObjectManager::WaitRegistration::Sleep+0x0 (objects.cpp:655)
+  2 of 25 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63AF47DF0 crackdown!__imp__guest_base_sub_82A54768+0x0 (crackdown_recomp.116.cpp:31201)
+    00007FF638E070E0 crackdown!__imp__guest_base_sub_82A573F8+0x0 (crackdown_recomp.15.cpp:32587)
+    00007FF63BFA0F00 crackdown!__imp__guest_base_sub_82A5CF98+0x0 (crackdown_recomp.166.cpp:31346)
+  1 of 25 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63AF47DF0 crackdown!__imp__guest_base_sub_82A54768+0x0 (crackdown_recomp.116.cpp:31201)
+    00007FF63BCEFD90 crackdown!__imp__guest_base_sub_82A53218+0x0 (crackdown_recomp.158.cpp:30683)
+    00007FF63893A1E0 crackdown!__imp__guest_base_sub_82A5C9F0+0x0 (crackdown_recomp.0.cpp:31914)
+
+Thread 39148 "XThread98EC (F800004C)": 16.6 Mcycles (3% of the threads'), 25 samples
+  22 of 25 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63C477020 crackdown!_Cnd_timedwait_for_unchecked+0x0 (sharedmutex.cpp:78)
+    00007FF638578210 crackdown!std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x0 (condition_variable:119)
+    00007FF6385763E0 crackdown!any360::sys::ObjectManager::WaitRegistration::Sleep+0x0 (objects.cpp:655)
+  3 of 25 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63AF47DF0 crackdown!__imp__guest_base_sub_82A54768+0x0 (crackdown_recomp.116.cpp:31201)
+    00007FF638E070E0 crackdown!__imp__guest_base_sub_82A573F8+0x0 (crackdown_recomp.15.cpp:32587)
+    00007FF63BFA0F00 crackdown!__imp__guest_base_sub_82A5CF98+0x0 (crackdown_recomp.166.cpp:31346)
+
+Thread 17284 "XThread4384 (F800005C)": 7.9 Mcycles (1% of the threads'), 25 samples
+  25 of 25 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63C477020 crackdown!_Cnd_timedwait_for_unchecked+0x0 (sharedmutex.cpp:78)
+    00007FF638578210 crackdown!std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x0 (condition_variable:119)
+    00007FF6385763E0 crackdown!any360::sys::ObjectManager::WaitRegistration::Sleep+0x0 (objects.cpp:655)
+
+Thread 35232: 3.8 Mcycles (1% of the threads'), 25 samples
+  25 of 25 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF6385D2640 crackdown!any360::gfx::vk::VulkanRenderer::SubmitLoop+0x0 (renderer.cpp:2971)
+    00007FF6385EE3F0 crackdown!std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-gpu\layer\gfx\src\vulkan\renderer.cpp:2967:30'>,0>+0x0 (thread:56)
+
+Thread 19340: 3.4 Mcycles (1% of the threads'), 25 samples
+  25 of 25 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF638614750 crackdown!std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-gpu\layer\gfx\src\command_processor.cpp:1136:25'>,0>+0x0 (thread:56)
+
+Thread 18376 "rex::thread::TimerQueue": 2.3 Mcycles (0% of the threads'), 25 samples
+  25 of 25 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+
+Thread 11756 "XThread2DEC (F800002C)": 2.1 Mcycles (0% of the threads'), 25 samples
+  22 of 25 samples:
+    00007FFB2C1A6A50 ntdll!ZwDelayExecution+0x0
+    00007FF638639D70 crackdown!any360::sys::AudioKernel::Run+0x0 (audio.cpp:129)
+    00007FF6384CEAF0 crackdown!std::_Func_impl_no_alloc<`lambda at F:\Crackdown\any360-gpu\layer\host\rexglue\src\system.cpp:275:90',int>::_Do_call+0x0 (functional:1003)
+  3 of 25 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63C477020 crackdown!_Cnd_timedwait_for_unchecked+0x0 (sharedmutex.cpp:78)
+    00007FF638578210 crackdown!std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x0 (condition_variable:119)
+    00007FF6385763E0 crackdown!any360::sys::ObjectManager::WaitRegistration::Sleep+0x0 (objects.cpp:655)
+
+Thread 36724 "XThread8F74 (F8000044)": 2.0 Mcycles (0% of the threads'), 25 samples
+  25 of 25 samples:
+    00007FFB2C1AA040 ntdll!ZwWaitForAlertByThreadId+0x0
+    00007FF63C477020 crackdown!_Cnd_timedwait_for_unchecked+0x0 (sharedmutex.cpp:78)
+    00007FF638578210 crackdown!std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x0 (condition_variable:119)
+    00007FF6385763E0 crackdown!any360::sys::ObjectManager::WaitRegistration::Sleep+0x0 (objects.cpp:655)

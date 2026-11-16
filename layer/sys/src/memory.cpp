@@ -1,5 +1,7 @@
 #include "any360/sys/memory.h"
 
+#include "any360/sys/activity.h"
+
 #include <algorithm>
 #include <cstring>
 #include <utility>
@@ -95,16 +97,32 @@ bool MemoryManager::AllocRange(Heap& heap, uint32_t low, uint32_t high, uint32_t
   const uint32_t pages = size >> heap.shift, align_pages = std::max<uint32_t>(1, alignment >> heap.shift);
   const uint32_t first = (low - heap.spec.base) >> heap.shift, last = (high - heap.spec.base) >> heap.shift;
   if (pages == 0 || pages > heap.pages.size()) return false;
-  auto fits = [&](uint32_t start) {
-    if (start + pages > heap.pages.size() || start + pages - 1 > last) return false;
+  constexpr uint32_t kFits = 0xFFFFFFFF, kOutside = 0xFFFFFFFE;  // kOutside: past the heap or the range
+  // kFits, or a page of the window [start, start + pages) that is taken (in the heap, or its physical page in another
+  // view of the physical space): the lowest one searching down, the highest one searching up, so the search can skip
+  // every window holding it instead of trying them one alignment step at a time (a full heap took seconds).
+  const uint32_t physical_base = heap.spec.physical ? PhysicalAddress(heap.spec.base) : 0;
+  auto blocking = [&](uint32_t start) -> uint32_t {
+    if (start + pages > heap.pages.size() || start + pages - 1 > last) return kOutside;
+    uint32_t found = kFits;
     for (uint32_t p = start; p < start + pages; ++p) {
-      if (heap.pages[p].state != kFree) return false;
+      if (heap.pages[p].state != kFree) {
+        found = p;
+        if (top_down) return p;  // the lowest
+      }
     }
+    if (found != kFits) return found;  // the highest
     if (heap.spec.physical) {
-      const uint32_t physical = PhysicalAddress(heap.spec.base + (start << heap.shift));
-      if (!PhysicalFree(physical, size)) return false;
+      const uint32_t physical = physical_base + (start << heap.shift);
+      const uint32_t begin = physical / 0x1000, end = std::min<uint32_t>((physical + size) / 0x1000, uint32_t(physical_pages_.size()));
+      for (uint32_t q = begin; q < end; ++q) {
+        if (physical_pages_[q]) {
+          found = start + ((q * 0x1000 - physical) >> heap.shift);
+          if (top_down) return found;
+        }
+      }
     }
-    return true;
+    return found;
   };
   auto take = [&](uint32_t start) {
     for (uint32_t p = start; p < start + pages; ++p) {
@@ -120,14 +138,32 @@ bool MemoryManager::AllocRange(Heap& heap, uint32_t low, uint32_t high, uint32_t
   if (top_down) {
     uint32_t start = std::min<uint32_t>(last, uint32_t(heap.pages.size() - 1));
     start = start + 1 >= pages ? (start + 1 - pages) / align_pages * align_pages : 0;
-    for (;; start -= align_pages) {
-      if (start >= start_min && fits(start) && Claim(heap, start, pages, protect)) return take(start);
+    for (;;) {
+      uint32_t next = start - std::min(start, align_pages);  // one step down
+      if (start >= start_min) {
+        const uint32_t taken = blocking(start);
+        if (taken == kFits) {
+          if (Claim(heap, start, pages, protect)) return take(start);
+        } else if (taken >= start && taken < start + pages) {
+          // Every window holding `taken` fails: the next one ends below it.
+          next = taken >= pages ? std::min(next, (taken - pages) / align_pages * align_pages) : 0;
+          if (taken < pages) return false;
+        }
+      }
       if (start < align_pages || start < start_min) break;
+      start = next;
     }
     return false;
   }
-  for (uint32_t start = RoundUp(start_min, align_pages); start + pages <= heap.pages.size(); start += align_pages) {
-    if (fits(start) && Claim(heap, start, pages, protect)) return take(start);
+  for (uint32_t start = RoundUp(start_min, align_pages); start + pages <= heap.pages.size();) {
+    uint32_t next = start + align_pages;
+    const uint32_t taken = blocking(start);
+    if (taken == kFits) {
+      if (Claim(heap, start, pages, protect)) return take(start);
+    } else if (taken >= start && taken < start + pages) {
+      next = std::max(next, RoundUp(taken + 1, align_pages));  // the next window starts above it
+    }
+    start = next;
   }
   return false;
 }
@@ -334,6 +370,9 @@ uint32_t MemoryManager::QueryVirtual(Guest g, uint32_t address, uint32_t info_pt
 
 uint32_t MemoryManager::AllocatePhysical(Guest g, uint32_t, uint32_t size, uint32_t protect, uint32_t min_address,
                                          uint32_t max_address, uint32_t alignment) {
+  Activity& activity = SysActivity();
+  activity.memory_allocs.fetch_add(1, std::memory_order_relaxed);
+  const ActivityTimer timer(activity.memory_ns);
   std::lock_guard lock(mutex_);
   if (!(protect & (kPageReadOnly | kPageReadWrite))) return 0;
   const uint32_t page_size = (protect & kMemLargePages) ? 0x10000 : (protect & kMem16MbPages) ? 0x1000000 : 0x1000;

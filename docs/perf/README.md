@@ -11,3 +11,4 @@ Every step's measured results, kept for later optimization passes: the self-test
 - [2026-11-15-d6-frame-lows](archive/2026-11-15-d6-frame-lows/): D6 measured with median and 10% / 1% lows: 15 launches, three variants (frame_lows.txt) (published as of Any360 d57d69a)
 - [2026-11-16-texture-loads](archive/2026-11-16-texture-loads/): texture loads of 1 and 2-byte texels, tiled and linear; the dip's slowest frames broken down (NOTES.md)
 - [2026-11-16-d3d-alloc-per-call](archive/2026-11-16-d3d-alloc-per-call/): the 68-case self-test with host allocations a call on each side (BenchmarkDotNet style), and the published table
+- [2026-11-16-hitches](archive/2026-11-16-hitches/): the title-side hitches: hitch tracer reports, the physical allocator's skip-ahead (5 v 5 A/B: 1% low 203 -> 221 FPS) (NOTES.md)
