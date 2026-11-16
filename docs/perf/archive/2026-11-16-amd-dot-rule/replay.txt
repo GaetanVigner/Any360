@@ -13,3 +13,12 @@ Images, dot 0 against dot 1, 29 frames: NVIDIA 0 pixels differ; Radeon 0.0001% (
 character's edge, x 1224-1227, y 326-333, up to 25/255): the reference path is the one AMD's compiler fuses into
 FMAs (11 against 1) despite NoContraction, so a vertex lands one rounding step away. Replays are deterministic
 (dot 1 twice: 0 pixels differ). Side by side: out/dot_rule_side_by_side.png (not kept in the repository).
+
+Dead ends after the dot products (Crackdown city capture, gfx_replay --bench --repeat 3, Radeon iGPU, GPU ms over 29
+frames; both reverted):
+- The same for vector mul and mad (plain products, the rule in a branch where one is zero or NaN): 527.1 / 548.2 ms
+  without, 605.6 / 605.4 with (+12%, worse; full-screen passes up to +36%): a branch per multiply costs more than the
+  two compares it saves, and zero products are common in pixel shaders. Images identical.
+- Every pixel shader's textures taken as unsigned (timing only: the ceiling of specializing fetches by sign):
+  524.7 -> 515.4 ms (-1.8%, nearly all in one full-screen pass, B3D1 1143 -> 831 us): too little for the pipeline
+  variants an exact per-fetch specialization would need.
