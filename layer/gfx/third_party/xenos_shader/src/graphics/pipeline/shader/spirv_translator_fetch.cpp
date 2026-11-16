@@ -1857,6 +1857,14 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
         if (!use_computed_lod) {
           texture_parameters.lod = lod;
         }
+        // any360 (Features::implicit_lod_sampling): the computed LOD as an implicit-LOD sample biased by the LOD.
+        // The gradients above stay for the stacked textures' layer filter choice (minifying along the layers).
+        const bool implicit_lod = features_.implicit_lod_sampling && use_computed_lod && is_pixel_shader() &&
+                                  !instr.attributes.use_register_gradients;
+        if (implicit_lod) {
+          image_operands_mask = spv::ImageOperandsMaskNone;
+          texture_parameters.bias = lod;
+        }
         if (instr.dimension == xenos::FetchOpDimension::k3DOrStacked) {
           // 3D (3 coordinate components, 3 gradient components, single fetch)
           // or 2D stacked (2 coordinate components + 1 array layer coordinate
@@ -1869,7 +1877,7 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
           spv::Id sample_result_unsigned_3d, sample_result_signed_3d;
           {
             // 3D.
-            if (use_computed_lod) {
+            if (use_computed_lod && !implicit_lod) {  // any360: implicit_lod_sampling
               texture_parameters.gradX = gradients_h;
               texture_parameters.gradY = gradients_v;
             }
@@ -1887,7 +1895,7 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
           spv::Id sample_result_unsigned_stacked, sample_result_signed_stacked;
           {
             // 2D stacked.
-            if (use_computed_lod) {
+            if (use_computed_lod && !implicit_lod) {  // any360: implicit_lod_sampling
               // Extract 2D gradients for stacked textures which are 2D arrays.
               uint_vector_temp_.clear();
               uint_vector_temp_.push_back(0);
@@ -2074,7 +2082,7 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
           sample_result_signed =
               if_data_is_3d.createMergePhi(sample_result_signed_3d, sample_result_signed_stacked);
         } else {
-          if (use_computed_lod) {
+          if (use_computed_lod && !implicit_lod) {  // any360: implicit_lod_sampling
             texture_parameters.gradX = gradients_h;
             texture_parameters.gradY = gradients_v;
           }

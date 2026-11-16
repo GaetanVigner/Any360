@@ -409,6 +409,14 @@ class SpirvShaderTranslator : public ShaderTranslator {
 
     bool demote_to_helper_invocation;
     bool sample_rate_shading;
+
+    // any360: a pixel shader's fetch with the computed LOD samples with the implicit LOD biased by the fetch's LOD
+    // (bias = fetch constant LOD + register LOD + instruction bias) instead of explicit gradients (the coarse
+    // derivatives scaled by 2^LOD): the same level (log2(|g| 2^b) = log2|g| + b), one image operand instead of two
+    // gradient vectors (an explicit-gradient sample costs the texture units more address cycles, 9 dwords against 3
+    // for a 3D fetch). Not a device feature: off by default (ReXGlue's translation), the Vulkan renderer turns it on.
+    // Register gradients (setGradientH/V) still sample with them.
+    bool implicit_lod_sampling = false;
   };
 
   SpirvShaderTranslator(const Features& features, bool native_2x_msaa_with_attachments,

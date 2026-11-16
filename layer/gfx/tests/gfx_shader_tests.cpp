@@ -217,6 +217,68 @@ int main(int argc, char** argv) {
                                                std::to_string(stores) + " stores to xe_var_jump_skip)");
     }
 
+    // Features::implicit_lod_sampling: a pixel shader's computed-LOD fetch samples with the implicit LOD biased by the
+    // fetch's LOD (OpImageSampleImplicitLod, Bias) instead of explicit gradients (OpImageSampleExplicitLod, Grad); a
+    // fetch with register gradients keeps them. 2D (an unsigned and a signed sample), 3D or stacked (3D, then the
+    // stacked layer and the next one, each unsigned and signed) and cube; off, every sample keeps its gradients (the
+    // rendered effect is gfx_render_tests' textured draws, which run with the renderer's setting).
+    {
+        struct Samples {
+            uint32_t implicit_bias = 0, implicit_other = 0, explicit_grad = 0, explicit_other = 0;
+        };
+        auto count_samples = [](const std::vector<uint32_t>& spirv) {
+            Samples s;
+            for (size_t i = 5; i < spirv.size();) {
+                const uint32_t count = spirv[i] >> 16, opcode = spirv[i] & 0xFFFF;
+                if (!count || i + count > spirv.size()) break;
+                const uint32_t operands = count > 5 ? spirv[i + 5] : 0;  // result type, result, sampled image, coordinates
+                if (opcode == 87 /* OpImageSampleImplicitLod */) {
+                    ++((operands & 0x1 /* Bias */) && !(operands & 0x6) ? s.implicit_bias : s.implicit_other);
+                } else if (opcode == 88 /* OpImageSampleExplicitLod */) {
+                    ++((operands & 0x4 /* Grad */) ? s.explicit_grad : s.explicit_other);
+                }
+                i += count;
+            }
+            return s;
+        };
+        SpirvShaderTranslator::Features implicit_features(true);
+        implicit_features.implicit_lod_sampling = true;
+        SpirvShaderTranslator implicit(implicit_features, true, true, false);
+        struct Case {
+            const char* name;
+            xenos::FetchOpDimension dimension;
+            bool register_gradients;
+            uint32_t samples;
+        };
+        for (const Case& c : {Case{"2D", xenos::FetchOpDimension::k2D, false, 2},
+                              Case{"3D or stacked", xenos::FetchOpDimension::k3DOrStacked, false, 6},
+                              Case{"cube", xenos::FetchOpDimension::kCube, false, 2},
+                              Case{"2D, register gradients", xenos::FetchOpDimension::k2D, true, 2}}) {
+            Tex t;
+            t.dimension = c.dimension;
+            t.register_gradients = c.register_gradients;
+            std::vector<uint32_t> ps;
+            PushCfPair(ps, CfAlloc(uc::AllocType::kPsColors, 0), CfExec(uc::ControlFlowOpcode::kExecEnd, 1, 2, 0b0001));
+            PushTex(ps, t);
+            PushAluVector(ps, uc::AluVectorOpcode::kMax, kColor0, true, 0b1111, {1, true}, {1, true});
+            const std::string name = std::string("ps_tfetch ") + c.name;
+            const Samples on = count_samples(Translate(implicit, xenos::ShaderType::kPixel, ps, 0x5A0010 + c.samples, name + "/implicit").spirv);
+            const Samples off = count_samples(Translate(full, xenos::ShaderType::kPixel, ps, 0x5A0010 + c.samples, name + "/full").spirv);
+            const std::string counts = " (implicit with bias " + std::to_string(on.implicit_bias) + ", other implicit " +
+                                       std::to_string(on.implicit_other) + ", gradients " + std::to_string(on.explicit_grad) +
+                                       ", other explicit " + std::to_string(on.explicit_other) + ")";
+            if (c.register_gradients) {
+                Check(on.explicit_grad == c.samples && !on.implicit_bias && !on.implicit_other,
+                      name + "/implicit: register gradients still sample with them" + counts);
+            } else {
+                Check(on.implicit_bias == c.samples && !on.implicit_other && !on.explicit_grad && !on.explicit_other,
+                      name + "/implicit: every sample implicit with the LOD as its bias" + counts);
+            }
+            Check(off.explicit_grad == c.samples && !off.implicit_bias && !off.implicit_other,
+                  name + "/full: without the feature every sample keeps its gradients");
+        }
+    }
+
     // The shaders gfx_vulkan_tests runs on whatever device it finds: every feature but the float controls, which the
     // renderer sets as each device reports them (a mode a device lacks is invalid: NVIDIA has no 32-bit denormal flush).
     SpirvShaderTranslator::Features portable_features(true);

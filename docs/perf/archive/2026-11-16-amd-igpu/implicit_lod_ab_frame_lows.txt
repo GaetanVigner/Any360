@@ -1,0 +1,17 @@
+explicit: 5 launches
+  crackdown_014.log: dip 1% low 42 FPS, slowest 34.9 ms, 259 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 46-46
+  crackdown_016.log: dip 1% low 45 FPS, slowest 34.6 ms, 261 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 46-46
+  crackdown_018.log: dip 1% low 40 FPS, slowest 34.4 ms, 261 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 46-46
+  crackdown_020.log: dip 1% low 44 FPS, slowest 24.4 ms, 231 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 46-52
+  crackdown_022.log: dip 1% low 40 FPS, slowest 35.1 ms, 256 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 46-46
+  steady (25 periods): FPS mean 46.4 (median 46.2, min 45.8), 10% low mean 45.9 (median 45.9, min 44.9), 1% low mean 45.1 (median 45.3, min 43.9); process private memory mean 2672 MB, max 2676 MB
+  dips (5): 1% low mean 42.4, slowest frame mean 32.7 ms, over 16.7 ms mean 253.6, texture loading mean 0.08 ms a frame
+implicit: 5 launches
+  crackdown_015.log: dip 1% low 42 FPS, slowest 45.6 ms, 261 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 48-48
+  crackdown_017.log: dip 1% low 44 FPS, slowest 45.5 ms, 264 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 48-48
+  crackdown_019.log: dip 1% low 42 FPS, slowest 46.1 ms, 262 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 48-48
+  crackdown_021.log: dip 1% low 46 FPS, slowest 23.2 ms, 239 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 48-54
+  crackdown_023.log: dip 1% low 45 FPS, slowest 23.6 ms, 239 over 16.7 ms, texture loading up to 0.12 ms a frame; steady FPS 48-55
+  steady (25 periods): FPS mean 48.5 (median 48.0, min 47.5), 10% low mean 47.7 (median 47.6, min 46.8), 1% low mean 46.8 (median 46.8, min 45.7); process private memory mean 2669 MB, max 2677 MB
+  dips (5): 1% low mean 43.7, slowest frame mean 36.8 ms, over 16.7 ms mean 253.0, texture loading mean 0.08 ms a frame
+explicit against implicit: steady fps z -5.62, p10 z -5.62, p1 z -6.06; dips 1% low z -0.94, slowest z -0.52

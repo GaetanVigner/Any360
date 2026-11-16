@@ -1,0 +1,8 @@
+--any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a: 5 launches
+  crackdown_002.log: dip 1% low 24 FPS, slowest 59.9 ms, 193 over 16.7 ms, texture loading up to 0.09 ms a frame; steady FPS 44-51
+  crackdown_003.log: dip 1% low 40 FPS, slowest 40.2 ms, 249 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 45-46
+  crackdown_004.log: dip 1% low 39 FPS, slowest 35.6 ms, 247 over 16.7 ms, texture loading up to 0.10 ms a frame; steady FPS 44-46
+  crackdown_005.log: dip 1% low 25 FPS, slowest 40.4 ms, 221 over 16.7 ms, texture loading up to 0.09 ms a frame; steady FPS 44-50
+  crackdown_006.log: dip 1% low 42 FPS, slowest 25.9 ms, 231 over 16.7 ms, texture loading up to 0.09 ms a frame; steady FPS 45-51
+  steady (45 periods): FPS mean 45.2 (median 44.8, min 43.5), 10% low mean 44.4 (median 44.3, min 42.7), 1% low mean 43.3 (median 43.5, min 38.3); process private memory mean 2671 MB, max 2692 MB
+  dips (5): 1% low mean 33.9, slowest frame mean 40.4 ms, over 16.7 ms mean 228.2, texture loading mean 0.09 ms a frame

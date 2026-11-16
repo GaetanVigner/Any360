@@ -1,0 +1,13 @@
+Capture of 60 kicks (29 frames) in the city, replayed with gfx_replay and ANY360_DRAW_TIMING=1, --swaps written and
+compared pixel by pixel (ANY360_EXPLICIT_GRADIENTS=1: before; unset: after).
+
+AMD Radeon(TM) Graphics (iGPU, 2 CUs):
+  draw time, all pixel shaders: 538.70 ms -> 512.65 ms (-4.8%)
+  ps F97FFAB436756000 (full-screen shadow pass, 12 tfetch3D a pixel): 2686.6 -> 2373.6 us a draw (-11.7%)
+  ps B3D1B16292C5D46B (full-screen pass): 1764.1 -> 1649.9 us a draw (-6.5%)
+  ps 6A6AA56007BC90BF (world, 339 draws a frame): 13.66 -> 13.08 us a draw (-4.2%)
+  frames: 0.0386% of pixels differ, max difference 1/255; explicit replayed twice: 0 pixels differ (deterministic)
+NVIDIA GeForce RTX 5070 Ti:
+  draw time, all pixel shaders: 25.55 ms -> 23.71 ms (-7.2%)
+  ps F97FFAB436756000: 124.90 -> 76.23 us a draw (-39%)
+  frames: 0.1017% of pixels differ, max difference 1/255

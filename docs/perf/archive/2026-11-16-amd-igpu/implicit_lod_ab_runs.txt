@@ -1,0 +1,51 @@
+﻿
+=== explicit (crackdown_014.log)
+hangs: 0; errors: 0
+Any360: 46.1 FPS; per frame: 2321 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: 46.2 FPS; per frame: 2322 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: command processor per frame: 2.48 ms running the ring (0.08 ms of it in WAIT_REG_MEM), 2.2 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 88.6% of the time with nothing to run
+=== implicit (crackdown_015.log)
+hangs: 0; errors: 0
+Any360: 48.1 FPS; per frame: 2313 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: 48.3 FPS; per frame: 2311 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: command processor per frame: 2.39 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 2.3 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 88.5% of the time with nothing to run
+=== explicit (crackdown_016.log)
+hangs: 0; errors: 0
+Any360: 46.1 FPS; per frame: 2326 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: 46.3 FPS; per frame: 2317 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: command processor per frame: 2.36 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 2.3 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 89.1% of the time with nothing to run
+=== implicit (crackdown_017.log)
+hangs: 0; errors: 0
+Any360: 48.0 FPS; per frame: 2325 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: 48.1 FPS; per frame: 2324 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: command processor per frame: 2.55 ms running the ring (0.08 ms of it in WAIT_REG_MEM), 2.2 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 87.7% of the time with nothing to run
+=== explicit (crackdown_018.log)
+hangs: 0; errors: 0
+Any360: 46.2 FPS; per frame: 2318 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: 46.3 FPS; per frame: 2320 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: command processor per frame: 2.38 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 2.2 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 89.0% of the time with nothing to run
+=== implicit (crackdown_019.log)
+hangs: 0; errors: 0
+Any360: 47.5 FPS; per frame: 2325 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: 47.8 FPS; per frame: 2325 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: command processor per frame: 2.59 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 2.2 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 87.6% of the time with nothing to run
+=== explicit (crackdown_020.log)
+hangs: 0; errors: 0
+Any360: 46.2 FPS; per frame: 2319 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: 46.3 FPS; per frame: 2319 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: command processor per frame: 2.40 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 2.2 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 88.9% of the time with nothing to run
+=== implicit (crackdown_021.log)
+hangs: 0; errors: 0
+Any360: 48.1 FPS; per frame: 2323 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: 48.0 FPS; per frame: 2325 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: command processor per frame: 2.52 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 2.2 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 87.9% of the time with nothing to run
+=== explicit (crackdown_022.log)
+hangs: 0; errors: 0
+Any360: 46.1 FPS; per frame: 2316 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: 46.3 FPS; per frame: 2317 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: command processor per frame: 2.40 ms running the ring (0.08 ms of it in WAIT_REG_MEM), 2.2 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 88.9% of the time with nothing to run
+=== implicit (crackdown_023.log)
+hangs: 0; errors: 0
+Any360: 48.0 FPS; per frame: 2316 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: 48.1 FPS; per frame: 2315 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 31.0 texture
+Any360: command processor per frame: 2.41 ms running the ring (0.07 ms of it in WAIT_REG_MEM), 2.3 kicks (0.0 through the title's ring; 14.1 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 88.4% of the time with nothing to run

@@ -49,6 +49,10 @@ Each vendored file also keeps its original header.
 - `spirv_translator_fetch.cpp`: `getBCF` (kGetTextureBorderColorFrac), unimplemented in the reference (a
   translation error), is worked out from the coordinates along getWeights' path: the magnification filter's taps
   outside the texture on axes clamped to the border, at the base level.
+- `spirv_translator.h` `Features::implicit_lod_sampling` and `spirv_translator_fetch.cpp`: with it (off by default,
+  the reference's translation), a pixel shader's computed-LOD fetch without register gradients samples with the
+  implicit LOD and the fetch's LOD as the bias, instead of the coarse derivatives scaled by 2^LOD as explicit
+  gradients: the same level, fewer texture address cycles (docs/GFX.md, "Implicit-LOD sampling").
 
 ## Ours: `shim/include/rex/...`
 

@@ -165,6 +165,10 @@ VulkanRenderer::VulkanRenderer(Device& device, uint8_t* physical, uint32_t mirro
     features.signed_zero_inf_nan_preserve_float32 = v12.shaderSignedZeroInfNanPreserveFloat32;
     features.rounding_mode_rte_float32 = v12.shaderRoundingModeRTEFloat32;
   }
+  // Computed-LOD fetches as implicit-LOD samples (fewer texture address cycles than explicit gradients);
+  // ANY360_EXPLICIT_GRADIENTS=1 goes back to the gradients, for A/B runs and image comparisons.
+  const char* explicit_gradients = std::getenv("ANY360_EXPLICIT_GRADIENTS");
+  features.implicit_lod_sampling = !(explicit_gradients && *explicit_gradients == '1');
   translator_ = std::make_unique<SpirvShaderTranslator>(features, true, true, false, scale_, scale_);
   translator_->SetSamplesAsPixels(true);  // guest samples are pixels of the host targets
 }

@@ -573,3 +573,35 @@ showed the way: every submit had completed when the device was lost.
 
 Test: `gfx_render_tests` (one-time submits on a thread of their own beside 100 frames the renderer draws and submits:
 every frame right, no submit failed).
+
+### Implicit-LOD sampling; draw time by pixel shader (2026-11-16)
+
+On a small GPU (an AMD Radeon iGPU with 2 compute units, the class of the target devices) Crackdown's city is bound
+by the GPU: 45 FPS, 18.3 ms of draws a frame. To see which draws cost it, `ANY360_DRAW_TIMING=1` now also puts the
+draws' GPU time by pixel shader in the in-game report (`Any360: GPU draw ms per frame by pixel shader`, the 12
+costliest, each with its draws and time a draw), as `gfx_replay` already printed it for a capture. The costliest:
+a world shader (4.6 ms, 339 draws), a full-screen shadow pass (2.7 ms in one draw: 12 `tfetch3D` of the shadow map a
+pixel) and two other full-screen passes (1.8 and 1.2 ms).
+
+The translator sampled every pixel-shader fetch with the computed LOD with explicit gradients (the coarse derivatives
+of the coordinates scaled by 2^LOD, `OpImageSampleExplicitLod ... Grad`). An implicit-LOD sample biased by the same LOD
+(`OpImageSampleImplicitLod ... Bias`) selects the same level (log2(|g| 2^b) = log2|g| + b) and hands the texture units
+one operand instead of two gradient vectors: 3 address dwords against 9 for a 3D fetch. `Features::implicit_lod_sampling`
+(off by default, the reference's translation; the renderer turns it on) does that for computed-LOD fetches without
+register gradients; `ANY360_EXPLICIT_GRADIENTS=1` goes back to the gradients for comparisons. The derivatives are taken
+where the gradients were (coarse, so per quad), in the same control flow.
+
+- Images: a capture of 29 city frames replayed both ways: 0.04% of the pixels differ on the Radeon, 0.10% on NVIDIA, by
+  1/255 at most (the replay is deterministic: the same way twice, 0 pixels differ).
+- GPU time on that capture: Radeon 538.7 -> 512.7 ms of draws (-4.8%; the shadow pass -12%), NVIDIA 25.6 -> 23.7 ms
+  (-7%; the shadow pass 125 -> 76 us).
+- In game on the Radeon, 5 launches a way alternating: 46.4 -> 48.5 FPS (median 46.2 -> 48.0), 10% low 45.9 -> 47.7,
+  1% low 45.1 -> 46.8 (rank test z -5.6, -5.6, -6.1); the dips unchanged (1% low 42.4 -> 43.7, not significant);
+  private memory 2672 -> 2669 MB. Archived in `docs/perf/archive/2026-11-16-amd-igpu/`.
+
+Tests: `gfx_shader_tests` (a 2D, a 3D-or-stacked and a cube fetch: every sample implicit with the LOD as its bias; with
+register gradients, every sample keeps them; without the feature, every sample has gradients), `gfx_render_tests`
+(mip level selection and the textured draws with the renderer's setting).
+
+Crackdown takes `--any360_gpu_capture=<file>` (creating `<file>.go` records the next `--any360_gpu_capture_kicks`
+kicks) to capture a frame in game for `gfx_replay`.
