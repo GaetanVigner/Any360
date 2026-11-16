@@ -569,6 +569,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       frames_ = 1;
       since_ = now;
       last_ = s;
+      last_shader_times_ = shader_times();  // the next report: its own period only (empty without ANY360_DRAW_TIMING)
       worst_ms_ = 0, slow_frames_ = very_slow_frames_ = 0, worst_cost_ = {};
       if (sampler_) sampler_->Write();  // the samples so far (the title may end without StopGraphics)
       gfx::g_diagnostics = true;
@@ -612,6 +613,31 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
                     kind(gfx::vk::kGpuTextureCopies), kind(gfx::vk::kGpuWriteBacks),
                     kind(gfx::vk::kGpuOther));
       log_(kinds);
+    }
+    if (std::map<uint64_t, ShaderTime> times = shader_times(); !times.empty()) {
+      // ANY360_DRAW_TIMING: the draws' GPU time by pixel shader over the period, the costliest first.
+      std::vector<std::pair<uint64_t, uint64_t>> by_time;  // ns this period, pixel shader hash
+      uint64_t total = 0;
+      for (const auto& [hash, st] : times) {
+        const auto before = last_shader_times_.find(hash);
+        const uint64_t ns = st.ns - (before == last_shader_times_.end() ? 0 : before->second.ns);
+        if (ns) by_time.push_back({ns, hash}), total += ns;
+      }
+      std::sort(by_time.rbegin(), by_time.rend());
+      std::string top = "Any360: GPU draw ms per frame by pixel shader (" + std::to_string(by_time.size()) + " shaders, " +
+                        std::to_string(total / ms).substr(0, 5) + " ms):";
+      for (size_t i = 0; i < std::min<size_t>(12, by_time.size()); ++i) {
+        const uint64_t hash = by_time[i].second;
+        const auto before = last_shader_times_.find(hash);
+        const uint64_t draws = times[hash].draws - (before == last_shader_times_.end() ? 0 : before->second.draws);
+        char entry[160];
+        std::snprintf(entry, sizeof(entry), " ps %016llX (vs %016llX) %.2f ms, %.1f draws, %.1f us a draw;",
+                      (unsigned long long)hash, (unsigned long long)times[hash].vertex_hash, by_time[i].first / ms,
+                      draws / n, draws ? by_time[i].first / 1e3 / double(draws) : 0.0);
+        top += entry;
+      }
+      log_(top);
+      last_shader_times_ = std::move(times);
     }
     if (cp_) {
       const uint64_t busy = cp_->ns_busy(), waiting = cp_->ns_waiting(), kicks = cp_->kicks(), direct = cp_->direct_kicks();
@@ -837,6 +863,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   FrameMarks last_marks_, worst_cost_;  // the last frame's counters; the cost of the period's slowest frame
   std::vector<float> intervals_;  // the period's frame times (ms)
   uint32_t slow_frames_ = 0, very_slow_frames_ = 0;
+  std::map<uint64_t, ShaderTime> last_shader_times_;  // ANY360_DRAW_TIMING: shader_times() at the last report
   gfx::vk::RendererStats last_;
 
   gfx::vk::Presenter presenter_;
