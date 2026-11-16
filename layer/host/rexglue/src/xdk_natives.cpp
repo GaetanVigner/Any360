@@ -62,7 +62,7 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "D3D blend", "D3D bool constants", "D3D int constants",
                                             "D3D pixel shader constants", "D3D SetTexture", "D3D SetStreamSource",
                                             "D3D sampler filter", "D3D SetVertexDeclaration", "D3D SetShader",
-                                            "D3D CPU range flush", "zlib inflate_fast"};
+                                            "D3D CPU range flush", "zlib inflate_fast", "png_read_filter_row"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -1003,6 +1003,44 @@ void RunInflateFastSlow(PPCContext& ctx, uint8_t* base, GuestFunction original) 
   };
   sides.call = fmt::format("bl {} bd {} tl {:08X} td {:08X} s {:08X} z {:08X} window {:08X}-{:08X} in {}", call.bl,
                            call.bd, call.tl, call.td, s, z, window, end, avail_in);
+  RunSides(mode, sides, ctx, base, original);
+}
+
+void RunPngFilterRowSlow(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  constexpr uint32_t f = uint32_t(Function::kPngFilterRow);
+  const Mode mode = SlowMode(f, base);
+  const uint32_t info = ctx.r4.u32, row = ctx.r5.u32, prev = ctx.r6.u32, filter = ctx.r7.u32, r1 = ctx.r1.u32;
+  const auto native = [=](PPCContext& c) {
+    if (any360::xdk::IsPlainMemory(r1 - 112, 112) && any360::xdk::PngReadFilterRow(g_memory, info, row, prev, filter)) {
+      SaveGprLr(c, 29);
+      any360::xdk::detail::GuestStore32(g_memory, r1 - 112, r1);
+      return;
+    }
+    original(c, base);
+  };
+  if (mode == Mode::kNative) {
+    native(ctx);
+    return;
+  }
+  // What either side may write: the row (and row[0] on a bad filter), the frame below r1.
+  const uint32_t rowbytes = any360::xdk::IsPlainMemory(info, 12) ? any360::xdk::detail::GuestLoad32(g_memory, info + 4) : 0;
+  if (mode == Mode::kOriginal || !any360::xdk::IsPlainMemory(info, 12) || rowbytes > kMostChecked ||
+      !any360::xdk::IsPlainMemory(row, std::max<uint32_t>(rowbytes, 1)) || !any360::xdk::IsPlainMemory(r1 - 112, 112)) {
+    original(ctx, base);
+    if (mode != Mode::kOriginal) g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  Sides sides;
+  sides.f = f;
+  sides.writes = {{row, std::max<uint32_t>(rowbytes, 1)}, {r1 - 112, 112}};
+  sides.work = rowbytes;
+  sides.native = native;
+  sides.differs = [](const PPCContext& a, const PPCContext& b) -> const char* {
+    if (a.r12.u32 != b.r12.u32) return "r12";
+    return nullptr;
+  };
+  sides.call = fmt::format("filter {} row {:08X} prev {:08X} rowbytes {} depth {}", filter, row, prev, rowbytes,
+                           any360::xdk::IsPlainMemory(info, 12) ? *g_memory.Host(info + 11) : 0);
   RunSides(mode, sides, ctx, base, original);
 }
 

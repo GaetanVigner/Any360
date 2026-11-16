@@ -32,6 +32,7 @@
 #include "any360/xdk/d3d.h"
 #include "any360/xdk/d3d_state.h"
 #include "any360/xdk/xaudio.h"
+#include "any360/xdk/libpng.h"
 #include "any360/xdk/zlib.h"
 #include "d3d_selftest.h"
 #include "any360/xdk/xapi.h"
@@ -48,7 +49,7 @@ enum class Function : uint32_t {
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
-  kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kCount
+  kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -70,6 +71,8 @@ void RunSetConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original)
 void RunFillSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t floats);
 // And for zlib's inflate_fast (ZlibInflateFast below).
 void RunInflateFastSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
+// And for libpng's png_read_filter_row (PngReadFilterRow below).
+void RunPngFilterRowSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
 // And for the D3D runtime's state setters (D3dState below): `native` the replacement on the registers (false: it
 // declines), `writes` what it may write (false: it declines).
 using D3dStateNative = bool (*)(const any360::xdk::Memory&, PPCContext&);
@@ -514,18 +517,37 @@ inline void XAudioFill(PPCContext& ctx, uint8_t* base, GuestFunction original, u
   RunFillSlow(ctx, base, original, floats);
 }
 
-// What the register save of a function that keeps r22-r31 leaves below r1 (the CRT's __savegprlr_22): the ten
-// registers as doublewords from r1 - 88, the return address (mflr r12) as a word at r1 - 8. A replacement that does
-// the whole function writes it as the function would; r12 is left the return address, as its restore leaves it.
-inline void SaveGprLr22(PPCContext& ctx) {
+// What the register save of a function that keeps r`first`-r31 leaves below r1 (the CRT's __savegprlr_<first>): the
+// registers as doublewords from r1 - 8 * (33 - first), the return address (mflr r12) as a word at r1 - 8. A
+// replacement that does the whole function writes it as the function would; r12 is left the return address, as its
+// restore leaves it. The caller has checked that [r1 - 8 * (33 - first), r1) is plain memory.
+inline void SaveGprLr(PPCContext& ctx, uint32_t first) {
   const uint32_t r1 = ctx.r1.u32;
-  const uint64_t saved[10] = {ctx.r22.u64, ctx.r23.u64, ctx.r24.u64, ctx.r25.u64, ctx.r26.u64,
-                              ctx.r27.u64, ctx.r28.u64, ctx.r29.u64, ctx.r30.u64, ctx.r31.u64};
-  for (uint32_t i = 0; i < 10; ++i) {
-    any360::xdk::detail::Store64(g_memory.Host(r1 - 88 + 8 * i), any360::xdk::detail::ByteSwap64(saved[i]));
+  const uint64_t gpr[10] = {ctx.r22.u64, ctx.r23.u64, ctx.r24.u64, ctx.r25.u64, ctx.r26.u64,
+                            ctx.r27.u64, ctx.r28.u64, ctx.r29.u64, ctx.r30.u64, ctx.r31.u64};
+  for (uint32_t n = first; n < 32; ++n) {
+    any360::xdk::detail::Store64(g_memory.Host(r1 - 8 * (33 - n)), any360::xdk::detail::ByteSwap64(gpr[n - 22]));
   }
   any360::xdk::detail::GuestStore32(g_memory, r1 - 8, uint32_t(ctx.lr));
   ctx.r12.u64 = uint32_t(ctx.lr);
+}
+inline void SaveGprLr22(PPCContext& ctx) { SaveGprLr(ctx, 22); }
+
+// libpng 1.0.5's png_read_filter_row (any360/xdk/libpng.h): r3 png_ptr, r4 row_info, r5 row, r6 prev_row, r7 the
+// filter. Leaves what the function leaves below r1: r29-r31 and the return address saved, and its 112-byte frame's
+// back chain (stwu r1,-112(r1): the caller's r1 at r1 - 112). Declined (a bad filter, the function warns): its own code.
+inline void PngReadFilterRow(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    if (any360::xdk::IsPlainMemory(ctx.r1.u32 - 112, 112) &&
+        any360::xdk::PngReadFilterRow(g_memory, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32)) [[likely]] {
+      SaveGprLr(ctx, 29);
+      any360::xdk::detail::GuestStore32(g_memory, ctx.r1.u32 - 112, ctx.r1.u32);
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunPngFilterRowSlow(ctx, base, original);
 }
 
 // zlib 1.1.4's inflate_fast (any360/xdk/zlib.h): r3 bl, r4 bd, r5 tl, r6 td, r7 the blocks state, r8 the stream;

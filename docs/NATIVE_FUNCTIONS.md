@@ -670,6 +670,31 @@ Measured (docs/perf/archive/2026-11-16-zlib-inflate-fast):
   copy loop that never ends, a corrupted link chain: the function would not end either) and 9 handed back after
   the bit count wrapped (zlib.h says why those differ). The benchmark's mixes are synthetic streams, not a title's.
 
+### libpng's png_read_filter_row (2026-11-16)
+
+The other half of Crackdown's PNG stalls: libpng 1.0.5's `png_read_filter_row`, which undoes each row's filter
+(Sub, Up, Average, Paeth). The same instructions in Crackdown's PNG loader's copy (0x82A7F5D0), D3DX's (0x8280F5C8)
+and The Simpsons Game's (0x82BFA728). Model: the PowerPC step by step (`libpng_reference.h`); native: `libpng.h`.
+
+| Function | Library | Handler | Declines | Crackdown | The Simpsons Game |
+|---|---|---|---|---|---|
+| `png_read_filter_row` | libpng 1.0.5 | `PngReadFilterRow` | a filter above 4 (the function warns), a pixel depth of 0, rows that are not plain memory or overlap, Average and Paeth with bpp above rowbytes (the function's loop does not end) | bound (the loader's copy): 12,452 calls, 0 different, none declined; D3DX's copy not bound (no run checked it) | not bound: the same mnemonics, its operands not read yet |
+
+- The binding writes what the function leaves below r1: r29-r31 and the return address (`SaveGprLr`, now for any
+  first register) and its 112-byte frame's back chain.
+- `xdk_libpng_tests`: every filter, pixel depths of 1 to 64 bits and some PNG has not, rows of 0 to 5,000 bytes,
+  smooth and random: 3,757 calls compared over the whole guest memory, 0 different; every call of a filter of 0 to 4
+  is taken but Average and Paeth with bpp above rowbytes, as the header says.
+- What optimization kept (`xdk_libpng_bench`, smooth rows): Paeth a pixel at a time in SSE2 (16-bit lanes, the
+  predictor chosen with masks), for 3, 4, 6 and 8-byte pixels: 3.4x (24-bit) and 5.0x (32-bit) over the first
+  version. Not kept: a Paeth one byte at a time without branches, 0.93x on 8-bit pixels. Up is 0.02 ns a byte as
+  written (the compiler's vectors); Sub and Average stay as written (a chain from byte to byte).
+- In game (`--any360_xdk_bench=true`): 11,729 -> 1,156 ns a call, 10.1x; the most frequent row is 3,840 bytes (a
+  960-pixel RGBA row). About 11,500 calls come before the city shows and about 950 in its first seconds: about
+  10 ms saved at its entry, over several frames. The A/B (5 launches a variant) is within noise: the steady figures
+  moved (+7% on the 1% low) where the function is not called any more, in a series slower in both variants than
+  the others. docs/perf/archive/2026-11-16-libpng-filter-row.
+
 ### Found on the way
 
 - Crackdown crashed after 40 to 55 seconds with a gamepad connected and the input group on `any360::sys`: its
