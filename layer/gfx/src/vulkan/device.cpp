@@ -234,6 +234,10 @@ bool Device::Create(const DeviceOptions& options) {
   }
   // A lost device's fault (address, vendor data) when the driver reports it (VK_EXT_device_fault).
   VkPhysicalDeviceFaultFeaturesEXT fault{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT};
+  VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR executables{
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
+  const char* stats_env = std::getenv("ANY360_PIPELINE_STATS");
+  bool pipeline_stats = false;
   VkDeviceCreateInfo device_info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, &enabled};
   device_info.queueCreateInfoCount = 1;
   device_info.pQueueCreateInfos = &queue_info;
@@ -260,6 +264,18 @@ bool Device::Create(const DeviceOptions& options) {
           std::strcmp(e.extensionName, VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME) == 0) {
         device_extensions.push_back(VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME);
         checkpoints = true;
+      }
+      if (stats_env && *stats_env &&
+          std::strcmp(e.extensionName, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME) == 0) {
+        device_extensions.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+        executables.pipelineExecutableInfo = VK_TRUE;
+        executables.pNext = enabled.pNext;
+        enabled.pNext = &executables;
+        pipeline_stats = true;
+      }
+      if (stats_env && *stats_env && std::getenv("ANY360_PIPELINE_ISA") &&
+          std::strcmp(e.extensionName, VK_AMD_SHADER_INFO_EXTENSION_NAME) == 0) {
+        device_extensions.push_back(VK_AMD_SHADER_INFO_EXTENSION_NAME);
       }
       if (std::strcmp(e.extensionName, VK_EXT_DEVICE_FAULT_EXTENSION_NAME) == 0) {
         VkPhysicalDeviceFaultFeaturesEXT has{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT};
@@ -290,6 +306,16 @@ bool Device::Create(const DeviceOptions& options) {
 #include "any360/gfx/vulkan/functions.inc"
 #undef ANY360_VK_FN
   fn_.vkGetDeviceQueue(device_, queue_family_, 0, &queue_);
+  if (pipeline_stats) {
+    get_executables_ = reinterpret_cast<PFN_vkGetPipelineExecutablePropertiesKHR>(
+        fn_.vkGetDeviceProcAddr(device_, "vkGetPipelineExecutablePropertiesKHR"));
+    get_executable_statistics_ = reinterpret_cast<PFN_vkGetPipelineExecutableStatisticsKHR>(
+        fn_.vkGetDeviceProcAddr(device_, "vkGetPipelineExecutableStatisticsKHR"));
+    get_executable_representations_ = reinterpret_cast<PFN_vkGetPipelineExecutableInternalRepresentationsKHR>(
+        fn_.vkGetDeviceProcAddr(device_, "vkGetPipelineExecutableInternalRepresentationsKHR"));
+    if (!get_executable_statistics_) get_executables_ = nullptr;
+    get_shader_info_amd_ = reinterpret_cast<PFN_vkGetShaderInfoAMD>(fn_.vkGetDeviceProcAddr(device_, "vkGetShaderInfoAMD"));
+  }
   if (names) set_name_ = reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(get(instance_, "vkSetDebugUtilsObjectNameEXT"));
   if (device_fault_) {
     get_fault_ = reinterpret_cast<PFN_vkGetDeviceFaultInfoEXT>(fn_.vkGetDeviceProcAddr(device_, "vkGetDeviceFaultInfoEXT"));

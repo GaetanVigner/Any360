@@ -1,0 +1,14 @@
+Crackdown city capture (29 frames) replayed with gfx_replay --bench --repeat 3 on the AMD Radeon iGPU (Windows
+driver), cores 8-15, ANY360_DRAW_TIMING=1; timing-only translator switches (removed after).
+
+GPU ms over the 29 frames (pass 2), and the costliest pixel shaders (us a draw):
+  exact (as shipped)              622.3   6A6A 13.03, F97F 2367.7, B3D1 1650.0, 9147 1099.4, 694E 3.24, 81BD 2.90
+  no zero-multiply rule           432.4   6A6A  6.57, F97F 1495.5, B3D1 1337.6, 9147  545.6, 694E 2.48, 81BD 2.26
+  contraction allowed             628.3   (no change)
+  both                            433.1
+  (b==0?0:a)*(a==0?0:b) form      590.1 against 602.6 exact in the same session (noise-level)
+Images, exact against no rule: 0.0469% of pixels differ, max 152 (NaN/inf leaking): the rule is needed.
+Images, exact against the other form: 0 pixels differ.
+Pipeline statistics (ANY360_PIPELINE_STATS): 6A6A ps 41 VGPRs / vs 57; F97F ps 48 / vs 42 (4.6 KB LDS); no scratch.
+Mesa (F:/Freedreno/mesa, 2026-11-05): nir_opt_algebraic.py turns (min(abs(a), abs(b)) == 0.0 ? 0.0 : a * b) into
+fmulz; ac_nir.c sets has_fmulz = true, has_ffmaz_no_denorms for gfx_level >= GFX10_3.

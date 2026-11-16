@@ -643,3 +643,30 @@ Measured on the Radeon iGPU (cores 8-15):
 Tests: `gfx_render_tests` (a chain of five resolves to one address, each sampled back in the same batch, with a
 red/blue swapped one between them: every pixel right, sampled in place, no copy; a 64-row texture over a 40-row
 resolve: copied, the rows below zeros), under the validation layer on NVIDIA and AMD.
+
+### What the shaders cost: pipeline statistics, the zero-multiply rule (2026-11-16)
+
+`ANY360_PIPELINE_STATS=<file>` (VK_KHR_pipeline_executable_properties) writes a line a pipeline with what the driver
+made of its shaders (`vs <hash>_<modification> + ps <hash>_<modification> | <stage>: numUsedVgprs=..; ...`), and
+`ANY360_PIPELINE_ISA=<dir>` their assembly: the executables' internal representations where the driver gives them,
+AMD's disassembly through VK_AMD_shader_info. With `ANY360_DRAW_TIMING=1` and `ANY360_DUMP_SHADERS=<dir>` (microcode
+and SPIR-V) over a capture in `gfx_replay`, a costly draw's shader can be followed from microcode to the GPU's
+instructions.
+
+Crackdown's city on the Radeon iGPU (Windows driver): the costliest shaders use 41-57 VGPRs, no scratch memory, no
+dynamically indexed registers; the full-screen shadow pass runs about 3150 instructions in wave64. Much of their
+ALU is the Xenos multiply rule (0 times anything, infinity and NaN included, is +0): `min(|a|, |b|) == 0 ? 0 : a * b`
+for each multiplied component (ZeroIfAnyOperandIsZero, the mul/mad paths), three instructions more for each
+multiply. Sized on the city capture (timing only):
+
+- without the rule: 622 -> 432 ms of GPU time over 29 frames (-30%; the world shader 13.0 -> 6.6 us a draw), but
+  0.05% of the pixels go wrong by up to 152 (NaN and infinities through, as in normalizing a zero vector): the rule
+  stays;
+- contraction allowed (fused multiply-adds): no change;
+- the other exact form Mesa recognizes, `(b == 0 ? 0 : a) * (a == 0 ? 0 : b)`: the same images, no measurable gain.
+
+GPUs have this multiply natively (AMD's v_mul_legacy_f32, D3D9's rule), but SPIR-V cannot ask for it. Mesa's
+`nir_opt_algebraic.py` turns exactly the translator's pattern into `fmulz` (`(min(abs(a), abs(b)) == 0.0 ? 0.0 :
+a * b) -> fmulz(a,b)`), and RADV sets `has_fmulz` for every AMD GPU (`ac_nir.c`), with `ffmaz` from GFX10.3, the
+Steam Deck's: on the primary target's driver the rule is one instruction, and the 30% is the Windows driver's. To
+confirm on a Steam Deck or another RADV machine (the same capture's per-shader times), not to work around here.

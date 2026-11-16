@@ -68,6 +68,13 @@ class Device {
   // Diagnostics (ANY360_GPU_CHECKPOINTS=1, VK_NV_device_diagnostic_checkpoints): a marker the GPU passes in `cb`, and
   // after a lost device the last marker each pipeline stage passed (stage flags, marker).
   bool checkpoints() const { return set_checkpoint_ != nullptr; }
+  // Diagnostics: with ANY360_PIPELINE_STATS=<file> (VK_KHR_pipeline_executable_properties), what the driver made of
+  // each pipeline's shaders (registers, instructions, spills...) can be asked for (renderer: one line a pipeline).
+  bool pipeline_stats() const { return get_executables_ != nullptr; }
+  PFN_vkGetPipelineExecutablePropertiesKHR get_executables_ = nullptr;
+  PFN_vkGetPipelineExecutableStatisticsKHR get_executable_statistics_ = nullptr;
+  PFN_vkGetPipelineExecutableInternalRepresentationsKHR get_executable_representations_ = nullptr;
+  PFN_vkGetShaderInfoAMD get_shader_info_amd_ = nullptr;  // VK_AMD_shader_info: the disassembly AMD's driver gives
   // Diagnostics: with the validation layer (or ANY360_GPU_NAMES=1), images and buffers carry the place that created
   // them (file:line, size, format) as their debug name, so a validation message says which one it is.
   bool naming() const { return set_name_ != nullptr; }

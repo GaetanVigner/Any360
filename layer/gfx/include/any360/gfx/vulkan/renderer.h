@@ -353,6 +353,11 @@ class VulkanRenderer : public gfx::Renderer {
   // The pipeline of a key; asynchronously, VK_NULL_HANDLE with `pending` set while it compiles.
   VkPipeline GetPipeline(const PipelineKey& key, bool& pending);
   VkPipeline CreatePipeline(const PipelineKey& key);  // any thread
+  // ANY360_PIPELINE_STATS=<file>: each pipeline's shaders as the driver compiled them, a line a pipeline (registers,
+  // instructions, spills...), and with ANY360_PIPELINE_ISA=<dir> their internal representations (the GPU's assembly).
+  void PipelineStats(const PipelineKey& key, VkPipeline pipeline);
+  std::mutex module_names_mutex_;
+  std::unordered_map<uint64_t, std::string> module_names_;  // "ps <hash>_<modification>", while the stats are on
   void CompilePipelines();                            // a compiler thread
   void TakeCompiledPipelines();                       // compile_mutex_ held
   void SavePipelineCache();                           // any thread

@@ -1118,6 +1118,13 @@ VkShaderModule VulkanRenderer::GetModule(TranslatedShader& shader, uint64_t modi
   info.pCode = reinterpret_cast<const uint32_t*>(binary.data());
   if (device_.fn().vkCreateShaderModule(device_.device(), &info, nullptr, &module) != VK_SUCCESS) return module = VK_NULL_HANDLE;
   module_sources_[uint64_t(module)] = {&shader, modification};
+  if (device_.pipeline_stats()) {
+    char name[64];
+    std::snprintf(name, sizeof(name), "%s %016llX_%016llX", shader.shader->type() == rg::xenos::ShaderType::kPixel ? "ps" : "vs",
+                  (unsigned long long)shader.shader->ucode_data_hash(), (unsigned long long)modification);
+    std::lock_guard lock(module_names_mutex_);
+    module_names_[uint64_t(module)] = name;
+  }
   ++stats_.translations;
   return module;
 }
@@ -1467,11 +1474,109 @@ VkPipeline VulkanRenderer::CreatePipeline(const PipelineKey& key) {
   info.pColorBlendState = &blend;
   info.pDynamicState = &dynamic;
   info.layout = VkPipelineLayout(key.layout);
+  if (device_.pipeline_stats()) {
+    info.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+    if (std::getenv("ANY360_PIPELINE_ISA")) info.flags |= VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR;
+  }
   VkPipeline pipeline = VK_NULL_HANDLE;
   if (device_.fn().vkCreateGraphicsPipelines(device_.device(), pipeline_cache_, 1, &info, nullptr, &pipeline) != VK_SUCCESS) {
     return VK_NULL_HANDLE;
   }
+  if (device_.pipeline_stats()) PipelineStats(key, pipeline);
   return pipeline;
+}
+
+void VulkanRenderer::PipelineStats(const PipelineKey& key, VkPipeline pipeline) {
+  const VkDevice d = device_.device();
+  std::string names;
+  {
+    std::lock_guard lock(module_names_mutex_);
+    for (uint64_t module : {key.vs_module, key.ps_module}) {
+      const auto it = module_names_.find(module);
+      if (it != module_names_.end()) names += (names.empty() ? "" : " + ") + it->second;
+    }
+  }
+  VkPipelineInfoKHR pipeline_info{VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR};
+  pipeline_info.pipeline = pipeline;
+  uint32_t count = 0;
+  device_.get_executables_(d, &pipeline_info, &count, nullptr);
+  std::vector<VkPipelineExecutablePropertiesKHR> executables(count, {VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_PROPERTIES_KHR});
+  device_.get_executables_(d, &pipeline_info, &count, executables.data());
+  std::string line = names;
+  const char* isa_dir = std::getenv("ANY360_PIPELINE_ISA");
+  for (uint32_t i = 0; i < count; ++i) {
+    VkPipelineExecutableInfoKHR executable{VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR};
+    executable.pipeline = pipeline;
+    executable.executableIndex = i;
+    uint32_t stats = 0;
+    device_.get_executable_statistics_(d, &executable, &stats, nullptr);
+    std::vector<VkPipelineExecutableStatisticKHR> values(stats, {VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_STATISTIC_KHR});
+    device_.get_executable_statistics_(d, &executable, &stats, values.data());
+    line += std::string(" | ") + executables[i].name + " (subgroup " + std::to_string(executables[i].subgroupSize) + "):";
+    for (const VkPipelineExecutableStatisticKHR& v : values) {
+      char value[96];
+      switch (v.format) {
+        case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR: std::snprintf(value, sizeof(value), "%u", v.value.b32); break;
+        case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR: std::snprintf(value, sizeof(value), "%lld", (long long)v.value.i64); break;
+        case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR: std::snprintf(value, sizeof(value), "%llu", (unsigned long long)v.value.u64); break;
+        default: std::snprintf(value, sizeof(value), "%g", v.value.f64); break;
+      }
+      line += std::string(" ") + v.name + "=" + value + ";";
+    }
+    if (isa_dir && device_.get_executable_representations_) {
+      uint32_t representations = 0;
+      device_.get_executable_representations_(d, &executable, &representations, nullptr);
+      std::vector<VkPipelineExecutableInternalRepresentationKHR> irs(
+          representations, {VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INTERNAL_REPRESENTATION_KHR});
+      device_.get_executable_representations_(d, &executable, &representations, irs.data());
+      std::vector<std::vector<char>> data(representations);
+      for (uint32_t r = 0; r < representations; ++r) {
+        data[r].resize(irs[r].dataSize + 1);
+        irs[r].pData = data[r].data();
+      }
+      device_.get_executable_representations_(d, &executable, &representations, irs.data());
+      std::string file = std::string(isa_dir) + "/" + names + " " + std::to_string(uint64_t(pipeline)) + " " +
+                         executables[i].name + ".txt";
+      for (char& c : file) {
+        if (c == '+' || c == ':') c = '_';
+      }
+      if (FILE* out = std::fopen(file.c_str(), "w")) {
+        for (uint32_t r = 0; r < representations; ++r) {
+          std::fprintf(out, "== %s: %s\n", irs[r].name, irs[r].description);
+          if (irs[r].isText) std::fwrite(data[r].data(), 1, irs[r].dataSize ? irs[r].dataSize - 1 : 0, out);
+          std::fprintf(out, "\n");
+        }
+        std::fclose(out);
+      }
+    }
+  }
+  if (isa_dir && device_.get_shader_info_amd_) {
+    // AMD: each stage's disassembly.
+    for (VkShaderStageFlagBits stage : {VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_FRAGMENT_BIT}) {
+      size_t size = 0;
+      if (device_.get_shader_info_amd_(d, pipeline, stage, VK_SHADER_INFO_TYPE_DISASSEMBLY_AMD, &size, nullptr) != VK_SUCCESS ||
+          !size) {
+        continue;
+      }
+      std::vector<char> text(size);
+      if (device_.get_shader_info_amd_(d, pipeline, stage, VK_SHADER_INFO_TYPE_DISASSEMBLY_AMD, &size, text.data()) != VK_SUCCESS) continue;
+      std::string file = std::string(isa_dir) + "/" + names + (stage == VK_SHADER_STAGE_VERTEX_BIT ? " vs " : " ps ") +
+                         std::to_string(uint64_t(pipeline)) + ".txt";
+      for (char& c : file) {
+        if (c == '+') c = '_';
+      }
+      if (FILE* out = std::fopen(file.c_str(), "w")) {
+        std::fwrite(text.data(), 1, size, out);
+        std::fclose(out);
+      }
+    }
+  }
+  static std::mutex file_mutex;
+  std::lock_guard lock(file_mutex);
+  if (FILE* out = std::fopen(std::getenv("ANY360_PIPELINE_STATS"), "a")) {
+    std::fprintf(out, "%s\n", line.c_str());
+    std::fclose(out);
+  }
 }
 
 void VulkanRenderer::Draw(const DrawCall& draw) {
