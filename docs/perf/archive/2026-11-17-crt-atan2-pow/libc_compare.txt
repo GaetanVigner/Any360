@@ -1,0 +1,6 @@
+# libc_compare (Any360's natives on Crackdown's own tables from its decrypted image, against the host's UCRT; best of 5 runs of 1 M calls; cores 0-7)
+sin    Any360  16.26 ns, libC   8.37 ns (libC 1.94x Any360) | results: 320592 of 1048576 differ (30.57%), 1 ULP: 318166, more: 2426, max 39 ULP
+cos    Any360  17.04 ns, libC   8.09 ns (libC 2.11x Any360) | results: 355164 of 1048576 differ (33.87%), 1 ULP: 352672, more: 2492, max 28 ULP
+asin   Any360  14.10 ns, libC   7.88 ns (libC 1.79x Any360) | results: 242413 of 1048576 differ (23.12%), 1 ULP: 235329, more: 7084, max 2 ULP
+atan2  Any360  18.63 ns, libC  13.60 ns (libC 1.37x Any360) | results: 495070 of 1048576 differ (47.21%), 1 ULP: 464299, more: 30771, max 3 ULP
+pow    Any360  55.28 ns, libC   8.37 ns (libC 6.61x Any360) | results: 287719 of 1048576 differ (27.44%), 1 ULP: 287695, more: 24, max 2 ULP

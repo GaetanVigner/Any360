@@ -63,7 +63,7 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "D3D pixel shader constants", "D3D SetTexture", "D3D SetStreamSource",
                                             "D3D sampler filter", "D3D SetVertexDeclaration", "D3D SetShader",
                                             "D3D CPU range flush", "zlib inflate_fast", "png_read_filter_row", "XMemSet", "sin", "cos", "asin",
-                                            "D3D render state"};
+                                            "D3D render state", "atan2", "pow"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -1084,6 +1084,44 @@ void RunCrtMathSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunc
     return a.f1.u64 != b.f1.u64 ? "f1" : nullptr;
   };
   sides.call = fmt::format("f1 {:016X} ({})", ctx.f1.u64, ctx.f1.f64);
+  RunSides(mode, sides, ctx, base, original);
+}
+
+void RunCrtMath2Slow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original,
+                     const any360::xdk::CrtAtan2Build& atan2, const any360::xdk::CrtPowBuild& pow) {
+  const uint32_t f = uint32_t(function);
+  const Mode mode = SlowMode(f, base);
+  const uint32_t r1 = ctx.r1.u32;
+  const auto native = [=](PPCContext& c) {
+    double result = 0;
+    const bool taken = function == Function::kAtan2
+                           ? any360::xdk::CrtAtan2(g_memory, atan2, r1, c.f1.f64, c.f2.f64, result)
+                           : any360::xdk::CrtPow(g_memory, pow, r1, c.f1.f64, c.f2.f64, result);
+    if (taken) {
+      c.f1.f64 = result;
+      return;
+    }
+    original(c, base);
+  };
+  if (mode == Mode::kNative) {
+    native(ctx);
+    return;
+  }
+  if (mode == Mode::kOriginal || !any360::xdk::IsPlainMemory(r1 + 16, 16)) {
+    original(ctx, base);
+    if (mode != Mode::kOriginal) g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  // What either side may write: the caller's two parameter words; what it leaves: f1.
+  Sides sides;
+  sides.f = f;
+  sides.writes = {{r1 + 16, 16}};
+  sides.work = 1;
+  sides.native = native;
+  sides.differs = [](const PPCContext& a, const PPCContext& b) -> const char* {
+    return a.f1.u64 != b.f1.u64 ? "f1" : nullptr;
+  };
+  sides.call = fmt::format("f1 {:016X} ({}), f2 {:016X} ({})", ctx.f1.u64, ctx.f1.f64, ctx.f2.u64, ctx.f2.f64);
   RunSides(mode, sides, ctx, base, original);
 }
 

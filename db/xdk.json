@@ -86,6 +86,15 @@
   "note": "The C runtime's asin: a rational polynomial in x*x, past 0.5 in (1 - |x|) / 2 through a square root; the build's table (Crackdown: 0x82BA3C20). Any360: xdk::CrtAsin (the same bits), bound in Crackdown"
  },
  {
+  "name": "atan2",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82AB64C0"
+  },
+  "note": "The C runtime's atan2(y, x): the ratio of the smaller to the larger magnitude, past tan(pi/12) reduced by pi/6, a rational polynomial, the octant's offset; the build's table (Crackdown: 0x82BA3B68); leaves y and x in the caller's parameter words. Any360: xdk::CrtAtan2 (the same bits; NaN arguments declined), bound in Crackdown"
+ },
+ {
   "name": "cos",
   "library": "CRT",
   "any360": "native",
@@ -148,6 +157,15 @@
    "tdu": "0x826460C0"
   },
   "note": "Any360: xdk::CrtMemset, the one function the three titles bind (docs/NATIVE_FUNCTIONS.md)"
+ },
+ {
+  "name": "pow",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82AB57F8"
+  },
+  "note": "The C runtime's pow (Cephes' algorithm): integer powers by squaring, otherwise log2 in sixteenths against a 2^(-i/16) table and exp2 by a polynomial, through its own frexp, integer test, log, _get_exp and _set_exp; the build's table (Crackdown: 0x82063B38) and constants from the runtime's pool. Any360: xdk::CrtPow (the same bits; x = 0, infinities and NaNs declined), bound in Crackdown; TDU has the same function at 0x82642460 (not bound)"
  },
  {
   "name": "sin",

@@ -753,6 +753,37 @@ first instruction does.
 - Measured: off-game as fast as the models (about 17-18 ns: a fixed chain of dependent operations); in game sin 33.7
   -> 32.2 ns (1.05x), cos 33.6 -> 28.7 (1.2x), asin 23.1 -> 18.3 (1.3x). About 80 ms saved in 150 seconds.
 
+### atan2 and pow (2026-11-17)
+
+The next two of the C runtime's math functions in Crackdown, done as sin, cos and asin (above): the function's own
+operations in its order on the build's own tables, for the same bits. pow is Cephes' algorithm and calls seven
+functions of its own (frexp, an integer test, log, `_get_exp`, `_set_exp`, the register save and restore); the
+native one does their work inline, so in game it saves more than the others.
+
+| Function | Library | Handler | Declines | Crackdown | Test Drive Unlimited | The Simpsons Game |
+|---|---|---|---|---|---|---|
+| `atan2` | CRT | `CrtAtan2` | a NaN argument; a stack or table that is not plain memory | bound: 185,832 calls, 0 different | not looked for | not looked for |
+| `pow` | CRT | `CrtPow` | x = 0 with y not 0, an infinite or NaN argument (its own tests and callees for those); the same | bound: 111,850 calls, 0 different | the same function at 0x82642460, not bound | not looked for |
+
+- Both leave their two arguments in the caller's parameter words (r1 + 16, r1 + 24), as the functions store them;
+  what they store in their own frames below r1 is not written (nothing reads it after they return).
+- `xdk_crt_math_tests`: 319,790 atan2 and pow calls compared with the models (result bits and memory): special
+  values against each other, random bits, every octant, and each of pow's paths (integer powers, x near 1 through
+  its log, negative x, overflow, underflow, subnormal x, |y| past its limit); 1,562 declined as listed. The pow model
+  follows the function's words (its frexp's loop on 32-bit halves, its `cntlzw` pair), the native one 64-bit forms.
+- Measured: off-game as fast as the models (atan2 about 19.6 ns, pow about 56 ns); in game (title screen) atan2
+  88.9 -> 56.7 ns (1.6x), pow 703 -> 190 ns (3.7x).
+
+#### The host's C library beside them
+
+Measured at the owner's request (docs/perf/archive/2026-11-17-crt-atan2-pow/): the five natives on Crackdown's own
+tables against the host's UCRT. The UCRT is 1.4x (atan2) to 6.6x (pow) faster, and 23% (asin) to 47% (atan2) of its
+results are not the title's, mostly by 1 ULP (sin and cos up to 28-39 ULPs near multiples of pi). So it is not what
+the bindings run: the rule is the title's bits (0 different). In Crackdown's city the five take about 0.2% of the
+process, so even a free math library would not show in the frame rate there. Kept for the per-title fine-tuning
+phase: an opt-in flag, title by title and function by function, kept only where an A/B shows a gain and the game
+still plays the same (physics, AI, co-op); never counted as checked.
+
 ### Found on the way
 
 - Crackdown crashed after 40 to 55 seconds with a gamepad connected and the input group on `any360::sys`: its

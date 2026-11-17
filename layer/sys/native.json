@@ -12,6 +12,8 @@
   "sin",
   "cos",
   "asin",
+  "atan2",
+  "pow",
   "D3D GPU wait step",
   "D3D dirty constants",
   "D3D dirty words",

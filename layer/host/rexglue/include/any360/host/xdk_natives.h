@@ -51,7 +51,7 @@ enum class Function : uint32_t {
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
   kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kSin, kCos, kAsin,
-  kD3dRenderState, kCount
+  kD3dRenderState, kAtan2, kPow, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -76,6 +76,9 @@ void RunInflateFastSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
 // And for the C runtime's sin, cos and asin (CrtSin, CrtCos, CrtAsin below): `function` one of the three.
 void RunCrtMathSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original,
                     const any360::xdk::CrtTrigBuild& trig, const any360::xdk::CrtAsinBuild& asin);
+// And for the C runtime's atan2 and pow (CrtAtan2, CrtPow below): `function` one of the two.
+void RunCrtMath2Slow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original,
+                     const any360::xdk::CrtAtan2Build& atan2, const any360::xdk::CrtPowBuild& pow);
 // And for libpng's png_read_filter_row (PngReadFilterRow below).
 void RunPngFilterRowSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
 // And for the D3D runtime's state setters (D3dState below): `native` the replacement on the registers (false: it
@@ -637,6 +640,34 @@ inline void CrtAsin(PPCContext& ctx, uint8_t* base, GuestFunction original, cons
     return;
   }
   RunCrtMathSlow(Function::kAsin, ctx, base, original, {}, build);
+}
+// atan2 (f1 = y, f2 = x) and pow (f1 = x, f2 = y): f1 the result; both leave their two arguments in the caller's
+// parameter words (r1 + 16 and r1 + 24), as the functions store them.
+inline void CrtAtan2(PPCContext& ctx, uint8_t* base, GuestFunction original, const any360::xdk::CrtAtan2Build& build) {
+  ctx.fpscr.disableFlushMode();
+  if (g_mode == Mode::kNative) [[likely]] {
+    double result;
+    if (any360::xdk::CrtAtan2(g_memory, build, ctx.r1.u32, ctx.f1.f64, ctx.f2.f64, result)) [[likely]] {
+      ctx.f1.f64 = result;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunCrtMath2Slow(Function::kAtan2, ctx, base, original, build, {});
+}
+inline void CrtPow(PPCContext& ctx, uint8_t* base, GuestFunction original, const any360::xdk::CrtPowBuild& build) {
+  ctx.fpscr.disableFlushMode();
+  if (g_mode == Mode::kNative) [[likely]] {
+    double result;
+    if (any360::xdk::CrtPow(g_memory, build, ctx.r1.u32, ctx.f1.f64, ctx.f2.f64, result)) [[likely]] {
+      ctx.f1.f64 = result;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunCrtMath2Slow(Function::kPow, ctx, base, original, {}, build);
 }
 
 // The D3D runtime's GPU wait step (any360/xdk/d3d.h): r3 the wait's state; returns nonzero while the wait goes on.
