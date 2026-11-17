@@ -4,6 +4,8 @@
  "0x826ACD08": ["D3DResource_Release", "atomic decrement of the count; at 0, the parent released and the resource destroyed (sub_826AC6C8)"],
  "0x826B0AA0": ["D3DDevice_SetRenderState_ViewportEnable", "PA_CL_VTE_CNTL 0x43F or 0x400, PA_CL_CLIP_CNTL clip_disable with the viewport off; dirty 0x20, 0x80"],
  "0x826B0488": ["D3DDevice_SetRenderState_DepthBias", "the bias as both polygon offsets, PA_SU_SC_MODE_CNTL poly offset enables unless scale and bias are 0"],
+ "0x826B1EE0": ["D3DDevice_SetRenderTarget", "the target's surface, COLOR_INFO (2_10_10_10 _AS_ variant fixed), viewport for target 0, query flag, color mask"],
+ "0x826B2218": ["D3DDevice_SetDepthStencilSurface", "the depth surface, DEPTH_INFO, 0x2203, hi-z pitch when tiled, query flag, z and stencil enables"],
  "0x826AF038": ["D3DDevice_SetTexture", "stage's fetch constant from the texture's, mip range clamped; old texture released (fence or release list)"],
  "0x826B1D30": ["D3DDevice_SetStreamSource", "stream's vertex fetch constant, stride byte; old buffer released"],
  "0x826B1180": ["D3DDevice_SetSamplerState_MinFilter", "fetch constant words 3-4: min filter and anisotropy"],

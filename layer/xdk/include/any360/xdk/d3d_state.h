@@ -56,6 +56,22 @@ struct D3dLayout {
   // 0.0f the depth bias is compared with (a guest address in the title's image).
   uint32_t clip_control = 10436, mode_control = 10440, vte_control = 10444, poly_offset = 10704;
   uint32_t zero_float = 0x820722DCu;
+  // The bound surfaces: render targets 0-3 then the depth surface (a word each), and those a tiling recorded (same
+  // order). The mirror's RB_SURFACE_INFO (0x2000), RB_COLOR_INFO (0x2001; RB_DEPTH_INFO 0x2002, RB_COLOR1-3_INFO
+  // 0x2003-0x2005 after it), RB_COLOR_MASK (0x2104), RB_DEPTHCONTROL (0x2200), the word of 0x2203 a depth surface sets.
+  uint32_t surfaces = 12160, tiled_surfaces = 12448;
+  uint32_t surface_info = 10240, color_info = 10244, color_mask = 10332, depth_control = 10420, depth_word = 10432;
+  // As the title set them: the color write masks (a word a target), the depth and stencil enables; a word a target:
+  // its 2_10_10_10 formats taken as their _AS_ variants (1) or not (0).
+  uint32_t color_mask_set = 11580, depth_enable_set = 11596, stencil_enable_set = 11600, target_as_wide = 11748;
+  // The tiling's state: the bin mask's word (non-zero: one set), the flags (bit 4 tiled, bit 5 tiled when the
+  // surfaces match the recorded ones, bit 3 none, bit 1 the draws' predicated-query variant), the depth's flags (bit 6
+  // the surface's word 32 bit 0), the options (bit 6), two bytes the query also needs at 0, the hi-z pitch.
+  uint32_t bin_mask_set = 12436, tiling_flags = 10812, depth_flags = 10814, tiling_options = 10815;
+  uint32_t tiling_pending[2] = {11841, 11907};
+  uint32_t tiling_hiz_pitch = 12892;
+  // The command buffer's cursor and the point past which a writer first makes room (the runtime's own check).
+  uint32_t command_cursor = 48, command_end = 56;
 };
 
 namespace detail {
@@ -159,6 +175,116 @@ inline bool D3dSetDepthBias(const Memory& m, const D3dLayout& l, uint32_t device
                 (detail::At32(d + l.mode_control) & ~0x1800u) | (front ? 0x800u : 0u) | (back ? 0x1000u : 0u));
   detail::Or64(m, device + l.constant_dirty, (uint64_t(1) << 44) | (uint64_t(1) << 42));
   detail::Or64(m, device + l.state_dirty, 0x40);
+  return true;
+}
+
+namespace detail {
+// The tiling's surfaces as the runtime checks them: flags bit 4, or bit 5 with each bound surface the recorded one
+// (or none bound there).
+inline bool SurfacesTiled(const uint8_t* d, const D3dLayout& l) {
+  const uint8_t flags = d[l.tiling_flags];
+  if (flags & 0x10) return true;
+  if (!(flags & 0x20)) return false;
+  for (uint32_t k = 0; k < 5; ++k) {
+    const uint32_t bound = At32(d + l.surfaces + 4 * k);
+    if (At32(d + l.tiled_surfaces + 4 * k) != bound && bound != 0) return false;
+  }
+  return true;
+}
+// The draws' predicated-query variant (tiling flags bit 1): no bin mask set, the surfaces tiled, flags bit 3 off,
+// and options bit 6 or both pending bytes 0.
+inline void SetTilingQuery(uint8_t* d, const D3dLayout& l) {
+  const bool query = At32(d + l.bin_mask_set) == 0 && SurfacesTiled(d, l) && !(d[l.tiling_flags] & 0x08) &&
+                     ((d[l.tiling_options] & 0x40) || (d[l.tiling_pending[0]] == 0 && d[l.tiling_pending[1]] == 0));
+  d[l.tiling_flags] = uint8_t((d[l.tiling_flags] & ~0x02) | (query ? 0x02 : 0));
+}
+// The device's fields the surface setters touch, and the surface's words they read (24-39, the helper's too).
+inline bool SurfaceSetterAccepts(const D3dLayout& l, uint32_t device, uint32_t surface) {
+  return IsPlainMemory(device, l.device_bytes) &&
+         (surface == 0 || (IsPlainMemory(surface, 40) && !Overlap(surface, 40, device, l.device_bytes)));
+}
+}  // namespace detail
+
+// SetRenderTarget (Crackdown sub_826B1EE0): target `index` (0-3) bound to `surface` (0: none). A surface's word 28
+// becomes the target's COLOR_INFO with dirty bit 56 (index 0) or 55 - index; a 2_10_10_10 format (2, 3, 10, 12)
+// whose _AS_ bit (19) is not what the target's word says is switched to the other variant in the surface and the
+// mirror. Target 0 then has the viewport and scissor set to its surface, or to the depth surface without one:
+// `viewport_of(surface)`, the runtime's function (it writes the device), and the predicated-query flag set again.
+// Last the target's color write mask (0 with no surface bound) and dirty bit 37. Declined: index past 3, memory not
+// plain, the surface over the device.
+template <class ViewportOf>
+inline bool D3dSetRenderTarget(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t index, uint32_t surface,
+                               ViewportOf&& viewport_of) {
+  if (index > 3 || !detail::SurfaceSetterAccepts(l, device, surface)) return false;
+  uint8_t* d = m.Host(device);
+  detail::Set32(d + l.surfaces + 4 * index, surface);
+  if (surface) {
+    uint8_t* s = m.Host(surface);
+    const uint32_t slot = index ? index + 1 : 0;
+    const uint64_t dirty = (uint64_t(1) << 63) >> (7 + slot);
+    uint8_t* info = d + l.color_info + 4 * slot;
+    const uint32_t word = detail::At32(s + 28);
+    detail::Set32(info, word);
+    detail::Or64(m, device + l.state_dirty, dirty);
+    const uint32_t wide = detail::At32(d + l.target_as_wide + 4 * index);
+    const uint32_t format = (word >> 16) & 0xF;
+    if ((format == 2 || format == 3 || format == 10 || format == 12) && ((word >> 19) & 1) != wide) {
+      const uint32_t keep = wide - 1;  // all ones for 0: the narrow format; 0 for 1: the wide one
+      const uint32_t other = ((((format >> 1) - 3) & keep) | (((format + 3) << 1) & ~keep)) & 0xF;
+      detail::Set32(s + 28, (word & ~0xF0000u) | other << 16);
+      detail::Set32(info, (detail::At32(info) & ~0xF0000u) | other << 16);
+    }
+  }
+  if (index == 0) {
+    const uint32_t target = surface ? surface : detail::At32(d + l.surfaces + 16);
+    if (target) viewport_of(target);
+    detail::SetTilingQuery(d, l);
+  }
+  const uint32_t mask = detail::At32(d + l.surfaces + 4 * index) ? detail::At32(d + l.color_mask_set + 4 * index) : 0;
+  const uint32_t shift = 4 * index;
+  detail::Set32(d + l.color_mask, (detail::At32(d + l.color_mask) & ~(0xFu << shift)) | (mask & 0xF) << shift);
+  detail::Or64(m, device + l.state_dirty, uint64_t(1) << 37);
+  return true;
+}
+
+// SetDepthStencilSurface (Crackdown sub_826B2218): the depth surface bound (0: none). A surface: with no render
+// target 0, the viewport and scissor set to it first (`viewport_of(surface)`, the runtime's function); its word 28
+// to DEPTH_INFO, word 32 to 0x2203's word and its bit 0 to the depth flags' bit 6; when tiled (options bit 6 and the
+// surfaces tiled) SURFACE_INFO's hi-z pitch (bits 18-31) from the tiling's; dirty bits 55, 8 and 17. None: 0x2203's
+// low 4 bits and the depth flags' bit 6 cleared, dirty bit 8. Then the predicated-query flag, DEPTHCONTROL's z and
+// stencil enables as the title set them (0 with no surface bound), dirty bits 11 and 17. Declined: memory not plain,
+// the surface over the device.
+template <class ViewportOf>
+inline bool D3dSetDepthStencilSurface(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t surface,
+                                      ViewportOf&& viewport_of) {
+  if (!detail::SurfaceSetterAccepts(l, device, surface)) return false;
+  uint8_t* d = m.Host(device);
+  detail::Set32(d + l.surfaces + 16, surface);
+  if (surface) {
+    if (detail::At32(d + l.surfaces) == 0) viewport_of(surface);
+    const uint8_t* s = m.Host(surface);
+    const bool tiled = (d[l.tiling_options] & 0x40) != 0;
+    detail::Set32(d + l.color_info + 4, detail::At32(s + 28));
+    const uint32_t word = detail::At32(s + 32);
+    detail::Set32(d + l.depth_word, word);
+    d[l.depth_flags] = uint8_t((d[l.depth_flags] & ~0x40) | (word & 1) << 6);
+    if (tiled && detail::SurfacesTiled(d, l)) {
+      detail::Set32(d + l.surface_info,
+                    (detail::At32(d + l.surface_info) & 0x3FFFFu) | detail::At32(d + l.tiling_hiz_pitch) << 18);
+    }
+    detail::Or64(m, device + l.state_dirty, (uint64_t(1) << 55) | 0x100 | 0x20000);
+  } else {
+    detail::Set32(d + l.depth_word, detail::At32(d + l.depth_word) & ~0xFu);
+    d[l.depth_flags] &= 0xBF;
+    detail::Or64(m, device + l.state_dirty, 0x100);
+  }
+  detail::SetTilingQuery(d, l);
+  const bool bound = detail::At32(d + l.surfaces + 16) != 0;
+  const uint32_t z = bound ? detail::At32(d + l.depth_enable_set) : 0;
+  detail::Set32(d + l.depth_control, (detail::At32(d + l.depth_control) & ~2u) | (z & 1) << 1);
+  const uint32_t stencil = detail::At32(d + l.surfaces + 16) != 0 ? detail::At32(d + l.stencil_enable_set) : 0;
+  detail::Set32(d + l.depth_control, (detail::At32(d + l.depth_control) & ~1u) | (stencil & 1));
+  detail::Or64(m, device + l.state_dirty, 0x800 | 0x20000);
   return true;
 }
 

@@ -51,7 +51,7 @@ enum class Function : uint32_t {
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
   kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kSin, kCos, kAsin,
-  kD3dRenderState, kAtan2, kPow, kCount
+  kD3dRenderState, kAtan2, kPow, kD3dSurfaces, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -855,6 +855,83 @@ struct DepthBias {
     AddRange(w, device + l.constant_dirty, 8);
     AddRange(w, device + l.state_dirty, 8);
     return true;
+  }
+};
+// The runtime's function SetRenderTarget and SetDepthStencilSurface call (the title sets it): r3 the device, r4 a
+// surface: the viewport and scissor set to the surface, their packets written (Crackdown sub_826AF2D8).
+inline GuestFunction g_surface_viewport = nullptr;
+// That function as the setters' bl runs it: r1 their frame (112 bytes), r3 the device, r4 the surface.
+struct SurfaceViewport {
+  PPCContext& ctx;
+  uint8_t* base;
+  uint32_t device;
+  void operator()(uint32_t surface) const {
+    const uint64_t r1 = ctx.r1.u64;
+    ctx.r1.u64 = r1 - 112;
+    ctx.r3.u64 = device;
+    ctx.r4.u64 = surface;
+    g_surface_viewport(ctx, base);
+    ctx.r1.u64 = r1;
+  }
+};
+// What the two setters write: their device fields, the viewport function's (Crackdown's runtime: SURFACE_INFO, +10308,
+// the viewport's floats at +10376, +10556, the viewport and scissor as set at +12368, the command buffer's cursor)
+// and, for a render target, the surface's word 28. Only those: the device's other fields are other threads' too (put
+// back when verified, their writes would be lost). The function's packets go past the cursor (the same on both sides
+// when verified). Declined when it could make room for them on the way (one header and a packet a tile, 8 words each,
+// past its end): run twice when verified, that would send twice.
+inline constexpr uint32_t kViewportTiles = 12468;  // the tiling's tile count (the viewport function's loop)
+inline constexpr any360::xdk::Range kViewportWrites[] = {{10240, 4}, {10308, 8}, {10376, 24}, {10556, 4}, {12368, 44}};
+inline bool SurfaceWrites(const PPCContext& ctx, uint32_t surface, std::vector<any360::xdk::Range>& w) {
+  const any360::xdk::D3dLayout& l = g_d3d_layout;
+  const uint32_t device = ctx.r3.u32;
+  if (!g_surface_viewport || !any360::xdk::detail::SurfaceSetterAccepts(l, device, surface)) return false;
+  const any360::xdk::Memory& m = g_memory;
+  const uint32_t cursor = any360::xdk::detail::Get32(m, device + l.command_cursor);
+  const uint32_t end = any360::xdk::detail::Get32(m, device + l.command_end);
+  const uint32_t tiles = any360::xdk::detail::Get32(m, device + kViewportTiles);
+  if (tiles > 64 || cursor > end || end - cursor < 4 * 8 * (tiles + 4)) return false;
+  for (const any360::xdk::Range& r : kViewportWrites) AddRange(w, device + r.at, r.size);
+  AddRange(w, device + l.command_cursor, 4);
+  AddRange(w, device + l.state_dirty, 8);
+  AddRange(w, device + l.constant_dirty, 8);
+  AddRange(w, device + l.surfaces, 20);
+  AddRange(w, device + l.color_info, 20);
+  AddRange(w, device + l.color_mask, 4);
+  AddRange(w, device + l.depth_control, 4);
+  AddRange(w, device + l.depth_word, 4);
+  AddRange(w, device + l.tiling_flags, 1);
+  AddRange(w, device + l.depth_flags, 1);
+  return true;
+}
+// SetRenderTarget: r4 the target (0-3), r5 the surface.
+struct SetRenderTarget {
+  static constexpr Function kFunction = Function::kD3dSurfaces;
+  static constexpr bool kVoid = true;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    if (!g_surface_viewport) return false;
+    const uint32_t device = ctx.r3.u32;
+    return any360::xdk::D3dSetRenderTarget(m, g_d3d_layout, device, ctx.r4.u32, ctx.r5.u32,
+                                           SurfaceViewport{ctx, m.base, device});
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    if (ctx.r4.u32 > 3 || !SurfaceWrites(ctx, ctx.r5.u32, w)) return false;
+    if (ctx.r5.u32) AddRange(w, ctx.r5.u32 + 28, 4);
+    return true;
+  }
+};
+// SetDepthStencilSurface: r4 the surface.
+struct SetDepthStencilSurface {
+  static constexpr Function kFunction = Function::kD3dSurfaces;
+  static constexpr bool kVoid = true;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    if (!g_surface_viewport) return false;
+    const uint32_t device = ctx.r3.u32;
+    return any360::xdk::D3dSetDepthStencilSurface(m, g_d3d_layout, device, ctx.r4.u32,
+                                                  SurfaceViewport{ctx, m.base, device});
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    return SurfaceWrites(ctx, ctx.r4.u32, w);
   }
 };
 // SetTexture: r4 the stage, r5 the texture, r6 the dirty bits.

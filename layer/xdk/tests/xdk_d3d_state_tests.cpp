@@ -38,6 +38,11 @@ xdk::D3dLayout Shifted() {
   l.stage_filter_index += 40, l.stage_lod_limit += 40, l.vertex_declaration += 40, l.pixel_shader += 40;
   l.vertex_shader += 40, l.shader_flags += 40;
   l.clip_control += 40, l.mode_control += 40, l.vte_control += 40, l.poly_offset += 40;
+  l.surfaces += 40, l.tiled_surfaces += 40, l.surface_info += 40, l.color_info += 40, l.color_mask += 40;
+  l.depth_control += 40, l.depth_word += 40, l.color_mask_set += 40, l.depth_enable_set += 40;
+  l.stencil_enable_set += 40, l.target_as_wide += 40, l.bin_mask_set += 40, l.tiling_flags += 40;
+  l.depth_flags += 40, l.tiling_options += 40, l.tiling_pending[0] += 40, l.tiling_pending[1] += 40;
+  l.tiling_hiz_pitch += 40;
   return l;
 }
 
@@ -468,8 +473,74 @@ void TestRenderStates(xdk::D3dLayout l, uint32_t seed) {
   CHECK(p.native == q.native);
 }
 
+// SetRenderTarget and SetDepthStencilSurface against their code read line by line. The runtime's viewport function
+// is a stand-in that writes what the later steps read (SURFACE_INFO, the dirty bits, the tiling flags, the bin mask's
+// word), so a call made at another point shows. Surfaces bound or not, recorded or not, every tiling flag, formats
+// 2_10_10_10 or not with their _AS_ bit as the target's word says or not (that word 0, 1 or any), indices past 3 and
+// surfaces over the device declined.
+void TestSurfaceSetters(const xdk::D3dLayout& l, uint32_t seed) {
+  std::mt19937_64 rng(seed);
+  constexpr uint32_t kSurfaces = 0x60000;
+  auto stand_in = [&](const xdk::Memory& m, std::vector<uint32_t>& calls) {
+    return [&m, &l, &calls](uint32_t surface) {
+      calls.push_back(surface);
+      ref::stw(m, kDevice + l.surface_info, surface ^ 0x5A5A1234u);
+      ref::std_(m, kDevice + l.state_dirty, ref::ld(m, kDevice + l.state_dirty) | (uint64_t(1) << 57));
+      *m.Host(kDevice + l.tiling_flags) ^= uint8_t(surface & 0x38);
+      if (surface & 0x40) ref::stw(m, kDevice + l.bin_mask_set, 0);
+    };
+  };
+  auto surface_at = [&](uint32_t k) { return kSurfaces + 64 * k; };
+  for (int round = 0; round < 200; ++round) {
+    Pair p(seed + round);
+    for (int call = 0; call < 32; ++call) {
+      for (uint32_t k = 0; k < 5; ++k) {
+        if (rng() % 3 == 0) Put32Both(p, kDevice + l.surfaces + 4 * k, rng() % 3 ? surface_at(uint32_t(rng() % 8)) : 0);
+        if (rng() % 3 == 0) {
+          const uint32_t bound = ref::lwz(p.a, kDevice + l.surfaces + 4 * k);
+          Put32Both(p, kDevice + l.tiled_surfaces + 4 * k, rng() % 2 ? bound : rng() % 2 ? 0 : surface_at(uint32_t(rng() % 8)));
+        }
+      }
+      for (uint32_t k = 0; k < 4; ++k) {
+        if (rng() % 4 == 0) Put32Both(p, kDevice + l.target_as_wide + 4 * k, rng() % 4 ? uint32_t(rng() % 2) : uint32_t(rng()));
+      }
+      if (rng() % 3 == 0) Put32Both(p, kDevice + l.bin_mask_set, rng() % 2 ? 0 : uint32_t(rng()));
+      for (uint32_t at : {l.tiling_flags, l.tiling_options, l.tiling_pending[0], l.tiling_pending[1]}) {
+        if (rng() % 3 == 0) *p.a.Host(kDevice + at) = *p.b.Host(kDevice + at) = rng() % 3 ? uint8_t(rng()) : 0;
+      }
+      for (uint32_t k = 0; k < 8; ++k) {
+        if (rng() % 6) continue;
+        static constexpr uint32_t kFormats[] = {2, 3, 10, 12, 0, 1, 6, 15};
+        const uint32_t word = (uint32_t(rng()) & ~0xF0000u) | kFormats[rng() % 8] << 16;
+        Put32Both(p, surface_at(k) + 28, word);
+      }
+      std::vector<uint32_t> calls_a, calls_b;
+      const uint32_t choice = uint32_t(rng() % 8);
+      const uint32_t surface = choice < 5 ? surface_at(uint32_t(rng() % 8)) : choice < 7 ? 0 : uint32_t(rng() % (kArena - 64)) & ~3u;
+      const bool over_device = surface && surface + 40 > kDevice && surface < kDevice + l.device_bytes;
+      if (rng() % 2) {
+        const uint64_t r4 = rng() % 8 ? rng() % 4 : rng() % 16;
+        const bool taken = xdk::D3dSetRenderTarget(p.a, l, kDevice, uint32_t(r4), surface, stand_in(p.a, calls_a));
+        CHECK(taken == (r4 <= 3 && !over_device));
+        if (taken) ref::SetRenderTarget(p.b, l, kDevice, r4, surface, stand_in(p.b, calls_b));
+      } else {
+        const bool taken = xdk::D3dSetDepthStencilSurface(p.a, l, kDevice, surface, stand_in(p.a, calls_a));
+        CHECK(taken == !over_device);
+        if (taken) ref::SetDepthStencilSurface(p.b, l, kDevice, surface, stand_in(p.b, calls_b));
+      }
+      CHECK(calls_a == calls_b);
+      CHECK(p.SameEverywhere());
+      if (!p.SameEverywhere()) {
+        std::memcpy(p.model.data(), p.native.data(), kArena);  // one failure reported once
+      }
+    }
+  }
+}
+
 int main() {
   const xdk::D3dLayout standard, shifted = Shifted();
+  TestSurfaceSetters(standard, 2100);
+  TestSurfaceSetters(shifted, 2200);
   TestRenderStates(standard, 1900);
   TestRenderStates(shifted, 2000);
   TestBlend(standard, 100);

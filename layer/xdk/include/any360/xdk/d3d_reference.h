@@ -600,6 +600,149 @@ inline void DepthBias(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t
   std_(m, r3 + l.state_dirty, ld(m, r3 + l.state_dirty) | 64);              // ld; ori 64; std
 }
 
+// The predicated-query flag as sub_826B1EE0 (from loc_826B2054) and sub_826B2218 (from loc_826B237C) set it: r10 1
+// or 0 into bit 1 of +10812.
+inline uint32_t TiledCheck(const Memory& m, const D3dLayout& l, uint32_t r31, uint32_t r10) {
+  if (r10 & 0x10) return 1;                                                 // rlwinm. r11,r10,0,27,27; li r11,1
+  if (!(r10 & 0x20)) return 0;                                              // rlwinm. r11,r10,0,26,26
+  for (uint32_t k = 0; k < 5; ++k) {                                        // 12160/12448 ... 12176/12464
+    const uint32_t r11 = lwz(m, r31 + l.surfaces + 4 * k), r9 = lwz(m, r31 + l.tiled_surfaces + 4 * k);
+    if (r9 != r11 && r11 != 0) return 0;                                    // cmplw; beq; cmplwi; bne
+  }
+  return 1;
+}
+inline void QueryFlag(const Memory& m, const D3dLayout& l, uint32_t r31) {
+  uint32_t r10 = 0;
+  if (lwz(m, r31 + l.bin_mask_set) == 0) {                                           // lwz r11,12436(r31); bne
+    const uint32_t flags = lbz(m, r31 + l.tiling_flags);                             // lbz r10,10812(r31)
+    if (TiledCheck(m, l, r31, flags) && !(flags & 8)) {                        // clrlwi.; rlwinm. r11,r10,0,28,28
+      if (lbz(m, r31 + l.tiling_options) & 0x40) r10 = 1;                              // rlwinm. r11,r11,0,25,25; bne
+      else if (lbz(m, r31 + l.tiling_pending[0]) == 0 && lbz(m, r31 + l.tiling_pending[1]) == 0) r10 = 1;
+    }
+  }
+  uint32_t r9 = lbz(m, r31 + l.tiling_flags);                                        // lbz r9,10812(r31)
+  r9 = rlwimi(r9, r10, 1, 30, 30);                                          // rlwimi r9,r10,1,30,30
+  *m.Host(r31 + l.tiling_flags) = uint8_t(r9);                                       // stb r9,10812(r31)
+}
+// SetRenderTarget (Crackdown sub_826B1EE0), as its code reads; `call(r4)` its bl 0x826af2d8 (r3 the device).
+template <class Call>
+inline void SetRenderTarget(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4, uint64_t r5, Call&& call) {
+  const uint32_t r31 = r3;                                                  // mr r31,r3
+  const uint32_t r6 = uint32_t((uint32_t(r4) + l.surfaces / 4) << 2);                 // addi r11,r4,3040; rlwinm r6,r11,2,0,29
+  stw(m, r6 + r31, uint32_t(r5));                                           // stwx r5,r6,r31
+  if (uint32_t(r5) != 0) {                                                  // beq cr6,0x826b2028
+    uint64_t r9 = uint32_t(r4) == 0 ? 0 : r4 + 1;                           // li r9,0; addi r9,r4,1
+    const uint64_t r8 = uint64_t(l.state_dirty / 8) << 16 | 263;                                            // lis r11,2; ori r8,r11,263
+    const uint64_t r7 = uint64_t(1) << 63;                                  // li r7,1; rldicr r7,r7,63,63
+    uint64_t r11 = r9 + r8;                                                 // add r11,r9,r8
+    const uint32_t r9s = uint32_t((r9 + l.color_info / 4) << 2);                        // addi r9,r9,2561; rlwinm
+    const uint32_t r10 = uint32_t((uint32_t(r4) + l.target_as_wide / 4) << 2);              // addi r10,r4,2937; rlwinm
+    stw(m, r9s + r31, lwz(m, uint32_t(r5) + 28));                           // lwz r3,28(r5); stwx r3,r9,r31
+    const uint64_t sh = r11 & 0xFF;                                         // clrldi r9,r11,56
+    r11 = uint32_t(int32_t(uint32_t(r11)) >> 16) << 3;                      // srawi r11,r11,16; rlwinm r11,r11,3
+    const uint64_t bit = sh & 0x40 ? 0 : r7 >> (sh & 0x3F);                 // srd r9,r7,r9
+    std_(m, uint32_t(r11) + r31, bit | ld(m, uint32_t(r11) + r31));         // ldx; or; stdx
+    r9 = lwz(m, r10 + r31);                                                 // lwzx r9,r10,r31
+    const uint32_t s = lwz(m, r6 + r31);                                    // lwzx r11,r6,r31
+    stw(m, r10 + r31, uint32_t(r9));                                        // stwx r9,r10,r31
+    if (s != 0) {
+      const uint32_t w = lwz(m, s + 28);                                    // lwz r6,28(r11)
+      const uint32_t f = rlwinm(w, 16, 28, 31);                             // rlwinm r10,r6,16,28,31
+      if ((f == 2 || f == 3 || f == 10 || f == 12) &&
+          uint32_t(rlwinm(w, 13, 31, 31) ^ r9) != 0) {                      // rlwinm r10,r6,13,31,31; xor.
+        const uint64_t q = uint32_t(r4) == 0 ? 0 : r4 + 1;                  // li r6,0; addi r6,r4,1
+        const uint32_t at = uint32_t((q + l.color_info / 4) << 2);                      // addi r3,r6,2561; rlwinm r6,r3,2,0,29
+        const uint32_t w2 = lwz(m, s + 28);                                 // lwz r10,28(r11)
+        const uint64_t r8b = q + r8;                                        // add r8,r6,r8
+        const uint64_t r29 = r8b & 0xFF;                                    // clrldi r29,r8,56
+        const uint32_t f2 = rlwinm(w2, 16, 28, 31);                         // rlwinm r7,r10,16,28,31
+        const uint32_t r30 = w2 & mask(16, 11);                             // rlwinm r30,r10,0,16,11
+        const uint32_t word = uint32_t(int32_t(uint32_t(r8b)) >> 16);      // srawi r10,r8,16
+        uint64_t a = rlwinm(f2, 31, 1, 31);                                 // rlwinm r8,r7,31,1,31
+        const uint64_t r9m = r9 - 1;                                        // addi r9,r9,-1
+        a = (a - 3) & r9m;                                                  // addi r8,r8,-3; and r8,r8,r9
+        const uint64_t r3b = r29 & 0x40 ? 0 : r7 >> (r29 & 0x3F);           // srd r3,r3,r29
+        uint64_t b = rlwinm(uint32_t(f2 + 3), 1, 0, 30);                    // addi r29,r7,3; rlwinm r7,r29,1,0,30
+        b &= ~r9m;                                                          // andc r7,r7,r9
+        const uint32_t r9w = word << 3;                                     // rlwinm r9,r10,3,0,28
+        const uint32_t r10b = rlwinm(uint32_t(b | a), 16, 12, 15);          // or r10,r7,r8; rlwinm r10,r10,16,12,15
+        stw(m, s + 28, r30 | r10b);                                         // or r8,r30,r10; stw r8,28(r11)
+        stw(m, at + r31, (lwz(m, at + r31) & mask(16, 11)) | r10b);         // lwzx; rlwinm; or; stwx
+        std_(m, r9w + r31, r3b | ld(m, r9w + r31));                         // ldx; or; stdx
+      }
+    }
+  }
+  uint32_t r11 = 0, r10 = 0;
+  if (uint32_t(r4) == 0) {                                                  // loc_826B2028
+    uint32_t a = uint32_t(r5) != 0 ? uint32_t(r5) : lwz(m, r31 + l.surfaces + 16);    // mr r4,r5 / lwz r4,12176(r31)
+    if (a != 0) call(a);                                                    // bl 0x826af2d8
+    QueryFlag(m, l, r31);
+    r11 = lwz(m, r31 + l.color_mask_set);                                              // lwz r11,11580(r31)
+    stw(m, r31 + l.color_mask_set, r11);
+    if (lwz(m, r31 + l.surfaces) == 0) r11 = 0;                                  // lwz r10,12160; li r11,0
+    r10 = rlwimi(lwz(m, r31 + l.color_mask), r11, 0, 28, 31);                      // rlwimi r10,r11,0,28,31
+  } else if (uint32_t(r4) <= 3) {                                           // loc_826B2174 ...
+    const uint32_t k = uint32_t(r4);
+    const bool none = lwz(m, r31 + l.surfaces + 4 * k) == 0;                     // lwz r11,12164(r31); cmplwi
+    r11 = lwz(m, r31 + l.color_mask_set + 4 * k);                                      // lwz r11,11584(r31)
+    stw(m, r31 + l.color_mask_set + 4 * k, r11);
+    if (none) r11 = 0;
+    r10 = rlwimi(lwz(m, r31 + l.color_mask), r11, 4 * k, 28 - 4 * k, 31 - 4 * k);  // rlwimi r10,r11,4,24,27 ...
+  } else {
+    return;                                                                 // loc_826B220C
+  }
+  stw(m, r31 + l.color_mask, r10);                                                 // stw r10,10332(r31)
+  std_(m, r31 + l.state_dirty, ld(m, r31 + l.state_dirty) | (uint64_t(1) << 37));                 // rldicr r12,r12,37,63; or; std
+}
+// SetDepthStencilSurface (Crackdown sub_826B2218), as its code reads; `call(r4)` its bl 0x826af2d8.
+template <class Call>
+inline void SetDepthStencilSurface(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4, Call&& call) {
+  const uint32_t r31 = r3, r30 = uint32_t(r4);                              // mr r30,r4; mr r31,r3
+  stw(m, r31 + l.surfaces + 16, r30);                                                 // stw r30,12176(r31)
+  uint64_t r11;
+  if (r30 != 0) {
+    if (lwz(m, r31 + l.surfaces) == 0) call(r30);                                // lwz r11,12160; bne; bl 0x826af2d8
+    const uint32_t b = lbz(m, r31 + l.tiling_options);                                 // lbz r10,10815(r31)
+    stw(m, r31 + l.color_info + 4, lwz(m, r30 + 28));                                  // lwz r11,28(r30); stw r11,10248(r31)
+    stw(m, r31 + l.depth_word, lwz(m, r30 + 32));                                  // lwz r11,32(r30); stw r11,10432(r31)
+    const uint32_t w = lwz(m, r30 + 32);                                    // lwz r11,32(r30)
+    const uint32_t r10 = rlwimi(lbz(m, r31 + l.depth_flags), w, 6, 25, 25);         // lbz r10,10814; rlwimi r10,r11,6,25,25
+    *m.Host(r31 + l.depth_flags) = uint8_t(r10);                                    // stb r10,10814(r31)
+    if (b & 0x40) {                                                         // rlwinm. r10,r10,0,25,25; beq
+      if (TiledCheck(m, l, r31, lbz(m, r31 + l.tiling_flags))) {                        // lbz r11,10812(r31) ...
+        stw(m, r31 + l.surface_info, rlwimi(lwz(m, r31 + l.surface_info), lwz(m, r31 + l.tiling_hiz_pitch), 18, 0, 13));
+      }
+    }
+    r11 = ld(m, r31 + l.state_dirty) | (uint64_t(1) << 55);                            // ld; rldicr r12,r12,55,63; or
+    std_(m, r31 + l.state_dirty, r11);
+    r11 |= 256;                                                             // ori r11,r11,256
+    std_(m, r31 + l.state_dirty, r11);
+    r11 |= 0x20000;                                                         // oris r11,r11,2
+  } else {                                                                  // loc_826B235C
+    const uint32_t r10 = lbz(m, r31 + l.depth_flags);
+    stw(m, r31 + l.depth_word, lwz(m, r31 + l.depth_word) & mask(0, 27));                 // rlwinm r11,r11,0,0,27
+    *m.Host(r31 + l.depth_flags) = uint8_t(r10 & 191);                              // andi. r10,r10,191; stb
+    r11 = ld(m, r31 + l.state_dirty) | 256;                                            // ld r11,16(r31); ori r11,r11,256
+  }
+  std_(m, r31 + l.state_dirty, r11);                                                   // loc_826B237C: std r11,16(r31)
+  QueryFlag(m, l, r31);
+  uint32_t z = lwz(m, r31 + l.depth_enable_set);                                         // lwz r11,11596(r31)
+  stw(m, r31 + l.depth_enable_set, z);
+  if (lwz(m, r31 + l.surfaces + 16) == 0) z = 0;                                      // lwz r10,12176; li r11,0
+  stw(m, r31 + l.depth_control, rlwimi(lwz(m, r31 + l.depth_control), z, 1, 30, 30));           // rlwimi r10,r11,1,30,30
+  r11 = ld(m, r31 + l.state_dirty) | 2048;                                             // ori r11,r11,2048
+  std_(m, r31 + l.state_dirty, r11);
+  std_(m, r31 + l.state_dirty, r11 | 0x20000);                                         // oris r11,r11,2
+  uint32_t st = lwz(m, r31 + l.stencil_enable_set);                                        // lwz r11,11600(r31)
+  const uint32_t bound = lwz(m, r31 + l.surfaces + 16);                               // lwz r10,12176(r31)
+  stw(m, r31 + l.stencil_enable_set, st);
+  if (bound == 0) st = 0;                                                   // li r11,0
+  stw(m, r31 + l.depth_control, rlwimi(st, lwz(m, r31 + l.depth_control), 0, 0, 30));           // rlwimi r11,r10,0,0,30
+  r11 = ld(m, r31 + l.state_dirty) | 2048;
+  std_(m, r31 + l.state_dirty, r11);
+  std_(m, r31 + l.state_dirty, r11 | 0x20000);
+}
+
 }  // namespace state
 
 // D3DResource_AddRef (Crackdown sub_826ACC90) and D3DResource_Release (sub_826ACD08), as their code reads.

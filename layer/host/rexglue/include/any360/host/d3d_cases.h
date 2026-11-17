@@ -142,6 +142,44 @@ struct Blend {
     ctx.r4.u64 = Value(rng);
   }
 };
+// SetRenderTarget (kDepth false) and SetDepthStencilSurface: surfaces of the scratch (their words random, word 28's
+// format 2_10_10_10 or not) bound or not on the device's five slots and recorded or not by the tiling, the targets'
+// _AS_ words 0, 1 or any, the tiling's flags and bin mask at random; targets 0-3 and now and then past 3 (declined).
+// The command buffer's cursor in the scratch with room (the viewport function's packets compared there).
+template <bool kDepth>
+struct Surfaces {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const auto& l = g_d3d_layout;
+    auto surface_at = [&](uint32_t k) { return s.scratch + 0x2000 + 64 * k; };
+    for (uint32_t k = 0; k < 8; ++k) {
+      static constexpr uint32_t kFormats[] = {2, 3, 10, 12, 0, 1, 6, 15};
+      Put32(s, surface_at(k) + 28, (uint32_t(rng()) & ~0xF0000u) | kFormats[rng() % 8] << 16);
+    }
+    for (uint32_t k = 0; k < 5; ++k) {
+      const uint32_t bound = rng() % 3 ? surface_at(uint32_t(rng() % 8)) : 0;
+      Put32(s, s.device + l.surfaces + 4 * k, bound);
+      Put32(s, s.device + l.tiled_surfaces + 4 * k, rng() % 2 ? bound : rng() % 2 ? 0 : surface_at(uint32_t(rng() % 8)));
+    }
+    for (uint32_t k = 0; k < 4; ++k) {
+      Put32(s, s.device + l.target_as_wide + 4 * k, rng() % 4 ? uint32_t(rng() % 2) : uint32_t(rng()));
+    }
+    Put32(s, s.device + l.bin_mask_set, rng() % 2 ? 0 : uint32_t(rng()));
+    for (uint32_t at : {l.tiling_flags, l.tiling_options, l.tiling_pending[0], l.tiling_pending[1]}) {
+      s.Host(s.device + at)[0] = rng() % 3 ? uint8_t(rng()) : 0;
+    }
+    Put32(s, s.device + l.command_cursor, s.scratch + 0x20000);
+    Put32(s, s.device + l.command_end, s.scratch + 0x30000);
+    const uint32_t surface = rng() % 4 ? surface_at(uint32_t(rng() % 8)) : 0;
+    ctx.r3.u64 = s.device;
+    if (kDepth) {
+      ctx.r4.u64 = surface;
+    } else {
+      ctx.r4.u64 = rng() % 8 ? rng() % 4 : rng() % 8;
+      ctx.r5.u64 = surface;
+    }
+  }
+};
 // SetRenderState_ViewportEnable: PA_CL_CLIP_CNTL's word at random now and then, values as titles pass them.
 struct ViewportEnable {
   static void Setup(CallSetup& s, PPCContext& ctx) {

@@ -484,6 +484,15 @@
   "note": ""
  },
  {
+  "name": "D3DDevice_SetDepthStencilSurface",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B2218"
+  },
+  "note": "the depth surface and its registers; the runtime's viewport function without target 0"
+ },
+ {
   "name": "D3DDevice_SetPixelShader",
   "library": "D3D",
   "any360": "native",
@@ -610,6 +619,15 @@
    "crackdown": "0x826B0AA0"
   },
   "note": "PA_CL_VTE_CNTL and the clip disable"
+ },
+ {
+  "name": "D3DDevice_SetRenderTarget",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1EE0"
+  },
+  "note": "a render target's surface and registers; the runtime's viewport function for target 0"
  },
  {
   "name": "D3DDevice_SetSamplerState_MagFilter",
