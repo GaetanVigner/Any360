@@ -50,7 +50,8 @@ enum class Function : uint32_t {
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
-  kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kSin, kCos, kAsin, kCount
+  kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kSin, kCos, kAsin,
+  kD3dRenderState, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -788,6 +789,43 @@ inline bool BinderWrites(const PPCContext& ctx, std::vector<any360::xdk::Range>&
   if (r.kind == any360::xdk::detail::Release::kRecord) AddRange(w, r.record, 8), AddRange(w, device + l.release_cursor, 4);
   return true;
 }
+// SetRenderState_ViewportEnable: r4 the value.
+struct ViewportEnable {
+  static constexpr Function kFunction = Function::kD3dRenderState;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetViewportEnable(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t device = ctx.r3.u32;
+    if (!any360::xdk::IsPlainMemory(device, l.vte_control + 4)) return false;
+    AddRange(w, device + l.vte_control, 4);
+    AddRange(w, device + l.clip_control, 4);
+    AddRange(w, device + l.state_dirty, 8);
+    return true;
+  }
+};
+// SetRenderState_DepthBias: r4 the bias's float bits, kept at the caller's r1 + 28; the host's denormal flush turned
+// off first, as the runtime's code does (its lfs).
+struct DepthBias {
+  static constexpr Function kFunction = Function::kD3dRenderState;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    ctx.fpscr.disableFlushMode();
+    return any360::xdk::D3dSetDepthBias(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32, ctx.r1.u32 + 28);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t device = ctx.r3.u32;
+    if (!any360::xdk::IsPlainMemory(device, l.poly_offset + 16) || !any360::xdk::IsPlainMemory(ctx.r1.u32 + 28, 4)) return false;
+    AddRange(w, ctx.r1.u32 + 28, 4);
+    AddRange(w, device + l.poly_offset + 4, 4);
+    AddRange(w, device + l.poly_offset + 12, 4);
+    AddRange(w, device + l.mode_control, 4);
+    AddRange(w, device + l.constant_dirty, 8);
+    AddRange(w, device + l.state_dirty, 8);
+    return true;
+  }
+};
 // SetTexture: r4 the stage, r5 the texture, r6 the dirty bits.
 struct SetTexture {
   static constexpr Function kFunction = Function::kD3dSetTexture;

@@ -142,6 +142,31 @@ struct Blend {
     ctx.r4.u64 = Value(rng);
   }
 };
+// SetRenderState_ViewportEnable: PA_CL_CLIP_CNTL's word at random now and then, values as titles pass them.
+struct ViewportEnable {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    if (rng() % 3 == 0) Put32(s, s.device + g_d3d_layout.clip_control, uint32_t(rng()));
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = Value(rng);
+  }
+};
+// SetRenderState_DepthBias: the polygon offsets' scales 0 or not, the bias as float bits (0, -0, small values, NaN,
+// infinities, denormals, any bits).
+struct DepthBias {
+  static uint32_t Float(std::mt19937_64& rng) {
+    static constexpr uint32_t kBits[] = {0x00000000u, 0x80000000u, 0x3F800000u, 0xBF000000u, 0x7FC00000u,
+                                         0x7F800001u, 0x00000001u, 0x80000001u, 0x7F800000u, 0x3A83126Fu};
+    return rng() % 3 ? kBits[rng() % 10] : uint32_t(rng());
+  }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    if (rng() % 2) Put32(s, s.device + g_d3d_layout.poly_offset, rng() % 2 ? 0u : Float(rng));
+    if (rng() % 2) Put32(s, s.device + g_d3d_layout.poly_offset + 8, rng() % 2 ? 0u : Float(rng));
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = Float(rng);
+  }
+};
 // The bool and integer constants: registers and counts within the bank and now and then past it, a source in the
 // scratch at any alignment. (A count of 0 never: the runtime's code loops on it.)
 template <uint32_t kRegisters, uint32_t kBytes>

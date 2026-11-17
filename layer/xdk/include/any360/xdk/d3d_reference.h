@@ -559,6 +559,47 @@ inline void SetShader(const Memory& m, const D3dLayout& l, uint32_t r3, uint32_t
   }
 }
 
+// SetRenderState_ViewportEnable (Crackdown sub_826B0AA0), as its code reads.
+inline void ViewportEnable(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4) {
+  const uint32_t r11 = uint32_t(r4) != 0 ? 1087u : 1024u;                  // cmplwi r4,0; li r11,1087 / 1024
+  stw(m, r3 + l.vte_control, r11);                                          // stw r11,10444(r3)
+  const uint32_t lz = uint32_t(std::countl_zero(uint32_t(r4)));             // cntlzw r11,r4
+  uint32_t r10 = lwz(m, r3 + l.clip_control);                               // lwz r10,10436(r3)
+  const uint32_t bit = rlwinm(lz, 27, 31, 31);                              // rlwinm r11,r11,27,31,31
+  r10 = rlwimi(r10, bit, 16, 15, 15);                                       // rlwimi r10,r11,16,15,15
+  stw(m, r3 + l.clip_control, r10);                                         // stw r10,10436(r3)
+  uint64_t dirty = ld(m, r3 + l.state_dirty);                               // ld r11,16(r3)
+  dirty |= 32;                                                              // ori r11,r11,32
+  std_(m, r3 + l.state_dirty, dirty);
+  dirty |= 128;                                                             // ori r11,r11,128
+  std_(m, r3 + l.state_dirty, dirty);
+}
+// SetRenderState_DepthBias (Crackdown sub_826B0488), as its code reads (f registers as doubles, lfs/stfs).
+inline void DepthBias(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4, uint32_t r1) {
+  auto lfs = [&](uint32_t ea) { return double(std::bit_cast<float>(lwz(m, ea))); };
+  stw(m, r1 + 28, uint32_t(r4));                                            // stw r4,28(r1)
+  const double f12 = lfs(r3 + l.poly_offset);                               // lfs f12,10704(r3)
+  const double f0 = lfs(l.zero_float);                                      // lfs f0,8924(r11)
+  const bool eq6 = f12 == f0;                                               // fcmpu cr6,f12,f0
+  const double f13 = lfs(r1 + 28);                                          // lfs f13,28(r1)
+  stw(m, r3 + l.poly_offset + 4, std::bit_cast<uint32_t>(float(f13)));      // stfs f13,10708(r3)
+  stw(m, r3 + l.poly_offset + 12, std::bit_cast<uint32_t>(float(f13)));     // stfs f13,10716(r3)
+  uint32_t r10 = (!eq6 || !(f13 == f0)) ? 1u : 0u;                          // bne / fcmpu f13,f0 / li
+  uint32_t r11 = lwz(m, r3 + l.mode_control);                               // lwz r11,10440(r3)
+  const double f12b = lfs(r3 + l.poly_offset + 8);                          // lfs f12,10712(r3)
+  r11 = rlwimi(r11, r10, 11, 20, 20);                                       // rlwimi r11,r10,11,20,20
+  stw(m, r3 + l.mode_control, r11);
+  r10 = (!(f12b == f0) || !(f13 == f0)) ? 1u : 0u;
+  r11 = rlwimi(r11, r10, 12, 19, 19);                                       // rlwimi r11,r10,12,19,19
+  stw(m, r3 + l.mode_control, r11);
+  uint64_t c = ld(m, r3 + l.constant_dirty);                                // ld r11,32(r3)
+  c |= uint64_t(1) << 44;
+  std_(m, r3 + l.constant_dirty, c);
+  c |= uint64_t(1) << 42;
+  std_(m, r3 + l.constant_dirty, c);
+  std_(m, r3 + l.state_dirty, ld(m, r3 + l.state_dirty) | 64);              // ld; ori 64; std
+}
+
 }  // namespace state
 
 // D3DResource_AddRef (Crackdown sub_826ACC90) and D3DResource_Release (sub_826ACD08), as their code reads.

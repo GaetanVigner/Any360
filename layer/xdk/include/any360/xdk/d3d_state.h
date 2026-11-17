@@ -51,6 +51,11 @@ struct D3dLayout {
   uint32_t sampler_filter_table = 0x820E9E30u, stage_filter_index = 11644, stage_lod_limit = 11722;
   // The bound vertex declaration and shaders, and the flags byte whose bit 0 a vertex shader clears.
   uint32_t vertex_declaration = 12156, pixel_shader = 12412, vertex_shader = 12416, shader_flags = 10813;
+  // The registers' mirror (a word a register): PA_CL_CLIP_CNTL (0x2204), PA_SU_SC_MODE_CNTL (0x2205), PA_CL_VTE_CNTL
+  // (0x2206), the polygon offsets (front scale, front offset, back scale, back offset: 0x2380-0x2383), and the runtime's
+  // 0.0f the depth bias is compared with (a guest address in the title's image).
+  uint32_t clip_control = 10436, mode_control = 10440, vte_control = 10444, poly_offset = 10704;
+  uint32_t zero_float = 0x820722DCu;
 };
 
 namespace detail {
@@ -111,6 +116,49 @@ inline bool D3dSetBlendField(const Memory& m, const D3dLayout& l, uint32_t devic
   } else {
     detail::StoreTargetBlend(d, l, separate ? control : detail::BlendAlphaFromColor(control));
   }
+  return true;
+}
+
+// SetRenderState_ViewportEnable (Crackdown sub_826B0AA0): PA_CL_VTE_CNTL 0x43F (the viewport's scale and offset
+// applied) or, with `value` 0, 0x400 and PA_CL_CLIP_CNTL's clip_disable (bit 16) set; the state's dirty bits 0x20 and
+// 0x80. Declined: the device's fields not plain memory.
+inline bool D3dSetViewportEnable(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t value) {
+  if (!IsPlainMemory(device, l.vte_control + 4) || !IsPlainMemory(device, l.state_dirty + 8)) return false;
+  uint8_t* d = m.Host(device);
+  detail::Set32(d + l.vte_control, value ? 0x43Fu : 0x400u);
+  detail::Set32(d + l.clip_control, (detail::At32(d + l.clip_control) & ~0x10000u) | (value ? 0u : 0x10000u));
+  detail::Or64(m, device + l.state_dirty, 0xA0);
+  return true;
+}
+
+// SetRenderState_DepthBias (Crackdown sub_826B0488): `value` a float's bits, kept in the caller's parameter area
+// (`stack_word`, the caller's r1 + 28) as the runtime does, then as the front and back polygon offsets (through a
+// double, as its lfs/stfs); PA_SU_SC_MODE_CNTL's poly_offset_front_enable (bit 11) and back_enable (bit 12) set unless
+// that side's scale and the offset both equal the runtime's 0.0f (a float comparison: -0 is 0, NaN never equal); the
+// dirty bits 42 and 44 of the word at constant_dirty and 0x40 of the state's. The caller runs it with the host's
+// denormals kept (the runtime's code turns their flush off first). Declined: memory not plain, or the parameter area
+// over the device's fields or the 0.0f.
+inline bool D3dSetDepthBias(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t value, uint32_t stack_word) {
+  if (!IsPlainMemory(device, l.poly_offset + 16) || !IsPlainMemory(device, l.state_dirty + 8) ||
+      !IsPlainMemory(device, l.constant_dirty + 8) || !IsPlainMemory(stack_word, 4) || !IsPlainMemory(l.zero_float, 4) ||
+      detail::Overlap(stack_word, 4, device, l.poly_offset + 16) || detail::Overlap(stack_word, 4, l.zero_float, 4)) {
+    return false;
+  }
+  detail::Put32(m, stack_word, value);
+  uint8_t* d = m.Host(device);
+  const double zero = double(std::bit_cast<float>(detail::Get32(m, l.zero_float)));
+  const double front_scale = double(std::bit_cast<float>(detail::At32(d + l.poly_offset)));
+  const double bias = double(std::bit_cast<float>(value));
+  const uint32_t stored = std::bit_cast<uint32_t>(float(bias));
+  detail::Set32(d + l.poly_offset + 4, stored);
+  detail::Set32(d + l.poly_offset + 12, stored);
+  const double back_scale = double(std::bit_cast<float>(detail::At32(d + l.poly_offset + 8)));
+  const bool front = !(front_scale == zero) || !(bias == zero);
+  const bool back = !(back_scale == zero) || !(bias == zero);
+  detail::Set32(d + l.mode_control,
+                (detail::At32(d + l.mode_control) & ~0x1800u) | (front ? 0x800u : 0u) | (back ? 0x1000u : 0u));
+  detail::Or64(m, device + l.constant_dirty, (uint64_t(1) << 44) | (uint64_t(1) << 42));
+  detail::Or64(m, device + l.state_dirty, 0x40);
   return true;
 }
 

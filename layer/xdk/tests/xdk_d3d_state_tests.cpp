@@ -37,6 +37,7 @@ xdk::D3dLayout Shifted() {
   l.release_end += 40;
   l.stage_filter_index += 40, l.stage_lod_limit += 40, l.vertex_declaration += 40, l.pixel_shader += 40;
   l.vertex_shader += 40, l.shader_flags += 40;
+  l.clip_control += 40, l.mode_control += 40, l.vte_control += 40, l.poly_offset += 40;
   return l;
 }
 
@@ -429,8 +430,48 @@ void TestTileOps() {
 
 }  // namespace
 
+// SetRenderState_ViewportEnable and SetRenderState_DepthBias against their code read line by line: values as titles
+// pass them and any 32 bits; the depth bias as float bits (0, -0, small values, NaN, denormals, any bits) with the
+// scales 0 or not; the device's words and dirty words at random. The 0.0f the runtime compares with sits in the arena.
+float RandomFloat(std::mt19937_64& rng) {
+  static constexpr uint32_t kBits[] = {0x00000000u, 0x80000000u, 0x3F800000u, 0xBF000000u, 0x7FC00000u,
+                                       0x7F800001u, 0x00000001u, 0x80000001u, 0x7F800000u, 0x3A83126Fu};
+  return std::bit_cast<float>(rng() % 3 ? kBits[rng() % 10] : uint32_t(rng()));
+}
+void TestRenderStates(xdk::D3dLayout l, uint32_t seed) {
+  std::mt19937_64 rng(seed);
+  l.zero_float = 0x50000;
+  for (int round = 0; round < 200; ++round) {
+    Pair p(seed + round);
+    Put32Both(p, l.zero_float, rng() % 8 ? 0u : std::bit_cast<uint32_t>(RandomFloat(rng)));
+    for (int call = 0; call < 32; ++call) {
+      if (rng() % 3 == 0) Put32Both(p, kDevice + l.poly_offset, std::bit_cast<uint32_t>(RandomFloat(rng)));
+      if (rng() % 3 == 0) Put32Both(p, kDevice + l.poly_offset + 8, std::bit_cast<uint32_t>(RandomFloat(rng)));
+      if (rng() % 2) {
+        const uint64_t r4 = rng() % 2 ? RandomValue(rng) : rng();
+        CHECK(xdk::D3dSetViewportEnable(p.a, l, kDevice, uint32_t(r4)));
+        ref::ViewportEnable(p.b, l, kDevice, r4);
+      } else {
+        const uint32_t bits = std::bit_cast<uint32_t>(RandomFloat(rng));
+        const uint64_t r4 = (rng() % 4 == 0 ? rng() << 32 : 0) | bits;
+        CHECK(xdk::D3dSetDepthBias(p.a, l, kDevice, uint32_t(r4), kStackPointer + 28));
+        ref::DepthBias(p.b, l, kDevice, r4, kStackPointer);
+      }
+      CHECK(p.Same(kDevice, kDevice + l.poly_offset + 16));
+    }
+    CHECK(p.SameEverywhere());
+  }
+  // Declined, memory untouched: the device reaching the GPU's register window, the parameter area over the device.
+  Pair p(seed), q(seed);
+  CHECK(!xdk::D3dSetViewportEnable(p.a, l, 0x7F000000u - 64, 1));
+  CHECK(!xdk::D3dSetDepthBias(p.a, l, kDevice, 0x3F800000u, kDevice + l.poly_offset + 4));
+  CHECK(p.native == q.native);
+}
+
 int main() {
   const xdk::D3dLayout standard, shifted = Shifted();
+  TestRenderStates(standard, 1900);
+  TestRenderStates(shifted, 2000);
   TestBlend(standard, 100);
   TestBlend(shifted, 200);
   TestBoolConstants(standard, 300);

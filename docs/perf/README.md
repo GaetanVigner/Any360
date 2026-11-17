@@ -17,3 +17,4 @@ Every step's measured results, kept for later optimization passes: the self-test
 - [2026-11-17-xmemset](archive/2026-11-17-xmemset/): the XDK's vector fill (XMemSet) native: the city's CPU profile that chose it, benchmark, the check and the measure in game (1.7x a call over 10.5 M calls) (NOTES.md)
 - [2026-11-17-d3d-refcounts](archive/2026-11-17-d3d-refcounts/): 2026-11-17, D3DResource_AddRef / D3DResource_Release native (D1)
 - [2026-11-17-crt-sin-cos-asin](archive/2026-11-17-crt-sin-cos-asin/): the C runtime's sin, cos and asin native, bit for bit: benchmark, the check and the measure in game (1.05x, 1.2x, 1.3x a call over 19 M calls) (NOTES.md)
+- [2026-11-17-d3d-render-states](archive/2026-11-17-d3d-render-states/): 2026-11-17, SetRenderState_ViewportEnable and SetRenderState_DepthBias native (D1)

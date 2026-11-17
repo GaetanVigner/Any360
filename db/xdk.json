@@ -531,6 +531,15 @@
   "note": "blend word bits 21-23"
  },
  {
+  "name": "D3DDevice_SetRenderState_DepthBias",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0488"
+  },
+  "note": "both polygon offsets and their enables"
+ },
+ {
   "name": "D3DDevice_SetRenderState_DestBlend",
   "library": "D3D",
   "any360": "native",
@@ -574,6 +583,15 @@
    "crackdown": "0x826AFC00"
   },
   "note": "blend word bits 16-20"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_ViewportEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0AA0"
+  },
+  "note": "PA_CL_VTE_CNTL and the clip disable"
  },
  {
   "name": "D3DDevice_SetSamplerState_MagFilter",
