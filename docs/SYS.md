@@ -313,6 +313,14 @@ to the reference, or, where the reference is not faithful, when the scenario tes
   `XNetConnect` connected, `XNetQosLookup` complete with no contact) and `off` (the console without a connection
   described above, which `sys_io_tests` keeps as the reference's answers). Not implemented: overlapped Winsock
   (`WSASend`, `WSARecv`, `WSAEventSelect`), which fails as before, and any network beyond the machine.
+  Ports (2026-11-17): the console's services sit below 1024 (VDP's 1000, which Black Ops binds), which Linux refuses
+  to an unprivileged process (EACCES, the title's "Failed to bind socket, error 10013"). Every guest port below 1024
+  is `kHostPortShift` (30000) + port on the host, and the host's 30001-31023 are those guest ports back
+  (`SwapPrivilegedPort`, net.h: its own inverse), wherever an address crosses: bind, connect and sendto one way;
+  accept, recvfrom, getsockname and getpeername the other. On every system, so the title sees its own numbers and its
+  sockets meet; nothing leaves the machine, so nothing outside sees the host's. The guest ports 30001-31023 land on
+  the host's privileged 1-1023 in exchange: titles do not use them. `sys_net_tests` checks the mapping over every
+  port and a VDP datagram and a stream on ports 1000 and 1001, and passes on Linux as an ordinary user.
 
 The display and console settings are `VideoSettings` / `ConsoleSettings` (defaults: 1280x720 at 60 Hz, English,
 country 103); `SetDebugPrintSink` receives `DbgPrint` text.

@@ -26,6 +26,23 @@ uint32_t NetDll___WSAFDIsSet(Guest g, uint32_t socket, uint32_t fd_set);
 //   off: a console with no connection: no XNADDR, every socket call fails with WSAENETDOWN or WSAENOTSOCK.
 // Errors go to the calling thread's WSAGetLastError, as Winsock codes. Overlapped Winsock (WSASend, WSARecv,
 // WSAEventSelect) is not implemented: those calls fail as on a console with no connection.
+//
+// Ports: the console's services sit below 1024 (VDP's 1000 above all), which a host reserves to privileged processes
+// (Linux: EACCES without root). Every guest port below 1024 is therefore kHostPortShift + port on the host, and the
+// host ports kHostPortShift + 1..1023 are those guest ports back: one mapping, its own inverse, applied wherever an
+// address crosses (bind, connect, sendto one way; accept, recvfrom, getsockname, getpeername the other), on every
+// system, so a title sees its own port numbers and its sockets still meet each other. Nothing leaves the machine
+// (loopback), so no one outside sees the host's numbers. kHostPortShift + 1..1023 is below the ranges hosts hand out
+// on their own (Linux 32768+, Windows 49152+); the guest ports that land on the host's 1..1023 in exchange (30001 to
+// 31023) are the ones a title cannot bind on Linux.
+constexpr uint16_t kHostPortShift = 30000;
+constexpr uint16_t SwapPrivilegedPort(uint16_t port) {
+  if (port == 0) return 0;  // any port: the host picks
+  if (port < 1024) return uint16_t(port + kHostPortShift);
+  if (port > kHostPortShift && port < kHostPortShift + 1024) return uint16_t(port - kHostPortShift);
+  return port;
+}
+
 class Network {
  public:
   enum class Mode { kOff, kLoopback };

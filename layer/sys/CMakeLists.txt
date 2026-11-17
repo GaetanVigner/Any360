@@ -16,6 +16,9 @@ target_include_directories(any360_sys PUBLIC include)
 if(WIN32)
   target_link_libraries(any360_sys PUBLIC ws2_32)  # the host's sockets (src/host_sockets.cpp)
 endif()
+# std::thread and the condition variables (the scheduler, objects): libpthread on older glibc (Ubuntu 20.04's 2.31).
+find_package(Threads REQUIRED)
+target_link_libraries(any360_sys PUBLIC Threads::Threads)
 target_compile_options(any360_sys PRIVATE -Wall -Wextra)
 # Host heap allocations counted per thread (include/any360/sys/alloc_meter.h): the global operator new / delete of
 # every executable that links any360_sys or any360_xdk (the benches', the tests', the titles').

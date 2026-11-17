@@ -117,19 +117,34 @@ uint32_t Fail(uint32_t error) {
   return kSocketError;
 }
 
-// A guest sockaddr_in: family (16 bits, big-endian), port and address in network order.
+// A port in network order (as the host's sockets take it) from a value, and back.
+uint16_t NetworkOrder(uint16_t value) {
+  const uint8_t bytes[2] = {uint8_t(value >> 8), uint8_t(value)};
+  uint16_t port;
+  std::memcpy(&port, bytes, 2);
+  return port;
+}
+uint16_t PortValue(uint16_t network_order) {
+  uint8_t bytes[2];
+  std::memcpy(bytes, &network_order, 2);
+  return uint16_t(bytes[0] << 8 | bytes[1]);
+}
+
+// A guest sockaddr_in: family (16 bits, big-endian), port and address in network order. The port comes out as the
+// host's (SwapPrivilegedPort, net.h), in network order.
 bool ReadAddress(Guest g, uint32_t name, uint32_t length, uint32_t& address, uint16_t& port) {
   if (!name || length < 8) return false;
-  std::memcpy(&port, g.host(name + 2), 2);
+  port = NetworkOrder(SwapPrivilegedPort(g.Load16(name + 2)));
   std::memcpy(&address, g.host(name + 4), 4);
   return g.Load16(name) == kAfInet;
 }
 
+// A host address (port in network order) as the guest's sockaddr_in: the port back to the guest's.
 void WriteAddress(Guest g, uint32_t name, uint32_t length_ptr, uint32_t address, uint16_t port) {
   if (!name) return;
   if (length_ptr && g.Load32(length_ptr) < 16) return;
   g.Store16(name, kAfInet);
-  std::memcpy(g.host(name + 2), &port, 2);
+  g.Store16(name + 2, SwapPrivilegedPort(PortValue(port)));
   std::memcpy(g.host(name + 4), &address, 4);
   std::memset(g.host(name + 8), 0, 8);
   if (length_ptr) g.Store32(length_ptr, 16);

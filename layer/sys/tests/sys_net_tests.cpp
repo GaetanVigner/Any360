@@ -165,6 +165,53 @@ void Streams() {
   CHECK(Net().CloseSocket(client) == 0 && Net().CloseSocket(accepted) == 0 && Net().CloseSocket(listening) == 0);
 }
 
+// The console's own ports (below 1024: VDP's 1000) are moved off the host's privileged range and back: the mapping is
+// its own inverse, and a title using them sees its numbers while its sockets meet.
+void PrivilegedPorts() {
+  CHECK(SwapPrivilegedPort(0) == 0 && SwapPrivilegedPort(1) == 30001 && SwapPrivilegedPort(1000) == 31000);
+  CHECK(SwapPrivilegedPort(1023) == 31023 && SwapPrivilegedPort(1024) == 1024 && SwapPrivilegedPort(30000) == 30000);
+  CHECK(SwapPrivilegedPort(31000) == 1000 && SwapPrivilegedPort(31024) == 31024 && SwapPrivilegedPort(65535) == 65535);
+  bool involution = true;
+  for (uint32_t p = 0; p < 65536; ++p) {
+    const uint16_t q = SwapPrivilegedPort(uint16_t(p));
+    involution &= SwapPrivilegedPort(q) == p && (p == 0 || q >= 1024 || p > kHostPortShift);
+  }
+  CHECK(involution);
+
+  // Datagrams to the console's VDP port.
+  const uint32_t vdp = Net().Socket(kAfInet, kDgram, kVdp), sender = Net().Socket(kAfInet, kDgram, kUdp);
+  CHECK(vdp != kError && sender != kError);
+  Address(0x1000, 0, 1000);
+  CHECK(Net().Bind(g, vdp, 0x1000, 16) == 0);  // EACCES on Linux if passed through
+  g.Store32(0x1020, 16);
+  CHECK(Net().Name(g, vdp, false, 0x1010, 0x1020) == 0 && g.Load16(0x1012) == 1000);
+  Address(0x1030, 0x7F000001, 1000);
+  std::memcpy(g.host(0x2000), "vdp!", 4);
+  CHECK(Net().SendTo(g, sender, 0x2000, 4, 0, 0x1030, 16) == 4);
+  Set(0x3000, vdp);
+  Timeout(0x3200, 1000);
+  CHECK(Net().Select(g, 0x3000, 0, 0, 0x3200) == 1);
+  g.Store32(0x1060, 16);
+  CHECK(Net().RecvFrom(g, vdp, 0x2100, 64, 0, 0x1050, 0x1060) == 4 && std::memcmp(g.host(0x2100), "vdp!", 4) == 0);
+  g.Store32(0x1020, 16);
+  CHECK(Net().Name(g, sender, false, 0x1010, 0x1020) == 0 && g.Load16(0x1052) == g.Load16(0x1012));  // its own port
+
+  // A stream server on a port below 1024: connect, accept, and the client sees the server's port as the title chose it.
+  const uint32_t listening = Net().Socket(kAfInet, kStream, kTcp), client = Net().Socket(kAfInet, kStream, kTcp);
+  Address(0x1000, 0, 1001);
+  CHECK(Net().Bind(g, listening, 0x1000, 16) == 0 && Net().Listen(listening, 4) == 0);
+  Address(0x1030, 0x7F000001, 1001);
+  CHECK(Net().Connect(g, client, 0x1030, 16) == 0);
+  g.Store32(0x1060, 16);
+  const uint32_t accepted = Net().Accept(g, listening, 0x1050, 0x1060);
+  CHECK(accepted != kError);
+  g.Store32(0x1060, 16);
+  CHECK(Net().Name(g, client, true, 0x1050, 0x1060) == 0 && g.Load16(0x1052) == 1001);
+  g.Store32(0x1060, 16);
+  CHECK(Net().Name(g, accepted, false, 0x1050, 0x1060) == 0 && g.Load16(0x1052) == 1001);
+  for (uint32_t s : {vdp, sender, client, accepted, listening}) CHECK(Net().CloseSocket(s) == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -175,6 +222,7 @@ int main() {
   XNet();
   Datagrams();
   Streams();
+  PrivilegedPorts();
   Net().Reset();
   std::printf("sys_net_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;
