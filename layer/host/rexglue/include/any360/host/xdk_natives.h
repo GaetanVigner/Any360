@@ -49,7 +49,7 @@ enum class Function : uint32_t {
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
-  kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kCount
+  kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -124,6 +124,28 @@ inline bool ByteStepIsOne(uint32_t address) {
   if (!address) return false;
   const uint8_t* p = g_memory.Host(address);
   return p[0] == 0 && p[1] == 0 && p[2] == 0 && p[3] == 1;
+}
+// Whether the 32-bit global at `address` is 16: the step XMemSet adds after each vector it stores apart from the
+// cache lines, in the title's build (0: not given, taken as not 16).
+inline bool VectorStepIs16(uint32_t address) {
+  if (!address) return false;
+  const uint8_t* p = g_memory.Host(address);
+  return p[0] == 0 && p[1] == 0 && p[2] == 0 && p[3] == 16;
+}
+// The XDK's vector fill: r3 destination, r4 the byte, r5 size; returns the destination. `vector_step_address` is the
+// address of the global its vector stores step by, read from the title's build of the function (the lis / lwz pair
+// before its first vector loop); without it fills of 16 bytes and more are left to the function's own code.
+inline void XMemSet(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t vector_step_address = 0) {
+  if (g_mode == Mode::kNative) [[likely]] {
+    const uint32_t size = ctx.r5.u32;
+    if (any360::xdk::XMemSet(g_memory, ctx.r3.u32, ctx.r4.u32, size, size < 16 || VectorStepIs16(vector_step_address)))
+        [[likely]] {
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunSlow(Function::kXMemSet, ctx, base, original, vector_step_address);
 }
 // The XDK's vector copy: r3 destination, r4 source, r5 size; returns the destination. `byte_step_address` is the
 // address of the global its byte loop subtracts from the count, read from the title's build of the function (the

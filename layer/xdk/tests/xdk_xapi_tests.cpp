@@ -154,8 +154,46 @@ void LastError() {
   CHECK(!xdk::XapiGetLastError(nowhere, 0x7EFFFF00, r3) && !xdk::XapiSetLastError(nowhere, 0x7EFFFF00, 5));
 }
 
+// XMemSet: every size from 0 to 600 at every alignment of a 128-byte line, random sizes up to 64 KB, every byte
+// value class (0 takes the code's zeroing path), against the model, the whole memory compared; declined: a vector
+// step other than 16 from 16 bytes on, ranges that are not plain memory.
+void Fill() {
+  std::mt19937 rng(0x5E7);
+  uint32_t compared = 0;
+  for (uint32_t size = 0; size <= 600; size += (size < 300 ? 1 : 7)) {
+    for (uint32_t align = 0; align < 128; align += (size < 40 ? 1 : 5)) {
+      xdk_test::Pair p(size * 131 + align);
+      const uint32_t dest = 0x10000 + align, value = (size + align) % 3 == 0 ? 0 : 0x100 | (rng() & 0xFF);
+      const bool accepted = xdk::XMemSet(p.a, dest, value, size, true);
+      CHECK(accepted);
+      xdk::reference::XMemSet(p.b, dest, value, size);
+      CHECK(p.SameEverywhere());
+      ++compared;
+    }
+  }
+  for (int i = 0; i < 3000; ++i) {
+    const uint32_t size = rng() % 65536, dest = 0x20000 + rng() % 4096, value = rng() % 4 == 0 ? 0 : rng();
+    xdk_test::Pair p(i);
+    CHECK(xdk::XMemSet(p.a, dest, value, size, true));
+    xdk::reference::XMemSet(p.b, dest, value, size);
+    CHECK(p.SameEverywhere());
+    ++compared;
+  }
+  // Declined, nothing written: from 16 bytes on without the step checked; memory that is not plain.
+  {
+    xdk_test::Pair p(9);
+    const std::vector<uint8_t> before = p.native;
+    CHECK(!xdk::XMemSet(p.a, 0x1000, 7, 16, false) && !xdk::XMemSet(p.a, 0x1000, 7, 4096, false));
+    CHECK(xdk::XMemSetAccepts(0x1000, 15, false));
+    CHECK(!xdk::XMemSet(p.a, 0x7EFFFFF0, 7, 64, true) && !xdk::XMemSet(p.a, 0xDFFFFFF0, 7, 32, true));
+    CHECK(p.native == before);
+  }
+  std::printf("xdk_xapi_tests: XMemSet: %u fills compared with the model\n", compared);
+}
+
 int main() {
   Predicates();
+  Fill();
   LastError();
   Apart();
   Overlapping();

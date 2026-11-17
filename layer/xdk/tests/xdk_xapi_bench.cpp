@@ -32,6 +32,14 @@ NOINLINE bool FirstXMemCpy(const Memory& m, uint32_t dest, uint32_t source, uint
 NOINLINE bool NowXMemCpy(const Memory& m, uint32_t dest, uint32_t source, uint32_t size) {
   return xdk::XMemCpy(m, dest, source, size, true);
 }
+NOINLINE bool FirstXMemSet(const Memory& m, uint32_t dest, uint32_t value, uint32_t size) {
+  if (!xdk::XMemSetAccepts(dest, size, true)) return false;
+  std::memset(m.Host(dest), int(value & 0xFF), size);
+  return true;
+}
+NOINLINE bool NowXMemSet(const Memory& m, uint32_t dest, uint32_t value, uint32_t size) {
+  return xdk::XMemSet(m, dest, value, size, true);
+}
 
 // A title's calls by size, as any360_xdk_bench logs them (sizes `low` to `high`, one size when equal).
 struct Share {
@@ -99,6 +107,20 @@ int main(int argc, char** argv) {
     const std::vector<Call> calls = CallsOfSize(sizes[i], uint32_t(i) + 1);
     const double slow = sizes[i] > 65536 ? 0 : Fastest(calls, std::min(repeats, 3u), model);
     const auto [a, b] = FastestOfBoth(calls, repeats, first, now);
+    std::printf("%9u | %9.2f %9.2f %9.2f %6.2fx\n", sizes[i], slow, a, b, a / b);
+  }
+  std::printf("xdk_xapi_bench: XMemSet, ns a call (fastest of %u runs)\n", repeats);
+  std::printf("%9s | %9s %9s %9s %7s\n", "size", "model", "first", "now", "gain");
+  const auto fill_model = [&](const Call& c) {
+    xdk::reference::XMemSet(m, c.dest, c.size & 0xFF, c.size);
+    return 1u;
+  };
+  const auto fill_first = [&](const Call& c) { return uint32_t(FirstXMemSet(m, c.dest, c.size & 0xFF, c.size)); };
+  const auto fill_now = [&](const Call& c) { return uint32_t(NowXMemSet(m, c.dest, c.size & 0xFF, c.size)); };
+  for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+    const std::vector<Call> calls = CallsOfSize(sizes[i], uint32_t(i) + 101);
+    const double slow = sizes[i] > 65536 ? 0 : Fastest(calls, std::min(repeats, 3u), fill_model);
+    const auto [a, b] = FastestOfBoth(calls, repeats, fill_first, fill_now);
     std::printf("%9u | %9.2f %9.2f %9.2f %6.2fx\n", sizes[i], slow, a, b, a / b);
   }
   std::printf("the titles' mixes, sizes in random order (ns a call):\n");

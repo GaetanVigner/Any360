@@ -1067,6 +1067,15 @@
   "note": "the XDK's vector copy next to XAPI: 16-byte vectors, dcbt ahead of the source, dcbz128 ahead of the destination; named after what it does (its name is not in the titles). Three builds of the same steps. Any360: xdk::XMemCpy for ranges that do not overlap, bound in the three"
  },
  {
+  "name": "XMemSet",
+  "library": "XAPI",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82742E80"
+  },
+  "note": "The XDK's vector fill (XMemCpy's counterpart): the low byte of r4 into r5 bytes at r3, returns r3; bytes below 16, then stvlx, 16-byte vectors stepped by a global of the title (16), 128-byte lines zeroed (dcbz128) then filled, stvrx. Named after what it does. Any360: xdk::XMemSet, bound in Crackdown (base guest, its step global at 0x82B84FE8)"
+ },
+ {
   "name": "XAudio fill 1024",
   "library": "XAudio",
   "any360": "native",

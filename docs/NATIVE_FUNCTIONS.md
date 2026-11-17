@@ -706,6 +706,27 @@ the first loading into gameplay, 4 and 6 minutes, with every bound function chec
 So they are not bound there (the rule: a function no run has called is not bound). The route is kept
 (`tools/any360-route.txt` in the port) for when a run finds where the game loads a PNG.
 
+### XMemSet (2026-11-17)
+
+Chosen from a CPU profile of Crackdown's city (`tools/cpu_profile.ps1`, docs/perf/archive/2026-11-17-xmemset): outside
+the D3D runtime (another session's, phase D1) the libraries cost under 1% of the process, the first of them XAudio's
+mixer (0.36%), the C runtime's `asin`, `sin` and `cos` (0.2% together) and XAPI's vector fill (0.05%, about 70,000
+calls a second). The fill is `XMemCpy`'s counterpart: the low byte of r4 into r5 bytes at r3; bytes one by one below
+16, then the bytes up to 16 (`stvlx`), vectors up to the 128-byte line, the lines zeroed (`dcbz128`) then filled,
+the last vectors and bytes (`stvrx`). The vectors outside the lines step by a global of the title (16 in Crackdown,
+next to `XMemCpy`'s 1), which the binding checks, as `XMemCpy`'s byte step.
+
+| Function | Library | Handler | Declines | Crackdown | Test Drive Unlimited | The Simpsons Game |
+|---|---|---|---|---|---|---|
+| `XMemSet` | XAPI | `XMemSet` | from 16 bytes on, a step global other than 16 or not given; ranges that are not plain memory | bound (base guest): 8,180,925 calls, 0 different | not looked for | not looked for (no identical instructions found by the scan) |
+
+- `xdk_xapi_tests`: the model zeroes and fills store by store as the function does; 15,998 fills compared over the
+  whole memory (every size from 0 to 600 at every alignment of a line, random sizes to 64 KB, the byte 0 and others),
+  0 different.
+- In game (`--any360_xdk_bench=true`, the city route): 10.5 M calls, 21.6 -> 12.7 ns a call (1.7x); 1 to 7 bytes
+  most (13.5-15.6 -> 10.2-10.3 ns), 1,440 bytes 1.23 M times (60.3 -> 23.5 ns). About 94 ms saved in 150 seconds:
+  0.06% of a processor, below what an A/B of frame rates can show.
+
 ### Found on the way
 
 - Crackdown crashed after 40 to 55 seconds with a gamepad connected and the input group on `any360::sys`: its

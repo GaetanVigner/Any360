@@ -1,0 +1,132 @@
+crackdown, 50 s sampled, 1736000 samples; the process used 4,68 processors on average
+
+by thread (its share of the cycles, then what it runs most):
+   21,0%  thread 37980: any360::gfx::vk::VulkanRenderer::Draw 16%; ntdll.dll!ZwDelayExecution 9%; VCRUNTIME140.dll!_NLG_Return2 9%
+   18,6%  thread 39848: __imp__guest_base_sub_823B3328 13%; ntdll.dll!ZwWaitForAlertByThreadId 12%; __imp__guest_base_sub_825BB3B8 10%
+   13,8%  thread 44856: any360::gfx::CommandProcessor::ExecutePacket 32%; ntdll.dll!ZwWaitForAlertByThreadId 28%; VCRUNTIME140.dll!_NLG_Return2 6%
+   13,5%  thread 18848: ntdll.dll!ZwWaitForAlertByThreadId 24%; __imp__guest_base_sub_82136C90 3%; __imp__guest_base_sub_8233C238 3%
+    6,2%  thread 17720: ntdll.dll!ZwWaitForAlertByThreadId 51%; __imp__guest_base_sub_82252150 32%; rex::ppc::simde_mm_vrsqrtefp 3%
+    4,3%  thread 36572: ntdll.dll!ZwWaitForAlertByThreadId 56%; any360::gfx::vk::WriteBackTiled 24%; ntdll.dll!ZwWaitForMultipleObjects 14%
+    3,5%  thread 33420: ntdll.dll!ZwWaitForAlertByThreadId 84%; nvoglv64.dll!vkGetInstanceProcAddr 7%; ntdll.dll!RtlSleepConditionVariableSRW 2%
+    3,5%  thread 42572: ntdll.dll!ZwWaitForAlertByThreadId 84%; nvoglv64.dll!vkGetInstanceProcAddr 7%; ntdll.dll!RtlSleepConditionVariableSRW 2%
+
+by kind of code:
+   38,3%  waits and sleeps (system calls, with what ran just before them)
+   25,0%  the title's recompiled code
+   21,1%  Any360
+    7,7%  Windows and the C++ runtime DLLs
+    4,0%  the executable's other code
+    3,5%  the GPU driver and Vulkan
+    0,3%  the runtime (ReXGlue)
+    0,0%  other DLLs
+
+by module:
+   38,1%  waits and sleeps (system calls, with what ran just before them) | ntdll.dll
+   19,5%  the title's recompiled code | no module named (game code)
+   18,9%  Any360 | Any360 graphics (gfx)
+    4,6%  Windows and the C++ runtime DLLs | VCRUNTIME140.dll
+    4,0%  the executable's other code | host code of the title's port and its C++ runtime
+    3,5%  the GPU driver and Vulkan | nvoglv64.dll
+    2,0%  Windows and the C++ runtime DLLs | ntdll.dll
+    1,9%  the title's recompiled code | middleware: Havok Physics
+    1,2%  Any360 | Any360 host binding
+    1,1%  the title's recompiled code | middleware: Kynapse (AI)
+    0,9%  Any360 | Any360 native library functions (xdk)
+    0,9%  the title's recompiled code | library: XDK D3D runtime
+    0,7%  Windows and the C++ runtime DLLs | win32u.dll
+    0,6%  the title's recompiled code | library: XDK audio (XAudio, XMA)
+    0,5%  the title's recompiled code | middleware: Lua
+    0,3%  the runtime (ReXGlue) | rexruntime.dll
+    0,3%  the title's recompiled code | library: C runtime (CRT)
+    0,3%  the title's recompiled code | middleware: SpeedTree
+    0,3%  Windows and the C++ runtime DLLs | ucrtbase.dll
+    0,1%  waits and sleeps (system calls, with what ran just before them) | win32u.dll
+    0,1%  Windows and the C++ runtime DLLs | MSVCP140.dll
+    0,1%  Any360 | Any360 system (sys)
+    0,1%  the title's recompiled code | library: XAPI (Win32 layer over the kernel and XAM)
+    0,0%  other DLLs | no module
+    0,0%  Windows and the C++ runtime DLLs | KERNEL32.DLL
+    0,0%  Windows and the C++ runtime DLLs | KERNELBASE.dll
+    0,0%  the title's recompiled code | library: XDK D3DX and XGraphics (shader compiler)
+    0,0%  Windows and the C++ runtime DLLs | USER32.dll
+    0,0%  other DLLs | gdi32full.dll
+    0,0%  other DLLs | graphics-hook64.dll
+
+the 60 functions that cost most:
+   33,0%  ntdll.dll!ZwWaitForAlertByThreadId
+    4,4%  any360::gfx::CommandProcessor::ExecutePacket
+    3,4%  any360::gfx::vk::VulkanRenderer::Draw
+    2,9%  VCRUNTIME140.dll!_NLG_Return2
+    2,9%  nvoglv64.dll!vkGetInstanceProcAddr
+    2,5%  ntdll.dll!ZwDelayExecution
+    2,5%  __imp__guest_base_sub_823B3328  [game code]
+    2,0%  __imp__guest_base_sub_82252150  [game code]
+    1,8%  __imp__guest_base_sub_825BB3B8  [game code]
+    1,7%  VCRUNTIME140.dll!memmove
+    1,2%  ntdll.dll!NtAlertThreadByThreadId
+    1,0%  any360::gfx::vk::WriteBackTiled
+    1,0%  __imp__guest_base_sub_825AA008  [game code]
+    0,8%  any360::gfx::vk::TextureCache::MemoryChanged
+    0,8%  any360::gfx::CommandProcessor::ExecuteType3
+    0,7%  any360::gfx::AsyncRenderer::SendRegisters
+    0,6%  any360::gfx::vk::VulkanRenderer::Draw::<lambda_0>::operator()
+    0,6%  ntdll.dll!NtWaitForSingleObject
+    0,6%  ntdll.dll!ZwWaitForMultipleObjects
+    0,6%  any360::gfx::CommandProcessor::ExecuteRecord
+    0,5%  any360::gfx::vk::TextureCache::View
+    0,5%  rex::ppc::simde_mm_vrsqrtefp
+    0,5%  ntdll.dll!RtlSleepConditionVariableSRW
+    0,5%  __imp__guest_base_sub_82136C90  [game code]
+    0,5%  any360::gfx::AsyncRenderer::Run
+    0,4%  __imp__guest_base_sub_825543F8  [game code]
+    0,4%  crackdown::`anonymous namespace'::ScanPm4
+    0,4%  `anonymous namespace'::_Mismatching::_Mismatch_impl<unsigned int>
+    0,4%  ntdll.dll!RtlSizeHeap
+    0,4%  win32u.dll!NtDxgkSubmitPresentToHwQueue
+    0,4%  std::_Hash<std::_Umap_traits<std::array<unsigned int,8>,any360::gfx::vk::TextureCache::FastView,std::_Uhash_co
+    0,4%  ntdll.dll!RtlQueryPerformanceCounter
+    0,4%  __imp__guest_base_sub_82A4DCF0  [XDK audio (XAudio, XMA)]
+    0,4%  __imp__guest_base_sub_8233C238  [game code]
+    0,3%  __imp__guest_base_sub_823A2130  [game code]
+    0,3%  any360::gfx::vk::`anonymous namespace'::Place
+    0,3%  __imp__guest_base_sub_829A9F38  [Havok Physics]
+    0,3%  crackdown::hooks::AudioBarrier
+    0,3%  any360::gfx::CommandProcessor::Next
+    0,3%  any360::gfx::AsyncRenderer::Execute
+    0,3%  rexruntime.dll!rex::memory::PhysicalHeap::EnableAccessCallbacks
+    0,3%  any360::gfx::vk::TextureCache::SetGpuSource
+    0,3%  std::_Hash<std::_Umap_traits<unsigned long long,std::unique_ptr<any360::gfx::Shader,std::default_delete<any360
+    0,3%  __imp__guest_base_sub_8233BE28  [game code]
+    0,3%  any360::xdk::detail::UploadAsRecords<16>
+    0,3%  ntdll.dll!RtlFreeHeap
+    0,2%  __imp__guest_base_sub_8213C980  [game code]
+    0,2%  any360::gfx::vk::VulkanRenderer::RecordJob
+    0,2%  nvoglv64.dll!DrvPresentBuffers
+    0,2%  __imp__guest_base_sub_826AF370  [XDK D3D runtime]
+    0,2%  __imp__guest_base_sub_825AF370  [game code]
+    0,2%  __imp__guest_base_sub_829C0C30  [Havok Physics]
+    0,2%  __imp__guest_base_sub_8233CCF0  [game code]
+    0,2%  std::_Partition_by_pivot_unchecked<std::pair<unsigned int,unsigned int> *,std::less<void> >
+    0,2%  __imp__guest_base_sub_823A1AF8  [game code]
+    0,2%  __imp__guest_base_sub_82A14048  [Kynapse (AI)]
+    0,2%  any360::gfx::vk::VulkanRenderer::SourceView
+    0,2%  __imp__guest_base_sub_82A220D0  [Kynapse (AI)]
+    0,2%  any360::gfx::vk::TiledOffset2D
+    0,2%  __imp__guest_base_sub_82568AE0  [game code]
+
+time spent in DLLs (waits and sleeps among them), by the function of the executable that called them:
+   12,7%  _Cnd_timedwait_for_unchecked
+   12,3%  any360::gfx::vk::VulkanRenderer::RecordLoop
+    2,4%  any360::gfx::vk::VulkanRenderer::Complete
+    2,2%  any360::gfx::AsyncRenderer::Run
+    1,6%  any360::gfx::vk::VulkanRenderer::Draw
+    1,2%  any360::gfx::AsyncRenderer::Execute
+    1,0%  any360::gfx::vk::VulkanRenderer::Draw::<lambda_0>::operator()
+    0,9%  any360::gfx::vk::VulkanRenderer::Flush
+    0,8%  any360::gfx::vk::VulkanRenderer::RecordJob
+    0,8%  any360::gfx::AsyncRenderer::SendRegisters
+    0,6%  any360::gfx::vk::VulkanRenderer::Record
+    0,5%  any360::gfx::vk::VulkanRenderer::FinishBatch
+    0,5%  any360::gfx::vk::VulkanRenderer::EndRendering
+    0,4%  std::_Func_impl_no_alloc<`lambda at F:\Crackdown\any360-gpu\layer\host\rexglue\src\rexglue.cpp:1177:39',void,u
+    0,3%  std::_Func_impl_no_alloc<`lambda at F:\Crackdown\any360-gpu\layer\host\rexglue\src\rexglue.cpp:911:61',int>::_

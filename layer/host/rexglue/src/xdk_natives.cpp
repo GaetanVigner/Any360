@@ -62,7 +62,7 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "D3D blend", "D3D bool constants", "D3D int constants",
                                             "D3D pixel shader constants", "D3D SetTexture", "D3D SetStreamSource",
                                             "D3D sampler filter", "D3D SetVertexDeclaration", "D3D SetShader",
-                                            "D3D CPU range flush", "zlib inflate_fast", "png_read_filter_row"};
+                                            "D3D CPU range flush", "zlib inflate_fast", "png_read_filter_row", "XMemSet"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -189,6 +189,7 @@ bool Accepts(Function function, Call& c) {
     case Function::kMemcpy:
     case Function::kCopyForward: return any360::xdk::CrtMemcpyAccepts(c.dest, c.second, c.size);
     case Function::kMemset: return any360::xdk::CrtMemsetAccepts(c.dest, c.size);
+    case Function::kXMemSet: return any360::xdk::XMemSetAccepts(c.dest, c.size, c.size < 16 || VectorStepIs16(c.value));
     case Function::kMemmove: return any360::xdk::CrtMemmoveAccepts(c.dest, c.second, c.size);
     case Function::kStrncpy: return any360::xdk::CrtStrncpyAccepts(c.dest, c.second, c.size);
     default: return any360::xdk::XMemCpyAccepts(c.dest, c.second, c.size, c.size >= 16 || ByteStepIsOne(c.value));
@@ -208,6 +209,8 @@ bool Native(Function function, Call& c) {
     case Function::kMemcpy: return any360::xdk::CrtMemcpy(g_memory, c.dest_register, c.second, c.size, c.stack_pointer);
     case Function::kCopyForward: return any360::xdk::CrtCopyForward(g_memory, c.dest, c.second, c.size);
     case Function::kMemset: return any360::xdk::CrtMemset(g_memory, c.dest, c.second, c.size);
+    case Function::kXMemSet:
+      return any360::xdk::XMemSet(g_memory, c.dest, c.second, c.size, c.size < 16 || VectorStepIs16(c.value));
     case Function::kMemmove: return any360::xdk::CrtMemmove(g_memory, c.dest_register, c.second, c.size, c.stack_pointer);
     case Function::kStrncpy: return any360::xdk::CrtStrncpy(g_memory, c.dest, c.second, c.size);
     case Function::kWcsncpy: return any360::xdk::CrtWcsncpy(g_memory, c.dest, c.second, c.size);
@@ -274,6 +277,7 @@ uint32_t PureWork(Function function, const Call& c, uint64_t r3) {
 bool RunsTwiceInPlace(Function function, const Call& c) {
   switch (function) {
     case Function::kMemset:
+    case Function::kXMemSet:
     case Function::kXMemCpy:
     case Function::kWcscpy:
     case Function::kFinite:
@@ -294,8 +298,8 @@ bool RunsTwiceInPlace(Function function, const Call& c) {
 }
 
 // The 8 bytes below the stack pointer are compared for the functions that are leaves (memcpy leaves its
-// destination there; the others leave it alone). XMemCpy builds a frame there, which no caller can see.
-bool ComparesStackSlot(Function function) { return function != Function::kXMemCpy; }
+// destination there; the others leave it alone). XMemCpy and XMemSet build a frame there, which no caller can see.
+bool ComparesStackSlot(Function function) { return function != Function::kXMemCpy && function != Function::kXMemSet; }
 
 // The bytes just before and just after a destination that are safe to read: on the same 4 KB pages as its first
 // and last bytes, plain memory, and away from the stack the function itself uses (below the stack pointer).

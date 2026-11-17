@@ -34,6 +34,23 @@ inline bool XMemCpy(const Memory& memory, uint32_t dest, uint32_t source, uint32
   return true;
 }
 
+// The XDK's vector fill (r3 destination, r4 the byte, r5 size; returns the destination), XMemCpy's counterpart: the
+// function writes the low byte of r4 into the `size` bytes of the destination, memset's result. Below 16 bytes it
+// stores them one by one; from 16 on, the bytes up to the next 16 (stvlx), 16-byte vectors up to the next 128, the
+// 128-byte cache lines zeroed (dcbz128) then filled, the last vectors and the last bytes (stvrx). The vectors it
+// stores apart from the cache lines are placed by a global of the title added to the address after each one (16 in
+// the titles read: `vector_step_16` says the caller has checked it): sizes from 16 on are the function's own code
+// without it. Its name is not in the titles; what it does is XMemSet's, the name used here. Its register save (r28-
+// r31 and the return address below r1) is a frame no caller can see, as XMemCpy's.
+inline bool XMemSetAccepts(uint32_t dest, uint32_t size, bool vector_step_16) {
+  return (size < 16 || vector_step_16) && IsPlainMemory(dest, size);
+}
+inline bool XMemSet(const Memory& memory, uint32_t dest, uint32_t byte, uint32_t size, bool vector_step_16) {
+  if (!XMemSetAccepts(dest, size, vector_step_16)) return false;
+  std::memset(memory.Host(dest), int(byte & 0xFF), size);
+  return true;
+}
+
 // GetLastError and SetLastError: the thread's last error, a 32-bit field of the kernel's thread (+352) that the
 // processor's control region (r13) names at +256. While that region's field at +336 is not zero (a DPC runs: there
 // is no thread to speak of) GetLastError gives 0 and SetLastError stores nothing. Both decline a control region or

@@ -8,6 +8,7 @@
   "memset",
   "memmove",
   "XMemCpy",
+  "XMemSet",
   "D3D GPU wait step",
   "D3D dirty constants",
   "D3D dirty words",

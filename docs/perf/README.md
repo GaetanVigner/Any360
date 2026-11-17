@@ -14,3 +14,4 @@ Every step's measured results, kept for later optimization passes: the self-test
 - [2026-11-16-hitches](archive/2026-11-16-hitches/): the title-side hitches: hitch tracer reports, the physical allocator's skip-ahead (5 v 5 A/B: 1% low 203 -> 221 FPS) (NOTES.md)
 - [2026-11-16-zlib-inflate-fast](archive/2026-11-16-zlib-inflate-fast/): zlib 1.1.4's inflate_fast native: benchmark, the check and the measure in game (1.4x a call), 5 v 5 A/B (the dip's slowest frame 14.6 -> 9.4 ms) (NOTES.md)
 - [2026-11-16-libpng-filter-row](archive/2026-11-16-libpng-filter-row/): libpng 1.0.5's png_read_filter_row native: benchmark (Paeth in SSE2, 3.4-5.0x), the check and the measure in game (10.1x a call), 5 v 5 A/B within noise (NOTES.md)
+- [2026-11-17-xmemset](archive/2026-11-17-xmemset/): the XDK's vector fill (XMemSet) native: the city's CPU profile that chose it, benchmark, the check and the measure in game (1.7x a call over 10.5 M calls) (NOTES.md)

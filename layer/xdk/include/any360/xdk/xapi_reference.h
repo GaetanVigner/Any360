@@ -11,6 +11,56 @@
 
 namespace any360::xdk::reference {
 
+// The XDK's vector fill, store by store as its code makes them. `vector_step` is the title's global added to the
+// address after each vector stored apart from the cache lines (16). Cache lines are zeroed (dcbz128) when the code
+// zeroes them, the line four ahead included, before they are filled.
+inline void XMemSet(const Memory& memory, uint32_t dest, uint32_t value, uint32_t size, uint32_t vector_step = 16) {
+  const uint8_t byte = uint8_t(value);
+  const auto store = [&](uint32_t at, uint32_t count) {
+    for (uint32_t i = 0; i < count; ++i) *memory.Host(at + i) = byte;
+  };
+  const auto zero_line = [&](uint32_t address) {
+    const uint32_t line = address & ~127u;
+    for (uint32_t i = 0; i < 128; ++i) *memory.Host(line + i) = 0;
+  };
+  if (size < 16) {
+    store(dest, size);  // stb one by one
+    return;
+  }
+  uint32_t at = dest, left = size;
+  const uint32_t head = (0u - dest) & 15;
+  uint32_t blocks = uint32_t(int32_t(0u - dest) >> 4) & 7;
+  if (head) {  // stvlx: up to the next 16 bytes
+    store(dest, head);
+    left -= head, at = dest + head;
+  }
+  blocks = std::min(blocks, left >> 4);
+  for (uint32_t i = 0; i < blocks; ++i) {  // stvx, the title's step
+    store(at & ~15u, 16);
+    at += vector_step;
+  }
+  const uint32_t rest = left - (blocks << 4), lines = rest >> 7;
+  if (byte == 0) {
+    for (uint32_t i = 0; i < lines; ++i, at += 128) zero_line(at);
+  } else {
+    for (uint32_t i = 0; i < std::min(lines, 4u); ++i) zero_line(at + 128 * i);
+    for (uint32_t i = 0; i < lines; ++i, at += 128) {
+      if (i + 4 < lines) zero_line(at + 512);
+      for (uint32_t j = 0; j < 128; j += 16) store((at + j) & ~15u, 16);
+    }
+  }
+  uint32_t tail = rest - (lines << 7);
+  if (tail >= 16) {
+    for (uint32_t n = tail >> 4; n; --n) {
+      store(at & ~15u, 16);
+      tail -= 16, at += vector_step;
+    }
+  }
+  // stvrx at at + tail: the bytes of that 16-byte block before the address.
+  const uint32_t end = at + tail;
+  store(end & ~15u, end & 15);
+}
+
 // The XDK's vector copy. `byte_step` is the title's global its byte loop subtracts from the count (1).
 // Loads and stores are made in the function's order, and the cache lines it zeroes ahead are zeroed when it zeroes
 // them: for ranges that overlap this is what the function leaves, which no plain copy gives.

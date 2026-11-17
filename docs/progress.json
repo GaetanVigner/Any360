@@ -1,5 +1,5 @@
 {
- "date": "2026-11-16",
+ "date": "2026-11-17",
  "reference": {
   "sdk": "ReXGlue",
   "version": "0.8.0"
@@ -60,8 +60,8 @@
   }
  },
  "xdk": {
-  "total": 118,
-  "native": 98,
+  "total": 119,
+  "native": 99,
   "ported": 0,
   "unnamed_by_title": {
    "codbo": {},
