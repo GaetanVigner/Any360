@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "any360/xdk/crt.h"
+#include "any360/xdk/crt_math.h"
 #include "any360/xdk/d3d.h"
 #include "any360/xdk/d3d_state.h"
 #include "any360/xdk/xaudio.h"
@@ -49,7 +50,7 @@ enum class Function : uint32_t {
   kStrrchr, kTolower, kToupper, kWcsncpy, kWcscpy, kStrncat, kWcscmp, kStrlen, kStrcmp, kMbtowc,
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
-  kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kCount
+  kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kSin, kCos, kAsin, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -71,6 +72,9 @@ void RunSetConstantsSlow(PPCContext& ctx, uint8_t* base, GuestFunction original)
 void RunFillSlow(PPCContext& ctx, uint8_t* base, GuestFunction original, uint32_t floats);
 // And for zlib's inflate_fast (ZlibInflateFast below).
 void RunInflateFastSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
+// And for the C runtime's sin, cos and asin (CrtSin, CrtCos, CrtAsin below): `function` one of the three.
+void RunCrtMathSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original,
+                    const any360::xdk::CrtTrigBuild& trig, const any360::xdk::CrtAsinBuild& asin);
 // And for libpng's png_read_filter_row (PngReadFilterRow below).
 void RunPngFilterRowSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
 // And for the D3D runtime's state setters (D3dState below): `native` the replacement on the registers (false: it
@@ -589,6 +593,49 @@ inline void ZlibInflateFast(PPCContext& ctx, uint8_t* base, GuestFunction origin
     return;
   }
   RunInflateFastSlow(ctx, base, original);
+}
+
+// The C runtime's sin, cos and asin (any360/xdk/crt_math.h): f1 the argument and the result; sin and cos leave the
+// words the function stores below r1. `build` says where the title's build keeps its coefficients. The host's
+// flush-to-zero mode is turned off first, as the function's first instruction does (and stays off, as after it).
+inline void CrtSin(PPCContext& ctx, uint8_t* base, GuestFunction original, const any360::xdk::CrtTrigBuild& build) {
+  ctx.fpscr.disableFlushMode();
+  if (g_mode == Mode::kNative) [[likely]] {
+    double result;
+    if (any360::xdk::CrtSin(g_memory, build, ctx.r1.u32, ctx.f1.f64, result)) [[likely]] {
+      ctx.f1.f64 = result;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunCrtMathSlow(Function::kSin, ctx, base, original, build, {});
+}
+inline void CrtCos(PPCContext& ctx, uint8_t* base, GuestFunction original, const any360::xdk::CrtTrigBuild& build) {
+  ctx.fpscr.disableFlushMode();
+  if (g_mode == Mode::kNative) [[likely]] {
+    double result;
+    if (any360::xdk::CrtCos(g_memory, build, ctx.r1.u32, ctx.f1.f64, result)) [[likely]] {
+      ctx.f1.f64 = result;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunCrtMathSlow(Function::kCos, ctx, base, original, build, {});
+}
+inline void CrtAsin(PPCContext& ctx, uint8_t* base, GuestFunction original, const any360::xdk::CrtAsinBuild& build) {
+  ctx.fpscr.disableFlushMode();
+  if (g_mode == Mode::kNative) [[likely]] {
+    double result;
+    if (any360::xdk::CrtAsin(g_memory, build, ctx.f1.f64, result)) [[likely]] {
+      ctx.f1.f64 = result;
+      return;
+    }
+    original(ctx, base);
+    return;
+  }
+  RunCrtMathSlow(Function::kAsin, ctx, base, original, {}, build);
 }
 
 // The D3D runtime's GPU wait step (any360/xdk/d3d.h): r3 the wait's state; returns nonzero while the wait goes on.

@@ -727,6 +727,32 @@ next to `XMemCpy`'s 1), which the binding checks, as `XMemCpy`'s byte step.
   most (13.5-15.6 -> 10.2-10.3 ns), 1,440 bytes 1.23 M times (60.3 -> 23.5 ns). About 94 ms saved in 150 seconds:
   0.06% of a processor, below what an A/B of frame rates can show.
 
+### sin, cos and asin (2026-11-17)
+
+The C runtime's next most costly functions in Crackdown's city after XAudio's mixer (0.2% of the process together,
+19 M calls in 150 seconds). Floating point, so the rule is the same bits, not a close value: the native ones
+(`any360/xdk/crt_math.h`) do the function's own operations in its order on the build's own coefficients, read from
+its tables where it reads them (the binding gives their addresses): the fused multiply-adds where it has `fmadd` and
+`fnmsub`, `fctid` under the host's rounding mode, its tests and early returns, the words it leaves below r1 (sin: |x|
+and the quadrant; cos: the quadrant). The binding turns the host's flush-to-zero mode off first, as the function's
+first instruction does.
+
+| Function | Library | Handler | Declines | Crackdown | Test Drive Unlimited | The Simpsons Game |
+|---|---|---|---|---|---|---|
+| `sin` | CRT | `CrtSin` | a NaN argument; a stack or table that is not plain memory | bound: 3,255,681 calls, 0 different | not looked for (no identical instructions found by the scan) | not looked for (the same) |
+| `cos` | CRT | `CrtCos` | the same | bound: 3,188,805 calls, 0 different | the same | the same |
+| `asin` | CRT | `CrtAsin` | a table that is not plain memory | bound: 9,032,261 calls, 0 different | the same | the same |
+
+- Why NaNs are declined by sin and cos: their `fnmsub` is `-std::fma(a, b, -c)` in the recompiled code, which the
+  compiler may fold into another fused form that carries a NaN's sign otherwise; the unit test saw both in the same
+  build. A NaN's sign bit then depends on how the function was compiled, so those calls stay its own code. Numbers
+  and infinities do not reach the difference.
+- `xdk_crt_math_tests`: 372,058 calls compared with the models (result bits and memory) on doubles of every exponent,
+  the special values, the functions' ranges and asin around its threshold; the tables are made up, a CRT's shape
+  (no title's data in the repository).
+- Measured: off-game as fast as the models (about 17-18 ns: a fixed chain of dependent operations); in game sin 33.7
+  -> 32.2 ns (1.05x), cos 33.6 -> 28.7 (1.2x), asin 23.1 -> 18.3 (1.3x). About 80 ms saved in 150 seconds.
+
 ### Found on the way
 
 - Crackdown crashed after 40 to 55 seconds with a gamepad connected and the input group on `any360::sys`: its

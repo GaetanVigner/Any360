@@ -1,0 +1,10 @@
+# crackdown_456.log (--any360_xdk_verify=true, city route): the last count
+Any360 xdk: 171000000 calls verified against the functions' own code (memcpy 7382364, forward copy 809351, memset 8801446, memmove 61416, XMemCpy 1845090, wcslen 273292, strchr 50137, strncmp 19513, strncpy 56557, strrchr 1285, tolower 510914, wcsncpy 5006, wcscpy 11012, strncat 14, wcscmp 9385182, mbtowc 90052, _stricmp 742158, strstr 73334, _isnan 23, _get_exp 434381, _set_exp 434381, XAudio mix ramp 7020971, D3D dirty constants 16107472, D3D dirty words 14859650, D3D set shader constants 14017341, XAudio fill 64, D3D blend 9890061, D3D bool constants 1544162, D3D pixel shader constants 7446550, D3D SetTexture 14277966, D3D SetStreamSource 7124607, D3D sampler filter 16591152, D3D SetVertexDeclaration 3427190, D3D SetShader 4302449, D3D CPU range flush 80534, zlib inflate_fast 18000, png_read_filter_row 12452, XMemSet 7815728, sin 3255681, cos 3188805, asin 9032261), 0 different; bytes next to a destination changed during its own code: memcpy 31, memset 3219, XMemCpy 1, strncpy 3; during the replacement: memcpy 44, memset 14375, strncpy 3, wcscpy 1; left to its own code: memcpy 1, forward copy 206, memset 32, D3D dirty constants 8674, D3D dirty words 2599; different at first and the same when run again (another thread wrote meanwhile): none
+
+# crackdown_457.log (--any360_xdk_bench=true, city route)
+Any360 xdk bench: sin: 3763120 calls, own code 33.7 ns a call, host routine 32.2 ns (1.0x); by size: [1-1: 3763120 calls, 33.700 -> 32.200 ns]
+Any360 xdk bench: sin: most frequent sizes (size x calls): 1 x 3763120
+Any360 xdk bench: cos: 3739726 calls, own code 33.6 ns a call, host routine 28.7 ns (1.2x); by size: [1-1: 3739726 calls, 33.600 -> 28.700 ns]
+Any360 xdk bench: cos: most frequent sizes (size x calls): 1 x 3739726
+Any360 xdk bench: asin: 11549783 calls, own code 23.1 ns a call, host routine 18.3 ns (1.3x); by size: [1-1: 11549783 calls, 23.100 -> 18.300 ns]
+Any360 xdk bench: asin: most frequent sizes (size x calls): 1 x 11549783

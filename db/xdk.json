@@ -77,6 +77,24 @@
   "note": "the same instructions in the three titles: the difference of the first bytes that differ, A to Z lowered; at the second string's end the first's byte as it is. Any360: xdk::CrtStricmp, bound in the three"
  },
  {
+  "name": "asin",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82AB66E8"
+  },
+  "note": "The C runtime's asin: a rational polynomial in x*x, past 0.5 in (1 - |x|) / 2 through a square root; the build's table (Crackdown: 0x82BA3C20). Any360: xdk::CrtAsin (the same bits), bound in Crackdown"
+ },
+ {
+  "name": "cos",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82AB60E0"
+  },
+  "note": "The C runtime's cos: sin's reduction shifted by pi/2, the same polynomial and table; leaves the quadrant below r1. Any360: xdk::CrtCos (the same bits; NaN arguments declined), bound in Crackdown"
+ },
+ {
   "name": "mbtowc",
   "library": "CRT",
   "any360": "native",
@@ -130,6 +148,15 @@
    "tdu": "0x826460C0"
   },
   "note": "Any360: xdk::CrtMemset, the one function the three titles bind (docs/NATIVE_FUNCTIONS.md)"
+ },
+ {
+  "name": "sin",
+  "library": "CRT",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82AB6010"
+  },
+  "note": "The C runtime's sin: reduction by pi/2 (fctid), a polynomial of fused multiply-adds on the build's table (Crackdown: 0x82BA3AF0, its constant term at 0x820ED510, the value past its range at 0x82BA4308); leaves |x| and the quadrant below r1. Any360: xdk::CrtSin (the same operations in the same order: the same bits; NaN arguments declined), bound in Crackdown"
  },
  {
   "name": "strchr",
