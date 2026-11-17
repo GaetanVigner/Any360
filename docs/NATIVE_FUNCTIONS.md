@@ -784,6 +784,42 @@ process, so even a free math library would not show in the frame rate there. Kep
 phase: an opt-in flag, title by title and function by function, kept only where an A/B shows a gain and the game
 still plays the same (physics, AI, co-op); never counted as checked.
 
+### XAudio's I3DL2 reverb (2026-11-18)
+
+The first function too long to transcribe by hand: XAudio's I3DL2 reverb, one frame of the effect (256 samples, two
+channels in, four out) through ten stages (crossfading delay lines, early reflections, all-pass and comb filters, the
+late mix), about 3,500 recompiled lines. Its state (r3) is in line, 0x4B9D0 bytes with no pointers: delay buffers,
+positions, coefficients and a 256-sample buffer one frame leaves for the next.
+
+| Function | Library | Handler | Declines | Crackdown | Test Drive Unlimited | The Simpsons Game |
+|---|---|---|---|---|---|---|
+| I3DL2 reverb, one frame | XAudio | `XAudioReverb` | a state, stack, channel or pointer table that is not plain memory | bound: 51,402 calls, 0 different | not looked for | a function with the same 17,888-byte frame at 0x82C50660, likely the same, not bound |
+
+- **Made, not written.** `tools/ppc_model.py` turns a title's recompiled functions into a header on
+  `any360/xdk/ppc_model.h`'s context (registers, memory as `any360::xdk::Memory`, the runtime's helpers such as
+  `vmaddfp` and the register saves): the root and every function it calls, callees first, the asm comments kept. Plain,
+  it is the model (`xaudio_reverb_reference.h`). With `--native` it is the native's first version
+  (`xaudio_reverb_native.h`): every function forced inline into one leaf, the registers in a context local to the
+  call, memory without the runtime's volatile accesses. The same operations in the same order give the same bits;
+  what it saves is the recompiled code's traffic through the shared register context. Anything the tool does not
+  know yet (indirect calls, other runtime helpers) stops it.
+- The title's build computes `fmadd` and `fmsub` with the C library's `fma` (no FMA in its flags); the leaf is
+  compiled a second time with FMA3 and that copy runs where the processor has it: one rounding either way, the same
+  bits, 164 calls cheaper.
+- It writes the state, the four outputs it uses (r5's first, second, fourth and fifth pointers) and the caller's word
+  at r1 + 20; its frame below r1 (about 18 KB) is its own and not compared (the native saves its own registers there).
+- `xdk_xaudio_reverb_tests`: 312 frames compared with the model, every byte of the state, the outputs, the stack and
+  the caller's word, over sequences in the three input modes, with crossfades moving; reverbs dying out (denormal delay
+  lines), entered with the host's flush mode off and on; and any byte written outside the call's plan fails.
+- Measured (docs/perf/archive/2026-11-18-xaudio-reverb/): off-game 86.0 -> 78.3 µs a frame (1.10x); in Crackdown's
+  city 108.7 -> 94.4 µs (1.15x), 0 bytes and 0 allocations a call. The host offers no I3DL2 reverb doing the same work
+to measure against (the platforms' own reverbs are other algorithms). A modest gain: the next step, if the effect
+  matters somewhere, is its per-sample loop (about 680 instructions a sample) written by hand against this model.
+- Found on the way: the first in-game check gave 0 different, but 83% of the calls agreed only on a second try. The
+  state had been measured 1 KB short, so that buffer was neither compared nor put back between the two sides. The
+  off-game test now fails any write outside the plan. The verifier also starts each side with the host's
+  floating-point control word the call found (the code writes it only when the guest's flush mode changes).
+
 ### Found on the way
 
 - Crackdown crashed after 40 to 55 seconds with a gamepad connected and the input group on `any360::sys`: its

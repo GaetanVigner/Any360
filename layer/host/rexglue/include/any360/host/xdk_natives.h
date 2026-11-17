@@ -51,7 +51,7 @@ enum class Function : uint32_t {
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
   kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kSin, kCos, kAsin,
-  kD3dRenderState, kAtan2, kPow, kD3dSurfaces, kCount
+  kD3dRenderState, kAtan2, kPow, kD3dSurfaces, kXAudioReverb, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -76,6 +76,9 @@ void RunInflateFastSlow(PPCContext& ctx, uint8_t* base, GuestFunction original);
 // And for the C runtime's sin, cos and asin (CrtSin, CrtCos, CrtAsin below): `function` one of the three.
 void RunCrtMathSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original,
                     const any360::xdk::CrtTrigBuild& trig, const any360::xdk::CrtAsinBuild& asin);
+// XAudio's I3DL2 reverb (any360/xdk/xaudio_reverb.h): one frame of the effect, r3 its state, r4 and r5 its
+// channels. Defined in xdk_natives.cpp (the native leaf is long; only that file compiles it).
+void XAudioReverb(PPCContext& ctx, uint8_t* base, GuestFunction original);
 // And for the C runtime's atan2 and pow (CrtAtan2, CrtPow below): `function` one of the two.
 void RunCrtMath2Slow(Function function, PPCContext& ctx, uint8_t* base, GuestFunction original,
                      const any360::xdk::CrtAtan2Build& atan2, const any360::xdk::CrtPowBuild& pow);

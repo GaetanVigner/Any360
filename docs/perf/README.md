@@ -22,3 +22,4 @@ Every step's measured results, kept for later optimization passes: the self-test
 - [2026-11-17-d3d-surface-setters](archive/2026-11-17-d3d-surface-setters/): 2026-11-17, SetRenderTarget and SetDepthStencilSurface native (D1)
 - [2026-11-18-d3d-render-state-fields](archive/2026-11-18-d3d-render-state-fields/): 2026-11-18, the render state fields, their getters and the sampler state siblings native (D1)
 - [2026-11-18-sys-step12](archive/2026-11-18-sys-step12/): step 12's first 27 system calls (13 cryptography, 14 Win32 forms): time and host memory a call (0 B, 0 allocations) beside Windows' CNG and `wcslen`; SHA-256, HMAC-SHA-1 and DES slower than CNG (0.15-0.6x), MD5 at par (NOTES.md)
+- [2026-11-18-xaudio-reverb](archive/2026-11-18-xaudio-reverb/): XAudio's I3DL2 reverb native, its own statements made into one leaf (tools/ppc_model.py): benchmark, the check and the measure in Crackdown's city (1.15x a frame, 0 different), the state found 1 KB longer (NOTES.md)

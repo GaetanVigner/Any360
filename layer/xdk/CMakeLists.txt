@@ -26,6 +26,12 @@ target_link_libraries(xdk_crt_math_tests PRIVATE any360_xdk)
 target_compile_options(xdk_crt_math_tests PRIVATE -Wall -Wextra)
 add_test(NAME xdk_crt_math_tests COMMAND xdk_crt_math_tests)
 
+# The reverb's model and native leaf are recompiled statements: labels and temporaries they do not all use.
+add_executable(xdk_xaudio_reverb_tests tests/xdk_xaudio_reverb_tests.cpp)
+target_link_libraries(xdk_xaudio_reverb_tests PRIVATE any360_xdk)
+target_compile_options(xdk_xaudio_reverb_tests PRIVATE -Wall -Wextra -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
+add_test(NAME xdk_xaudio_reverb_tests COMMAND xdk_xaudio_reverb_tests)
+
 add_executable(xdk_libpng_tests tests/xdk_libpng_tests.cpp)
 target_link_libraries(xdk_libpng_tests PRIVATE any360_xdk)
 target_compile_options(xdk_libpng_tests PRIVATE -Wall -Wextra)
@@ -59,6 +65,9 @@ target_compile_options(xdk_d3d_bench PRIVATE -Wall -Wextra)
 add_executable(xdk_crt_math_bench tests/xdk_crt_math_bench.cpp)
 target_link_libraries(xdk_crt_math_bench PRIVATE any360_xdk)
 target_compile_options(xdk_crt_math_bench PRIVATE -Wall -Wextra)
+add_executable(xdk_xaudio_reverb_bench tests/xdk_xaudio_reverb_bench.cpp)
+target_link_libraries(xdk_xaudio_reverb_bench PRIVATE any360_xdk)
+target_compile_options(xdk_xaudio_reverb_bench PRIVATE -Wall -Wextra -Wno-unused-label -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-parameter)
 
 add_executable(xdk_libpng_bench tests/xdk_libpng_bench.cpp)
 target_link_libraries(xdk_libpng_bench PRIVATE any360_xdk)

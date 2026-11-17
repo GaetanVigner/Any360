@@ -1,0 +1,206 @@
+﻿# Crackdown, the city through the scripted route (12 s Start, A presses), 120 s after reaching it; build of 2026-11-18.
+# Verify (crackdown_472.log): the last count line, then the frame-rate lines.
+[2026-11-18 09:47:11.638] [info] [core] [t37688] Any360 xdk: 181000000 calls verified against the functions' own code (memcpy 6655079, forward copy 762668, memset 8716067, memmove 64786, XMemCpy 1627882, wcslen 227966, strchr 46791, strncmp 16167, strncpy 53211, strrchr 1285, tolower 511308, wcsncpy 5005, wcscpy 10440, strncat 14, wcscmp 9379935, mbtowc 93420, _stricmp 652560, strstr 73334, _isnan 23, _get_exp 417106, _set_exp 417106, XAudio mix ramp 8047331, D3D dirty constants 15376265, D3D dirty words 14089582, D3D set shader constants 13608829, XAudio fill 64, D3D blend 9210171, D3D bool constants 1555990, D3D int constants 66070, D3D pixel shader constants 7189188, D3D SetTexture 13080483, D3D SetStreamSource 6530436, D3D sampler filter 18613709, D3D SetVertexDeclaration 3510226, D3D SetShader 3817099, D3D CPU range flush 63265, zlib inflate_fast 17953, png_read_filter_row 12428, XMemSet 7670668, sin 3292318, cos 3202874, asin 8968213, D3D render state 12000175, atan2 702353, pow 423376, D3D surfaces 167379, XAudio reverb 51402), 0 different; left to its own code: memcpy 1, forward copy 206, memset 32, D3D dirty constants 10263, D3D dirty words 2003, D3D surfaces 378; different at first and the same when run again: none
+[2026-11-18 09:46:45.271] [info] [core] [t23108] Any360: 53.1 FPS with the diagnostics off (52.6 with them, the period before: +1%); frame times: median 18.67 ms (53.6 FPS), 10% low 49.6 FPS, 1% low 46.5 FPS; byte swapping 9.13 MB a frame, ~0.14 ms over plain copies: without it ~53 FPS (the command processor's thread bound); slowest frame 23.4 ms, 266 over 16.7 ms, 0 over 50 ms (slowest frame 23.4 ms (command processor busy 2.7 ms; 0 texture uploads, 0.00 ms loading; 0 images created, 0.00 ms; 0 staging buffers, 0.0 MB, 0.00 ms; 0 pipelines created; files: 0 reads, 0.00 MB, 0.00 ms; 19 waits slept; XMA 0.29 ms; 0 physical allocations, 0.00 ms)); 15.3 watched writes a frame (0.06 MB invalidated); 2887 MB private, 384 textures, 8 targets, 18 resolves kept, 352 pipelines
+[2026-11-18 09:46:55.293] [info] [core] [t23108] Any360: 51.6 FPS with the diagnostics off (51.8 with them, the period before: -0%); frame times: median 19.00 ms (52.6 FPS), 10% low 47.1 FPS, 1% low 40.1 FPS; byte swapping 9.18 MB a frame, ~0.14 ms over plain copies: without it ~52 FPS (the command processor's thread bound); slowest frame 26.5 ms, 258 over 16.7 ms, 0 over 50 ms (slowest frame 26.5 ms (command processor busy 2.6 ms; 0 texture uploads, 0.00 ms loading; 0 images created, 0.00 ms; 0 staging buffers, 0.0 MB, 0.00 ms; 0 pipelines created; files: 0 reads, 0.00 MB, 0.00 ms; 20 waits slept; XMA 0.44 ms; 0 physical allocations, 0.00 ms)); 15.3 watched writes a frame (0.06 MB invalidated); 2887 MB private, 384 textures, 8 targets, 18 resolves kept, 352 pipelines
+[2026-11-18 09:47:05.308] [info] [core] [t23108] Any360: 50.4 FPS with the diagnostics off (52.1 with them, the period before: -3%); frame times: median 19.42 ms (51.5 FPS), 10% low 45.8 FPS, 1% low 39.8 FPS; byte swapping 9.21 MB a frame, ~0.14 ms over plain copies: without it ~51 FPS (the command processor's thread bound); slowest frame 27.2 ms, 252 over 16.7 ms, 0 over 50 ms (slowest frame 27.2 ms (command processor busy 2.8 ms; 0 texture uploads, 0.00 ms loading; 0 images created, 0.00 ms; 0 staging buffers, 0.0 MB, 0.00 ms; 0 pipelines created; files: 0 reads, 0.00 MB, 0.00 ms; 20 waits slept; XMA 0.30 ms; 0 physical allocations, 0.00 ms)); 15.5 watched writes a frame (0.06 MB invalidated); 2887 MB private, 384 textures, 8 targets, 18 resolves kept, 352 pipelines
+# Bench (crackdown_473.log): the reverb lines, then the frame-rate lines (60 FPS cap).
+[2026-11-18 09:47:46.203] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 414 calls, own code 111065.3 ns a call, host routine 96909.0 ns (1.1x); by size: [1-1: 414 calls, 111065 -> 96909. ns]
+[2026-11-18 09:47:46.203] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 414
+[2026-11-18 09:47:48.290] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 1198 calls, own code 111514.3 ns a call, host routine 96807.6 ns (1.2x); by size: [1-1: 1198 calls, 111514 -> 96807. ns]
+[2026-11-18 09:47:48.290] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 1198
+[2026-11-18 09:47:50.409] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 1992 calls, own code 112426.4 ns a call, host routine 96885.1 ns (1.2x); by size: [1-1: 1992 calls, 112426 -> 96885. ns]
+[2026-11-18 09:47:50.409] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 1992
+[2026-11-18 09:47:52.536] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 2790 calls, own code 112474.8 ns a call, host routine 97064.8 ns (1.2x); by size: [1-1: 2790 calls, 112474 -> 97064. ns]
+[2026-11-18 09:47:52.536] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 2790
+[2026-11-18 09:47:54.658] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: 3586 calls, own code 112596.3 ns a call, host routine 97288.7 ns (1.2x); by size: [1-1: 3586 calls, 112596 -> 97288. ns]
+[2026-11-18 09:47:54.658] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 3586
+[2026-11-18 09:47:56.750] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 4370 calls, own code 112422.1 ns a call, host routine 97350.2 ns (1.2x); by size: [1-1: 4370 calls, 112422 -> 97350. ns]
+[2026-11-18 09:47:56.750] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 4370
+[2026-11-18 09:47:58.933] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 5190 calls, own code 112836.2 ns a call, host routine 97504.7 ns (1.2x); by size: [1-1: 5190 calls, 112836 -> 97504. ns]
+[2026-11-18 09:47:58.933] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 5190
+[2026-11-18 09:48:01.117] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 6008 calls, own code 113003.7 ns a call, host routine 97659.6 ns (1.2x); by size: [1-1: 6008 calls, 113003 -> 97659. ns]
+[2026-11-18 09:48:01.117] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 6008
+[2026-11-18 09:48:03.299] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 6828 calls, own code 112786.4 ns a call, host routine 97501.6 ns (1.2x); by size: [1-1: 6828 calls, 112786 -> 97501. ns]
+[2026-11-18 09:48:03.299] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 6828
+[2026-11-18 09:48:05.475] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 7614 calls, own code 113079.9 ns a call, host routine 97671.8 ns (1.2x); by size: [1-1: 7614 calls, 113079 -> 97671. ns]
+[2026-11-18 09:48:05.475] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 7614
+[2026-11-18 09:48:07.214] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 8226 calls, own code 113129.8 ns a call, host routine 97814.8 ns (1.2x); by size: [1-1: 8226 calls, 113129 -> 97814. ns]
+[2026-11-18 09:48:07.214] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 8226
+[2026-11-18 09:48:08.786] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 8816 calls, own code 113217.0 ns a call, host routine 97900.6 ns (1.2x); by size: [1-1: 8816 calls, 113217 -> 97900. ns]
+[2026-11-18 09:48:08.786] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 8816
+[2026-11-18 09:48:10.342] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 9400 calls, own code 113242.8 ns a call, host routine 97912.1 ns (1.2x); by size: [1-1: 9400 calls, 113242 -> 97912. ns]
+[2026-11-18 09:48:10.342] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 9400
+[2026-11-18 09:48:11.882] [info] [core] [t39876] Any360 xdk bench: XAudio reverb: 9976 calls, own code 113068.3 ns a call, host routine 97804.6 ns (1.2x); by size: [1-1: 9976 calls, 113068 -> 97804. ns]
+[2026-11-18 09:48:11.882] [info] [core] [t39876] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 9976
+[2026-11-18 09:48:13.436] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 10560 calls, own code 113230.3 ns a call, host routine 97884.3 ns (1.2x); by size: [1-1: 10560 calls, 113230 -> 97884. ns]
+[2026-11-18 09:48:13.436] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 10560
+[2026-11-18 09:48:14.991] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 11144 calls, own code 113244.7 ns a call, host routine 97973.9 ns (1.2x); by size: [1-1: 11144 calls, 113244 -> 97973. ns]
+[2026-11-18 09:48:14.991] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 11144
+[2026-11-18 09:48:16.541] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 11724 calls, own code 113119.2 ns a call, host routine 97882.3 ns (1.2x); by size: [1-1: 11724 calls, 113119 -> 97882. ns]
+[2026-11-18 09:48:16.541] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 11724
+[2026-11-18 09:48:18.070] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 12298 calls, own code 112968.8 ns a call, host routine 97803.0 ns (1.2x); by size: [1-1: 12298 calls, 112968 -> 97803. ns]
+[2026-11-18 09:48:18.070] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 12298
+[2026-11-18 09:48:19.587] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 12866 calls, own code 112859.7 ns a call, host routine 97731.5 ns (1.2x); by size: [1-1: 12866 calls, 112859 -> 97731. ns]
+[2026-11-18 09:48:19.587] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 12866
+[2026-11-18 09:48:21.115] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 13440 calls, own code 112701.1 ns a call, host routine 97651.1 ns (1.2x); by size: [1-1: 13440 calls, 112701 -> 97651. ns]
+[2026-11-18 09:48:21.115] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 13440
+[2026-11-18 09:48:22.644] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 14014 calls, own code 112828.3 ns a call, host routine 97751.8 ns (1.2x); by size: [1-1: 14014 calls, 112828 -> 97751. ns]
+[2026-11-18 09:48:22.644] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 14014
+[2026-11-18 09:48:24.159] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: 14582 calls, own code 112720.3 ns a call, host routine 97693.4 ns (1.2x); by size: [1-1: 14582 calls, 112720 -> 97693. ns]
+[2026-11-18 09:48:24.159] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 14582
+[2026-11-18 09:48:25.669] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 15146 calls, own code 112563.6 ns a call, host routine 97601.2 ns (1.2x); by size: [1-1: 15146 calls, 112563 -> 97601. ns]
+[2026-11-18 09:48:25.669] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 15146
+[2026-11-18 09:48:27.167] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 15710 calls, own code 112488.4 ns a call, host routine 97504.7 ns (1.2x); by size: [1-1: 15710 calls, 112488 -> 97504. ns]
+[2026-11-18 09:48:27.167] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 15710
+[2026-11-18 09:48:28.657] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 16268 calls, own code 112335.0 ns a call, host routine 97383.3 ns (1.2x); by size: [1-1: 16268 calls, 112335 -> 97383. ns]
+[2026-11-18 09:48:28.657] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 16268
+[2026-11-18 09:48:30.195] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: 16846 calls, own code 112546.6 ns a call, host routine 97536.5 ns (1.2x); by size: [1-1: 16846 calls, 112546 -> 97536. ns]
+[2026-11-18 09:48:30.195] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 16846
+[2026-11-18 09:48:31.702] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 17410 calls, own code 112507.3 ns a call, host routine 97486.7 ns (1.2x); by size: [1-1: 17410 calls, 112507 -> 97486. ns]
+[2026-11-18 09:48:31.702] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 17410
+[2026-11-18 09:48:33.204] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 17974 calls, own code 112405.2 ns a call, host routine 97421.0 ns (1.2x); by size: [1-1: 17974 calls, 112405 -> 97421. ns]
+[2026-11-18 09:48:33.204] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 17974
+[2026-11-18 09:48:34.706] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 18536 calls, own code 112358.2 ns a call, host routine 97357.8 ns (1.2x); by size: [1-1: 18536 calls, 112358 -> 97357. ns]
+[2026-11-18 09:48:34.706] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 18536
+[2026-11-18 09:48:36.202] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 19098 calls, own code 112298.2 ns a call, host routine 97270.6 ns (1.2x); by size: [1-1: 19098 calls, 112298 -> 97270. ns]
+[2026-11-18 09:48:36.202] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 19098
+[2026-11-18 09:48:37.711] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 19664 calls, own code 112303.0 ns a call, host routine 97301.9 ns (1.2x); by size: [1-1: 19664 calls, 112303 -> 97301. ns]
+[2026-11-18 09:48:37.711] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 19664
+[2026-11-18 09:48:39.196] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 20220 calls, own code 112289.8 ns a call, host routine 97314.8 ns (1.2x); by size: [1-1: 20220 calls, 112289 -> 97314. ns]
+[2026-11-18 09:48:39.196] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 20220
+[2026-11-18 09:48:40.666] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 20772 calls, own code 112163.7 ns a call, host routine 97206.7 ns (1.2x); by size: [1-1: 20772 calls, 112163 -> 97206. ns]
+[2026-11-18 09:48:40.666] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 20772
+[2026-11-18 09:48:42.159] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 21330 calls, own code 112086.4 ns a call, host routine 97143.8 ns (1.2x); by size: [1-1: 21330 calls, 112086 -> 97143. ns]
+[2026-11-18 09:48:42.159] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 21330
+[2026-11-18 09:48:43.665] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 21896 calls, own code 112009.9 ns a call, host routine 97095.6 ns (1.2x); by size: [1-1: 21896 calls, 112009 -> 97095. ns]
+[2026-11-18 09:48:43.665] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 21896
+[2026-11-18 09:48:45.160] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 22458 calls, own code 111932.8 ns a call, host routine 97056.2 ns (1.2x); by size: [1-1: 22458 calls, 111932 -> 97056. ns]
+[2026-11-18 09:48:45.160] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 22458
+[2026-11-18 09:48:46.665] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 23022 calls, own code 111994.8 ns a call, host routine 97095.2 ns (1.2x); by size: [1-1: 23022 calls, 111994 -> 97095. ns]
+[2026-11-18 09:48:46.665] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 23022
+[2026-11-18 09:48:48.162] [info] [core] [t43320] Any360 xdk bench: XAudio reverb: 23582 calls, own code 111958.0 ns a call, host routine 97058.5 ns (1.2x); by size: [1-1: 23582 calls, 111958 -> 97058. ns]
+[2026-11-18 09:48:48.162] [info] [core] [t43320] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 23582
+[2026-11-18 09:48:49.667] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 24146 calls, own code 111927.5 ns a call, host routine 97039.0 ns (1.2x); by size: [1-1: 24146 calls, 111927 -> 97039. ns]
+[2026-11-18 09:48:49.667] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 24146
+[2026-11-18 09:48:51.160] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: 24708 calls, own code 111892.8 ns a call, host routine 97007.6 ns (1.2x); by size: [1-1: 24708 calls, 111892 -> 97007. ns]
+[2026-11-18 09:48:51.160] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 24708
+[2026-11-18 09:48:52.652] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 25268 calls, own code 111806.8 ns a call, host routine 96954.4 ns (1.2x); by size: [1-1: 25268 calls, 111806 -> 96954. ns]
+[2026-11-18 09:48:52.652] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 25268
+[2026-11-18 09:48:54.146] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: 25826 calls, own code 111918.9 ns a call, host routine 97046.6 ns (1.2x); by size: [1-1: 25826 calls, 111918 -> 97046. ns]
+[2026-11-18 09:48:54.146] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 25826
+[2026-11-18 09:48:55.633] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 26386 calls, own code 111945.0 ns a call, host routine 97024.6 ns (1.2x); by size: [1-1: 26386 calls, 111945 -> 97024. ns]
+[2026-11-18 09:48:55.633] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 26386
+[2026-11-18 09:48:57.132] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 26948 calls, own code 111972.8 ns a call, host routine 96991.9 ns (1.2x); by size: [1-1: 26948 calls, 111972 -> 96991. ns]
+[2026-11-18 09:48:57.132] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 26948
+[2026-11-18 09:48:58.606] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 27500 calls, own code 111996.4 ns a call, host routine 96993.1 ns (1.2x); by size: [1-1: 27500 calls, 111996 -> 96993. ns]
+[2026-11-18 09:48:58.606] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 27500
+[2026-11-18 09:49:00.081] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 28054 calls, own code 112027.9 ns a call, host routine 96979.3 ns (1.2x); by size: [1-1: 28054 calls, 112027 -> 96979. ns]
+[2026-11-18 09:49:00.081] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 28054
+[2026-11-18 09:49:01.580] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 28612 calls, own code 112077.5 ns a call, host routine 96992.4 ns (1.2x); by size: [1-1: 28612 calls, 112077 -> 96992. ns]
+[2026-11-18 09:49:01.580] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 28612
+[2026-11-18 09:49:03.045] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 29164 calls, own code 112061.7 ns a call, host routine 96983.1 ns (1.2x); by size: [1-1: 29164 calls, 112061 -> 96983. ns]
+[2026-11-18 09:49:03.045] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 29164
+[2026-11-18 09:49:04.502] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 29712 calls, own code 111955.2 ns a call, host routine 96915.3 ns (1.2x); by size: [1-1: 29712 calls, 111955 -> 96915. ns]
+[2026-11-18 09:49:04.502] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 29712
+[2026-11-18 09:49:05.964] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 30260 calls, own code 111839.3 ns a call, host routine 96835.7 ns (1.2x); by size: [1-1: 30260 calls, 111839 -> 96835. ns]
+[2026-11-18 09:49:05.964] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 30260
+[2026-11-18 09:49:07.497] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 30832 calls, own code 111775.3 ns a call, host routine 96787.6 ns (1.2x); by size: [1-1: 30832 calls, 111775 -> 96787. ns]
+[2026-11-18 09:49:07.497] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 30832
+[2026-11-18 09:49:08.960] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: 31380 calls, own code 111677.0 ns a call, host routine 96740.6 ns (1.2x); by size: [1-1: 31380 calls, 111677 -> 96740. ns]
+[2026-11-18 09:49:08.960] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 31380
+[2026-11-18 09:49:10.449] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 31940 calls, own code 111540.6 ns a call, host routine 96646.2 ns (1.2x); by size: [1-1: 31940 calls, 111540 -> 96646. ns]
+[2026-11-18 09:49:10.449] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 31940
+[2026-11-18 09:49:11.921] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 32494 calls, own code 111429.2 ns a call, host routine 96536.7 ns (1.2x); by size: [1-1: 32494 calls, 111429 -> 96536. ns]
+[2026-11-18 09:49:11.921] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 32494
+[2026-11-18 09:49:13.399] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 33046 calls, own code 111342.8 ns a call, host routine 96474.7 ns (1.2x); by size: [1-1: 33046 calls, 111342 -> 96474. ns]
+[2026-11-18 09:49:13.399] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 33046
+[2026-11-18 09:49:14.883] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 33604 calls, own code 111209.9 ns a call, host routine 96383.1 ns (1.2x); by size: [1-1: 33604 calls, 111209 -> 96383. ns]
+[2026-11-18 09:49:14.883] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 33604
+[2026-11-18 09:49:16.352] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 34156 calls, own code 111100.2 ns a call, host routine 96312.3 ns (1.2x); by size: [1-1: 34156 calls, 111100 -> 96312. ns]
+[2026-11-18 09:49:16.352] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 34156
+[2026-11-18 09:49:17.820] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 34702 calls, own code 111004.9 ns a call, host routine 96239.5 ns (1.2x); by size: [1-1: 34702 calls, 111004 -> 96239. ns]
+[2026-11-18 09:49:17.820] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 34702
+[2026-11-18 09:49:19.287] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 35254 calls, own code 110882.2 ns a call, host routine 96143.6 ns (1.2x); by size: [1-1: 35254 calls, 110882 -> 96143. ns]
+[2026-11-18 09:49:19.287] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 35254
+[2026-11-18 09:49:20.777] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 35812 calls, own code 110808.3 ns a call, host routine 96085.4 ns (1.2x); by size: [1-1: 35812 calls, 110808 -> 96085. ns]
+[2026-11-18 09:49:20.777] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 35812
+[2026-11-18 09:49:22.249] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 36364 calls, own code 110687.5 ns a call, host routine 95985.0 ns (1.2x); by size: [1-1: 36364 calls, 110687 -> 95985. ns]
+[2026-11-18 09:49:22.249] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 36364
+[2026-11-18 09:49:23.728] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 36920 calls, own code 110576.7 ns a call, host routine 95905.0 ns (1.2x); by size: [1-1: 36920 calls, 110576 -> 95905. ns]
+[2026-11-18 09:49:23.728] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 36920
+[2026-11-18 09:49:25.214] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 37478 calls, own code 110462.7 ns a call, host routine 95826.7 ns (1.2x); by size: [1-1: 37478 calls, 110462 -> 95826. ns]
+[2026-11-18 09:49:25.214] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 37478
+[2026-11-18 09:49:26.732] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 38048 calls, own code 110401.2 ns a call, host routine 95768.9 ns (1.2x); by size: [1-1: 38048 calls, 110401 -> 95768. ns]
+[2026-11-18 09:49:26.732] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 38048
+[2026-11-18 09:49:28.226] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 38606 calls, own code 110307.6 ns a call, host routine 95703.2 ns (1.2x); by size: [1-1: 38606 calls, 110307 -> 95703. ns]
+[2026-11-18 09:49:28.226] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 38606
+[2026-11-18 09:49:29.698] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 39158 calls, own code 110203.6 ns a call, host routine 95611.5 ns (1.2x); by size: [1-1: 39158 calls, 110203 -> 95611. ns]
+[2026-11-18 09:49:29.698] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 39158
+[2026-11-18 09:49:31.176] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: 39712 calls, own code 110122.3 ns a call, host routine 95548.9 ns (1.2x); by size: [1-1: 39712 calls, 110122 -> 95548. ns]
+[2026-11-18 09:49:31.176] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 39712
+[2026-11-18 09:49:32.653] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 40268 calls, own code 110006.9 ns a call, host routine 95456.7 ns (1.2x); by size: [1-1: 40268 calls, 110006 -> 95456. ns]
+[2026-11-18 09:49:32.653] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 40268
+[2026-11-18 09:49:34.145] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 40826 calls, own code 109927.7 ns a call, host routine 95393.0 ns (1.2x); by size: [1-1: 40826 calls, 109927 -> 95393. ns]
+[2026-11-18 09:49:34.145] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 40826
+[2026-11-18 09:49:35.622] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 41382 calls, own code 109852.1 ns a call, host routine 95338.1 ns (1.2x); by size: [1-1: 41382 calls, 109852 -> 95338. ns]
+[2026-11-18 09:49:35.622] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 41382
+[2026-11-18 09:49:37.100] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 41932 calls, own code 109773.0 ns a call, host routine 95279.8 ns (1.2x); by size: [1-1: 41932 calls, 109773 -> 95279. ns]
+[2026-11-18 09:49:37.100] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 41932
+[2026-11-18 09:49:38.578] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 42488 calls, own code 109684.6 ns a call, host routine 95212.1 ns (1.2x); by size: [1-1: 42488 calls, 109684 -> 95212. ns]
+[2026-11-18 09:49:38.578] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 42488
+[2026-11-18 09:49:40.007] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 43024 calls, own code 109605.0 ns a call, host routine 95150.5 ns (1.2x); by size: [1-1: 43024 calls, 109605 -> 95150. ns]
+[2026-11-18 09:49:40.007] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 43024
+[2026-11-18 09:49:41.448] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 43564 calls, own code 109528.2 ns a call, host routine 95092.4 ns (1.2x); by size: [1-1: 43564 calls, 109528 -> 95092. ns]
+[2026-11-18 09:49:41.448] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 43564
+[2026-11-18 09:49:42.887] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 44104 calls, own code 109437.9 ns a call, host routine 95025.2 ns (1.2x); by size: [1-1: 44104 calls, 109437 -> 95025. ns]
+[2026-11-18 09:49:42.887] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 44104
+[2026-11-18 09:49:44.360] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 44656 calls, own code 109361.7 ns a call, host routine 94965.5 ns (1.2x); by size: [1-1: 44656 calls, 109361 -> 94965. ns]
+[2026-11-18 09:49:44.360] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 44656
+[2026-11-18 09:49:45.827] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: 45206 calls, own code 109286.3 ns a call, host routine 94904.9 ns (1.2x); by size: [1-1: 45206 calls, 109286 -> 94904. ns]
+[2026-11-18 09:49:45.827] [info] [core] [t39284] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 45206
+[2026-11-18 09:49:47.281] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 45752 calls, own code 109232.1 ns a call, host routine 94854.6 ns (1.2x); by size: [1-1: 45752 calls, 109232 -> 94854. ns]
+[2026-11-18 09:49:47.281] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 45752
+[2026-11-18 09:49:48.711] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 46290 calls, own code 109173.1 ns a call, host routine 94800.9 ns (1.2x); by size: [1-1: 46290 calls, 109173 -> 94800. ns]
+[2026-11-18 09:49:48.711] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 46290
+[2026-11-18 09:49:50.152] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 46830 calls, own code 109142.0 ns a call, host routine 94772.4 ns (1.2x); by size: [1-1: 46830 calls, 109142 -> 94772. ns]
+[2026-11-18 09:49:50.152] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 46830
+[2026-11-18 09:49:51.591] [info] [core] [t39876] Any360 xdk bench: XAudio reverb: 47366 calls, own code 109068.4 ns a call, host routine 94712.3 ns (1.2x); by size: [1-1: 47366 calls, 109068 -> 94712. ns]
+[2026-11-18 09:49:51.591] [info] [core] [t39876] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 47366
+[2026-11-18 09:49:53.049] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 47914 calls, own code 109017.5 ns a call, host routine 94685.8 ns (1.2x); by size: [1-1: 47914 calls, 109017 -> 94685. ns]
+[2026-11-18 09:49:53.049] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 47914
+[2026-11-18 09:49:54.502] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 48462 calls, own code 108964.6 ns a call, host routine 94648.0 ns (1.2x); by size: [1-1: 48462 calls, 108964 -> 94648. ns]
+[2026-11-18 09:49:54.502] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 48462
+[2026-11-18 09:49:55.944] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 49002 calls, own code 108904.1 ns a call, host routine 94596.6 ns (1.2x); by size: [1-1: 49002 calls, 108904 -> 94596. ns]
+[2026-11-18 09:49:55.944] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 49002
+[2026-11-18 09:49:57.369] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 49534 calls, own code 108862.9 ns a call, host routine 94578.2 ns (1.2x); by size: [1-1: 49534 calls, 108862 -> 94578. ns]
+[2026-11-18 09:49:57.369] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 49534
+[2026-11-18 09:49:58.794] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 50070 calls, own code 108832.4 ns a call, host routine 94542.5 ns (1.2x); by size: [1-1: 50070 calls, 108832 -> 94542. ns]
+[2026-11-18 09:49:58.794] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 50070
+[2026-11-18 09:50:00.218] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 50602 calls, own code 108766.0 ns a call, host routine 94490.3 ns (1.2x); by size: [1-1: 50602 calls, 108766 -> 94490. ns]
+[2026-11-18 09:50:00.218] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 50602
+[2026-11-18 09:50:01.661] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: 51142 calls, own code 108694.6 ns a call, host routine 94444.6 ns (1.2x); by size: [1-1: 51142 calls, 108694 -> 94444. ns]
+[2026-11-18 09:50:01.661] [info] [core] [t19820] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 51142
+[2026-11-18 09:50:03.116] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: 51690 calls, own code 108653.6 ns a call, host routine 94412.3 ns (1.2x); by size: [1-1: 51690 calls, 108653 -> 94412. ns]
+[2026-11-18 09:50:03.116] [info] [core] [t35008] Any360 xdk bench: XAudio reverb: most frequent sizes (size x calls): 1 x 51690
+[2026-11-18 09:49:36.996] [info] [core] [t22312] Any360: 60.0 FPS with the diagnostics off (60.0 with them, the period before: +0%); frame times: median 16.58 ms (60.3 FPS), 10% low 58.4 FPS, 1% low 55.8 FPS; byte swapping 9.13 MB a frame, ~0.13 ms over plain copies: without it ~60 FPS (the command processor's thread bound); slowest frame 18.1 ms, 124 over 16.7 ms, 0 over 50 ms (slowest frame 18.1 ms (command processor busy 0.0 ms; 0 texture uploads, 0.00 ms loading; 0 images created, 0.00 ms; 0 staging buffers, 0.0 MB, 0.00 ms; 0 pipelines created; files: 0 reads, 0.00 MB, 0.00 ms; 17 waits slept; XMA 0.19 ms; 0 physical allocations, 0.00 ms)); 14.2 watched writes a frame (0.06 MB invalidated); 2895 MB private, 388 textures, 8 targets, 18 resolves kept, 353 pipelines
+[2026-11-18 09:49:47.012] [info] [core] [t22312] Any360: 60.0 FPS with the diagnostics off (60.0 with them, the period before: -0%); frame times: median 16.59 ms (60.3 FPS), 10% low 57.4 FPS, 1% low 56.3 FPS; byte swapping 9.17 MB a frame, ~0.13 ms over plain copies: without it ~60 FPS (the command processor's thread bound); slowest frame 17.9 ms, 131 over 16.7 ms, 0 over 50 ms (slowest frame 17.9 ms (command processor busy 0.0 ms; 0 texture uploads, 0.00 ms loading; 0 images created, 0.00 ms; 0 staging buffers, 0.0 MB, 0.00 ms; 0 pipelines created; files: 0 reads, 0.00 MB, 0.00 ms; 17 waits slept; XMA 0.14 ms; 0 physical allocations, 0.00 ms)); 13.1 watched writes a frame (0.05 MB invalidated); 2895 MB private, 388 textures, 8 targets, 18 resolves kept, 353 pipelines
+[2026-11-18 09:49:57.028] [info] [core] [t22312] Any360: 60.0 FPS with the diagnostics off (60.0 with them, the period before: -0%); frame times: median 16.59 ms (60.3 FPS), 10% low 58.2 FPS, 1% low 56.2 FPS; byte swapping 9.20 MB a frame, ~0.13 ms over plain copies: without it ~60 FPS (the command processor's thread bound); slowest frame 18.0 ms, 137 over 16.7 ms, 0 over 50 ms (slowest frame 18.0 ms (command processor busy 0.0 ms; 0 texture uploads, 0.00 ms loading; 0 images created, 0.00 ms; 0 staging buffers, 0.0 MB, 0.00 ms; 0 pipelines created; files: 0 reads, 0.00 MB, 0.00 ms; 15 waits slept; XMA 0.10 ms; 0 physical allocations, 0.00 ms)); 13.3 watched writes a frame (0.05 MB invalidated); 2895 MB private, 388 textures, 8 targets, 18 resolves kept, 353 pipelines
+# Before the state size was corrected (crackdown_465-471.log): first differences and the repeat probe.
+[2026-11-18 09:40:04.177] [warning] [core] [t36708] Any360 xdk: XAudio reverb: its own code again on the same input: other bytes (range 4 at +4; the word AEB3FC00)
+[2026-11-18 09:40:04.177] [warning] [core] [t36708] Any360 xdk: XAudio reverb differs at first: state 7E900A08, inputs 7E900100 7E900500: bytes written  (range 4 at +4, word 40260E84: replacement AEB3FC00, own code 00000000)
+[2026-11-18 09:40:04.181] [warning] [core] [t36220] Any360 xdk: XAudio reverb: its own code again on the same input: other bytes (range 4 at +4; the word B1E35A00)
+[2026-11-18 09:40:04.182] [warning] [core] [t36220] Any360 xdk: XAudio reverb differs at first: state 7E900A08, inputs 7E900100 7E900500: bytes written  (range 4 at +4, word 40264004: replacement B1E35A00, own code AEB3FD00)
+[2026-11-18 09:40:04.187] [warning] [core] [t36220] Any360 xdk: XAudio reverb: its own code again on the same input: other bytes (range 4 at +4; the word 313D5300)
+[2026-11-18 09:40:04.187] [warning] [core] [t36220] Any360 xdk: XAudio reverb differs at first: state 7E900A08, inputs 7E900100 7E900500: bytes written  (range 4 at +4, word 40264004: replacement 313D5300, own code B1E35A00)
+[2026-11-18 09:40:04.192] [warning] [core] [t36708] Any360 xdk: XAudio reverb: its own code again on the same input: other bytes (range 4 at +4; the word 3200F080)
+[2026-11-18 09:40:04.192] [warning] [core] [t36708] Any360 xdk: XAudio reverb differs at first: state 7E900A08, inputs 7E900100 7E900500: bytes written  (range 4 at +4, word 40260E84: replacement 3200F080, own code 313D5300)
+[2026-11-18 09:40:04.198] [warning] [core] [t36220] Any360 xdk: XAudio reverb: its own code again on the same input: other bytes (range 4 at +4; the word B10B3E00)
+[2026-11-18 09:40:04.198] [warning] [core] [t36220] Any360 xdk: XAudio reverb differs at first: state 7E900A08, inputs 7E900100 7E900500: bytes written  (range 4 at +4, word 40264004: replacement B10B3E00, own code 3200F080)
+[2026-11-18 09:40:04.203] [warning] [core] [t36220] Any360 xdk: XAudio reverb: its own code again on the same input: other bytes (range 4 at +4; the word B496AE00)
+[2026-11-18 09:40:04.203] [warning] [core] [t36220] Any360 xdk: XAudio reverb differs at first: state 7E900A08, inputs 7E900100 7E900500: bytes written  (range 4 at +4, word 40264004: replacement B496AE00, own code B10B3D80)
+[2026-11-18 09:40:04.209] [warning] [core] [t36708] Any360 xdk: XAudio reverb: its own code again on the same input: other bytes (range 4 at +4; the word 357C1C00)
+[2026-11-18 09:40:04.209] [warning] [core] [t36708] Any360 xdk: XAudio reverb differs at first: state 7E900A08, inputs 7E900100 7E900500: bytes written  (range 4 at +4, word 40260E84: replacement 357C1C00, own code B496AF00)
+[2026-11-18 09:40:04.214] [warning] [core] [t36708] Any360 xdk: XAudio reverb: its own code again on the same input: other bytes (range 4 at +4; the word 33D17600)
+[2026-11-18 09:40:04.214] [warning] [core] [t36708] Any360 xdk: XAudio reverb differs at first: state 7E900A08, inputs 7E900100 7E900500: bytes written  (range 4 at +4, word 40260E84: replacement 33D17600, own code 357C1D00)
+[2026-11-18 09:41:58.331] [info] [core] [t43184] Any360 xdk: 176000000 calls verified against the functions' own code (memcpy 6568173, forward copy 750018, memset 8521376, memmove 62690, XMemCpy 1594634, wcslen 226958, strchr 46871, strncmp 16247, strncpy 53291, strrchr 1285, tolower 511093, wcsncpy 5006, wcscpy 10549, strncat 14, wcscmp 9372270, mbtowc 90642, _stricmp 659008, strstr 73334, _isnan 23, _get_exp 406151, _set_exp 406151, XAudio mix ramp 8045611, D3D dirty constants 14912815, D3D dirty words 13606993, D3D set shader constants 13126846, XAudio fill 64, D3D blend 8879085, D3D bool constants 1490193, D3D int constants 63524, D3D pixel shader constants 6970291, D3D SetTexture 12637794, D3D SetStreamSource 6292573, D3D sampler filter 18058249, D3D SetVertexDeclaration 3361929, D3D SetShader 3691839, D3D CPU range flush 61581, zlib inflate_fast 18000, png_read_filter_row 12452, XMemSet 7449188, sin 3240263, cos 3141352, asin 8659553, D3D render state 11602586, atan2 674722, pow 412144, D3D surfaces 162861, XAudio reverb 51708), 0 different; bytes next to a destination changed during its own code: memcpy 14, memset 3230, wcscpy 1; during the replacement: memcpy 24, memset 15047, wcscpy 2; left to its own code: memcpy 1, forward copy 206, memset 32, D3D dirty constants 9525, D3D dirty words 1817, D3D surfaces 154; different at first and the same when run again (another thread wrote meanwhile): XAudio reverb 42801

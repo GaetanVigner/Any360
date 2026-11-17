@@ -1,5 +1,7 @@
 #include "any360/host/xdk_natives.h"
 
+#include "any360/xdk/xaudio_reverb.h"
+
 #include <rex/cvar.h>
 #include <rex/logging.h>
 #include <rex/system/xmemory.h>
@@ -63,7 +65,7 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "D3D pixel shader constants", "D3D SetTexture", "D3D SetStreamSource",
                                             "D3D sampler filter", "D3D SetVertexDeclaration", "D3D SetShader",
                                             "D3D CPU range flush", "zlib inflate_fast", "png_read_filter_row", "XMemSet", "sin", "cos", "asin",
-                                            "D3D render state", "atan2", "pow", "D3D surfaces"};
+                                            "D3D render state", "atan2", "pow", "D3D surfaces", "XAudio reverb"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.
@@ -681,6 +683,11 @@ struct Sides {
 
 void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const uint32_t f = s.f;
+  // The host's floating-point control word as the call found it: each side starts with it, the one the context
+  // says. The recompiled code and the replacements only write it when the guest's mode changes, so a side started
+  // with the other's leftover flush mode would compute denormals another way than its context says.
+  const uint32_t entry_csr = ctx.fpscr.csr;
+  const auto at_entry = [entry_csr] { _mm_setcsr(entry_csr); };
   std::vector<std::vector<uint8_t>> before;
   for (const any360::xdk::Range& w : s.writes) before.emplace_back(g_memory.Host(w.at), g_memory.Host(w.at) + w.size);
   const auto put_back = [&] {
@@ -707,16 +714,54 @@ void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFu
     for (; tries < kTries; ++tries) {
       if (tries) put_back();
       reference = ctx;
+      at_entry();
       original(reference, base);
       for (size_t i = 0; i < s.writes.size(); ++i) {
         first[i].assign(g_memory.Host(s.writes[i].at), g_memory.Host(s.writes[i].at) + s.writes[i].size);
       }
       put_back();
       mine = ctx;
+      at_entry();
       s.native(mine);
       same_bytes = same_as(first, range, at);
       register_differs = s.differs(mine, reference);
       if (same_bytes && !register_differs) break;
+      // The first few calls that differ at first: where, for the cases that agree when run again.
+      static std::atomic<uint32_t> first_logged{0};
+      if (!tries && first_logged.fetch_add(1, std::memory_order_relaxed) < 8) {
+        const uint32_t word_at = s.writes[std::min(range, s.writes.size() - 1)].at + (at & ~3u);
+        uint32_t replacement = 0, own = 0;
+        if (!same_bytes) {
+          std::memcpy(&replacement, g_memory.Host(word_at), 4);
+          std::memcpy(&own, first[range].data() + (at & ~3u), 4);
+        }
+        // The function's own code once more on the same input: does it give itself the same bytes?
+        std::vector<std::vector<uint8_t>> native_bytes(s.writes.size());
+        for (size_t i = 0; i < s.writes.size(); ++i) {
+          native_bytes[i].assign(g_memory.Host(s.writes[i].at), g_memory.Host(s.writes[i].at) + s.writes[i].size);
+        }
+        put_back();
+        PPCContext own_again = ctx;
+        at_entry();
+        original(own_again, base);
+        size_t own_range = 0;
+        uint32_t own_at = 0;
+        const bool own_repeats = same_as(first, own_range, own_at);
+        uint32_t own_second = 0;
+        std::memcpy(&own_second, g_memory.Host(word_at), 4);
+        REXLOG_WARN("Any360 xdk: {}: its own code again on the same input: {} (range {} at +{:X}; the word {:08X})",
+                    kNames[f], own_repeats ? "the same bytes" : "other bytes", own_range, own_at,
+                    std::byteswap(own_second));
+        for (size_t i = 0; i < s.writes.size(); ++i) {
+          std::memcpy(g_memory.Host(s.writes[i].at), native_bytes[i].data(), s.writes[i].size);
+        }
+        _mm_setcsr(mine.fpscr.csr);
+        REXLOG_WARN("Any360 xdk: {} differs at first: {}: {}{} (range {} at +{:X}, word {:08X}: replacement {:08X}, own "
+                    "code {:08X})",
+                    kNames[f], s.call, same_bytes ? "" : "bytes written ", register_differs ? register_differs : "",
+                    range, at, word_at, std::byteswap(replacement),
+                    std::byteswap(own));
+      }
     }
     if (tries && tries < kTries) g_settled[f].fetch_add(1, std::memory_order_relaxed);
     g_verified_by[f].fetch_add(1, std::memory_order_relaxed);
@@ -736,6 +781,7 @@ void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFu
     // The function's own result stands.
     for (size_t i = 0; i < s.writes.size(); ++i) std::memcpy(g_memory.Host(s.writes[i].at), first[i].data(), s.writes[i].size);
     ctx = reference;
+    _mm_setcsr(ctx.fpscr.csr);
     return;
   }
 
@@ -748,6 +794,7 @@ void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFu
     original(own, base);
     const uint64_t b = Ticks();
     put_back();
+    at_entry();
     const uint64_t c = Ticks();
     s.native(mine);
     const uint64_t d = Ticks();
@@ -758,6 +805,7 @@ void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFu
     s.native(mine);
     const uint64_t b = Ticks();
     put_back();
+    at_entry();
     const uint64_t c = Ticks();
     original(own, base);
     const uint64_t d = Ticks();
@@ -772,9 +820,11 @@ void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFu
     // first touch of the memory (a page fault, a watched page).
     put_back();
     PPCContext again = ctx;
+    at_entry();
     const uint64_t a = Ticks();
     s.native(again);
     const uint64_t again_ticks = Ticks() - a;
+    _mm_setcsr(ctx.fpscr.csr);
     REXLOG_WARN("Any360 xdk bench: {} took {} ticks, its own code {}, again {}: {}", kNames[f], native_ticks,
                 original_ticks, again_ticks, s.call);
   }
@@ -1084,6 +1134,47 @@ void RunCrtMathSlow(Function function, PPCContext& ctx, uint8_t* base, GuestFunc
     return a.f1.u64 != b.f1.u64 ? "f1" : nullptr;
   };
   sides.call = fmt::format("f1 {:016X} ({})", ctx.f1.u64, ctx.f1.f64);
+  RunSides(mode, sides, ctx, base, original);
+}
+
+void XAudioReverb(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const auto native = [&](PPCContext& c, const any360::xdk::XAudioReverbPlan* known) {
+    any360::xdk::XAudioReverbPlan plan;
+    if (known || any360::xdk::XAudioReverbPlanned(g_memory, c.r1.u32, c.r3.u32, c.r4.u32, c.r5.u32, plan)) {
+      uint32_t csr = c.fpscr.csr;
+      any360::xdk::XAudioReverb(g_memory, c.r1.u32, c.r3.u32, c.r4.u32, c.r5.u32, csr);
+      c.fpscr.csr = csr;
+      return true;
+    }
+    original(c, base);
+    return false;
+  };
+  if (g_mode == Mode::kNative) [[likely]] {
+    native(ctx, nullptr);
+    return;
+  }
+  const uint32_t f = uint32_t(Function::kXAudioReverb);
+  const Mode mode = SlowMode(f, base);
+  any360::xdk::XAudioReverbPlan plan;
+  if (mode == Mode::kNative) {
+    native(ctx, nullptr);
+    return;
+  }
+  if (mode == Mode::kOriginal ||
+      !any360::xdk::XAudioReverbPlanned(g_memory, ctx.r1.u32, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, plan)) {
+    original(ctx, base);
+    if (mode != Mode::kOriginal) g_declined_by[f].fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  // What either side leaves for its caller: the state, the four outputs, the caller's word; registers: none (the
+  // nonvolatile ones come back as they were).
+  Sides sides;
+  sides.f = f;
+  sides.writes.assign(std::begin(plan.writes), std::end(plan.writes));
+  sides.work = 1;
+  sides.native = [native, plan](PPCContext& c) { native(c, &plan); };
+  sides.differs = [](const PPCContext&, const PPCContext&) -> const char* { return nullptr; };
+  sides.call = fmt::format("state {:08X}, inputs {:08X} {:08X}", ctx.r3.u32, plan.inputs[0], plan.inputs[1]);
   RunSides(mode, sides, ctx, base, original);
 }
 

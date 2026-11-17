@@ -1,0 +1,6 @@
+﻿reverb 78.32 us a frame, model 87.83 (1.12x)
+reverb 76.84 us a frame, model 84.87 (1.10x)
+reverb 77.98 us a frame, model 85.95 (1.10x)
+reverb 79.19 us a frame, model 89.11 (1.13x)
+reverb 78.53 us a frame, model 85.25 (1.09x)
+xdk_xaudio_reverb_bench: allocated per call 0.00 B in 0.0000 allocations over 20000 timed calls (at most 0.00 B a call in a run)

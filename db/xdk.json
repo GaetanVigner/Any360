@@ -1447,6 +1447,15 @@
   "note": "XAudio's mix of a source into a destination with a volume ramp: four vectors of four samples at a time, vmaddfp with the gains kept in four running sums of four steps; named after what it does. Any360: xdk::XAudioMixRamp (fused, as the console and Crackdown's recompiled code), bound in Crackdown; not in Test Drive Unlimited, whose recompiled vmaddfp rounds twice and which barely calls it"
  },
  {
+  "name": "XAudio reverb",
+  "library": "XAudio",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x82A4DCF0"
+  },
+  "note": "XAudio's I3DL2 reverb: one frame (256 samples, two channels in, four out) through ten stages (crossfading delay lines, early reflections, all-pass and comb filters, the late mix); its state in line (0x4B9D0 bytes). Any360: xdk::XAudioReverb, the function's own statements as one leaf (tools/ppc_model.py --native; hardware FMA where the build calls the C library's fma): the same bits, bound in Crackdown. The Simpsons Game has a function with the same 17,888-byte frame at 0x82C50660, likely the same (not bound: its leaf would be made from its own build)"
+ },
+ {
   "name": "png_read_filter_row",
   "library": "libpng",
   "any360": "native",

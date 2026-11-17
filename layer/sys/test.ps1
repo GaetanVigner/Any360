@@ -67,6 +67,8 @@ try {
     if ($LASTEXITCODE) { throw "xdk_libpng_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'xdk/xdk_crt_math_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "xdk_crt_math_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'xdk/xdk_xaudio_reverb_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "xdk_xaudio_reverb_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'xdk/xdk_d3d_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "xdk_d3d_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'xdk/xdk_d3d_state_tests.exe') | Out-Host
