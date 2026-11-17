@@ -18,6 +18,8 @@
   {"name": "D3DDevice_SetVertexShader", "library": "D3D", "titles": {"simpsons": "0x82445278", "crackdown": "0x826B3848"}},
   {"name": "D3DDevice_SetPixelShader", "library": "D3D", "titles": {"simpsons": "0x82445578", "crackdown": "0x826B3458"}},
   {"name": "D3DDevice_SetTexture", "library": "D3D", "titles": {"simpsons": "0x824408E0", "crackdown": "0x826AF038"}},
+  {"name": "D3DResource_AddRef", "library": "D3D", "titles": {"crackdown": "0x826ACC90"}, "note": "reference count + 1, a type-4 resource's parent too at 1"},
+  {"name": "D3DResource_Release", "library": "D3D", "titles": {"crackdown": "0x826ACD08"}, "note": "reference count - 1; at 0 the parent released, the resource destroyed"},
   {"name": "D3DDevice_CreateTexture", "library": "D3D", "titles": {"simpsons": "0x82440578"}},
   {"name": "D3DVertexBuffer_Lock", "library": "D3D", "titles": {"simpsons": "0x824418A0"}},
   {"name": "D3DVertexBuffer_Unlock", "library": "D3D", "titles": {"simpsons": "0x824419A0"}},

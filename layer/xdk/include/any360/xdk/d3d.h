@@ -2,6 +2,7 @@
 // docs/NATIVE_FUNCTIONS.md.
 #pragma once
 
+#include <atomic>
 #include <bit>
 #include <chrono>
 #include <cstdint>
@@ -288,5 +289,70 @@ struct D3dGpuWait {
     return moved;
   }
 };
+
+// D3DResource_AddRef and D3DResource_Release, the XDK's reference counting of D3D resources (Crackdown sub_826ACC90,
+// sub_826ACD08). A resource: +0 its common word (bits 0-3 its type; bit 30 on a type-4 resource: it holds its
+// parent), +4 its reference count, +24 the parent. The count changes atomically, as the runtime's lwarx/stwcx. loop
+// does (other threads change it at the same time).
+//  AddRef: count + 1; when it becomes 1 on a type-4 resource with bit 30, the parent referenced the same way.
+//  Release: count - 1; when it becomes 0, the parent released first the same way (a type-4 resource with bit 30),
+//  then `destroy(resource, depth)` (the runtime's sub_826AC6C8; depth 0 the resource asked for, 1 its parent...),
+//  and 0 back.
+// `count` is the runtime's r3 back: the 32-bit count + or - 1 in 64 bits (0 - 1 is -1, 0xFFFFFFFF + 1 is 2^32).
+// Declined (false, nothing changed): a resource of the chain the call may reach not 4-byte aligned plain memory, or a
+// chain longer than 8 (read before the first change; the runtime's code would follow it into any memory).
+namespace detail {
+// A big-endian guest word.
+inline uint32_t ResourceWord(const Memory& m, uint32_t address) { return std::byteswap(Load32(m.Host(address))); }
+inline bool ResourceChainPlain(const Memory& m, uint32_t resource) {
+  for (int depth = 0; depth < 8; ++depth) {
+    if ((resource & 3) || !IsPlainMemory(resource, 28)) return false;
+    const uint32_t word = ResourceWord(m, resource);
+    if ((word & 0xF) != 4 || !(word & 0x40000000u)) return true;
+    resource = ResourceWord(m, resource + 24);
+  }
+  return false;
+}
+// The count + delta, atomically on the big-endian word; the 32-bit count before.
+inline uint32_t AddToCount(const Memory& m, uint32_t resource, uint32_t delta) {
+  std::atomic_ref<uint32_t> word(*reinterpret_cast<uint32_t*>(m.Host(resource + 4)));
+  uint32_t old = word.load(std::memory_order_relaxed);
+  while (!word.compare_exchange_weak(old, std::byteswap(std::byteswap(old) + delta), std::memory_order_acq_rel)) {
+  }
+  return std::byteswap(old);
+}
+inline bool HoldsParent(const Memory& m, uint32_t resource) {
+  const uint32_t word = ResourceWord(m, resource);
+  return (word & 0xF) == 4 && (word & 0x40000000u);
+}
+}  // namespace detail
+
+inline bool D3dResourceAddRef(const Memory& m, uint32_t resource, uint64_t& count) {
+  if (!detail::ResourceChainPlain(m, resource)) return false;
+  count = uint64_t(detail::AddToCount(m, resource, 1)) + 1;
+  for (uint32_t r = resource, now = uint32_t(count); now == 1 && detail::HoldsParent(m, r);) {
+    r = detail::ResourceWord(m, r + 24);
+    now = detail::AddToCount(m, r, 1) + 1;
+  }
+  return true;
+}
+
+namespace detail {
+template <class Destroy>
+inline uint64_t ReleaseOne(const Memory& m, uint32_t resource, Destroy& destroy, uint32_t depth) {
+  const uint64_t now = uint64_t(AddToCount(m, resource, 0xFFFFFFFFu)) - 1;
+  if (uint32_t(now) != 0) return now;
+  if (HoldsParent(m, resource)) ReleaseOne(m, ResourceWord(m, resource + 24), destroy, depth + 1);
+  destroy(resource, depth);
+  return 0;
+}
+}  // namespace detail
+
+template <class Destroy>
+inline bool D3dResourceRelease(const Memory& m, uint32_t resource, Destroy&& destroy, uint64_t& count) {
+  if (!detail::ResourceChainPlain(m, resource)) return false;
+  count = detail::ReleaseOne(m, resource, destroy, 0);
+  return true;
+}
 
 }  // namespace any360::xdk

@@ -640,6 +640,36 @@ struct SwapPacketCase {
   }
 };
 
+// D3DResource_AddRef / D3DResource_Release (d3d_draw.h): a chain of 1 to 4 resources in the scratch, each a type-4
+// resource holding its parent or not, counts at random (0, 1, 2, 0xFFFFFFFF and the like). Release never takes the
+// resource asked for to 0, not even over the timed calls in a row on the same inputs: its count starts at 0, at
+// 0xFFFFFFFF or at 2^24 or more. At 0 it is destroyed through the title's function, which must not run on the scratch
+// (it corrupted the title's heap once); the unit test covers that path with its own destroy.
+template <bool kRelease>
+struct ResourceRefCountCase {
+  static bool Native(PPCContext& ctx, uint8_t* base) {
+    return kRelease ? d3d_draw::ResourceRelease(ctx, base, SelfTestMemory()) : d3d_draw::ResourceAddRef(ctx, SelfTestMemory());
+  }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    static constexpr uint32_t kCounts[] = {0u, 1u, 1u, 2u, 3u, 7u, 0xFFFFFFFFu};
+    const uint32_t length = 1 + uint32_t(rng() % 4);
+    uint32_t chain[4];
+    for (uint32_t i = 0; i < length; ++i) chain[i] = s.scratch + 0x1000 * (i + 1) + 32 * uint32_t(rng() % 64);
+    for (uint32_t i = 0; i < length; ++i) {
+      const bool holds = i + 1 < length && rng() % 4;
+      const uint32_t type = holds || rng() % 2 ? 4 : uint32_t(rng() % 16);
+      Put32(s, chain[i], (uint32_t(rng()) & ~0x4000000Fu) | type | (holds ? 0x40000000u : 0));
+      uint32_t count = kCounts[rng() % 7];
+      if (kRelease && i == 0 && count != 0 && count != 0xFFFFFFFFu) count = (1u << 24) + uint32_t(rng() % (1u << 30));
+      Put32(s, chain[i] + 4, count);
+      Put32(s, chain[i] + 24, holds ? chain[i + 1] : uint32_t(rng()));
+    }
+    ctx.r3.u64 = chain[0];
+  }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = nullptr;
+};
+
 // A fence (sub_826BB5C8): the cursor in the scratch, every flag shape, the value, the two words, the device's
 // counter address at random. PM4: the cursor back compared; records: through the canonical list (its length).
 template <bool kRecords>

@@ -561,4 +561,37 @@ inline void SetShader(const Memory& m, const D3dLayout& l, uint32_t r3, uint32_t
 
 }  // namespace state
 
+// D3DResource_AddRef (Crackdown sub_826ACC90) and D3DResource_Release (sub_826ACD08), as their code reads.
+namespace refcount {
+inline uint32_t lwz(const Memory& m, uint32_t ea) { return detail::At32(m.Host(ea)); }
+inline void stw(const Memory& m, uint32_t ea, uint32_t v) { detail::Set32(m.Host(ea), v); }
+inline uint64_t AddRef(const Memory& m, uint64_t r3) {
+  const uint32_t r11 = uint32_t(r3) + 4;               // addi r11,r3,4
+  const uint64_t r10 = uint64_t(lwz(m, r11)) + 1;      // lwarx r10; addi r10,r10,1
+  stw(m, r11, uint32_t(r10));                          // stwcx. r10
+  const uint64_t r31 = r10;                            // mr r31,r10
+  if (uint32_t(r31) == 1) {                            // cmplwi cr6,r31,1
+    const uint32_t word = lwz(m, uint32_t(r3));        // lwz r11,0(r3)
+    if ((word & 0xF) == 4 && (word & 0x40000000u)) {   // clrlwi r10,r11,28; cmplwi 4; rlwinm. r11,r11,0,1,1
+      AddRef(m, lwz(m, uint32_t(r3) + 24));            // lwz r3,24(r3); bl 0x826acc90
+    }
+  }
+  return r31;                                          // mr r3,r31
+}
+template <class Destroy>
+inline uint64_t Release(const Memory& m, uint64_t r3, Destroy& destroy, uint32_t depth = 0) {
+  const uint32_t r31 = uint32_t(r3);                   // mr r31,r3
+  const uint32_t r11 = r31 + 4;                        // addi r11,r31,4
+  const uint64_t r10 = uint64_t(lwz(m, r11)) - 1;      // lwarx r10; addi r10,r10,-1
+  stw(m, r11, uint32_t(r10));                          // stwcx. r10
+  if (uint32_t(r10) != 0) return r10;                  // mr r3,r10; cmplwi cr6,r3,0; bne
+  const uint32_t word = lwz(m, r31);                   // lwz r11,0(r31)
+  if ((word & 0xF) == 4 && (word & 0x40000000u)) {     // clrlwi; cmplwi 4; rlwinm.
+    Release(m, lwz(m, r31 + 24), destroy, depth + 1);  // lwz r3,24(r31); bl 0x826acd08
+  }
+  destroy(r31, depth);                                 // mr r3,r31; bl 0x826ac6c8
+  return 0;                                            // li r3,0
+}
+}  // namespace refcount
+
 }  // namespace any360::xdk::reference

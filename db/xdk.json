@@ -632,6 +632,15 @@
   "note": "r3 a query, r4 D3DISSUE_BEGIN (2) / END (1): occlusion queries (type 9) through sub_826C05C8, event queries (10) as EVENT_WRITE / EVENT_WRITE_EXT"
  },
  {
+  "name": "D3DResource_AddRef",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826ACC90"
+  },
+  "note": "reference count + 1, a type-4 resource's parent too at 1"
+ },
+ {
   "name": "D3DResource_LockCpu",
   "library": "D3D",
   "any360": "native",
@@ -639,6 +648,15 @@
    "crackdown": "0x826AC8F0"
   },
   "note": "CPU lock of a resource: its fence waited, the locked pages' cache flushed (or the range added to the device's pending one from another thread), the locked lines widened, the lock count raised"
+ },
+ {
+  "name": "D3DResource_Release",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826ACD08"
+  },
+  "note": "reference count - 1; at 0 the parent released, the resource destroyed"
  },
  {
   "name": "D3DVertexBuffer_Lock",

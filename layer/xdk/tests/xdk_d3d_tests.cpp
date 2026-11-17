@@ -407,7 +407,96 @@ void UploadRecords() {
   CHECK(compared > 2000 && declined > 50);
 }
 
+// D3DResource_AddRef / D3DResource_Release (Crackdown sub_826ACC90, sub_826ACD08) against their code read line by
+// line: chains of 1 to 4 resources (type 4 or not, bit 30 or not), counts at 0, 1, 2, 3 and 0xFFFFFFFF; the memory, r3
+// and the destroy calls (resource, depth, order) the same. Then what is declined,
+// the count under 8 threads at once (exact, nothing destroyed), and the time a call.
+void ResourceRefCounts() {
+  namespace xdk = any360::xdk;
+  namespace ref = any360::xdk::reference::refcount;
+  xdk_test::Pair p(41);
+  std::mt19937_64 rng(43);
+  const auto put = [&](uint32_t address, uint32_t value) {
+    xdk::detail::Set32(p.a.Host(address), value);
+    xdk::detail::Set32(p.b.Host(address), value);
+  };
+  const uint32_t kCounts[] = {0u, 1u, 1u, 2u, 3u, 0xFFFFFFFFu};
+  uint64_t compared = 0, destroyed = 0;
+  for (int round = 0; round < 20000; ++round) {
+    const uint32_t first = 0x10000 + 32 * uint32_t(rng() % 1024), length = 1 + uint32_t(rng() % 4);
+    std::vector<uint32_t> chain;
+    for (uint32_t i = 0; i < length; ++i) chain.push_back(i ? 0x40000 + 32 * (256 * i + uint32_t(rng() % 256)) : first);  // apart: no cycle
+    for (uint32_t i = 0; i < length; ++i) {
+      const bool last = i + 1 == length;
+      const bool holds = !last && rng() % 4;  // a type-4 resource with bit 30 leads on to the next one
+      const uint32_t type = holds ? 4 : (rng() % 3 ? 4 : uint32_t(rng() % 16));
+      const uint32_t word = (uint32_t(rng()) & ~0x4000000Fu) | type | (holds || (type != 4 && rng() % 2) ? 0x40000000u : 0);
+      put(chain[i], word);
+      put(chain[i] + 4, kCounts[rng() % 6]);
+      put(chain[i] + 24, holds ? chain[i + 1] : uint32_t(rng()));
+    }
+    const bool add = rng() % 2;
+    std::vector<std::pair<uint32_t, uint32_t>> native_calls, model_calls;
+    auto native_destroy = [&](uint32_t r, uint32_t depth) { native_calls.push_back({r, depth}); };
+    auto model_destroy = [&](uint32_t r, uint32_t depth) { model_calls.push_back({r, depth}); };
+    uint64_t native_r3 = 0;
+    const bool accepted = add ? xdk::D3dResourceAddRef(p.a, first, native_r3)
+                              : xdk::D3dResourceRelease(p.a, first, native_destroy, native_r3);
+    CHECK(accepted);
+    const uint64_t model_r3 = add ? ref::AddRef(p.b, first) : ref::Release(p.b, first, model_destroy);
+    CHECK(native_r3 == model_r3);
+    CHECK(native_calls == model_calls);
+    for (uint32_t r : chain) CHECK(p.Same(r, r + 28, 0));
+    ++compared, destroyed += model_calls.size();
+  }
+  CHECK(compared == 20000 && destroyed > 1000);
+  // Declined, nothing changed: not aligned, not plain, a chain of type-4 parents that never ends (a cycle).
+  uint64_t r3 = 0;
+  auto none = [](uint32_t, uint32_t) {};
+  put(0x20000, 0x40000004u), put(0x20004, 1), put(0x20018, 0x20000);
+  CHECK(!xdk::D3dResourceAddRef(p.a, 0x20002, r3) && !xdk::D3dResourceRelease(p.a, 0x20002, none, r3));
+  CHECK(!xdk::D3dResourceAddRef(p.a, 0x7FFFFFF0u, r3) && !xdk::D3dResourceRelease(p.a, 0x7FFFFFF0u, none, r3));
+  CHECK(!xdk::D3dResourceAddRef(p.a, 0x20000, r3) && !xdk::D3dResourceRelease(p.a, 0x20000, none, r3));
+  CHECK(xdk::detail::At32(p.a.Host(0x20004)) == 1);
+  // 8 threads raising and dropping one resource's count at once: back to its count, nothing destroyed.
+  put(0x30000, 0x40000004u), put(0x30004, 1), put(0x30018, 0x30100);
+  put(0x30100, 0x00000003u), put(0x30104, 5);
+  std::atomic<uint32_t> destroys{0};
+  std::vector<std::thread> threads;
+  for (int t = 0; t < 8; ++t) {
+    threads.emplace_back([&] {
+      uint64_t c = 0;
+      auto d = [&](uint32_t, uint32_t) { destroys.fetch_add(1); };
+      for (int i = 0; i < 20000; ++i) {
+        xdk::D3dResourceAddRef(p.a, 0x30000, c);
+        xdk::D3dResourceRelease(p.a, 0x30000, d, c);
+      }
+    });
+  }
+  for (auto& t : threads) t.join();
+  CHECK(xdk::detail::At32(p.a.Host(0x30004)) == 1 && xdk::detail::At32(p.a.Host(0x30104)) == 5 && destroys == 0);
+  // Time a call (no allocation: the destroy callback is not reached), the replacement against the reference.
+  put(0x30004, 2);
+  const auto time = [&](auto&& call) {
+    const auto start = steady_clock::now();
+    for (int i = 0; i < 1000000; ++i) call();
+    return double(std::chrono::duration_cast<std::chrono::nanoseconds>(steady_clock::now() - start).count()) / 1e6;
+  };
+  uint64_t c = 0;
+  const double native = time([&] {
+    xdk::D3dResourceAddRef(p.a, 0x30000, c);
+    xdk::D3dResourceRelease(p.a, 0x30000, none, c);
+  });
+  const double model = time([&] {
+    ref::AddRef(p.b, 0x30000);
+    ref::Release(p.b, 0x30000, none);
+  });
+  std::printf("xdk_d3d_tests: resource AddRef + Release: %.1f ns a pair (atomic), reference %.1f ns; 0 bytes allocated\n",
+              native, model);
+}
+
 int main() {
+  ResourceRefCounts();
   Orders();
   Raced(20000, false);
   Raced(20000, true);

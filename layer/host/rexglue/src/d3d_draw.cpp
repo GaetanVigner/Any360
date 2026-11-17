@@ -18,6 +18,9 @@ REXCVAR_DEFINE_BOOL(any360_native_tiling, true, "GPU",
                     "Any360: the tiled recording (its segment lists opened and closed, each tile's bin select handed to "
                     "the command processor) native (docs/D3D.md, D6)");
 
+REXCVAR_DEFINE_BOOL(any360_d3d_native_refcounts, true, "GPU",
+                    "Any360: D3D resources' reference counts (AddRef, Release) native (docs/D3D.md, D1)");
+
 REXCVAR_DEFINE_BOOL(any360_d3d_native_draw_helpers, true, "GPU",
                     "Any360: native draws call the title's shader, state, misc and wait helpers (off: those draws are the "
                     "runtime's own code; a diagnostic)");
@@ -32,6 +35,7 @@ bool DrawHelpers() { return REXCVAR_GET(any360_d3d_native_draw_helpers); }
 bool DirectSubmit() { return REXCVAR_GET(any360_direct_submit); }
 bool NativeSegments() { return REXCVAR_GET(any360_native_segments); }
 bool NativeTiling() { return REXCVAR_GET(any360_native_tiling); }
+bool NativeRefCounts() { return REXCVAR_GET(any360_d3d_native_refcounts); }
 
 namespace {
 std::atomic<uint64_t> g_brackets[2], g_tile_runs[2];

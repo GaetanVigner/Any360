@@ -1,0 +1,17 @@
+--any360_d3d_native_refcounts=false: 5 launches
+  crackdown_068.log: dip 1% low 61 FPS, slowest 19.0 ms, 2 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_070.log: dip 1% low 61 FPS, slowest 19.0 ms, 2 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-64
+  crackdown_072.log: dip 1% low 53 FPS, slowest 19.2 ms, 20 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_074.log: dip 1% low 60 FPS, slowest 19.0 ms, 3 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-64
+  crackdown_076.log: dip 1% low 62 FPS, slowest 19.4 ms, 2 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  steady (25 periods): FPS mean 63.1 (median 63.1, min 62.9), 10% low mean 62.4 (median 62.5, min 61.8), 1% low mean 61.7 (median 61.7, min 61.4); process private memory mean 2586 MB, max 2590 MB
+  dips (5): 1% low mean 59.3, slowest frame mean 19.1 ms, over 16.7 ms mean 5.8, texture loading mean 0.06 ms a frame
+--any360_d3d_native_refcounts=true: 5 launches
+  crackdown_069.log: dip 1% low 61 FPS, slowest 18.9 ms, 1 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_071.log: dip 1% low 61 FPS, slowest 18.9 ms, 2 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-64
+  crackdown_073.log: dip 1% low 61 FPS, slowest 19.0 ms, 3 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_075.log: dip 1% low 61 FPS, slowest 18.9 ms, 2 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_077.log: dip 1% low 59 FPS, slowest 18.1 ms, 14 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-63
+  steady (25 periods): FPS mean 63.0 (median 63.1, min 62.3), 10% low mean 62.4 (median 62.4, min 61.5), 1% low mean 61.6 (median 61.7, min 60.2); process private memory mean 2590 MB, max 2594 MB
+  dips (5): 1% low mean 60.3, slowest frame mean 18.8 ms, over 16.7 ms mean 4.4, texture loading mean 0.06 ms a frame
+--any360_d3d_native_refcounts=false against --any360_d3d_native_refcounts=true: steady fps z +0.74, p10 z +0.13, p1 z +0.54; dips 1% low z +0.21, slowest z +2.30

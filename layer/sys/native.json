@@ -61,6 +61,8 @@
   "D3DDevice_SetVertexShaderConstantB",
   "D3DDevice_SetPixelShaderConstantB",
   "D3DDevice_SetPixelShader",
+  "D3DResource_AddRef",
+  "D3DResource_Release",
   "D3DDevice_SetVertexShader",
   "D3D_InsertFenceInterrupt",
   "D3D_InternalClearDraw",

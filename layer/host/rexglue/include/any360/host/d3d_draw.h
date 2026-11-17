@@ -84,6 +84,7 @@ struct Runtime {
   // The clear's vertex shader (27 dwords) and pixel shader (9 dwords), and the color it clears to when given none
   // (one float for the four channels): guest addresses in the title's image.
   uint32_t clear_vertex_shader = 0, clear_pixel_shader = 0, clear_default_color = 0;
+  GuestFunction destroy_resource = nullptr;  // r3 a resource whose count reached 0: destroyed (D3DResource_Release's)
 };
 inline Runtime g_runtime;
 // any360_d3d_native_draws and any360_d3d_records (d3d_draw.cpp).
@@ -92,6 +93,7 @@ bool DrawRecords();
 bool DirectSubmit();  // any360_direct_submit (d3d_draw.cpp)
 bool NativeSegments();  // any360_native_segments (d3d_draw.cpp)
 bool NativeTiling();  // any360_native_tiling (d3d_draw.cpp)
+bool NativeRefCounts();  // any360_d3d_native_refcounts (d3d_draw.cpp)
 void CountBracket(bool native);  // a BeginTiling taken by Any360 or left to the runtime (TilingBrackets)
 void CountTileRun(bool native);  // a tile ops run, Any360's or the runtime's (TileOpRuns)
 // any360_d3d_native_draw_helpers off (a diagnostic): draws that need the title's helpers besides its uploads (shader
@@ -3256,6 +3258,41 @@ inline void BeginVerticesOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunctio
 inline void BeginIndexedVerticesOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && BeginIndexedVertices(ctx, base, m, DrawRecords())) return;
+  original(ctx, base);
+}
+
+// D3DResource_AddRef (Crackdown sub_826ACC90): r3 the resource -> r3 its new count; and D3DResource_Release
+// (sub_826ACD08): r3 the resource -> r3 its new count, at 0 its parent released and the resource destroyed through
+// the title's function (Runtime::destroy_resource, r1 the runtime's frame at that depth, 96 bytes a level). The model
+// and what it declines: any360/xdk/d3d.h (D3dResourceAddRef, D3dResourceRelease).
+inline bool ResourceAddRef(PPCContext& ctx, const any360::xdk::Memory& m) {
+  uint64_t count;
+  if (!any360::xdk::D3dResourceAddRef(m, ctx.r3.u32, count)) return false;
+  ctx.r3.u64 = count;
+  return true;
+}
+inline bool ResourceRelease(PPCContext& ctx, uint8_t* base, const any360::xdk::Memory& m) {
+  if (!g_runtime.destroy_resource) return false;
+  const uint64_t entry = ctx.r1.u64;
+  auto destroy = [&](uint32_t resource, uint32_t depth) {
+    ctx.r1.u64 = entry - 96 * (depth + 1);
+    ctx.r3.u64 = resource;
+    g_runtime.destroy_resource(ctx, base);
+  };
+  uint64_t count;
+  if (!any360::xdk::D3dResourceRelease(m, ctx.r3.u32, destroy, count)) return false;
+  ctx.r1.u64 = entry;
+  ctx.r3.u64 = count;
+  return true;
+}
+inline void ResourceAddRefOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeRefCounts() && ResourceAddRef(ctx, m)) return;
+  original(ctx, base);
+}
+inline void ResourceReleaseOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeRefCounts() && ResourceRelease(ctx, base, m)) return;
   original(ctx, base);
 }
 
