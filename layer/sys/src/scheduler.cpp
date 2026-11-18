@@ -346,6 +346,15 @@ size_t Scheduler::DeliverApcs(Guest g, uint32_t pcr, uint32_t stack_pointer, boo
 
 uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_size, uint32_t thread_id_out, uint32_t xapi_startup,
                                  uint32_t start_address, uint32_t start_context, uint32_t creation_flags) {
+  uint32_t handle = 0;
+  const uint32_t status = CreateThreadHandle(g, handle_out ? &handle : nullptr, stack_size, thread_id_out, xapi_startup,
+                                       start_address, start_context, creation_flags);
+  if (status == kStatusSuccess && handle_out) g.Store32(handle_out, handle);
+  return status;
+}
+
+uint32_t Scheduler::CreateThreadHandle(Guest g, uint32_t* handle, uint32_t stack_size, uint32_t thread_id_out, uint32_t xapi_startup,
+                                 uint32_t start_address, uint32_t start_context, uint32_t creation_flags) {
   if (!dispatcher_) return kStatusInvalidParameter;
   GuestContext context;
   if (const uint32_t status = CreateContext(g, stack_size, context, creation_flags, true); status != kStatusSuccess) {
@@ -378,7 +387,7 @@ uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_si
                   stack_size ? "asked" : "the default");
     stack_log_(line);
   }
-  if (handle_out) g.Store32(handle_out, (creation_flags & kCreateHandleIsObject) ? kthread : Objects().OpenHandle(kthread));
+  if (handle) *handle = (creation_flags & kCreateHandleIsObject) ? kthread : Objects().OpenHandle(kthread);
   if (thread_id_out) g.Store32(thread_id_out, g.Load32(kthread + kThreadId));
   {
     // Run starts by taking this lock, so a thread that ends at once cannot free `t` before it holds its host thread.

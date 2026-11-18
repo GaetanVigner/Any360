@@ -193,6 +193,8 @@ class Xam {
   // The title module.
   uint32_t ImageXexHeaderField(Guest g, uint32_t header, uint32_t key) const;
   uint32_t GetModuleHandle(Guest g, uint32_t name, uint32_t handle_ptr);
+  // The module handle GetModuleHandle gives (0: not found).
+  uint32_t ModuleHandle(Guest g, uint32_t name);
   // XexLoadImage / XexUnloadImage: the title's own module and the system ones ("xam.xex", "xboxkrnl.exe", already
   // loaded) by name, a path's directories ignored; no other image is loaded (STATUS_NO_SUCH_FILE).
   uint32_t LoadImage(Guest g, uint32_t name, uint32_t handle_ptr);

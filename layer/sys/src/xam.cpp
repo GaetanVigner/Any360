@@ -886,14 +886,19 @@ uint32_t Xam::ImageXexHeaderField(Guest g, uint32_t header, uint32_t key) const 
 }
 
 uint32_t Xam::GetModuleHandle(Guest g, uint32_t name, uint32_t handle_ptr) {
+  const uint32_t handle = ModuleHandle(g, name);
+  if (handle_ptr) g.Store32(handle_ptr, handle);
+  return handle ? kStatusSuccess : kStatusNotFound;
+}
+
+uint32_t Xam::ModuleHandle(Guest g, uint32_t name) {
   const std::string module = GuestString(g, name, 64);
   std::string lower = module;
   for (char& c : lower) c = char(c >= 'A' && c <= 'Z' ? c + 32 : c);
   uint32_t handle = 0;
   if (module.empty() || lower == "default.xex" || lower == title_.module_name) handle = title_.module_handle;
   else if (lower == "xam.xex" || lower == "xboxkrnl.exe") handle = SystemModule(g);
-  if (handle_ptr) g.Store32(handle_ptr, handle);
-  return handle ? kStatusSuccess : kStatusNotFound;
+  return handle;
 }
 
 uint32_t Xam::SystemModule(Guest g) {

@@ -24,6 +24,7 @@
 #include "any360/sys/rtl.h"
 #include "any360/sys/variables.h"
 #include "any360/sys/xam.h"
+#include "any360/sys/win32.h"
 
 #include <algorithm>
 #include <atomic>
@@ -2769,8 +2770,39 @@ void CryptStep12Tests() {
   CHECK(std::memcmp(g.host(out + 0x40), "Now is the time for all ", 24) == 0);
 }
 
+// Step 12's Win32 forms (win32.h): what is Win32's own over the kernel calls they use (the last error in the KTHREAD,
+// millisecond timeouts, WaitForSingleObjectEx's documented results, SleepEx's, lstrlenW, the tick count).
+void Win32Step12Tests() {
+  const uint32_t kthread = kScratch + 0x800, text = kScratch + 0x400;
+  std::memset(g.host(kthread), 0, 0x200);
+  SetWin32LastError(g, kthread, 0x57);
+  CHECK(Win32LastError(g, kthread) == 0x57 && g.Load32(kthread + 0x160) == 0x57);
+  CHECK(Win32LastError(g, 0) == 0);
+  // RtlSetLastNTError: STATUS_INVALID_HANDLE is ERROR_INVALID_HANDLE (6).
+  CHECK(SetWin32LastNtError(g, kthread, 0xC0000008) == 6 && Win32LastError(g, kthread) == 6);
+  CHECK(!Win32Timeout(0xFFFFFFFF) && *Win32Timeout(0) == 0 && *Win32Timeout(1500) == -15000000);
+  // The documented results pass through; an error is WAIT_FAILED with the last error set.
+  SetWin32LastError(g, kthread, 0);
+  CHECK(Win32WaitResult(g, kthread, 0) == 0 && Win32WaitResult(g, kthread, 3) == 3);
+  CHECK(Win32WaitResult(g, kthread, 0x80) == 0x80 && Win32WaitResult(g, kthread, 0x102) == 0x102);
+  CHECK(Win32WaitResult(g, kthread, 0xC0) == 0xC0 && Win32LastError(g, kthread) == 0);
+  CHECK(Win32WaitResult(g, kthread, 0xC0000008) == 0xFFFFFFFF && Win32LastError(g, kthread) == 6);
+  CHECK(Win32SleepResult(0) == 0 && Win32SleepResult(0xC0) == 0xC0);
+  // lstrlenW on a big-endian UTF-16 string.
+  const char16_t word[] = u"Anyé360";
+  for (uint32_t i = 0; i <= 7; ++i) g.Store16(text + 2 * i, uint16_t(word[i]));
+  CHECK(LstrlenW(g, text) == 7 && LstrlenW(g, 0) == 0);
+  g.Store16(text, 0);
+  CHECK(LstrlenW(g, text) == 0);
+  // The tick count is KeTimeStampBundle's: it moves on.
+  const uint32_t before = TickCount();
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  CHECK(TickCount() - before >= 15);
+}
+
 int main() {
   CryptStep12Tests();
+  Win32Step12Tests();
   InputQueueTests();
   InputScriptTests();
   ProfileSettingsKept();

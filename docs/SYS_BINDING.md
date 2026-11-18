@@ -409,6 +409,17 @@ uneven pieces. Left out until a source confirms its state's size: streamed SHA-5
 unconfirmed, and a title reserving a smaller state on its stack would be overwritten). HMAC-MD5's cut of a long key is
 Xenia's assumption, not checked on a console.
 
+Second batch, xam.xex's Win32 forms (14 calls, `win32.h`): `Sleep`, `SleepEx`, `WaitForSingleObject(Ex)`,
+`CreateThread`, `ResumeThread`, `ExitThread`, `GetCurrentThreadId`, `GetLastError`, `GetModuleHandleA`, `GetTickCount`,
+`QueryPerformanceFrequency`, `GetSystemTimeAsFileTime`, `lstrlenW`. None recodes what exists: each is a form over a
+call any360::sys already answers (`KeDelayExecutionThread` and `NtWaitForSingleObjectEx` with their APC handling,
+`ExCreateThread`, the scheduler's resume and terminate, `XexGetModuleHandle`, `KeQueryPerformanceFrequency`,
+`KeQuerySystemTime`, `KeTimeStampBundle`'s tick count, `RtlNtStatusToDosError`); only Win32's own part is new: the
+last error in the KTHREAD (+0x160, the thread id at +0x14C, as Xenia lays it out), the millisecond timeouts (INFINITE
+as Xenia passes it) and WaitForSingleObjectEx's results as Microsoft documents them (Xenia's returns WAIT_FAILED in
+every case, a shortcut its source marks). `lstrlenW` counts big-endian UTF-16 characters (the host's `wcslen` does not
+read guest strings). `sys_object_tests` checks the Win32 part; the kernel calls under it keep their own tests.
+
 ## After step 7: from one title to any title (the road to 100%)
 
 Steps 0-7 put Crackdown's system calls on any360::sys, with ReXGlue still hosting it. Crackdown is the test bench; the

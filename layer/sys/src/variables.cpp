@@ -57,7 +57,11 @@ void KernelVariables::Tick(Guest g) {
   const auto since_boot = std::chrono::steady_clock::now() - kBoot;
   g.Store64(bundle, uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(since_boot).count() / 100));
   g.Store64(bundle + 8, SystemTime());
-  g.Store32(bundle + 16, uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(since_boot).count()));
+  g.Store32(bundle + 16, UptimeMilliseconds());
+}
+
+uint32_t UptimeMilliseconds() {
+  return uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - kBoot).count());
 }
 
 uint32_t KernelVariables::Create(Guest g, const std::string& name) {

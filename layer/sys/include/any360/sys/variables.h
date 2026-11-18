@@ -36,4 +36,7 @@ class KernelVariables {
 
 KernelVariables& Variables();
 
+// Milliseconds since the layer started: KeTimeStampBundle's tick count, and GetTickCount's.
+uint32_t UptimeMilliseconds();
+
 }  // namespace any360::sys

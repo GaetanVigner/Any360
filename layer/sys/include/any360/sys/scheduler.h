@@ -82,6 +82,9 @@ class Scheduler {
   // ExCreateThread: handle (or the KTHREAD itself with kCreateHandleIsObject) and thread id written when asked.
   uint32_t CreateThread(Guest g, uint32_t handle_out, uint32_t stack_size, uint32_t thread_id_out, uint32_t xapi_startup,
                         uint32_t start_address, uint32_t start_context, uint32_t creation_flags);
+  // The same, the handle given to the host (always opened, or the KTHREAD with kCreateHandleIsObject).
+  uint32_t CreateThreadHandle(Guest g, uint32_t* handle, uint32_t stack_size, uint32_t thread_id_out, uint32_t xapi_startup,
+                        uint32_t start_address, uint32_t start_context, uint32_t creation_flags);
   // The calling thread (its PCR) ends with `exit_code`; does not return for a thread the scheduler runs.
   uint32_t TerminateThread(Guest g, uint32_t pcr, uint32_t exit_code);
   // A relative interval (negative, 100 ns) sleeps, zero yields, an absolute one waits until that system time. An

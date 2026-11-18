@@ -24,6 +24,7 @@
 #include "any360/sys/scheduler.h"
 #include "any360/sys/threading.h"
 #include "any360/sys/video.h"
+#include "any360/sys/win32.h"
 #include "any360/sys/xam.h"
 
 #define ANY360_SYS_EXPORT(name) extern "C" void any360_##name(PPCContext& ctx, [[maybe_unused]] uint8_t* base)
@@ -836,6 +837,59 @@ ANY360_SYS_EXPORT(XeCryptHmacShaVerify) {
 ANY360_SYS_EXPORT(XeCryptDesKey) { XeCryptDesKey({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptDesEcb) { XeCryptDesEcb({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
 ANY360_SYS_EXPORT(XeCryptDesCbc) { XeCryptDesCbc({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32); }
+
+// Step 12: xam.xex's Win32 forms (win32.h), each over a kernel call any360::sys already answers.
+static uint32_t Win32Delay(PPCContext& ctx, uint8_t* base, uint32_t milliseconds, uint32_t alertable) {
+  // INFINITE: an absolute time no clock reaches, as Xenia passes it.
+  const int64_t interval = Win32Timeout(milliseconds).value_or(INT64_MAX);
+  return AlertableWait(ctx, base, alertable, [&](bool a) { return Threads().Delay({base}, ctx.r13.u32, interval, a); });
+}
+ANY360_SYS_EXPORT(Sleep) { Win32Delay(ctx, base, ctx.r3.u32, 0); }
+ANY360_SYS_EXPORT(SleepEx) { ctx.r3.u64 = Win32SleepResult(Win32Delay(ctx, base, ctx.r3.u32, ctx.r4.u32)); }
+static uint32_t Win32Wait(PPCContext& ctx, uint8_t* base, uint32_t handle, uint32_t milliseconds, uint32_t alertable) {
+  const std::optional<int64_t> timeout = Win32Timeout(milliseconds);
+  const uint32_t status = AlertableWait(ctx, base, alertable, [&](bool a) {
+    return Objects().WaitForHandle({base}, handle, ThreadOf(ctx, base), timeout ? &*timeout : nullptr, a);
+  });
+  return Win32WaitResult({base}, ThreadOf(ctx, base), status);
+}
+ANY360_SYS_EXPORT(WaitForSingleObject) { ctx.r3.u64 = Win32Wait(ctx, base, ctx.r3.u32, ctx.r4.u32, 0); }
+ANY360_SYS_EXPORT(WaitForSingleObjectEx) { ctx.r3.u64 = Win32Wait(ctx, base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(CreateThread) {
+  // (attributes, stack size, start, parameter, flags, thread id out): CREATE_SUSPENDED (4) is the kernel's suspended
+  // flag (1); no processor asked for.
+  uint32_t handle = 0;
+  const uint32_t status = Threads().CreateThreadHandle({base}, &handle, ctx.r4.u32, ctx.r8.u32, 0, ctx.r5.u32, ctx.r6.u32,
+                                                       (ctx.r7.u32 >> 2) & 1);
+  if (status != kStatusSuccess) SetWin32LastNtError({base}, ThreadOf(ctx, base), status);
+  ctx.r3.u64 = status == kStatusSuccess ? handle : 0;
+}
+ANY360_SYS_EXPORT(ResumeThread) {
+  // The previous suspend count, or -1 with the last error set.
+  const uint32_t kthread = Objects().Lookup(ctx.r3.u32);
+  uint32_t count = 0;
+  const uint32_t status = kthread ? Threads().Resume({base}, kthread, &count) : kStatusInvalidHandle;
+  if (status != kStatusSuccess) SetWin32LastNtError({base}, ThreadOf(ctx, base), status);
+  ctx.r3.u64 = status == kStatusSuccess ? count : 0xFFFFFFFFu;
+}
+ANY360_SYS_EXPORT(ExitThread) { Threads().TerminateThread({base}, ctx.r13.u32, ctx.r3.u32); }
+ANY360_SYS_EXPORT(GetCurrentThreadId) { ctx.r3.u64 = Guest{base}.Load32(ThreadOf(ctx, base) + kKThreadId); }
+ANY360_SYS_EXPORT(GetLastError) { ctx.r3.u64 = Win32LastError({base}, ThreadOf(ctx, base)); }
+ANY360_SYS_EXPORT(GetModuleHandleA) {
+  const uint32_t handle = XamState().ModuleHandle({base}, ctx.r3.u32);
+  if (!handle) SetWin32LastNtError({base}, ThreadOf(ctx, base), 0xC0000225u);  // STATUS_NOT_FOUND
+  ctx.r3.u64 = handle;
+}
+ANY360_SYS_EXPORT(GetTickCount) { ctx.r3.u64 = TickCount(); }
+ANY360_SYS_EXPORT(QueryPerformanceFrequency) {
+  if (ctx.r3.u32) Guest{base}.Store64(ctx.r3.u32, KeQueryPerformanceFrequency());
+  ctx.r3.u64 = 1;
+}
+ANY360_SYS_EXPORT(GetSystemTimeAsFileTime) {
+  // The system time as one 64-bit value, as KeQuerySystemTime writes it (and Xenia).
+  if (ctx.r3.u32) Guest{base}.Store64(ctx.r3.u32, SystemTime());
+}
+ANY360_SYS_EXPORT(lstrlenW) { ctx.r3.u64 = LstrlenW({base}, ctx.r3.u32); }
 ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
@@ -1601,6 +1655,20 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XeCryptDesKey),
     ANY360_SYS_ENTRY(XeCryptDesEcb),
     ANY360_SYS_ENTRY(XeCryptDesCbc),
+    ANY360_SYS_ENTRY(Sleep),
+    ANY360_SYS_ENTRY(SleepEx),
+    ANY360_SYS_ENTRY(WaitForSingleObject),
+    ANY360_SYS_ENTRY(WaitForSingleObjectEx),
+    ANY360_SYS_ENTRY(CreateThread),
+    ANY360_SYS_ENTRY(ResumeThread),
+    ANY360_SYS_ENTRY(ExitThread),
+    ANY360_SYS_ENTRY(GetCurrentThreadId),
+    ANY360_SYS_ENTRY(GetLastError),
+    ANY360_SYS_ENTRY(GetModuleHandleA),
+    ANY360_SYS_ENTRY(GetTickCount),
+    ANY360_SYS_ENTRY(QueryPerformanceFrequency),
+    ANY360_SYS_ENTRY(GetSystemTimeAsFileTime),
+    ANY360_SYS_ENTRY(lstrlenW),
     ANY360_SYS_ENTRY(XeCryptAesKey),
     ANY360_SYS_ENTRY(XeCryptAesEcb),
     ANY360_SYS_ENTRY(XeCryptAesCbc),
