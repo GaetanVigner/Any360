@@ -20,3 +20,4 @@ Every step's measured results, kept for later optimization passes: the self-test
 - [2026-11-17-d3d-render-states](archive/2026-11-17-d3d-render-states/): 2026-11-17, SetRenderState_ViewportEnable and SetRenderState_DepthBias native (D1)
 - [2026-11-17-crt-atan2-pow](archive/2026-11-17-crt-atan2-pow/): the C runtime's atan2 and pow native, bit for bit: benchmark, the check and the measure in game (1.6x, 3.7x a call), and the host's C library beside the five math functions (1.4-6.6x faster, 23-47% of its results not the title's) (NOTES.md)
 - [2026-11-17-d3d-surface-setters](archive/2026-11-17-d3d-surface-setters/): 2026-11-17, SetRenderTarget and SetDepthStencilSurface native (D1)
+- [2026-11-18-d3d-render-state-fields](archive/2026-11-18-d3d-render-state-fields/): 2026-11-18, the render state fields, their getters and the sampler state siblings native (D1)

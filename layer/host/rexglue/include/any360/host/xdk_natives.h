@@ -934,6 +934,166 @@ struct SetDepthStencilSurface {
     return SurfaceWrites(ctx, ctx.r4.u32, w);
   }
 };
+// The render state fields' setters (any360/xdk/d3d_state.h): r4 the value; each writes its fields and the state's
+// dirty bits.
+struct DeviceField {
+  uint32_t any360::xdk::D3dLayout::*field;
+  uint32_t size;
+};
+template <bool (*kSet)(const any360::xdk::Memory&, const any360::xdk::D3dLayout&, uint32_t, uint32_t),
+          DeviceField... kFields>
+struct RenderStateField {
+  static constexpr Function kFunction = Function::kD3dRenderState;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) { return kSet(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32); }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t device = ctx.r3.u32;
+    if (!any360::xdk::detail::DeviceAccepts(l, device)) return false;
+    (AddRange(w, device + l.*(kFields.field), kFields.size), ...);
+    AddRange(w, device + l.state_dirty, 8);
+    return true;
+  }
+};
+using D3dLayout_ = any360::xdk::D3dLayout;
+using CullMode = RenderStateField<any360::xdk::D3dSetCullMode, DeviceField{&D3dLayout_::mode_control, 4}>;
+using AlphaTestEnable = RenderStateField<any360::xdk::D3dSetAlphaTestEnable, DeviceField{&D3dLayout_::color_control, 4}>;
+using AlphaFunc = RenderStateField<any360::xdk::D3dSetAlphaFunc, DeviceField{&D3dLayout_::color_control, 4}>;
+using ZEnable = RenderStateField<any360::xdk::D3dSetZEnable, DeviceField{&D3dLayout_::depth_enable_set, 4},
+                                 DeviceField{&D3dLayout_::depth_control, 4}>;
+using ZWriteEnable = RenderStateField<any360::xdk::D3dSetZWriteEnable, DeviceField{&D3dLayout_::depth_control, 4}>;
+using ClipPlaneEnable = RenderStateField<any360::xdk::D3dSetClipPlaneEnable, DeviceField{&D3dLayout_::clip_plane_flag, 4},
+                                         DeviceField{&D3dLayout_::clip_control, 4}>;
+using SetIndices = RenderStateField<any360::xdk::D3dSetIndices, DeviceField{&D3dLayout_::index_buffer, 4}>;
+// SetRenderState_BlendFactor: r4 the color; the host's denormal flush turned off first, as the runtime's code does.
+// (Its doubles through the stack below r1 are its own scratch, not written here.)
+struct BlendFactor {
+  static constexpr Function kFunction = Function::kD3dRenderState;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    ctx.fpscr.disableFlushMode();
+    return any360::xdk::D3dSetBlendFactor(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t device = ctx.r3.u32;
+    if (!any360::xdk::detail::DeviceAccepts(l, device) || !any360::xdk::IsPlainMemory(l.blend_byte_scale, 4)) return false;
+    AddRange(w, device + l.blend_color, 16);
+    AddRange(w, device + l.state_dirty, 8);
+    return true;
+  }
+};
+// SetRenderState_SlopeScaleDepthBias: r4 the scale's float bits, kept at the caller's r1 + 28; denormals kept.
+struct SlopeScaleDepthBias {
+  static constexpr Function kFunction = Function::kD3dRenderState;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    ctx.fpscr.disableFlushMode();
+    return any360::xdk::D3dSetSlopeScaleDepthBias(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32, ctx.r1.u32 + 28);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t device = ctx.r3.u32, stack_word = ctx.r1.u32 + 28;
+    if (!any360::xdk::detail::DeviceAccepts(l, device) || !any360::xdk::IsPlainMemory(stack_word, 4) ||
+        !any360::xdk::IsPlainMemory(l.zero_float, 4) || !any360::xdk::IsPlainMemory(l.slope_scale_factor, 4) ||
+        any360::xdk::detail::Overlap(stack_word, 4, device, l.device_bytes) ||
+        any360::xdk::detail::Overlap(stack_word, 4, l.zero_float, 4) ||
+        any360::xdk::detail::Overlap(stack_word, 4, l.slope_scale_factor, 4))
+      return false;
+    AddRange(w, stack_word, 4);
+    AddRange(w, device + l.poly_offset, 4);
+    AddRange(w, device + l.poly_offset + 8, 4);
+    AddRange(w, device + l.mode_control, 4);
+    AddRange(w, device + l.constant_dirty, 8);
+    AddRange(w, device + l.state_dirty, 8);
+    return true;
+  }
+};
+// SetClipPlane: r4 the plane's index (0-5), r5 its four floats.
+struct SetClipPlane {
+  static constexpr Function kFunction = Function::kD3dRenderState;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetClipPlane(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t device = ctx.r3.u32, plane = ctx.r5.u32;
+    if (ctx.r4.u32 > 5 || !any360::xdk::detail::DeviceAccepts(l, device) || !any360::xdk::IsPlainMemory(plane, 16) ||
+        any360::xdk::detail::Overlap(plane, 16, device, l.device_bytes))
+      return false;
+    AddRange(w, device + l.clip_planes + 16 * ctx.r4.u32, 16);
+    AddRange(w, device + l.constant_dirty, 8);
+    return true;
+  }
+};
+// The render state getters: r3 the value.
+template <any360::xdk::D3dRenderStateRead kState>
+struct GetRenderState {
+  static constexpr Function kFunction = Function::kD3dRenderState;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    uint32_t value;
+    if (!any360::xdk::D3dGetRenderState(m, g_d3d_layout, ctx.r3.u32, kState, value)) return false;
+    ctx.r3.u64 = value;
+    return true;
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>&) {
+    return any360::xdk::detail::DeviceAccepts(g_d3d_layout, ctx.r3.u32);
+  }
+};
+// GetRenderState_BlendFactor: r3 the color; denormals kept. (Its words through the stack below r1 are its scratch.)
+struct GetBlendFactor {
+  static constexpr Function kFunction = Function::kD3dRenderState;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    ctx.fpscr.disableFlushMode();
+    uint32_t color;
+    if (!any360::xdk::D3dGetBlendFactor(m, g_d3d_layout, ctx.r3.u32, color)) return false;
+    ctx.r3.u64 = color;
+    return true;
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>&) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    return any360::xdk::detail::DeviceAccepts(l, ctx.r3.u32) && any360::xdk::IsPlainMemory(l.blend_float_scale, 4) &&
+           any360::xdk::IsPlainMemory(l.blend_rounding, 4);
+  }
+};
+// SetSamplerState for a stage's anisotropy: r4 the stage, r5 the table index.
+struct SamplerAnisotropy {
+  static constexpr Function kFunction = Function::kD3dSamplerFilter;
+  static constexpr bool kVoid = true;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetSamplerAnisotropy(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t device = ctx.r3.u32, stage = ctx.r4.u32;
+    if (stage >= 32 || !any360::xdk::detail::DeviceAccepts(l, device)) return false;
+    const uint32_t f = device + l.fetch_constants + 24 * stage;
+    if (any360::xdk::detail::Get32(g_memory, f + 16) & 0xC00u) {
+      const uint32_t table_at = l.sampler_filter_table + ((ctx.r5.u32 << 2) & 0xFFFFFFFCu);
+      if (!any360::xdk::IsPlainMemory(table_at, 4) || any360::xdk::detail::Overlap(table_at, 4, device, l.device_bytes))
+        return false;
+    }
+    AddRange(w, f + 12, 4);
+    AddRange(w, device + l.fetch_dirty, 8);
+    AddRange(w, device + l.stage_filter_index + stage, 1);
+    return true;
+  }
+};
+// SetSamplerState for a flag of the stage's LOD byte (`kBit` 1 or 0): r4 the stage, r5 the value.
+template <uint32_t kBit>
+struct SamplerLodFlag {
+  static constexpr Function kFunction = Function::kD3dSamplerFilter;
+  static constexpr bool kVoid = true;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dSetSamplerLodFlag(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, kBit);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t device = ctx.r3.u32, stage = ctx.r4.u32;
+    if (stage >= 32 || !any360::xdk::detail::DeviceAccepts(l, device)) return false;
+    AddRange(w, device + l.fetch_constants + 24 * stage + 16, 4);
+    AddRange(w, device + l.fetch_dirty, 8);
+    AddRange(w, device + l.stage_lod_limit + stage, 1);
+    return true;
+  }
+};
 // SetTexture: r4 the stage, r5 the texture, r6 the dirty bits.
 struct SetTexture {
   static constexpr Function kFunction = Function::kD3dSetTexture;

@@ -465,6 +465,78 @@
   "note": ""
  },
  {
+  "name": "D3DDevice_GetRenderState_AlphaBlendEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AF9D0"
+  },
+  "note": "the blend flags bit 31"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_AlphaFunc",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFE00"
+  },
+  "note": "RB_COLORCONTROL bits 0-2"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_AlphaTestEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AF940"
+  },
+  "note": "RB_COLORCONTROL bit 3"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_BlendFactor",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFEB0"
+  },
+  "note": "RB_BLEND_RED-ALPHA back to a D3DCOLOR (fmadds, fctidz)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_CullMode",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AF8D8"
+  },
+  "note": "PA_SU_SC_MODE_CNTL bits 0-2"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_DestBlend",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFB80"
+  },
+  "note": "the blend word as set, bits 8-12"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_SrcBlend",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFAF0"
+  },
+  "note": "the blend word as set, bits 0-4"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_ZWriteEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0038"
+  },
+  "note": "RB_DEPTHCONTROL bit 2"
+ },
+ {
   "name": "D3DDevice_GpuBeginShaderConstantF4",
   "library": "D3D",
   "any360": "todo",
@@ -484,6 +556,15 @@
   "note": ""
  },
  {
+  "name": "D3DDevice_SetClipPlane",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B2698"
+  },
+  "note": "a user clip plane (16 bytes at +10144); dirty bit 54 - index of +32"
+ },
+ {
   "name": "D3DDevice_SetDepthStencilSurface",
   "library": "D3D",
   "any360": "native",
@@ -491,6 +572,15 @@
    "crackdown": "0x826B2218"
   },
   "note": "the depth surface and its registers; the runtime's viewport function without target 0"
+ },
+ {
+  "name": "D3DDevice_SetIndices",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B3A98"
+  },
+  "note": "the index buffer bound (+11540); dirty 0x80000"
  },
  {
   "name": "D3DDevice_SetPixelShader",
@@ -521,6 +611,15 @@
   "note": "16-byte registers at (first + 368) * 16, dirty bits at +8"
  },
  {
+  "name": "D3DDevice_SetPixelShaderConstantI",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B3290"
+  },
+  "note": "a word a register at word 2520 (the low bytes of three integers)"
+ },
+ {
   "name": "D3DDevice_SetPredication",
   "library": "D3D",
   "any360": "native",
@@ -540,6 +639,33 @@
   "note": "blend flags bit 31; render targets' blend words"
  },
  {
+  "name": "D3DDevice_SetRenderState_AlphaFunc",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFDE0"
+  },
+  "note": "RB_COLORCONTROL bits 0-2; dirty 0x200"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_AlphaTestEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AF918"
+  },
+  "note": "RB_COLORCONTROL bit 3; dirty 0x200, 0x40000"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_BlendFactor",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFE10"
+  },
+  "note": "a D3DCOLOR into RB_BLEND_RED-ALPHA as floats; dirty bits 33-36"
+ },
+ {
   "name": "D3DDevice_SetRenderState_BlendOp",
   "library": "D3D",
   "any360": "native",
@@ -556,6 +682,24 @@
    "crackdown": "0x826AFB90"
   },
   "note": "blend word bits 21-23"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_ClipPlaneEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0358"
+  },
+  "note": "PA_CL_CLIP_CNTL low 6 bits, the word 10292 0x1000; dirty 0x80, bit 44"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_CullMode",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AF8B8"
+  },
+  "note": "PA_SU_SC_MODE_CNTL bits 0-2; dirty 0x40"
  },
  {
   "name": "D3DDevice_SetRenderState_DepthBias",
@@ -594,6 +738,15 @@
   "note": "blend flags bit 30; render targets' blend words"
  },
  {
+  "name": "D3DDevice_SetRenderState_SlopeScaleDepthBias",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B03C0"
+  },
+  "note": "both polygon offset scales (times the runtime factor) and their enables; dirty bits 45, 43, 0x40"
+ },
+ {
   "name": "D3DDevice_SetRenderState_SrcBlend",
   "library": "D3D",
   "any360": "native",
@@ -621,6 +774,24 @@
   "note": "PA_CL_VTE_CNTL and the clip disable"
  },
  {
+  "name": "D3DDevice_SetRenderState_ZEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFFD8"
+  },
+  "note": "the value kept; RB_DEPTHCONTROL bit 1 with a depth surface; dirty 0x800, 0x20000"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_ZWriteEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0018"
+  },
+  "note": "RB_DEPTHCONTROL bit 2; dirty 0x800"
+ },
+ {
   "name": "D3DDevice_SetRenderTarget",
   "library": "D3D",
   "any360": "native",
@@ -630,6 +801,24 @@
   "note": "a render target's surface and registers; the runtime's viewport function for target 0"
  },
  {
+  "name": "D3DDevice_SetSamplerState_LodByteBit0",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B13F8"
+  },
+  "note": "the stage LOD byte bit 0 (+11722), fetch constant word 4 low bits"
+ },
+ {
+  "name": "D3DDevice_SetSamplerState_LodByteBit1",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1270"
+  },
+  "note": "the stage LOD byte bit 1 (+11722), fetch constant word 4 low bits"
+ },
+ {
   "name": "D3DDevice_SetSamplerState_MagFilter",
   "library": "D3D",
   "any360": "native",
@@ -637,6 +826,15 @@
    "crackdown": "0x826B1308"
   },
   "note": "fetch constant words 3-4: mag filter and anisotropy"
+ },
+ {
+  "name": "D3DDevice_SetSamplerState_MaxAnisotropy",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1580"
+  },
+  "note": "the stage byte at +11644; with a filter flag, fetch constant word 3 bits 25-27 from the table"
  },
  {
   "name": "D3DDevice_SetSamplerState_MinFilter",
@@ -693,6 +891,15 @@
    "crackdown": "0x826B3178"
   },
   "note": "a bit a register at word 2496"
+ },
+ {
+  "name": "D3DDevice_SetVertexShaderConstantI",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B3238"
+  },
+  "note": "a word a register at word 2504 (the low bytes of three integers)"
  },
  {
   "name": "D3DDevice_Swap",

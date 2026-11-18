@@ -43,6 +43,8 @@ xdk::D3dLayout Shifted() {
   l.stencil_enable_set += 40, l.target_as_wide += 40, l.bin_mask_set += 40, l.tiling_flags += 40;
   l.depth_flags += 40, l.tiling_options += 40, l.tiling_pending[0] += 40, l.tiling_pending[1] += 40;
   l.tiling_hiz_pitch += 40;
+  l.color_control += 40, l.blend_color += 40, l.clip_plane_flag += 40, l.index_buffer += 40;
+  l.clip_planes += 48;  // the runtime finds a plane as (index + clip_planes / 16) << 4: kept on 16 bytes
   return l;
 }
 
@@ -537,8 +539,122 @@ void TestSurfaceSetters(const xdk::D3dLayout& l, uint32_t seed) {
   }
 }
 
+// The render state fields' setters and getters and the sampler state siblings against their code read line by line:
+// values as titles pass them and any 64 bits; the device's mirror words, polygon offsets, blend floats (0, -0, NaN,
+// infinities, denormals, any bits), depth surface, fetch constants and stage bytes at random; the runtime's float
+// constants (their values and any) in the arena. Each call compared over the device; the round's memory everywhere.
+void TestRenderStateFields(xdk::D3dLayout l, uint32_t seed) {
+  std::mt19937_64 rng(seed);
+  l.zero_float = 0x50000, l.blend_byte_scale = 0x50010, l.blend_float_scale = 0x50014, l.blend_rounding = 0x50018;
+  l.slope_scale_factor = 0x5001C, l.sampler_filter_table = 0x70000;
+  auto value = [&]() -> uint64_t { return rng() % 4 == 0 ? rng() : RandomValue(rng); };
+  auto float_bits = [&]() { return std::bit_cast<uint32_t>(RandomFloat(rng)); };
+  uint64_t taken = 0;
+  for (int round = 0; round < 300; ++round) {
+    Pair p(seed + round);
+    Put32Both(p, l.zero_float, rng() % 8 ? 0u : float_bits());
+    Put32Both(p, l.blend_byte_scale, rng() % 4 ? std::bit_cast<uint32_t>(1.0f / 255.0f) : float_bits());
+    Put32Both(p, l.blend_float_scale, rng() % 4 ? std::bit_cast<uint32_t>(255.0f) : float_bits());
+    Put32Both(p, l.blend_rounding, rng() % 4 ? std::bit_cast<uint32_t>(0.5f) : float_bits());
+    Put32Both(p, l.slope_scale_factor, rng() % 4 ? std::bit_cast<uint32_t>(16.0f) : float_bits());
+    for (int call = 0; call < 48; ++call) {
+      for (uint32_t k = 0; k < 4; ++k) {
+        if (rng() % 4 == 0) Put32Both(p, kDevice + l.blend_color + 4 * k, rng() % 2 ? float_bits() : std::bit_cast<uint32_t>(float(rng() % 256) / 255.0f));
+        if (rng() % 6 == 0) Put32Both(p, kDevice + l.poly_offset + 4 * k, rng() % 2 ? 0u : float_bits());
+      }
+      if (rng() % 4 == 0) Put32Both(p, kDevice + l.surfaces + 16, rng() % 2 ? 0u : uint32_t(rng()));
+      const uint32_t stage = rng() % 16 ? uint32_t(rng() % 32) : 32 + uint32_t(rng() % 8);
+      if (stage < 32) {
+        if (rng() % 3 == 0) Put32Both(p, kDevice + l.fetch_constants + 24 * stage + 16, uint32_t(rng()));
+        if (rng() % 3 == 0) Put32Both(p, kDevice + l.fetch_constants + 24 * stage + 12, uint32_t(rng()));
+        if (rng() % 3 == 0) *p.a.Host(kDevice + l.stage_lod_limit + stage) = *p.b.Host(kDevice + l.stage_lod_limit + stage) = uint8_t(rng());
+      }
+      const uint64_t r4 = value();
+      const uint32_t which = uint32_t(rng() % 21);
+      bool expect = true, took = false;
+      uint64_t mine = 0, theirs = 0;
+      uint32_t got = 0;
+      switch (which) {
+        case 0: took = xdk::D3dSetCullMode(p.a, l, kDevice, uint32_t(r4)); ref::CullMode(p.b, l, kDevice, r4); break;
+        case 1: took = xdk::D3dSetAlphaTestEnable(p.a, l, kDevice, uint32_t(r4)); ref::AlphaTestEnable(p.b, l, kDevice, r4); break;
+        case 2: took = xdk::D3dSetAlphaFunc(p.a, l, kDevice, uint32_t(r4)); ref::AlphaFunc(p.b, l, kDevice, r4); break;
+        case 3: took = xdk::D3dSetBlendFactor(p.a, l, kDevice, uint32_t(r4)); ref::BlendFactor(p.b, l, kDevice, r4); break;
+        case 4: took = xdk::D3dSetZEnable(p.a, l, kDevice, uint32_t(r4)); ref::ZEnable(p.b, l, kDevice, r4); break;
+        case 5: took = xdk::D3dSetZWriteEnable(p.a, l, kDevice, uint32_t(r4)); ref::ZWriteEnable(p.b, l, kDevice, r4); break;
+        case 6: took = xdk::D3dSetClipPlaneEnable(p.a, l, kDevice, uint32_t(r4)); ref::ClipPlaneEnable(p.b, l, kDevice, r4); break;
+        case 7: {
+          const uint64_t bits = (rng() % 4 == 0 ? rng() << 32 : 0) | float_bits();
+          took = xdk::D3dSetSlopeScaleDepthBias(p.a, l, kDevice, uint32_t(bits), kStackPointer + 28);
+          ref::SlopeScaleDepthBias(p.b, l, kDevice, bits, kStackPointer);
+          break;
+        }
+        case 8: took = xdk::D3dSetIndices(p.a, l, kDevice, uint32_t(r4)); ref::SetIndices(p.b, l, kDevice, r4); break;
+        case 9: {
+          const uint64_t index = rng() % 8 ? rng() % 6 : rng() % 64;
+          const uint32_t plane = rng() % 8 ? 0x60000 + uint32_t(rng() % 0x1000) : kDevice + uint32_t(rng() % 0x4000);
+          expect = index < 6 && !(plane + 16 > kDevice && plane < kDevice + l.device_bytes);
+          took = xdk::D3dSetClipPlane(p.a, l, kDevice, uint32_t(index), plane);
+          if (took) ref::SetClipPlane(p.b, l, kDevice, index, plane);
+          break;
+        }
+        case 10: case 11: case 12: case 13: case 14: case 15: case 16: {
+          static constexpr xdk::D3dRenderStateRead kStates[] = {
+              xdk::D3dRenderStateRead::kCullMode, xdk::D3dRenderStateRead::kAlphaTestEnable,
+              xdk::D3dRenderStateRead::kBlendEnable, xdk::D3dRenderStateRead::kSrcBlend,
+              xdk::D3dRenderStateRead::kDestBlend, xdk::D3dRenderStateRead::kAlphaFunc,
+              xdk::D3dRenderStateRead::kZWriteEnable};
+          using Get = uint64_t (*)(const xdk::Memory&, const xdk::D3dLayout&, uint32_t);
+          static constexpr Get kRefs[] = {ref::GetCullMode, ref::GetAlphaTestEnable, ref::GetBlendEnable, ref::GetSrcBlend,
+                                          ref::GetDestBlend, ref::GetAlphaFunc, ref::GetZWriteEnable};
+          took = xdk::D3dGetRenderState(p.a, l, kDevice, kStates[which - 10], got);
+          mine = got, theirs = kRefs[which - 10](p.b, l, kDevice);
+          break;
+        }
+        case 17: took = xdk::D3dGetBlendFactor(p.a, l, kDevice, got); mine = got, theirs = ref::GetBlendFactor(p.b, l, kDevice); break;
+        case 18: {
+          const uint64_t index = rng() % 4 ? rng() % 8 : (rng() % 0x20000) | (rng() % 2 ? rng() << 32 : 0);
+          expect = stage < 32;
+          took = xdk::D3dSetSamplerAnisotropy(p.a, l, kDevice, stage, uint32_t(index));
+          if (took) ref::SamplerAnisotropy(p.b, l, kDevice, stage, index);
+          break;
+        }
+        default: {
+          const uint32_t bit = which == 19 ? 1 : 0;
+          expect = stage < 32;
+          took = xdk::D3dSetSamplerLodFlag(p.a, l, kDevice, stage, uint32_t(r4), bit);
+          if (took) ref::SamplerLodFlag(p.b, l, kDevice, stage, r4, bit);
+          break;
+        }
+      }
+      CHECK(took == expect);
+      taken += took;
+      CHECK(mine == theirs);
+      CHECK(p.Same(kDevice, kDevice + l.device_bytes));
+      if (mine != theirs || !p.Same(kDevice, kDevice + l.device_bytes)) {
+        if (xdk_test::g_failures <= 40) {
+          std::printf("  function %u, stage %u, r4 %llx\n", which, stage, static_cast<unsigned long long>(r4));
+        }
+        std::memcpy(p.model.data(), p.native.data(), kArena);  // one failure reported once
+      }
+    }
+    CHECK(p.SameEverywhere());
+    if (!p.SameEverywhere()) std::memcpy(p.model.data(), p.native.data(), kArena);
+  }
+  CHECK(taken > 13000);
+  // Declined, memory untouched: a plane over the device, a stage past 31, the device in the GPU's register window.
+  Pair p(seed), q(seed);
+  CHECK(!xdk::D3dSetClipPlane(p.a, l, kDevice, 0, kDevice + 8));
+  CHECK(!xdk::D3dSetClipPlane(p.a, l, kDevice, 6, 0x60000));
+  CHECK(!xdk::D3dSetSamplerLodFlag(p.a, l, kDevice, 32, 1, 0));
+  CHECK(!xdk::D3dSetCullMode(p.a, l, 0x7F000000u - 64, 1));
+  CHECK(!xdk::D3dSetSlopeScaleDepthBias(p.a, l, kDevice, 0x3F800000u, kDevice + l.poly_offset + 4));
+  CHECK(p.native == q.native);
+}
+
 int main() {
   const xdk::D3dLayout standard, shifted = Shifted();
+  TestRenderStateFields(standard, 2300);
+  TestRenderStateFields(shifted, 2400);
   TestSurfaceSetters(standard, 2100);
   TestSurfaceSetters(shifted, 2200);
   TestRenderStates(standard, 1900);

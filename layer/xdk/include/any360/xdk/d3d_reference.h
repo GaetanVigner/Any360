@@ -600,6 +600,202 @@ inline void DepthBias(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t
   std_(m, r3 + l.state_dirty, ld(m, r3 + l.state_dirty) | 64);              // ld; ori 64; std
 }
 
+// The render state fields' setters and getters (sub_826AF8B8 to sub_826B03C0, sub_826B3A98, sub_826B2698), as their
+// code reads; a getter returns its r3.
+inline double lfs_(const Memory& m, uint32_t ea) { return double(std::bit_cast<float>(lwz(m, ea))); }
+inline void stfs_(const Memory& m, uint32_t ea, double f) { stw(m, ea, std::bit_cast<uint32_t>(float(f))); }
+inline void Dirty16(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t bits) {
+  std_(m, r3 + l.state_dirty, ld(m, r3 + l.state_dirty) | bits);
+}
+// sub_826AF8B8: lwz r11,10440(r3); rlwimi r4,r11,0,0,28; stw r4; ld; ori 64; std.
+inline void CullMode(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4) {
+  const uint32_t r11 = lwz(m, r3 + l.mode_control);
+  stw(m, r3 + l.mode_control, rlwimi(uint32_t(r4), r11, 0, 0, 28));
+  Dirty16(m, l, r3, 64);
+}
+// sub_826AF918: lwz r11,10428(r3); rlwimi r11,r4,3,28,28; stw; ori 512; std; oris 4; std.
+inline void AlphaTestEnable(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4) {
+  stw(m, r3 + l.color_control, rlwimi(lwz(m, r3 + l.color_control), uint32_t(r4), 3, 28, 28));
+  uint64_t r11 = ld(m, r3 + l.state_dirty) | 512;
+  std_(m, r3 + l.state_dirty, r11);
+  r11 |= 0x40000;
+  std_(m, r3 + l.state_dirty, r11);
+}
+// sub_826AFDE0: lwz r11,10428(r3); rlwimi r4,r11,0,0,28; stw r4; ori 512.
+inline void AlphaFunc(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4) {
+  stw(m, r3 + l.color_control, rlwimi(uint32_t(r4), lwz(m, r3 + l.color_control), 0, 0, 28));
+  Dirty16(m, l, r3, 512);
+}
+// sub_826AFE10: the bytes rotated out (rlwinm 24/16/8, clrldi 56), through the stack as doubles (fcfid, frsp), times
+// the float at -3116(0x82070000) (fmuls), stfs into 10340, 10336, 10344, 10348; dirty 15 << 33.
+inline void BlendFactor(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4) {
+  const uint32_t w = uint32_t(r4);
+  const uint64_t r10 = rlwinm(w, 24, 24, 31), r11 = rlwinm(w, 16, 24, 31), r8 = rlwinm(w, 8, 24, 31);
+  const uint64_t r9 = r4 & 0xFF;
+  const double f13 = double(float(double(int64_t(r10))));
+  const double f10 = double(float(double(int64_t(r11))));
+  const double f0 = lfs_(m, l.blend_byte_scale);
+  const double f12 = double(float(double(int64_t(r9))));
+  const double f11 = double(float(double(int64_t(r8))));
+  stfs_(m, r3 + l.blend_color + 4, double(float(f13 * f0)));
+  stfs_(m, r3 + l.blend_color, double(float(f10 * f0)));
+  stfs_(m, r3 + l.blend_color + 8, double(float(f12 * f0)));
+  stfs_(m, r3 + l.blend_color + 12, double(float(f11 * f0)));
+  Dirty16(m, l, r3, uint64_t(15) << 33);
+}
+// sub_826AFFD8: lwz r11,12176(r3); stw r4,11596(r3); cmplwi r11,0; bne; li r4,0; rlwimi r11,r4,1,30,30 into 10420;
+// ori 2048; std; oris 2; std.
+inline void ZEnable(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4) {
+  const uint32_t r11 = lwz(m, r3 + l.surfaces + 16);
+  stw(m, r3 + l.depth_enable_set, uint32_t(r4));
+  if (r11 == 0) r4 = 0;
+  stw(m, r3 + l.depth_control, rlwimi(lwz(m, r3 + l.depth_control), uint32_t(r4), 1, 30, 30));
+  uint64_t d = ld(m, r3 + l.state_dirty) | 2048;
+  std_(m, r3 + l.state_dirty, d);
+  std_(m, r3 + l.state_dirty, d | 0x20000);
+}
+// sub_826B0018: lwz r11,10420(r3); rlwimi r11,r4,2,29,29; stw; ori 2048.
+inline void ZWriteEnable(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4) {
+  stw(m, r3 + l.depth_control, rlwimi(lwz(m, r3 + l.depth_control), uint32_t(r4), 2, 29, 29));
+  Dirty16(m, l, r3, 2048);
+}
+// sub_826B0358 as recompiled: subfic's carry from the low word (r4 == 0); subfe; rlwinm 0,19,19 into 10292; 10436's
+// rlwinm 0,0,25 or r4; ori 128; std; or 1 << 44; std.
+inline void ClipPlaneEnable(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4) {
+  const uint64_t ca = uint32_t(r4) == 0 ? 1 : 0;
+  uint64_t r11 = 0 - r4;
+  r11 = ~r11 + r11 + ca;
+  stw(m, r3 + l.clip_plane_flag, rlwinm(uint32_t(r11), 0, 19, 19));
+  stw(m, r3 + l.clip_control, uint32_t((rlwinm(lwz(m, r3 + l.clip_control), 0, 0, 25)) | r4));
+  uint64_t d = ld(m, r3 + l.state_dirty) | 128;
+  std_(m, r3 + l.state_dirty, d);
+  std_(m, r3 + l.state_dirty, d | (uint64_t(1) << 44));
+}
+// sub_826B03C0: stw r4,28(r1); lfs the factor (-31180(0x82BB0000)); lfs f13,28(r1); fmuls; lfs the 0.0f; stfs into
+// 10704 and 10712; fcmpu with 0 (then 10708, 10716) into 10440's bits 11, 12; 1 << 45, 1 << 43 into +32; ori 64.
+inline void SlopeScaleDepthBias(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4, uint32_t r1) {
+  stw(m, r1 + 28, uint32_t(r4));
+  double f0 = lfs_(m, l.slope_scale_factor);
+  double f13 = lfs_(m, r1 + 28);
+  f0 = double(float(f13 * f0));
+  f13 = lfs_(m, l.zero_float);
+  stfs_(m, r3 + l.poly_offset, f0);
+  stfs_(m, r3 + l.poly_offset + 8, f0);
+  uint32_t r10 = 1;
+  if (f0 == f13) r10 = lfs_(m, r3 + l.poly_offset + 4) == f13 ? 0u : 1u;
+  uint32_t r11 = lwz(m, r3 + l.mode_control);
+  r11 = rlwimi(r11, r10, 11, 20, 20);
+  stw(m, r3 + l.mode_control, r11);
+  r10 = 1;
+  if (f0 == f13) r10 = lfs_(m, r3 + l.poly_offset + 12) == f13 ? 0u : 1u;
+  r11 = rlwimi(r11, r10, 12, 19, 19);
+  stw(m, r3 + l.mode_control, r11);
+  uint64_t c = ld(m, r3 + l.constant_dirty) | (uint64_t(1) << 45);
+  std_(m, r3 + l.constant_dirty, c);
+  std_(m, r3 + l.constant_dirty, c | (uint64_t(1) << 43));
+  Dirty16(m, l, r3, 64);
+}
+// sub_826B3A98: stw r4,11540(r3); oris 8.
+inline void SetIndices(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4) {
+  stw(m, r3 + l.index_buffer, uint32_t(r4));
+  Dirty16(m, l, r3, 0x80000);
+}
+// sub_826B2698 as recompiled: srd's count from the low byte of r4 + 9 (0 past 63), the plane at (r4 + 634) << 4.
+inline void SetClipPlane(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4, uint64_t r5) {
+  const uint64_t r10 = (r4 + 9) & 0xFFFFFFFF;
+  const uint64_t r9 = uint64_t(1) << 63;
+  const uint32_t r11 = uint32_t(rlwinm(uint32_t(r4 + l.clip_planes / 16), 4, 0, 27) + r3);
+  const uint64_t bit = (r10 & 0x40) ? 0 : r9 >> (r10 & 0x7F);
+  for (uint32_t k = 0; k < 16; k += 4) stw(m, r11 + k, lwz(m, uint32_t(r5) + k));
+  std_(m, r3 + l.constant_dirty, bit | ld(m, r3 + l.constant_dirty));
+}
+// The getters: lwz and a mask into r3.
+inline uint64_t GetCullMode(const Memory& m, const D3dLayout& l, uint32_t r3) { return lwz(m, r3 + l.mode_control) & 7; }
+inline uint64_t GetAlphaTestEnable(const Memory& m, const D3dLayout& l, uint32_t r3) {
+  return rlwinm(lwz(m, r3 + l.color_control), 29, 31, 31);
+}
+inline uint64_t GetBlendEnable(const Memory& m, const D3dLayout& l, uint32_t r3) {
+  return rlwinm(lwz(m, r3 + l.blend_flags), 1, 31, 31);
+}
+inline uint64_t GetSrcBlend(const Memory& m, const D3dLayout& l, uint32_t r3) { return lwz(m, r3 + l.blend_control) & 31; }
+inline uint64_t GetDestBlend(const Memory& m, const D3dLayout& l, uint32_t r3) {
+  return rlwinm(lwz(m, r3 + l.blend_control), 24, 27, 31);
+}
+inline uint64_t GetAlphaFunc(const Memory& m, const D3dLayout& l, uint32_t r3) { return lwz(m, r3 + l.color_control) & 7; }
+inline uint64_t GetZWriteEnable(const Memory& m, const D3dLayout& l, uint32_t r3) {
+  return rlwinm(lwz(m, r3 + l.depth_control), 30, 31, 31);
+}
+// sub_826AFEB0 as recompiled: lfs the four floats, fmadds with the scale (-11164(0x820F0000)) and the rounding term
+// (1148(0x82070000)), fctidz (NaN and too large saturating as the recompiled code does), stfiwx's low words through
+// r1 - 16, rlwimi 8,0,23 three times.
+inline int64_t Fctidz(double f) {
+  if (std::isnan(f)) return int64_t(0x8000000000000000ULL);
+  if (f > double(INT64_MAX)) return INT64_MAX;
+  if (!(f < 9223372036854775808.0) || f < -9223372036854775808.0) return int64_t(0x8000000000000000ULL);
+  return int64_t(f);
+}
+inline uint64_t GetBlendFactor(const Memory& m, const D3dLayout& l, uint32_t r3) {
+  const double f12 = lfs_(m, r3 + l.blend_color), f11 = lfs_(m, r3 + l.blend_color + 12);
+  const double f10 = lfs_(m, r3 + l.blend_color + 4), f9 = lfs_(m, r3 + l.blend_color + 8);
+  const double f0 = lfs_(m, l.blend_float_scale), f13 = lfs_(m, l.blend_rounding);
+  const uint32_t red = uint32_t(Fctidz(double(float(std::fma(f12, f0, f13)))));
+  const uint32_t green = uint32_t(Fctidz(double(float(std::fma(f10, f0, f13)))));
+  const uint32_t alpha = uint32_t(Fctidz(double(float(std::fma(f11, f0, f13)))));
+  const uint32_t blue = uint32_t(Fctidz(double(float(std::fma(f9, f0, f13)))));
+  uint32_t r11 = red;
+  r11 = rlwimi(r11, alpha, 8, 0, 23);
+  uint32_t r10 = rlwimi(green, r11, 8, 0, 23);
+  return rlwimi(blue, r10, 8, 0, 23);
+}
+// sub_826B1580: stage word 4 bits 11 or 10 (rlwinm. 0,20,20 / 0,21,21): r9 = r4 + 32 (clrldi 32); the table entry at
+// -25040(0x820F0000) + (r5 << 2); rlwimi r8,r10,25,4,6 into word 3; srd into +24. Always stb r5,11644(r3 + r4).
+inline void SamplerAnisotropy(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4, uint64_t r5) {
+  const uint32_t r11 = uint32_t(r4 * 24) + r3 + l.fetch_constants;
+  const uint32_t r10 = lwz(m, r11 + 16);
+  if ((r10 & 0x800) || (r10 & 0x400)) {
+    const uint64_t r9 = (r4 + 32) & 0xFFFFFFFF;
+    const uint32_t r8 = rlwinm(uint32_t(r5), 2, 0, 29);
+    const uint32_t entry = lwz(m, r8 + l.sampler_filter_table);
+    stw(m, r11 + 12, rlwimi(lwz(m, r11 + 12), entry, 25, 4, 6));
+    const uint64_t bit = (r9 & 127) >= 64 ? 0 : (uint64_t(1) << 63) >> (r9 & 127);
+    std_(m, r3 + l.fetch_dirty, bit | ld(m, r3 + l.fetch_dirty));
+  }
+  *m.Host(uint32_t(r3 + r4) + l.stage_filter_index) = uint8_t(r5);
+}
+// sub_826B1270 (`bit` 1: rlwinm r9,r5,1,0,30; rlwinm r7,r11,0,31,29) / sub_826B13F8 (`bit` 0: rlwinm r9,r11,0,0,30;
+// or r9,r9,r5): the LOD byte's new value r9, word 3's bits mixed (rlwimi 31,13,31 and 31,1,11; rlwinm 13,20,31), r7 =
+// (r9 >> 2) - 1, and/andc/add, rlwimi r11,r4,0,0,29 into word 4; stb r31; srd into +24.
+inline void SamplerLodFlag(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4, uint64_t r5, uint32_t bit) {
+  const uint32_t r10 = uint32_t(r4 * 24) + r3 + l.fetch_constants;
+  const uint32_t r8 = uint32_t(r3 + r4);
+  const uint64_t r11s = (r4 + 32) & 0xFFFFFFFF;
+  const uint32_t w4 = lwz(m, r10 + 16);
+  const uint64_t r6 = (r11s & 127) >= 64 ? 0 : (uint64_t(1) << 63) >> (r11s & 127);
+  const uint32_t byte = lbz(m, r8 + l.stage_lod_limit);
+  uint32_t r9;
+  if (bit == 1) {
+    r9 = rlwinm(uint32_t(r5), 1, 0, 30);
+    r9 = rlwinm(byte, 0, 31, 29) | r9;
+  } else {
+    r9 = rlwinm(byte, 0, 0, 30) | uint32_t(r5);
+  }
+  uint32_t r11 = lwz(m, r10 + 12);
+  const uint32_t w3 = r11;
+  r11 = rlwimi(r11, w3, 31, 13, 31);
+  uint32_t r7 = rlwinm(r9, 30, 2, 31);
+  r11 = rlwimi(r11, w3, 31, 1, 11);
+  r7 -= 1;
+  r11 = rlwinm(r11, 13, 20, 31);
+  const uint32_t r31 = r9;
+  r11 &= r7;
+  r9 &= ~r7;
+  r11 += r9;
+  r11 = rlwimi(r11, w4, 0, 0, 29);
+  stw(m, r10 + 16, r11);
+  *m.Host(r8 + l.stage_lod_limit) = uint8_t(r31);
+  std_(m, r3 + l.fetch_dirty, r6 | ld(m, r3 + l.fetch_dirty));
+}
+
 // The predicated-query flag as sub_826B1EE0 (from loc_826B2054) and sub_826B2218 (from loc_826B237C) set it: r10 1
 // or 0 into bit 1 of +10812.
 inline uint32_t TiledCheck(const Memory& m, const D3dLayout& l, uint32_t r31, uint32_t r10) {

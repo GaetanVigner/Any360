@@ -1,5 +1,5 @@
 {
- "date": "2026-11-17",
+ "date": "2026-11-18",
  "reference": {
   "sdk": "ReXGlue",
   "version": "0.8.0"
@@ -109,9 +109,9 @@
   }
  },
  "xdk": {
-  "total": 130,
+  "total": 153,
   "any360": {
-   "native": 110,
+   "native": 133,
    "todo": 20
   },
   "unnamed_by_title": {

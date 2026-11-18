@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 
@@ -72,6 +73,15 @@ struct D3dLayout {
   uint32_t tiling_hiz_pitch = 12892;
   // The command buffer's cursor and the point past which a writer first makes room (the runtime's own check).
   uint32_t command_cursor = 48, command_end = 56;
+  // The mirror's RB_COLORCONTROL (0x2202: alpha function bits 0-2, alpha test bit 3), RB_BLEND_RED-ALPHA (0x2105-0x2108,
+  // floats), the six user clip planes (16 bytes each), the word the clip plane enables set 0x1000 in, the bound index
+  // buffer.
+  uint32_t color_control = 10428, blend_color = 10336, clip_planes = 10144, clip_plane_flag = 10292;
+  uint32_t index_buffer = 11540;
+  // The runtime's float constants (guest addresses in the title's image): the blend factor's byte to float scale,
+  // its float to byte scale and rounding term, the slope-scaled depth bias's factor.
+  uint32_t blend_byte_scale = 0x8206F3D4u, blend_float_scale = 0x820ED464u, blend_rounding = 0x8207047Cu;
+  uint32_t slope_scale_factor = 0x82BA8634u;
 };
 
 namespace detail {
@@ -175,6 +185,208 @@ inline bool D3dSetDepthBias(const Memory& m, const D3dLayout& l, uint32_t device
                 (detail::At32(d + l.mode_control) & ~0x1800u) | (front ? 0x800u : 0u) | (back ? 0x1000u : 0u));
   detail::Or64(m, device + l.constant_dirty, (uint64_t(1) << 44) | (uint64_t(1) << 42));
   detail::Or64(m, device + l.state_dirty, 0x40);
+  return true;
+}
+
+// The render state fields set and read as the runtime keeps them in the device's mirror (Crackdown's runtime from
+// sub_826AF8B8 to sub_826B03C0, sub_826B3A98, sub_826B2698): each setter writes its register's bits and its dirty
+// bits; each getter reads them back. Declined: the device's fields not plain memory (and what each one says).
+namespace detail {
+inline bool DeviceAccepts(const D3dLayout& l, uint32_t device) { return IsPlainMemory(device, l.device_bytes); }
+inline void InsertBits(uint8_t* word, uint32_t mask, uint32_t bits) { Set32(word, (At32(word) & ~mask) | (bits & mask)); }
+// fctidz as the recompiled code runs it: NaN to the most negative integer, past the largest to it, and the host's
+// truncating conversion otherwise (the most negative integer for what it cannot hold).
+inline int64_t ConvertToInt64Truncated(double v) {
+  if (v != v) return INT64_MIN;
+  if (v > 9223372036854775807.0) return INT64_MAX;
+  if (!(v < 9223372036854775808.0) || !(v >= -9223372036854775808.0)) return INT64_MIN;
+  return int64_t(v);
+}
+}  // namespace detail
+
+// SetRenderState_CullMode (sub_826AF8B8): PA_SU_SC_MODE_CNTL bits 0-2 from `value`; dirty 0x40.
+inline bool D3dSetCullMode(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t value) {
+  if (!detail::DeviceAccepts(l, device)) return false;
+  detail::InsertBits(m.Host(device + l.mode_control), 7u, value);
+  detail::Or64(m, device + l.state_dirty, 0x40);
+  return true;
+}
+// SetRenderState_AlphaTestEnable (sub_826AF918): RB_COLORCONTROL bit 3 from `value` bit 0; dirty 0x200 and 0x40000.
+inline bool D3dSetAlphaTestEnable(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t value) {
+  if (!detail::DeviceAccepts(l, device)) return false;
+  detail::InsertBits(m.Host(device + l.color_control), 8u, value << 3);
+  detail::Or64(m, device + l.state_dirty, 0x40200);
+  return true;
+}
+// SetRenderState_AlphaFunc (sub_826AFDE0): RB_COLORCONTROL bits 0-2 from `value`; dirty 0x200.
+inline bool D3dSetAlphaFunc(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t value) {
+  if (!detail::DeviceAccepts(l, device)) return false;
+  detail::InsertBits(m.Host(device + l.color_control), 7u, value);
+  detail::Or64(m, device + l.state_dirty, 0x200);
+  return true;
+}
+// SetRenderState_BlendFactor (sub_826AFE10): a D3DCOLOR (A8R8G8B8) into RB_BLEND_RED-ALPHA, each byte times the
+// runtime's scale as a float (through a double, as its fcfid/frsp/fmuls); dirty bits 33-36. The caller runs it with
+// the host's denormals kept (the runtime's code turns their flush off).
+inline bool D3dSetBlendFactor(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t color) {
+  if (!detail::DeviceAccepts(l, device) || !IsPlainMemory(l.blend_byte_scale, 4)) return false;
+  const double scale = double(std::bit_cast<float>(detail::Get32(m, l.blend_byte_scale)));
+  uint8_t* d = m.Host(device + l.blend_color);
+  const uint32_t shifts[4] = {16, 8, 0, 24};  // red, green, blue, alpha
+  for (uint32_t k = 0; k < 4; ++k) {
+    const double channel = double(float(double((color >> shifts[k]) & 0xFFu)));
+    detail::Set32(d + 4 * k, std::bit_cast<uint32_t>(float(channel * scale)));
+  }
+  detail::Or64(m, device + l.state_dirty, uint64_t(15) << 33);
+  return true;
+}
+// SetRenderState_ZEnable (sub_826AFFD8): `value` kept as the title set it; RB_DEPTHCONTROL bit 1 from its bit 0 with a
+// depth surface bound, else 0; dirty 0x800 and 0x20000.
+inline bool D3dSetZEnable(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t value) {
+  if (!detail::DeviceAccepts(l, device)) return false;
+  uint8_t* d = m.Host(device);
+  detail::Set32(d + l.depth_enable_set, value);
+  const uint32_t z = detail::At32(d + l.surfaces + 16) ? value : 0u;
+  detail::InsertBits(d + l.depth_control, 2u, z << 1);
+  detail::Or64(m, device + l.state_dirty, 0x20800);
+  return true;
+}
+// SetRenderState_ZWriteEnable (sub_826B0018): RB_DEPTHCONTROL bit 2 from `value` bit 0; dirty 0x800.
+inline bool D3dSetZWriteEnable(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t value) {
+  if (!detail::DeviceAccepts(l, device)) return false;
+  detail::InsertBits(m.Host(device + l.depth_control), 4u, value << 2);
+  detail::Or64(m, device + l.state_dirty, 0x800);
+  return true;
+}
+// SetRenderState_ClipPlaneEnable (sub_826B0358): the clip plane word 0x1000 with any plane on (`value` not 0), and
+// PA_CL_CLIP_CNTL's low 6 bits cleared and `value` ORed in (all of it, as the runtime does); dirty 0x80 and bit 44.
+inline bool D3dSetClipPlaneEnable(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t value) {
+  if (!detail::DeviceAccepts(l, device)) return false;
+  uint8_t* d = m.Host(device);
+  detail::Set32(d + l.clip_plane_flag, value ? 0x1000u : 0u);
+  detail::Set32(d + l.clip_control, (detail::At32(d + l.clip_control) & 0xFFFFFFC0u) | value);
+  detail::Or64(m, device + l.state_dirty, 0x80 | (uint64_t(1) << 44));
+  return true;
+}
+// SetRenderState_SlopeScaleDepthBias (sub_826B03C0): `value` a float's bits, kept in the caller's parameter area
+// (`stack_word`) as the runtime does; times the runtime's factor (a float product through a double) into both
+// polygon offset scales; PA_SU_SC_MODE_CNTL's poly offset enables (bits 11, 12) set unless the scale and that side's
+// offset both equal the runtime's 0.0f; dirty bits 45 and 43 of the constants' word and 0x40. The caller runs it with
+// the host's denormals kept. Declined as DepthBias is, and with the factor not plain or under the parameter area.
+inline bool D3dSetSlopeScaleDepthBias(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t value,
+                                      uint32_t stack_word) {
+  if (!detail::DeviceAccepts(l, device) || !IsPlainMemory(stack_word, 4) || !IsPlainMemory(l.zero_float, 4) ||
+      !IsPlainMemory(l.slope_scale_factor, 4) || detail::Overlap(stack_word, 4, device, l.device_bytes) ||
+      detail::Overlap(stack_word, 4, l.zero_float, 4) || detail::Overlap(stack_word, 4, l.slope_scale_factor, 4)) {
+    return false;
+  }
+  detail::Put32(m, stack_word, value);
+  uint8_t* d = m.Host(device);
+  const double factor = double(std::bit_cast<float>(detail::Get32(m, l.slope_scale_factor)));
+  const double scale = double(float(double(std::bit_cast<float>(value)) * factor));
+  const double zero = double(std::bit_cast<float>(detail::Get32(m, l.zero_float)));
+  const uint32_t stored = std::bit_cast<uint32_t>(float(scale));
+  detail::Set32(d + l.poly_offset, stored);
+  detail::Set32(d + l.poly_offset + 8, stored);
+  const double front_offset = double(std::bit_cast<float>(detail::At32(d + l.poly_offset + 4)));
+  const double back_offset = double(std::bit_cast<float>(detail::At32(d + l.poly_offset + 12)));
+  const bool front = !(scale == zero) || !(front_offset == zero);
+  const bool back = !(scale == zero) || !(back_offset == zero);
+  detail::InsertBits(d + l.mode_control, 0x1800u, (front ? 0x800u : 0u) | (back ? 0x1000u : 0u));
+  detail::Or64(m, device + l.constant_dirty, (uint64_t(1) << 45) | (uint64_t(1) << 43));
+  detail::Or64(m, device + l.state_dirty, 0x40);
+  return true;
+}
+// SetIndices (sub_826B3A98): the index buffer bound; dirty 0x80000.
+inline bool D3dSetIndices(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t buffer) {
+  if (!detail::DeviceAccepts(l, device)) return false;
+  detail::Set32(m.Host(device + l.index_buffer), buffer);
+  detail::Or64(m, device + l.state_dirty, 0x80000);
+  return true;
+}
+// SetClipPlane (sub_826B2698): plane `index` (0-5) from the 16 bytes at `plane`; its dirty bit (54 - index) in the
+// constants' word. Declined: another index (the runtime would write past the planes), the plane over the device.
+inline bool D3dSetClipPlane(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t index, uint32_t plane) {
+  if (index > 5 || !detail::DeviceAccepts(l, device) || !IsPlainMemory(plane, 16) ||
+      detail::Overlap(plane, 16, device, l.device_bytes)) {
+    return false;
+  }
+  std::memcpy(m.Host(device + l.clip_planes + 16 * index), m.Host(plane), 16);
+  detail::Or64(m, device + l.constant_dirty, uint64_t(1) << (54 - index));
+  return true;
+}
+
+// The getters (r3 the value): GetRenderState_CullMode (sub_826AF8D8), AlphaTestEnable (sub_826AF940), BlendEnable
+// (sub_826AF9D0, the blend flags' bit 31), SrcBlend (sub_826AFAF0) and DestBlend (sub_826AFB80, the blend word as set),
+// AlphaFunc (sub_826AFE00), ZWriteEnable (sub_826B0038).
+enum class D3dRenderStateRead : uint32_t {
+  kCullMode, kAlphaTestEnable, kBlendEnable, kSrcBlend, kDestBlend, kAlphaFunc, kZWriteEnable
+};
+inline bool D3dGetRenderState(const Memory& m, const D3dLayout& l, uint32_t device, D3dRenderStateRead state,
+                              uint32_t& value) {
+  if (!detail::DeviceAccepts(l, device)) return false;
+  const uint8_t* d = m.Host(device);
+  switch (state) {
+    case D3dRenderStateRead::kCullMode: value = detail::At32(d + l.mode_control) & 7u; break;
+    case D3dRenderStateRead::kAlphaTestEnable: value = (detail::At32(d + l.color_control) >> 3) & 1u; break;
+    case D3dRenderStateRead::kBlendEnable: value = detail::At32(d + l.blend_flags) >> 31; break;
+    case D3dRenderStateRead::kSrcBlend: value = detail::At32(d + l.blend_control) & 0x1Fu; break;
+    case D3dRenderStateRead::kDestBlend: value = (detail::At32(d + l.blend_control) >> 8) & 0x1Fu; break;
+    case D3dRenderStateRead::kAlphaFunc: value = detail::At32(d + l.color_control) & 7u; break;
+    case D3dRenderStateRead::kZWriteEnable: value = (detail::At32(d + l.depth_control) >> 2) & 1u; break;
+  }
+  return true;
+}
+// GetRenderState_BlendFactor (sub_826AFEB0): RB_BLEND_RED-ALPHA back to a D3DCOLOR, each float times the runtime's
+// scale plus its rounding term (a fused multiply-add rounded to a float), converted as fctidz does, its low byte
+// kept. The caller runs it with the host's denormals kept.
+inline bool D3dGetBlendFactor(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t& color) {
+  if (!detail::DeviceAccepts(l, device) || !IsPlainMemory(l.blend_float_scale, 4) || !IsPlainMemory(l.blend_rounding, 4))
+    return false;
+  const double scale = double(std::bit_cast<float>(detail::Get32(m, l.blend_float_scale)));
+  const double rounding = double(std::bit_cast<float>(detail::Get32(m, l.blend_rounding)));
+  const uint8_t* d = m.Host(device + l.blend_color);
+  auto byte = [&](uint32_t k) {
+    const double v = double(std::bit_cast<float>(detail::At32(d + 4 * k)));
+    return uint32_t(uint64_t(detail::ConvertToInt64Truncated(double(float(std::fma(v, scale, rounding)))))) & 0xFFu;
+  };
+  color = byte(3) << 24 | byte(0) << 16 | byte(1) << 8 | byte(2);
+  return true;
+}
+
+// SetSamplerState for a stage's anisotropy (sub_826B1580): r5 an index into the runtime's table of anisotropic bits,
+// kept in the stage's byte; when the fetch constant's word 4 has a filter flag (bit 10 or 11), word 3's bits 25-27 from
+// the table's entry and the stage's fetch dirty bit. Declined: stage past 31, the table's entry not plain or in the
+// device.
+inline bool D3dSetSamplerAnisotropy(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t stage, uint32_t index) {
+  if (stage >= 32 || !detail::DeviceAccepts(l, device)) return false;
+  uint8_t* d = m.Host(device);
+  uint8_t* f = d + l.fetch_constants + 24 * stage;
+  if (detail::At32(f + 16) & 0xC00u) {
+    const uint32_t table_at = l.sampler_filter_table + ((index << 2) & 0xFFFFFFFCu);
+    if (!IsPlainMemory(table_at, 4) || detail::Overlap(table_at, 4, device, l.device_bytes)) return false;
+    detail::InsertBits(f + 12, 0x0E000000u, std::rotl(detail::Get32(m, table_at), 25));
+    detail::Or64(m, device + l.fetch_dirty, uint64_t(1) << (31 - stage));
+  }
+  d[l.stage_filter_index + stage] = uint8_t(index);
+  return true;
+}
+// SetSamplerState for one of the stage's LOD byte's flags (sub_826B1270: bit 1, from r5 << 1; sub_826B13F8: bit 0, from
+// r5; all of r5 ORed in, as the runtime does): the byte kept, word 4's low two bits recomputed from word 3 and that
+// value (the 32 bits the runtime holds, not the byte), the stage's fetch dirty bit. Declined: stage past 31.
+inline bool D3dSetSamplerLodFlag(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t stage, uint32_t value,
+                                 uint32_t bit) {
+  if (stage >= 32 || !detail::DeviceAccepts(l, device)) return false;
+  uint8_t* d = m.Host(device);
+  uint8_t* f = d + l.fetch_constants + 24 * stage;
+  const uint32_t limit = (uint32_t(d[l.stage_lod_limit + stage]) & ~(1u << bit)) | (value << bit);
+  const uint32_t f3 = detail::At32(f + 12);
+  const uint32_t mixed = (f3 & 0x80080000u) | (std::rotr(f3, 1) & 0x7FF7FFFFu);
+  const uint32_t mask = (limit >> 2) - 1u;
+  const uint32_t low = (((mixed >> 19) & 0xFFFu) & mask) + (limit & ~mask);
+  detail::InsertBits(f + 16, 3u, low);
+  d[l.stage_lod_limit + stage] = uint8_t(limit);
+  detail::Or64(m, device + l.fetch_dirty, uint64_t(1) << (31 - stage));
   return true;
 }
 

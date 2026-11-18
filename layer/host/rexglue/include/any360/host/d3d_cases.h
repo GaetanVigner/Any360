@@ -180,6 +180,60 @@ struct Surfaces {
     }
   }
 };
+// The render state fields' setters and getters: the mirror's words, the depth surface, the polygon offsets and the
+// blend floats (0, -0, NaN, infinities, denormals, any bits, or a byte over 255) at random now and then; values as
+// titles pass them (a plane's index 0-5 and now and then past it, the plane's floats in the scratch).
+struct RenderStateFields {
+  static uint32_t Float(std::mt19937_64& rng) {
+    static constexpr uint32_t kBits[] = {0x00000000u, 0x80000000u, 0x3F800000u, 0xBF000000u, 0x7FC00000u,
+                                         0x7F800001u, 0x00000001u, 0x80000001u, 0x7F800000u, 0x3A83126Fu};
+    return rng() % 3 ? kBits[rng() % 10] : uint32_t(rng());
+  }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    for (uint32_t at : {l.mode_control, l.color_control, l.depth_control, l.clip_control, l.blend_control, l.blend_flags}) {
+      if (rng() % 4 == 0) Put32(s, s.device + at, uint32_t(rng()));
+    }
+    if (rng() % 4 == 0) Put32(s, s.device + l.surfaces + 16, rng() % 2 ? 0u : s.scratch + 0x2000);
+    for (uint32_t k = 0; k < 4; ++k) {
+      if (rng() % 4 == 0) Put32(s, s.device + l.poly_offset + 4 * k, rng() % 2 ? 0u : Float(rng));
+      if (rng() % 4 == 0) {
+        Put32(s, s.device + l.blend_color + 4 * k,
+              rng() % 2 ? Float(rng) : std::bit_cast<uint32_t>(float(rng() % 300) / 255.0f));
+      }
+    }
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = rng() % 3 ? Value(rng) : (rng() % 2 ? Float(rng) : rng());
+    ctx.r5.u64 = s.scratch + 0x100 + uint32_t(rng() % 0x8000);
+  }
+};
+// SetClipPlane: an index 0-5, now and then past it (declined); the plane's floats in the scratch.
+struct ClipPlane {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = rng() % 16 ? rng() % 6 : rng() % 64;
+    ctx.r5.u64 = s.scratch + 0x100 + uint32_t(rng() % 0x8000);
+  }
+};
+// The sampler state siblings: the stage's fetch constant words 3 and 4 and its bytes at random now and then; the
+// anisotropy's index into the runtime's table (0-7, now and then up to 255) or any value.
+struct SamplerStates {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t stage = uint32_t(rng() % 32);
+    const uint32_t f = s.device + l.fetch_constants + 24 * stage;
+    if (rng() % 3 == 0) Put32(s, f + 12, uint32_t(rng()));
+    if (rng() % 3 == 0) Put32(s, f + 16, uint32_t(rng()));
+    if (rng() % 3 == 0) s.Host(s.device + l.stage_lod_limit + stage)[0] = uint8_t(rng());
+    if (rng() % 3 == 0) s.Host(s.device + l.stage_filter_index + stage)[0] = uint8_t(rng() % 8);
+    ctx.r3.u64 = s.device;
+    ctx.r4.u64 = stage;
+    ctx.r5.u64 = rng() % 2 ? rng() % 8 : rng() % 4 ? rng() % 256 : uint64_t(rng() % 2);
+  }
+};
 // SetRenderState_ViewportEnable: PA_CL_CLIP_CNTL's word at random now and then, values as titles pass them.
 struct ViewportEnable {
   static void Setup(CallSetup& s, PPCContext& ctx) {
