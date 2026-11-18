@@ -952,7 +952,15 @@ struct ChainSegmentCase {
 // A recorded command buffer's replay (sub_826C3750): the draws' device and dirty groups as the helpers' draw case
 // makes them, a buffer in the scratch (its masks, 1-3 segment nodes of 1-4 segments, 0-2 resource nodes with
 // objects there, a fence now and then, its flags at random: room only, occlusion predication, bins back), the
-// device's two lists with room, its tiling and predicate words at random, a bin select or none.
+// device's two lists with room, its tiling and predicate words at random, a bin select or none. A buffer that only
+// makes room runs the title's make_room (sub_826BB408) on the device copy, whose ring, pending chain, recording list
+// (+13000) and GPU fence are the title's own: the copy says its segment allocation failed and its frame's wait is
+// done (+10813 bits 6 and 2, read only by make_room and its callees here), so that make_room only rounds the cursor
+// in the scratch. Without them it ended the scratch's segment into the title's real ring (the GPU read random words
+// and the title stopped: the case hung) or into the recording's list, and could wait on a fence that never moves.
+// No shaders bound on the copy (+12412, +12416): the title's shader helper (both sides call it) links the bound vertex
+// and pixel shaders in their own objects, the title's memory, not put back between the two sides; when the copy was
+// taken with shaders bound, the replacement found the link the original had just made and wrote a word more.
 template <bool kRecords>
 struct ReplayCase {
   static bool Native(PPCContext& ctx, uint8_t* base) {
@@ -1011,6 +1019,8 @@ struct ReplayCase {
     Put32(s, s.device + 12436, rng() % 4 == 0 ? uint32_t(rng()) & 0x0000FF01u : uint32_t(rng() % 2));
     s.Host(s.device + 10812)[0] = uint8_t((s.Host(s.device + 10812)[0] & 0x5D) | (rng() % 4 == 0 ? 0x80 : 0) |
                                           (rng() % 2 ? 0x20 : 0) | (rng() % 3 == 0 ? 0x02 : 0));
+    s.Host(s.device + 10813)[0] |= 0x44;
+    Put32(s, s.device + 12412, 0), Put32(s, s.device + 12416, 0);
     ctx.r4.u64 = buffer;
     ctx.r5.u64 = rng() % 2 ? 0 : uint32_t(rng());
   }

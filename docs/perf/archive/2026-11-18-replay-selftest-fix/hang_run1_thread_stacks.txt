@@ -1,0 +1,94 @@
+pid 47560, 87 threads; busiest tid 46240 (7 s of CPU), 6 samples of it:
+  ZwWaitForAlertByThreadId+0x14 < `string'+0x0 < _Cnd_timedwait_for_unchecked+0x28 < std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x1C8 < `string'+0xDB < objects+0x0 < any360::sys::ObjectManager::WaitRegistration::Sleep+0x12B < objects+0x1F0 < objects+0x0 < any360::sys::ObjectManager::SleepInWait+0x151 < objects+0x1F0 < objects+0x0 < `string'+0xDB < any360::sys::ObjectManager::WaitForObject+0x3D5 < objects+0x0
+  ZwWaitForAlertByThreadId+0x14 < `string'+0x0 < _Cnd_timedwait_for_unchecked+0x28 < std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x1C8 < `string'+0xDB < objects+0x0 < any360::sys::ObjectManager::WaitRegistration::Sleep+0x12B < objects+0x1F0 < objects+0x0 < any360::sys::ObjectManager::SleepInWait+0x151 < objects+0x1F0 < objects+0x0 < `string'+0xDB < any360::sys::ObjectManager::WaitForObject+0x3D5 < objects+0x0
+  ZwWaitForAlertByThreadId+0x14 < `string'+0x0 < _Cnd_timedwait_for_unchecked+0x28 < std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x1C8 < `string'+0xDB < objects+0x0 < any360::sys::ObjectManager::WaitRegistration::Sleep+0x12B < objects+0x1F0 < objects+0x0 < any360::sys::ObjectManager::SleepInWait+0x151 < objects+0x1F0 < objects+0x0 < `string'+0xDB < any360::sys::ObjectManager::WaitForObject+0x3D5 < objects+0x0
+  ZwWaitForAlertByThreadId+0x14 < `string'+0x0 < _Cnd_timedwait_for_unchecked+0x28 < std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x1C8 < `string'+0xDB < objects+0x0 < any360::sys::ObjectManager::WaitRegistration::Sleep+0x12B < objects+0x1F0 < objects+0x0 < any360::sys::ObjectManager::SleepInWait+0x151 < objects+0x1F0 < objects+0x0 < `string'+0xDB < any360::sys::ObjectManager::WaitForObject+0x3D5 < objects+0x0
+  ZwWaitForAlertByThreadId+0x14 < `string'+0x0 < _Cnd_timedwait_for_unchecked+0x28 < std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x1C8 < `string'+0xDB < objects+0x0 < any360::sys::ObjectManager::WaitRegistration::Sleep+0x12B < objects+0x1F0 < objects+0x0 < any360::sys::ObjectManager::SleepInWait+0x151 < objects+0x1F0 < objects+0x0 < `string'+0xDB < any360::sys::ObjectManager::WaitForObject+0x3D5 < objects+0x0
+  ZwWaitForAlertByThreadId+0x14 < `string'+0x0 < _Cnd_timedwait_for_unchecked+0x28 < std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x1C8 < `string'+0xDB < objects+0x0 < any360::sys::ObjectManager::WaitRegistration::Sleep+0x12B < objects+0x1F0 < objects+0x0 < any360::sys::ObjectManager::SleepInWait+0x151 < objects+0x1F0 < objects+0x0 < `string'+0xDB < any360::sys::ObjectManager::WaitForObject+0x3D5 < objects+0x0
+tid 46240 cpu 7.1 s Unknown: ZwWaitForAlertByThreadId+0x14 < `string'+0x0 < _Cnd_timedwait_for_unchecked+0x28 < std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x1C8 < `string'+0xDB < objects+0x0 < any360::sys::ObjectManager::WaitRegistration::Sleep+0x12B < objects+0x1F0 < objects+0x0 < any360::sys::ObjectManager::SleepInWait+0x151 < objects+0x1F0 < objects+0x0 < `string'+0xDB < any360::sys::ObjectManager::WaitForObject+0x3D5 < objects+0x0
+tid 7700 cpu 4.2 s UserRequest: NtWaitForSingleObject+0x14
+tid 39072 cpu 3.1 s UserRequest: NtUserMsgWaitForMultipleObjectsEx+0x14
+tid 37444 cpu 2.7 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 47016 cpu 2.4 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 31992 cpu 2.2 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 41740 cpu 0.9 s Unknown: ZwWaitForAlertByThreadId+0x14 < _Cnd_timedwait_for_unchecked+0x28 < std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x1C8 < any360::sys::ObjectManager::WaitRegistration::Sleep+0x12B < objects+0x1F0 < objects+0x0 < any360::sys::ObjectManager::SleepInWait+0x151 < objects+0x1F0 < objects+0x0 < `string'+0xDB < any360::sys::ObjectManager::WaitForObject+0x3D5 < objects+0x0 < objects+0x1F0 < any360_KeWaitForSingleObject+0x0 < any360_KeWaitForSingleObject+0xC0
+tid 39912 cpu 0.7 s Unknown: ZwWaitForAlertByThreadId+0x14 < `string'+0x303 < _Cnd_timedwait_for_unchecked+0x28 < any360::gfx::AsyncRenderer::Run+0x1DB < std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-amd\layer\gfx\src\async_renderer.cpp:28:25'>,0>+0x1E
+tid 41248 cpu 0.7 s ExecutionDelay: ZwDelayExecution+0x14
+tid 11788 cpu 0.6 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 46424 cpu 0.6 s ExecutionDelay: ZwDelayExecution+0x14 < std::this_thread::sleep_for<long long,std::ratio<1,1000000> >+0x105 < `string'+0x0 < `string'+0x0 < any360::host::rexglue::`anonymous namespace'::SdlSink::Submit+0x61 < any360::sys::AudioKernel::SubmitFrame+0x2AF < any360::sys::AudioKernel::SubmitFrame+0xC < any360_XAudioSubmitRenderDriverFrame+0x23 < `string'+0x0 < `string'+0x0 < any360::host::rexglue::RunAny360+0x67A < any360::sys::ObjectManager::WaitRegistration::~WaitRegistration+0x1E6 < objects+0x0 < any360::sys::ObjectManager::WaitForObjects+0xCA < any360::sys::Scheduler::DeliverApcs+0x5B5
+tid 43748 cpu 0.6 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 27468 cpu 0.4 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 6840 cpu 0.3 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 40384 cpu 0.2 s ExecutionDelay: ZwDelayExecution+0x14 < std::this_thread::sleep_for<__int64,std::ratio<1,1000> >+0x105 < variables+0x0 < std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-amd\layer\sys\src\variables.cpp:132:26'>,0>+0x4D
+tid 40392 cpu 0.1 s ExecutionDelay: ZwDelayExecution+0x14
+tid 33428 cpu 0.1 s UserRequest: NtWaitForSingleObject+0x14
+tid 16100 cpu 0.1 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 45184 cpu 0.1 s Unknown: ZwWaitForAlertByThreadId+0x14 < _Cnd_timedwait_for_unchecked+0x28 < std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x1C8 < any360::sys::ObjectManager::WaitRegistration::Sleep+0x12B < objects+0x0 < any360::sys::ObjectManager::SleepInWait+0x151 < any360::sys::ObjectManager::WaitForObjects::<lambda_0>::operator()+0x20 < objects+0x0 < any360::sys::ObjectManager::WaitForObjects+0x382 < any360::sys::Scheduler::DeliverApcs+0x5B5 < objects+0x0 < objects+0x0 < objects+0x1F0 < any360_KeWaitForMultipleObjects+0x200 < `string'+0x0
+tid 39848 cpu 0.1 s Unknown: ZwWaitForAlertByThreadId+0x14 < _Cnd_timedwait_for_unchecked+0x28 < std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x1C8 < `string'+0xDB < objects+0x0 < any360::sys::ObjectManager::WaitRegistration::Sleep+0x12B < objects+0x1F0 < objects+0x0 < any360::sys::ObjectManager::SleepInWait+0x151 < objects+0x1F0 < objects+0x0 < `string'+0xDB < any360::sys::ObjectManager::WaitForObject+0x3D5 < objects+0x0 < any360::sys::ObjectManager::Allocate+0x271
+tid 28196 cpu 0.1 s UserRequest: NtWaitForSingleObject+0x14
+tid 33272 cpu 0.1 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 20284 cpu 0.1 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 39760 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14 < _Cnd_timedwait_for_unchecked+0x28 < std::condition_variable_any::wait_for<std::unique_lock<std::recursive_mutex>,long long,std::ratio<1,1000000000> >+0x1C8 < `string'+0xDB < objects+0x0 < any360::sys::ObjectManager::WaitRegistration::Sleep+0x12B < objects+0x1F0 < objects+0x0 < any360::sys::ObjectManager::SleepInWait+0x151 < objects+0x1F0 < objects+0x0 < `string'+0xDB < any360::sys::ObjectManager::WaitForObject+0x3D5 < objects+0x0 < any360::sys::ObjectManager::Allocate+0x271
+tid 13608 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 17532 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 30732 cpu 0 s UserRequest: NtWaitForSingleObject+0x14
+tid 30408 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 37172 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 45612 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 23196 cpu 0 s UserRequest: NtWaitForSingleObject+0x14 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < any360::host::rexglue::RunInRuntimeThread+0xAA < kGroups+0x98 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-amd\layer\sys\src\scheduler.cpp:395:27'>,0>+0x37
+tid 39548 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 47276 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 18896 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 11864 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 47476 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 3932 cpu 0 s UserRequest: NtWaitForSingleObject+0x14
+tid 36144 cpu 0 s UserRequest: NtWaitForSingleObject+0x14 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < any360::host::rexglue::RunInRuntimeThread+0xAA < kGroups+0x98 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-amd\layer\sys\src\scheduler.cpp:395:27'>,0>+0x37
+tid 43560 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 43212 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 37944 cpu 0 s UserRequest: NtWaitForSingleObject+0x14 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < any360::host::rexglue::RunInRuntimeThread+0xAA < kGroups+0x98 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-amd\layer\sys\src\scheduler.cpp:395:27'>,0>+0x37
+tid 22460 cpu 0 s UserRequest: NtWaitForSingleObject+0x14 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < any360::host::rexglue::RunInRuntimeThread+0xAA < kGroups+0x98 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-amd\layer\sys\src\scheduler.cpp:395:27'>,0>+0x37
+tid 7656 cpu 0 s UserRequest: NtWaitForSingleObject+0x14
+tid 46808 cpu 0 s UserRequest: NtWaitForSingleObject+0x14 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < any360::host::rexglue::RunInRuntimeThread+0xAA < kGroups+0x98 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-amd\layer\sys\src\scheduler.cpp:395:27'>,0>+0x37
+tid 22968 cpu 0 s UserRequest: NtWaitForSingleObject+0x14
+tid 34284 cpu 0 s UserRequest: NtWaitForSingleObject+0x14 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < any360::host::rexglue::RunInRuntimeThread+0xAA < kGroups+0x98 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-amd\layer\sys\src\scheduler.cpp:395:27'>,0>+0x37
+tid 42712 cpu 0 s UserRequest: ZwWaitForMultipleObjects+0x14
+tid 47792 cpu 0 s UserRequest: NtWaitForSingleObject+0x14 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < any360::host::rexglue::RunInRuntimeThread+0xAA < kGroups+0x98 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-amd\layer\sys\src\scheduler.cpp:395:27'>,0>+0x37
+tid 34488 cpu 0 s UserRequest: NtWaitForSingleObject+0x14 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < any360::host::rexglue::RunInRuntimeThread+0xAA < kGroups+0x98 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-amd\layer\sys\src\scheduler.cpp:395:27'>,0>+0x37
+tid 42896 cpu 0 s UserRequest: NtWaitForSingleObject+0x14 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < any360::host::rexglue::RunInRuntimeThread+0xAA < kGroups+0x98 < any360::sys::Scheduler::CreateThreadHandle::<lambda_1>::operator()::<lambda_1>::__invoke+0x0 < std::thread::_Invoke<std::tuple<`lambda at F:\Crackdown\any360-amd\layer\sys\src\scheduler.cpp:395:27'>,0>+0x37
+tid 44668 cpu 0 s UserRequest: NtWaitForSingleObject+0x14
+tid 18792 cpu 0 s UserRequest: NtWaitForSingleObject+0x14
+tid 39040 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 34492 cpu 0 s UserRequest: NtWaitForSingleObject+0x14
+tid 3188 cpu 0 s UserRequest: ZwWaitForMultipleObjects+0x14
+tid 37844 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 46928 cpu 0 s UserRequest: NtWaitForSingleObject+0x14
+tid 36156 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 42324 cpu 0 s UserRequest: NtWaitForSingleObject+0x14
+tid 36984 cpu 0 s EventPairLow: NtWaitForWorkViaWorkerFactory+0x14
+tid 19772 cpu 0 s UserRequest: NtUserGetMessage+0x14
+tid 44580 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 33008 cpu 0 s UserRequest: ZwWaitForMultipleObjects+0x14
+tid 13188 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 31096 cpu 0 s UserRequest: NtWaitForSingleObject+0x14
+tid 2704 cpu 0 s UserRequest: NtWaitForSingleObject+0x14
+tid 13068 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 27156 cpu 0 s UserRequest: ZwWaitForMultipleObjects+0x14
+tid 18396 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 39124 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 44728 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 47436 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 34156 cpu 0 s ExecutionDelay: ZwDelayExecution+0x14 < crackdown::`anonymous namespace'::Watch+0x1E5 < std::thread::_Invoke<std::tuple<void (__cdecl*)(HWND__ * __ptr64,std::filesystem::path),HWND__ * __ptr64,std::filesystem::path>,0,1,2>+0x48
+tid 46524 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 41044 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 37016 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 48076 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 36180 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 18844 cpu 0 s UserRequest: NtWaitForSingleObject+0x14
+tid 41132 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 11928 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 19768 cpu 0 s UserRequest: ZwWaitForMultipleObjects+0x14
+tid 34796 cpu 0 s UserRequest: NtUserGetMessage+0x14
+tid 20428 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 10200 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 35296 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14
+tid 29460 cpu 0 s Unknown: ZwWaitForAlertByThreadId+0x14

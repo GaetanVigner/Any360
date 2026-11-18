@@ -1,0 +1,43 @@
+﻿=== @exe:crackdown_diag.exe --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_187.log)
+hangs: 0; errors: 0
+Any360: 31.0 FPS; per frame: 2 draws, 0 skipped, 0 failed, 1 resolves, 0.0 texture uploads, 0.0 texture copies
+Any360: command processor per frame: 0.12 ms running the ring (0.01 ms of it in WAIT_REG_MEM), 1.3 kicks (0.0 through the title's ring; 4.1 command buffers and 0.0 tile bin selects submitted directly), 0.0 tiled brackets (0.0 the runtime's), 0.0 tile op runs (0.0 the runtime's); 99.6% of the time with nothing to run
+--- run 1
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+ViewportEnable                 3000 calls, 0 declined, 0 different; median original 6.3 ns, native 3.8 ns (1.66x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetRenderTarget                3000 calls, 184 declined, 0 different; median original 25.0 ns, native 12.5 ns (2.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetDepthStencilSurface         3000 calls, 0 declined, 0 different; median original 28.8 ns, native 16.3 ns (1.77x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+WindowScissorPackets (PM4)     3000 calls, 63 declined, 0 different; median original 32.5 ns, native 20.0 ns (1.62x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+WindowScissorPackets (records)   3000 calls, 64 declined, 0 different; median original 28.8 ns, native 17.5 ns (1.64x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+ApplyScissor                   3000 calls, 0 declined, 0 different; median original 42.5 ns, native 30.0 ns (1.42x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetViewport (floats)           3000 calls, 0 declined, 0 different; median original 70.0 ns, native 43.8 ns (1.60x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetViewport                    3000 calls, 0 declined, 0 different; median original 53.8 ns, native 41.3 ns (1.30x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Viewport of a surface          3000 calls, 0 declined, 0 different; median original 48.8 ns, native 46.3 ns (1.05x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetPredication (PM4)           3000 calls, 0 declined, 0 different; median original 12.5 ns, native 6.3 ns (2.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetPredication (records)       3000 calls, 0 declined, 0 different; median original 12.5 ns, native 6.3 ns (2.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Clear (PM4)                    3000 calls, 0 declined, 0 different; median original 42.5 ns, native 13.8 ns (3.09x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Clear (records)                3000 calls, 0 declined, 0 different; median original 42.5 ns, native 13.8 ns (3.09x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Clear target (PM4)             3000 calls, 55 declined, 0 different; median original 193.8 ns, native 97.5 ns (1.99x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Clear target (records)         3000 calls, 42 declined, 0 different; median original 208.8 ns, native 107.5 ns (1.94x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Resolve (PM4)                  3000 calls, 0 declined, 0 different; median original 287.5 ns, native 238.8 ns (1.20x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Resolve (records)              3000 calls, 0 declined, 0 different; median original 282.5 ns, native 237.5 ns (1.19x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+exited (code 0)
+=== @exe:crackdown_diag.exe --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_188.log)
+hangs: 0; errors: 0
+Any360: 161.6 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: 164.4 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: command processor per frame: 0.14 ms running the ring (0.00 ms of it in WAIT_REG_MEM), 3.4 kicks (0.0 through the title's ring; 9.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 97.7% of the time with nothing to run
+--- run 2
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 482.5 ns, native 438.8 ns (1.10x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 441.3 ns, native 406.3 ns (1.09x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+exited (code 0)
+=== @exe:crackdown_diag.exe --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_189.log)
+hangs: 0; errors: 0
+Any360: 165.2 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.1 texture uploads, 5.0 texture c
+Any360: 168.8 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: command processor per frame: 0.17 ms running the ring (0.00 ms of it in WAIT_REG_MEM), 3.6 kicks (0.0 through the title's ring; 9.4 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 97.1% of the time with nothing to run
+--- run 3
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 541.3 ns, native 500.0 ns (1.08x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 553.8 ns, native 515.0 ns (1.08x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00

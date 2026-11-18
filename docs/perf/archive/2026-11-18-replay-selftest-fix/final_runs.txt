@@ -1,0 +1,100 @@
+﻿exited (code 0)
+=== --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_009.log)
+hangs: 0; errors: 0
+Any360: 53.7 FPS; per frame: 25 draws, 75 skipped, 0 failed, 8 resolves, 0.3 texture uploads, 2.6 texture copi
+Any360: 148.6 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: command processor per frame: 0.17 ms running the ring (0.00 ms of it in WAIT_REG_MEM), 3.6 kicks (0.0 through the title's ring; 9.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 97.5% of the time with nothing to run
+--- run 1
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 477.5 ns, native 428.8 ns (1.11x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 458.8 ns, native 413.8 ns (1.11x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+exited (code 0)
+=== --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_010.log)
+hangs: 0; errors: 0
+Any360: 60.8 FPS; per frame: 29 draws, 87 skipped, 0 failed, 9 resolves, 0.3 texture uploads, 3.0 texture copi
+Any360: 165.6 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: command processor per frame: 0.16 ms running the ring (0.01 ms of it in WAIT_REG_MEM), 3.5 kicks (0.0 through the title's ring; 9.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 97.3% of the time with nothing to run
+--- run 2
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 470.0 ns, native 420.0 ns (1.12x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 456.3 ns, native 408.8 ns (1.12x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+exited (code 0)
+=== --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_011.log)
+hangs: 0; errors: 0
+Any360: 57.0 FPS; per frame: 27 draws, 81 skipped, 0 failed, 8 resolves, 0.3 texture uploads, 2.8 texture copi
+Any360: 145.5 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: command processor per frame: 0.15 ms running the ring (0.00 ms of it in WAIT_REG_MEM), 3.4 kicks (0.0 through the title's ring; 9.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 97.8% of the time with nothing to run
+--- run 3
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 447.5 ns, native 398.8 ns (1.12x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 465.0 ns, native 422.5 ns (1.10x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+exited (code 0)
+=== --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_012.log)
+hangs: 0; errors: 0
+Any360: 52.2 FPS; per frame: 25 draws, 72 skipped, 0 failed, 8 resolves, 0.3 texture uploads, 2.5 texture copi
+Any360: 168.4 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: command processor per frame: 0.14 ms running the ring (0.00 ms of it in WAIT_REG_MEM), 3.3 kicks (0.0 through the title's ring; 9.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 97.6% of the time with nothing to run
+--- run 4
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 448.8 ns, native 403.8 ns (1.11x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 453.8 ns, native 408.8 ns (1.11x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+exited (code 0)
+=== --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_013.log)
+hangs: 0; errors: 0
+Any360: 46.2 FPS; per frame: 21 draws, 59 skipped, 0 failed, 6 resolves, 0.2 texture uploads, 2.1 texture copi
+Any360: 164.4 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: command processor per frame: 0.16 ms running the ring (0.00 ms of it in WAIT_REG_MEM), 3.5 kicks (0.0 through the title's ring; 9.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 97.4% of the time with nothing to run
+--- run 5
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 441.3 ns, native 396.3 ns (1.11x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 461.3 ns, native 418.8 ns (1.10x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+exited (code 0)
+=== --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_014.log)
+hangs: 0; errors: 0
+Any360: 52.8 FPS; per frame: 25 draws, 73 skipped, 0 failed, 8 resolves, 0.3 texture uploads, 2.5 texture copi
+Any360: 169.4 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: command processor per frame: 0.14 ms running the ring (0.00 ms of it in WAIT_REG_MEM), 3.3 kicks (0.0 through the title's ring; 9.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 97.6% of the time with nothing to run
+--- run 6
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 442.5 ns, native 402.5 ns (1.10x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 458.8 ns, native 421.3 ns (1.09x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+exited (code 0)
+=== --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_015.log)
+hangs: 0; errors: 0
+Any360: 63.8 FPS; per frame: 30 draws, 91 skipped, 0 failed, 9 resolves, 0.3 texture uploads, 3.1 texture copi
+Any360: 168.9 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: command processor per frame: 0.15 ms running the ring (0.00 ms of it in WAIT_REG_MEM), 3.4 kicks (0.0 through the title's ring; 9.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 97.5% of the time with nothing to run
+--- run 7
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 435.0 ns, native 388.8 ns (1.12x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 457.5 ns, native 418.8 ns (1.09x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+exited (code 0)
+=== --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_016.log)
+hangs: 0; errors: 0
+Any360: 60.8 FPS; per frame: 29 draws, 87 skipped, 0 failed, 9 resolves, 0.3 texture uploads, 3.0 texture copi
+Any360: 166.9 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: command processor per frame: 0.15 ms running the ring (0.00 ms of it in WAIT_REG_MEM), 3.6 kicks (0.0 through the title's ring; 9.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 97.4% of the time with nothing to run
+--- run 8
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 456.3 ns, native 411.3 ns (1.11x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 483.8 ns, native 438.8 ns (1.10x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+exited (code 0)
+=== --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_017.log)
+hangs: 0; errors: 0
+Any360: 49.2 FPS; per frame: 22 draws, 66 skipped, 0 failed, 7 resolves, 0.2 texture uploads, 2.3 texture copi
+Any360: 169.9 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: command processor per frame: 0.13 ms running the ring (0.00 ms of it in WAIT_REG_MEM), 3.6 kicks (0.0 through the title's ring; 9.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 97.7% of the time with nothing to run
+--- run 9
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 430.0 ns, native 383.8 ns (1.12x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 453.8 ns, native 407.5 ns (1.11x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+exited (code 0)
+=== --any360_d3d_selftest=true --any360_d3d_selftest_only=Replay (crackdown_018.log)
+hangs: 0; errors: 0
+Any360: 56.3 FPS; per frame: 27 draws, 80 skipped, 0 failed, 8 resolves, 0.3 texture uploads, 2.8 texture copi
+Any360: 169.0 FPS; per frame: 47 draws, 144 skipped, 0 failed, 14 resolves, 0.0 texture uploads, 5.0 texture c
+Any360: command processor per frame: 0.15 ms running the ring (0.00 ms of it in WAIT_REG_MEM), 3.4 kicks (0.0 through the title's ring; 9.0 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 97.5% of the time with nothing to run
+--- run 10
+Any360 D3D self-test: 101 cases on a copy of device 40259D00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 457.5 ns, native 411.3 ns (1.11x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 448.8 ns, native 408.8 ns (1.10x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
