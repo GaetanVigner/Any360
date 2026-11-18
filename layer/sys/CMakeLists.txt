@@ -109,6 +109,16 @@ if(ANY360_REFERENCE_SDK)
         target_link_libraries(sys_io_tests PRIVATE any360_sys_ppc "${ANY360_REFERENCE_SDK}/lib/librexruntimerd.so")
     endif()
     add_test(NAME sys_io_tests COMMAND sys_io_tests)
+    # The original against Any360 through the PowerPC ABI for step 12's calls (a benchmark, not a test).
+    add_executable(sys_abi_bench tests/sys_abi_bench.cpp)
+    target_include_directories(sys_abi_bench PRIVATE tests)
+    target_compile_options(sys_abi_bench PRIVATE -Wall -Wextra)
+    if(WIN32)
+        target_link_libraries(sys_abi_bench PRIVATE any360_sys_ppc "${ANY360_REFERENCE_SDK}/lib/rexruntimerd.lib"
+                              "${ANY360_REFERENCE_SDK}/lib/spdlogrd.lib" "${ANY360_REFERENCE_SDK}/lib/fmtrd.lib")
+    else()
+        target_link_libraries(sys_abi_bench PRIVATE any360_sys_ppc "${ANY360_REFERENCE_SDK}/lib/librexruntimerd.so")
+    endif()
 
     # The oracle with the reference kernel running: the same libraries, a guest thread of the reference runtime.
     add_executable(sys_runtime_tests tests/sys_runtime_tests.cpp)

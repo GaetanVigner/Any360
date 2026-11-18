@@ -34,6 +34,9 @@ owner adds a rule, it goes here (or into a skill under `.claude/skills/`) in the
   benchmark (time a call and host memory a call, bytes and allocations, against the original when there is one and
   against what the host already offers when it does the same work), with its results saved in the repository under
   `docs/perf/archive/<date>-<step>/` and listed in `docs/perf/README.md`. A function without both is not done.
+  The original is always timed, through the PowerPC ABI a title calls it by, even when the reference runtime only
+  stubs it (`sys_abi_bench` for system calls); the comparison table (original, Any360, host when it has the same
+  work: ns, bytes and allocations a call, speed) is shown to the owner in the report of the change, not only saved.
 - Prefer pooled and reused buffers to allocations: RAM is limited on the target devices.
 - Register new natives in the database (`db/xdk_seed.json`, `layer/sys/native.json`, `titles/<title>/d3d_names.json`,
   one entry a line), then run `python -I tools/build_db.py` and `python -I tools/progress_page.py`.
