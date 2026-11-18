@@ -2951,6 +2951,62 @@ void CryptPathTests() {
     XeCryptDes3Ecb(g, state, out, out + 8, 0);
     CHECK(g.Load64(out + 8) == block);
   }
+  // CBC both ways against the model over 1 to 9 blocks (decryption runs two blocks at a time, then the odd one), single
+  // and triple; the feed left on the last ciphertext block.
+  for (int round = 0; round < 60; ++round) {
+    const bool triple = round % 2;
+    const uint32_t blocks = 1 + rng() % 9;
+    for (int i = 0; i < 3; ++i) g.Store64(key + 8 * i, uint64_t(rng()) << 32 | rng());
+    triple ? XeCryptDes3Key(g, state, key) : XeCryptDesKey(g, state, key);
+    uint64_t schedules[3][16];
+    std::memcpy(schedules, g.host(state), triple ? sizeof schedules : sizeof schedules[0]);
+    auto model = [&](uint64_t b, bool decrypt) {
+      if (!triple) return RefDes(b, schedules[0], decrypt);
+      return decrypt ? RefDes(RefDes(RefDes(b, schedules[2], true), schedules[1], false), schedules[0], true)
+                     : RefDes(RefDes(RefDes(b, schedules[0], false), schedules[1], true), schedules[2], false);
+    };
+    const uint64_t iv = uint64_t(rng()) << 32 | rng();
+    uint64_t chain = iv;
+    std::vector<uint64_t> plain(blocks), cipher(blocks);
+    for (uint32_t i = 0; i < blocks; ++i) {
+      plain[i] = uint64_t(rng()) << 32 | rng();
+      g.Store64(in + 8 * i, plain[i]);
+      cipher[i] = chain = model(plain[i] ^ chain, false);
+    }
+    const uint32_t feed = key + 0x40;
+    g.Store64(feed, iv);
+    triple ? XeCryptDes3Cbc(g, state, in, 8 * blocks, out, feed, 1) : XeCryptDesCbc(g, state, in, 8 * blocks, out, feed, 1);
+    bool same = g.Load64(feed) == cipher[blocks - 1];
+    for (uint32_t i = 0; i < blocks; ++i) same = same && g.Load64(out + 8 * i) == cipher[i];
+    CHECK(same);
+    g.Store64(feed, iv);
+    triple ? XeCryptDes3Cbc(g, state, out, 8 * blocks, out + 0x100, feed, 0)
+           : XeCryptDesCbc(g, state, out, 8 * blocks, out + 0x100, feed, 0);
+    same = g.Load64(feed) == cipher[blocks - 1];
+    for (uint32_t i = 0; i < blocks; ++i) same = same && g.Load64(out + 0x100 + 8 * i) == plain[i];
+    CHECK(same);
+  }
+  // HMACs under alternating keys (each thread keeps its last key's pad states): A, B, A, a longer B, A again give
+  // each key's own digest every time.
+  {
+    std::string first_a, first_b;
+    for (int pass = 0; pass < 5; ++pass) {
+      const bool b = pass % 2;
+      const uint32_t key_size = b ? (pass == 3 ? 40u : 20u) : 16u;
+      for (uint32_t i = 0; i < 40; ++i) g.Store8(key + i, uint8_t(b ? 0xB0 + i : 0xA0 + i));
+      XeCryptHmacMd5(g, key, key_size, in, 100, 0, 0, 0, 0, out, 16);
+      XeCryptHmacSha(g, key, key_size, in, 100, 0, 0, 0, 0, out + 16, 20);
+      XeCryptHmacShaInit(g, state, key, key_size);
+      XeCryptHmacShaUpdate(g, state, in, 100);
+      XeCryptHmacShaFinal(g, state, out + 36, 20);
+      const std::string digest(reinterpret_cast<const char*>(g.host(out)), 56);
+      CHECK(std::memcmp(g.host(out + 16), g.host(out + 36), 20) == 0);
+      if (pass == 0) first_a = digest;
+      if (pass == 1) first_b = digest;
+      if (pass == 2 || pass == 4) CHECK(digest == first_a);
+      if (pass == 3) CHECK(digest != first_b);
+    }
+  }
 }
 
 // Step 12's information calls (info.h, xam.h, win32.h), against Xenia's answers (xam_info.cc, xam_locale.cc,

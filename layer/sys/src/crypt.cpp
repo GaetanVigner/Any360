@@ -124,6 +124,40 @@ void StoreDigest(Guest g, uint32_t state, const Sha1& sha) {
 
 void Sha256Block(uint32_t h[8], const uint8_t* block) { crypt_blocks::Sha256(h, block, 1); }
 
+// The hash states after an HMAC's two pads (key ^ 0x36, key ^ 0x5C) for a key of 64 bytes or fewer, as `Words`
+// host words of the hash `Compress` runs. A title signs or checks many messages under one key, so the last key each
+// thread used is kept with its two states (pure arithmetic of the key's bytes): the same key again skips the two pad
+// compressions. Any other key replaces it.
+template <size_t kWords, void (*Compress)(uint32_t*, const uint8_t*, size_t)>
+struct HmacPadStates {
+  uint32_t inner[kWords], outer[kWords];
+  static const HmacPadStates& For(const uint32_t (&initial)[kWords], const uint8_t* key, uint32_t key_size) {
+    thread_local struct {
+      uint32_t key_size = ~0u;
+      uint8_t key[64];
+      HmacPadStates states;
+    } last;
+    if (last.key_size == key_size && std::memcmp(last.key, key, key_size) == 0) return last.states;
+    uint8_t inner[64], outer[64];
+    std::memset(inner, 0x36, 64);
+    std::memset(outer, 0x5C, 64);
+    for (uint32_t i = 0; i < key_size; ++i) inner[i] ^= key[i], outer[i] ^= key[i];
+    std::memcpy(last.states.inner, initial, sizeof initial);
+    std::memcpy(last.states.outer, initial, sizeof initial);
+    Compress(last.states.inner, inner, 1);
+    Compress(last.states.outer, outer, 1);
+    std::memcpy(last.key, key, key_size);
+    last.key_size = key_size;
+    return last.states;
+  }
+};
+constexpr uint32_t kSha1Initial[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0};
+constexpr uint32_t kMd5Initial[4] = {0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476};
+using Sha1Pads = HmacPadStates<5, crypt_blocks::Sha1>;
+using Md5Pads = HmacPadStates<4, crypt_blocks::Md5>;
+// A resumed hash's buffer when nothing is buffered (its 64 pad bytes are one whole block).
+constexpr uint8_t kNoBuffer[1] = {};
+
 // The digest of an HMAC-SHA-1 with a host key.
 std::array<uint8_t, 20> HmacSha(Guest g, const uint8_t* key, uint32_t key_size, uint32_t in1, uint32_t size1, uint32_t in2,
                                 uint32_t size2, uint32_t in3, uint32_t size3) {
@@ -131,27 +165,20 @@ std::array<uint8_t, 20> HmacSha(Guest g, const uint8_t* key, uint32_t key_size, 
                                      {size3 ? g.host(in3) : nullptr, size3}};
   std::array<uint8_t, 20> host;
   if (HostDigest(crypt_host::Hash::kSha1, true, key, key_size, parts, host.data())) return host;
-  uint8_t inner[64], outer[64], k[64];
-  std::memset(inner, 0x36, sizeof inner);
-  std::memset(outer, 0x5C, sizeof outer);
+  std::array<uint8_t, 20> hashed_key;
   if (key_size > 64) {
     Sha1 hashed;
     hashed.Update(key, key_size);
-    const auto digest = hashed.Final();
-    std::memcpy(k, digest.data(), 20);
-    key_size = 20;
-  } else {
-    std::memcpy(k, key, key_size);
+    hashed_key = hashed.Final();
+    key = hashed_key.data(), key_size = 20;
   }
-  for (uint32_t i = 0; i < key_size; ++i) inner[i] = k[i] ^ 0x36, outer[i] = k[i] ^ 0x5C;
-  Sha1 sha;
-  sha.Update(inner, 64);
+  const Sha1Pads& pads = Sha1Pads::For(kSha1Initial, key ? key : kNoBuffer, key_size);
+  Sha1 sha(pads.inner, kNoBuffer, 64);
   if (size1) sha.Update(g.host(in1), size1);
   if (size2) sha.Update(g.host(in2), size2);
   if (size3) sha.Update(g.host(in3), size3);
   const auto digest = sha.Final();
-  Sha1 second;
-  second.Update(outer, 64);
+  Sha1 second(pads.outer, kNoBuffer, 64);
   second.Update(digest.data(), 20);
   return second.Final();
 }
@@ -377,15 +404,33 @@ constexpr uint64_t Permute(uint64_t value, int width, const uint8_t* table, int 
   return result;
 }
 
+// A bit permutation is linear in its input's bits, so it is the OR of one table entry per input byte:
+// table[j][v] is the permutation of byte value v at byte j (j = 0 the most significant).
+template <int kWidth, int kCount>
+struct ByteTables {
+  std::array<std::array<uint64_t, 256>, kWidth / 8> t{};
+  constexpr explicit ByteTables(const uint8_t* table) {
+    for (int j = 0; j < kWidth / 8; ++j) {
+      for (uint64_t v = 0; v < 256; ++v) t[j][v] = Permute(v << (kWidth - 8 - 8 * j), kWidth, table, kCount);
+    }
+  }
+  uint64_t operator()(uint64_t value) const {
+    uint64_t out = 0;
+    for (int j = 0; j < kWidth / 8; ++j) out |= t[j][(value >> (kWidth - 8 - 8 * j)) & 0xFF];
+    return out;
+  }
+};
+constexpr ByteTables<64, 56> kDesPc1Tables(kDesPc1);
+constexpr ByteTables<56, 48> kDesPc2Tables(kDesPc2);
+
 void DesSchedule(uint64_t key, uint64_t sub_keys[16]) {
-  const uint64_t pc1 = Permute(key, 64, kDesPc1, 56);
+  const uint64_t pc1 = kDesPc1Tables(key);
   uint32_t c = uint32_t(pc1 >> 28) & 0x0FFFFFFF, d = uint32_t(pc1) & 0x0FFFFFFF;
   for (int i = 0; i < 16; ++i) {
-    for (int j = 0; j < kDesShifts[i]; ++j) {
-      c = (0x0FFFFFFF & (c << 1)) | (c >> 27);
-      d = (0x0FFFFFFF & (d << 1)) | (d >> 27);
-    }
-    sub_keys[i] = Permute(uint64_t(c) << 28 | d, 56, kDesPc2, 48);
+    const int n = kDesShifts[i];
+    c = (0x0FFFFFFF & (c << n)) | (c >> (28 - n));
+    d = (0x0FFFFFFF & (d << n)) | (d >> (28 - n));
+    sub_keys[i] = kDesPc2Tables(uint64_t(c) << 28 | d);
   }
 }
 
@@ -447,6 +492,18 @@ inline void DesRounds(uint32_t& l, uint32_t& r, const DesKeys& keys) {
     r ^= DesRound(l, keys.sub_keys[k1]);
   }
   std::swap(l, r);
+}
+
+// Two independent blocks' rounds interleaved: CBC decryption's blocks do not wait on each other, so the two round
+// chains run side by side.
+template <bool kDecrypt>
+inline void DesRounds2(uint32_t& l0, uint32_t& r0, uint32_t& l1, uint32_t& r1, const DesKeys& keys) {
+  for (int i = 0; i < 16; i += 2) {
+    const int k0 = kDecrypt ? 15 - i : i, k1 = kDecrypt ? 14 - i : i + 1;
+    l0 ^= DesRound(r0, keys.sub_keys[k0]), l1 ^= DesRound(r1, keys.sub_keys[k0]);
+    r0 ^= DesRound(l0, keys.sub_keys[k1]), r1 ^= DesRound(l1, keys.sub_keys[k1]);
+  }
+  std::swap(l0, r0), std::swap(l1, r1);
 }
 
 uint64_t Des(uint64_t block, const DesKeys& keys, bool decrypt) {
@@ -793,13 +850,6 @@ Md5 LoadMd5(Guest g, uint32_t state) {
   return Md5(abcd, g.host(state + kMd5Buffer), g.Load32(state + kMd5Count));
 }
 
-// An HMAC's two pads for a key cut to its first 64 bytes.
-void HmacPads(const uint8_t* key, uint32_t key_size, uint8_t inner[64], uint8_t outer[64]) {
-  std::memset(inner, 0x36, 64);
-  std::memset(outer, 0x5C, 64);
-  for (uint32_t i = 0; i < std::min<uint32_t>(key_size, 64); ++i) inner[i] ^= key[i], outer[i] ^= key[i];
-}
-
 // The hash of up to three guest buffers, null or empty ones skipped.
 template <typename Hash>
 auto HashOf(Guest g, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2, uint32_t in3, uint32_t size3) {
@@ -939,31 +989,26 @@ void XeCryptMd5Final(Guest g, uint32_t state, uint32_t out, uint32_t out_size) {
 
 void XeCryptHmacMd5(Guest g, uint32_t key, uint32_t key_size, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2,
                     uint32_t in3, uint32_t size3, uint32_t out, uint32_t out_size) {
-  uint8_t inner[64], outer[64];
-  HmacPads(key_size ? g.host(key) : nullptr, key_size, inner, outer);
-  Md5 first;
-  first.Update(inner, 64);
+  // The key cut to its first 64 bytes, as HmacPads cuts it.
+  const Md5Pads& pads = Md5Pads::For(kMd5Initial, key_size ? g.host(key) : kNoBuffer, std::min<uint32_t>(key_size, 64));
+  Md5 first(pads.inner, kNoBuffer, 64);
   if (in1 && size1) first.Update(g.host(in1), size1);
   if (in2 && size2) first.Update(g.host(in2), size2);
   if (in3 && size3) first.Update(g.host(in3), size3);
   const auto digest = first.Final();
-  Md5 second;
-  second.Update(outer, 64);
+  Md5 second(pads.outer, kNoBuffer, 64);
   second.Update(digest.data(), 16);
   const auto result = second.Final();
   std::memcpy(g.host(out), result.data(), std::min<uint32_t>(16, out_size));
 }
 
 void XeCryptHmacShaInit(Guest g, uint32_t state, uint32_t key, uint32_t key_size) {
-  uint8_t inner[64], outer[64];
-  HmacPads(key_size ? g.host(key) : nullptr, key_size, inner, outer);
+  const Sha1Pads& pads = Sha1Pads::For(kSha1Initial, key_size ? g.host(key) : kNoBuffer, std::min<uint32_t>(key_size, 64));
   std::memset(g.host(state), 0, 2 * kShaStateSize);
   // Each half is an XECRYPT_SHA_STATE that has taken its 64-byte pad (one whole block: nothing buffered).
-  const std::pair<uint32_t, const uint8_t*> halves[2] = {{state, inner}, {state + kHmacOuter, outer}};
-  for (const auto& [at, pad] : halves) {
-    Sha1 sha;
-    sha.Update(pad, 64);
-    StoreDigest(g, at, sha);
+  const std::pair<uint32_t, const uint32_t*> halves[2] = {{state, pads.inner}, {state + kHmacOuter, pads.outer}};
+  for (const auto& [at, words] : halves) {
+    for (int i = 0; i < 5; ++i) g.Store32(at + kShaDigest + 4 * i, words[i]);
     g.Store32(at + kShaCount, 64);
   }
 }
@@ -1006,7 +1051,21 @@ void XeCryptDesEcb(Guest g, uint32_t state, uint32_t in, uint32_t out, uint32_t 
 void XeCryptDesCbc(Guest g, uint32_t state, uint32_t in, uint32_t size, uint32_t out, uint32_t feed, uint32_t encrypt) {
   const DesState des(g, state);
   uint64_t last = g.Load64(feed);
-  for (uint32_t i = 0; i < size / 8; ++i) {
+  uint32_t i = 0;
+  if (!encrypt) {
+    // Each plaintext block is its ciphertext decrypted XOR the previous ciphertext: two blocks at a time.
+    for (; i + 2 <= size / 8; i += 2) {
+      const uint64_t c0 = g.Load64(in + 8 * i), c1 = g.Load64(in + 8 * i + 8);
+      uint32_t l0 = uint32_t(c0 >> 32), r0 = uint32_t(c0), l1 = uint32_t(c1 >> 32), r1 = uint32_t(c1);
+      DesIp(l0, r0), DesIp(l1, r1);
+      DesRounds2<true>(l0, r0, l1, r1, des.keys);
+      DesFp(l0, r0), DesFp(l1, r1);
+      g.Store64(out + 8 * i, (uint64_t(l0) << 32 | r0) ^ last);
+      g.Store64(out + 8 * i + 8, (uint64_t(l1) << 32 | r1) ^ c0);
+      last = c1;
+    }
+  }
+  for (; i < size / 8; ++i) {
     const uint64_t block = g.Load64(in + 8 * i);
     if (encrypt) {
       last = Des(block ^ last, des.keys, false);

@@ -179,6 +179,21 @@ int main(int argc, char** argv) {
 #endif
     PrintRow("XeCryptHmacMd5", size, ours, host);
   }
+  // A new key every call (the pad states kept for a repeated key do not help): the cost of a first use.
+  for (uint32_t size : {0u, 256u}) {
+    uint8_t flip = 0;
+    PrintRow("XeCryptHmacMd5 (new key each call)", size, Time(200000, [&] {
+               g.Store8(kKey, ++flip);
+               XeCryptHmacMd5(g, kKey, 16, kIn, size, 0, 0, 0, 0, kOut, 16);
+             }),
+             Measure{});
+    PrintRow("XeCryptHmacSha (new key each call)", size, Time(200000, [&] {
+               g.Store8(kKey, ++flip);
+               XeCryptHmacSha(g, kKey, 20, kIn, size, 0, 0, 0, 0, kOut, 20);
+             }),
+             Measure{});
+  }
+  std::memset(g.host(kKey), 0x0b, 64);
   for (const ShaPath sha : sha_paths) {
     SetShaPath(sha);
     for (uint32_t size : sizes) {
