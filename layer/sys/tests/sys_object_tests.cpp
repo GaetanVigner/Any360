@@ -2680,7 +2680,97 @@ void InputQueueTests() {
   }
 }
 
+// Step 12's cryptography (docs/SYS_STUBS.md: implemented by Xenia, stubbed by the reference) against the standards'
+// test vectors: MD5 (RFC 1321), SHA-256 (FIPS 180-4), HMAC-MD5 and HMAC-SHA-1 (RFC 2202), DES (the classic vector and
+// FIPS 81's CBC example); one call and streamed in uneven pieces.
+void CryptStep12Tests() {
+  const uint32_t in = kScratch, out = kScratch + 0x400, state = kScratch + 0x600, key = kScratch + 0x800;
+  auto put = [](uint32_t at, const std::string& bytes) { std::memcpy(g.host(at), bytes.data(), bytes.size()); };
+  auto hex = [](uint32_t at, uint32_t size) {
+    std::string text;
+    for (uint32_t i = 0; i < size; ++i) text += "0123456789abcdef"[g.Load8(at + i) >> 4], text += "0123456789abcdef"[g.Load8(at + i) & 15];
+    return text;
+  };
+  // MD5, one call: the three buffers as one message; null and empty buffers skipped; the output cut to its size.
+  XeCryptMd5(g, 0, 0, 0, 0, 0, 0, out, 16);
+  CHECK(hex(out, 16) == "d41d8cd98f00b204e9800998ecf8427e");
+  put(in, "abc");
+  XeCryptMd5(g, in, 1, in + 1, 1, in + 2, 1, out, 16);
+  CHECK(hex(out, 16) == "900150983cd24fb0d6963f7d28e17f72");
+  std::memset(g.host(out), 0xEE, 16);
+  XeCryptMd5(g, in, 3, 0, 5, in, 0, out, 4);
+  CHECK(hex(out, 5) == "90015098ee");
+  // MD5 streamed across block boundaries: 80 digits in pieces of 1, 63 and 16; the digest left in the state's words.
+  const std::string digits = "12345678901234567890123456789012345678901234567890123456789012345678901234567890";
+  put(in, digits);
+  XeCryptMd5Init(g, state);
+  CHECK(g.Load32(state + 4) == 0x67452301 && g.Load32(state + 0x10) == 0x10325476 && g.Load32(state) == 0);
+  XeCryptMd5Update(g, state, in, 1);
+  XeCryptMd5Update(g, state, in + 1, 63);
+  XeCryptMd5Update(g, state, in + 64, 16);
+  CHECK(g.Load32(state) == 80);
+  XeCryptMd5Final(g, state, out, 16);
+  CHECK(hex(out, 16) == "57edf4a22be3c955ac49da2e2107b67a" && hex(state + 4, 16) == "57edf4a22be3c955ac49da2e2107b67a");
+  // SHA-256, one call.
+  put(in, "abc");
+  XeCryptSha256(g, in, 3, 0, 0, 0, 0, out, 32);
+  CHECK(hex(out, 32) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  const std::string long_message = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+  put(in, long_message);
+  XeCryptSha256(g, in, 20, in + 20, 30, in + 50, uint32_t(long_message.size()) - 50, out, 32);
+  CHECK(hex(out, 32) == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+  // HMAC-MD5 (RFC 2202 cases 1 and 2).
+  put(key, std::string(16, '\x0b'));
+  put(in, "Hi There");
+  XeCryptHmacMd5(g, key, 16, in, 8, 0, 0, 0, 0, out, 16);
+  CHECK(hex(out, 16) == "9294727a3638bb1c13f48ef8158bfc9d");
+  put(key, "Jefe");
+  put(in, "what do ya want for nothing?");
+  XeCryptHmacMd5(g, key, 4, in, 10, in + 10, 18, 0, 0, out, 16);
+  CHECK(hex(out, 16) == "750c783e6ab0b503eaa86e310a5db738");
+  // HMAC-SHA-1 streamed (RFC 2202 cases 1 and 2), and the one-call verify.
+  put(key, std::string(20, '\x0b'));
+  put(in, "Hi There");
+  XeCryptHmacShaInit(g, state, key, 20);
+  CHECK(g.Load32(state) == 64 && g.Load32(state + 0x58) == 64);
+  XeCryptHmacShaUpdate(g, state, in, 3);
+  XeCryptHmacShaUpdate(g, state, in + 3, 5);
+  XeCryptHmacShaFinal(g, state, out, 20);
+  CHECK(hex(out, 20) == "b617318655057264e28bc0b6fb378c8ef146be00");
+  put(key, "Jefe");
+  put(in, "what do ya want for nothing?");
+  XeCryptHmacShaInit(g, state, key, 4);
+  XeCryptHmacShaUpdate(g, state, in, 28);
+  XeCryptHmacShaFinal(g, state, out, 20);
+  CHECK(hex(out, 20) == "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79");
+  CHECK(XeCryptHmacShaVerify(g, key, 4, in, 28, 0, 0, 0, 0, out, 20) == 1);
+  CHECK(XeCryptHmacShaVerify(g, key, 4, in, 28, 0, 0, 0, 0, out, 8) == 1);
+  g.Store8(out + 19, g.Load8(out + 19) ^ 1);
+  CHECK(XeCryptHmacShaVerify(g, key, 4, in, 28, 0, 0, 0, 0, out, 20) == 0);
+  CHECK(XeCryptHmacShaVerify(g, key, 4, in, 28, 0, 0, 0, 0, out, 19) == 1);
+  // Single DES: the classic vector both ways, then FIPS 81's CBC example (the feed left on the last block).
+  g.Store64(key, 0x133457799BBCDFF1ull);
+  XeCryptDesKey(g, state, key);
+  g.Store64(in, 0x0123456789ABCDEFull);
+  XeCryptDesEcb(g, state, in, out, 1);
+  CHECK(g.Load64(out) == 0x85E813540F0AB405ull);
+  XeCryptDesEcb(g, state, out, out + 8, 0);
+  CHECK(g.Load64(out + 8) == 0x0123456789ABCDEFull);
+  g.Store64(key, 0x0123456789ABCDEFull);
+  XeCryptDesKey(g, state, key);
+  const uint32_t feed = key + 8;
+  g.Store64(feed, 0x1234567890ABCDEFull);
+  put(in, "Now is the time for all ");
+  XeCryptDesCbc(g, state, in, 24, out, feed, 1);
+  CHECK(hex(out, 24) == "e5c7cdde872bf27c43e934008c389c0f683788499a7c05f6");
+  CHECK(g.Load64(feed) == 0x683788499A7C05F6ull);
+  g.Store64(feed, 0x1234567890ABCDEFull);
+  XeCryptDesCbc(g, state, out, 24, out + 0x40, feed, 0);
+  CHECK(std::memcmp(g.host(out + 0x40), "Now is the time for all ", 24) == 0);
+}
+
 int main() {
+  CryptStep12Tests();
   InputQueueTests();
   InputScriptTests();
   ProfileSettingsKept();

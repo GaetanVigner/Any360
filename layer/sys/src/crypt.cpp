@@ -755,4 +755,267 @@ uint32_t XeCryptBnQwNeRsaPubCrypt(Guest g, uint32_t in, uint32_t out, uint32_t k
   return 1;
 }
 
+// --- step 12: MD5, HMAC-MD5, streamed HMAC-SHA-1, one-call SHA-256, single DES (source: Xenia Canary's
+// xboxkrnl_crypt.cc for the states and answers; RFC 1321, RFC 2202, FIPS 180-4 and FIPS 81 for the results) ---
+
+namespace {
+
+constexpr uint32_t kMd5Count = 0, kMd5Words = 4, kMd5Buffer = 0x14, kMd5StateSize = 0x54;
+constexpr uint32_t kHmacOuter = kShaStateSize;
+
+constexpr uint32_t kMd5K[64] = {
+    0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501, 0x698098d8, 0x8b44f7af,
+    0xffff5bb1, 0x895cd7be, 0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821, 0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa,
+    0xd62f105d, 0x02441453, 0xd8a1e681, 0xe7d3fbc8, 0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed, 0xa9e3e905, 0xfcefa3f8,
+    0x676f02d9, 0x8d2a4c8a, 0xfffa3942, 0x8771f681, 0x6d9d6122, 0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70,
+    0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05, 0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665, 0xf4292244, 0x432aff97,
+    0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1, 0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1,
+    0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391};
+constexpr uint8_t kMd5Shift[64] = {7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9,  14, 20, 5, 9,
+                                   14, 20, 5, 9,  14, 20, 5, 9,  14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+                                   4,  11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21};
+
+Md5 LoadMd5(Guest g, uint32_t state) {
+  uint32_t abcd[4];
+  for (int i = 0; i < 4; ++i) abcd[i] = g.Load32(state + kMd5Words + 4 * i);
+  return Md5(abcd, g.host(state + kMd5Buffer), g.Load32(state + kMd5Count));
+}
+
+// An HMAC's two pads for a key cut to its first 64 bytes.
+void HmacPads(const uint8_t* key, uint32_t key_size, uint8_t inner[64], uint8_t outer[64]) {
+  std::memset(inner, 0x36, 64);
+  std::memset(outer, 0x5C, 64);
+  for (uint32_t i = 0; i < std::min<uint32_t>(key_size, 64); ++i) inner[i] ^= key[i], outer[i] ^= key[i];
+}
+
+// The hash of up to three guest buffers, null or empty ones skipped.
+template <typename Hash>
+auto HashOf(Guest g, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2, uint32_t in3, uint32_t size3) {
+  Hash hash;
+  if (in1 && size1) hash.Update(g.host(in1), size1);
+  if (in2 && size2) hash.Update(g.host(in2), size2);
+  if (in3 && size3) hash.Update(g.host(in3), size3);
+  return hash.Final();
+}
+
+class Sha256 {
+ public:
+  void Update(const uint8_t* data, size_t size) {
+    total_ += size;
+    while (size > 0) {
+      const size_t n = std::min<size_t>(64 - buffered_, size);
+      std::memcpy(buffer_ + buffered_, data, n);
+      buffered_ += n, data += n, size -= n;
+      if (buffered_ == 64) Sha256Block(h_, buffer_), buffered_ = 0;
+    }
+  }
+  std::array<uint8_t, 32> Final() {
+    const uint64_t bits = total_ * 8;
+    const uint8_t pad = 0x80, zero = 0;
+    Update(&pad, 1);
+    while (buffered_ != 56) Update(&zero, 1);
+    uint8_t length[8];
+    for (int i = 0; i < 8; ++i) length[i] = uint8_t(bits >> (56 - 8 * i));
+    Update(length, 8);
+    std::array<uint8_t, 32> out;
+    for (int i = 0; i < 8; ++i) {
+      for (int j = 0; j < 4; ++j) out[4 * i + j] = uint8_t(h_[i] >> (24 - 8 * j));
+    }
+    return out;
+  }
+
+ private:
+  uint32_t h_[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+  uint8_t buffer_[64];
+  size_t buffered_ = 0;
+  uint64_t total_ = 0;
+};
+
+// One DES schedule as the reference stores it (host little-endian 64-bit subkeys).
+struct DesState {
+  uint64_t keys[16];
+  DesState(Guest g, uint32_t state) {
+    std::memcpy(keys, g.host(state), sizeof keys);
+    if constexpr (std::endian::native == std::endian::big) {
+      for (uint64_t& k : keys) k = std::byteswap(k);
+    }
+  }
+};
+
+}  // namespace
+
+Md5::Md5() : abcd_{0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476} {}
+
+Md5::Md5(const uint32_t abcd[4], const uint8_t* buffer, uint32_t count) : buffered_(count % 64), total_(count) {
+  std::memcpy(abcd_, abcd, sizeof abcd_);
+  std::memcpy(buffer_, buffer, buffered_);
+}
+
+void Md5::Block(const uint8_t* block) {
+  uint32_t m[16];
+  for (int i = 0; i < 16; ++i) {
+    m[i] = uint32_t(block[4 * i]) | uint32_t(block[4 * i + 1]) << 8 | uint32_t(block[4 * i + 2]) << 16 |
+           uint32_t(block[4 * i + 3]) << 24;
+  }
+  uint32_t a = abcd_[0], b = abcd_[1], c = abcd_[2], d = abcd_[3];
+  for (int i = 0; i < 64; ++i) {
+    uint32_t f;
+    int k;
+    if (i < 16) {
+      f = (b & c) | (~b & d), k = i;
+    } else if (i < 32) {
+      f = (d & b) | (~d & c), k = (5 * i + 1) % 16;
+    } else if (i < 48) {
+      f = b ^ c ^ d, k = (3 * i + 5) % 16;
+    } else {
+      f = c ^ (b | ~d), k = (7 * i) % 16;
+    }
+    const uint32_t t = d;
+    d = c, c = b;
+    b = b + std::rotl(a + f + kMd5K[i] + m[k], kMd5Shift[i]);
+    a = t;
+  }
+  abcd_[0] += a, abcd_[1] += b, abcd_[2] += c, abcd_[3] += d;
+}
+
+void Md5::Update(const uint8_t* data, size_t size) {
+  total_ += size;
+  while (size > 0) {
+    const size_t n = std::min<size_t>(64 - buffered_, size);
+    std::memcpy(buffer_ + buffered_, data, n);
+    buffered_ += n, data += n, size -= n;
+    if (buffered_ == 64) Block(buffer_), buffered_ = 0;
+  }
+}
+
+std::array<uint8_t, 16> Md5::Final() {
+  const uint64_t bits = total_ * 8;
+  const uint8_t pad = 0x80, zero = 0;
+  Update(&pad, 1);
+  while (buffered_ != 56) Update(&zero, 1);
+  uint8_t length[8];
+  for (int i = 0; i < 8; ++i) length[i] = uint8_t(bits >> (8 * i));
+  Update(length, 8);
+  std::array<uint8_t, 16> out;
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) out[4 * i + j] = uint8_t(abcd_[i] >> (8 * j));
+  }
+  return out;
+}
+
+void XeCryptMd5(Guest g, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2, uint32_t in3, uint32_t size3, uint32_t output,
+                uint32_t output_size) {
+  const auto digest = HashOf<Md5>(g, in1, size1, in2, size2, in3, size3);
+  std::memcpy(g.host(output), digest.data(), std::min<uint32_t>(16, output_size));
+}
+
+void XeCryptSha256(Guest g, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2, uint32_t in3, uint32_t size3,
+                   uint32_t output, uint32_t output_size) {
+  const auto digest = HashOf<Sha256>(g, in1, size1, in2, size2, in3, size3);
+  std::memcpy(g.host(output), digest.data(), std::min<uint32_t>(32, output_size));
+}
+
+void XeCryptMd5Init(Guest g, uint32_t state) {
+  std::memset(g.host(state), 0, kMd5StateSize);
+  const Md5 md5;
+  for (int i = 0; i < 4; ++i) g.Store32(state + kMd5Words + 4 * i, md5.words()[i]);
+}
+
+void XeCryptMd5Update(Guest g, uint32_t state, uint32_t input, uint32_t size) {
+  Md5 md5 = LoadMd5(g, state);
+  if (size) md5.Update(g.host(input), size);
+  for (int i = 0; i < 4; ++i) g.Store32(state + kMd5Words + 4 * i, md5.words()[i]);
+  g.Store32(state + kMd5Count, uint32_t(md5.total()));
+  std::memcpy(g.host(state + kMd5Buffer), md5.buffer(), md5.total() % 64);
+}
+
+void XeCryptMd5Final(Guest g, uint32_t state, uint32_t out, uint32_t out_size) {
+  Md5 md5 = LoadMd5(g, state);
+  const auto digest = md5.Final();
+  std::memcpy(g.host(out), digest.data(), std::min<uint32_t>(16, out_size));
+  std::memcpy(g.host(state + kMd5Words), digest.data(), 16);  // the digest left in the state's words, as Xenia
+}
+
+void XeCryptHmacMd5(Guest g, uint32_t key, uint32_t key_size, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2,
+                    uint32_t in3, uint32_t size3, uint32_t out, uint32_t out_size) {
+  uint8_t inner[64], outer[64];
+  HmacPads(key_size ? g.host(key) : nullptr, key_size, inner, outer);
+  Md5 first;
+  first.Update(inner, 64);
+  if (in1 && size1) first.Update(g.host(in1), size1);
+  if (in2 && size2) first.Update(g.host(in2), size2);
+  if (in3 && size3) first.Update(g.host(in3), size3);
+  const auto digest = first.Final();
+  Md5 second;
+  second.Update(outer, 64);
+  second.Update(digest.data(), 16);
+  const auto result = second.Final();
+  std::memcpy(g.host(out), result.data(), std::min<uint32_t>(16, out_size));
+}
+
+void XeCryptHmacShaInit(Guest g, uint32_t state, uint32_t key, uint32_t key_size) {
+  uint8_t inner[64], outer[64];
+  HmacPads(key_size ? g.host(key) : nullptr, key_size, inner, outer);
+  std::memset(g.host(state), 0, 2 * kShaStateSize);
+  // Each half is an XECRYPT_SHA_STATE that has taken its 64-byte pad (one whole block: nothing buffered).
+  const std::pair<uint32_t, const uint8_t*> halves[2] = {{state, inner}, {state + kHmacOuter, outer}};
+  for (const auto& [at, pad] : halves) {
+    Sha1 sha;
+    sha.Update(pad, 64);
+    StoreDigest(g, at, sha);
+    g.Store32(at + kShaCount, 64);
+  }
+}
+
+void XeCryptHmacShaUpdate(Guest g, uint32_t state, uint32_t input, uint32_t size) { XeCryptShaUpdate(g, state, input, size); }
+
+void XeCryptHmacShaFinal(Guest g, uint32_t state, uint32_t out, uint32_t out_size) {
+  Sha1 inner = LoadSha1(g, state);
+  const auto digest = inner.Final();
+  StoreDigest(g, state, inner);
+  Sha1 outer = LoadSha1(g, state + kHmacOuter);
+  outer.Update(digest.data(), 20);
+  const auto result = outer.Final();
+  StoreDigest(g, state + kHmacOuter, outer);
+  std::memcpy(g.host(out), result.data(), std::min<uint32_t>(20, out_size));
+}
+
+uint32_t XeCryptHmacShaVerify(Guest g, uint32_t key, uint32_t key_size, uint32_t in1, uint32_t size1, uint32_t in2,
+                              uint32_t size2, uint32_t in3, uint32_t size3, uint32_t verify, uint32_t verify_size) {
+  const auto digest = HmacSha(g, key_size ? g.host(key) : nullptr, key_size, in1, size1, in2, size2, in3, size3);
+  const uint32_t n = std::min<uint32_t>(20, verify_size);
+  return n == 0 || std::memcmp(digest.data(), g.host(verify), n) == 0 ? 1 : 0;
+}
+
+void XeCryptDesKey(Guest g, uint32_t state, uint32_t key) {
+  uint64_t sub_keys[16];
+  DesSchedule(g.Load64(key), sub_keys);
+  for (int k = 0; k < 16; ++k) {
+    uint64_t little = sub_keys[k];
+    if constexpr (std::endian::native == std::endian::big) little = std::byteswap(little);
+    std::memcpy(g.host(state + 8 * k), &little, 8);
+  }
+}
+
+void XeCryptDesEcb(Guest g, uint32_t state, uint32_t in, uint32_t out, uint32_t encrypt) {
+  const DesState des(g, state);
+  g.Store64(out, Des(g.Load64(in), des.keys, !encrypt));
+}
+
+void XeCryptDesCbc(Guest g, uint32_t state, uint32_t in, uint32_t size, uint32_t out, uint32_t feed, uint32_t encrypt) {
+  const DesState des(g, state);
+  uint64_t last = g.Load64(feed);
+  for (uint32_t i = 0; i < size / 8; ++i) {
+    const uint64_t block = g.Load64(in + 8 * i);
+    if (encrypt) {
+      last = Des(block ^ last, des.keys, false);
+      g.Store64(out + 8 * i, last);
+    } else {
+      g.Store64(out + 8 * i, Des(block, des.keys, true) ^ last);
+      last = block;
+    }
+  }
+  g.Store64(feed, last);
+}
+
 }  // namespace any360::sys

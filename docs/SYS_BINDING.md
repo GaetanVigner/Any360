@@ -399,6 +399,16 @@ code, the XDK's documentation, a standard's test vectors) and scenario tests; th
 native-function rule wait for a title that calls it. One difference already found: Xenia truncates an HMAC-SHA key
 longer than 64 bytes (`XeCryptHmacShaInit`, as the console), where `XeCryptHmacSha` here hashes it first.
 
+First batch, the cryptography Xenia implements (13 calls, `crypt.h`): `XeCryptMd5` and `XeCryptSha256` in one call,
+streamed MD5 (`XeCryptMd5Init` / `Update` / `Final` on the 0x54-byte state, the digest left in its words),
+`XeCryptHmacMd5`, streamed HMAC-SHA-1 (`XeCryptHmacShaInit` / `Update` / `Final` on the 0xB0-byte state, a key over
+64 bytes cut as the console does) and `XeCryptHmacShaVerify`, single DES (`XeCryptDesKey` / `Ecb` / `Cbc`, one third
+of the triple-DES state). The states and answers follow Xenia's xboxkrnl_crypt.cc; `sys_object_tests` checks the
+results against the standards' test vectors (RFC 1321, FIPS 180-4, RFC 2202, FIPS 81), in one call and streamed in
+uneven pieces. Left out until a source confirms its state's size: streamed SHA-512 (Xenia marks its layout
+unconfirmed, and a title reserving a smaller state on its stack would be overwritten). HMAC-MD5's cut of a long key is
+Xenia's assumption, not checked on a console.
+
 ## After step 7: from one title to any title (the road to 100%)
 
 Steps 0-7 put Crackdown's system calls on any360::sys, with ReXGlue still hosting it. Crackdown is the test bench; the

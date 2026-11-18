@@ -44,6 +44,56 @@ void XeCryptShaFinal(Guest g, uint32_t state, uint32_t out, uint32_t out_size);
 void XeCryptSha256Init(Guest g, uint32_t state);
 void XeCryptSha256Update(Guest g, uint32_t state, uint32_t input, uint32_t size);
 void XeCryptSha256Final(Guest g, uint32_t state, uint32_t out, uint32_t out_size);
+// MD5 (RFC 1321), as Sha1 above.
+class Md5 {
+ public:
+  Md5();
+  // Resumed from a guest XECRYPT_MD5_STATE's words A-D, buffered bytes and byte count.
+  Md5(const uint32_t abcd[4], const uint8_t* buffer, uint32_t count);
+  const uint32_t* words() const { return abcd_; }
+  const uint8_t* buffer() const { return buffer_; }
+  uint64_t total() const { return total_; }
+  void Update(const uint8_t* data, size_t size);
+  std::array<uint8_t, 16> Final();
+
+ private:
+  void Block(const uint8_t* block);
+  uint32_t abcd_[4];
+  uint8_t buffer_[64];
+  size_t buffered_ = 0;
+  uint64_t total_ = 0;
+};
+
+// Step 12 (docs/SYS_STUBS.md: what Xenia Canary implements and the reference stubs; the source of each answer is
+// Xenia's xboxkrnl_crypt.cc, the hashes and ciphers checked against their standards' test vectors).
+// XeCryptMd5 / XeCryptSha256: the digest of up to three buffers (null or empty ones skipped), its first `output_size`
+// bytes written.
+void XeCryptMd5(Guest g, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2, uint32_t in3, uint32_t size3, uint32_t output,
+                uint32_t output_size);
+void XeCryptSha256(Guest g, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2, uint32_t in3, uint32_t size3,
+                   uint32_t output, uint32_t output_size);
+// Streamed MD5 on an XECRYPT_MD5_STATE (0x54 bytes: count, words A-D, 64 buffered bytes). Final writes the first
+// `out_size` digest bytes and leaves the digest in the state's words.
+void XeCryptMd5Init(Guest g, uint32_t state);
+void XeCryptMd5Update(Guest g, uint32_t state, uint32_t input, uint32_t size);
+void XeCryptMd5Final(Guest g, uint32_t state, uint32_t out, uint32_t out_size);
+// HMAC-MD5 of up to three buffers; a key over 64 bytes is cut to its first 64 (as Xenia assumes the console does,
+// as for HMAC-SHA-1: not checked on a console).
+void XeCryptHmacMd5(Guest g, uint32_t key, uint32_t key_size, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2,
+                    uint32_t in3, uint32_t size3, uint32_t out, uint32_t out_size);
+// Streamed HMAC-SHA-1 on an XECRYPT_HMACSHA_STATE (0xB0 bytes: the inner then the outer XECRYPT_SHA_STATE). Init
+// starts both on the key's pads, a key over 64 bytes cut to its first 64 as the console does; Final finishes the
+// inner hash, feeds its digest to the outer one and writes the first `out_size` bytes of the result.
+void XeCryptHmacShaInit(Guest g, uint32_t state, uint32_t key, uint32_t key_size);
+void XeCryptHmacShaUpdate(Guest g, uint32_t state, uint32_t input, uint32_t size);
+void XeCryptHmacShaFinal(Guest g, uint32_t state, uint32_t out, uint32_t out_size);
+// Whether XeCryptHmacSha's digest of the buffers starts with the first `verify_size` (at most 20) bytes given.
+uint32_t XeCryptHmacShaVerify(Guest g, uint32_t key, uint32_t key_size, uint32_t in1, uint32_t size1, uint32_t in2,
+                              uint32_t size2, uint32_t in3, uint32_t size3, uint32_t verify, uint32_t verify_size);
+// Single DES on an XECRYPT_DES_STATE (one schedule of 16 subkeys, laid out as one third of XECRYPT_DES3_STATE).
+void XeCryptDesKey(Guest g, uint32_t state, uint32_t key);
+void XeCryptDesEcb(Guest g, uint32_t state, uint32_t in, uint32_t out, uint32_t encrypt);
+void XeCryptDesCbc(Guest g, uint32_t state, uint32_t in, uint32_t size, uint32_t out, uint32_t feed, uint32_t encrypt);
 // HMAC-SHA-1 of up to three buffers (empty ones skipped); a key over 64 bytes is hashed first.
 void XeCryptHmacSha(Guest g, uint32_t key, uint32_t key_size, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2,
                     uint32_t in3, uint32_t size3, uint32_t out, uint32_t out_size);

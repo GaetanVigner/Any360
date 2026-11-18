@@ -811,6 +811,31 @@ ANY360_SYS_EXPORT(XeCryptDes3Key) { XeCryptDes3Key({base}, ctx.r3.u32, ctx.r4.u3
 ANY360_SYS_EXPORT(XeCryptDes3Ecb) { XeCryptDes3Ecb({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
 ANY360_SYS_EXPORT(XeCryptDes3Cbc) { XeCryptDes3Cbc({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32); }
 ANY360_SYS_EXPORT(XeCryptDesParity) { XeCryptDesParity({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+// Step 12: what Xenia Canary implements and the reference stubs (docs/SYS_STUBS.md), with scenario tests against the
+// hashes' and ciphers' standard test vectors (sys_object_tests).
+ANY360_SYS_EXPORT(XeCryptMd5) {
+  XeCryptMd5({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+}
+ANY360_SYS_EXPORT(XeCryptSha256) {
+  XeCryptSha256({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+}
+ANY360_SYS_EXPORT(XeCryptMd5Init) { XeCryptMd5Init({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XeCryptMd5Update) { XeCryptMd5Update({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptMd5Final) { XeCryptMd5Final({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptHmacMd5) {
+  XeCryptHmacMd5({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32,
+                 StackArgument(ctx, base, 8), StackArgument(ctx, base, 9));
+}
+ANY360_SYS_EXPORT(XeCryptHmacShaInit) { XeCryptHmacShaInit({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptHmacShaUpdate) { XeCryptHmacShaUpdate({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptHmacShaFinal) { XeCryptHmacShaFinal({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptHmacShaVerify) {
+  ctx.r3.u64 = XeCryptHmacShaVerify({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32,
+                                    ctx.r10.u32, StackArgument(ctx, base, 8), StackArgument(ctx, base, 9));
+}
+ANY360_SYS_EXPORT(XeCryptDesKey) { XeCryptDesKey({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XeCryptDesEcb) { XeCryptDesEcb({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XeCryptDesCbc) { XeCryptDesCbc({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32); }
 ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
@@ -1563,6 +1588,19 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XeCryptRc4Key),
     ANY360_SYS_ENTRY(XeCryptRc4Ecb),
     ANY360_SYS_ENTRY(XeCryptRc4),
+    ANY360_SYS_ENTRY(XeCryptMd5),
+    ANY360_SYS_ENTRY(XeCryptSha256),
+    ANY360_SYS_ENTRY(XeCryptMd5Init),
+    ANY360_SYS_ENTRY(XeCryptMd5Update),
+    ANY360_SYS_ENTRY(XeCryptMd5Final),
+    ANY360_SYS_ENTRY(XeCryptHmacMd5),
+    ANY360_SYS_ENTRY(XeCryptHmacShaInit),
+    ANY360_SYS_ENTRY(XeCryptHmacShaUpdate),
+    ANY360_SYS_ENTRY(XeCryptHmacShaFinal),
+    ANY360_SYS_ENTRY(XeCryptHmacShaVerify),
+    ANY360_SYS_ENTRY(XeCryptDesKey),
+    ANY360_SYS_ENTRY(XeCryptDesEcb),
+    ANY360_SYS_ENTRY(XeCryptDesCbc),
     ANY360_SYS_ENTRY(XeCryptAesKey),
     ANY360_SYS_ENTRY(XeCryptAesEcb),
     ANY360_SYS_ENTRY(XeCryptAesCbc),
