@@ -88,7 +88,7 @@ class Xam {
   uint32_t NotifyGetNext(Guest g, uint32_t handle, uint32_t match_id, uint32_t id_ptr, uint32_t param_ptr);
 
   // The local user and profile.
-  uint32_t UserGetSigninState(uint32_t user);
+  uint32_t UserGetSigninState(uint32_t user) const;
   uint32_t UserGetXUID(Guest g, uint32_t user, uint32_t type_mask, uint32_t xuid_ptr);
   uint32_t UserGetName(Guest g, uint32_t user, uint32_t buffer, uint32_t length);
   uint32_t UserGetSigninInfo(Guest g, uint32_t user, uint32_t flags, uint32_t info);
@@ -160,6 +160,56 @@ class Xam {
   uint32_t NuiHudSetEngagedTrackingId(uint32_t id) const { return id ? 0x80004005u : 0; }
   void NuiHudGetVersions(Guest g, uint32_t xam_version, uint32_t xtl_version) const;
   uint64_t NuiIdentitySessionId();
+
+  // Step 12, the profile and user calls Xenia implements (its xam_profile.cc, xam_user.cc, xam_enum.cc, xam_nui.cc,
+  // user_tracker.cc). One local profile (TitleSettings: xuid, gamertag), signed in as user 0. Its account
+  // (X_XAMACCOUNTINFO, 0x17C bytes): the gamertag, no online XUID, no reserved flags, and as cached user flags the
+  // console's country (bits 8-15) and language (bits 25-29), no subscription tier, no parental controls (Xenia leaves
+  // the country and language at 0 and reads the console's instead).
+  static constexpr uint32_t kAccountSize = 0x17C, kProfileEnumResultSize = 0x188;
+  void WriteAccount(Guest g, uint32_t account) const;
+  void WriteProfileEnumResult(Guest g, uint32_t at) const;
+  uint32_t CachedUserFlags() const;
+  // XamUserGetUserFlags / XamUserGetCachedUserFlags (user index) and XamUserGetUserFlagsFromXUID: the flags above for
+  // the local profile, 0 otherwise.
+  uint32_t UserFlags(uint32_t user) const { return UserGetSigninState(user) ? CachedUserFlags() : 0; }
+  uint32_t UserFlagsFromXuid(uint64_t xuid) const { return xuid == title_.xuid ? CachedUserFlags() : 0; }
+  // XamProfileCreateEnumerator: an enumerator of the profiles on the console (the local one: X_PROFILEENUMRESULT,
+  // its offline XUID, account and device 1), one a call; ERROR_INVALID_PARAMETER without a handle out.
+  uint32_t ProfileCreateEnumerator(Guest g, uint32_t handle_ptr);
+  // XamProfileEnumerate (handle, flags, buffer, overlapped): the next profile into the buffer, which the system
+  // gives no size for; ERROR_NO_MORE_FILES at the end.
+  uint32_t ProfileEnumerate(Guest g, uint32_t handle, uint32_t buffer, uint32_t overlapped);
+  // XamProfileFindAccount (offline XUID, account out, device out): the account cleared, then the local profile's
+  // and device 1; ERROR_NO_SUCH_USER for another XUID, ERROR_INVALID_PARAMETER without an account out.
+  uint32_t ProfileFindAccount(Guest g, uint64_t xuid, uint32_t account, uint32_t device_ptr) const;
+  // XamProfileOpen (XUID, mount name, flags, XCONTENT_DATA_AGGREGATE out): the local profile's package mounted as
+  // "<name>:" ("User_<XUID>" without a name; a folder under the content root), the content data filled (profile
+  // type 0x10000, device 1, the XUID as file name, the dashboard's title id); ERROR_INVALID_PARAMETER for another XUID.
+  uint32_t ProfileOpen(Guest g, uint64_t xuid, uint32_t mount_name, uint32_t content_data);
+  // XamUserGetIndexFromXUID: 0 for the local profile's XUID; E_INVALIDARG without an index out, the NO_SUCH_USER
+  // HRESULT for another XUID.
+  uint32_t UserGetIndexFromXuid(Guest g, uint64_t xuid, uint32_t index_ptr) const;
+  // XamUserGetSubscriptionType (user, length out, payment out): no Xbox Live subscription (0, 0) for user 0;
+  // E_INVALIDARG for a user past 3 or a null out, the NO_SUCH_USER HRESULT for another user.
+  uint32_t UserGetSubscriptionType(Guest g, uint32_t user, uint32_t length_ptr, uint32_t payment_ptr) const;
+  // XamUserGetUserTenure: the profile holds no tenure settings, so nothing is written; success for user 0, the
+  // NO_SUCH_USER HRESULT for another.
+  uint32_t UserGetUserTenure(uint32_t user) const { return UserGetSigninState(user) ? 0 : 0x80070525u; }
+  // XamUserLogon (XUIDs, flags, overlapped): ERROR_INVALID_PARAMETER without XUIDs; else success (through the
+  // overlapped when given). The one local profile stays signed in: adding it changes nothing, and Any360 has no other
+  // profile to add nor a sign-out state (removing or logging off every user leaves it signed in).
+  uint32_t UserLogon(Guest g, uint32_t xuids, uint32_t overlapped);
+  // XamUserNuiGetUserIndexForSignin: user 0 (the signed-in profile), S_OK; E_INVALIDARG without an index out.
+  uint32_t UserNuiGetUserIndexForSignin(Guest g, uint32_t index_ptr) const;
+  // XamUserReadUserPreference / XamUserWriteUserPreference (user, mask, value [out], overlapped): the dashboard's
+  // XPROFILE_USER_PREFERENCES word, kept for the run. A mask names one preference (0x001, 0x020 ... 0x200 alone; 0x006
+  // and 0x018 with a "written" bit, 0x004 and 0x010); a read gives the word's bits under the mask, without the written
+  // bit (S_FALSE as the extended error when never written); a write takes only bits of the mask, never the written
+  // bit, sets it, and notifies XN_SYS_PROFILESETTINGCHANGED (0x0E) for user 0. ERROR_INVALID_PARAMETER for a user past
+  // 3 (or no value out); ERROR_FUNCTION_FAILED with E_INVALIDARG or NO_SUCH_USER as the extended error otherwise.
+  uint32_t UserReadUserPreference(Guest g, uint32_t user, uint32_t mask, uint32_t value_ptr, uint32_t overlapped);
+  uint32_t UserWriteUserPreference(Guest g, uint32_t user, uint32_t mask, uint32_t value, uint32_t overlapped);
   // XamGetDashBackstackData: no dashboard ran before the title, so no backstack nodes: nothing written, success.
   uint32_t GetDashBackstackData() const { return 0; }
   // XamGetCachedTitleName: the title's name for any id but 0 (one profile, one title known), as big-endian UTF-16
@@ -308,6 +358,8 @@ class Xam {
     uint32_t object, item_size, per_call;
     size_t next = 0;
     std::vector<std::vector<uint8_t>> items;
+    // The profile enumerator's one item is written straight into the title's buffer (no host copy kept).
+    bool local_profile = false;
   };
   struct Setting {
     uint32_t id;
@@ -323,6 +375,8 @@ class Xam {
   uint8_t dash_app_info_[12] = {};
   uint32_t dash_context_ = 0;
   uint64_t nui_session_id_ = 0;
+  uint32_t user_preferences_ = 0;
+  std::vector<std::string> profile_mounts_;  // the names XamProfileOpen mounted the profile under
   uint32_t language_fallback_ = 0;  // the 18 fallback locale names in the kernel heap, laid out at first use
   uint32_t language_fallback_at_[18] = {};
   // The packages of a type as enumerator items of `item_size` bytes starting with their XCONTENT_DATA, sorted by name.

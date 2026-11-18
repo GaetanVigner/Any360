@@ -954,6 +954,45 @@ ANY360_SYS_EXPORT(XamShowForcedNameChangeUI) { ctx.r3.u64 = XamState().ShowForce
 ANY360_SYS_EXPORT(XamShowGamerCardUI) { ctx.r3.u64 = XamState().ShowProfileUI(ctx.r3.u32); }
 ANY360_SYS_EXPORT(XamShowMultiplayerUpgradeUI) { ctx.r3.u64 = XamState().ShowMultiplayerUpgradeUI(); }
 ANY360_SYS_EXPORT(XamShowNuiHardwareRequiredUI) { ctx.r3.u64 = XamState().ShowNuiHardwareRequiredUI(ctx.r3.u32); }
+
+// Step 12: the profile and user calls Xenia implements (xam.h). One local profile, user 0.
+// (device, handle out)
+ANY360_SYS_EXPORT(XamProfileCreateEnumerator) { ctx.r3.u64 = XamState().ProfileCreateEnumerator({base}, ctx.r4.u32); }
+// (handle, flags, buffer, overlapped)
+ANY360_SYS_EXPORT(XamProfileEnumerate) { ctx.r3.u64 = XamState().ProfileEnumerate({base}, ctx.r3.u32, ctx.r5.u32, ctx.r6.u32); }
+// (offline XUID, account out, device out)
+ANY360_SYS_EXPORT(XamProfileFindAccount) {
+  ctx.r3.u64 = XamState().ProfileFindAccount({base}, ctx.r3.u64, ctx.r4.u32, ctx.r5.u32);
+}
+// (XUID, buffer length, buffer): the profile's language and country as "ll-CC", which are the console's here.
+ANY360_SYS_EXPORT(XamProfileGetLiveLegalLocale) {
+  ctx.r3.u64 = XamGetOnlineLanguageAndCountryString({base}, Console().language, Console().country, ctx.r4.u32, ctx.r5.u32);
+}
+// (XUID, mount name, flags, content data out)
+ANY360_SYS_EXPORT(XamProfileOpen) { ctx.r3.u64 = XamState().ProfileOpen({base}, ctx.r3.u64, ctx.r4.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XamUserGetCachedUserFlags) { ctx.r3.u64 = XamState().UserFlags(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamUserGetUserFlags) { ctx.r3.u64 = XamState().UserFlags(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamUserGetUserFlagsFromXUID) { ctx.r3.u64 = XamState().UserFlagsFromXuid(ctx.r3.u64); }
+// (XUID, flags, index out)
+ANY360_SYS_EXPORT(XamUserGetIndexFromXUID) { ctx.r3.u64 = XamState().UserGetIndexFromXuid({base}, ctx.r3.u64, ctx.r5.u32); }
+// The profile's language, which is the console's here.
+ANY360_SYS_EXPORT(XamUserGetOnlineLanguageFromXUID) { ctx.r3.u64 = Console().language; }
+ANY360_SYS_EXPORT(XamUserGetSubscriptionType) {
+  ctx.r3.u64 = XamState().UserGetSubscriptionType({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);
+}
+// (user, tenure level out, milestone out, milestone date out, overlapped)
+ANY360_SYS_EXPORT(XamUserGetUserTenure) { ctx.r3.u64 = XamState().UserGetUserTenure(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamUserIsParentalControlled) { ctx.r3.u64 = 0; }  // no parental controls on the local profile
+// (XUIDs, flags, overlapped)
+ANY360_SYS_EXPORT(XamUserLogon) { ctx.r3.u64 = XamState().UserLogon({base}, ctx.r3.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamUserNuiGetUserIndexForSignin) { ctx.r3.u64 = XamState().UserNuiGetUserIndexForSignin({base}, ctx.r3.u32); }
+// (user, mask, value out / value, overlapped)
+ANY360_SYS_EXPORT(XamUserReadUserPreference) {
+  ctx.r3.u64 = XamState().UserReadUserPreference({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+}
+ANY360_SYS_EXPORT(XamUserWriteUserPreference) {
+  ctx.r3.u64 = XamState().UserWriteUserPreference({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+}
 ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
@@ -1779,6 +1818,23 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XamShowGamerCardUI),
     ANY360_SYS_ENTRY(XamShowMultiplayerUpgradeUI),
     ANY360_SYS_ENTRY(XamShowNuiHardwareRequiredUI),
+    ANY360_SYS_ENTRY(XamProfileCreateEnumerator),
+    ANY360_SYS_ENTRY(XamProfileEnumerate),
+    ANY360_SYS_ENTRY(XamProfileFindAccount),
+    ANY360_SYS_ENTRY(XamProfileGetLiveLegalLocale),
+    ANY360_SYS_ENTRY(XamProfileOpen),
+    ANY360_SYS_ENTRY(XamUserGetCachedUserFlags),
+    ANY360_SYS_ENTRY(XamUserGetIndexFromXUID),
+    ANY360_SYS_ENTRY(XamUserGetOnlineLanguageFromXUID),
+    ANY360_SYS_ENTRY(XamUserGetSubscriptionType),
+    ANY360_SYS_ENTRY(XamUserGetUserFlags),
+    ANY360_SYS_ENTRY(XamUserGetUserFlagsFromXUID),
+    ANY360_SYS_ENTRY(XamUserGetUserTenure),
+    ANY360_SYS_ENTRY(XamUserIsParentalControlled),
+    ANY360_SYS_ENTRY(XamUserLogon),
+    ANY360_SYS_ENTRY(XamUserNuiGetUserIndexForSignin),
+    ANY360_SYS_ENTRY(XamUserReadUserPreference),
+    ANY360_SYS_ENTRY(XamUserWriteUserPreference),
     ANY360_SYS_ENTRY(XeCryptAesKey),
     ANY360_SYS_ENTRY(XeCryptAesEcb),
     ANY360_SYS_ENTRY(XeCryptAesCbc),

@@ -394,6 +394,15 @@ int main(int argc, char** argv) {
              Measure{});
     Objects().Close(listener);
   }
+  // The profile enumerator as a title uses it: create, read the one profile, read the end, close.
+  PrintRow("XamProfile Create+Enumerate x2+Close", 0, Time(20000, [&] {
+             XamState().ProfileCreateEnumerator(g, kOut + 0x300);
+             const uint32_t handle = g.Load32(kOut + 0x300);
+             g_sink = g_sink + XamState().ProfileEnumerate(g, handle, kOut + 0x400, 0);
+             g_sink = g_sink + XamState().ProfileEnumerate(g, handle, kOut + 0x400, 0);
+             Objects().Close(handle);
+           }),
+           Measure{});
   std::printf("sys_step12_bench: allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_totals.calls ? double(g_totals.bytes) / double(g_totals.calls) : 0.0,
               g_totals.calls ? double(g_totals.count) / double(g_totals.calls) : 0.0,

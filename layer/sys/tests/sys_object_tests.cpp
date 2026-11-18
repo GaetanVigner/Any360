@@ -3206,6 +3206,99 @@ void GuideNuiStep12Tests() {
   XamState().Reset();
 }
 
+// Step 12's profile and user calls (xam.h), against Xenia's answers with one local profile.
+void ProfileStep12Tests() {
+  namespace fs = std::filesystem;
+  Fresh();
+  XamState().Reset();
+  Files().Reset();
+  const fs::path content = fs::temp_directory_path() / "any360-sys-profile";
+  std::error_code ec;
+  fs::remove_all(content, ec);
+  XamState().title().content_root = content;
+  XamState().title().gamertag = "Any360";
+  const uint64_t xuid = XamState().title().xuid;
+  const ConsoleSettings saved = Console();
+  Console().language = 3, Console().country = 24;  // German, Germany
+  const uint32_t out = kScratch + 0x400, account = kScratch + 0x800, ov = kScratch + 0x380;
+  const uint32_t flags = 24u << 8 | 3u << 25;
+  // User flags: the console's country and language, for the local profile only.
+  CHECK(XamState().UserFlags(0) == flags && XamState().UserFlags(1) == 0);
+  CHECK(XamState().UserFlagsFromXuid(xuid) == flags && XamState().UserFlagsFromXuid(xuid + 1) == 0);
+  // The account: cleared then filled; another XUID is no such user (the account left cleared).
+  std::memset(g.host(account), 0xEE, Xam::kAccountSize);
+  g.Store32(out, 0);
+  CHECK(XamState().ProfileFindAccount(g, xuid, account, out) == 0 && g.Load32(out) == 1);
+  CHECK(g.Load16(account + 8) == 'A' && g.Load16(account + 18) == '0' && g.Load16(account + 20) == 0);
+  CHECK(g.Load32(account) == 0 && g.Load64(account + 0x28) == 0 && g.Load32(account + 0x30) == flags);
+  CHECK(g.Load8(account + Xam::kAccountSize - 1) == 0);
+  std::memset(g.host(account), 0xEE, Xam::kAccountSize);
+  CHECK(XamState().ProfileFindAccount(g, xuid + 1, account, out) == kErrorNoSuchUser && g.Load32(account + 0x30) == 0);
+  CHECK(XamState().ProfileFindAccount(g, xuid, 0, out) == kErrorInvalidParameter);
+  // The profile enumerator: one X_PROFILEENUMRESULT (XUID, account, device 1), then no more.
+  CHECK(XamState().ProfileCreateEnumerator(g, 0) == kErrorInvalidParameter);
+  CHECK(XamState().ProfileCreateEnumerator(g, out) == 0);
+  const uint32_t handle = g.Load32(out);
+  std::memset(g.host(account), 0xEE, Xam::kProfileEnumResultSize);
+  CHECK(XamState().ProfileEnumerate(g, handle, account, 0) == 0);
+  CHECK(g.Load64(account) == xuid && g.Load16(account + 16) == 'A' && g.Load32(account + 8 + 0x30) == flags);
+  CHECK(g.Load32(account + Xam::kProfileEnumResultSize - 4) == 1);
+  CHECK(XamState().ProfileEnumerate(g, handle, account, 0) == kErrorNoMoreFiles);
+  Objects().Close(handle);
+  // Opening the profile mounts its package under the content root and fills the content data.
+  std::memcpy(g.host(out), "PROFILE", 8);
+  std::memset(g.host(account), 0, 0x148);
+  CHECK(XamState().ProfileOpen(g, xuid, out, account) == 0);
+  CHECK(g.Load32(account) == 1 && g.Load32(account + 4) == 0x10000 && g.Load32(account + 0x140) == 0xFFFE07D1);
+  char hex[17];
+  std::snprintf(hex, sizeof hex, "%016llX", static_cast<unsigned long long>(xuid));
+  CHECK(std::memcmp(g.host(account + 0x108), hex, 16) == 0 && g.Load8(account + 0x108 + 16) == 0);
+  CHECK(fs::is_directory(content / "profile" / hex));
+  CHECK(XamState().ProfileOpen(g, xuid + 1, out, account) == kErrorInvalidParameter);
+  // Index from XUID, subscription, tenure, the Kinect sign-in index, logon.
+  CHECK(XamState().UserGetIndexFromXuid(g, xuid, out) == 0 && g.Load32(out) == 0);
+  CHECK(XamState().UserGetIndexFromXuid(g, xuid + 1, out) == 0x80070525u && XamState().UserGetIndexFromXuid(g, xuid, 0) == 0x80070057u);
+  g.Store32(out, 7), g.Store32(out + 4, 7);
+  CHECK(XamState().UserGetSubscriptionType(g, 0, out, out + 4) == 0 && g.Load32(out) == 0 && g.Load32(out + 4) == 0);
+  CHECK(XamState().UserGetSubscriptionType(g, 1, out, out + 4) == 0x80070525u);
+  CHECK(XamState().UserGetSubscriptionType(g, 4, out, out + 4) == 0x80070057u && XamState().UserGetSubscriptionType(g, 0, 0, out) == 0x80070057u);
+  CHECK(XamState().UserGetUserTenure(0) == 0 && XamState().UserGetUserTenure(2) == 0x80070525u);
+  g.Store32(out, 9);
+  CHECK(XamState().UserNuiGetUserIndexForSignin(g, out) == 0 && g.Load32(out) == 0 && XamState().UserNuiGetUserIndexForSignin(g, 0) == 0x80070057u);
+  CHECK(XamState().UserLogon(g, 0, 0) == kErrorInvalidParameter && XamState().UserLogon(g, out, 0) == 0);
+  std::memset(g.host(ov), 0, 0x1C);
+  CHECK(XamState().UserLogon(g, out, ov) == kErrorIoPending && g.Load32(ov) == 0);
+  CHECK(XamState().UserGetSigninState(0) == 1);
+  // Preferences: a read before any write is S_FALSE for a mask with a written bit; writes keep to their mask, set the
+  // written bit and notify; bad masks and values fail with E_INVALIDARG as the extended error.
+  const uint32_t listener = XamState().NotifyCreateListener(g, 1, 0);
+  while (XamState().NotifyGetNext(g, listener, 0, out + 8, out + 12)) {}
+  g.Store32(out, 0xEE);
+  CHECK(XamState().UserReadUserPreference(g, 0, 0x006, out, 0) == 0 && g.Load32(out) == 0);
+  CHECK(XamState().UserReadUserPreference(g, 0, 0x006, out, ov) == kErrorIoPending && g.Load32(ov) == 0 && g.Load32(ov + 0x18) == 1);
+  CHECK(XamState().UserWriteUserPreference(g, 0, 0x006, 0x002, 0) == 0);
+  CHECK(XamState().NotifyGetNext(g, listener, 0, out + 8, out + 12) == 1 && g.Load32(out + 8) == 0x0E && g.Load32(out + 12) == 1);
+  CHECK(XamState().UserReadUserPreference(g, 0, 0x006, out, ov) == kErrorIoPending && g.Load32(ov + 0x18) == 0 && g.Load32(out) == 0x002);
+  CHECK(XamState().UserWriteUserPreference(g, 0, 0x020, 0x020, 0) == 0);
+  CHECK(XamState().UserReadUserPreference(g, 0, 0x020, out, 0) == 0 && g.Load32(out) == 0x020);
+  CHECK(XamState().UserReadUserPreference(g, 0, 0x006, out, 0) == 0 && g.Load32(out) == 0x002);  // untouched
+  CHECK(XamState().UserWriteUserPreference(g, 0, 0x006, 0x004, ov) == kErrorIoPending && g.Load32(ov) == kErrorFunctionFailed &&
+        g.Load32(ov + 0x18) == 0x80070057u);  // the written bit itself
+  CHECK(XamState().UserWriteUserPreference(g, 0, 0x020, 0x040, 0) == kErrorFunctionFailed);  // outside the mask
+  CHECK(XamState().UserWriteUserPreference(g, 0, 0x003, 0x001, 0) == kErrorFunctionFailed);  // no such preference
+  CHECK(XamState().UserReadUserPreference(g, 0, 0x003, out, 0) == kErrorFunctionFailed);
+  CHECK(XamState().UserReadUserPreference(g, 1, 0x020, out, ov) == kErrorIoPending && g.Load32(ov) == kErrorFunctionFailed &&
+        g.Load32(ov + 0x18) == 0x80070525u);
+  CHECK(XamState().UserReadUserPreference(g, 4, 0x020, out, 0) == kErrorInvalidParameter);
+  CHECK(XamState().UserReadUserPreference(g, 0, 0x020, 0, 0) == kErrorInvalidParameter);
+  CHECK(XamState().UserWriteUserPreference(g, 4, 0x020, 0x020, 0) == kErrorInvalidParameter);
+  Objects().Close(listener);
+  Console() = saved;
+  XamState().Reset();
+  Files().Reset();
+  fs::remove_all(content, ec);
+}
+
 // Step 12's Win32 forms (win32.h): what is Win32's own over the kernel calls they use (the last error in the KTHREAD,
 // millisecond timeouts, WaitForSingleObjectEx's documented results, SleepEx's, lstrlenW, the tick count).
 void Win32Step12Tests() {
@@ -3250,6 +3343,7 @@ int main() {
   XamInfoStep12Tests();
   KernelStep12Tests();
   GuideNuiStep12Tests();
+  ProfileStep12Tests();
   Win32Step12Tests();
   InputQueueTests();
   InputScriptTests();

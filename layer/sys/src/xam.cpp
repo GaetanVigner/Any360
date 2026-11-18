@@ -8,6 +8,7 @@
 #include <iterator>
 #include <random>
 
+#include "any360/sys/config.h"
 #include "any360/sys/files.h"
 #include "any360/sys/info.h"
 #include "any360/sys/memory.h"
@@ -20,7 +21,7 @@ uint32_t RtlNtStatusToDosError(uint32_t status);  // config.h
 
 namespace {
 
-constexpr uint32_t kStatusSuccess = 0, kStatusNotFound = 0xC0000225, kStatusProcedureNotFound = 0xC000007A;
+constexpr uint32_t kStatusNotFound = 0xC0000225, kStatusProcedureNotFound = 0xC000007A;
 constexpr uint32_t kXuserSize = 40;                    // X_USER_PROFILE_SETTING
 constexpr uint32_t kContentDataSize = 0x134, kContentAggregateSize = 0x148;           // XCONTENT_DATA: device, type, 128 wide chars, 42-byte file name
 constexpr uint32_t kContentFileNameOffset = 0x108;
@@ -65,6 +66,8 @@ void Xam::Reset() {
   std::memset(dash_app_info_, 0, sizeof dash_app_info_);
   dash_context_ = 0;
   nui_session_id_ = 0;
+  user_preferences_ = 0;
+  profile_mounts_.clear();
   language_fallback_ = 0;
   Objects().AddCloseHook([](uint32_t object) { XamState().OnClose(object); });
   system_module_ = 0;
@@ -238,6 +241,154 @@ uint64_t Xam::NuiIdentitySessionId() {
   return nui_session_id_;
 }
 
+uint32_t Xam::CachedUserFlags() const {
+  return uint32_t(Console().country) << 8 | (Console().language << 25 & 0x3E000000u);
+}
+
+void Xam::WriteAccount(Guest g, uint32_t account) const {
+  std::memset(g.host(account), 0, kAccountSize);
+  for (size_t i = 0; i < std::min<size_t>(title_.gamertag.size(), 15); ++i) {
+    g.Store16(account + 8 + 2 * uint32_t(i), uint16_t(uint8_t(title_.gamertag[i])));
+  }
+  g.Store32(account + 0x30, CachedUserFlags());
+}
+
+void Xam::WriteProfileEnumResult(Guest g, uint32_t at) const {
+  // X_PROFILEENUMRESULT: the offline XUID, the account, device 1.
+  g.Store64(at, title_.xuid);
+  WriteAccount(g, at + 8);
+  g.Store32(at + kProfileEnumResultSize - 4, 1);
+}
+
+uint32_t Xam::ProfileCreateEnumerator(Guest g, uint32_t handle_ptr) {
+  if (!handle_ptr) return kErrorInvalidParameter;
+  const uint32_t handle = CreateEnumerator(g, kProfileEnumResultSize, 1, {});
+  if (!handle) return kErrorFunctionFailed;
+  enumerators_.back().local_profile = true;
+  g.Store32(handle_ptr, handle);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ProfileEnumerate(Guest g, uint32_t handle, uint32_t buffer, uint32_t overlapped) {
+  return Enumerate(g, handle, 0, buffer, kProfileEnumResultSize, 0, overlapped);
+}
+
+uint32_t Xam::ProfileFindAccount(Guest g, uint64_t xuid, uint32_t account, uint32_t device_ptr) const {
+  if (!account) return kErrorInvalidParameter;
+  std::memset(g.host(account), 0, kAccountSize);
+  if (xuid != title_.xuid) return kErrorNoSuchUser;
+  WriteAccount(g, account);
+  if (device_ptr) g.Store32(device_ptr, 1);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ProfileOpen(Guest g, uint64_t xuid, uint32_t mount_name, uint32_t content_data) {
+  if (xuid != title_.xuid) return kErrorInvalidParameter;
+  char hex[17];
+  std::snprintf(hex, sizeof hex, "%016llX", static_cast<unsigned long long>(xuid));
+  // Mounted once per name: a title opening its profile again finds it as it left it (no host file system call).
+  char root[72] = {};
+  if (mount_name) {
+    for (size_t i = 0; i < 64 && g.Load8(mount_name + uint32_t(i)); ++i) root[i] = char(g.Load8(mount_name + uint32_t(i)));
+  }
+  if (!root[0]) std::snprintf(root, sizeof root, "User_%s", hex);
+  if (std::find(profile_mounts_.begin(), profile_mounts_.end(), root) == profile_mounts_.end()) {
+    const std::filesystem::path path = title_.content_root / "profile" / hex;
+    std::error_code error;
+    std::filesystem::create_directories(path, error);
+    Files().Mount(std::string("\\Device\\Content\\") + root, path, false);
+    Files().Link(std::string(root) + ":", std::string("\\Device\\Content\\") + root);
+    profile_mounts_.emplace_back(root);
+  }
+  if (content_data) {
+    g.Store32(content_data, 1);                // device
+    g.Store32(content_data + 4, 0x10000);      // XContentType::kProfile
+    std::memset(g.host(content_data + kContentFileNameOffset), 0, 42);
+    std::memcpy(g.host(content_data + kContentFileNameOffset), hex, 16);
+    g.Store32(content_data + 0x140, 0xFFFE07D1);  // the dashboard's title id
+  }
+  return kErrorSuccess;
+}
+
+uint32_t Xam::UserGetIndexFromXuid(Guest g, uint64_t xuid, uint32_t index_ptr) const {
+  if (!index_ptr) return 0x80070057;  // E_INVALIDARG
+  if (xuid != title_.xuid) return 0x80070525;  // HRESULT_FROM_WIN32(ERROR_NO_SUCH_USER)
+  g.Store32(index_ptr, 0);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::UserGetSubscriptionType(Guest g, uint32_t user, uint32_t length_ptr, uint32_t payment_ptr) const {
+  if (user >= 4 || !length_ptr || !payment_ptr) return 0x80070057;
+  if (!UserGetSigninState(user)) return 0x80070525;
+  g.Store32(length_ptr, 0);
+  g.Store32(payment_ptr, 0);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::UserLogon(Guest g, uint32_t xuids, uint32_t overlapped) {
+  if (!xuids) return kErrorInvalidParameter;
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::UserNuiGetUserIndexForSignin(Guest g, uint32_t index_ptr) const {
+  if (!index_ptr) return 0x80070057;
+  g.Store32(index_ptr, 0);
+  return 0;
+}
+
+namespace {
+// The "written" bit of a preference mask (user_settings.h's GetUserPreferenceWrittenBit); ~0 for a mask that names no
+// preference.
+uint32_t PreferenceWrittenBit(uint32_t mask) {
+  switch (mask) {
+    case 0x001: case 0x020: case 0x040: case 0x080: case 0x100: case 0x200: return 0;
+    case 0x006: return 0x004;
+    case 0x018: return 0x010;
+    default: return ~0u;
+  }
+}
+}  // namespace
+
+uint32_t Xam::UserReadUserPreference(Guest g, uint32_t user, uint32_t mask, uint32_t value_ptr, uint32_t overlapped) {
+  if (user >= 4 || !value_ptr) return kErrorInvalidParameter;
+  uint32_t result = kErrorSuccess, extended = 0;
+  const uint32_t written = PreferenceWrittenBit(mask);
+  if (!UserGetSigninState(user)) {
+    result = kErrorFunctionFailed, extended = 0x80070525;
+  } else if (written == ~0u) {
+    result = kErrorFunctionFailed, extended = 0x80070057;
+  } else {
+    uint32_t value = user_preferences_ & mask;
+    if (written && (value & written) != written) {
+      extended = 1;  // S_FALSE: never written; the value stands as it is
+    } else {
+      value &= ~written;
+    }
+    g.Store32(value_ptr, value);
+  }
+  if (!overlapped) return result;
+  MsgCompleteIORequest(g, overlapped, result, extended, 0);
+  return kErrorIoPending;
+}
+
+uint32_t Xam::UserWriteUserPreference(Guest g, uint32_t user, uint32_t mask, uint32_t value, uint32_t overlapped) {
+  if (user >= 4) return kErrorInvalidParameter;
+  uint32_t result = kErrorSuccess, extended = 0;
+  const uint32_t written = PreferenceWrittenBit(mask);
+  if (!UserGetSigninState(user)) {
+    result = kErrorFunctionFailed, extended = 0x80070525;
+  } else if (written == ~0u || (mask | value) != mask || (value & written)) {
+    result = kErrorFunctionFailed, extended = 0x80070057;
+  } else {
+    user_preferences_ = (user_preferences_ & ~mask) | value | written;
+    constexpr uint32_t kNotifyProfileSettingChanged = 0x0000000E;
+    Notify(kNotifyProfileSettingChanged, 1u << user);
+  }
+  if (!overlapped) return result;
+  MsgCompleteIORequest(g, overlapped, result, extended, 0);
+  return kErrorIoPending;
+}
+
 uint32_t Xam::GetCachedTitleName(Guest g, uint32_t title_id, uint32_t buffer, uint32_t length_ptr) const {
   const std::u16string empty;
   const std::u16string& name = title_id ? title_.title_name : empty;
@@ -311,7 +462,7 @@ uint32_t Xam::NotifyGetNext(Guest g, uint32_t handle, uint32_t match_id, uint32_
 
 // --- the local user -------------------------------------------------------------------------------------------------
 
-uint32_t Xam::UserGetSigninState(uint32_t user) { return user == 0 ? 1 : 0; }  // signed in locally
+uint32_t Xam::UserGetSigninState(uint32_t user) const { return user == 0 ? 1 : 0; }  // signed in locally
 
 uint32_t Xam::UserGetXUID(Guest g, uint32_t user, uint32_t, uint32_t xuid_ptr) {
   if (!xuid_ptr) return kErrorInvalidParameter;
@@ -597,8 +748,14 @@ uint32_t Xam::Enumerate(Guest g, uint32_t handle, uint32_t, uint32_t buffer, uin
   if (items_ptr) g.Store32(items_ptr, 0);
   if (length < e->item_size) return Finish(g, overlapped, kErrorInsufficientBuffer, 0, true);
   uint32_t n = 0;
-  while (e->next < e->items.size() && n < e->per_call && (n + 1) * e->item_size <= length) {
-    std::memcpy(g.host(buffer + n * e->item_size), e->items[e->next].data(), std::min<size_t>(e->item_size, e->items[e->next].size()));
+  const size_t count = e->local_profile ? 1 : e->items.size();
+  while (e->next < count && n < e->per_call && (n + 1) * e->item_size <= length) {
+    const uint32_t at = buffer + n * e->item_size;
+    if (e->local_profile) {
+      WriteProfileEnumResult(g, at);
+    } else {
+      std::memcpy(g.host(at), e->items[e->next].data(), std::min<size_t>(e->item_size, e->items[e->next].size()));
+    }
     ++e->next;
     ++n;
   }

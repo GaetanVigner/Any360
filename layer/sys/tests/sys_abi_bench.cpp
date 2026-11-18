@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <vector>
@@ -39,7 +40,12 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamIsCurrentTitleDash) X(XamIsIptvEnabled) X(XamIsNuiUIActive) X(XamIsSystemExperienceTitleId)                   \
   X(XamIsSystemTitleId) X(XamIsXbox1TitleId) X(RtlGetLastError) X(RtlSetLastNTError) X(RtlRandom)                    \
   X(RtlDowncaseUnicodeChar) X(RtlGetStackLimits) X(RtlImageDirectoryEntryToData) X(KeQueryInterruptTime)            \
-  X(KeSetPriorityThread) X(HalGetCurrentAVPack) X(XamGetLocaleDateFormat) X(XamNuiHudGetEngagedTrackingID)           X(XamNuiHudGetInitializeFlags) X(XamNuiHudGetVersions) X(XamNuiHudIsEnabled) X(XamNuiHudSetEngagedTrackingID)        X(XamNuiIdentityGetSessionId) X(XamNuiIsChatMicEnabled) X(XamNuiIsDeviceReady) X(XamSetDashContext)                  X(XamShowCreateProfileUI) X(XamShowCreateProfileUIEx) X(XamShowEditProfileUI) X(XamShowForcedNameChangeUI)          X(XamShowGamerCardUI) X(XamShowMultiplayerUpgradeUI) X(XamShowNuiHardwareRequiredUI)
+  X(KeSetPriorityThread) X(HalGetCurrentAVPack) X(XamGetLocaleDateFormat) X(XamNuiHudGetEngagedTrackingID)           X(XamNuiHudGetInitializeFlags) X(XamNuiHudGetVersions) X(XamNuiHudIsEnabled) X(XamNuiHudSetEngagedTrackingID)        X(XamNuiIdentityGetSessionId) X(XamNuiIsChatMicEnabled) X(XamNuiIsDeviceReady) X(XamSetDashContext)                  X(XamShowCreateProfileUI) X(XamShowCreateProfileUIEx) X(XamShowEditProfileUI) X(XamShowForcedNameChangeUI)          X(XamShowGamerCardUI) X(XamShowMultiplayerUpgradeUI) X(XamShowNuiHardwareRequiredUI) X(XamProfileCreateEnumerator) \
+  X(XamProfileEnumerate) X(XamProfileFindAccount) X(XamProfileGetLiveLegalLocale) X(XamProfileOpen)                   \
+  X(XamUserGetCachedUserFlags) X(XamUserGetIndexFromXUID) X(XamUserGetOnlineLanguageFromXUID)                        \
+  X(XamUserGetSubscriptionType) X(XamUserGetUserFlags) X(XamUserGetUserFlagsFromXUID) X(XamUserGetUserTenure)        \
+  X(XamUserIsParentalControlled) X(XamUserLogon) X(XamUserNuiGetUserIndexForSignin) X(XamUserReadUserPreference)     \
+  X(XamUserWriteUserPreference)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -50,7 +56,7 @@ using any360::sys::ThreadAllocations;
 // Guest layout: a PCR whose +0x100 is the current KTHREAD, buffers, a stack.
 constexpr uint32_t kPcr = 0x40000000, kThread = 0x40001000, kIn = 0x40010000, kOut = 0x40020000, kState = 0x40030000,
                    kKey = 0x40031000, kFeed = 0x40031100, kText = 0x40032000, kStack = 0x40100000, kStackSize = 0x10000,
-                   kHeap = 0x40200000, kImage = 0x40300000;
+                   kHeap = 0x41000000, kImage = 0x40300000;
 constexpr uint32_t kBytes = 256;  // the buffer size of the hashes and ciphers
 
 uint8_t* g_base = nullptr;
@@ -114,6 +120,7 @@ struct Row {
   const char* name;
   Function reference;
   Arguments args;
+  uint32_t calls = 20000;  // a run's calls (fewer for a call that leaves an object behind each time)
 };
 
 Arguments Args(std::initializer_list<uint64_t> regs, std::initializer_list<uint64_t> stack = {}) {
@@ -134,14 +141,14 @@ int main(int argc, char** argv) {
   std::memset(g_base + kPcr, 0, 0x2000);
   std::memset(g_base + kIn, 0, 0x30000);
   std::memset(g_base + kStack, 0, kStackSize);
-  std::memset(g_base + kHeap, 0, 0x8000);
+  std::memset(g_base + kHeap, 0, 0x4000000);
   Store32(kPcr + 0x100, kThread);
   for (uint32_t i = 0; i < 0x10000; ++i) g_base[kIn + i] = uint8_t(i * 131 + 7);
   std::memset(g_base + kKey, 0x0b, 64);
   for (uint32_t i = 0; i < 64; ++i) Store16(kText + 2 * i, uint16_t('a' + i % 26));
   Store16(kText + 128, 0);
   std::memcpy(g_base + kText + 0x200, "xam.xex", 8);
-  any360::sys::Objects().SetKernelHeap(kHeap, 0x8000);
+  any360::sys::Objects().SetKernelHeap(kHeap, 0x4000000);
   any360::sys::Objects().SetGuest({g_base});
   any360::sys::Objects().Reset();
   any360::sys::XamState().title().title_name = u"Any360 benchmark title";
@@ -156,6 +163,13 @@ int main(int argc, char** argv) {
   le(optional + 0x80 + 12, 0x1000, 4), le(optional + 0x80 + 16, 0x1000, 4);
   le(optional + 0x80 + 52, 0x3000, 4), le(optional + 0x80 + 56, 0x800, 4);
   Store32(kOut + 0x200, 12345);
+  // The profile rows: an enumerator already at its end, a mount name, the local profile's XUID.
+  any360::sys::XamState().title().content_root = std::filesystem::temp_directory_path() / "any360-abi-bench";
+  any360::sys::XamState().ProfileCreateEnumerator({g_base}, kOut + 0x300);
+  const uint32_t profiles = __builtin_bswap32(*reinterpret_cast<uint32_t*>(g_base + kOut + 0x300));
+  any360::sys::XamState().ProfileEnumerate({g_base}, profiles, kOut + 0x400, 0);
+  std::memcpy(g_base + kText + 0x300, "PROFILE", 8);
+  const uint64_t xuid = any360::sys::XamState().title().xuid;
 
   const uint32_t stack_args = kStack + kStackSize - 0x1000 + 0x54;
   const Row rows[] = {
@@ -224,6 +238,23 @@ int main(int argc, char** argv) {
       {"XamShowGamerCardUI (no listener)", __imp__XamShowGamerCardUI, Args({0})},
       {"XamShowMultiplayerUpgradeUI", __imp__XamShowMultiplayerUpgradeUI, Args({0})},
       {"XamShowNuiHardwareRequiredUI", __imp__XamShowNuiHardwareRequiredUI, Args({0})},
+      {"XamProfileCreateEnumerator (left open)", __imp__XamProfileCreateEnumerator, Args({1, kOut + 0x300}), 200},
+      {"XamProfileEnumerate (at the end)", __imp__XamProfileEnumerate, Args({profiles, 0, kOut + 0x400, 0})},
+      {"XamProfileFindAccount", __imp__XamProfileFindAccount, Args({xuid, kOut + 0x600, kOut + 0x7F0})},
+      {"XamProfileGetLiveLegalLocale", __imp__XamProfileGetLiveLegalLocale, Args({xuid, 16, kOut + 0x800})},
+      {"XamProfileOpen (mounted again)", __imp__XamProfileOpen, Args({xuid, kText + 0x300, 0, kOut + 0x900})},
+      {"XamUserGetCachedUserFlags", __imp__XamUserGetCachedUserFlags, Args({0})},
+      {"XamUserGetIndexFromXUID", __imp__XamUserGetIndexFromXUID, Args({xuid, 0, kOut})},
+      {"XamUserGetOnlineLanguageFromXUID", __imp__XamUserGetOnlineLanguageFromXUID, Args({xuid})},
+      {"XamUserGetSubscriptionType", __imp__XamUserGetSubscriptionType, Args({0, kOut, kOut + 4})},
+      {"XamUserGetUserFlags", __imp__XamUserGetUserFlags, Args({0})},
+      {"XamUserGetUserFlagsFromXUID", __imp__XamUserGetUserFlagsFromXUID, Args({xuid})},
+      {"XamUserGetUserTenure", __imp__XamUserGetUserTenure, Args({0, kOut, kOut + 4, kOut + 8, 0})},
+      {"XamUserIsParentalControlled", __imp__XamUserIsParentalControlled, Args({0})},
+      {"XamUserLogon", __imp__XamUserLogon, Args({kOut + 0x300, 1, 0})},
+      {"XamUserNuiGetUserIndexForSignin", __imp__XamUserNuiGetUserIndexForSignin, Args({kOut})},
+      {"XamUserReadUserPreference", __imp__XamUserReadUserPreference, Args({0, 0x020, kOut, 0})},
+      {"XamUserWriteUserPreference", __imp__XamUserWriteUserPreference, Args({0, 0x020, 0x020, 0})},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "
@@ -234,7 +265,7 @@ int main(int argc, char** argv) {
     // The 9th and 10th arguments on the stack, as the ABI passes them.
     Store32(stack_args + 4, uint32_t(row.args.stack[0]));
     Store32(stack_args + 12, uint32_t(row.args.stack[1]));
-    const uint32_t n = 20000;
+    const uint32_t n = row.calls;
     const Measure original = Time(row.reference, row.args, n, false);
     const std::string name(row.name, std::strcspn(row.name, " "));
     const Measure ours = Time(Native(name.c_str()), row.args, n, true);

@@ -161,7 +161,10 @@ void FileSystem::Reset() {
 }
 
 void FileSystem::Mount(const std::string& device, const std::filesystem::path& host, bool read_only) {
-  mounts_.push_back({Lower(device), host, read_only});
+  // A device mounted again (a title opening the same content or profile twice) is replaced, not listed twice.
+  const std::string name = Lower(device);
+  std::erase_if(mounts_, [&](const Mounted& m) { return m.device == name; });
+  mounts_.push_back({name, host, read_only});
   // Longest device paths first, so "\device\harddisk0\partition1" wins over "\device\harddisk0".
   std::sort(mounts_.begin(), mounts_.end(), [](const Mounted& a, const Mounted& b) { return a.device.size() > b.device.size(); });
 }

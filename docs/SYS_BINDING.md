@@ -443,6 +443,11 @@ player, a random session id), `XamSetDashContext` (notified on change), and the 
 Gold-upgrade and Kinect-required screens over the guide that opens and closes at once
 (docs/perf/archive/2026-11-18-sys-step12-guide-nui/).
 
+Sixth batch, profiles and users (17, `xam.h`): the local profile's account, enumeration, lookup by XUID, legal
+locale and opening (its folder mounted as a content device), the user flags (the console's country and language),
+subscription, tenure and logon answers for the one signed-in profile, and the dashboard's user preferences with
+Xenia's "written" bit rules (docs/perf/archive/2026-11-18-sys-step12-profile/).
+
 Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
 host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
 SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),
