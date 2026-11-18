@@ -33,6 +33,14 @@ add_executable(sys_object_tests tests/sys_object_tests.cpp tests/watched_memory.
 target_link_libraries(sys_object_tests PRIVATE any360_sys)
 target_compile_options(sys_object_tests PRIVATE -Wall -Wextra)
 add_test(NAME sys_object_tests COMMAND sys_object_tests)
+# Not a test: step 12's calls timed, with host memory a call, beside what the host offers (Windows' CNG, wcslen);
+# results kept in docs/perf/archive/ (sys_step12_bench [repeats]).
+add_executable(sys_step12_bench tests/sys_step12_bench.cpp)
+target_link_libraries(sys_step12_bench PRIVATE any360_sys any360_alloc_meter)
+if(WIN32)
+    target_link_libraries(sys_step12_bench PRIVATE bcrypt)
+endif()
+target_compile_options(sys_step12_bench PRIVATE -Wall -Wextra)
 
 # The network over the host's loopback sockets.
 add_executable(sys_net_tests tests/sys_net_tests.cpp)

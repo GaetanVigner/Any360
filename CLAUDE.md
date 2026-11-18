@@ -28,6 +28,12 @@ owner adds a rule, it goes here (or into a skill under `.claude/skills/`) in the
 - Every native must be at least as fast as the title's original (1x or better) and allocate as little as possible.
 - Every block checked in game gets an automatic unit test registered with the suite (behaviour, memory, CPU/GPU,
   leaks) in the same change.
+- Every function ported to Any360 (a native of a title's code, a system call of `any360::sys`, a D3D or library
+  function), in the same change: unit tests of its outputs (every byte it writes and every value it returns, against
+  a reference: the original, a standard's test vectors, or the documented behaviour) registered with the suite, and a
+  benchmark (time a call and host memory a call, bytes and allocations, against the original when there is one and
+  against what the host already offers when it does the same work), with its results saved in the repository under
+  `docs/perf/archive/<date>-<step>/` and listed in `docs/perf/README.md`. A function without both is not done.
 - Prefer pooled and reused buffers to allocations: RAM is limited on the target devices.
 - Register new natives in the database (`db/xdk_seed.json`, `layer/sys/native.json`, `titles/<title>/d3d_names.json`,
   one entry a line), then run `python -I tools/build_db.py` and `python -I tools/progress_page.py`.

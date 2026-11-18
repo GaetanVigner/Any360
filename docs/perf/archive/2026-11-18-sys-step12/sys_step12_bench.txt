@@ -1,0 +1,63 @@
+sys_step12_bench: ns a call (fastest of 9 runs); host = what the host offers for the same work (ratio > 1: Any360 faster)
+  call (guest state it uses)              bytes |        ns    B/call  allocs |   host ns    B/call  allocs |   speed
+  XeCryptMd5                                  0 |     130.5       0.0    0.00 |     164.0       0.0    0.00 |   1.26x
+  XeCryptMd5                                 16 |     121.9       0.0    0.00 |     165.7       0.0    0.00 |   1.36x
+  XeCryptMd5                                 64 |     211.2       0.0    0.00 |     248.9       0.0    0.00 |   1.18x
+  XeCryptMd5                                256 |     480.1       0.0    0.00 |     498.4       0.0    0.00 |   1.04x
+  XeCryptMd5                               1024 |    1556.3       0.0    0.00 |    1508.9       0.0    0.00 |   0.97x
+  XeCryptMd5                               4096 |    5839.3       0.0    0.00 |    5554.2       0.0    0.00 |   0.95x
+  XeCryptMd5                              65536 |   91396.9       0.0    0.00 |   86499.2       0.0    0.00 |   0.95x
+  XeCryptSha256                               0 |     204.6       0.0    0.00 |     104.6       0.0    0.00 |   0.51x
+  XeCryptSha256                              16 |     196.2       0.0    0.00 |     105.4       0.0    0.00 |   0.54x
+  XeCryptSha256                              64 |     380.5       0.0    0.00 |     129.4       0.0    0.00 |   0.34x
+  XeCryptSha256                             256 |     906.5       0.0    0.00 |     203.6       0.0    0.00 |   0.22x
+  XeCryptSha256                            1024 |    3043.3       0.0    0.00 |     508.8       0.0    0.00 |   0.17x
+  XeCryptSha256                            4096 |   11465.6       0.0    0.00 |    1740.3       0.0    0.00 |   0.15x
+  XeCryptSha256                           65536 |  179831.5       0.0    0.00 |   26436.2       0.0    0.00 |   0.15x
+  XeCryptHmacMd5                              0 |     425.9       0.0    0.00 |     429.2       0.0    0.00 |   1.01x
+  XeCryptHmacMd5                             16 |     416.3       0.0    0.00 |     432.2       0.0    0.00 |   1.04x
+  XeCryptHmacMd5                             64 |     536.7       0.0    0.00 |     515.9       0.0    0.00 |   0.96x
+  XeCryptHmacMd5                            256 |     780.0       0.0    0.00 |     769.1       0.0    0.00 |   0.99x
+  XeCryptHmacMd5                           1024 |    1861.6       0.0    0.00 |    1781.6       0.0    0.00 |   0.96x
+  XeCryptHmacMd5                           4096 |    6149.5       0.0    0.00 |    5825.4       0.0    0.00 |   0.95x
+  XeCryptHmacMd5                          65536 |   91874.8       0.0    0.00 |   86755.9       0.0    0.00 |   0.94x
+  HmacSha Init+Update+Final (0xB0)            0 |     616.3       0.0    0.00 |     386.4       0.0    0.00 |   0.63x
+  HmacSha Init+Update+Final (0xB0)           16 |     636.2       0.0    0.00 |     397.0       0.0    0.00 |   0.62x
+  HmacSha Init+Update+Final (0xB0)           64 |     752.0       0.0    0.00 |     457.0       0.0    0.00 |   0.61x
+  HmacSha Init+Update+Final (0xB0)          256 |    1200.9       0.0    0.00 |     656.8       0.0    0.00 |   0.55x
+  HmacSha Init+Update+Final (0xB0)         1024 |    2866.2       0.0    0.00 |    1470.7       0.0    0.00 |   0.51x
+  HmacSha Init+Update+Final (0xB0)         4096 |    9267.9       0.0    0.00 |    4704.7       0.0    0.00 |   0.51x
+  HmacSha Init+Update+Final (0xB0)        65536 |  140835.4       0.0    0.00 |   70796.1       0.0    0.00 |   0.50x
+  XeCryptHmacShaVerify                        0 |     647.3       0.0    0.00 |         -         -       - |
+  XeCryptHmacShaVerify                       16 |     654.1       0.0    0.00 |         -         -       - |
+  XeCryptHmacShaVerify                       64 |     810.5       0.0    0.00 |         -         -       - |
+  XeCryptHmacShaVerify                      256 |    1272.5       0.0    0.00 |         -         -       - |
+  XeCryptHmacShaVerify                     1024 |    2929.1       0.0    0.00 |         -         -       - |
+  XeCryptHmacShaVerify                     4096 |    9606.6       0.0    0.00 |         -         -       - |
+  XeCryptHmacShaVerify                    65536 |  148760.6       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)             0 |     133.9       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)            16 |     135.1       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)            64 |     235.0       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)           256 |     559.8       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)          1024 |    1749.0       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)          4096 |    6662.2       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)         65536 |  102745.7       0.0    0.00 |         -         -       - |
+  XeCryptDesKey (0x80)                        8 |     519.0       0.0    0.00 |         -         -       - |
+  XeCryptDesEcb                               8 |     718.2       0.0    0.00 |         -         -       - |
+  XeCryptDesCbc                               8 |     712.4       0.0    0.00 |     184.3       0.0    0.00 |   0.26x
+  XeCryptDesCbc                              64 |    5745.4       0.0    0.00 |    1396.8       0.0    0.00 |   0.24x
+  XeCryptDesCbc                            1024 |   91665.8       0.0    0.00 |   22215.1       0.0    0.00 |   0.24x
+  XeCryptDesCbc                           65536 | 5888970.2       0.0    0.00 | 1420878.7       0.0    0.00 |   0.24x
+  GetTickCount                                0 |      18.0       0.0    0.00 |         -         -       - |
+  GetLastError                                0 |       1.0       0.0    0.00 |         -         -       - |
+  RtlSetLastNTError (failed waits)            0 |       5.2       0.0    0.00 |         -         -       - |
+  Wait result (WaitForSingleObject)           0 |       1.0       0.0    0.00 |         -         -       - |
+  Timeout (Sleep, waits)                      0 |       1.0       0.0    0.00 |         -         -       - |
+  GetSystemTimeAsFileTime                     0 |      19.0       0.0    0.00 |         -         -       - |
+  QueryPerformanceFrequency                   0 |       1.0       0.0    0.00 |         -         -       - |
+  GetModuleHandleA                            0 |      24.8       0.0    0.00 |         -         -       - |
+  lstrlenW (host: wcslen)                     0 |       1.2       0.0    0.00 |       2.2       0.0    0.00 |   1.82x
+  lstrlenW (host: wcslen)                     8 |       4.4       0.0    0.00 |       4.0       0.0    0.00 |   0.91x
+  lstrlenW (host: wcslen)                    64 |      27.2       0.0    0.00 |       6.3       0.0    0.00 |   0.23x
+  lstrlenW (host: wcslen)                   256 |     112.3       0.0    0.00 |       6.8       0.0    0.00 |   0.06x
+sys_step12_bench: allocated per call 0.00 B in 0.0000 allocations over 43854525 timed calls
