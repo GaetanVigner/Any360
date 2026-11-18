@@ -3,6 +3,7 @@
 #pragma once
 
 #include <bit>
+#include <cmath>
 #include <cstdlib>
 #include <cstdint>
 
@@ -937,6 +938,184 @@ inline void SetDepthStencilSurface(const Memory& m, const D3dLayout& l, uint32_t
   r11 = ld(m, r31 + l.state_dirty) | 2048;
   std_(m, r31 + l.state_dirty, r11);
   std_(m, r31 + l.state_dirty, r11 | 0x20000);
+}
+
+// The viewport and scissor (Crackdown sub_826AF370, sub_826B1B60, sub_826AF650, sub_826B1C60, sub_826AF2D8), as their
+// code reads. The packets function only for the calls with room (its two bl 0x826bb408 not taken).
+// fctiwz as the recompiled code does it (its stfiwx: the low word).
+inline uint32_t fctiwz_(double f) {
+  if (std::isnan(f)) return 0x80000000u;
+  if (f >= double(INT32_MAX)) return 0x7FFFFFFFu;
+  const double t = std::trunc(f);
+  return t < -2147483648.0 ? 0x80000000u : uint32_t(int32_t(t));
+}
+// The tiling test both functions make (lbz r10,10812; rlwinm. 27,27; rlwinm. 26,26; five cmplw / cmplwi pairs).
+inline bool TiledTest(const Memory& m, const D3dLayout& l, uint32_t r31) {
+  const uint32_t r10 = lbz(m, r31 + l.tiling_flags);
+  if (rlwinm(r10, 0, 27, 27)) return true;
+  if (!rlwinm(r10, 0, 26, 26)) return false;
+  for (uint32_t k = 0; k < 5; ++k) {
+    const uint32_t bound = lwz(m, r31 + l.surfaces + 4 * k), recorded = lwz(m, r31 + l.tiled_surfaces + 4 * k);
+    if (recorded != bound && bound != 0) return false;
+  }
+  return true;
+}
+inline void WindowScissorPackets(const Memory& m, const D3dLayout& l, uint32_t r3, uint64_t r4, uint64_t r5,
+                                 uint64_t r6, uint64_t r7) {
+  const uint32_t r31 = r3;
+  const uint64_t r24 = r4, r23 = r5, r22 = r6, r21 = r7;
+  uint64_t r11 = lwz(m, r31 + l.command_cursor);  // lwz r11,48(r31) (cmplw r11,56(r31): not past it)
+  const auto stwu = [&](uint32_t v) { r11 = uint32_t(r11 + 4), stw(m, uint32_t(r11), v); };
+  if (!TiledTest(m, l, r31)) {
+    uint32_t r10 = (2u << 16) | 8320u;                       // lis r10,2; ori r10,r10,8320
+    uint32_t r8 = rlwinm(uint32_t(r23), 16, 2, 15);          // rlwinm r8,r23,16,2,15
+    const uint32_t r7_ = uint32_t(r24) & 0x3FFFu;           // clrlwi r7,r24,18
+    const uint32_t r6_ = rlwinm(uint32_t(r21), 16, 2, 15);  // rlwinm r6,r21,16,2,15
+    stwu(r10);
+    r10 = r8 | r7_;
+    r8 = uint32_t(r22) & 0x3FFFu;
+    r8 = r6_ | r8;
+    stwu(0), stwu(r10), stwu(r8);
+  } else {
+    const uint32_t r25 = 0xC0000000u | 24832u;  // lis r10,-16384; ori r25,r10,24832
+    stwu(r25), stwu(0);
+    const uint32_t r30 = 0xC0000000u | 24576u;  // ori r30,r9,24576
+    if (lwz(m, r31 + l.tile_count) > 0) {
+      uint32_t r29 = 0, r28 = r31 + l.tile_rects + 4, r27 = r31 + l.tile_offsets + 4, r26 = 0;
+      do {
+        uint32_t r10 = lwz(m, r28 - 4);
+        uint32_t r7_ = uint32_t(r24);
+        uint32_t r6_ = lwz(m, r27 - 4), r5_ = lwz(m, r27);
+        if (!(int32_t(r24) > int32_t(r10))) r7_ = r10;  // cmpw r24,r10; bgt
+        uint32_t r8 = lwz(m, r28);
+        if (int32_t(r23) > int32_t(r8)) r8 = uint32_t(r23);  // cmpw r23,r8; ble
+        uint32_t r9 = lwz(m, r28 + 4);
+        if (!(int32_t(r22) >= int32_t(r9))) r9 = uint32_t(r22);  // cmpw r22,r9; bge
+        r10 = lwz(m, r28 + 8);
+        if (!(int32_t(r21) >= int32_t(r10))) r10 = uint32_t(r21);  // cmpw r21,r10; bge
+        if (!(int32_t(r7_) < int32_t(r9)) || !(int32_t(r8) < int32_t(r10))) r10 = r9 = r8 = r7_ = 0;
+        r7_ &= 0x3FFFu;                          // clrlwi r7,r7,18
+        r8 = rlwinm(r8, 16, 2, 15) | r7_;        // rlwinm r8,r8,16,2,15; or r8,r8,r7
+        const uint32_t r20 = 0xC0030000u | 11521u, r19 = (4u << 16) | 128u;
+        stwu(r30);
+        r6_ = (0u - r6_) & 0x7FFFu;              // neg r6,r6; clrlwi r6,r6,17
+        r5_ = rlwinm(0u - r5_, 16, 1, 15);       // neg r5,r5; rlwinm r5,r5,16,1,15
+        r10 = rlwinm(r10, 16, 2, 15);
+        r6_ = r5_ | r6_;
+        r9 &= 0x3FFFu;
+        const uint32_t shift = r29 & 0x3F;        // slw r7,r3(3),r29
+        r7_ = shift >= 32 ? 0 : 3u << shift;
+        r10 = r10 | r9;
+        stwu(r7_), stwu(r20), stwu(r19), stwu(r6_), stwu(r8), stwu(r10);
+        stw(m, r31 + l.command_cursor, uint32_t(r11));  // stw r11,48(r31) (cmplw r11,56(r31): not past it)
+        r26 += 1, r27 += 8, r28 += 16, r29 += 2;
+      } while (r26 < lwz(m, r31 + l.tile_count));
+    }
+    if (rlwinm(lbz(m, r31 + l.tiling_options), 0, 25, 25) && rlwinm(lbz(m, r31 + l.tiling_flags), 0, 25, 25)) {
+      stwu(r30), stwu(1), stwu(0xC0020000u | 11521u), stwu((4u << 16) | 129u);
+      stwu(rlwinm(uint32_t(r23), 16, 2, 15) | (uint32_t(r24) & 0x3FFFu));
+      stwu(rlwinm(uint32_t(r21), 16, 2, 15) | (uint32_t(r22) & 0x3FFFu));
+    }
+    stwu(r30), stwu(lwz(m, r31 + l.tile_bins)), stwu(r25), stwu(lwz(m, r31 + l.tile_bins + 4));
+  }
+  stw(m, r31 + l.command_cursor, uint32_t(r11));  // stw r11,48(r31)
+}
+// The scissor: r3 device, r4 the rect; `call(r4, r5, r6, r7)` its bl 0x826af370 (r3 the device).
+template <class Call>
+inline void ApplyScissor(const Memory& m, const D3dLayout& l, uint32_t r3, uint32_t r4, Call&& call) {
+  const uint32_t x = fctiwz_(lfs_(m, r3 + l.viewport_set)), y = fctiwz_(lfs_(m, r3 + l.viewport_set + 4));
+  const uint32_t w = fctiwz_(lfs_(m, r3 + l.viewport_set + 8));
+  const uint32_t r11 = lwz(m, r4), r10 = lwz(m, r4 + 4), r8 = lwz(m, r4 + 8), r31 = lwz(m, r4 + 12);
+  const uint32_t r7 = lwz(m, r3 + l.scissor_enable);
+  const uint32_t h = fctiwz_(lfs_(m, r3 + l.viewport_set + 12));
+  uint64_t a4 = x, a5 = y;  // lwz r4,84(r1); lwz r5,88(r1)
+  stw(m, r3 + l.scissor_set, r11), stw(m, r3 + l.scissor_set + 4, r10);
+  stw(m, r3 + l.scissor_set + 8, r8), stw(m, r3 + l.scissor_set + 12, r31);
+  uint64_t a6 = uint64_t(w) + a4;  // add r6,r9,r4
+  uint64_t a7 = uint64_t(h) + a5;  // add r7,r9,r5
+  if (r7 != 0) {
+    if (!(int32_t(a4) > int32_t(r11))) a4 = r11;
+    if (!(int32_t(a5) > int32_t(r10))) a5 = r10;
+    if (!(int32_t(a6) < int32_t(r8))) a6 = r8;
+    if (!(int32_t(a7) < int32_t(r31))) a7 = r31;
+  }
+  uint32_t w0 = lwz(m, r3 + l.window_scissor), w1 = lwz(m, r3 + l.window_scissor + 4);
+  w0 = rlwimi(w0, uint32_t(a5), 16, 1, 15), w1 = rlwimi(w1, uint32_t(a7), 16, 1, 15);
+  w0 = rlwimi(w0, uint32_t(a4), 0, 17, 31), w1 = rlwimi(w1, uint32_t(a6), 0, 17, 31);
+  stw(m, r3 + l.window_scissor, w0), stw(m, r3 + l.window_scissor + 4, w1);
+  call(uint32_t(a4), uint32_t(a5), uint32_t(a6), uint32_t(a7));
+}
+// The viewport function: r3 device, f1-f6 x, y, width, height, min z, max z.
+template <class Call>
+inline void SetViewportFloats(const Memory& m, const D3dLayout& l, uint32_t r3, double f1, double f2, double f3,
+                              double f4, double f5, double f6, Call&& call) {
+  const uint32_t r31 = r3;
+  const double f28 = f1, f27 = f2, f31 = f5, f26 = f6;
+  const uint32_t r10 = lwz(m, r31 + l.surfaces);
+  uint32_t r9 = r10;
+  if (r9 == 0) {
+    r9 = lwz(m, r31 + l.surfaces + 16);
+    if (r9 == 0) return;
+  }
+  uint64_t r11;
+  if (TiledTest(m, l, r31)) {
+    r11 = lwz(m, r31 + l.tiled_size), r9 = lwz(m, r31 + l.tiled_size + 4);
+  } else {
+    const uint32_t word = lwz(m, r9 + 36);
+    r9 = rlwinm(word, 29, 17, 31) + 1;
+    r11 = rlwinm(word, 14, 18, 31) + 1;
+  }
+  const uint64_t r7 = fctiwz_(f28), r8 = fctiwz_(f27);
+  uint64_t s = uint64_t(fctiwz_(f3)) + r7;  // add r10,r10,r7
+  if (int32_t(s) < int32_t(r11)) r11 = s;
+  uint64_t t = uint64_t(fctiwz_(f4)) + r8;  // add r10,r10,r8
+  if (!(int32_t(t) < int32_t(r9))) t = r9;
+  r11 = r11 - r7;  // subf. r11,r7,r11
+  t = t - r8;      // subf r10,r8,r10
+  if (int32_t(r11) < 0 || int32_t(t) < 0) r11 = 0, t = 0;
+  const int64_t width = int32_t(r11), height = int32_t(t);  // extsw
+  stfs_(m, r31 + l.viewport_set, f28), stfs_(m, r31 + l.viewport_set + 4, f27);
+  stfs_(m, r31 + l.viewport_set + 16, f31), stfs_(m, r31 + l.viewport_set + 20, f26);
+  stw(m, r31 + l.viewport_set + 24, 0);
+  const double f30 = double(float(double(width))), f29 = double(float(double(height)));  // fcfid; frsp
+  stfs_(m, r31 + l.viewport_set + 8, f30), stfs_(m, r31 + l.viewport_set + 12, f29);
+  ApplyScissor(m, l, r31, r31 + l.scissor_set, call);
+  const double f12 = double(float(f26 - f31));  // fsubs
+  stfs_(m, r31 + l.viewport_scale + 20, f31), stfs_(m, r31 + l.viewport_scale + 16, f12);
+  double f0 = lfs_(m, l.blend_rounding);
+  double f13 = double(float(f30 * f0));
+  stfs_(m, r31 + l.viewport_scale, f13);
+  f0 = double(float(f29 * f0));
+  f13 = double(float(f13 + f28));
+  stfs_(m, r31 + l.viewport_scale + 4, f13);
+  f13 = std::bit_cast<double>(std::bit_cast<uint64_t>(f0) ^ 0x8000000000000000ull);  // fneg
+  stfs_(m, r31 + l.viewport_scale + 8, f13);
+  f0 = double(float(f0 + f27));
+  stfs_(m, r31 + l.viewport_scale + 12, f0);
+  uint64_t dirty = ld(m, r31 + l.state_dirty);
+  for (uint64_t bits : {1024u, 512u, 256u, 128u, 64u, 32u}) dirty |= bits << 16, std_(m, r31 + l.state_dirty, dirty);
+}
+// SetViewport: r3 device, r4 the D3DVIEWPORT9.
+template <class Call>
+inline void SetViewport(const Memory& m, const D3dLayout& l, uint32_t r3, uint32_t r4, Call&& call) {
+  const auto fcfid_frsp = [](uint64_t v) { return double(float(double(int64_t(v)))); };  // std; lfd; fcfid; frsp
+  const uint64_t r11 = lwz(m, r4 + 12), r9 = lwz(m, r4 + 8), r8 = lwz(m, r4 + 4), r7 = lwz(m, r4);
+  const double f6 = lfs_(m, r4 + 20), f5 = lfs_(m, r4 + 16);
+  SetViewportFloats(m, l, r3, fcfid_frsp(r7), fcfid_frsp(r8), fcfid_frsp(r9), fcfid_frsp(r11), f5, f6, call);
+}
+// A surface's viewport: r3 device, r4 the surface.
+template <class Call>
+inline void ViewportOfSurface(const Memory& m, const D3dLayout& l, uint32_t r3, uint32_t r4, Call&& call) {
+  const uint32_t r8 = lwz(m, r4 + 24);
+  const uint32_t r11 = rlwinm(r8, 16, 30, 31);
+  uint32_t r7 = 0;
+  if (r11 != 0) r7 = r11 == 1 ? 32769u : 49155u;
+  stw(m, r3 + l.sample_control, r7);
+  stw(m, r3 + l.surface_info, r8);
+  std_(m, r3 + l.state_dirty, ld(m, r3 + l.state_dirty) | (uint64_t(1) << 57));
+  std_(m, r3 + l.constant_dirty, ld(m, r3 + l.constant_dirty) | (uint64_t(1) << 36));
+  for (uint32_t k = 0; k < 16; k += 4) stw(m, r3 + l.scissor_set + k, lwz(m, l.surface_scissor + k));
+  SetViewport(m, l, r3, l.surface_viewport, call);  // b 0x826b1c60
 }
 
 }  // namespace state

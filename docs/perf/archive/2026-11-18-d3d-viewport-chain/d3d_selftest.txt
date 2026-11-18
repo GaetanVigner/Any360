@@ -1,0 +1,102 @@
+Any360 D3D self-test: 101 cases (merged: the 2026-11-18 render state fields report and a run of the viewport and scissor chain with the cases that call it) on a copy of device 40259D00
+set shader constants           3000 calls, 0 declined, 0 different; median original 22.5 ns, native 16.3 ns (1.38x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+dirty constants                3000 calls, 0 declined, 0 different; median original 270.0 ns, native 62.5 ns (4.32x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+dirty words                    3000 calls, 0 declined, 0 different; median original 107.5 ns, native 23.8 ns (4.52x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+dirty constants (records)      3000 calls, 0 declined, 0 different; median original 271.3 ns, native 63.8 ns (4.25x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+dirty words (records)          3000 calls, 0 declined, 0 different; median original 112.5 ns, native 36.3 ns (3.10x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+blend color source             3000 calls, 0 declined, 0 different; median original 7.5 ns, native 5.0 ns (1.50x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+blend color operation          3000 calls, 0 declined, 0 different; median original 7.5 ns, native 3.8 ns (1.99x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+blend color destination        3000 calls, 0 declined, 0 different; median original 7.5 ns, native 3.8 ns (1.99x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+blend alpha source             3000 calls, 0 declined, 0 different; median original 5.0 ns, native 3.8 ns (1.33x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+blend alpha operation          3000 calls, 0 declined, 0 different; median original 5.0 ns, native 3.8 ns (1.33x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+blend alpha destination        3000 calls, 0 declined, 0 different; median original 5.0 ns, native 3.8 ns (1.33x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+blend enable                   3000 calls, 0 declined, 0 different; median original 8.8 ns, native 3.8 ns (2.32x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+separate alpha blend           3000 calls, 0 declined, 0 different; median original 8.8 ns, native 3.8 ns (2.32x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+vertex bool constants          3000 calls, 0 declined, 0 different; median original 111.3 ns, native 41.3 ns (2.70x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+pixel bool constants           3000 calls, 0 declined, 0 different; median original 101.3 ns, native 37.5 ns (2.70x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+vertex int constants           3000 calls, 0 declined, 0 different; median original 17.5 ns, native 13.8 ns (1.27x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+pixel int constants            3000 calls, 0 declined, 0 different; median original 17.5 ns, native 13.8 ns (1.27x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+pixel float constants          3000 calls, 0 declined, 0 different; median original 22.5 ns, native 16.3 ns (1.38x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetTexture                     3000 calls, 0 declined, 0 different; median original 32.5 ns, native 17.5 ns (1.86x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetStreamSource                3000 calls, 0 declined, 0 different; median original 23.8 ns, native 16.3 ns (1.46x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+sampler min filter             3000 calls, 0 declined, 0 different; median original 11.3 ns, native 8.8 ns (1.28x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+sampler mag filter             3000 calls, 0 declined, 0 different; median original 11.3 ns, native 10.0 ns (1.12x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetVertexDeclaration           3000 calls, 0 declined, 0 different; median original 13.8 ns, native 11.3 ns (1.22x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetPixelShader                 3000 calls, 0 declined, 0 different; median original 35.0 ns, native 35.0 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetVertexShader                3000 calls, 0 declined, 0 different; median original 38.8 ns, native 35.0 ns (1.11x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+CPU range flush                3000 calls, 0 declined, 0 different; median original 463.8 ns, native 1.3 ns (362.40x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+DrawIndexedVertices (helpers)   3000 calls, 0 declined, 0 different; median original 80.0 ns, native 43.8 ns (1.83x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+DrawIndexedVertices (PM4)      3000 calls, 0 declined, 0 different; median original 76.3 ns, native 40.0 ns (1.91x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+DrawIndexedVertices (records)   3000 calls, 0 declined, 0 different; median original 73.8 ns, native 36.3 ns (2.03x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+DrawVertices (PM4)             3000 calls, 0 declined, 0 different; median original 68.8 ns, native 45.0 ns (1.53x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+DrawVertices (records)         3000 calls, 0 declined, 0 different; median original 63.8 ns, native 41.3 ns (1.55x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+DrawBeginVertices (PM4)        3000 calls, 0 declined, 0 different; median original 110.0 ns, native 75.0 ns (1.47x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+DrawBeginVertices (records)    3000 calls, 0 declined, 0 different; median original 105.0 ns, native 68.8 ns (1.53x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+DrawBeginIndexedVertices (PM4)   3000 calls, 0 declined, 0 different; median original 143.8 ns, native 95.0 ns (1.51x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+DrawBeginIndexedVertices (records)   3000 calls, 0 declined, 0 different; median original 136.3 ns, native 90.0 ns (1.51x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetPredication (PM4)           3000 calls, 0 declined, 0 different; median original 12.5 ns, native 6.3 ns (2.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetPredication (records)       3000 calls, 0 declined, 0 different; median original 12.5 ns, native 6.3 ns (2.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Query Issue (PM4)              3000 calls, 0 declined, 0 different; median original 17.5 ns, native 12.5 ns (1.40x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Query Issue (records)          3000 calls, 0 declined, 0 different; median original 18.8 ns, native 15.0 ns (1.25x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Clear (PM4)                    3000 calls, 0 declined, 0 different; median original 42.5 ns, native 13.8 ns (3.09x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Clear (records)                3000 calls, 0 declined, 0 different; median original 42.5 ns, native 13.8 ns (3.09x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Fetch constants upload (PM4)   3000 calls, 0 declined, 0 different; median original 136.3 ns, native 28.8 ns (4.74x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Fetch constants upload (records)   3000 calls, 0 declined, 0 different; median original 140.0 ns, native 41.3 ns (3.39x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Wait group upload (PM4)        3000 calls, 0 declined, 0 different; median original 147.5 ns, native 32.5 ns (4.54x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Wait group upload (records)    3000 calls, 0 declined, 0 different; median original 140.0 ns, native 37.5 ns (3.73x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+State helper (PM4)             3000 calls, 9 declined, 0 different; median original 41.3 ns, native 21.3 ns (1.94x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+State helper (records)         3000 calls, 12 declined, 0 different; median original 40.0 ns, native 25.0 ns (1.60x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Constant list (PM4)            3000 calls, 0 declined, 0 different; median original 26.3 ns, native 17.5 ns (1.50x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Constant list (records)        3000 calls, 0 declined, 0 different; median original 27.5 ns, native 17.5 ns (1.57x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Vertex fetch patch             3000 calls, 0 declined, 0 different; median original 763.8 ns, native 327.5 ns (2.33x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Shader link                    3000 calls, 0 declined, 0 different; median original 132.5 ns, native 80.0 ns (1.66x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Occlusion helper (PM4)         3000 calls, 57 declined, 0 different; median original 48.8 ns, native 32.5 ns (1.50x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Occlusion helper (records)     3000 calls, 46 declined, 0 different; median original 47.5 ns, native 35.0 ns (1.36x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Clear target (PM4)             3000 calls, 55 declined, 0 different; median original 193.8 ns, native 97.5 ns (1.99x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Clear target (records)         3000 calls, 42 declined, 0 different; median original 208.8 ns, native 107.5 ns (1.94x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Swap packet (PM4)              3000 calls, 170 declined, 0 different; median original 60.0 ns, native 32.5 ns (1.85x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Swap packet (records)          3000 calls, 176 declined, 0 different; median original 60.0 ns, native 33.8 ns (1.78x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Fence (PM4)                    3000 calls, 0 declined, 0 different; median original 28.8 ns, native 11.3 ns (2.56x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Fence (records)                3000 calls, 0 declined, 0 different; median original 28.8 ns, native 12.5 ns (2.30x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Segment end (PM4)              3000 calls, 0 declined, 0 different; median original 18.8 ns, native 13.8 ns (1.36x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Segment end (records)          3000 calls, 0 declined, 0 different; median original 18.8 ns, native 13.8 ns (1.36x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Chain segment                  3000 calls, 0 declined, 0 different; median original 12.5 ns, native 6.3 ns (2.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 441.3 ns, native 402.5 ns (1.10x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 447.5 ns, native 411.3 ns (1.09x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Shader helper (PM4)            3000 calls, 0 declined, 0 different; median original 85.0 ns, native 53.8 ns (1.58x faster); allocated per call: original 0.1 B in 0.00, native 0.1 B in 0.00
+Shader helper (records)        3000 calls, 0 declined, 0 different; median original 82.5 ns, native 53.8 ns (1.53x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Resolve (PM4)                  3000 calls, 0 declined, 0 different; median original 287.5 ns, native 238.8 ns (1.20x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Resolve (records)              3000 calls, 0 declined, 0 different; median original 282.5 ns, native 237.5 ns (1.19x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Resource AddRef                3000 calls, 0 declined, 0 different; median original 27.5 ns, native 7.5 ns (3.66x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Resource Release               3000 calls, 0 declined, 0 different; median original 26.3 ns, native 8.8 ns (2.99x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+ViewportEnable                 3000 calls, 0 declined, 0 different; median original 6.3 ns, native 3.8 ns (1.66x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+DepthBias                      3000 calls, 0 declined, 0 different; median original 20.0 ns, native 11.3 ns (1.78x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetRenderTarget                3000 calls, 184 declined, 0 different; median original 25.0 ns, native 12.5 ns (2.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetDepthStencilSurface         3000 calls, 0 declined, 0 different; median original 28.8 ns, native 16.3 ns (1.77x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetRenderState_CullMode        3000 calls, 0 declined, 0 different; median original 3.8 ns, native 2.5 ns (1.49x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetRenderState_AlphaTestEnable   3000 calls, 0 declined, 0 different; median original 3.8 ns, native 3.8 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetRenderState_AlphaFunc       3000 calls, 0 declined, 0 different; median original 5.0 ns, native 3.8 ns (1.33x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetRenderState_BlendFactor     3000 calls, 0 declined, 0 different; median original 11.3 ns, native 5.0 ns (2.24x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetRenderState_ZEnable         3000 calls, 0 declined, 0 different; median original 6.3 ns, native 3.8 ns (1.67x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetRenderState_ZWriteEnable    3000 calls, 0 declined, 0 different; median original 3.8 ns, native 2.5 ns (1.49x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetRenderState_ClipPlaneEnable   3000 calls, 0 declined, 0 different; median original 3.8 ns, native 2.5 ns (1.49x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetRenderState_SlopeScaleDepthBias   3000 calls, 0 declined, 0 different; median original 15.0 ns, native 11.3 ns (1.33x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetIndices                     3000 calls, 0 declined, 0 different; median original 2.5 ns, native 2.5 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetClipPlane                   3000 calls, 158 declined, 0 different; median original 6.3 ns, native 3.8 ns (1.66x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+GetRenderState_CullMode        3000 calls, 0 declined, 0 different; median original 2.5 ns, native 2.5 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+GetRenderState_AlphaTestEnable   3000 calls, 0 declined, 0 different; median original 2.5 ns, native 2.5 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+GetRenderState_BlendEnable     3000 calls, 0 declined, 0 different; median original 2.5 ns, native 2.5 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+GetRenderState_SrcBlend        3000 calls, 0 declined, 0 different; median original 2.5 ns, native 2.5 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+GetRenderState_DestBlend       3000 calls, 0 declined, 0 different; median original 2.5 ns, native 2.5 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+GetRenderState_AlphaFunc       3000 calls, 0 declined, 0 different; median original 2.5 ns, native 2.5 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+GetRenderState_ZWriteEnable    3000 calls, 0 declined, 0 different; median original 2.5 ns, native 2.5 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+GetRenderState_BlendFactor     3000 calls, 0 declined, 0 different; median original 17.5 ns, native 12.5 ns (1.40x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetSamplerState anisotropy     3000 calls, 0 declined, 0 different; median original 7.5 ns, native 5.0 ns (1.50x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetSamplerState LOD flag 1     3000 calls, 0 declined, 0 different; median original 8.8 ns, native 5.0 ns (1.75x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetSamplerState LOD flag 0     3000 calls, 0 declined, 0 different; median original 8.8 ns, native 5.0 ns (1.75x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+WindowScissorPackets (PM4)     3000 calls, 63 declined, 0 different; median original 32.5 ns, native 20.0 ns (1.62x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+WindowScissorPackets (records)   3000 calls, 64 declined, 0 different; median original 28.8 ns, native 17.5 ns (1.64x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+ApplyScissor                   3000 calls, 0 declined, 0 different; median original 42.5 ns, native 30.0 ns (1.42x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetViewport (floats)           3000 calls, 0 declined, 0 different; median original 70.0 ns, native 43.8 ns (1.60x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+SetViewport                    3000 calls, 0 declined, 0 different; median original 53.8 ns, native 41.3 ns (1.30x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Viewport of a surface          3000 calls, 0 declined, 0 different; median original 48.8 ns, native 46.3 ns (1.05x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00

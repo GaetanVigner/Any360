@@ -902,6 +902,15 @@
   "note": "a word a register at word 2504 (the low bytes of three integers)"
  },
  {
+  "name": "D3DDevice_SetViewport",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1C60"
+  },
+  "note": "a D3DVIEWPORT9 (words to floats) into the viewport function"
+ },
+ {
   "name": "D3DDevice_Swap",
   "library": "D3D",
   "any360": "todo",
@@ -972,6 +981,15 @@
    "simpsons": "0x82456E68"
   },
   "note": ""
+ },
+ {
+  "name": "D3D_ApplyScissor",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1B60"
+  },
+  "note": "the scissor as set (+12396), the viewport clipped to it, the window scissor mirror (+10308), its packets"
  },
  {
   "name": "D3D_BeginTiledRecording",
@@ -1282,6 +1300,24 @@
   "note": "a segment submitted: straight to the ring's submit, or chained after the pending ones under the kernel's lock"
  },
  {
+  "name": "D3D_SetViewportFloats",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AF650"
+  },
+  "note": "the viewport as set (+12368, clamped to the surface or the tiling), its scale and offset (+10376), the scissor; dirty bits 21-26"
+ },
+ {
+  "name": "D3D_SurfaceViewport",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AF2D8"
+  },
+  "note": "a surface into SURFACE_INFO and the multisample word, the runtime's scissor and viewport; dirty bits 57 and 36"
+ },
+ {
   "name": "D3D_SwapPacket",
   "library": "D3D",
   "any360": "native",
@@ -1316,6 +1352,15 @@
    "crackdown": "0x826C5580"
   },
   "note": "the shader control bits (+10432) and the EVENT_WRITE that follows a change"
+ },
+ {
+  "name": "D3D_WindowScissorPackets",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AF370"
+  },
+  "note": "the window scissor registers 0x2080-0x2082 (a tile at a time when tiled: bin mask, window offset, rect)"
  },
  {
   "name": "strcmp (loop of bytes)",

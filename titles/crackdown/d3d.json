@@ -835,10 +835,10 @@
   {
    "address": "0x826AF370",
    "class": "flush",
-   "name": "sub_826AF370",
-   "named": false,
-   "role": "flush: builds SET_BIN_MASK_HI, SET_BIN_MASK_LO, SET_CONSTANT",
-   "bound": false,
+   "name": "D3D_WindowScissorPackets",
+   "named": true,
+   "role": "the window scissor registers 0x2080-0x2082 (a tile at a time when tiled: bin mask, window offset, rect)",
+   "bound": true,
    "outside_sites": 0,
    "instructions": 184,
    "args": [
@@ -883,10 +883,10 @@
   {
    "address": "0x826AF650",
    "class": "entry",
-   "name": "sub_826AF650",
-   "named": false,
-   "role": "no access through r3 (calls 0x826B1B60)",
-   "bound": false,
+   "name": "D3D_SetViewportFloats",
+   "named": true,
+   "role": "the viewport as set (+12368, clamped to the surface or the tiling), its scale and offset (+10376), the scissor; dirty bits 21-26",
+   "bound": true,
    "outside_sites": 1,
    "instructions": 153,
    "args": [],
@@ -904,7 +904,7 @@
    "name": "D3DDevice_SetRenderState_CullMode",
    "named": true,
    "role": "PA_SU_SC_MODE_CNTL bits 0-2; dirty 0x40",
-   "bound": false,
+   "bound": true,
    "outside_sites": 3,
    "instructions": 7,
    "args": [
@@ -928,7 +928,7 @@
    "name": "D3DDevice_GetRenderState_CullMode",
    "named": true,
    "role": "PA_SU_SC_MODE_CNTL bits 0-2",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 3,
    "args": [
@@ -948,7 +948,7 @@
    "name": "D3DDevice_SetRenderState_AlphaTestEnable",
    "named": true,
    "role": "RB_COLORCONTROL bit 3; dirty 0x200, 0x40000",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 9,
    "args": [
@@ -973,7 +973,7 @@
    "name": "D3DDevice_GetRenderState_AlphaTestEnable",
    "named": true,
    "role": "RB_COLORCONTROL bit 3",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 3,
    "args": [
@@ -1023,7 +1023,7 @@
    "name": "D3DDevice_GetRenderState_AlphaBlendEnable",
    "named": true,
    "role": "the blend flags bit 31",
-   "bound": false,
+   "bound": true,
    "outside_sites": 2,
    "instructions": 3,
    "args": [
@@ -1103,7 +1103,7 @@
    "name": "D3DDevice_GetRenderState_SrcBlend",
    "named": true,
    "role": "the blend word as set, bits 0-4",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 3,
    "args": [
@@ -1153,7 +1153,7 @@
    "name": "D3DDevice_GetRenderState_DestBlend",
    "named": true,
    "role": "the blend word as set, bits 8-12",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 3,
    "args": [
@@ -1293,7 +1293,7 @@
    "name": "D3DDevice_SetRenderState_AlphaFunc",
    "named": true,
    "role": "RB_COLORCONTROL bits 0-2; dirty 0x200",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 7,
    "args": [
@@ -1317,7 +1317,7 @@
    "name": "D3DDevice_GetRenderState_AlphaFunc",
    "named": true,
    "role": "RB_COLORCONTROL bits 0-2",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 3,
    "args": [
@@ -1337,7 +1337,7 @@
    "name": "D3DDevice_SetRenderState_BlendFactor",
    "named": true,
    "role": "a D3DCOLOR into RB_BLEND_RED-ALPHA as floats; dirty bits 33-36",
-   "bound": false,
+   "bound": true,
    "outside_sites": 5,
    "instructions": 39,
    "args": [
@@ -1364,7 +1364,7 @@
    "name": "D3DDevice_GetRenderState_BlendFactor",
    "named": true,
    "role": "RB_BLEND_RED-ALPHA back to a D3DCOLOR (fmadds, fctidz)",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 32,
    "args": [
@@ -1387,7 +1387,7 @@
    "name": "D3DDevice_SetRenderState_ZEnable",
    "named": true,
    "role": "the value kept; RB_DEPTHCONTROL bit 1 with a depth surface; dirty 0x800, 0x20000",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 14,
    "args": [
@@ -1414,7 +1414,7 @@
    "name": "D3DDevice_SetRenderState_ZWriteEnable",
    "named": true,
    "role": "RB_DEPTHCONTROL bit 2; dirty 0x800",
-   "bound": false,
+   "bound": true,
    "outside_sites": 2,
    "instructions": 7,
    "args": [
@@ -1439,7 +1439,7 @@
    "name": "D3DDevice_GetRenderState_ZWriteEnable",
    "named": true,
    "role": "RB_DEPTHCONTROL bit 2",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 3,
    "args": [
@@ -1459,7 +1459,7 @@
    "name": "D3DDevice_SetRenderState_ClipPlaneEnable",
    "named": true,
    "role": "PA_CL_CLIP_CNTL low 6 bits, the word 10292 0x1000; dirty 0x80, bit 44",
-   "bound": false,
+   "bound": true,
    "outside_sites": 2,
    "instructions": 16,
    "args": [
@@ -1485,7 +1485,7 @@
    "name": "D3DDevice_SetRenderState_SlopeScaleDepthBias",
    "named": true,
    "role": "both polygon offset scales (times the runtime factor) and their enables; dirty bits 45, 43, 0x40",
-   "bound": false,
+   "bound": true,
    "outside_sites": 8,
    "instructions": 41,
    "args": [
@@ -1597,7 +1597,7 @@
    "name": "D3DDevice_SetSamplerState_LodByteBit1",
    "named": true,
    "role": "the stage LOD byte bit 1 (+11722), fetch constant word 4 low bits",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 34,
    "args": [
@@ -1645,7 +1645,7 @@
    "name": "D3DDevice_SetSamplerState_LodByteBit0",
    "named": true,
    "role": "the stage LOD byte bit 0 (+11722), fetch constant word 4 low bits",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 33,
    "args": [
@@ -1669,7 +1669,7 @@
    "name": "D3DDevice_SetSamplerState_MaxAnisotropy",
    "named": true,
    "role": "the stage byte at +11644; with a filter flag, fetch constant word 3 bits 25-27 from the table",
-   "bound": false,
+   "bound": true,
    "outside_sites": 1,
    "instructions": 26,
    "args": [
@@ -1690,10 +1690,10 @@
   {
    "address": "0x826B1B60",
    "class": "entry",
-   "name": "sub_826B1B60",
-   "named": false,
-   "role": "writes r3 +10308, +10312, +12396, +12400, +12404, +12408",
-   "bound": false,
+   "name": "D3D_ApplyScissor",
+   "named": true,
+   "role": "the scissor as set (+12396), the viewport clipped to it, the window scissor mirror (+10308), its packets",
+   "bound": true,
    "outside_sites": 14,
    "instructions": 63,
    "args": [
@@ -1726,10 +1726,10 @@
   {
    "address": "0x826B1C60",
    "class": "entry",
-   "name": "sub_826B1C60",
-   "named": false,
-   "role": "no access through r3 (calls 0x826AF650)",
-   "bound": false,
+   "name": "D3DDevice_SetViewport",
+   "named": true,
+   "role": "a D3DVIEWPORT9 (words to floats) into the viewport function",
+   "bound": true,
    "outside_sites": 10,
    "instructions": 31,
    "args": [
@@ -1977,7 +1977,7 @@
    "name": "D3DDevice_SetClipPlane",
    "named": true,
    "role": "a user clip plane (16 bytes at +10144); dirty bit 54 - index of +32",
-   "bound": false,
+   "bound": true,
    "outside_sites": 4,
    "instructions": 20,
    "args": [
@@ -2171,7 +2171,7 @@
    "name": "D3DDevice_SetVertexShaderConstantI",
    "named": true,
    "role": "a word a register at word 2504",
-   "bound": false,
+   "bound": true,
    "outside_sites": 6,
    "instructions": 21,
    "args": [
@@ -2196,7 +2196,7 @@
    "name": "D3DDevice_SetPixelShaderConstantI",
    "named": true,
    "role": "a word a register at word 2520",
-   "bound": false,
+   "bound": true,
    "outside_sites": 6,
    "instructions": 21,
    "args": [
@@ -2462,7 +2462,7 @@
    "name": "D3DDevice_SetIndices",
    "named": true,
    "role": "the index buffer bound (+11540); dirty 0x80000",
-   "bound": false,
+   "bound": true,
    "outside_sites": 5,
    "instructions": 5,
    "args": [

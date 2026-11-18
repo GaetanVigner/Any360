@@ -51,7 +51,7 @@ enum class Function : uint32_t {
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
   kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kSin, kCos, kAsin,
-  kD3dRenderState, kAtan2, kPow, kD3dSurfaces, kXAudioReverb, kCount
+  kD3dRenderState, kAtan2, kPow, kD3dSurfaces, kXAudioReverb, kD3dViewport, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -935,6 +935,121 @@ struct SetDepthStencilSurface {
   }
   static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
     return SurfaceWrites(ctx, ctx.r4.u32, w);
+  }
+};
+// The viewport and scissor (any360/xdk/d3d_state.h): the scissor (Crackdown sub_826B1B60), the viewport on its floats
+// (sub_826AF650), SetViewport (sub_826B1C60), a surface's viewport (sub_826AF2D8). Their packets through the window
+// scissor's packets function (sub_826AF370, the title sets it: its bound replacement or its own code runs there).
+inline GuestFunction g_scissor_packets = nullptr;
+// That function as their bl runs it: r1 below the callers' frames (`frames` bytes), r3 the device, r4-r7 the rect.
+struct ScissorPacketsCall {
+  PPCContext& ctx;
+  uint8_t* base;
+  uint32_t device, frames;
+  void operator()(uint32_t left, uint32_t top, uint32_t right, uint32_t bottom) const {
+    const uint64_t r1 = ctx.r1.u64;
+    ctx.r1.u64 = r1 - frames;
+    ctx.r3.u64 = device, ctx.r4.u64 = left, ctx.r5.u64 = top, ctx.r6.u64 = right, ctx.r7.u64 = bottom;
+    g_scissor_packets(ctx, base);
+    ctx.r1.u64 = r1;
+  }
+};
+// The frames below each entry when the packets function runs: the scissor's 112 bytes, the viewport function's 176,
+// SetViewport's 128 (a surface's viewport branches to SetViewport: none of its own).
+inline constexpr uint32_t kScissorFrames = 112, kViewportFloatsFrames = 176 + 112, kViewportFrames = 128 + 176 + 112;
+// What they write: the scissor as set, the window scissor's mirror, the command buffer's cursor and the packets after it
+// (their records form, the larger: compared on both sides). Declined when the packets could make room (their PM4 form
+// past the buffer's end: the runtime's function would then make room, twice when verified).
+inline bool ScissorWrites(uint32_t device, std::vector<any360::xdk::Range>& w) {
+  const any360::xdk::D3dLayout& l = g_d3d_layout;
+  const any360::xdk::Memory& m = g_memory;
+  uint32_t words = 0;
+  if (!g_scissor_packets || !any360::xdk::D3dWindowScissorFits(m, l, device, false, words)) return false;
+  const uint32_t cursor = any360::xdk::detail::Get32(m, device + l.command_cursor);
+  const uint32_t bytes = 4 * any360::xdk::D3dWindowScissorWords(m, l, device, true);
+  if (!any360::xdk::IsPlainMemory(cursor + 4, bytes) || !any360::xdk::detail::Disjoint(cursor + 4, bytes, device, l.device_bytes))
+    return false;
+  AddRange(w, cursor + 4, bytes);
+  AddRange(w, device + l.command_cursor, 4);
+  AddRange(w, device + l.scissor_set, 16);
+  AddRange(w, device + l.window_scissor, 8);
+  return true;
+}
+// The viewport function's: the scissor's, the viewport as set, its scale and offset, the state's dirty bits.
+inline bool ViewportWrites(uint32_t device, std::vector<any360::xdk::Range>& w) {
+  const any360::xdk::D3dLayout& l = g_d3d_layout;
+  if (!any360::xdk::detail::ViewportAccepts(g_memory, l, device) || !ScissorWrites(device, w)) return false;
+  AddRange(w, device + l.viewport_set, 28);
+  AddRange(w, device + l.viewport_scale, 24);
+  AddRange(w, device + l.state_dirty, 8);
+  return true;
+}
+// The scissor: r4 the rect.
+struct ApplyScissor {
+  static constexpr Function kFunction = Function::kD3dViewport;
+  static constexpr bool kVoid = true;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    if (!g_scissor_packets) return false;
+    const uint32_t device = ctx.r3.u32;
+    return any360::xdk::D3dApplyScissor(m, g_d3d_layout, device, ctx.r4.u32,
+                                        ScissorPacketsCall{ctx, m.base, device, kScissorFrames});
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    return any360::xdk::IsPlainMemory(ctx.r4.u32, 16) && ScissorWrites(ctx.r3.u32, w);
+  }
+};
+// The viewport function: f1-f6 x, y, width, height, min z, max z.
+struct ViewportFloats {
+  static constexpr Function kFunction = Function::kD3dViewport;
+  static constexpr bool kVoid = true;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    if (!g_scissor_packets) return false;
+    ctx.fpscr.disableFlushMode();
+    const uint32_t device = ctx.r3.u32;
+    return any360::xdk::D3dSetViewportFloats(m, g_d3d_layout, device, ctx.f1.f64, ctx.f2.f64, ctx.f3.f64, ctx.f4.f64,
+                                             ctx.f5.f64, ctx.f6.f64,
+                                             ScissorPacketsCall{ctx, m.base, device, kViewportFloatsFrames});
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) { return ViewportWrites(ctx.r3.u32, w); }
+};
+// SetViewport: r4 the D3DVIEWPORT9.
+struct Viewport {
+  static constexpr Function kFunction = Function::kD3dViewport;
+  static constexpr bool kVoid = true;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    if (!g_scissor_packets) return false;
+    ctx.fpscr.disableFlushMode();
+    const uint32_t device = ctx.r3.u32;
+    return any360::xdk::D3dSetViewport(m, g_d3d_layout, device, ctx.r4.u32,
+                                       ScissorPacketsCall{ctx, m.base, device, kViewportFrames});
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    return any360::xdk::IsPlainMemory(ctx.r4.u32, 24) && ViewportWrites(ctx.r3.u32, w);
+  }
+};
+// A surface's viewport: r4 the surface.
+struct ViewportOfSurface {
+  static constexpr Function kFunction = Function::kD3dViewport;
+  static constexpr bool kVoid = true;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    if (!g_scissor_packets) return false;
+    ctx.fpscr.disableFlushMode();
+    const uint32_t device = ctx.r3.u32;
+    return any360::xdk::D3dViewportOfSurface(m, g_d3d_layout, device, ctx.r4.u32,
+                                             ScissorPacketsCall{ctx, m.base, device, kViewportFrames});
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t device = ctx.r3.u32;
+    if (!any360::xdk::IsPlainMemory(ctx.r4.u32 + 24, 4) || !any360::xdk::IsPlainMemory(l.surface_scissor, 16) ||
+        !any360::xdk::IsPlainMemory(l.surface_viewport, 24) ||
+        !any360::xdk::detail::Disjoint(l.surface_scissor, 16, device, l.device_bytes) ||
+        !any360::xdk::detail::Disjoint(l.surface_viewport, 24, device, l.device_bytes) || !ViewportWrites(device, w))
+      return false;
+    AddRange(w, device + l.surface_info, 4);
+    AddRange(w, device + l.sample_control, 4);
+    AddRange(w, device + l.constant_dirty, 8);
+    return true;
   }
 };
 // The render state fields' setters (any360/xdk/d3d_state.h): r4 the value; each writes its fields and the state's

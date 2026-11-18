@@ -2,6 +2,9 @@
 // models (any360/xdk/d3d_reference.h): random devices, values, registers, counts and sources, in the default layout
 // and in a shifted one. A call the replacement takes must leave the same bytes as the model; one it declines must
 // leave memory as it was (the runtime's own code then runs; for a count of 0 it would loop for ever).
+#include <cmath>
+#include <limits>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <random>
@@ -45,6 +48,9 @@ xdk::D3dLayout Shifted() {
   l.tiling_hiz_pitch += 40;
   l.color_control += 40, l.blend_color += 40, l.clip_plane_flag += 40, l.index_buffer += 40;
   l.clip_planes += 48;  // the runtime finds a plane as (index + clip_planes / 16) << 4: kept on 16 bytes
+  l.viewport_set += 40, l.scissor_set += 40, l.window_scissor += 40, l.viewport_scale += 40, l.scissor_enable += 40;
+  l.tiled_size += 40, l.tile_count += 40, l.tile_rects += 40, l.tile_offsets += 40, l.tile_bins += 40;
+  l.sample_control += 40;
   return l;
 }
 
@@ -651,8 +657,222 @@ void TestRenderStateFields(xdk::D3dLayout l, uint32_t seed) {
   CHECK(p.native == q.native);
 }
 
+// The window scissor's packets as a list of writes: register writes (type-0 packets, SET_CONSTANT's context registers,
+// register records) and bin masks (SET_BIN_MASK_LO/HI, bins records), each with its predication, in the order written.
+// PM4 and records of the same writes give the same list.
+std::vector<std::array<uint32_t, 4>> ScissorCommands(const std::vector<uint8_t>& memory, uint32_t from, uint32_t to) {
+  namespace record = any360::xdk::record;
+  std::vector<std::array<uint32_t, 4>> out;
+  const auto big = [&](uint32_t a) {
+    return uint32_t(memory[a]) << 24 | uint32_t(memory[a + 1]) << 16 | uint32_t(memory[a + 2]) << 8 | memory[a + 3];
+  };
+  const auto host = [&](uint32_t a) { return std::byteswap(big(a)); };
+  uint32_t at = from;
+  while (at < to) {
+    const uint32_t h = big(at);
+    at += 4;
+    const uint32_t count = ((h >> 16) & 0x3FFF) + 1, predicated = h & 1;
+    if ((h >> 30) == 0) {
+      for (uint32_t i = 0; i < count; ++i) out.push_back({0, (h & 0x7FFF) + i, big(at + 4 * i), 0});
+    } else {
+      const uint32_t opcode = (h >> 8) & 0x7F;
+      CHECK((h >> 30) == 3);
+      if (opcode == 0x2D) {
+        const uint32_t offset_type = big(at);
+        CHECK(((offset_type >> 16) & 0xFF) == 4);
+        for (uint32_t i = 1; i < count; ++i) out.push_back({0, 0x2000 + (offset_type & 0x7FF) + i - 1, big(at + 4 * i), predicated});
+      } else if (opcode >= 0x60 && opcode <= 0x63) {
+        CHECK(count == 1);
+        out.push_back({3, opcode - 0x60, big(at), predicated});
+      } else {
+        const uint32_t kind = host(at);
+        CHECK(opcode == record::kOpcode);
+        if ((kind & 0xFF) == record::kBins) {
+          CHECK(count == record::kBinsWords);
+          out.push_back({3, kind >> 8, host(at + 4), predicated});
+        } else {
+          CHECK((kind & 0xFF) == record::kRegisters);
+          for (uint32_t i = 1; i < count; ++i) out.push_back({0, (kind >> 8) + i - 1, host(at + 4 * i), predicated});
+        }
+      }
+    }
+    at += 4 * count;
+  }
+  CHECK(at == to);
+  return out;
+}
+
+// The viewport and scissor functions against their code read line by line: the window scissor's packets (PM4 byte for
+// byte; records decoded against the PM4), the scissor, the viewport on its floats (doubles that are not floats, NaN,
+// infinities, huge, negative), SetViewport on a D3DVIEWPORT9 (any words) and a surface's viewport. The device's
+// fields at random: the bound and recorded surfaces, the tiling's flags, options, tile count (0-15, and past it for the
+// packets), rects, offsets, bin masks and size, the scissor's enable, the viewport as set, the surfaces' words 24 and
+// 36; the command buffer's room (short of the packets now and then). The runtime's 0.5, viewport and rect in the arena.
+// The viewport functions' packets: the model's (PM4) on one side, the reference's on the other.
+void TestViewportChain(xdk::D3dLayout l, uint32_t seed) {
+  std::mt19937_64 rng(seed);
+  l.blend_rounding = 0x50018, l.surface_viewport = 0x50040, l.surface_scissor = 0x50060;
+  auto surface_at = [](uint32_t k) { return 0x60000u + 64 * k; };
+  auto coordinate = [&]() -> uint32_t {
+    switch (rng() % 6) {
+      case 0: return uint32_t(rng());
+      case 1: return uint32_t(int32_t(rng() % 512) - 256);
+      default: return uint32_t(rng() % 2048);
+    }
+  };
+  auto real = [&]() -> double {
+    switch (rng() % 10) {
+      case 0: return std::numeric_limits<double>::quiet_NaN();
+      case 1: return rng() % 2 ? HUGE_VAL : -HUGE_VAL;
+      case 2: return double(int64_t(rng() % 0x200000000ull) - 0x100000000ll) + 0.5;  // past the 32-bit range
+      case 3: return std::bit_cast<double>(rng());
+      case 4: return double(rng() % 4096) + double(rng() % 1000) / 997.0;  // not a float
+      case 5: return -double(rng() % 300) - 0.25;
+      default: return double(float(rng() % 2048));
+    }
+  };
+  uint64_t taken = 0, records_compared = 0, declined = 0;
+  for (int round = 0; round < 200; ++round) {
+    Pair p(seed + round);
+    Put32Both(p, l.blend_rounding, rng() % 4 ? std::bit_cast<uint32_t>(0.5f) : std::bit_cast<uint32_t>(RandomFloat(rng)));
+    for (uint32_t k = 0; k < 6; ++k) Put32Both(p, l.surface_viewport + 4 * k, k < 4 ? coordinate() : uint32_t(rng()));
+    for (uint32_t k = 0; k < 4; ++k) Put32Both(p, l.surface_scissor + 4 * k, coordinate());
+    for (int call = 0; call < 40; ++call) {
+      for (uint32_t k = 0; k < 5; ++k) {
+        const uint32_t bound = rng() % 3 ? surface_at(uint32_t(rng() % 8)) : 0;
+        if (call == 0 || rng() % 3 == 0) Put32Both(p, kDevice + l.surfaces + 4 * k, bound);  // the arena's surfaces
+        if (rng() % 3 == 0) Put32Both(p, kDevice + l.tiled_surfaces + 4 * k, rng() % 2 ? bound : surface_at(uint32_t(rng() % 8)));
+      }
+      for (uint32_t at : {l.tiling_flags, l.tiling_options}) {
+        if (rng() % 3 == 0) *p.a.Host(kDevice + at) = *p.b.Host(kDevice + at) = uint8_t(rng());
+      }
+      const uint32_t which = uint32_t(rng() % 6);
+      const bool chain = which >= 2;
+      Put32Both(p, kDevice + l.tile_count, chain || rng() % 8 ? uint32_t(rng() % 16) : 16 + uint32_t(rng() % 4));
+      for (uint32_t k = 0; k < 15; ++k) {
+        for (uint32_t w = 0; w < 4; ++w) Put32Both(p, kDevice + l.tile_rects + 16 * k + 4 * w, coordinate());
+        for (uint32_t w = 0; w < 2; ++w) Put32Both(p, kDevice + l.tile_offsets + 8 * k + 4 * w, coordinate());
+      }
+      for (uint32_t w = 0; w < 2; ++w) {
+        Put32Both(p, kDevice + l.tile_bins + 4 * w, uint32_t(rng()));
+        Put32Both(p, kDevice + l.tiled_size + 4 * w, rng() % 4 ? uint32_t(rng() % 4096) : uint32_t(rng()));
+        Put32Both(p, kDevice + l.window_scissor + 4 * w, uint32_t(rng()));
+      }
+      Put32Both(p, kDevice + l.scissor_enable, rng() % 3 ? uint32_t(rng() % 2) : uint32_t(rng()));
+      for (uint32_t k = 0; k < 4; ++k) Put32Both(p, kDevice + l.viewport_set + 4 * k, std::bit_cast<uint32_t>(float(real())));
+      for (uint32_t k = 0; k < 8; ++k) {
+        Put32Both(p, surface_at(k) + 24, uint32_t(rng()));
+        Put32Both(p, surface_at(k) + 36, uint32_t(rng()));
+      }
+      const uint32_t cursor = 0x40000 + 4 * uint32_t(rng() % 256);
+      const uint32_t room = chain || rng() % 2 ? 0x2000 : 4 * uint32_t(rng() % 160);
+      Put32Both(p, kDevice + l.command_cursor, cursor);
+      Put32Both(p, kDevice + l.command_end, chain || rng() % 16 ? cursor + room : cursor - 4 * uint32_t(1 + rng() % 8));
+      // The model's packets (PM4) on one side, the reference's on the other; both see the same arguments.
+      std::vector<std::array<uint32_t, 4>> args_a, args_b;
+      auto packets_a = [&](uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+        args_a.push_back({a, b, c, d});
+        CHECK(xdk::D3dWindowScissorPackets(p.a, l, kDevice, a, b, c, d, false));
+      };
+      auto packets_b = [&](uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+        args_b.push_back({a, b, c, d});
+        ref::WindowScissorPackets(p.b, l, kDevice, a, b, c, d);
+      };
+      bool took = false;
+      switch (which) {
+        case 0:
+        case 1: {
+          const uint32_t left = coordinate(), top = coordinate(), right = coordinate(), bottom = coordinate();
+          // The PM4 form's size, as the function writes it: what it takes when there is room for it.
+          const bool tiled = ref::TiledTest(p.b, l, kDevice);
+          const uint32_t tiles = ref::lwz(p.b, kDevice + l.tile_count);
+          const bool whole = (ref::lbz(p.b, kDevice + l.tiling_options) & 0x40) && (ref::lbz(p.b, kDevice + l.tiling_flags) & 0x40);
+          const bool records = which == 1;
+          const uint32_t bins = records ? 3 : 2;
+          const uint64_t words = !tiled ? (records ? 5 : 4) : bins + uint64_t(tiles) * (bins + 5) + (whole ? bins + 4 : 0) + 2 * bins;
+          const bool expect = (!tiled || tiles <= 15) && cursor + 4 * words <= ref::lwz(p.b, kDevice + l.command_end);
+          took = xdk::D3dWindowScissorPackets(p.a, l, kDevice, left, top, right, bottom, records);
+          CHECK(took == expect);
+          if (!took) {
+            ++declined;
+            break;
+          }
+          ref::WindowScissorPackets(p.b, l, kDevice, left, top, right, bottom);
+          if (records) {
+            const uint32_t end_a = ref::lwz(p.a, kDevice + l.command_cursor) + 4, end_b = ref::lwz(p.b, kDevice + l.command_cursor) + 4;
+            CHECK(end_a == cursor + 4 + 4 * words);
+            CHECK(ScissorCommands(p.native, cursor + 4, end_a) == ScissorCommands(p.model, cursor + 4, end_b));
+            ++records_compared;
+            // The PM4 side's bytes on both, to go on comparing everything else.
+            std::memcpy(&p.native[cursor], &p.model[cursor], std::max(end_a, end_b) - cursor);
+            std::memcpy(&p.native[kDevice + l.command_cursor], &p.model[kDevice + l.command_cursor], 4);
+          }
+          break;
+        }
+        case 2: {
+          const uint32_t rect = rng() % 4 ? 0x61000 + 4 * uint32_t(rng() % 64) : kDevice + l.scissor_set;
+          if (rect != kDevice + l.scissor_set) {
+            for (uint32_t w = 0; w < 4; ++w) Put32Both(p, rect + 4 * w, coordinate());
+          }
+          took = xdk::D3dApplyScissor(p.a, l, kDevice, rect, packets_a);
+          ref::ApplyScissor(p.b, l, kDevice, rect, packets_b);
+          break;
+        }
+        case 3: {
+          const double x = real(), y = real(), w = real(), h = real(), min_z = real(), max_z = real();
+          took = xdk::D3dSetViewportFloats(p.a, l, kDevice, x, y, w, h, min_z, max_z, packets_a);
+          ref::SetViewportFloats(p.b, l, kDevice, x, y, w, h, min_z, max_z, packets_b);
+          break;
+        }
+        case 4: {
+          const uint32_t viewport = 0x62000 + 4 * uint32_t(rng() % 32);
+          for (uint32_t k = 0; k < 6; ++k) {
+            Put32Both(p, viewport + 4 * k, k < 4 ? (rng() % 4 ? coordinate() : uint32_t(rng())) : std::bit_cast<uint32_t>(float(real())));
+          }
+          took = xdk::D3dSetViewport(p.a, l, kDevice, viewport, packets_a);
+          ref::SetViewport(p.b, l, kDevice, viewport, packets_b);
+          break;
+        }
+        default: {
+          const uint32_t surface = surface_at(uint32_t(rng() % 8));
+          took = xdk::D3dViewportOfSurface(p.a, l, kDevice, surface, packets_a);
+          ref::ViewportOfSurface(p.b, l, kDevice, surface, packets_b);
+          break;
+        }
+      }
+      if (chain) CHECK(took);
+      CHECK(args_a == args_b);
+      taken += took;
+      CHECK(p.Same(kDevice, kDevice + l.device_bytes));
+      CHECK(p.Same(cursor, cursor + 0x2000));
+    }
+    CHECK(p.SameEverywhere());
+    if (!p.SameEverywhere()) std::memcpy(p.model.data(), p.native.data(), kArena);
+  }
+  CHECK(taken > 5000 && records_compared > 500 && declined > 300);
+  // Declined, memory untouched: a rect, a viewport or a surface not plain, the device in the GPU's register window,
+  // the runtime's viewport over the device, a bound surface's word 36 not plain (untiled).
+  Pair p(seed), q(seed);
+  auto none = [](uint32_t, uint32_t, uint32_t, uint32_t) {};
+  CHECK(!xdk::D3dApplyScissor(p.a, l, kDevice, 0x7F000000u - 8, none));
+  CHECK(!xdk::D3dSetViewport(p.a, l, kDevice, 0xFFFFFFF0u, none));
+  CHECK(!xdk::D3dViewportOfSurface(p.a, l, kDevice, 0x7F000000u - 24, none));
+  CHECK(!xdk::D3dSetViewportFloats(p.a, l, 0x7F000000u - 64, 0, 0, 1, 1, 0, 1, none));
+  CHECK(!xdk::D3dWindowScissorPackets(p.a, l, 0x7F000000u - 64, 0, 0, 1, 1, false));
+  xdk::D3dLayout over = l;
+  over.surface_viewport = kDevice + 64;
+  CHECK(!xdk::D3dViewportOfSurface(p.a, over, kDevice, surface_at(0), none));
+  CHECK(p.native == q.native);
+  Put32Both(p, kDevice + l.surfaces, 0x7F000000u - 38), Put32Both(q, kDevice + l.surfaces, 0x7F000000u - 38);
+  *p.a.Host(kDevice + l.tiling_flags) = *q.a.Host(kDevice + l.tiling_flags) = 0;
+  CHECK(!xdk::D3dSetViewportFloats(p.a, l, kDevice, 0, 0, 1, 1, 0, 1, none));
+  CHECK(p.native == q.native);
+}
+
 int main() {
   const xdk::D3dLayout standard, shifted = Shifted();
+  TestViewportChain(standard, 2500);
+  TestViewportChain(shifted, 2600);
   TestRenderStateFields(standard, 2300);
   TestRenderStateFields(shifted, 2400);
   TestSurfaceSetters(standard, 2100);

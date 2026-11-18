@@ -7,6 +7,8 @@
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <limits>
+#include <cmath>
 #include <random>
 #include <vector>
 
@@ -177,6 +179,79 @@ struct Surfaces {
     } else {
       ctx.r4.u64 = rng() % 8 ? rng() % 4 : rng() % 8;
       ctx.r5.u64 = surface;
+    }
+  }
+};
+// The viewport and scissor (kEntry 0 the scissor, 1 the viewport on its floats, 2 SetViewport, 3 a surface's viewport):
+// the bound and recorded surfaces (in the scratch, their words 24 and 36 at random), the tiling's flags, options, tile
+// count (0-15), rects, offsets, bin masks and size, the scissor's enable, the viewport as set, the window scissor's
+// mirror; the command buffer with room. The rect (now and then the device's scissor as set), the floats (NaN,
+// infinities, past 32 bits, not floats, negative), the D3DVIEWPORT9 (any words now and then) or the surface.
+template <uint32_t kEntry>
+struct Viewports {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    auto surface_at = [&](uint32_t k) { return s.scratch + 0x2000 + 64 * k; };
+    auto coordinate = [&]() -> uint32_t {
+      switch (rng() % 6) {
+        case 0: return uint32_t(rng());
+        case 1: return uint32_t(int32_t(rng() % 512) - 256);
+        default: return uint32_t(rng() % 2048);
+      }
+    };
+    auto real = [&]() -> double {
+      switch (rng() % 10) {
+        case 0: return std::numeric_limits<double>::quiet_NaN();
+        case 1: return rng() % 2 ? HUGE_VAL : -HUGE_VAL;
+        case 2: return double(int64_t(rng() % 0x200000000ull) - 0x100000000ll) + 0.5;
+        case 3: return std::bit_cast<double>(rng());
+        case 4: return double(rng() % 4096) + double(rng() % 1000) / 997.0;
+        case 5: return -double(rng() % 300) - 0.25;
+        default: return double(float(rng() % 2048));
+      }
+    };
+    for (uint32_t k = 0; k < 8; ++k) Put32(s, surface_at(k) + 24, uint32_t(rng())), Put32(s, surface_at(k) + 36, uint32_t(rng()));
+    for (uint32_t k = 0; k < 5; ++k) {
+      const uint32_t bound = rng() % 3 ? surface_at(uint32_t(rng() % 8)) : 0;
+      Put32(s, s.device + l.surfaces + 4 * k, bound);
+      Put32(s, s.device + l.tiled_surfaces + 4 * k, rng() % 2 ? bound : surface_at(uint32_t(rng() % 8)));
+    }
+    for (uint32_t at : {l.tiling_flags, l.tiling_options}) s.Host(s.device + at)[0] = rng() % 3 ? uint8_t(rng()) : 0;
+    Put32(s, s.device + l.tile_count, rng() % 4 ? uint32_t(rng() % 5) : uint32_t(rng() % 16));
+    for (uint32_t k = 0; k < 15; ++k) {
+      for (uint32_t w = 0; w < 4; ++w) Put32(s, s.device + l.tile_rects + 16 * k + 4 * w, coordinate());
+      for (uint32_t w = 0; w < 2; ++w) Put32(s, s.device + l.tile_offsets + 8 * k + 4 * w, coordinate());
+    }
+    for (uint32_t w = 0; w < 2; ++w) {
+      Put32(s, s.device + l.tile_bins + 4 * w, uint32_t(rng()));
+      Put32(s, s.device + l.tiled_size + 4 * w, rng() % 4 ? uint32_t(rng() % 4096) : uint32_t(rng()));
+      Put32(s, s.device + l.window_scissor + 4 * w, uint32_t(rng()));
+    }
+    Put32(s, s.device + l.scissor_enable, rng() % 3 ? uint32_t(rng() % 2) : uint32_t(rng()));
+    for (uint32_t k = 0; k < 4; ++k) Put32(s, s.device + l.viewport_set + 4 * k, std::bit_cast<uint32_t>(float(real())));
+    const uint32_t cursor = s.scratch + 0x20000 + 4 * uint32_t(rng() % 64);
+    Put32(s, s.scratch, cursor);  // the buffer's start, for CanonicalCommands
+    Put32(s, s.device + l.command_cursor, cursor);
+    Put32(s, s.device + l.command_end, s.scratch + 0x30000);
+    ctx.r3.u64 = s.device;
+    if constexpr (kEntry == 0) {
+      const uint32_t rect = rng() % 4 ? s.scratch + 0x3000 + 4 * uint32_t(rng() % 64) : s.device + l.scissor_set;
+      if (rect != s.device + l.scissor_set) {
+        for (uint32_t w = 0; w < 4; ++w) Put32(s, rect + 4 * w, coordinate());
+      }
+      ctx.r4.u64 = rect;
+    } else if constexpr (kEntry == 1) {
+      ctx.f1.f64 = real(), ctx.f2.f64 = real(), ctx.f3.f64 = real(), ctx.f4.f64 = real();
+      ctx.f5.f64 = real(), ctx.f6.f64 = real();
+    } else if constexpr (kEntry == 2) {
+      const uint32_t viewport = s.scratch + 0x3400 + 4 * uint32_t(rng() % 32);
+      for (uint32_t k = 0; k < 6; ++k) {
+        Put32(s, viewport + 4 * k, k < 4 ? (rng() % 4 ? coordinate() : uint32_t(rng())) : std::bit_cast<uint32_t>(float(real())));
+      }
+      ctx.r4.u64 = viewport;
+    } else {
+      ctx.r4.u64 = surface_at(uint32_t(rng() % 8));
     }
   }
 };
@@ -602,6 +677,28 @@ struct Predication {
     ctx.r3.u64 = s.device;
     ctx.r4.u64 = rng() % 3 == 0 ? 0 : uint32_t(rng());
   }
+  static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
+  static void Normalize(CallSetup& s, PPCContext&) {
+    if constexpr (kRecords) CanonicalCommands(s);
+  }
+};
+
+// The window scissor's packets (d3d_draw.h): the viewport cases' device, the rect's corners as they set them (and any
+// 32 bits now and then); now and then a tiling past the 15 tiles the native takes (declined).
+template <bool kRecords>
+struct WindowScissor {
+  static bool Native(PPCContext& ctx, uint8_t*) {
+    return d3d_draw::WindowScissorPackets(ctx, SelfTestMemory(), kRecords);
+  }
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    Viewports<0>::Setup(s, ctx);
+    std::mt19937_64& rng = *s.rng;
+    if (rng() % 16 == 0) Put32(s, s.device + g_d3d_layout.tile_count, 16 + uint32_t(rng() % 4));
+    for (RegisterOf r : {&PPCContext::r4, &PPCContext::r5, &PPCContext::r6, &PPCContext::r7}) {
+      (ctx.*r).u64 = rng() % 6 == 0 ? uint32_t(rng()) : rng() % 4 == 0 ? uint32_t(int32_t(rng() % 512) - 256) : uint32_t(rng() % 2048);
+    }
+  }
+  using RegisterOf = decltype(&PPCContext::r4);
   static constexpr const char* (*Differs)(const PPCContext&, const PPCContext&) = &NoRegisterDiffers;
   static void Normalize(CallSetup& s, PPCContext&) {
     if constexpr (kRecords) CanonicalCommands(s);

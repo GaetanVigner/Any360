@@ -2040,6 +2040,21 @@ inline bool Fence(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
   ctx.r3.u64 = cursor + 4 * n;
   return true;
 }
+// The window scissor's packets (Crackdown sub_826AF370): r3 device, r4-r7 the rect (any360/xdk/d3d_state.h), PM4 or
+// records. Declined where the runtime's code would make room for them (it runs then).
+inline bool WindowScissorPackets(PPCContext& ctx, const any360::xdk::Memory& m, bool records) {
+  return any360::xdk::D3dWindowScissorPackets(m, xdk::g_d3d_layout, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32,
+                                              ctx.r7.u32, records);
+}
+// Bound, it writes the runtime's PM4 even with any360_d3d_records: measured on the Radeon (2026-11-18), records mode
+// brings stretches of 19 ms frames into the city (14 of 20 launches, none of 20 with records off), and these packets as
+// records made them more frequent (9 of 10 launches against 5 of 10). Their records form stays tested (unit tests,
+// self-test) for when that is understood.
+inline void WindowScissorPacketsOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && NativeDraws() && WindowScissorPackets(ctx, m, false)) return;
+  original(ctx, base);
+}
 inline void FenceOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const any360::xdk::Memory& m = xdk::g_memory;
   if (m.base == base && NativeDraws() && Fence(ctx, m, DrawRecords())) return;

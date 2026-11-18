@@ -82,6 +82,19 @@ struct D3dLayout {
   // its float to byte scale and rounding term, the slope-scaled depth bias's factor.
   uint32_t blend_byte_scale = 0x8206F3D4u, blend_float_scale = 0x820ED464u, blend_rounding = 0x8207047Cu;
   uint32_t slope_scale_factor = 0x82BA8634u;
+  // The viewport and scissor. As set: the viewport's x, y, width, height (the width and height as clamped to the
+  // surface), min z, max z (floats) and a word the viewport function clears; the scissor rect (four words). The mirror's
+  // window scissor (two words: top left, bottom right, 15 bits each coordinate) and the viewport's scale and offset (x
+  // scale, x offset, y scale, y offset, z scale, z offset: floats). The scissor's enable (a word), the tiling's size
+  // (width, height), tile count, tile rects (16 bytes each: left, top, right, bottom), tile offsets (8 bytes each: x,
+  // y) and bin masks (low, high: the masks the scissor's packets put back), the multisample word the surface's sample
+  // count sets.
+  uint32_t viewport_set = 12368, scissor_set = 12396, window_scissor = 10308, viewport_scale = 10376;
+  uint32_t scissor_enable = 11576, tiled_size = 12900, tile_count = 12468, tile_rects = 12472, tile_offsets = 12712;
+  uint32_t tile_bins = 12428, sample_control = 10556;
+  // The runtime's viewport and scissor a surface's viewport starts from (guest addresses in the title's image: a
+  // D3DVIEWPORT9 of words and floats, a rect of four words).
+  uint32_t surface_viewport = 0x820E9E08u, surface_scissor = 0x820E9E20u;
 };
 
 namespace detail {
@@ -955,6 +968,262 @@ inline bool D3dSetPixelShaderConstants(const Memory& m, const D3dLayout& l, uint
                                        uint32_t source, uint32_t count, uint64_t dirty, uint32_t stack_pointer) {
   return D3dSetShaderConstants(m, device, first, source, count, dirty, stack_pointer, l.float_constant_base[1],
                                l.float_dirty[1]);
+}
+
+// The viewport and scissor (Crackdown: SetViewport sub_826B1C60 on a D3DVIEWPORT9, sub_826AF650 on its floats, the
+// scissor sub_826B1B60, the window scissor's packets sub_826AF370, a surface's viewport sub_826AF2D8). The packets are
+// the runtime's PM4 or, with `records`, Any360's records of the same register writes and bin masks (d3d_records.h).
+// The viewport functions reach the packets through `packets(left, top, right, bottom)` (the runtime's function, or a
+// replacement of it: the caller's choice).
+namespace detail {
+// fctiwz on a double as the recompiled code does it: NaN to 0x80000000, INT_MAX and above to INT_MAX, else truncated
+// (0x80000000 below INT_MIN).
+inline int32_t ToInt32Truncated(double v) {
+  if (std::isnan(v)) return int32_t(0x80000000u);
+  if (v >= 2147483647.0) return 2147483647;
+  if (v < -2147483648.0) return int32_t(0x80000000u);
+  return int32_t(v);
+}
+inline float AtFloat(const uint8_t* p) { return std::bit_cast<float>(At32(p)); }
+inline void SetFloat(uint8_t* p, float f) { Set32(p, std::bit_cast<uint32_t>(f)); }
+// Packets written after a command buffer's cursor: a call a packet, PM4 or records.
+struct CommandWriter {
+  uint8_t* at;
+  bool records;
+  void Word(uint32_t v) { Set32(at, v), at += 4; }
+  void Host(uint32_t v) { Store32(at, v), at += 4; }
+  // Registers from `first` (a type-0 packet, or a register record).
+  void Registers(uint32_t first, std::initializer_list<uint32_t> values) {
+    const uint32_t n = uint32_t(values.size());
+    if (records) {
+      Word(record::Header(record::RegistersWords(n))), Host(record::KindWord(record::kRegisters, first));
+      for (uint32_t v : values) Host(v);
+    } else {
+      Word(((n - 1) << 16) | first);
+      for (uint32_t v : values) Word(v);
+    }
+  }
+  // SET_CONSTANT (predicated) of context registers from 0x2000 + `index`, or a predicated register record.
+  void ContextConstants(uint32_t index, std::initializer_list<uint32_t> values) {
+    const uint32_t n = uint32_t(values.size());
+    if (records) {
+      Word(record::Header(record::RegistersWords(n), true)), Host(record::KindWord(record::kRegisters, 0x2000 + index));
+      for (uint32_t v : values) Host(v);
+    } else {
+      Word(0xC0002D01u | (n << 16)), Word(0x00040000u | index);
+      for (uint32_t v : values) Word(v);
+    }
+  }
+  // SET_BIN_MASK_LO (0) or _HI (1), or a bins record.
+  void Bins(uint32_t which, uint32_t value) {
+    if (records) {
+      Word(record::Header(record::kBinsWords)), Host(record::KindWord(record::kBins, which)), Host(value);
+    } else {
+      Word(0xC0006000u + (which << 8)), Word(value);
+    }
+  }
+};
+// The tiles the scissor's packets handle (the device's tile rects and offsets have room for 15).
+inline constexpr uint32_t kMaxScissorTiles = 15;
+// The words of the scissor's packets: one register packet untiled; tiled, the high bin mask, a bin mask and the
+// window registers a tile, the bin mask and the scissor registers when the options and flags have bit 6, the two bin
+// masks put back.
+inline uint32_t WindowScissorWords(bool tiled, uint32_t tiles, bool whole, bool records) {
+  const uint32_t bins = records ? 3 : 2;
+  if (!tiled) return records ? 5 : 4;
+  return bins + tiles * (bins + 5) + (whole ? bins + 4 : 0) + 2 * bins;
+}
+// A corner as the window registers hold it: 14 bits of x low, 14 bits of y from bit 16.
+inline uint32_t WindowCorner(uint32_t x, uint32_t y) { return ((y << 16) & 0x3FFF0000u) | (x & 0x3FFFu); }
+}  // namespace detail
+
+// The window scissor's packets' size in words, PM4 or records (the device plain).
+inline uint32_t D3dWindowScissorWords(const Memory& m, const D3dLayout& l, uint32_t device, bool records) {
+  const uint8_t* d = m.Host(device);
+  const bool whole = (d[l.tiling_options] & 0x40) && (d[l.tiling_flags] & 0x40);
+  return detail::WindowScissorWords(detail::SurfacesTiled(d, l), detail::At32(d + l.tile_count), whole, records);
+}
+// Whether the window scissor's packets fit before the command buffer's end (the point past which the runtime makes
+// room: declined there, as for a tiling past 15 tiles, memory not plain or the packets over the device). `words`: their
+// size.
+inline bool D3dWindowScissorFits(const Memory& m, const D3dLayout& l, uint32_t device, bool records, uint32_t& words) {
+  if (!IsPlainMemory(device, l.device_bytes)) return false;
+  const uint8_t* d = m.Host(device);
+  const uint32_t cursor = detail::At32(d + l.command_cursor), end = detail::At32(d + l.command_end);
+  const bool tiled = detail::SurfacesTiled(d, l);
+  const uint32_t tiles = detail::At32(d + l.tile_count);
+  if (tiled && tiles > detail::kMaxScissorTiles) return false;
+  words = D3dWindowScissorWords(m, l, device, records);
+  if (uint64_t(cursor) + 4ull * words > end) return false;
+  return IsPlainMemory(cursor + 4, 4 * words) && !detail::Overlap(cursor + 4, 4 * words, device, l.device_bytes);
+}
+
+// The window scissor's packets (Crackdown sub_826AF370): the rect's corners into the window scissor registers
+// (0x2080-0x2082: the window offset 0, then the corners). Tiled, a tile at a time: its bin mask (3 << 2 * tile), then
+// the window offset (minus the tile's offset) and the rect within the tile's (0 where they do not meet), the bin masks
+// off before and put back after (+12428, +12432); with options and flags bit 6, the whole rect into 0x2081-0x2082 for
+// bin mask 1. The cursor moved past them. Declined where D3dWindowScissorFits is.
+inline bool D3dWindowScissorPackets(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t left, uint32_t top,
+                                    uint32_t right, uint32_t bottom, bool records) {
+  uint32_t words = 0;
+  if (!D3dWindowScissorFits(m, l, device, records, words)) return false;
+  uint8_t* d = m.Host(device);
+  const uint32_t cursor = detail::At32(d + l.command_cursor);
+  detail::CommandWriter out{m.Host(cursor + 4), records};
+  using detail::At32;
+  using detail::WindowCorner;
+  if (!detail::SurfacesTiled(d, l)) {
+    out.Registers(0x2080, {0, WindowCorner(left, top), WindowCorner(right, bottom)});
+  } else {
+    out.Bins(1, 0);
+    const uint32_t tiles = At32(d + l.tile_count);
+    for (uint32_t k = 0; k < tiles; ++k) {
+      const uint8_t* rect = d + l.tile_rects + 16 * k;
+      const uint8_t* offset = d + l.tile_offsets + 8 * k;
+      int32_t x0 = std::max(int32_t(left), int32_t(At32(rect))), y0 = std::max(int32_t(top), int32_t(At32(rect + 4)));
+      int32_t x1 = std::min(int32_t(right), int32_t(At32(rect + 8)));
+      int32_t y1 = std::min(int32_t(bottom), int32_t(At32(rect + 12)));
+      if (!(x0 < x1 && y0 < y1)) x0 = y0 = x1 = y1 = 0;
+      const uint32_t window = ((0u - At32(offset + 4)) << 16 & 0x7FFF0000u) | ((0u - At32(offset)) & 0x7FFFu);
+      out.Bins(0, 3u << (2 * k));
+      out.ContextConstants(0x80, {window, WindowCorner(uint32_t(x0), uint32_t(y0)), WindowCorner(uint32_t(x1), uint32_t(y1))});
+    }
+    if ((d[l.tiling_options] & 0x40) && (d[l.tiling_flags] & 0x40)) {
+      out.Bins(0, 1);
+      out.ContextConstants(0x81, {WindowCorner(left, top), WindowCorner(right, bottom)});
+    }
+    out.Bins(0, At32(d + l.tile_bins)), out.Bins(1, At32(d + l.tile_bins + 4));
+  }
+  detail::Set32(d + l.command_cursor, cursor + 4 * words);
+  return true;
+}
+
+namespace detail {
+// The scissor (sub_826B1B60) on fields already checked: the rect (read first) kept as set; the viewport as set
+// (truncated to integers) clipped to it when the scissor is on; the window scissor's mirror; the packets.
+template <class Packets>
+inline void ApplyScissor(const D3dLayout& l, uint8_t* d, const uint8_t* rect, Packets& packets) {
+  const uint8_t* v = d + l.viewport_set;
+  const int32_t x = ToInt32Truncated(AtFloat(v)), y = ToInt32Truncated(AtFloat(v + 4));
+  const int32_t w = ToInt32Truncated(AtFloat(v + 8)), h = ToInt32Truncated(AtFloat(v + 12));
+  const uint32_t left = At32(rect), top = At32(rect + 4), right = At32(rect + 8), bottom = At32(rect + 12);
+  uint8_t* set = d + l.scissor_set;
+  Set32(set, left), Set32(set + 4, top), Set32(set + 8, right), Set32(set + 12, bottom);
+  uint32_t r4 = uint32_t(x), r5 = uint32_t(y), r6 = uint32_t(x) + uint32_t(w), r7 = uint32_t(y) + uint32_t(h);
+  if (At32(d + l.scissor_enable) != 0) {
+    if (!(int32_t(r4) > int32_t(left))) r4 = left;
+    if (!(int32_t(r5) > int32_t(top))) r5 = top;
+    if (!(int32_t(r6) < int32_t(right))) r6 = right;
+    if (!(int32_t(r7) < int32_t(bottom))) r7 = bottom;
+  }
+  uint8_t* window = d + l.window_scissor;
+  Set32(window, (At32(window) & 0x80008000u) | ((r5 << 16) & 0x7FFF0000u) | (r4 & 0x7FFFu));
+  Set32(window + 4, (At32(window + 4) & 0x80008000u) | ((r7 << 16) & 0x7FFF0000u) | (r6 & 0x7FFFu));
+  packets(r4, r5, r6, r7);
+}
+// What the viewport function reads before it writes: the device, the runtime's 0.5, and the bound surface's word 36
+// (target 0's, else the depth's) when it is not tiled.
+inline bool ViewportAccepts(const Memory& m, const D3dLayout& l, uint32_t device) {
+  if (!IsPlainMemory(device, l.device_bytes) || !IsPlainMemory(l.blend_rounding, 4)) return false;
+  const uint8_t* d = m.Host(device);
+  uint32_t surface = At32(d + l.surfaces);
+  if (!surface) surface = At32(d + l.surfaces + 16);
+  return !surface || SurfacesTiled(d, l) || IsPlainMemory(surface + 36, 4);
+}
+// The viewport function (sub_826AF650) on fields already checked.
+template <class Packets>
+inline void SetViewportFloats(const Memory& m, const D3dLayout& l, uint32_t device, double x, double y, double w,
+                              double h, double min_z, double max_z, Packets& packets) {
+  uint8_t* d = m.Host(device);
+  uint32_t surface = At32(d + l.surfaces);
+  if (!surface) surface = At32(d + l.surfaces + 16);
+  if (!surface) return;
+  int32_t limit_x, limit_y;
+  if (SurfacesTiled(d, l)) {
+    limit_x = int32_t(At32(d + l.tiled_size)), limit_y = int32_t(At32(d + l.tiled_size + 4));
+  } else {
+    const uint32_t word = At32(m.Host(surface + 36));
+    limit_x = int32_t(((word >> 18) & 0x3FFFu) + 1), limit_y = int32_t(((word >> 3) & 0x7FFFu) + 1);
+  }
+  const int32_t ix = ToInt32Truncated(x), iy = ToInt32Truncated(y);
+  const int32_t right = int32_t(uint32_t(ToInt32Truncated(w)) + uint32_t(ix));
+  const int32_t bottom = int32_t(uint32_t(ToInt32Truncated(h)) + uint32_t(iy));
+  int32_t width = int32_t(uint32_t(right < limit_x ? right : limit_x) - uint32_t(ix));
+  int32_t height = int32_t(uint32_t(bottom < limit_y ? bottom : limit_y) - uint32_t(iy));
+  if (width < 0 || height < 0) width = height = 0;
+  uint8_t* v = d + l.viewport_set;
+  SetFloat(v, float(x)), SetFloat(v + 4, float(y)), SetFloat(v + 16, float(min_z)), SetFloat(v + 20, float(max_z));
+  Set32(v + 24, 0);
+  const float fw = float(double(width)), fh = float(double(height));
+  SetFloat(v + 8, fw), SetFloat(v + 12, fh);
+  ApplyScissor(l, d, d + l.scissor_set, packets);
+  uint8_t* s = d + l.viewport_scale;
+  SetFloat(s + 20, float(min_z));
+  SetFloat(s + 16, float(max_z - min_z));
+  const double half = double(AtFloat(m.Host(l.blend_rounding)));
+  const double x_scale = double(float(double(fw) * half)), y_scale = double(float(double(fh) * half));
+  SetFloat(s, float(x_scale));
+  SetFloat(s + 4, float(x_scale + x));
+  SetFloat(s + 8, float(-y_scale));
+  SetFloat(s + 12, float(y_scale + y));
+  Or64(m, device + l.state_dirty, 0x07E00000u);
+}
+}  // namespace detail
+
+// The scissor (Crackdown sub_826B1B60): `rect` (left, top, right, bottom) kept as set; the viewport as set, truncated,
+// clipped to it when the scissor is on (+11576), into the window scissor's mirror (+10308); then its packets. Declined:
+// memory not plain.
+template <class Packets>
+inline bool D3dApplyScissor(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t rect, Packets&& packets) {
+  if (!IsPlainMemory(device, l.device_bytes) || !IsPlainMemory(rect, 16)) return false;
+  detail::ApplyScissor(l, m.Host(device), m.Host(rect), packets);
+  return true;
+}
+
+// The viewport (Crackdown sub_826AF650: x, y, width, height, min z, max z as doubles): with a surface bound (target
+// 0's, else the depth's; none: nothing done), the width and height clamped to it (the tiling's size when tiled, else
+// the surface's from its word 36) and to 0 when either is negative; the viewport as set, the scissor applied, the
+// viewport's scale and offset (z: max - min and min), the state's dirty bits 21-26. Declined: memory not plain.
+template <class Packets>
+inline bool D3dSetViewportFloats(const Memory& m, const D3dLayout& l, uint32_t device, double x, double y, double w,
+                                 double h, double min_z, double max_z, Packets&& packets) {
+  if (!detail::ViewportAccepts(m, l, device)) return false;
+  detail::SetViewportFloats(m, l, device, x, y, w, h, min_z, max_z, packets);
+  return true;
+}
+
+// SetViewport (Crackdown sub_826B1C60): `viewport` a D3DVIEWPORT9 (x, y, width, height words, min z, max z floats),
+// the words as floats (unsigned, rounded to single), then the viewport function. Declined: memory not plain.
+template <class Packets>
+inline bool D3dSetViewport(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t viewport, Packets&& packets) {
+  if (!IsPlainMemory(viewport, 24) || !detail::ViewportAccepts(m, l, device)) return false;
+  const uint8_t* v = m.Host(viewport);
+  const auto word = [&](uint32_t at) { return double(float(double(detail::At32(v + at)))); };
+  const double x = word(0), y = word(4), w = word(8), h = word(12);
+  const double min_z = double(detail::AtFloat(v + 16)), max_z = double(detail::AtFloat(v + 20));
+  detail::SetViewportFloats(m, l, device, x, y, w, h, min_z, max_z, packets);
+  return true;
+}
+
+// A surface's viewport (Crackdown sub_826AF2D8, SetRenderTarget's and SetDepthStencilSurface's): the surface's word
+// 24 into SURFACE_INFO's mirror and its sample count (bits 16-17) into the multisample word (0, 0x8001, 0xC003), the
+// state's dirty bit 57 and the constants' 36; the scissor as set from the runtime's rect, then SetViewport of the
+// runtime's viewport. Declined: memory not plain, the runtime's viewport or rect over the device.
+template <class Packets>
+inline bool D3dViewportOfSurface(const Memory& m, const D3dLayout& l, uint32_t device, uint32_t surface, Packets&& packets) {
+  if (!IsPlainMemory(surface + 24, 4) || !IsPlainMemory(l.surface_scissor, 16) || !IsPlainMemory(l.surface_viewport, 24) ||
+      !detail::ViewportAccepts(m, l, device) || detail::Overlap(l.surface_scissor, 16, device, l.device_bytes) ||
+      detail::Overlap(l.surface_viewport, 24, device, l.device_bytes))
+    return false;
+  uint8_t* d = m.Host(device);
+  const uint32_t word = detail::At32(m.Host(surface + 24));
+  const uint32_t samples = (word >> 16) & 3;
+  detail::Set32(d + l.sample_control, samples == 0 ? 0u : samples == 1 ? 0x8001u : 0xC003u);
+  detail::Set32(d + l.surface_info, word);
+  detail::Or64(m, device + l.state_dirty, uint64_t(1) << 57);
+  detail::Or64(m, device + l.constant_dirty, uint64_t(1) << 36);
+  std::memcpy(d + l.scissor_set, m.Host(l.surface_scissor), 16);
+  return D3dSetViewport(m, l, device, l.surface_viewport, packets);
 }
 
 }  // namespace any360::xdk
