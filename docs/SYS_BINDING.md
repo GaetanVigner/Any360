@@ -417,8 +417,19 @@ call any360::sys already answers (`KeDelayExecutionThread` and `NtWaitForSingleO
 `KeQuerySystemTime`, `KeTimeStampBundle`'s tick count, `RtlNtStatusToDosError`); only Win32's own part is new: the
 last error in the KTHREAD (+0x160, the thread id at +0x14C, as Xenia lays it out), the millisecond timeouts (INFINITE
 as Xenia passes it) and WaitForSingleObjectEx's results as Microsoft documents them (Xenia's returns WAIT_FAILED in
-every case, a shortcut its source marks). `lstrlenW` counts big-endian UTF-16 characters (the host's `wcslen` does not
-read guest strings). `sys_object_tests` checks the Win32 part; the kernel calls under it keep their own tests.
+every case, a shortcut its source marks). `lstrlenW` counts big-endian UTF-16 characters on the host's own scan of
+16-bit units (Windows' `wcslen`, the C++ library's elsewhere: a zero unit is zero in either byte order), after an
+inline look at the first eight. `sys_object_tests` checks the Win32 part; the kernel calls under it keep their own
+tests.
+
+Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
+host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
+SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),
+chosen once per process (`crypt.h`: `ShaPath`); without them, Windows runs the one-call forms of 64 bytes or more on
+CNG (the streamed forms cannot: the host does not resume from a guest state) and the portable C++ does the rest. MD5's
+rounds are unrolled with the round function split so its chain is shorter; DES folds the S-boxes and P into tables,
+permutes IP and FP with swaps and drops the FP / IP pair between triple DES's stages. `sys_object_tests` runs every
+vector on each path the machine has and compares the paths byte for byte, and checks DES against a bitwise model.
 
 ## After step 7: from one title to any title (the road to 100%)
 

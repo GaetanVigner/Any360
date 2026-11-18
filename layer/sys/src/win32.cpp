@@ -1,5 +1,9 @@
 #include "any360/sys/win32.h"
 
+#include <cstring>
+#include <cwchar>
+#include <string>
+
 #include "any360/sys/config.h"
 #include "any360/sys/variables.h"
 
@@ -35,9 +39,28 @@ uint32_t Win32SleepResult(uint32_t status) { return status == 0 ? 0 : kWaitIoCom
 
 uint32_t LstrlenW(Guest g, uint32_t string) {
   if (!string) return 0;
-  uint32_t length = 0;
-  while (g.Load16(string + 2 * length) != 0) ++length;
-  return length;
+  // A zero UTF-16 unit is zero in either byte order, so the units are scanned as they lie. Short strings (most a title
+  // measures) end within the first units; longer ones go to the host's own scan of 16-bit units: Windows' wcslen
+  // (wchar_t is 16-bit there), the C++ library's elsewhere. Those step over whole aligned units, so an odd address
+  // (never a compiler's, possible by hand) stays on the unit-by-unit loop.
+  const uint8_t* units = g.host(string);
+  constexpr uint32_t kInline = 8;
+  for (uint32_t i = 0; i < kInline; ++i) {
+    uint16_t unit;
+    std::memcpy(&unit, units + 2 * i, 2);
+    if (unit == 0) return i;
+  }
+  if (string & 1) {
+    uint32_t length = kInline;
+    while (g.Load16(string + 2 * length) != 0) ++length;
+    return length;
+  }
+#if defined(_WIN32)
+  static_assert(sizeof(wchar_t) == 2);
+  return kInline + uint32_t(std::wcslen(reinterpret_cast<const wchar_t*>(units) + kInline));
+#else
+  return kInline + uint32_t(std::char_traits<char16_t>::length(reinterpret_cast<const char16_t*>(units) + kInline));
+#endif
 }
 
 uint32_t TickCount() { return UptimeMilliseconds(); }

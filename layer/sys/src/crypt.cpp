@@ -1,76 +1,72 @@
 #include "any360/sys/crypt.h"
 
+#include "crypt_blocks.h"
+#include "crypt_host.h"
+
 #include <algorithm>
 #include <bit>
 #include <cstring>
 #include <mutex>
 #include <random>
+#include <utility>
 #include <vector>
 
 namespace any360::sys {
 
+namespace {
+
+// The one-call SHA forms on the host's library when the SHA path is kHost (crypt.h): from 64 bytes of input (below,
+// the portable code's single block costs less than the host's call), and below 512 MB for SHA-1 (whose length field
+// the reference writes as 32 bits). False when the portable code is to run.
+bool HostDigest(crypt_host::Hash hash, bool hmac, const uint8_t* key, uint32_t key_size, const crypt_host::Part (&parts)[3],
+                uint8_t* out) {
+  if (CurrentShaPath() != ShaPath::kHost) return false;
+  const uint64_t total = uint64_t(parts[0].size) + parts[1].size + parts[2].size;
+  if (total < 64 || (hash == crypt_host::Hash::kSha1 && total + 64 >= (uint64_t(1) << 29))) return false;
+  return crypt_host::Digest(hash, hmac, key, key_size, parts, 3, out);
+}
+
+// Up to three guest buffers, null or empty ones skipped.
+void GuestParts(Guest g, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2, uint32_t in3, uint32_t size3,
+                crypt_host::Part (&parts)[3]) {
+  const uint32_t at[3] = {in1, in2, in3}, size[3] = {size1, size2, size3};
+  for (int i = 0; i < 3; ++i) parts[i] = at[i] && size[i] ? crypt_host::Part{g.host(at[i]), size[i]} : crypt_host::Part{nullptr, 0};
+}
+
+}  // namespace
+
 Sha1::Sha1() : h_{0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0} {}
 
-void Sha1::Block(const uint8_t* block) {
-  uint32_t w[80];
-  for (int i = 0; i < 16; ++i) {
-    w[i] = uint32_t(block[4 * i]) << 24 | uint32_t(block[4 * i + 1]) << 16 | uint32_t(block[4 * i + 2]) << 8 | block[4 * i + 3];
-  }
-  for (int i = 16; i < 80; ++i) w[i] = std::rotl(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
-  uint32_t a = h_[0], b = h_[1], c = h_[2], d = h_[3], e = h_[4];
-  for (int i = 0; i < 80; ++i) {
-    uint32_t f, k;
-    if (i < 20) {
-      f = (b & c) | (~b & d);
-      k = 0x5A827999;
-    } else if (i < 40) {
-      f = b ^ c ^ d;
-      k = 0x6ED9EBA1;
-    } else if (i < 60) {
-      f = (b & c) | (b & d) | (c & d);
-      k = 0x8F1BBCDC;
-    } else {
-      f = b ^ c ^ d;
-      k = 0xCA62C1D6;
-    }
-    const uint32_t t = std::rotl(a, 5) + f + e + k + w[i];
-    e = d;
-    d = c;
-    c = std::rotl(b, 30);
-    b = a;
-    a = t;
-  }
-  h_[0] += a;
-  h_[1] += b;
-  h_[2] += c;
-  h_[3] += d;
-  h_[4] += e;
-}
+void Sha1::Block(const uint8_t* block) { crypt_blocks::Sha1(h_, block, 1); }
 
 void Sha1::Update(const uint8_t* data, size_t size) {
   total_ += size;
-  while (size) {
+  if (buffered_) {
     const size_t n = std::min(size, sizeof buffer_ - buffered_);
     std::memcpy(buffer_ + buffered_, data, n);
-    buffered_ += n;
-    data += n;
-    size -= n;
-    if (buffered_ == sizeof buffer_) {
-      Block(buffer_);
-      buffered_ = 0;
-    }
+    buffered_ += n, data += n, size -= n;
+    if (buffered_ < sizeof buffer_) return;
+    Block(buffer_);
+    buffered_ = 0;
   }
+  // Whole blocks straight from the input, the rest buffered.
+  crypt_blocks::Sha1(h_, data, size / 64);
+  data += size & ~size_t(63), size &= 63;
+  std::memcpy(buffer_, data, size);
+  buffered_ = size;
 }
 
 std::array<uint8_t, 20> Sha1::Final() {
-  const uint64_t bits = total_ * 8;
-  const uint8_t one = 0x80, zero = 0;
-  Update(&one, 1);
-  while (buffered_ != 56) Update(&zero, 1);
   // Only the low 32 bits of the bit count, as the reference's SHA-1 writes it (the same below 512 MB).
-  uint8_t length[8] = {};
-  for (int i = 4; i < 8; ++i) length[i] = uint8_t(bits >> (56 - 8 * i));
-  Update(length, 8);
+  const uint32_t bits = uint32_t(total_ * 8);
+  uint8_t blocks[128] = {};
+  std::memcpy(blocks, buffer_, buffered_);
+  blocks[buffered_] = 0x80;
+  const size_t length = buffered_ < 56 ? 64 : 128;
+  for (int i = 0; i < 4; ++i) blocks[length - 4 + i] = uint8_t(bits >> (24 - 8 * i));
+  crypt_blocks::Sha1(h_, blocks, length / 64);
+  total_ += length - buffered_;
+  buffered_ = 0;
   std::array<uint8_t, 20> digest;
   for (int i = 0; i < 5; ++i) {
     for (int j = 0; j < 4; ++j) digest[4 * i + j] = uint8_t(h_[i] >> (24 - 8 * j));
@@ -80,11 +76,16 @@ std::array<uint8_t, 20> Sha1::Final() {
 
 void XeCryptSha(Guest g, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2, uint32_t in3, uint32_t size3, uint32_t output,
                 uint32_t output_size) {
-  Sha1 sha;
-  if (in1 && size1) sha.Update(g.host(in1), size1);
-  if (in2 && size2) sha.Update(g.host(in2), size2);
-  if (in3 && size3) sha.Update(g.host(in3), size3);
-  const auto digest = sha.Final();
+  crypt_host::Part parts[3];
+  GuestParts(g, in1, size1, in2, size2, in3, size3, parts);
+  std::array<uint8_t, 20> digest;
+  if (!HostDigest(crypt_host::Hash::kSha1, false, nullptr, 0, parts, digest.data())) {
+    Sha1 sha;
+    for (const auto& part : parts) {
+      if (part.size) sha.Update(part.data, part.size);
+    }
+    digest = sha.Final();
+  }
   std::memcpy(g.host(output), digest.data(), std::min<uint32_t>(20, output_size));
 }
 
@@ -121,37 +122,15 @@ void StoreDigest(Guest g, uint32_t state, const Sha1& sha) {
   for (int i = 0; i < 5; ++i) g.Store32(state + kShaDigest + 4 * i, sha.digest()[i]);
 }
 
-constexpr uint32_t kSha256K[64] = {
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01,
-    0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
-    0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
-    0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08,
-    0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
-
-void Sha256Block(uint32_t h[8], const uint8_t* block) {
-  uint32_t w[64];
-  for (int i = 0; i < 16; ++i) {
-    w[i] = uint32_t(block[4 * i]) << 24 | uint32_t(block[4 * i + 1]) << 16 | uint32_t(block[4 * i + 2]) << 8 | block[4 * i + 3];
-  }
-  for (int i = 16; i < 64; ++i) {
-    const uint32_t s0 = std::rotr(w[i - 15], 7) ^ std::rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
-    const uint32_t s1 = std::rotr(w[i - 2], 17) ^ std::rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
-    w[i] = w[i - 16] + s0 + w[i - 7] + s1;
-  }
-  uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], gg = h[6], hh = h[7];
-  for (int i = 0; i < 64; ++i) {
-    const uint32_t t1 = hh + (std::rotr(e, 6) ^ std::rotr(e, 11) ^ std::rotr(e, 25)) + ((e & f) ^ (~e & gg)) + kSha256K[i] + w[i];
-    const uint32_t t2 = (std::rotr(a, 2) ^ std::rotr(a, 13) ^ std::rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
-    hh = gg, gg = f, f = e, e = d + t1, d = c, c = b, b = a, a = t1 + t2;
-  }
-  h[0] += a, h[1] += b, h[2] += c, h[3] += d, h[4] += e, h[5] += f, h[6] += gg, h[7] += hh;
-}
+void Sha256Block(uint32_t h[8], const uint8_t* block) { crypt_blocks::Sha256(h, block, 1); }
 
 // The digest of an HMAC-SHA-1 with a host key.
 std::array<uint8_t, 20> HmacSha(Guest g, const uint8_t* key, uint32_t key_size, uint32_t in1, uint32_t size1, uint32_t in2,
                                 uint32_t size2, uint32_t in3, uint32_t size3) {
+  const crypt_host::Part parts[3] = {{size1 ? g.host(in1) : nullptr, size1}, {size2 ? g.host(in2) : nullptr, size2},
+                                     {size3 ? g.host(in3) : nullptr, size3}};
+  std::array<uint8_t, 20> host;
+  if (HostDigest(crypt_host::Hash::kSha1, true, key, key_size, parts, host.data())) return host;
   uint8_t inner[64], outer[64], k[64];
   std::memset(inner, 0x36, sizeof inner);
   std::memset(outer, 0x5C, sizeof outer);
@@ -339,23 +318,6 @@ void AesCbc(Guest g, const uint8_t* round_keys, uint32_t in, uint32_t size, uint
 
 // --- DES, bits numbered from 1 at the most significant end as FIPS 46 does ---
 
-constexpr uint8_t kDesIp[] = {
-    58, 50, 42, 34, 26, 18, 10, 2, 60, 52, 44, 36, 28, 20, 12, 4,
-    62, 54, 46, 38, 30, 22, 14, 6, 64, 56, 48, 40, 32, 24, 16, 8,
-    57, 49, 41, 33, 25, 17, 9, 1, 59, 51, 43, 35, 27, 19, 11, 3,
-    61, 53, 45, 37, 29, 21, 13, 5, 63, 55, 47, 39, 31, 23, 15, 7,
-};
-constexpr uint8_t kDesFp[] = {
-    40, 8, 48, 16, 56, 24, 64, 32, 39, 7, 47, 15, 55, 23, 63, 31,
-    38, 6, 46, 14, 54, 22, 62, 30, 37, 5, 45, 13, 53, 21, 61, 29,
-    36, 4, 44, 12, 52, 20, 60, 28, 35, 3, 43, 11, 51, 19, 59, 27,
-    34, 2, 42, 10, 50, 18, 58, 26, 33, 1, 41, 9, 49, 17, 57, 25,
-};
-constexpr uint8_t kDesE[] = {
-    32, 1, 2, 3, 4, 5, 4, 5, 6, 7, 8, 9, 8, 9, 10, 11,
-    12, 13, 12, 13, 14, 15, 16, 17, 16, 17, 18, 19, 20, 21, 20, 21,
-    22, 23, 24, 25, 24, 25, 26, 27, 28, 29, 28, 29, 30, 31, 32, 1,
-};
 constexpr uint8_t kDesP[] = {
     16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 23, 26, 5, 18, 31, 10,
     2, 8, 24, 14, 32, 27, 3, 9, 19, 13, 30, 6, 22, 11, 4, 25,
@@ -409,7 +371,7 @@ constexpr uint8_t kDesS[] = {
     2, 1, 14, 7, 4, 10, 8, 13, 15, 12, 9, 0, 3, 5, 6, 11,
 };
 
-uint64_t Permute(uint64_t value, int width, const uint8_t* table, int count) {
+constexpr uint64_t Permute(uint64_t value, int width, const uint8_t* table, int count) {
   uint64_t result = 0;
   for (int i = 0; i < count; ++i) result = result << 1 | ((value >> (width - table[i])) & 1);
   return result;
@@ -427,41 +389,100 @@ void DesSchedule(uint64_t key, uint64_t sub_keys[16]) {
   }
 }
 
-uint32_t DesRound(uint32_t r, uint64_t k) {
-  const uint64_t s_input = Permute(r, 32, kDesE, 48) ^ k;
-  uint32_t s_output = 0;
+// The S-boxes and P folded together: kDesSp[i][six] is P of S-box i's output for the six bits `six`, in place.
+constexpr auto kDesSp = [] {
+  std::array<std::array<uint32_t, 64>, 8> sp{};
   for (int i = 0; i < 8; ++i) {
-    const uint32_t six = uint32_t(s_input >> (42 - 6 * i)) & 0x3F;
-    const uint32_t row = (six >> 4 & 2) | (six & 1), column = six >> 1 & 0xF;
-    s_output = s_output << 4 | (kDesS[64 * i + 16 * row + column] & 0xF);
+    for (uint32_t six = 0; six < 64; ++six) {
+      const uint32_t row = (six >> 4 & 2) | (six & 1), column = six >> 1 & 0xF;
+      sp[i][six] = uint32_t(Permute(uint64_t(kDesS[64 * i + 16 * row + column] & 0xF) << (28 - 4 * i), 32, kDesP, 32));
+    }
   }
-  return uint32_t(Permute(s_output, 32, kDesP, 32));
+  return sp;
+}();
+
+// A round: E's six-bit groups of R are R's bits 4i-1 .. 4i+4 (bit 1 the most significant, 0 standing for 32), so
+// rotl(R, 1) holds groups 7, 5, 3, 1 and rotr(R, 3) groups 6, 4, 2, 0 in the low six bits of each byte; the 48-bit
+// subkey (group 0 in its bits 47..42) is spread the same way. The subkey's part does not wait on R, so it runs beside
+// the round chain: a round is the two XORs, eight table loads and their OR on that chain.
+inline uint32_t DesSpread(uint64_t k) {
+  return uint32_t(k & 0x3F) | uint32_t(k >> 4 & 0x3F00) | uint32_t(k >> 8 & 0x3F0000) | uint32_t(k >> 12 & 0x3F000000);
 }
 
-uint64_t Des(uint64_t block, const uint64_t sub_keys[16], bool decrypt) {
-  block = Permute(block, 64, kDesIp, 64);
-  uint32_t l = uint32_t(block >> 32), r = uint32_t(block);
-  for (int i = 0; i < 16; ++i) {
-    const uint32_t f = DesRound(r, sub_keys[decrypt ? 15 - i : i]);
-    const uint32_t t = r;
-    r = l ^ f, l = t;
+inline uint32_t DesRound(uint32_t r, uint64_t k) {
+  const uint32_t x = std::rotl(r, 1) ^ DesSpread(k), y = std::rotr(r, 3) ^ DesSpread(k >> 6);
+  return kDesSp[7][x & 0x3F] | kDesSp[5][x >> 8 & 0x3F] | kDesSp[3][x >> 16 & 0x3F] | kDesSp[1][x >> 24 & 0x3F] |
+         kDesSp[6][y & 0x3F] | kDesSp[4][y >> 8 & 0x3F] | kDesSp[2][y >> 16 & 0x3F] | kDesSp[0][y >> 24 & 0x3F];
+}
+
+// One schedule as the reference stores it: sixteen host (little-endian) 64-bit subkeys.
+struct DesKeys {
+  uint64_t sub_keys[16];
+};
+
+// One swap of the bits of `b` selected by `mask` with the bits of `a` `n` places higher (IP and FP as five of them).
+inline void DesSwap(uint32_t& a, uint32_t& b, int n, uint32_t mask) {
+  const uint32_t t = ((a >> n) ^ b) & mask;
+  b ^= t, a ^= t << n;
+}
+
+// IP on the block's halves (l the high word), and FP, its inverse: IP's steps undone in reverse order.
+inline void DesIp(uint32_t& l, uint32_t& r) {
+  DesSwap(l, r, 4, 0x0F0F0F0F), DesSwap(l, r, 16, 0x0000FFFF), DesSwap(r, l, 2, 0x33333333);
+  DesSwap(r, l, 8, 0x00FF00FF), DesSwap(l, r, 1, 0x55555555);
+}
+
+inline void DesFp(uint32_t& l, uint32_t& r) {
+  DesSwap(l, r, 1, 0x55555555), DesSwap(r, l, 8, 0x00FF00FF), DesSwap(r, l, 2, 0x33333333);
+  DesSwap(l, r, 16, 0x0000FFFF), DesSwap(l, r, 4, 0x0F0F0F0F);
+}
+
+// The sixteen rounds between IP and FP, leaving (R16, L16) in (l, r) as FP takes them. Triple DES chains three of
+// them with no FP / IP in between (FP then IP is the identity).
+template <bool kDecrypt>
+inline void DesRounds(uint32_t& l, uint32_t& r, const DesKeys& keys) {
+  for (int i = 0; i < 16; i += 2) {
+    const int k0 = kDecrypt ? 15 - i : i, k1 = kDecrypt ? 14 - i : i + 1;
+    l ^= DesRound(r, keys.sub_keys[k0]);
+    r ^= DesRound(l, keys.sub_keys[k1]);
   }
-  return Permute(uint64_t(r) << 32 | l, 64, kDesFp, 64);
+  std::swap(l, r);
+}
+
+uint64_t Des(uint64_t block, const DesKeys& keys, bool decrypt) {
+  uint32_t l = uint32_t(block >> 32), r = uint32_t(block);
+  DesIp(l, r);
+  decrypt ? DesRounds<true>(l, r, keys) : DesRounds<false>(l, r, keys);
+  DesFp(l, r);
+  return uint64_t(l) << 32 | r;
 }
 
 struct Des3 {
-  uint64_t keys[3][16];
-  Des3(Guest g, uint32_t state) {
-    // The reference keeps each subkey as a host (little-endian) 64-bit word.
-    std::memcpy(keys, g.host(state), sizeof keys);
+  DesKeys keys[3];
+  // The reference keeps each subkey as a host (little-endian) 64-bit word.
+  Des3(Guest g, uint32_t state) : keys{Load(g, state), Load(g, state + 0x80), Load(g, state + 0x100)} {}
+  static DesKeys Load(Guest g, uint32_t schedule) {
+    DesKeys keys;
+    std::memcpy(keys.sub_keys, g.host(schedule), sizeof keys.sub_keys);
     if constexpr (std::endian::native == std::endian::big) {
-      for (auto& schedule : keys) {
-        for (uint64_t& k : schedule) k = std::byteswap(k);
-      }
+      for (uint64_t& k : keys.sub_keys) k = std::byteswap(k);
     }
+    return keys;
   }
-  uint64_t Encrypt(uint64_t b) const { return Des(Des(Des(b, keys[0], false), keys[1], true), keys[2], false); }
-  uint64_t Decrypt(uint64_t b) const { return Des(Des(Des(b, keys[2], true), keys[1], false), keys[0], true); }
+  uint64_t Encrypt(uint64_t b) const {
+    uint32_t l = uint32_t(b >> 32), r = uint32_t(b);
+    DesIp(l, r);
+    DesRounds<false>(l, r, keys[0]), DesRounds<true>(l, r, keys[1]), DesRounds<false>(l, r, keys[2]);
+    DesFp(l, r);
+    return uint64_t(l) << 32 | r;
+  }
+  uint64_t Decrypt(uint64_t b) const {
+    uint32_t l = uint32_t(b >> 32), r = uint32_t(b);
+    DesIp(l, r);
+    DesRounds<true>(l, r, keys[2]), DesRounds<false>(l, r, keys[1]), DesRounds<true>(l, r, keys[0]);
+    DesFp(l, r);
+    return uint64_t(l) << 32 | r;
+  }
 };
 
 constexpr uint8_t kRetailKey19[16] = {0xE1, 0xBC, 0x15, 0x9C, 0x73, 0xB1, 0xEA, 0xE9, 0xAB, 0x31, 0x70, 0xF3, 0xAD, 0x47, 0xEB, 0xF3};
@@ -512,15 +533,19 @@ void XeCryptSha256Update(Guest g, uint32_t state, uint32_t input, uint32_t size)
   const uint8_t* data = size ? g.host(input) : nullptr;
   // As the reference: top up a partial buffer, then whole blocks straight from the input, the rest buffered.
   if (buffered > 0) {
-    while (size > 0 && buffered < 64) buffer[buffered++] = *data++, --size;
+    const uint32_t n = std::min<uint32_t>(64 - buffered, size);
+    std::memcpy(buffer + buffered, data, n);
+    buffered += n, data += n, size -= n;
   }
   if (buffered == 64) {
     Sha256Block(h, buffer);
     done += 64;
     buffered = 0;
   }
-  for (; size >= 64; data += 64, size -= 64, done += 64) Sha256Block(h, data);
-  while (size > 0) buffer[buffered++] = *data++, --size;
+  crypt_blocks::Sha256(h, data, size / 64);
+  done += size & ~63u, data += size & ~63u, size &= 63;
+  std::memcpy(buffer + buffered, data, size);
+  buffered += size;
   for (int i = 0; i < 8; ++i) g.Store32(state + kSha256Hash + 4 * i, h[i]);
   g.Store32(state + kSha256Count, uint32_t(done + buffered));
 }
@@ -536,8 +561,7 @@ void XeCryptSha256Final(Guest g, uint32_t state, uint32_t out, uint32_t out_size
   std::memset(blocks + buffered + 1, 0, length - buffered - 1);
   const uint64_t bits = uint64_t(count) * 8;
   for (int i = 0; i < 8; ++i) blocks[length - 8 + i] = uint8_t(bits >> (56 - 8 * i));
-  Sha256Block(h, blocks);
-  if (length == 128) Sha256Block(h, blocks + 64);
+  crypt_blocks::Sha256(h, blocks, length / 64);
   uint8_t hash[32];
   for (int i = 0; i < 8; ++i) {
     for (int j = 0; j < 4; ++j) hash[4 * i + j] = uint8_t(h[i] >> (24 - 8 * j));
@@ -763,18 +787,6 @@ namespace {
 constexpr uint32_t kMd5Count = 0, kMd5Words = 4, kMd5Buffer = 0x14, kMd5StateSize = 0x54;
 constexpr uint32_t kHmacOuter = kShaStateSize;
 
-constexpr uint32_t kMd5K[64] = {
-    0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501, 0x698098d8, 0x8b44f7af,
-    0xffff5bb1, 0x895cd7be, 0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821, 0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa,
-    0xd62f105d, 0x02441453, 0xd8a1e681, 0xe7d3fbc8, 0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed, 0xa9e3e905, 0xfcefa3f8,
-    0x676f02d9, 0x8d2a4c8a, 0xfffa3942, 0x8771f681, 0x6d9d6122, 0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70,
-    0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05, 0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665, 0xf4292244, 0x432aff97,
-    0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1, 0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1,
-    0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391};
-constexpr uint8_t kMd5Shift[64] = {7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9,  14, 20, 5, 9,
-                                   14, 20, 5, 9,  14, 20, 5, 9,  14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
-                                   4,  11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21};
-
 Md5 LoadMd5(Guest g, uint32_t state) {
   uint32_t abcd[4];
   for (int i = 0; i < 4; ++i) abcd[i] = g.Load32(state + kMd5Words + 4 * i);
@@ -802,21 +814,27 @@ class Sha256 {
  public:
   void Update(const uint8_t* data, size_t size) {
     total_ += size;
-    while (size > 0) {
+    if (buffered_) {
       const size_t n = std::min<size_t>(64 - buffered_, size);
       std::memcpy(buffer_ + buffered_, data, n);
       buffered_ += n, data += n, size -= n;
-      if (buffered_ == 64) Sha256Block(h_, buffer_), buffered_ = 0;
+      if (buffered_ < 64) return;
+      crypt_blocks::Sha256(h_, buffer_, 1);
+      buffered_ = 0;
     }
+    crypt_blocks::Sha256(h_, data, size / 64);
+    data += size & ~size_t(63), size &= 63;
+    std::memcpy(buffer_, data, size);
+    buffered_ = size;
   }
   std::array<uint8_t, 32> Final() {
     const uint64_t bits = total_ * 8;
-    const uint8_t pad = 0x80, zero = 0;
-    Update(&pad, 1);
-    while (buffered_ != 56) Update(&zero, 1);
-    uint8_t length[8];
-    for (int i = 0; i < 8; ++i) length[i] = uint8_t(bits >> (56 - 8 * i));
-    Update(length, 8);
+    uint8_t blocks[128] = {};
+    std::memcpy(blocks, buffer_, buffered_);
+    blocks[buffered_] = 0x80;
+    const size_t length = buffered_ < 56 ? 64 : 128;
+    for (int i = 0; i < 8; ++i) blocks[length - 8 + i] = uint8_t(bits >> (56 - 8 * i));
+    crypt_blocks::Sha256(h_, blocks, length / 64);
     std::array<uint8_t, 32> out;
     for (int i = 0; i < 8; ++i) {
       for (int j = 0; j < 4; ++j) out[4 * i + j] = uint8_t(h_[i] >> (24 - 8 * j));
@@ -833,13 +851,8 @@ class Sha256 {
 
 // One DES schedule as the reference stores it (host little-endian 64-bit subkeys).
 struct DesState {
-  uint64_t keys[16];
-  DesState(Guest g, uint32_t state) {
-    std::memcpy(keys, g.host(state), sizeof keys);
-    if constexpr (std::endian::native == std::endian::big) {
-      for (uint64_t& k : keys) k = std::byteswap(k);
-    }
-  }
+  DesKeys keys;
+  DesState(Guest g, uint32_t state) : keys(Des3::Load(g, state)) {}
 };
 
 }  // namespace
@@ -851,51 +864,34 @@ Md5::Md5(const uint32_t abcd[4], const uint8_t* buffer, uint32_t count) : buffer
   std::memcpy(buffer_, buffer, buffered_);
 }
 
-void Md5::Block(const uint8_t* block) {
-  uint32_t m[16];
-  for (int i = 0; i < 16; ++i) {
-    m[i] = uint32_t(block[4 * i]) | uint32_t(block[4 * i + 1]) << 8 | uint32_t(block[4 * i + 2]) << 16 |
-           uint32_t(block[4 * i + 3]) << 24;
-  }
-  uint32_t a = abcd_[0], b = abcd_[1], c = abcd_[2], d = abcd_[3];
-  for (int i = 0; i < 64; ++i) {
-    uint32_t f;
-    int k;
-    if (i < 16) {
-      f = (b & c) | (~b & d), k = i;
-    } else if (i < 32) {
-      f = (d & b) | (~d & c), k = (5 * i + 1) % 16;
-    } else if (i < 48) {
-      f = b ^ c ^ d, k = (3 * i + 5) % 16;
-    } else {
-      f = c ^ (b | ~d), k = (7 * i) % 16;
-    }
-    const uint32_t t = d;
-    d = c, c = b;
-    b = b + std::rotl(a + f + kMd5K[i] + m[k], kMd5Shift[i]);
-    a = t;
-  }
-  abcd_[0] += a, abcd_[1] += b, abcd_[2] += c, abcd_[3] += d;
-}
+void Md5::Block(const uint8_t* block) { crypt_blocks::Md5(abcd_, block, 1); }
 
 void Md5::Update(const uint8_t* data, size_t size) {
   total_ += size;
-  while (size > 0) {
+  if (buffered_) {
     const size_t n = std::min<size_t>(64 - buffered_, size);
     std::memcpy(buffer_ + buffered_, data, n);
     buffered_ += n, data += n, size -= n;
-    if (buffered_ == 64) Block(buffer_), buffered_ = 0;
+    if (buffered_ < 64) return;
+    Block(buffer_);
+    buffered_ = 0;
   }
+  crypt_blocks::Md5(abcd_, data, size / 64);
+  data += size & ~size_t(63), size &= 63;
+  std::memcpy(buffer_, data, size);
+  buffered_ = size;
 }
 
 std::array<uint8_t, 16> Md5::Final() {
   const uint64_t bits = total_ * 8;
-  const uint8_t pad = 0x80, zero = 0;
-  Update(&pad, 1);
-  while (buffered_ != 56) Update(&zero, 1);
-  uint8_t length[8];
-  for (int i = 0; i < 8; ++i) length[i] = uint8_t(bits >> (8 * i));
-  Update(length, 8);
+  uint8_t blocks[128] = {};
+  std::memcpy(blocks, buffer_, buffered_);
+  blocks[buffered_] = 0x80;
+  const size_t length = buffered_ < 56 ? 64 : 128;
+  for (int i = 0; i < 8; ++i) blocks[length - 8 + i] = uint8_t(bits >> (8 * i));
+  crypt_blocks::Md5(abcd_, blocks, length / 64);
+  total_ += length - buffered_;
+  buffered_ = 0;
   std::array<uint8_t, 16> out;
   for (int i = 0; i < 4; ++i) {
     for (int j = 0; j < 4; ++j) out[4 * i + j] = uint8_t(abcd_[i] >> (8 * j));
@@ -911,7 +907,12 @@ void XeCryptMd5(Guest g, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t si
 
 void XeCryptSha256(Guest g, uint32_t in1, uint32_t size1, uint32_t in2, uint32_t size2, uint32_t in3, uint32_t size3,
                    uint32_t output, uint32_t output_size) {
-  const auto digest = HashOf<Sha256>(g, in1, size1, in2, size2, in3, size3);
+  crypt_host::Part parts[3];
+  GuestParts(g, in1, size1, in2, size2, in3, size3, parts);
+  std::array<uint8_t, 32> digest;
+  if (!HostDigest(crypt_host::Hash::kSha256, false, nullptr, 0, parts, digest.data())) {
+    digest = HashOf<Sha256>(g, in1, size1, in2, size2, in3, size3);
+  }
   std::memcpy(g.host(output), digest.data(), std::min<uint32_t>(32, output_size));
 }
 

@@ -10,11 +10,12 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(any360_sys STATIC src/rtl.cpp src/info.cpp src/config.cpp src/error_tables.cpp src/video.cpp src/net.cpp
-            src/threading.cpp src/format.cpp src/objects.cpp src/scheduler.cpp src/memory.cpp src/files.cpp src/host_times.cpp src/xam.cpp src/win32.cpp src/input.cpp src/crypt.cpp
+            src/threading.cpp src/format.cpp src/objects.cpp src/scheduler.cpp src/memory.cpp src/files.cpp src/host_times.cpp src/xam.cpp src/win32.cpp src/input.cpp src/crypt.cpp src/crypt_blocks.cpp src/crypt_host.cpp
             src/graphics.cpp src/audio.cpp src/variables.cpp src/host_sockets.cpp)
 target_include_directories(any360_sys PUBLIC include)
 if(WIN32)
   target_link_libraries(any360_sys PUBLIC ws2_32)  # the host's sockets (src/host_sockets.cpp)
+  target_link_libraries(any360_sys PUBLIC bcrypt)  # the host's hashes, CNG (src/crypt_host.cpp)
 endif()
 # std::thread and the condition variables (the scheduler, objects): libpthread on older glibc (Ubuntu 20.04's 2.31).
 find_package(Threads REQUIRED)

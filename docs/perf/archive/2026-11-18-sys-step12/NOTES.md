@@ -14,11 +14,12 @@ clang, the owner's desktop: NVIDIA machine, Windows 11). Raw output: [sys_step12
     SHA instructions (SHA-NI); Any360's SHA-1 and SHA-256 are plain C++.
   - DES CBC: 0.24x CNG. Any360's DES permutes bit by bit (the triple DES it shares the code with was written for
     exactness against the reference, not speed).
-  - `lstrlenW`: 1.8x `wcslen` on an empty string, 0.06-0.9x on 8-256 characters. `wcslen` is a bound only: it reads
-    host-order strings and cannot read a guest's big-endian ones.
+  - `lstrlenW`: 1.8x `wcslen` on an empty string, 0.06-0.9x on 8-256 characters. (Said here at first: `wcslen`
+    cannot read a guest's big-endian strings. Wrong: a zero 16-bit unit is zero in either byte order, so it can, and
+    the optimization pass, [2026-11-18-sys-step12-opt](../2026-11-18-sys-step12-opt/), runs `lstrlenW` on it.)
 - **The Win32 part over the kernel calls** (what Sleep, waits, CreateThread, ResumeThread add): 1-5 ns a call.
   `GetTickCount` 18 ns, `GetSystemTimeAsFileTime` 19 ns (the host clocks), `GetModuleHandleA` 25 ns.
 
-Left for an optimization pass once a title calls them (each kept only when this benchmark confirms it and the
-sys_object_tests vectors still pass): SHA-1 / SHA-256 with SHA-NI where the processor has it (the Steam Deck's Zen 2
-does) with the C++ path as fallback, a table-driven DES, and a wider `lstrlenW` scan.
+Left then for an optimization pass (each kept only when this benchmark confirms it and the sys_object_tests vectors
+still pass): SHA-1 / SHA-256 with SHA-NI where the processor has it (the Steam Deck's Zen 2 does) with the C++ path as
+fallback, a table-driven DES, and a wider `lstrlenW` scan. Done the same day: [2026-11-18-sys-step12-opt](../2026-11-18-sys-step12-opt/).

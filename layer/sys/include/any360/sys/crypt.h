@@ -12,6 +12,18 @@
 
 namespace any360::sys {
 
+// Where SHA-1 and SHA-256 run, chosen once per process: kProcessor, the processor's SHA instructions (x86-64 SHA-NI:
+// faster than the host's own library at every size); kHost, Windows' CNG for the one-call forms of 64 bytes or more
+// (XeCryptSha, XeCryptSha256, the HMAC-SHA-1 calls), the portable code for the shorter ones and the streamed forms (the
+// host cannot resume from a guest state); kPortable, the portable C++ everywhere. The default is kProcessor when the
+// processor has SHA-NI, else kHost on Windows, else kPortable. SetShaPath forces one (the tests run every vector on
+// each, the benches time each); a path the machine lacks falls back to the default.
+enum class ShaPath { kProcessor, kHost, kPortable };
+bool ShaPathAvailable(ShaPath path);
+ShaPath DefaultShaPath();
+ShaPath CurrentShaPath();
+void SetShaPath(ShaPath path);
+
 class Sha1 {
  public:
   Sha1();

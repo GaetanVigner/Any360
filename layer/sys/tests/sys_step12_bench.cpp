@@ -1,8 +1,10 @@
 // sys_step12_bench: step 12's calls (docs/SYS_STUBS.md) timed, nanoseconds and host memory a call. The reference
 // stubs them (it returns at once and does nothing), so there is no original to time against; where the host already
 // does the same work, its own version is timed on the same data beside Any360's: Windows' CNG (BCrypt) for the hashes,
-// HMACs and DES, and the C library's wcslen for lstrlenW (host-order strings: it cannot read a guest's big-endian
-// ones, so it is a bound, not a replacement). The Win32 forms that block (Sleep, SleepEx, WaitForSingleObject(Ex),
+// HMACs and DES, and the C library's wcslen on a host string for lstrlenW (which runs on the host's own 16-bit scan:
+// a zero unit is zero in either byte order). The SHA rows run on each SHA path the machine has (crypt.h: ShaPath):
+// the default, then [SHA-NI], [host] (CNG) and [C++]. The allocation meter counts operator new only: the host
+// library's own heap use (CNG's columns, the [host] rows) is not measured. The Win32 forms that block (Sleep, SleepEx, WaitForSingleObject(Ex),
 // CreateThread, ResumeThread, ExitThread) are their kernel call plus the Win32 part timed here (timeout, result, last
 // error); the kernel calls keep their own measures.
 //
@@ -112,14 +114,30 @@ int main(int argc, char** argv) {
   std::printf("sys_step12_bench: ns a call (fastest of %u runs); host = what the host offers for the same work "
               "(ratio > 1: Any360 faster)\n",
               g_repeats);
+  std::printf("sys_step12_bench: SHA paths: processor (SHA-NI) %s, host (CNG) %s; default %s. Rows marked [SHA-NI], [host] "
+              "or [C++] force that path (SetShaPath)\n",
+              ShaPathAvailable(ShaPath::kProcessor) ? "yes" : "no", ShaPathAvailable(ShaPath::kHost) ? "yes" : "no",
+              DefaultShaPath() == ShaPath::kProcessor ? "processor" : DefaultShaPath() == ShaPath::kHost ? "host" : "C++");
   std::printf("  %-36s %8s | %9s %9s %7s | %9s %9s %7s | %7s\n", "call (guest state it uses)", "bytes", "ns", "B/call",
               "allocs", "host ns", "B/call", "allocs", "speed");
+  // The SHA rows on the default path first, then on every other path the machine has.
+  std::vector<ShaPath> sha_paths = {DefaultShaPath()};
+  for (const ShaPath path : {ShaPath::kProcessor, ShaPath::kHost, ShaPath::kPortable}) {
+    if (path != DefaultShaPath() && ShaPathAvailable(path)) sha_paths.push_back(path);
+  }
+  auto label = [](const char* name, ShaPath path) {
+    const char* tag = path == DefaultShaPath()     ? ""
+                      : path == ShaPath::kHost     ? " [host]"
+                      : path == ShaPath::kPortable ? " [C++]"
+                                                   : " [SHA-NI]";
+    return std::string(name) + tag;
+  };
 
 #if defined(_WIN32)
-  const Cng md5(BCRYPT_MD5_ALGORITHM, 0), sha256(BCRYPT_SHA256_ALGORITHM, 0);
+  const Cng md5(BCRYPT_MD5_ALGORITHM, 0), sha1(BCRYPT_SHA1_ALGORITHM, 0), sha256(BCRYPT_SHA256_ALGORITHM, 0);
   const Cng hmac_md5(BCRYPT_MD5_ALGORITHM, BCRYPT_ALG_HANDLE_HMAC_FLAG), hmac_sha1(BCRYPT_SHA1_ALGORITHM, BCRYPT_ALG_HANDLE_HMAC_FLAG);
 #endif
-  uint8_t host_out[64];
+  [[maybe_unused]] uint8_t host_out[64];
   for (uint32_t size : sizes) {
     const uint32_t n = CallsFor(size);
     const Measure ours = Time(n, [&] { XeCryptMd5(g, kIn, size, 0, 0, 0, 0, kOut, 16); });
@@ -129,15 +147,28 @@ int main(int argc, char** argv) {
 #endif
     PrintRow("XeCryptMd5", size, ours, host);
   }
-  for (uint32_t size : sizes) {
-    const uint32_t n = CallsFor(size);
-    const Measure ours = Time(n, [&] { XeCryptSha256(g, kIn, size, 0, 0, 0, 0, kOut, 32); });
-    Measure host;
+  for (const ShaPath sha : sha_paths) {
+    SetShaPath(sha);
+    for (uint32_t size : sizes) {
+      const uint32_t n = CallsFor(size);
+      const Measure ours = Time(n, [&] { XeCryptSha(g, kIn, size, 0, 0, 0, 0, kOut, 20); });
+      Measure host;
 #if defined(_WIN32)
-    host = Time(n, [&] { sha256.Hash(nullptr, 0, g.host(kIn), size, host_out, 32); }, false);
+      host = Time(n, [&] { sha1.Hash(nullptr, 0, g.host(kIn), size, host_out, 20); }, false);
 #endif
-    PrintRow("XeCryptSha256", size, ours, host);
+      PrintRow(label("XeCryptSha", sha).c_str(), size, ours, host);
+    }
+    for (uint32_t size : sizes) {
+      const uint32_t n = CallsFor(size);
+      const Measure ours = Time(n, [&] { XeCryptSha256(g, kIn, size, 0, 0, 0, 0, kOut, 32); });
+      Measure host;
+#if defined(_WIN32)
+      host = Time(n, [&] { sha256.Hash(nullptr, 0, g.host(kIn), size, host_out, 32); }, false);
+#endif
+      PrintRow(label("XeCryptSha256", sha).c_str(), size, ours, host);
+    }
   }
+  SetShaPath(DefaultShaPath());
   for (uint32_t size : sizes) {
     const uint32_t n = CallsFor(size);
     const Measure ours = Time(n, [&] { XeCryptHmacMd5(g, kKey, 16, kIn, size, 0, 0, 0, 0, kOut, 16); });
@@ -147,19 +178,23 @@ int main(int argc, char** argv) {
 #endif
     PrintRow("XeCryptHmacMd5", size, ours, host);
   }
-  for (uint32_t size : sizes) {
-    const uint32_t n = CallsFor(size);
-    const Measure ours = Time(n, [&] {
-      XeCryptHmacShaInit(g, kState, kKey, 20);
-      XeCryptHmacShaUpdate(g, kState, kIn, size);
-      XeCryptHmacShaFinal(g, kState, kOut, 20);
-    });
-    Measure host;
+  for (const ShaPath sha : sha_paths) {
+    SetShaPath(sha);
+    for (uint32_t size : sizes) {
+      const uint32_t n = CallsFor(size);
+      const Measure ours = Time(n, [&] {
+        XeCryptHmacShaInit(g, kState, kKey, 20);
+        XeCryptHmacShaUpdate(g, kState, kIn, size);
+        XeCryptHmacShaFinal(g, kState, kOut, 20);
+      });
+      Measure host;
 #if defined(_WIN32)
-    host = Time(n, [&] { hmac_sha1.Hash(g.host(kKey), 20, g.host(kIn), size, host_out, 20); }, false);
+      host = Time(n, [&] { hmac_sha1.Hash(g.host(kKey), 20, g.host(kIn), size, host_out, 20); }, false);
 #endif
-    PrintRow("HmacSha Init+Update+Final (0xB0)", size, ours, host);
+      PrintRow(label("HmacSha Init+Update+Final (0xB0)", sha).c_str(), size, ours, host);
+    }
   }
+  SetShaPath(DefaultShaPath());
   for (uint32_t size : sizes) {
     const uint32_t n = CallsFor(size);
     XeCryptHmacSha(g, kKey, 20, kIn, size, 0, 0, 0, 0, kOut + 0x80, 20);
@@ -208,6 +243,51 @@ int main(int argc, char** argv) {
 #endif
     PrintRow("XeCryptDesCbc", size, ours, host);
   }
+  for (uint32_t size : {8u, 1024u}) {
+    const uint32_t n = CallsFor(size) / 4 + 16;
+    PrintRow("XeCryptDesCbc decrypt", size, Time(n, [&] {
+               g.Store64(kFeed, 0x1234567890ABCDEFull);
+               XeCryptDesCbc(g, kState, kIn, size, kOut + 0x100, kFeed, 0);
+             }),
+             Measure{});
+  }
+#if defined(_WIN32)
+  BCryptDestroyKey(des_key);
+  BCryptCloseAlgorithmProvider(des_alg, 0);
+#endif
+  for (int i = 0; i < 3; ++i) g.Store64(kKey + 8 * i, 0x0123456789ABCDEFull + 0x1111111111111111ull * i);
+  PrintRow("XeCryptDes3Key (0x180)", 24, Time(100000, [&] { XeCryptDes3Key(g, kState, kKey); }), Measure{});
+  XeCryptDes3Key(g, kState, kKey);
+#if defined(_WIN32)
+  BCryptOpenAlgorithmProvider(&des_alg, BCRYPT_3DES_ALGORITHM, nullptr, 0);
+  BCryptSetProperty(des_alg, BCRYPT_CHAINING_MODE, reinterpret_cast<PUCHAR>(const_cast<wchar_t*>(BCRYPT_CHAIN_MODE_CBC)),
+                    sizeof(BCRYPT_CHAIN_MODE_CBC), 0);
+  BCryptGenerateSymmetricKey(des_alg, &des_key, nullptr, 0, g.host(kKey), 24, 0);
+#endif
+  for (uint32_t size : {8u, 64u, 1024u, 65536u}) {
+    const uint32_t n = CallsFor(size) / 8 + 16;
+    const Measure ours = Time(n, [&] {
+      g.Store64(kFeed, 0x1234567890ABCDEFull);
+      XeCryptDes3Cbc(g, kState, kIn, size, kOut + 0x100, kFeed, 1);
+    });
+    Measure host;
+#if defined(_WIN32)
+    host = Time(n, [&] {
+      uint8_t iv[8] = {0x12, 0x34, 0x56, 0x78, 0x90, 0xAB, 0xCD, 0xEF};
+      ULONG written = 0;
+      BCryptEncrypt(des_key, g.host(kIn), size, nullptr, iv, 8, host_cipher.data(), size, &written, 0);
+    }, false);
+#endif
+    PrintRow("XeCryptDes3Cbc", size, ours, host);
+  }
+  for (uint32_t size : {8u, 1024u}) {
+    const uint32_t n = CallsFor(size) / 8 + 16;
+    PrintRow("XeCryptDes3Cbc decrypt", size, Time(n, [&] {
+               g.Store64(kFeed, 0x1234567890ABCDEFull);
+               XeCryptDes3Cbc(g, kState, kIn, size, kOut + 0x100, kFeed, 0);
+             }),
+             Measure{});
+  }
 #if defined(_WIN32)
   BCryptDestroyKey(des_key);
   BCryptCloseAlgorithmProvider(des_alg, 0);
@@ -230,7 +310,7 @@ int main(int argc, char** argv) {
     std::wstring host_text(length, L'a');
     const Measure ours = Time(200000, [&] { g_sink = g_sink + LstrlenW(g, kText); });
     const Measure host = Time(200000, [&] { g_sink = g_sink + uint32_t(std::wcslen(host_text.c_str())); }, false);
-    PrintRow("lstrlenW (host: wcslen)", length, ours, host);
+    PrintRow("lstrlenW (host: wcslen, own string)", length, ours, host);
   }
   std::printf("sys_step12_bench: allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_totals.calls ? double(g_totals.bytes) / double(g_totals.calls) : 0.0,
