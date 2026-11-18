@@ -387,6 +387,18 @@ others' objects (an event the runtime made, an APC on a thread it does not run),
 a callback waits on the wrong object; the full binding, network on the runtime first, then on Any360, is what found
 the problems above.
 
+## Step 12: the reference stubs sorted (started)
+
+The 2,290 functions the reference stubs and Any360 does not answer itself (no known title imports any of them) are
+sorted by `tools/sys_stub_sort.py` into [SYS_STUBS.md](SYS_STUBS.md) and `db/sys_stub_sort.json`, with Xenia Canary's
+kernel sources as the evidence, read for its export declarations only: 122 to implement (Xenia implements them: titles
+it runs call them and they do work), 114 answered as stubs (Xenia stubs them too, or marks them doubtful), 255 debug
+only (xbdm, which a retail console does not load) and 1,799 never seen (no title Xenia runs is known to call them; the
+first call logs). Nothing changed in behaviour. Each one implemented next gets a stated source for its answer (Xenia's
+code, the XDK's documentation, a standard's test vectors) and scenario tests; the in-game check and measure of the
+native-function rule wait for a title that calls it. One difference already found: Xenia truncates an HMAC-SHA key
+longer than 64 bytes (`XeCryptHmacShaInit`, as the console), where `XeCryptHmacSha` here hashes it first.
+
 ## After step 7: from one title to any title (the road to 100%)
 
 Steps 0-7 put Crackdown's system calls on any360::sys, with ReXGlue still hosting it. Crackdown is the test bench; the
