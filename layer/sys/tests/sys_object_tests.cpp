@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "any360/sys/activity.h"
+#include "any360/sys/alloc_meter.h"
 #include "any360/sys/audio.h"
 #include "any360/sys/files.h"
 #include "any360/sys/graphics.h"
@@ -3338,7 +3339,188 @@ void Win32Step12Tests() {
   CHECK(TickCount() - before >= 15);
 }
 
+// U32Map (the object manager's flat tables) against std::map on a random mix of insertions, look-ups and removals,
+// key 0 and colliding aligned addresses included, through several growths.
+void U32MapTests() {
+  U32Map map(4);
+  std::map<uint32_t, uint32_t> model;
+  std::mt19937 random(1234);
+  for (int step = 0; step < 200000; ++step) {
+    const uint32_t key = (random() % 3000) * 16 + (step % 7 == 0 ? 0 : 0x10000);  // aligned; key 0 now and then
+    switch (random() % 3) {
+      case 0: {
+        const uint32_t value = random();
+        map[key] = value;
+        model[key] = value;
+        break;
+      }
+      case 1: CHECK(map.Erase(key) == (model.erase(key) == 1)); break;
+      default: {
+        const uint32_t* found = map.Find(key);
+        const auto it = model.find(key);
+        CHECK((found != nullptr) == (it != model.end()));
+        if (found && it != model.end()) CHECK(*found == it->second);
+      }
+    }
+    if (step % 50000 == 0) CHECK(map.size() == model.size());
+  }
+  CHECK(map.size() == model.size());
+  for (const auto& [key, value] : model) CHECK(map.Find(key) && *map.Find(key) == value);
+  // Key 0 (kept apart from the slots).
+  map[0] = 5;
+  CHECK(map.Find(0) && *map.Find(0) == 5 && map.Erase(0) && !map.Find(0) && !map.Erase(0));
+  // Clear keeps the storage: refilling to the same size allocates nothing.
+  const size_t capacity = map.capacity();
+  map.Clear();
+  CHECK(map.size() == 0 && !map.Find(0) && !map.Find(0x10000));
+  const AllocCounts before = ThreadAllocations();
+  for (uint32_t i = 0; i < capacity; ++i) map[0x10000 + i * 16] = i;
+  for (uint32_t i = 0; i < capacity; ++i) CHECK(map.Erase(0x10000 + i * 16));
+  CHECK((ThreadAllocations() - before).count == 0 && map.size() == 0);
+}
+
+// The object manager's bookkeeping: the handle table reuses its lowest closed slot, the heap its lowest fitting block,
+// freed blocks coalesce back into the heap whatever the closing order, and a title's create / close cycles allocate
+// nothing on the host once the tables have their working size.
+void ObjectBookkeepingTests() {
+  Fresh();
+  const uint32_t out = kScratch + 0x200;
+  auto event = [&]() {
+    CHECK(Objects().CreateEvent(g, out, 0, 0, 0) == 0);
+    return g.Load32(out);
+  };
+  // Lowest closed slot first, as the table always did.
+  const uint32_t h1 = event(), h2 = event(), h3 = event(), h4 = event();
+  CHECK(h2 == h1 + 4 && h3 == h2 + 4 && h4 == h3 + 4);
+  CHECK(Objects().Close(h3) == 0 && Objects().Close(h2) == 0);
+  const uint32_t h5 = event(), h6 = event(), h7 = event();
+  CHECK(h5 == h2 && h6 == h3 && h7 == h4 + 4);
+  for (uint32_t h : {h1, h4, h5, h6, h7}) CHECK(Objects().Close(h) == 0);
+  CHECK(Objects().Lookup(event()) == kHeap);  // everything went back: the heap starts over
+  Fresh();
+  // A thousand objects (past the tables' first capacity) closed in a random order coalesce back into the heap.
+  std::vector<uint32_t> handles;
+  for (int i = 0; i < 1000; ++i) handles.push_back(event());
+  CHECK(Objects().Lookup(handles.back()) == kHeap + 999 * 16);
+  std::mt19937 random(99);
+  std::shuffle(handles.begin(), handles.end(), random);
+  for (uint32_t h : handles) CHECK(Objects().Close(h) == 0);
+  // One block the size of the whole used region fits at the heap's start: no freed block was left apart.
+  CHECK(Objects().AllocateObject(1000 * 16, true) == kHeap);
+  Fresh();
+  // A block freed below the heap's top is found again first fit and split; its rest is still found.
+  const uint32_t big = Objects().AllocateObject(64, true), top = event();
+  CHECK(big == kHeap && Objects().Lookup(top) == kHeap + 64);
+  Objects().FreeObject(big);
+  const uint32_t a = event(), b = event();
+  CHECK(Objects().Lookup(a) == kHeap && Objects().Lookup(b) == kHeap + 16);
+  CHECK(Objects().AllocateObject(32, true) == kHeap + 32);
+  CHECK(Objects().AllocateObject(16, true) == kHeap + 80);  // the freed block is used up
+  // Duplicates and Ob references count apart; the object goes when neither is left.
+  Fresh();
+  const uint32_t d = event(), d_at = Objects().Lookup(d);
+  CHECK(Objects().Duplicate(g, d, out + 4, 1) == 0);  // DUPLICATE_CLOSE_SOURCE: one handle left
+  const uint32_t d2 = g.Load32(out + 4);
+  CHECK(Objects().Lookup(d) == 0 && Objects().Lookup(d2) == d_at);
+  CHECK(Objects().ReferenceObjectByHandle(g, d2, kMainThread, out + 8) == 0);
+  CHECK(Objects().ReferenceObjectByHandle(g, d2, kMainThread, out + 8) == 0);
+  CHECK(Objects().Close(d2) == 0 && Objects().AllocateObject(16, true) != d_at);
+  CHECK(Objects().DereferenceObject(g, d_at) == 0 && Objects().AllocateObject(16, true) != d_at);
+  CHECK(Objects().DereferenceObject(g, d_at) == 0 && Objects().AllocateObject(16, true) == d_at);
+  CHECK(Objects().DereferenceObject(g, d_at) == 0);  // one too many: nothing happens
+  // Host memory: the cycles a title makes, after a warm-up, allocate nothing.
+  Fresh();
+  std::vector<uint32_t> held;
+  for (int i = 0; i < 64; ++i) held.push_back(event());  // a title's usual table
+  auto cycles = [&] {
+    for (int i = 0; i < 1000; ++i) {
+      const uint32_t x = event();
+      CHECK(Objects().ReferenceObjectByHandle(g, x, kMainThread, out + 8) == 0);
+      CHECK(Objects().DereferenceObject(g, g.Load32(out + 8)) == 0);
+      const uint32_t y = event();
+      CHECK(Objects().Close(x) == 0 && Objects().Close(y) == 0);  // the lower first: a freed block apart, then joined
+    }
+  };
+  cycles();
+  {
+    // The meter counts in this executable (a zero below means something): one allocation seen.
+    const AllocCounts start = ThreadAllocations();
+    std::vector<uint8_t> control(100);
+    volatile uint8_t* data = control.data();
+    data[0] = 1;
+    CHECK((ThreadAllocations() - start).count >= 1 && (ThreadAllocations() - start).bytes >= 100);
+  }
+  const AllocCounts before = ThreadAllocations();
+  cycles();
+  const AllocCounts spent = ThreadAllocations() - before;
+  CHECK(spent.count == 0 && spent.bytes == 0);
+  if (spent.count) std::printf("  object cycles: %llu allocations, %llu bytes\n", (unsigned long long)spent.count, (unsigned long long)spent.bytes);
+  for (uint32_t h : held) CHECK(Objects().Close(h) == 0);
+}
+
+// A file stays usable while devices are mounted, remounted and unmounted around it: an open handle keeps the mount
+// entry it was opened on (the list is reordered and its entries replaced under it).
+void MountStabilityTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "any360-sys-mounts";
+  std::error_code ec;
+  fs::remove_all(root, ec);
+  fs::create_directories(root / "hdd");
+  fs::create_directories(root / "other");
+  Files().Reset();
+  Files().Mount("\\Device\\Harddisk0\\Partition1", root / "hdd", false);
+  Files().Link("hdd:", "\\Device\\Harddisk0\\Partition1");
+  const uint32_t attrs = kScratch + 0x100, name = kScratch + 0x120, text = kScratch + 0x140, iosb = kScratch + 0x300,
+                 out = kScratch + 0x320, buf = kScratch + 0x400;
+  auto path = [&](const char* p) {
+    g.Store32(attrs, 0);
+    g.Store32(attrs + 4, name);
+    g.Store16(name, uint16_t(std::strlen(p)));
+    g.Store32(name + 4, text);
+    std::memcpy(g.host(text), p, std::strlen(p) + 1);
+    return attrs;
+  };
+  const uint32_t kRead = 0x80000000, kWrite = 0x40000000;
+  CHECK(Files().CreateFile(g, out, kRead | kWrite, path("hdd:\\save.bin"), iosb, 0, kOverwriteIf,
+                           kFileNonDirectoryFile | kFileSynchronousIo) == 0);
+  const uint32_t f = g.Load32(out);
+  std::memcpy(g.host(buf), "before", 6);
+  CHECK(Files().WriteFile(g, f, 0, iosb, buf, 6, 0) == 0 && g.Load32(iosb + 4) == 6);
+  // Other devices mounted (the list grows past its capacity and is sorted again), the file's own device remounted
+  // read-only on the same folder, then another unmounted.
+  for (int i = 0; i < 40; ++i) Files().Mount("\\Device\\Content\\" + std::to_string(i) + std::string(i % 5, 'x'), root / "other", false);
+  Files().Mount("\\Device\\Harddisk0\\Partition1", root / "hdd", true);
+  Files().Mount("\\Device\\Harddisk0\\Partition1", root / "hdd", true);
+  Files().Unmount("\\Device\\Content\\7xx");
+  Files().MountNull("\\Device\\Harddisk0\\Partition0");
+  // The open handle writes, reads and closes as it was opened (writable); a new open sees the read-only device.
+  std::memcpy(g.host(buf), "after", 5);
+  CHECK(Files().WriteFile(g, f, 0, iosb, buf, 5, 0) == 0 && g.Load32(iosb + 4) == 5);
+  g.Store64(out + 8, 0);
+  std::memset(g.host(buf), 0, 16);
+  CHECK(Files().ReadFile(g, f, 0, iosb, buf, 16, out + 8) == 0 && g.Load32(iosb + 4) == 11 &&
+        std::memcmp(g.host(buf), "beforeafter", 11) == 0);
+  CHECK(Files().QueryVolume(g, f, iosb, buf, 0x40, kFsSizeInformation) == 0);
+  CHECK(Objects().Close(f) == 0);
+  CHECK(Files().CreateFile(g, out, kRead | kWrite, path("hdd:\\save.bin"), iosb, 0, kOpen, kFileNonDirectoryFile | kFileSynchronousIo) ==
+        kStatusAccessDenied);
+  CHECK(Files().CreateFile(g, out, kRead, path("hdd:\\save.bin"), iosb, 0, kOpen, kFileNonDirectoryFile | kFileSynchronousIo) == 0);
+  const uint32_t r = g.Load32(out);
+  // Unmounted under an open handle: it still reads, then closes.
+  Files().Unmount("\\Device\\Harddisk0\\Partition1");
+  std::memset(g.host(buf), 0, 16);
+  g.Store64(out + 8, 6);
+  CHECK(Files().ReadFile(g, r, 0, iosb, buf, 5, out + 8) == 0 && std::memcmp(g.host(buf), "after", 5) == 0);
+  CHECK(Objects().Close(r) == 0);
+  Files().Reset();
+  fs::remove_all(root, ec);
+}
+
 int main() {
+  U32MapTests();
+  ObjectBookkeepingTests();
+  MountStabilityTests();
   CryptPathTests();
   XamInfoStep12Tests();
   KernelStep12Tests();

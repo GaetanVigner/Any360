@@ -58,11 +58,14 @@ void ObjectManager::Reset() {
   std::lock_guard lock(lifetime_mutex_);
   std::lock_guard dispatcher(dispatcher_mutex_);
   entries_.clear();
-  references_.clear();
+  first_free_ = 0;
+  open_handles_.Clear();
+  references_.Clear();
   timers_.clear();
   timer_apcs_.clear();
   free_blocks_.clear();
-  freeable_.clear();
+  free_blocks_.reserve(64);
+  freeable_.Clear();
   {
     std::lock_guard lock(ports_mutex_);
     ports_.clear();
@@ -74,13 +77,17 @@ uint32_t ObjectManager::Allocate(uint32_t size, bool freed_on_close) {
   const uint32_t aligned = (size + 15) & ~15u;
   std::lock_guard lock(lifetime_mutex_);
   uint32_t at = 0;
-  // First fit among the freed blocks, then the untouched rest of the heap.
+  // First fit among the freed blocks (lowest address first), then the untouched rest of the heap. What is left of
+  // the block stays in its place in the order.
   for (auto it = free_blocks_.begin(); it != free_blocks_.end(); ++it) {
     if (it->second < aligned) continue;
     at = it->first;
     const uint32_t left = it->second - aligned;
-    free_blocks_.erase(it);
-    if (left) free_blocks_[at + aligned] = left;
+    if (left) {
+      *it = {at + aligned, left};
+    } else {
+      free_blocks_.erase(it);
+    }
     break;
   }
   if (!at) {
@@ -99,54 +106,63 @@ void ObjectManager::ReferenceObject(uint32_t object) {
   ++references_[object];
 }
 
+void ObjectManager::HandleClosed(uint32_t handle, Entry& e) {
+  e.open = false;
+  first_free_ = std::min<size_t>(first_free_, (handle - handle_base_) / 4);
+  if (uint32_t* count = open_handles_.Find(e.object); count && --*count == 0) open_handles_.Erase(e.object);
+}
+
 void ObjectManager::Release(uint32_t object) {
   std::lock_guard lock(lifetime_mutex_);
-  const auto owned = freeable_.find(object);
-  if (owned == freeable_.end() || references_.count(object)) return;
-  for (const Entry& e : entries_) {
-    if (e.open && e.object == object) return;
-  }
+  const uint32_t* owned = freeable_.Find(object);
+  if (!owned || references_.Contains(object) || HasOpenHandle(object)) return;
   {
     std::lock_guard dispatcher(dispatcher_mutex_);
     timers_.erase(std::remove(timers_.begin(), timers_.end(), object), timers_.end());
     timer_apcs_.erase(object);
   }
-  uint32_t at = object, size = owned->second;
-  freeable_.erase(owned);
+  uint32_t at = object, size = *owned;
+  freeable_.Erase(object);
   for (auto hook : free_hooks_) hook(object);
   {
     std::lock_guard lock(ports_mutex_);
     ports_.erase(object);
   }
   // Merged with the free blocks on either side; one that reaches the untouched rest of the heap joins it.
-  if (auto next = free_blocks_.find(at + size); next != free_blocks_.end()) {
+  auto next = std::lower_bound(free_blocks_.begin(), free_blocks_.end(), std::pair<uint32_t, uint32_t>{at, 0});
+  if (next != free_blocks_.end() && next->first == at + size) {
     size += next->second;
-    free_blocks_.erase(next);
+    next = free_blocks_.erase(next);
   }
-  if (auto next = free_blocks_.lower_bound(at); next != free_blocks_.begin()) {
+  if (next != free_blocks_.begin()) {
     auto previous = std::prev(next);
     if (previous->first + previous->second == at) {
       at = previous->first;
       size += previous->second;
-      free_blocks_.erase(previous);
+      next = free_blocks_.erase(previous);
     }
   }
   if (at + size == heap_next_) {
     heap_next_ = at;
   } else {
-    free_blocks_[at] = size;
+    free_blocks_.insert(next, {at, size});
   }
 }
 
 uint32_t ObjectManager::AddHandle(uint32_t object, const std::string& name) {
   std::lock_guard lock(lifetime_mutex_);
-  for (size_t i = 0; i < entries_.size(); ++i) {
+  ++open_handles_[object];
+  for (size_t i = first_free_; i < entries_.size(); ++i) {
     if (!entries_[i].open) {
-      entries_[i] = {object, true, name};
+      entries_[i].object = object;
+      entries_[i].open = true;
+      entries_[i].name = name;
+      first_free_ = i + 1;
       return handle_base_ + uint32_t(i) * 4;
     }
   }
   entries_.push_back({object, true, name});
+  first_free_ = entries_.size();
   return handle_base_ + uint32_t(entries_.size() - 1) * 4;
 }
 
@@ -476,9 +492,7 @@ void ObjectManager::AddFreeHook(void (*hook)(uint32_t object)) {
 void ObjectManager::Closed(uint32_t object) {
   {
     std::lock_guard lock(lifetime_mutex_);
-    for (const Entry& e : entries_) {
-      if (e.open && e.object == object) return;
-    }
+    if (HasOpenHandle(object)) return;
   }
   for (auto hook : close_hooks_) hook(object);
 }
@@ -489,8 +503,8 @@ uint32_t ObjectManager::Close(uint32_t handle) {
     std::lock_guard lock(lifetime_mutex_);  // one of two threads closing a handle closes it
     Entry* e = Find(handle);
     if (!e) return kStatusInvalidHandle;
-    e->open = false;
     object = e->object;
+    HandleClosed(handle, *e);
   }
   Closed(object);
   Release(object);
@@ -503,7 +517,7 @@ uint32_t ObjectManager::Duplicate(Guest g, uint32_t handle, uint32_t new_handle_
   if (!e) return kStatusInvalidHandle;
   const uint32_t duplicate = AddHandle(e->object, e->name);
   if (new_handle_out) g.Store32(new_handle_out, duplicate);
-  if (options == 1 && e) e->open = false;  // DUPLICATE_CLOSE_SOURCE (the duplicate keeps the object open)
+  if (options == 1) HandleClosed(handle, *e);  // DUPLICATE_CLOSE_SOURCE (the duplicate keeps the object open)
   return kStatusSuccess;
 }
 
@@ -581,9 +595,8 @@ uint32_t ObjectManager::SignalAndWait(Guest g, uint32_t signal, uint32_t wait, u
 
 uint32_t ObjectManager::DereferenceObject(Guest, uint32_t object) {
   std::lock_guard lock(lifetime_mutex_);
-  auto it = references_.find(object);
-  if (it != references_.end() && --it->second <= 0) {
-    references_.erase(it);
+  if (uint32_t* count = references_.Find(object); count && --*count == 0) {
+    references_.Erase(object);
     Release(object);
   }
   return kStatusSuccess;

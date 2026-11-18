@@ -23,6 +23,9 @@
 
 #include "any360/sys/alloc_meter.h"
 #include "any360/sys/crypt.h"
+#include "any360/sys/files.h"
+#include <filesystem>
+#include <fstream>
 #include <cwctype>
 #include "any360/sys/variables.h"
 #include "any360/sys/rtl.h"
@@ -41,6 +44,8 @@
 #endif
 #include <windows.h>
 #include <bcrypt.h>
+#undef CreateEvent  // windows.h's macros would rename the object manager's and the file system's methods
+#undef CreateFile
 #endif
 
 using namespace any360::sys;
@@ -403,6 +408,72 @@ int main(int argc, char** argv) {
              Objects().Close(handle);
            }),
            Measure{});
+  // The object manager's own bookkeeping, as every Nt-created object pays it: a create and its close (the block at
+  // the top of the heap), with an Ob reference taken and dropped, and two objects closed lowest first (the freed
+  // block listed apart from the heap's top until its neighbour joins it).
+  PrintRow("Objects NtCreateEvent+NtClose", 0, Time(200000, [&] {
+             Objects().CreateEvent(g, kOut + 0x500, 0, 0, 0);
+             Objects().Close(g.Load32(kOut + 0x500));
+           }),
+           Measure{});
+  PrintRow("Objects Create+ObRef+ObDeref+Close", 0, Time(200000, [&] {
+             Objects().CreateEvent(g, kOut + 0x500, 0, 0, 0);
+             const uint32_t handle = g.Load32(kOut + 0x500);
+             Objects().ReferenceObjectByHandle(g, handle, 0, kOut + 0x504);
+             Objects().DereferenceObject(g, g.Load32(kOut + 0x504));
+             Objects().Close(handle);
+           }),
+           Measure{});
+  PrintRow("Objects 2 creates, lower closed first", 0, Time(200000, [&] {
+             Objects().CreateEvent(g, kOut + 0x500, 0, 0, 0);
+             Objects().CreateEvent(g, kOut + 0x508, 0, 0, 0);
+             Objects().Close(g.Load32(kOut + 0x500));
+             Objects().Close(g.Load32(kOut + 0x508));
+           }),
+           Measure{});
+  {
+    // 64 handles open (a title's usual table), then the same cycle: the close's scan of the table is what grows.
+    std::vector<uint32_t> held;
+    for (int i = 0; i < 64; ++i) {
+      Objects().CreateEvent(g, kOut + 0x500, 0, 0, 0);
+      held.push_back(g.Load32(kOut + 0x500));
+    }
+    PrintRow("Objects NtCreateEvent+NtClose, 64 open", 0, Time(200000, [&] {
+               Objects().CreateEvent(g, kOut + 0x500, 0, 0, 0);
+               Objects().Close(g.Load32(kOut + 0x500));
+             }),
+             Measure{});
+    for (uint32_t h : held) Objects().Close(h);
+  }
+  {
+    // A file opened, read and closed on a mounted device with 16 devices mounted: the device look-up, the open file's
+    // object and its handle (the host file opened again each cycle).
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / "any360-step12-bench-files";
+    std::error_code ec;
+    fs::create_directories(root, ec);
+    { std::ofstream(root / "data.bin", std::ios::binary) << "0123456789ABCDEF"; }
+    Files().Reset();
+    for (int i = 0; i < 16; ++i) Files().Mount("\\Device\\Content\\" + std::to_string(i), root, true);
+    Files().Mount("\\Device\\Cdrom0", root, true);
+    Files().Link("game:", "\\Device\\Cdrom0");
+    const char* name = "game:\\data.bin";
+    const uint32_t attrs = kOut + 0x600, string = kOut + 0x620, text = kOut + 0x640, iosb = kOut + 0x6C0, buffer = kOut + 0x700;
+    g.Store32(attrs, 0);
+    g.Store32(attrs + 4, string);
+    g.Store16(string, uint16_t(std::strlen(name)));
+    g.Store32(string + 4, text);
+    std::memcpy(g.host(text), name, std::strlen(name) + 1);
+    PrintRow("Files NtCreateFile+NtReadFile 16+NtClose", 0, Time(20000, [&] {
+               Files().CreateFile(g, kOut + 0x680, 0x80000000, attrs, iosb, 0, kOpen, kFileNonDirectoryFile | kFileSynchronousIo);
+               const uint32_t handle = g.Load32(kOut + 0x680);
+               g_sink = g_sink + Files().ReadFile(g, handle, 0, iosb, buffer, 16, 0);
+               Objects().Close(handle);
+             }),
+             Measure{});
+    Files().Reset();
+    fs::remove_all(root, ec);
+  }
   std::printf("sys_step12_bench: allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_totals.calls ? double(g_totals.bytes) / double(g_totals.calls) : 0.0,
               g_totals.calls ? double(g_totals.count) / double(g_totals.calls) : 0.0,

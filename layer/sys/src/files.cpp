@@ -150,7 +150,10 @@ FileSystem& Files() {
 FileSystem::FileSystem() { Reset(); }
 
 void FileSystem::Reset() {
-  mounts_.clear();
+  {
+    std::unique_lock lock(mounts_mutex_);
+    mounts_.clear();
+  }
   links_.clear();
   link_objects_.clear();
   {
@@ -161,19 +164,21 @@ void FileSystem::Reset() {
 }
 
 void FileSystem::Mount(const std::string& device, const std::filesystem::path& host, bool read_only) {
-  // A device mounted again (a title opening the same content or profile twice) is replaced, not listed twice.
-  const std::string name = Lower(device);
-  std::erase_if(mounts_, [&](const Mounted& m) { return m.device == name; });
-  mounts_.push_back({name, host, read_only});
-  // Longest device paths first, so "\device\harddisk0\partition1" wins over "\device\harddisk0".
-  std::sort(mounts_.begin(), mounts_.end(), [](const Mounted& a, const Mounted& b) { return a.device.size() > b.device.size(); });
+  AddMount(device, host, read_only, false);
 }
 
-void FileSystem::MountNull(const std::string& device) {
-  Mount(device, {}, false);
-  for (Mounted& m : mounts_) {
-    if (m.device == Lower(device)) m.null = true;
-  }
+void FileSystem::MountNull(const std::string& device) { AddMount(device, {}, false, true); }
+
+void FileSystem::AddMount(const std::string& device, const std::filesystem::path& host, bool read_only, bool null) {
+  // A device mounted again (a title opening the same content or profile twice) is replaced, not listed twice; the
+  // files open on the entry it replaces keep that one.
+  const std::string name = Lower(device);
+  auto entry = std::make_shared<const Mounted>(Mounted{name, host, read_only, null});
+  std::unique_lock lock(mounts_mutex_);
+  std::erase_if(mounts_, [&](const MountRef& m) { return m->device == name; });
+  mounts_.push_back(std::move(entry));
+  // Longest device paths first, so "\device\harddisk0\partition1" wins over "\device\harddisk0".
+  std::stable_sort(mounts_.begin(), mounts_.end(), [](const MountRef& a, const MountRef& b) { return a->device.size() > b->device.size(); });
 }
 
 void FileSystem::Link(const std::string& link, const std::string& target) {
@@ -184,7 +189,8 @@ void FileSystem::Link(const std::string& link, const std::string& target) {
 
 void FileSystem::Unmount(const std::string& device) {
   const std::string lower = Lower(device);
-  mounts_.erase(std::remove_if(mounts_.begin(), mounts_.end(), [&](const Mounted& m) { return m.device == lower; }), mounts_.end());
+  std::unique_lock lock(mounts_mutex_);
+  std::erase_if(mounts_, [&](const MountRef& m) { return m->device == lower; });
 }
 
 void FileSystem::Unlink(const std::string& link) {
@@ -222,12 +228,13 @@ std::string FileSystem::Canonical(const std::string& guest_path) const {
   return path;
 }
 
-const FileSystem::Mounted* FileSystem::MountOf(const std::string& device_path, std::string& rest) const {
+FileSystem::MountRef FileSystem::MountOf(const std::string& device_path, std::string& rest) const {
   const std::string lower = Lower(device_path);
-  for (const Mounted& m : mounts_) {
-    if (lower.rfind(m.device, 0) == 0 && (lower.size() == m.device.size() || lower[m.device.size()] == '\\' || lower[m.device.size()] == '/')) {
-      rest = device_path.substr(m.device.size());
-      return &m;
+  std::shared_lock lock(mounts_mutex_);
+  for (const MountRef& m : mounts_) {
+    if (lower.rfind(m->device, 0) == 0 && (lower.size() == m->device.size() || lower[m->device.size()] == '\\' || lower[m->device.size()] == '/')) {
+      rest = device_path.substr(m->device.size());
+      return m;
     }
   }
   return nullptr;
@@ -236,7 +243,7 @@ const FileSystem::Mounted* FileSystem::MountOf(const std::string& device_path, s
 std::filesystem::path FileSystem::Resolve(const std::string& guest_path, bool* parent_exists) const {
   if (parent_exists) *parent_exists = false;
   std::string rest;
-  const Mounted* m = MountOf(Canonical(guest_path), rest);
+  const MountRef m = MountOf(Canonical(guest_path), rest);
   if (!m) return {};
   std::filesystem::path host = m->host;
   const std::vector<std::string> parts = Split(rest);
@@ -356,7 +363,7 @@ uint32_t FileSystem::OpenPath(Guest g, const std::string& guest, uint32_t access
     return status;
   };
   std::string rest;
-  const Mounted* mount = MountOf(Canonical(guest), rest);
+  const MountRef mount = MountOf(Canonical(guest), rest);
   if (mount && mount->null) {  // the device itself, nothing under it
     if (!rest.empty() && rest != "\\") return fail(kStatusObjectPathNotFound, kDoesNotExist);
     const uint32_t object = Objects().AllocateObject(16, true);
@@ -758,7 +765,8 @@ uint32_t FileSystem::SetInformation(Guest g, uint32_t handle, uint32_t io_status
       bool parent = false;
       const std::filesystem::path to = Resolve(target, &parent);
       std::string rest_from, rest_to;
-      if (!parent || MountOf(Canonical(target), rest_to) != file->mount) {
+      const MountRef target_mount = MountOf(Canonical(target), rest_to);
+      if (!parent || !target_mount || target_mount->device != file->mount->device) {
         status = kStatusObjectPathNotFound;
       } else if (file->mount->read_only) {
         status = kStatusAccessDenied;
@@ -1059,7 +1067,7 @@ uint32_t FileSystem::Win32FlushFileBuffers(uint32_t handle) { return Find(handle
 uint32_t FileSystem::Win32DeleteFile(Guest g, uint32_t name) {
   std::string rest;
   const std::string guest = CString(g, name);
-  const Mounted* mount = MountOf(Canonical(guest), rest);
+  const MountRef mount = MountOf(Canonical(guest), rest);
   const std::filesystem::path host = Resolve(guest);
   std::error_code error;
   if (!mount || mount->read_only || host.empty() || !std::filesystem::is_regular_file(host, error)) return 0;
@@ -1070,7 +1078,7 @@ uint32_t FileSystem::Win32DeleteFile(Guest g, uint32_t name) {
 uint32_t FileSystem::Win32CreateDirectory(Guest g, uint32_t name) {
   std::string rest;
   const std::string guest = CString(g, name);
-  const Mounted* mount = MountOf(Canonical(guest), rest);
+  const MountRef mount = MountOf(Canonical(guest), rest);
   bool parent = false;
   const std::filesystem::path host = Resolve(guest, &parent);
   std::error_code error;
@@ -1081,7 +1089,7 @@ uint32_t FileSystem::Win32CreateDirectory(Guest g, uint32_t name) {
 uint32_t FileSystem::Win32MoveFile(Guest g, uint32_t from, uint32_t to) {
   std::string rest;
   const std::string source = CString(g, from), target = CString(g, to);
-  const Mounted* mount = MountOf(Canonical(source), rest);
+  const MountRef mount = MountOf(Canonical(source), rest);
   bool parent = false;
   const std::filesystem::path from_host = Resolve(source), to_host = Resolve(target, &parent);
   std::error_code error;
@@ -1097,7 +1105,7 @@ uint32_t FileSystem::Win32MoveFile(Guest g, uint32_t from, uint32_t to) {
 uint32_t FileSystem::Win32CopyFile(Guest g, uint32_t from, uint32_t to, uint32_t fail_if_exists) {
   std::string rest;
   const std::string source = CString(g, from), target = CString(g, to);
-  const Mounted* mount = MountOf(Canonical(target), rest);
+  const MountRef mount = MountOf(Canonical(target), rest);
   bool parent = false;
   const std::filesystem::path from_host = Resolve(source), to_host = Resolve(target, &parent);
   std::error_code error;
@@ -1125,7 +1133,7 @@ uint32_t FileSystem::Win32GetFileAttributesEx(Guest g, uint32_t name, uint32_t i
 uint32_t FileSystem::Win32GetDiskFreeSpace(Guest g, uint32_t name, uint32_t free_to_caller, uint32_t total, uint32_t free) {
   std::string rest;
   const std::string guest = CString(g, name);
-  const Mounted* mount = MountOf(Canonical(guest), rest);
+  const MountRef mount = MountOf(Canonical(guest), rest);
   const std::filesystem::path host = Resolve(guest);
   std::error_code error;
   if (!mount || host.empty() || !std::filesystem::exists(host, error)) return 0;

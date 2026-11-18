@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "guest.h"
+#include "u32_map.h"
 
 namespace any360::sys {
 
@@ -189,6 +190,8 @@ class ObjectManager {
   // Frees a freed-on-close object no handle or reference keeps (an armed timer is cancelled first).
   void Release(uint32_t object);
   uint32_t AddHandle(uint32_t object, const std::string& name);
+  void HandleClosed(uint32_t handle, Entry& e);  // marks a handle's slot closed (under lifetime_mutex_)
+  bool HasOpenHandle(uint32_t object) const { return open_handles_.Contains(object); }
   Entry* Find(uint32_t handle);
   Entry* FindByName(const std::string& name);
   std::string NameOf(Guest g, uint32_t attributes) const;
@@ -196,7 +199,11 @@ class ObjectManager {
   bool IsSatisfiable(Guest g, uint32_t object, uint32_t thread) const;
 
   std::deque<Entry> entries_;  // a deque: an Entry* stays valid while others are added (under lifetime_mutex_)
-  std::unordered_map<uint32_t, int> references_;  // object -> Ob references
+  size_t first_free_ = 0;      // no closed slot below this index (AddHandle reuses the lowest)
+  // The bookkeeping of every object, in flat tables that allocate only when they grow (a title's create / close
+  // cycle touches no host heap once they reach their working size; under lifetime_mutex_).
+  U32Map open_handles_{256};  // object -> its open handles (Release and Closed look here, not through the table)
+  U32Map references_{64};     // object -> Ob references
   std::vector<uint32_t> timers_;  // armed timers (guest addresses)
   struct TimerApc {
     uint32_t thread, routine, context;
@@ -206,8 +213,9 @@ class ObjectManager {
   static constexpr uint32_t kHandleRange = 0x100000;  // 256K handles
   uint32_t handle_base_ = kHandleBase;
   ForeignHandles foreign_;
-  std::map<uint32_t, uint32_t> free_blocks_;          // address -> size, coalesced
-  std::unordered_map<uint32_t, uint32_t> freeable_;  // freed-on-close object -> its size
+  // The heap's freed blocks, (address, size) sorted by address and coalesced, in a vector kept at its capacity.
+  std::vector<std::pair<uint32_t, uint32_t>> free_blocks_;
+  U32Map freeable_{256};  // freed-on-close object -> its size
   std::recursive_mutex lifetime_mutex_;              // allocation, references, release, the handle table
   // The dispatcher's lock, as the kernel's: signal states, timers and their APCs change under it, and a wait takes or
   // tests its objects under it, so a release and a wait on two threads never lose a count. A wait sleeps on its

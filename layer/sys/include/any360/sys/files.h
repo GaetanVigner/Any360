@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <shared_mutex>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -129,13 +130,16 @@ class FileSystem {
     bool read_only;
     bool null = false;  // a raw device whose opens, reads and writes succeed and move nothing (MountNull)
   };
+  // A mount entry is shared, never changed once listed: an open file keeps the one it was opened on, so a Mount,
+  // a remount of the same device or an Unmount while it is open leaves it valid (the list itself is reordered).
+  using MountRef = std::shared_ptr<const Mounted>;
   // What an open handle keeps of its host file between calls (files.cpp).
   struct HostFile;
   struct Open {
     std::filesystem::path host;
     std::string guest;
     std::shared_ptr<HostFile> host_file;  // none for a raw device
-    const Mounted* mount = nullptr;
+    MountRef mount;
     bool directory = false, delete_on_close = false;
     // Opened without FILE_SYNCHRONOUS_IO_*: NtReadFile / NtWriteFile complete at once but answer STATUS_PENDING, as
     // the reference does, so kernel32's overlapped ReadFile takes its pending path (Crackdown's save loader reads
@@ -150,7 +154,8 @@ class FileSystem {
   Open* Find(uint32_t handle);
   // A transfer's answer to NtReadFile / NtWriteFile: STATUS_PENDING for a completed one on an asynchronous file.
   uint32_t Pending(uint32_t handle, uint32_t status);
-  const Mounted* MountOf(const std::string& device_path, std::string& rest) const;
+  MountRef MountOf(const std::string& device_path, std::string& rest) const;
+  void AddMount(const std::string& device, const std::filesystem::path& host, bool read_only, bool null);
   std::string Canonical(const std::string& guest_path) const;
   std::string PathOf(Guest g, uint32_t attributes) const;
   uint32_t DeviceControl(Guest g, uint32_t code, uint32_t output, uint32_t output_length, uint32_t& written);
@@ -191,7 +196,8 @@ class FileSystem {
   uint32_t OpenPath(Guest g, const std::string& guest, uint32_t access, uint32_t disposition, uint32_t options, uint32_t& handle,
                     uint32_t& action);
 
-  std::vector<Mounted> mounts_;
+  std::vector<MountRef> mounts_;       // longest device path first
+  mutable std::shared_mutex mounts_mutex_;  // the list: titles mount content on one thread while others open files
   std::map<std::string, std::string> links_;  // lower-case DOS name -> device path
   std::map<uint32_t, Open> open_;             // object -> open file
   // The table itself (a look-up, an insertion, a removal, a walk): titles open and close files on several threads
