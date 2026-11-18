@@ -890,6 +890,34 @@ ANY360_SYS_EXPORT(GetSystemTimeAsFileTime) {
   if (ctx.r3.u32) Guest{base}.Store64(ctx.r3.u32, SystemTime());
 }
 ANY360_SYS_EXPORT(lstrlenW) { ctx.r3.u64 = LstrlenW({base}, ctx.r3.u32); }
+
+// Step 12: xam.xex's information calls Xenia implements (info.h, xam.h, win32.h).
+ANY360_SYS_EXPORT(XGetAudioFlags) { ctx.r3.u64 = XGetAudioFlags(); }
+ANY360_SYS_EXPORT(XGetOverlappedExtendedError) {
+  ctx.r3.u64 = XGetOverlappedExtendedError({base}, ThreadOf(ctx, base), ctx.r3.u32);
+}
+ANY360_SYS_EXPORT(XamGetActiveDashAppInfo) { XamState().GetActiveDashAppInfo({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamSetActiveDashAppInfo) { XamState().SetActiveDashAppInfo({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamGetCachedTitleName) {
+  ctx.r3.u64 = XamState().GetCachedTitleName({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);
+}
+ANY360_SYS_EXPORT(XamGetDashBackstackData) { ctx.r3.u64 = XamState().GetDashBackstackData(); }
+ANY360_SYS_EXPORT(XamGetDashContext) { ctx.r3.u64 = XamState().DashContext(); }
+ANY360_SYS_EXPORT(XamGetLanguage) { ctx.r3.u64 = XamGetLanguage(); }
+ANY360_SYS_EXPORT(XamGetLanguageLocaleFallbackString) {
+  ctx.r3.u64 = XamState().LanguageLocaleFallbackString({base}, ctx.r3.u32);
+}
+ANY360_SYS_EXPORT(XamGetLanguageTypeface) { ctx.r3.u64 = XamGetLanguageTypeface({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamGetOnlineCountryFeatures) { ctx.r3.u64 = XamGetOnlineCountryFeatures(ctx.r3.u32); }
+// (xuid, language out, country out)
+ANY360_SYS_EXPORT(XamGetOnlineLanguageAndCountry) { XamGetOnlineLanguageAndCountry({base}, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamIsChildAccountSignedIn) { ctx.r3.u64 = 0; }  // the local profile has no parental controls
+ANY360_SYS_EXPORT(XamIsCurrentTitleDash) { ctx.r3.u64 = XamState().title().title_id == kDashboardTitleId; }
+ANY360_SYS_EXPORT(XamIsIptvEnabled) { ctx.r3.u64 = 0x80004005; }  // E_FAIL: no IPTV (the console's retail flag clear)
+ANY360_SYS_EXPORT(XamIsNuiUIActive) { ctx.r3.u64 = 0; }  // the system UI opens and closes at once, as XamIsUIActive
+ANY360_SYS_EXPORT(XamIsSystemExperienceTitleId) { ctx.r3.u64 = XamIsSystemExperienceTitleId(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamIsSystemTitleId) { ctx.r3.u64 = XamIsSystemTitleId(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamIsXbox1TitleId) { ctx.r3.u64 = XamIsXbox1TitleId(ctx.r3.u32); }
 ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
@@ -1669,6 +1697,25 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(QueryPerformanceFrequency),
     ANY360_SYS_ENTRY(GetSystemTimeAsFileTime),
     ANY360_SYS_ENTRY(lstrlenW),
+    ANY360_SYS_ENTRY(XGetAudioFlags),
+    ANY360_SYS_ENTRY(XGetOverlappedExtendedError),
+    ANY360_SYS_ENTRY(XamGetActiveDashAppInfo),
+    ANY360_SYS_ENTRY(XamSetActiveDashAppInfo),
+    ANY360_SYS_ENTRY(XamGetCachedTitleName),
+    ANY360_SYS_ENTRY(XamGetDashBackstackData),
+    ANY360_SYS_ENTRY(XamGetDashContext),
+    ANY360_SYS_ENTRY(XamGetLanguage),
+    ANY360_SYS_ENTRY(XamGetLanguageLocaleFallbackString),
+    ANY360_SYS_ENTRY(XamGetLanguageTypeface),
+    ANY360_SYS_ENTRY(XamGetOnlineCountryFeatures),
+    ANY360_SYS_ENTRY(XamGetOnlineLanguageAndCountry),
+    ANY360_SYS_ENTRY(XamIsChildAccountSignedIn),
+    ANY360_SYS_ENTRY(XamIsCurrentTitleDash),
+    ANY360_SYS_ENTRY(XamIsIptvEnabled),
+    ANY360_SYS_ENTRY(XamIsNuiUIActive),
+    ANY360_SYS_ENTRY(XamIsSystemExperienceTitleId),
+    ANY360_SYS_ENTRY(XamIsSystemTitleId),
+    ANY360_SYS_ENTRY(XamIsXbox1TitleId),
     ANY360_SYS_ENTRY(XeCryptAesKey),
     ANY360_SYS_ENTRY(XeCryptAesEcb),
     ANY360_SYS_ENTRY(XeCryptAesCbc),

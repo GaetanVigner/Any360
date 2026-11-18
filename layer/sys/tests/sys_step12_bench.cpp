@@ -23,6 +23,7 @@
 
 #include "any360/sys/alloc_meter.h"
 #include "any360/sys/crypt.h"
+#include "any360/sys/info.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/threading.h"
 #include "any360/sys/win32.h"
@@ -312,6 +313,27 @@ int main(int argc, char** argv) {
     const Measure host = Time(200000, [&] { g_sink = g_sink + uint32_t(std::wcslen(host_text.c_str())); }, false);
     PrintRow("lstrlenW (host: wcslen, own string)", length, ours, host);
   }
+  // The information calls (third batch): constants, table lookups and the XAM state they read or write.
+  PrintRow("XGetAudioFlags", 0, Time(200000, [&] { g_sink = g_sink + XGetAudioFlags(); }), Measure{});
+  PrintRow("XamGetLanguage", 0, Time(200000, [&] { g_sink = g_sink + XamGetLanguage(); }), Measure{});
+  PrintRow("XamGetOnlineCountryFeatures (US)", 0, Time(200000, [&] { g_sink = g_sink + XamGetOnlineCountryFeatures(103); }), Measure{});
+  PrintRow("XamGetOnlineCountryFeatures (unlisted)", 0, Time(200000, [&] { g_sink = g_sink + XamGetOnlineCountryFeatures(2); }), Measure{});
+  PrintRow("XamGetOnlineLanguageAndCountry", 0, Time(200000, [&] { XamGetOnlineLanguageAndCountry(g, kOut, kOut + 1); }), Measure{});
+  PrintRow("XamIsSystemTitleId", 0, Time(200000, [&] { g_sink = g_sink + XamIsSystemTitleId(g_sink | 0x4D530000); }), Measure{});
+  PrintRow("XamIsSystemExperienceTitleId", 0, Time(200000, [&] { g_sink = g_sink + XamIsSystemExperienceTitleId(g_sink | 0x58480000); }), Measure{});
+  PrintRow("XamIsXbox1TitleId", 0, Time(200000, [&] { g_sink = g_sink + XamIsXbox1TitleId(g_sink | 0x41430000); }), Measure{});
+  PrintRow("XamGetLanguageTypeface", 0, Time(200000, [&] { g_sink = g_sink + XamGetLanguageTypeface(g, 1, 0x100, kOut); }), Measure{});
+  for (uint32_t i = 0; i < 12; ++i) g.Store8(kText + i, uint8_t(i));
+  PrintRow("XamSetActiveDashAppInfo (12 B)", 0, Time(200000, [&] { XamState().SetActiveDashAppInfo(g, kText); }), Measure{});
+  PrintRow("XamGetActiveDashAppInfo (12 B)", 0, Time(200000, [&] { XamState().GetActiveDashAppInfo(g, kOut); }), Measure{});
+  XamState().title().title_name = u"Any360 benchmark title";
+  PrintRow("XamGetCachedTitleName (22 chars)", 0, Time(200000, [&] { g_sink = g_sink + XamState().GetCachedTitleName(g, 0x4D5308BC, kOut, kOut + 0x100); }), Measure{});
+  PrintRow("XGetOverlappedExtendedError", 0, Time(200000, [&] { g_sink = g_sink + XGetOverlappedExtendedError(g, kthread, kFeed); }), Measure{});
+  // The fallback names are laid out in the kernel heap at the first call (200 bytes, untimed), then each call is a lookup.
+  Objects().SetKernelHeap(0x80000, 0x8000);
+  Objects().SetGuest(g);
+  Objects().Reset();
+  PrintRow("XamGetLanguageLocaleFallbackString", 0, Time(200000, [&] { g_sink = g_sink + XamState().LanguageLocaleFallbackString(g, 2); }), Measure{});
   std::printf("sys_step12_bench: allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_totals.calls ? double(g_totals.bytes) / double(g_totals.calls) : 0.0,
               g_totals.calls ? double(g_totals.count) / double(g_totals.calls) : 0.0,

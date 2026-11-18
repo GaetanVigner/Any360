@@ -20,6 +20,7 @@
 #include "any360/sys/scheduler.h"
 #include "any360/sys/threading.h"
 #include "any360/sys/video.h"
+#include "any360/sys/config.h"
 #include "any360/sys/crypt.h"
 #include "any360/sys/rtl.h"
 #include "any360/sys/variables.h"
@@ -2952,6 +2953,89 @@ void CryptPathTests() {
   }
 }
 
+// Step 12's information calls (info.h, xam.h, win32.h), against Xenia's answers (xam_info.cc, xam_locale.cc,
+// title_id_utils.h: its static_asserts are among the cases).
+void XamInfoStep12Tests() {
+  Fresh();
+  XamState().Reset();
+  const uint32_t buf = kScratch + 0x400, len = kScratch + 0x3F0, ov = kScratch + 0x380, kthread = kScratch + 0x800;
+  auto text = [](uint32_t at) {
+    std::u16string out;
+    for (uint32_t i = 0; g.Load16(at + 2 * i); ++i) out += char16_t(g.Load16(at + 2 * i));
+    return out;
+  };
+  CHECK(XGetAudioFlags() == 0x10001);
+  // The language: the console's when it is one of the 18, else the game region's (every region here: English).
+  const ConsoleSettings saved = Console();
+  CHECK(XamGetLanguage() == 1);
+  Console().language = 17;
+  CHECK(XamGetLanguage() == 17);
+  Console().language = 18;
+  CHECK(XamGetLanguage() == 1);
+  // The profile's language and country bytes are the console's; a null out is skipped.
+  Console().language = 3, Console().country = 24;
+  std::memset(g.host(buf), 0xEE, 2);
+  XamGetOnlineLanguageAndCountry(g, buf, buf + 1);
+  CHECK(g.Load8(buf) == 3 && g.Load8(buf + 1) == 24);
+  XamGetOnlineLanguageAndCountry(g, 0, 0);
+  Console() = saved;
+  // Country features: listed ones (US 12, Japan 8, Argentina 4, UAE 0), 0x80000000 otherwise.
+  CHECK(XamGetOnlineCountryFeatures(103) == 12 && XamGetOnlineCountryFeatures(53) == 8);
+  CHECK(XamGetOnlineCountryFeatures(4) == 4 && XamGetOnlineCountryFeatures(1) == 0);
+  CHECK(XamGetOnlineCountryFeatures(2) == 0x80000000 && XamGetOnlineCountryFeatures(0) == 0x80000000);
+  // Title-id classes (Xenia's static_asserts, and each branch).
+  CHECK(XamIsSystemTitleId(kDashboardTitleId) && !XamIsSystemTitleId(0x4D5308BC) && !XamIsSystemTitleId(0x5841089A));
+  CHECK(XamIsSystemTitleId(0) && XamIsSystemTitleId(0x584E07D1) && XamIsSystemTitleId(0x5841FFFE) == false);
+  CHECK(XamIsSystemTitleId(0xFFFE0000) && !XamIsSystemTitleId(0x58410000 | 0x1234));
+  CHECK(XamIsXbox1TitleId(0x41430006) && !XamIsXbox1TitleId(0x4D5308BC) && XamIsXbox1TitleId(kDashboardTitleId));
+  CHECK(!XamIsXbox1TitleId(0xFF000001));
+  CHECK(XamIsSystemExperienceTitleId(0x58480001) && XamIsSystemExperienceTitleId(0x584A0001));
+  CHECK(XamIsSystemExperienceTitleId(0x584E07D1) && XamIsSystemExperienceTitleId(0x584E07D2));
+  CHECK(!XamIsSystemExperienceTitleId(0x584E07D3) && !XamIsSystemExperienceTitleId(0x4D5308BC));
+  // Typefaces.
+  CHECK(XamGetLanguageTypeface(g, 17, 0x100, buf) == 0 && text(buf) == u"file://media:/XenonSCLatin.xtt");
+  CHECK(XamGetLanguageTypeface(g, 8, 0x100, buf) == 0 && text(buf) == u"file://media:/XenonCLatin.xtt");
+  CHECK(XamGetLanguageTypeface(g, 1, 0x100, buf) == 0 && text(buf) == u"file://media:/XenonJKLatin.xtt");
+  // Locale fallbacks: one guest copy, made once; empty for English, none past the 18 languages.
+  const uint32_t japanese = XamState().LanguageLocaleFallbackString(g, 2);
+  CHECK(japanese && text(japanese) == u"ja-JP" && XamState().LanguageLocaleFallbackString(g, 2) == japanese);
+  CHECK(text(XamState().LanguageLocaleFallbackString(g, 17)) == u"zh-CHS");
+  CHECK(text(XamState().LanguageLocaleFallbackString(g, 10)) == u"zh-CHS");
+  CHECK(text(XamState().LanguageLocaleFallbackString(g, 16)) == u"nl-NL");
+  CHECK(XamState().LanguageLocaleFallbackString(g, 1) && text(XamState().LanguageLocaleFallbackString(g, 1)).empty());
+  CHECK(XamState().LanguageLocaleFallbackString(g, 18) == 0);
+  // The dashboard's application info: zero at first, the last set, cleared by a null set; a null get writes nothing.
+  std::memset(g.host(buf), 0xEE, 12);
+  XamState().GetActiveDashAppInfo(g, buf);
+  CHECK(std::all_of(g.host(buf), g.host(buf) + 12, [](uint8_t b) { return b == 0; }));
+  for (uint32_t i = 0; i < 12; ++i) g.Store8(buf + i, uint8_t(i + 1));
+  XamState().SetActiveDashAppInfo(g, buf);
+  std::memset(g.host(buf + 0x20), 0, 12);
+  XamState().GetActiveDashAppInfo(g, buf + 0x20);
+  CHECK(std::memcmp(g.host(buf), g.host(buf + 0x20), 12) == 0);
+  XamState().GetActiveDashAppInfo(g, 0);
+  XamState().SetActiveDashAppInfo(g, 0);
+  XamState().GetActiveDashAppInfo(g, buf + 0x20);
+  CHECK(std::all_of(g.host(buf + 0x20), g.host(buf + 0x20) + 12, [](uint8_t b) { return b == 0; }));
+  CHECK(XamState().DashContext() == 0 && XamState().GetDashBackstackData() == 0);
+  // The cached title name: the title's for any id, length with the terminator; id 0 refused with an empty string.
+  XamState().title().title_name = u"Any360";
+  std::memset(g.host(buf), 0xEE, 32);
+  CHECK(XamState().GetCachedTitleName(g, 0x4D5308BC, buf, len) == 0 && text(buf) == u"Any360" && g.Load32(len) == 7);
+  CHECK(XamState().GetCachedTitleName(g, 0x12345678, buf, len) == 0 && text(buf) == u"Any360");
+  CHECK(XamState().GetCachedTitleName(g, 0, buf, len) == kErrorInvalidParameter && g.Load16(buf) == 0 && g.Load32(len) == 1);
+  // The overlapped extended error; the thread's last error without one.
+  std::memset(g.host(kthread), 0, 0x200);
+  SetWin32LastError(g, kthread, 0x57);
+  CHECK(XGetOverlappedExtendedError(g, kthread, 0) == 0x57);
+  g.Store32(ov, kErrorIoPending);
+  g.Store32(ov + 0x18, 0x1234);
+  CHECK(XGetOverlappedExtendedError(g, kthread, ov) == 0x3E4);
+  g.Store32(ov, 0);
+  CHECK(XGetOverlappedExtendedError(g, kthread, ov) == 0x1234);
+  XamState().Reset();
+}
+
 // Step 12's Win32 forms (win32.h): what is Win32's own over the kernel calls they use (the last error in the KTHREAD,
 // millisecond timeouts, WaitForSingleObjectEx's documented results, SleepEx's, lstrlenW, the tick count).
 void Win32Step12Tests() {
@@ -2993,6 +3077,7 @@ void Win32Step12Tests() {
 
 int main() {
   CryptPathTests();
+  XamInfoStep12Tests();
   Win32Step12Tests();
   InputQueueTests();
   InputScriptTests();

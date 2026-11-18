@@ -9,6 +9,7 @@
 #include <random>
 
 #include "any360/sys/files.h"
+#include "any360/sys/info.h"
 #include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
@@ -61,6 +62,9 @@ void Xam::Reset() {
   listeners_.clear();
   enumerators_.clear();
   online_schema_ = 0;
+  std::memset(dash_app_info_, 0, sizeof dash_app_info_);
+  dash_context_ = 0;
+  language_fallback_ = 0;
   Objects().AddCloseHook([](uint32_t object) { XamState().OnClose(object); });
   system_module_ = 0;
   settings_.clear();
@@ -188,6 +192,49 @@ uint32_t Xam::GetOnlineSchema(Guest g) {
     online_schema_ = at;
   }
   return online_schema_;
+}
+
+void Xam::GetActiveDashAppInfo(Guest g, uint32_t info) const {
+  if (info) std::memcpy(g.host(info), dash_app_info_, sizeof dash_app_info_);
+}
+
+void Xam::SetActiveDashAppInfo(Guest g, uint32_t info) {
+  if (info) {
+    std::memcpy(dash_app_info_, g.host(info), sizeof dash_app_info_);
+  } else {
+    std::memset(dash_app_info_, 0, sizeof dash_app_info_);
+  }
+}
+
+uint32_t Xam::GetCachedTitleName(Guest g, uint32_t title_id, uint32_t buffer, uint32_t length_ptr) const {
+  const std::u16string empty;
+  const std::u16string& name = title_id ? title_.title_name : empty;
+  for (size_t i = 0; i < name.size(); ++i) g.Store16(buffer + 2 * uint32_t(i), uint16_t(name[i]));
+  g.Store16(buffer + 2 * uint32_t(name.size()), 0);
+  g.Store32(length_ptr, uint32_t(name.size()) + 1);
+  return title_id ? 0 : kErrorInvalidParameter;
+}
+
+uint32_t Xam::LanguageLocaleFallbackString(Guest g, uint32_t language) {
+  constexpr uint32_t kLanguages = 18;
+  if (language >= kLanguages) return 0;
+  if (!language_fallback_) {
+    uint32_t bytes = 0;
+    for (uint32_t i = 0; i < kLanguages; ++i) bytes += 2 * uint32_t(std::char_traits<char16_t>::length(LanguageLocaleFallback(i)) + 1);
+    const uint32_t at = Objects().AllocateObject(bytes);
+    if (!at) return 0;
+    uint32_t next = at;
+    for (uint32_t i = 0; i < kLanguages; ++i) {
+      language_fallback_at_[i] = next;
+      const char16_t* name = LanguageLocaleFallback(i);
+      do {
+        g.Store16(next, uint16_t(*name));
+        next += 2;
+      } while (*name++);
+    }
+    language_fallback_ = at;
+  }
+  return language_fallback_at_[language];
 }
 
 uint32_t Xam::UserGetDeviceContext(Guest g, uint32_t user, uint32_t context_out) {

@@ -422,6 +422,14 @@ every case, a shortcut its source marks). `lstrlenW` counts big-endian UTF-16 ch
 inline look at the first eight. `sys_object_tests` checks the Win32 part; the kernel calls under it keep their own
 tests.
 
+Third batch, xam.xex's information calls (19, `info.h`, `xam.h`, `win32.h`): the language (`XamGetLanguage`, with
+Xenia's region rule) and its locale fallback names and typefaces, the online language, country and country features,
+the title-id classes (system, system experience, original Xbox, the dashboard), the cached title name (the host's
+`TitleSettings::title_name`), the dashboard's application info, context and backstack, the audio flags, an
+XOVERLAPPED's extended error, and the child-account, IPTV and NUI answers. Each reuses what any360::sys already has
+(the console's settings, the game region, the last error, the kernel heap); `sys_object_tests` checks every value and
+byte against Xenia's answers (docs/perf/archive/2026-11-18-sys-step12-info/).
+
 Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
 host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
 SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),

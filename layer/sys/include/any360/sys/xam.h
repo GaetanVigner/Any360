@@ -53,6 +53,7 @@ struct TitleSettings {
   uint32_t license_mask = 0;                    // XContentGetLicenseMask: no content license granted, as the reference answers
   uint64_t machine_id = 0xFA00000000000001ull;  // XNetLogonGetMachineID: the console's id
   uint32_t title_id = 0;                        // XamGetCurrentTitleId: the title's id from its XEX (0 until the host sets it)
+  std::u16string title_name;                    // XamGetCachedTitleName: the title's name (empty until the host sets it)
 };
 
 class Xam {
@@ -132,6 +133,21 @@ class Xam {
   // Gamer pictures: the local profile's tile key parses to placeholder ids; a tile reads as a plain image.
   uint32_t ParseGamerTileKey(Guest g, uint32_t key, uint32_t out1, uint32_t out2, uint32_t out3);
   uint32_t ReadTileToTexture(Guest g, uint64_t tile_id, uint32_t buffer, uint32_t stride, uint32_t height, uint32_t overlapped);
+  // Step 12, the information calls with XAM state (Xenia's xam_info.cc). The active dashboard application's 12-byte
+  // info: the last one set (zero at first, cleared by a null set); a null get writes nothing.
+  void GetActiveDashAppInfo(Guest g, uint32_t info) const;
+  void SetActiveDashAppInfo(Guest g, uint32_t info);
+  // XamGetDashContext: the dashboard context (0: none set).
+  uint32_t DashContext() const { return dash_context_; }
+  // XamGetDashBackstackData: no dashboard ran before the title, so no backstack nodes: nothing written, success.
+  uint32_t GetDashBackstackData() const { return 0; }
+  // XamGetCachedTitleName: the title's name for any id but 0 (one profile, one title known), as big-endian UTF-16
+  // with its terminator, its length with the terminator stored; for id 0 an empty string, length 1 and
+  // ERROR_INVALID_PARAMETER. The whole name is written, as Xenia does: the length is not read first.
+  uint32_t GetCachedTitleName(Guest g, uint32_t title_id, uint32_t buffer, uint32_t length_ptr) const;
+  // XamGetLanguageLocaleFallbackString: the guest address of the language's fallback locale name (info.h:
+  // LanguageLocaleFallback), the 18 laid out once in the kernel heap; 0 for a language past Simplified Chinese.
+  uint32_t LanguageLocaleFallbackString(Guest g, uint32_t language);
   // The title id of the XEX header's execution info (0 without a header).
   uint32_t TitleId(Guest g) const;
   // Tasks: the callback runs on a new thread with the message as its context.
@@ -283,6 +299,10 @@ class Xam {
   std::filesystem::path ContentPath(Guest g, uint32_t content_data) const;
   std::filesystem::path ContentHeaderPath(const std::filesystem::path& package) const;
   uint32_t online_schema_ = 0;
+  uint8_t dash_app_info_[12] = {};
+  uint32_t dash_context_ = 0;
+  uint32_t language_fallback_ = 0;  // the 18 fallback locale names in the kernel heap, laid out at first use
+  uint32_t language_fallback_at_[18] = {};
   // The packages of a type as enumerator items of `item_size` bytes starting with their XCONTENT_DATA, sorted by name.
   std::vector<std::vector<uint8_t>> ContentItems(uint32_t device_id, uint32_t content_type, uint32_t item_size) const;
 

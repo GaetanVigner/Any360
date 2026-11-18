@@ -6,6 +6,7 @@
 
 #include "any360/sys/config.h"
 #include "any360/sys/variables.h"
+#include "any360/sys/xam.h"
 
 namespace any360::sys {
 
@@ -64,5 +65,12 @@ uint32_t LstrlenW(Guest g, uint32_t string) {
 }
 
 uint32_t TickCount() { return UptimeMilliseconds(); }
+
+uint32_t XGetOverlappedExtendedError(Guest g, uint32_t kthread, uint32_t overlapped) {
+  if (!overlapped) return Win32LastError(g, kthread);
+  constexpr uint32_t kErrorIoIncomplete = 0x3E4;
+  if (g.Load32(overlapped) == kErrorIoPending) return kErrorIoIncomplete;
+  return g.Load32(overlapped + 0x18);
+}
 
 }  // namespace any360::sys

@@ -42,5 +42,8 @@ uint32_t LstrlenW(Guest g, uint32_t string);
 
 // GetTickCount: milliseconds since the layer started, the count KeTimeStampBundle carries.
 uint32_t TickCount();
+// XGetOverlappedExtendedError: an XOVERLAPPED's extended error (+0x18); ERROR_IO_INCOMPLETE while its result is
+// still ERROR_IO_PENDING; with no XOVERLAPPED, the thread's last error.
+uint32_t XGetOverlappedExtendedError(Guest g, uint32_t kthread, uint32_t overlapped);
 
 }  // namespace any360::sys

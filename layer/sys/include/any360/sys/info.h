@@ -43,4 +43,33 @@ uint32_t XamBuildResourceLocator(Guest g, uint64_t module, const std::u16string&
                                  uint32_t buffer, uint32_t count);
 uint32_t XamBuildSystemResourceLocator(Guest g, const char16_t* container, uint32_t file, uint32_t buffer, uint32_t count);
 
+// Step 12, xam.xex's information calls Xenia implements (its xam_info.cc, xam_locale.cc and title_id_utils.h are the
+// source of each answer).
+// XGetAudioFlags: the console's audio flags; no audio setting is kept, so XAM's default (0x10001, stereo with Dolby
+// Digital allowed) as Xenia answers it on a VGA pack.
+uint32_t XGetAudioFlags();
+// XamGetLanguage: the extended language (up to Simplified Chinese, 17): the console's language when it is one,
+// else the game region's (Japanese for NTSC-J Japan, Simplified Chinese for NTSC-J China, Korean for the other
+// NTSC-J regions, English everywhere else).
+uint32_t XamGetLanguage();
+// XamGetOnlineCountryFeatures: XAM's feature bits of an online country; 0x80000000 for one it does not list.
+uint32_t XamGetOnlineCountryFeatures(uint32_t online_country);
+// The title-id classes: system titles (id 0, the 0xFFFE system range outside the X publisher, every X publisher
+// title except XBLA games), system experiences (the XH / XJ apps, Xbox Live's 2001 and 2002 titles), original Xbox
+// titles (the 0xFFFE range, ids under 0x7D0 outside the 0xFF publishers), and the dashboard (0xFFFE07D1).
+constexpr uint32_t kDashboardTitleId = 0xFFFE07D1;
+bool XamIsSystemTitleId(uint32_t title_id);
+bool XamIsSystemExperienceTitleId(uint32_t title_id);
+bool XamIsXbox1TitleId(uint32_t title_id);
+// XamGetLanguageTypeface: the locator of the font for a language (XenonSCLatin for Simplified Chinese, XenonCLatin
+// for Traditional, XenonJKLatin for every other), as big-endian UTF-16 with its terminator, whatever the buffer size
+// (as Xenia writes it). STATUS_SUCCESS.
+uint32_t XamGetLanguageTypeface(Guest g, uint32_t language, uint32_t buffer_size, uint32_t buffer);
+// The locale name a language falls back to ("ja-JP" for Japanese ... "zh-CHS" for Simplified Chinese; empty for
+// English and an unknown language), as XamGetLanguageLocaleFallbackString lays it in guest memory.
+const char16_t* LanguageLocaleFallback(uint32_t language);
+// XamGetOnlineLanguageAndCountry (xuid, language byte out, country byte out): the profile's language and country,
+// which are the console's here (one local profile); a null out is skipped.
+void XamGetOnlineLanguageAndCountry(Guest g, uint32_t language, uint32_t country);
+
 }  // namespace any360::sys

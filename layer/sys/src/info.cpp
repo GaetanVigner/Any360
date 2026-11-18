@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <iterator>
+#include <utility>
 
 #include "any360/sys/config.h"
 
@@ -243,6 +245,80 @@ uint32_t XamBuildResourceLocator(Guest g, uint64_t module, uint32_t container, u
 
 uint32_t XamBuildSystemResourceLocator(Guest g, const char16_t* container, uint32_t file, uint32_t buffer, uint32_t count) {
   return XamBuildResourceLocator(g, 0, container, GuestWide(g, file), buffer, count);
+}
+
+// --- step 12: xam.xex's information calls (Xenia's xam_info.cc, xam_locale.cc, title_id_utils.h) ---
+
+uint32_t XGetAudioFlags() { return 0x10001; }
+
+uint32_t XamGetLanguage() {
+  constexpr uint32_t kMaxLanguages = 18;
+  if (Console().language < kMaxLanguages) return Console().language;
+  const uint32_t region = XGetGameRegion();
+  if ((region & 0xFF00) != 0x100) return 1;  // English
+  return region == 0x101 ? 2 : region == 0x102 ? 17 : 7;  // Japanese, Simplified Chinese, Korean
+}
+
+namespace {
+
+// {online country, features}: Xenia's kOnlineCountryFeatures (xbox.h).
+constexpr std::pair<uint8_t, uint8_t> kOnlineCountryFeatures[] = {
+    {4, 4},   {6, 12},  {5, 12},  {8, 12},  {13, 4},  {16, 12}, {19, 0},  {21, 0},  {23, 0},  {25, 12}, {30, 0},  {32, 12},
+    {34, 12}, {24, 12}, {37, 0},  {39, 4},  {42, 0},  {46, 0},  {44, 12}, {45, 0},  {50, 12}, {53, 8},  {56, 4},  {72, 0},
+    {71, 12}, {74, 12}, {76, 12}, {75, 12}, {82, 4},  {84, 4},  {88, 0},  {89, 0},  {91, 4},  {93, 0},  {109, 0}, {31, 12},
+    {90, 12}, {18, 12}, {101, 4}, {97, 0},  {99, 4},  {35, 12}, {1, 0},   {103, 12}, {107, 0},
+};
+
+bool IsXPublisher(uint32_t title_id) { return (title_id >> 24) == 'X'; }
+bool IsSystemRange(uint32_t title_id) { return (title_id >> 16) == 0xFFFE; }
+
+}  // namespace
+
+uint32_t XamGetOnlineCountryFeatures(uint32_t online_country) {
+  for (const auto& [country, features] : kOnlineCountryFeatures) {
+    if (country == uint8_t(online_country)) return features;
+  }
+  return 0x80000000;
+}
+
+bool XamIsSystemTitleId(uint32_t title_id) {
+  if (!title_id) return true;
+  const bool xbla = IsXPublisher(title_id) && ((title_id >> 16) & 0xFF) == 'A';
+  return IsXPublisher(title_id) && !xbla ? true : IsSystemRange(title_id);
+}
+
+bool XamIsSystemExperienceTitleId(uint32_t title_id) {
+  const uint32_t second = (title_id >> 16) & 0xFF;
+  return (IsXPublisher(title_id) && (second == 'H' || second == 'J')) || title_id == 0x584E07D1 || title_id == 0x584E07D2;
+}
+
+bool XamIsXbox1TitleId(uint32_t title_id) {
+  if (IsSystemRange(title_id)) return true;
+  if ((title_id >> 24) == 0xFF) return false;
+  return (title_id & 0x7FFF) < 0x7D0;
+}
+
+uint32_t XamGetLanguageTypeface(Guest g, uint32_t language, uint32_t, uint32_t buffer) {
+  const char16_t* path = language == 17  ? u"file://media:/XenonSCLatin.xtt"
+                         : language == 8 ? u"file://media:/XenonCLatin.xtt"
+                                         : u"file://media:/XenonJKLatin.xtt";
+  uint32_t i = 0;
+  do {
+    g.Store16(buffer + 2 * i, uint16_t(path[i]));
+  } while (path[i++]);
+  return 0;
+}
+
+void XamGetOnlineLanguageAndCountry(Guest g, uint32_t language, uint32_t country) {
+  if (country) g.Store8(country, Console().country);
+  if (language) g.Store8(language, uint8_t(Console().language));
+}
+
+const char16_t* LanguageLocaleFallback(uint32_t language) {
+  static constexpr const char16_t* kFallback[] = {u"",      u"",      u"ja-JP", u"de-DE", u"fr-FR",  u"es-ES",
+                                                  u"it-IT", u"ko-KR", u"zh-TW", u"pt-BR", u"zh-CHS", u"pl-PL",
+                                                  u"ru-RU", u"sv-SE", u"tr-TR", u"nb-NO", u"nl-NL",  u"zh-CHS"};
+  return language < std::size(kFallback) ? kFallback[language] : u"";
 }
 
 }  // namespace any360::sys
