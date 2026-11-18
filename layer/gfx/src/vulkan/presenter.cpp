@@ -189,7 +189,7 @@ bool Presenter::Resize(uint32_t width, uint32_t height) {
 
   VkSwapchainCreateInfoKHR info{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
   info.surface = device_.surface();
-  info.minImageCount = std::max(caps.minImageCount, vsync_ ? 2u : 3u);
+  info.minImageCount = std::max(caps.minImageCount, 3u);  // the renderer's thread does not wait for each present
   if (caps.maxImageCount) info.minImageCount = std::min(info.minImageCount, caps.maxImageCount);
   info.imageFormat = chosen.format;
   info.imageColorSpace = chosen.colorSpace;
@@ -199,26 +199,24 @@ bool Presenter::Resize(uint32_t width, uint32_t height) {
   info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
   info.preTransform = caps.currentTransform;
   info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-  info.presentMode = VK_PRESENT_MODE_FIFO_KHR;  // always available
-  if (!vsync_) {
+  info.presentMode = VK_PRESENT_MODE_FIFO_KHR;  // always available (see PreferPresentMode)
+  if (wanted_ != VK_PRESENT_MODE_FIFO_KHR) {
     uint32_t mode_count = 0;
     f.vkGetPhysicalDeviceSurfacePresentModesKHR(device_.physical(), device_.surface(), &mode_count, nullptr);
     std::vector<VkPresentModeKHR> modes(mode_count);
     f.vkGetPhysicalDeviceSurfacePresentModesKHR(device_.physical(), device_.surface(), &mode_count, modes.data());
-    for (VkPresentModeKHR preferred : {VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR}) {
-      if (std::find(modes.begin(), modes.end(), preferred) != modes.end()) {
-        info.presentMode = preferred;
-        break;
-      }
-    }
+    info.presentMode = ChoosePresentMode(wanted_, modes);
   }
   info.clipped = VK_TRUE;
   info.oldSwapchain = swapchain_;
   VkSwapchainKHR next = VK_NULL_HANDLE;
-  if (f.vkCreateSwapchainKHR(d, &info, nullptr, &next) != VK_SUCCESS) return Fail("vkCreateSwapchainKHR failed");
+  if (const VkResult made = f.vkCreateSwapchainKHR(d, &info, nullptr, &next); made != VK_SUCCESS) {
+    return Fail("vkCreateSwapchainKHR failed", made);
+  }
   DestroySwapchain();
   swapchain_ = next;
   format_ = chosen.format;
+  mode_ = info.presentMode;
   f.vkGetSwapchainImagesKHR(d, swapchain_, &count, nullptr);
   images_.resize(count);
   f.vkGetSwapchainImagesKHR(d, swapchain_, &count, images_.data());
@@ -263,7 +261,7 @@ bool Presenter::PresentWith(const uint32_t* rgba, const BlitFn* blit_source, uin
   uint32_t index = 0;
   const VkResult acquired = f.vkAcquireNextImageKHR(d, swapchain_, UINT64_MAX, acquired_[slot], VK_NULL_HANDLE, &index);
   if (acquired == VK_ERROR_OUT_OF_DATE_KHR) return Fail("swapchain out of date (resize)");
-  if (acquired != VK_SUCCESS && acquired != VK_SUBOPTIMAL_KHR) return Fail("vkAcquireNextImageKHR failed");
+  if (acquired != VK_SUCCESS && acquired != VK_SUBOPTIMAL_KHR) return Fail("vkAcquireNextImageKHR failed", acquired);
   f.vkResetFences(d, 1, &fences_[slot]);
 
   f.vkResetCommandBuffer(cb, 0);
@@ -324,7 +322,9 @@ bool Presenter::PresentWith(const uint32_t* rgba, const BlitFn* blit_source, uin
   submit.signalSemaphoreCount = 1;
   submit.pSignalSemaphores = &rendered_[index];
   std::unique_lock queue_lock(device_.queue_mutex());  // the submit and the present, as one use of the queue
-  if (f.vkQueueSubmit(device_.queue(), 1, &submit, fences_[slot]) != VK_SUCCESS) return Fail("vkQueueSubmit failed");
+  if (const VkResult submitted = f.vkQueueSubmit(device_.queue(), 1, &submit, fences_[slot]); submitted != VK_SUCCESS) {
+    return Fail("vkQueueSubmit failed", submitted);
+  }
   slot_ = (slot + 1) % kFrames;
   VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
   present.waitSemaphoreCount = 1;
@@ -335,10 +335,21 @@ bool Presenter::PresentWith(const uint32_t* rgba, const BlitFn* blit_source, uin
   const VkResult presented = f.vkQueuePresentKHR(device_.queue(), &present);
   queue_lock.unlock();
   if (presented != VK_SUCCESS && presented != VK_SUBOPTIMAL_KHR) {
-    return presented == VK_ERROR_OUT_OF_DATE_KHR ? Fail("swapchain out of date (resize)") : Fail("vkQueuePresentKHR failed");
+    return presented == VK_ERROR_OUT_OF_DATE_KHR ? Fail("swapchain out of date (resize)")
+                                                 : Fail("vkQueuePresentKHR failed", presented);
   }
   ++presented_;
   return true;
+}
+
+std::string Presenter::Describe() const {
+  if (!swapchain_) return extent_.width && extent_.height ? "no swapchain: " + error_ : "no swapchain (window minimized)";
+  const char* mode = mode_ == VK_PRESENT_MODE_MAILBOX_KHR     ? "mailbox"
+                     : mode_ == VK_PRESENT_MODE_IMMEDIATE_KHR ? "immediate"
+                     : mode_ == VK_PRESENT_MODE_FIFO_KHR      ? "fifo"
+                                                              : "other";
+  return std::to_string(extent_.width) + "x" + std::to_string(extent_.height) + ", format " +
+         std::to_string(int(format_)) + ", " + mode + ", " + std::to_string(images_.size()) + " images";
 }
 
 }  // namespace any360::gfx::vk

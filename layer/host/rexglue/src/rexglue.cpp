@@ -299,13 +299,29 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   PresentingRenderer(gfx::vk::Device& device, uint8_t* physical, Window window, rex::ui::Window* title,
                      std::function<void(const std::string&)> log, double stats_seconds, uint32_t resolution_scale)
       : VulkanRenderer(device, physical, kPhysicalBytes, resolution_scale), log_(std::move(log)), stats_seconds_(stats_seconds),
-        presenter_(device), window_(window), title_(title) {}
+        presenter_(device), window_(window), title_(title) {
+    // ANY360_PRESENT_MODE=mailbox|immediate takes that present mode when the surface has it (FIFO otherwise: see
+    // Presenter::PreferPresentMode).
+    if (const char* mode = std::getenv("ANY360_PRESENT_MODE")) {
+      const std::string m = mode;
+      if (m == "fifo") presenter_.PreferPresentMode(VK_PRESENT_MODE_FIFO_KHR);
+      if (m == "mailbox") presenter_.PreferPresentMode(VK_PRESENT_MODE_MAILBOX_KHR);
+      if (m == "immediate") presenter_.PreferPresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR);
+    }
+  }
 
   bool Resize() {
     const auto [w, h] = Size();
     if (!w || !h) return true;  // minimised: keep the swapchain
     width_ = w, height_ = h;
-    return presenter_.Resize(width_, height_);
+    const bool made = presenter_.Resize(width_, height_);
+    if (!made) {
+      PresentFailed("swapchain");
+    } else if (log_) {
+      log_("Any360: swapchain " + presenter_.Describe() + " for a " + std::to_string(w) + "x" + std::to_string(h) +
+           " window");
+    }
+    return made;
   }
 
   void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* registers) override {
@@ -331,7 +347,10 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
                                                             VkOffset3D b) { RecordFrameBlit(cb, target, a, b); },
                                                      f.width, f.height)
                                 : presenter_.Present(f.pixels.data(), f.width, f.height);
-    if (!shown) Resize();  // out of date: the next frame goes to a new swapchain
+    if (!shown) {  // out of date: the next frame goes to a new swapchain
+      PresentFailed("present");
+      Resize();
+    }
     Screenshot();
     Report();
   }
@@ -379,6 +398,17 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   }
   std::shared_ptr<std::atomic<bool>> owned_ = std::make_shared<std::atomic<bool>>(false);
   bool take_asked_ = false;
+
+  // A frame the window did not get (its swapchain not made, or the present refused): the first ones logged with the
+  // presenter's reason, all counted in the report (a window that stays black says why).
+  void PresentFailed(const char* step) {
+    ++present_failures_;
+    if (log_ && present_failures_ <= 5) {
+      log_(std::string("Any360: the window did not get a frame (") + step + "): " + presenter_.error() +
+           (present_failures_ == 5 ? "; the next failures are only counted" : ""));
+    }
+  }
+  uint64_t present_failures_ = 0, last_present_failures_ = 0, last_presented_ = 0;
 
   // The presented frame as a PNG when the trigger file appears (looked for every 15 frames). A burst: when
   // <path>.burst appears, the next frames it names (900 if it is empty) at half size, as raw PPM files in
@@ -572,19 +602,23 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     if (!gfx::Diagnosing()) {
       const double fps = n / seconds, frame_ms = 1e3 / fps;
       const uint64_t watch_writes = g_watch_writes.load(), watch_bytes = g_watch_bytes.load();
-      char off[1280];
+      char off[1536];
       std::snprintf(off, sizeof(off),
                     "Any360: %.1f FPS with the diagnostics off (%.1f with them, the period before: %+.0f%%); %s; byte "
                     "swapping %.2f MB a frame, ~%.2f ms over plain copies: without it ~%.0f FPS (the command processor's "
                     "thread bound); slowest frame %.1f ms, %u over 16.7 ms, %u over 50 ms (%s); %.1f watched writes a frame (%.2f MB "
-                    "invalidated); %.0f MB private, %zu textures, %zu targets, %zu resolves kept, %zu pipelines",
+                    "invalidated); %.0f MB private, %zu textures, %zu targets, %zu resolves kept, %zu pipelines; "
+                    "%llu frames presented, %llu not",
                     fps, last_on_fps_, last_on_fps_ > 0 ? 100.0 * (fps / last_on_fps_ - 1.0) : 0.0,
                     TakeFrameTimes().c_str(), swap_bytes / 1e6, swap_ms,
                     1e3 / std::max(0.1, frame_ms - swap_ms), worst_ms_, slow_frames_, very_slow_frames_, SlowestFrame().c_str(),
                     double(watch_writes - last_watch_writes_) / n, double(watch_bytes - last_watch_bytes_) / n / 1e6,
                     double(PrivateBytes()) / 1e6, texture_cache() ? texture_cache()->texture_count() : size_t(0),
-                    surface_count(), resolved_count(), pipeline_count());
+                    surface_count(), resolved_count(), pipeline_count(),
+                    (unsigned long long)(presenter_.presented() - last_presented_),
+                    (unsigned long long)(present_failures_ - last_present_failures_));
       log_(off);
+      last_presented_ = presenter_.presented(), last_present_failures_ = present_failures_;
       last_watch_writes_ = watch_writes, last_watch_bytes_ = watch_bytes;
       // What accumulated meanwhile is not reported: the next period starts clean.
       if (cp_) {
@@ -1171,6 +1205,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
     error = "Vulkan: " + binding->device.error();
     return false;
   }
+  if (options.log) options.log(std::string("Any360: Vulkan device ") + binding->device.properties().deviceName);
 
   // The renderer over the guest's physical memory, the command processor in front of it.
   uint8_t* physical = memory->TranslatePhysical<uint8_t*>(0);

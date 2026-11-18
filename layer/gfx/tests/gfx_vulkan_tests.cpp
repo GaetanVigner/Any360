@@ -1,7 +1,8 @@
 // The Vulkan side on a real driver: a headless device, the shaders gfx_shader_tests translated (SPIR-V files next
 // to this executable) compiled into graphics pipelines with the descriptor layout the translator expects (as the
 // ReXGlue / Xenia Vulkan backend builds it), and an offscreen render pass cleared, drawn into and read back.
-// Without a Vulkan 1.3 device the test reports it and passes (CI machines without a GPU).
+// Without a Vulkan 1.3 device the test reports it and passes (CI machines without a GPU). Before the device: the
+// presenter's choice of present mode.
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -9,6 +10,7 @@
 #include <vector>
 
 #include "any360/gfx/vulkan/device.h"
+#include "any360/gfx/vulkan/presenter.h"
 #include "rex/graphics/pipeline/shader/spirv_translator.h"
 
 namespace {
@@ -167,12 +169,23 @@ void Barrier(const vk::Device& d, VkCommandBuffer cb, VkImage image, VkImageLayo
 
 int main(int argc, char** argv) {
   const std::filesystem::path dir = std::filesystem::path(argv[0]).parent_path();
+  // The presenter's mode (no device needed): FIFO unless another is asked for and the surface has it.
+  {
+    const std::vector<VkPresentModeKHR> all = {VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_MAILBOX_KHR,
+                                               VK_PRESENT_MODE_FIFO_KHR};
+    const std::vector<VkPresentModeKHR> fifo_only = {VK_PRESENT_MODE_FIFO_KHR};
+    CHECK(vk::ChoosePresentMode(VK_PRESENT_MODE_FIFO_KHR, all) == VK_PRESENT_MODE_FIFO_KHR);
+    CHECK(vk::ChoosePresentMode(VK_PRESENT_MODE_MAILBOX_KHR, all) == VK_PRESENT_MODE_MAILBOX_KHR);
+    CHECK(vk::ChoosePresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR, all) == VK_PRESENT_MODE_IMMEDIATE_KHR);
+    CHECK(vk::ChoosePresentMode(VK_PRESENT_MODE_MAILBOX_KHR, fifo_only) == VK_PRESENT_MODE_FIFO_KHR);
+    CHECK(vk::ChoosePresentMode(VK_PRESENT_MODE_IMMEDIATE_KHR, {}) == VK_PRESENT_MODE_FIFO_KHR);
+  }
   vk::Device device;
   vk::DeviceOptions options;
   if (argc > 1) options.prefer = argv[1];
   if (!device.Create(options)) {
     std::printf("gfx_vulkan_tests: skipped (%s)\n", device.error().c_str());
-    return 0;
+    return g_failures ? 1 : 0;
   }
   const vk::Functions& f = device.fn();
   std::printf("gfx_vulkan_tests: %s, Vulkan %u.%u.%u, max storage buffer range %u MB\n", device.properties().deviceName,

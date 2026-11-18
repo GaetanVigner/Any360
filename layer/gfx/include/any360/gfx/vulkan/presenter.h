@@ -1,6 +1,6 @@
 // Presentation: a swapchain on the window surface the platform layer made (Device's surface), each frame of RGBA8
 // pixels (a swap's front buffer) uploaded and blitted onto the swapchain image, scaled with its aspect ratio kept
-// (black bars), FIFO (vsync). The blit converts to whatever the surface's format is (BGRA on most desktops).
+// (black bars), FIFO (vsync) unless asked otherwise. The blit converts to whatever the surface's format is (BGRA on most desktops).
 #pragma once
 
 #include <cstdint>
@@ -11,6 +11,14 @@
 #include "device.h"
 
 namespace any360::gfx::vk {
+
+// The present mode a swapchain is made with: `wanted` when the surface has it, else FIFO (the one every surface has).
+inline VkPresentModeKHR ChoosePresentMode(VkPresentModeKHR wanted, const std::vector<VkPresentModeKHR>& available) {
+  for (const VkPresentModeKHR mode : available) {
+    if (mode == wanted) return wanted;
+  }
+  return VK_PRESENT_MODE_FIFO_KHR;
+}
 
 class Presenter {
  public:
@@ -32,17 +40,22 @@ class Presenter {
   // font (digits, a few letters and signs; others are blank). Empty: none. Cheap: rasterized when it changes, copied
   // onto the swapchain image (a few kilobytes) each frame.
   void SetOverlay(const std::string& text);
-  // Vertical sync (FIFO). Off (the default): frames as fast as they come, MAILBOX where the driver has it (no tearing),
-  // else IMMEDIATE. Takes effect at the next Resize.
-  void SetVsync(bool on) { vsync_ = on; }
+  // The present mode: FIFO (vertical sync) unless another is asked for and the surface has it. FIFO is the one mode
+  // every driver must have, and the one that shows: on NVIDIA's Windows driver (2026-11, RTX 5070 Ti, 32.0.16.1088)
+  // MAILBOX and IMMEDIATE went through its layered presentation and the window stayed black. A minimized window has
+  // no swapchain, so measuring runs are not held to the display's rate. Takes effect at the next Resize.
+  void PreferPresentMode(VkPresentModeKHR mode) { wanted_ = mode; }
   VkFormat format() const { return format_; }
   const std::string& error() const { return error_; }
+  // The swapchain as made by the last Resize ("1280x720, format 44, mailbox, 3 images"), or why there is none.
+  std::string Describe() const;
 
  private:
   bool Fail(const std::string& why) {
     error_ = why;
     return false;
   }
+  bool Fail(const std::string& why, VkResult result) { return Fail(why + " (VkResult " + std::to_string(int(result)) + ")"); }
   void DestroySwapchain();
   bool PresentWith(const uint32_t* rgba, const BlitFn* blit, uint32_t width, uint32_t height);
 
@@ -51,6 +64,8 @@ class Presenter {
   std::vector<VkImage> images_;
   VkFormat format_ = VK_FORMAT_UNDEFINED;
   VkExtent2D extent_{};
+  VkPresentModeKHR mode_ = VK_PRESENT_MODE_FIFO_KHR;
+  VkPresentModeKHR wanted_ = VK_PRESENT_MODE_FIFO_KHR;
   VkCommandPool pool_ = VK_NULL_HANDLE;
   // Frames in flight: a present waits for the one three frames back, not the last (the renderer's thread otherwise
   // waits for the GPU to finish every frame before it records the next).
@@ -68,7 +83,6 @@ class Presenter {
   bool overlay_dirty_ = false;
   void DrawOverlay(VkCommandBuffer cb, VkImage target, uint32_t slot);  // slot: the frame being recorded
   uint64_t presented_ = 0;
-  bool vsync_ = false;
   std::string error_;
 };
 

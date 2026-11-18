@@ -18,7 +18,7 @@ portable C++23 with no dependency on a graphics API. The renderer behind it is V
 | `tests/gfx_vulkan_tests.cpp` | On a real driver: the translated shaders compiled into pipelines with the translator's descriptor layout, an offscreen target rendered and read back (skipped without a Vulkan 1.3 device) |
 | `include/any360/gfx/vulkan/renderer.h`, `src/vulkan/renderer.cpp` | `VulkanRenderer`, the command processor's `Renderer`: shaders translated and cached by hash, pipelines by shader pair and topology, the five constant buffers from the register file, guest memory mirrored for vertex fetch, DMA indices endian-swapped |
 | `include/any360/gfx/vulkan/textures.h`, `src/vulkan/textures.cpp` | The texture cache: fetch constants parsed, guest memory endian-swapped and untiled (Xenos 32x32-block tiling, as the reference computes it), uploaded when it changed, viewed with the guest swizzle; samplers from the fetch constant and the fetch instruction |
-| `include/any360/gfx/vulkan/presenter.h`, `src/vulkan/presenter.cpp` | Presentation: a swapchain on the window surface the platform layer makes, each swapped frame uploaded and blitted with its aspect ratio kept (FIFO) |
+| `include/any360/gfx/vulkan/presenter.h`, `src/vulkan/presenter.cpp` | Presentation: a swapchain on the window surface the platform layer makes, each swapped frame uploaded and blitted with its aspect ratio kept (FIFO unless another mode is asked for) |
 | `tests/gfx_window_demo.cpp` | A window (SDL3) showing the whole chain every frame: hand-written PM4, a textured quad and a moving triangle, resolve, swap, present (`gfx_window_demo [--frames N] [--gpu NAME]`, built when the reference SDK has SDL3) |
 | `tests/ucode_encode.h` | Hand encoding of control flow, vector ALU and vertex fetch instructions, shared by the tests |
 | `tests/gfx_render_tests.cpp` | End to end: hand-written PM4 (state, fetch constant, shaders, constants, an auto-indexed and a DMA-indexed draw) through the command processor into the renderer; every pixel read back and checked |
@@ -731,6 +731,27 @@ Linux are `liblibavcodec.a` / `liblibavutil.a` (named after their CMake targets)
 option) needs the Win32 thread snapshot and unwinder, so it is an empty stub elsewhere.
 
 Test: `host_rexglue_tests` (tool mode: no display window, the frames rendered and not presented, said once in the log).
+
+### A black window: FIFO by default (2026-11-18)
+
+Crackdown's window stayed black on Windows (NVIDIA RTX 5070 Ti, driver 32.0.16.1088): the title rendered (its frames
+read back from the GPU were right), and every frame was presented with no error, yet the window showed nothing. The
+presenter asked for MAILBOX (IMMEDIATE where there was none), FIFO only with vsync. Shown launches, one variable at a time:
+MAILBOX and IMMEDIATE black (on every monitor, the primary included; MAILBOX showed once after the window was moved), FIFO
+shown, three times (the last as the new default). Each black run had a hidden `__wglDummyWindowFodder` window of NVIDIA's OpenGL driver in the process,
+none of the FIFO runs: the driver's layered presentation, which these modes took. The same build presented with MAILBOX
+the day before. Neither the driver nor Windows changed between the two days, so what changed is not known.
+
+The presenter now makes its swapchain with FIFO, the one mode every surface must have, unless another is asked for
+(`Presenter::PreferPresentMode`; in the binding `ANY360_PRESENT_MODE=mailbox|immediate`) and the surface has it
+(`ChoosePresentMode`, tested in `gfx_vulkan_tests`). FIFO holds a shown window to the display's rate: Crackdown at its
+60 FPS cap on 165 and 240 Hz displays did not change (60.0 FPS, as before). Measuring runs are minimized: a minimized
+window gets no swapchain, so they are not held to any rate.
+
+What a black window says now: the log names the Vulkan device and each swapchain made (size, format, mode, images),
+the first five frames the window did not get with the presenter's reason (the VkResult included), and each report the
+frames presented and not. `--any360_gpu_screenshot=<file.png>` (Crackdown) writes the renderer's frame when
+`<file>.go` appears: the frame as rendered, without the screen.
 
 ### Dot products: the rule where it can change the sum (2026-11-17)
 
