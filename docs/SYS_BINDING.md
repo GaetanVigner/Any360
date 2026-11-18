@@ -438,6 +438,11 @@ interrupt time `KeTimeStampBundle` carries, from the host's performance counter)
 `HalGetCurrentAVPack` (`XGetAVPack`'s VGA) and `XamGetLocaleDateFormat` (XAM's table)
 (docs/perf/archive/2026-11-18-sys-step12-kernel/).
 
+Fifth batch, the guide screens and Kinect (16, `xam.h`): no Kinect attached (not ready, the HUD off, no engaged
+player, a random session id), `XamSetDashContext` (notified on change), and the profile, gamer-card, name-change,
+Gold-upgrade and Kinect-required screens over the guide that opens and closes at once
+(docs/perf/archive/2026-11-18-sys-step12-guide-nui/).
+
 Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
 host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
 SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),

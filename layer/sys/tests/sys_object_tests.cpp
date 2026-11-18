@@ -3168,6 +3168,44 @@ void KernelStep12Tests() {
   CHECK(XamGetLocaleDateFormat(0) == 3 && XGetAVPack() == 6);
 }
 
+// Step 12's guide screens and Kinect calls (xam.h), against Xenia's answers and any360::sys's guide.
+void GuideNuiStep12Tests() {
+  Fresh();
+  XamState().Reset();
+  const uint32_t out = kScratch + 0x400;
+  // A system listener sees the guide open and close (XN_SYS_UI 1 then 0) for each screen that opens.
+  const uint32_t listener = XamState().NotifyCreateListener(g, 1, 0);
+  auto events = [&] {
+    std::vector<std::pair<uint32_t, uint32_t>> seen;
+    while (XamState().NotifyGetNext(g, listener, 0, out, out + 4)) seen.emplace_back(g.Load32(out), g.Load32(out + 4));
+    return seen;
+  };
+  events();
+  const std::vector<std::pair<uint32_t, uint32_t>> guide = {{9, 1}, {9, 0}};
+  CHECK(XamState().ShowCreateProfileUI() == 0 && events() == guide);
+  CHECK(XamState().ShowProfileUI(0) == 0 && events() == guide);
+  CHECK(XamState().ShowProfileUI(1) == kErrorAccessDenied && events().empty());
+  CHECK(XamState().ShowForcedNameChangeUI(0) == 0 && events() == guide);
+  CHECK(XamState().ShowForcedNameChangeUI(2) == kErrorNoSuchUser && XamState().ShowForcedNameChangeUI(4) == kErrorInvalidParameter);
+  CHECK(XamState().ShowMultiplayerUpgradeUI() == kErrorFunctionFailed && events().empty());
+  CHECK(XamState().ShowNuiHardwareRequiredUI(0) == 0 && XamState().ShowNuiHardwareRequiredUI(1) == kErrorInvalidParameter);
+  // The dashboard context: notified once per change.
+  CHECK(XamState().SetDashContext(7) == 0 && XamState().DashContext() == 7);
+  const std::vector<std::pair<uint32_t, uint32_t>> changed = {{0x8000000C, 0}};
+  CHECK(events() == changed);
+  CHECK(XamState().SetDashContext(7) == 0 && events().empty());
+  // Kinect: setting an engaged player fails, clearing succeeds; versions 0; a stable non-zero session id.
+  CHECK(XamState().NuiHudSetEngagedTrackingId(5) == 0x80004005u && XamState().NuiHudSetEngagedTrackingId(0) == 0);
+  std::memset(g.host(out), 0xEE, 16);
+  XamState().NuiHudGetVersions(g, out, out + 8);
+  CHECK(g.Load64(out) == 0 && g.Load64(out + 8) == 0);
+  XamState().NuiHudGetVersions(g, 0, 0);
+  const uint64_t session = XamState().NuiIdentitySessionId();
+  CHECK(session != 0 && XamState().NuiIdentitySessionId() == session);
+  Objects().Close(listener);
+  XamState().Reset();
+}
+
 // Step 12's Win32 forms (win32.h): what is Win32's own over the kernel calls they use (the last error in the KTHREAD,
 // millisecond timeouts, WaitForSingleObjectEx's documented results, SleepEx's, lstrlenW, the tick count).
 void Win32Step12Tests() {
@@ -3211,6 +3249,7 @@ int main() {
   CryptPathTests();
   XamInfoStep12Tests();
   KernelStep12Tests();
+  GuideNuiStep12Tests();
   Win32Step12Tests();
   InputQueueTests();
   InputScriptTests();

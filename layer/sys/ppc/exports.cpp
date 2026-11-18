@@ -935,6 +935,25 @@ ANY360_SYS_EXPORT(KeQueryInterruptTime) { ctx.r3.u64 = InterruptTime(); }
 ANY360_SYS_EXPORT(KeSetPriorityThread) { ctx.r3.u64 = Threads().SetPriority({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(HalGetCurrentAVPack) { ctx.r3.u64 = XGetAVPack(); }
 ANY360_SYS_EXPORT(XamGetLocaleDateFormat) { ctx.r3.u64 = XamGetLocaleDateFormat(ctx.r3.u32); }
+
+// Step 12: the guide screens and Kinect calls Xenia implements (xam.h). No Kinect is attached.
+ANY360_SYS_EXPORT(XamNuiHudGetEngagedTrackingID) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamNuiHudGetInitializeFlags) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamNuiHudGetVersions) { XamState().NuiHudGetVersions({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamNuiHudIsEnabled) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamNuiHudSetEngagedTrackingID) { ctx.r3.u64 = XamState().NuiHudSetEngagedTrackingId(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamNuiIdentityGetSessionId) { ctx.r3.u64 = XamState().NuiIdentitySessionId(); }
+ANY360_SYS_EXPORT(XamNuiIsChatMicEnabled) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamNuiIsDeviceReady) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamSetDashContext) { ctx.r3.u64 = XamState().SetDashContext(ctx.r3.u32); }
+// (user, flags[, an unknown string])
+ANY360_SYS_EXPORT(XamShowCreateProfileUI) { ctx.r3.u64 = XamState().ShowCreateProfileUI(); }
+ANY360_SYS_EXPORT(XamShowCreateProfileUIEx) { ctx.r3.u64 = XamState().ShowCreateProfileUI(); }
+ANY360_SYS_EXPORT(XamShowEditProfileUI) { ctx.r3.u64 = XamState().ShowProfileUI(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamShowForcedNameChangeUI) { ctx.r3.u64 = XamState().ShowForcedNameChangeUI(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamShowGamerCardUI) { ctx.r3.u64 = XamState().ShowProfileUI(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamShowMultiplayerUpgradeUI) { ctx.r3.u64 = XamState().ShowMultiplayerUpgradeUI(); }
+ANY360_SYS_EXPORT(XamShowNuiHardwareRequiredUI) { ctx.r3.u64 = XamState().ShowNuiHardwareRequiredUI(ctx.r3.u32); }
 ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
@@ -1744,6 +1763,22 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(KeSetPriorityThread),
     ANY360_SYS_ENTRY(HalGetCurrentAVPack),
     ANY360_SYS_ENTRY(XamGetLocaleDateFormat),
+    ANY360_SYS_ENTRY(XamNuiHudGetEngagedTrackingID),
+    ANY360_SYS_ENTRY(XamNuiHudGetInitializeFlags),
+    ANY360_SYS_ENTRY(XamNuiHudGetVersions),
+    ANY360_SYS_ENTRY(XamNuiHudIsEnabled),
+    ANY360_SYS_ENTRY(XamNuiHudSetEngagedTrackingID),
+    ANY360_SYS_ENTRY(XamNuiIdentityGetSessionId),
+    ANY360_SYS_ENTRY(XamNuiIsChatMicEnabled),
+    ANY360_SYS_ENTRY(XamNuiIsDeviceReady),
+    ANY360_SYS_ENTRY(XamSetDashContext),
+    ANY360_SYS_ENTRY(XamShowCreateProfileUI),
+    ANY360_SYS_ENTRY(XamShowCreateProfileUIEx),
+    ANY360_SYS_ENTRY(XamShowEditProfileUI),
+    ANY360_SYS_ENTRY(XamShowForcedNameChangeUI),
+    ANY360_SYS_ENTRY(XamShowGamerCardUI),
+    ANY360_SYS_ENTRY(XamShowMultiplayerUpgradeUI),
+    ANY360_SYS_ENTRY(XamShowNuiHardwareRequiredUI),
     ANY360_SYS_ENTRY(XeCryptAesKey),
     ANY360_SYS_ENTRY(XeCryptAesEcb),
     ANY360_SYS_ENTRY(XeCryptAesCbc),

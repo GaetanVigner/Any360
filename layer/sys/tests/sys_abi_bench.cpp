@@ -39,7 +39,7 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamIsCurrentTitleDash) X(XamIsIptvEnabled) X(XamIsNuiUIActive) X(XamIsSystemExperienceTitleId)                   \
   X(XamIsSystemTitleId) X(XamIsXbox1TitleId) X(RtlGetLastError) X(RtlSetLastNTError) X(RtlRandom)                    \
   X(RtlDowncaseUnicodeChar) X(RtlGetStackLimits) X(RtlImageDirectoryEntryToData) X(KeQueryInterruptTime)            \
-  X(KeSetPriorityThread) X(HalGetCurrentAVPack) X(XamGetLocaleDateFormat)
+  X(KeSetPriorityThread) X(HalGetCurrentAVPack) X(XamGetLocaleDateFormat) X(XamNuiHudGetEngagedTrackingID)           X(XamNuiHudGetInitializeFlags) X(XamNuiHudGetVersions) X(XamNuiHudIsEnabled) X(XamNuiHudSetEngagedTrackingID)        X(XamNuiIdentityGetSessionId) X(XamNuiIsChatMicEnabled) X(XamNuiIsDeviceReady) X(XamSetDashContext)                  X(XamShowCreateProfileUI) X(XamShowCreateProfileUIEx) X(XamShowEditProfileUI) X(XamShowForcedNameChangeUI)          X(XamShowGamerCardUI) X(XamShowMultiplayerUpgradeUI) X(XamShowNuiHardwareRequiredUI)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -208,6 +208,22 @@ int main(int argc, char** argv) {
       {"KeSetPriorityThread", __imp__KeSetPriorityThread, Args({kThread, 8})},
       {"HalGetCurrentAVPack", __imp__HalGetCurrentAVPack, Args({})},
       {"XamGetLocaleDateFormat", __imp__XamGetLocaleDateFormat, Args({36})},
+      {"XamNuiHudGetEngagedTrackingID", __imp__XamNuiHudGetEngagedTrackingID, Args({})},
+      {"XamNuiHudGetInitializeFlags", __imp__XamNuiHudGetInitializeFlags, Args({})},
+      {"XamNuiHudGetVersions", __imp__XamNuiHudGetVersions, Args({kOut, kOut + 8})},
+      {"XamNuiHudIsEnabled", __imp__XamNuiHudIsEnabled, Args({})},
+      {"XamNuiHudSetEngagedTrackingID", __imp__XamNuiHudSetEngagedTrackingID, Args({0})},
+      {"XamNuiIdentityGetSessionId", __imp__XamNuiIdentityGetSessionId, Args({})},
+      {"XamNuiIsChatMicEnabled", __imp__XamNuiIsChatMicEnabled, Args({})},
+      {"XamNuiIsDeviceReady", __imp__XamNuiIsDeviceReady, Args({})},
+      {"XamSetDashContext", __imp__XamSetDashContext, Args({7})},
+      {"XamShowCreateProfileUI (no listener)", __imp__XamShowCreateProfileUI, Args({0, 0})},
+      {"XamShowCreateProfileUIEx (no listener)", __imp__XamShowCreateProfileUIEx, Args({0, 0, 0})},
+      {"XamShowEditProfileUI (no listener)", __imp__XamShowEditProfileUI, Args({0})},
+      {"XamShowForcedNameChangeUI (no listener)", __imp__XamShowForcedNameChangeUI, Args({0})},
+      {"XamShowGamerCardUI (no listener)", __imp__XamShowGamerCardUI, Args({0})},
+      {"XamShowMultiplayerUpgradeUI", __imp__XamShowMultiplayerUpgradeUI, Args({0})},
+      {"XamShowNuiHardwareRequiredUI", __imp__XamShowNuiHardwareRequiredUI, Args({0})},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "

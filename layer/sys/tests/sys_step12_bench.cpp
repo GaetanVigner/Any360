@@ -382,6 +382,18 @@ int main(int argc, char** argv) {
   PrintRow("RtlRandom", 0, Time(200000, [&] { g_sink = g_sink + RtlRandom(g, kOut + 0x200); }), Measure{});
   PrintRow("RtlGetStackLimits", 0, Time(200000, [&] { RtlGetStackLimits(g, kState, kOut, kOut + 4); }), Measure{});
   PrintRow("XamGetLocaleDateFormat", 0, Time(200000, [&] { g_sink = g_sink + XamGetLocaleDateFormat(36); }), Measure{});
+  {
+    // A guide screen with a system listener (a title has one): the guide's open and close notifications queued and
+    // read back each call, as the title's XNotifyGetNext does.
+    const uint32_t listener = XamState().NotifyCreateListener(g, 1, 0);
+    PrintRow("XamShowGamerCardUI + 2 XNotifyGetNext", 0, Time(200000, [&] {
+               g_sink = g_sink + XamState().ShowProfileUI(0);
+               g_sink = g_sink + XamState().NotifyGetNext(g, listener, 0, kOut, kOut + 4);
+               g_sink = g_sink + XamState().NotifyGetNext(g, listener, 0, kOut, kOut + 4);
+             }),
+             Measure{});
+    Objects().Close(listener);
+  }
   std::printf("sys_step12_bench: allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_totals.calls ? double(g_totals.bytes) / double(g_totals.calls) : 0.0,
               g_totals.calls ? double(g_totals.count) / double(g_totals.calls) : 0.0,

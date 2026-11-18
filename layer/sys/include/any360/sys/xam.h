@@ -137,8 +137,29 @@ class Xam {
   // info: the last one set (zero at first, cleared by a null set); a null get writes nothing.
   void GetActiveDashAppInfo(Guest g, uint32_t info) const;
   void SetActiveDashAppInfo(Guest g, uint32_t info);
-  // XamGetDashContext: the dashboard context (0: none set).
+  // XamGetDashContext: the dashboard context (0: none set). XamSetDashContext stores another one and notifies
+  // XN_SYS_DASHCONTEXTCHANGED (0x8000000C) when it changes; 0.
   uint32_t DashContext() const { return dash_context_; }
+  uint32_t SetDashContext(uint32_t context);
+
+  // Step 12, the guide screens and Kinect (NUI) calls Xenia implements (its xam_ui.cc, xam_nui.cc). The guide opens
+  // and closes at once, as ShowLiveUI. Profiles: one local profile (user 0) and no way to make another, so
+  // XamShowCreateProfileUI(Ex) opens and closes the guide; the edit-profile and gamer-card screens refuse a user
+  // that is not signed in (ERROR_ACCESS_DENIED); the forced name change (a marketplace screen) refuses a user past 3
+  // (ERROR_INVALID_PARAMETER) or not signed in (ERROR_NO_SUCH_USER); the multiplayer (Gold) upgrade needs Xbox Live
+  // and fails (ERROR_FUNCTION_FAILED); the Kinect-required screen takes only 0 (else ERROR_INVALID_PARAMETER) and
+  // closes at once, as the troubleshooter.
+  uint32_t ShowCreateProfileUI();
+  uint32_t ShowProfileUI(uint32_t user);
+  uint32_t ShowForcedNameChangeUI(uint32_t user);
+  uint32_t ShowMultiplayerUpgradeUI() const { return kErrorFunctionFailed; }
+  uint32_t ShowNuiHardwareRequiredUI(uint32_t argument) const { return argument ? kErrorInvalidParameter : kErrorSuccess; }
+  // No Kinect: not ready, the HUD not enabled, no initialize flags, versions 0, no engaged player (setting one
+  // fails with E_FAIL, clearing it succeeds), the chat microphone off. The identity session id is a random non-zero
+  // 64-bit value made at the first call, as the console's (Xenia uses a constant).
+  uint32_t NuiHudSetEngagedTrackingId(uint32_t id) const { return id ? 0x80004005u : 0; }
+  void NuiHudGetVersions(Guest g, uint32_t xam_version, uint32_t xtl_version) const;
+  uint64_t NuiIdentitySessionId();
   // XamGetDashBackstackData: no dashboard ran before the title, so no backstack nodes: nothing written, success.
   uint32_t GetDashBackstackData() const { return 0; }
   // XamGetCachedTitleName: the title's name for any id but 0 (one profile, one title known), as big-endian UTF-16
@@ -301,6 +322,7 @@ class Xam {
   uint32_t online_schema_ = 0;
   uint8_t dash_app_info_[12] = {};
   uint32_t dash_context_ = 0;
+  uint64_t nui_session_id_ = 0;
   uint32_t language_fallback_ = 0;  // the 18 fallback locale names in the kernel heap, laid out at first use
   uint32_t language_fallback_at_[18] = {};
   // The packages of a type as enumerator items of `item_size` bytes starting with their XCONTENT_DATA, sorted by name.

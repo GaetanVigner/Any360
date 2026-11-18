@@ -64,6 +64,7 @@ void Xam::Reset() {
   online_schema_ = 0;
   std::memset(dash_app_info_, 0, sizeof dash_app_info_);
   dash_context_ = 0;
+  nui_session_id_ = 0;
   language_fallback_ = 0;
   Objects().AddCloseHook([](uint32_t object) { XamState().OnClose(object); });
   system_module_ = 0;
@@ -204,6 +205,37 @@ void Xam::SetActiveDashAppInfo(Guest g, uint32_t info) {
   } else {
     std::memset(dash_app_info_, 0, sizeof dash_app_info_);
   }
+}
+
+uint32_t Xam::SetDashContext(uint32_t context) {
+  constexpr uint32_t kNotifyDashContextChanged = 0x8000000C;
+  if (context != dash_context_) {
+    dash_context_ = context;
+    Notify(kNotifyDashContextChanged, 0);
+  }
+  return 0;
+}
+
+uint32_t Xam::ShowCreateProfileUI() { return ShowLiveUI(); }
+
+uint32_t Xam::ShowProfileUI(uint32_t user) { return UserGetSigninState(user) ? ShowLiveUI() : kErrorAccessDenied; }
+
+uint32_t Xam::ShowForcedNameChangeUI(uint32_t user) {
+  if (user >= 4) return kErrorInvalidParameter;
+  return UserGetSigninState(user) ? ShowLiveUI() : kErrorNoSuchUser;
+}
+
+void Xam::NuiHudGetVersions(Guest g, uint32_t xam_version, uint32_t xtl_version) const {
+  if (xam_version) g.Store64(xam_version, 0);
+  if (xtl_version) g.Store64(xtl_version, 0);
+}
+
+uint64_t Xam::NuiIdentitySessionId() {
+  if (!nui_session_id_) {
+    std::random_device device;
+    while (!nui_session_id_) nui_session_id_ = uint64_t(device()) << 32 | device();
+  }
+  return nui_session_id_;
 }
 
 uint32_t Xam::GetCachedTitleName(Guest g, uint32_t title_id, uint32_t buffer, uint32_t length_ptr) const {
