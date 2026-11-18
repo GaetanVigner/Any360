@@ -526,6 +526,9 @@ void SchedulerTests() {
   CHECK(Threads().QueryBasePriority(gm, kx) == 8);
   CHECK(Threads().SetBasePriority(gm, kx, 12) == 8 && Threads().QueryBasePriority(gm, kx) == 12);
   CHECK(Threads().SetBasePriority(gm, kx, uint32_t(-5)) == 12 && Threads().QueryBasePriority(gm, kx) == 0);
+  // KeSetPriorityThread: the previous priority back, the new one set, a negative one as 0.
+  CHECK(Threads().SetPriority(gm, kx, 17) == 0 && gm.Load8(kx + 0x70) == 17);
+  CHECK(Threads().SetPriority(gm, kx, uint32_t(-3)) == 17 && gm.Load8(kx + 0x70) == 0);
   CHECK(Threads().SetDisableBoost(gm, kx, 1) == 0 && Threads().SetDisableBoost(gm, kx, 0) == 1);
   // Two threads share the process TLS bitmap and have their own TLS blocks.
   std::atomic<int> slots{0};
@@ -3092,6 +3095,79 @@ void XamInfoStep12Tests() {
   XamState().Reset();
 }
 
+// Step 12's kernel and XAM calls (rtl.h, scheduler.h, variables.h, info.h), against Xenia's answers.
+void KernelStep12Tests() {
+  Fresh();
+  const uint32_t out = kScratch + 0x400, image = kScratch + 0x1000;
+  // RtlDowncaseUnicodeChar undoes RtlUpcaseUnicodeChar wherever that one changes a character; others are themselves.
+  for (uint32_t c = 0; c < 0x10000; ++c) {
+    const uint32_t upper = RtlUpcaseUnicodeChar(c);
+    if (upper != c) CHECK(RtlDowncaseUnicodeChar(upper) == c);
+  }
+  CHECK(RtlDowncaseUnicodeChar('A') == 'a' && RtlDowncaseUnicodeChar(0xC9) == 0xE9 && RtlDowncaseUnicodeChar(0xD7) == 0xD7);
+  CHECK(RtlDowncaseUnicodeChar(0x0410) == 0x0410 && RtlDowncaseUnicodeChar(0x10041) == 'a');
+  // RtlRandom: Xenia's sequence from seed 12345 on a fresh table (results and seeds, modelled step by step).
+  g.Store32(out, 12345);
+  const std::pair<uint32_t, uint32_t> expected[] = {{1960408961, 4457625}, {776561741, 1609203705}, {527237240, 1101953625},
+                                                    {839522115, 520784843}};
+  for (const auto& [result, seed] : expected) CHECK(RtlRandom(g, out) == result && g.Load32(out) == seed);
+  // RtlGetStackLimits: the PCR's stack, or its alternate one when the flag is set.
+  const uint32_t pcr = kScratch + 0x800;
+  std::memset(g.host(pcr), 0, 0x100);
+  g.Store32(pcr + 0x70, 0x70010000), g.Store32(pcr + 0x74, 0x70000000);
+  g.Store32(pcr + 0x78, 0x71010000), g.Store32(pcr + 0x7C, 0x71000000);
+  RtlGetStackLimits(g, pcr, out, out + 4);
+  CHECK(g.Load32(out) == 0x70000000 && g.Load32(out + 4) == 0x70010000);
+  g.Store32(pcr + 0x6C, 1);
+  RtlGetStackLimits(g, pcr, out, out + 4);
+  CHECK(g.Load32(out) == 0x71000000 && g.Load32(out + 4) == 0x71010000);
+  // RtlImageDirectoryEntryToData on a small PE32 image (little-endian fields): 4 directory entries, two sections.
+  std::memset(g.host(image), 0, 0x400);
+  auto le32 = [](uint32_t at, uint32_t v) { for (int i = 0; i < 4; ++i) g.Store8(at + i, uint8_t(v >> (8 * i))); };
+  auto le16 = [](uint32_t at, uint32_t v) { g.Store8(at, uint8_t(v)), g.Store8(at + 1, uint8_t(v >> 8)); };
+  g.Store8(image, 'M'), g.Store8(image + 1, 'Z');
+  le32(image + 0x3C, 0x80);
+  const uint32_t nt = image + 0x80, optional = nt + 24;
+  g.Store8(nt, 'P'), g.Store8(nt + 1, 'E');
+  le16(nt + 6, 2);       // sections
+  le16(nt + 20, 0x80);   // SizeOfOptionalHeader: 96 + 4 entries of 8
+  le16(optional, 0x10B);
+  le32(optional + 60, 0x200);  // SizeOfHeaders
+  le32(optional + 92, 4);      // NumberOfRvaAndSizes
+  le32(optional + 96 + 8 * 1, 0x100), le32(optional + 100 + 8 * 1, 0x20);    // entry 1 inside the headers
+  le32(optional + 96 + 8 * 2, 0x3010), le32(optional + 100 + 8 * 2, 0x40);   // entry 2 in the second section
+  le32(optional + 96 + 8 * 3, 0x9000), le32(optional + 100 + 8 * 3, 0x10);   // entry 3 in no section
+  const uint32_t section0 = optional + 0x80;
+  le32(section0 + 12, 0x1000), le32(section0 + 16, 0x1000);
+  le32(section0 + 40 + 12, 0x3000), le32(section0 + 40 + 16, 0x800);
+  g.Store32(out, 0xEEEEEEEE);
+  CHECK(RtlImageDirectoryEntryToData(g, image, 1, 2, out) == image + 0x3010 && g.Load32(out) == 0x40);
+  CHECK(RtlImageDirectoryEntryToData(g, image, 0, 2, out) == image + 0x10);       // its offset in the section
+  CHECK(RtlImageDirectoryEntryToData(g, image | 1, 1, 2, out) == image + 0x10);   // an odd base: a file
+  CHECK(RtlImageDirectoryEntryToData(g, image, 0x100, 2, out) == image + 0x10);   // the flag is one byte
+  CHECK(RtlImageDirectoryEntryToData(g, image, 0, 1, out) == image + 0x100 && g.Load32(out) == 0x20);
+  CHECK(RtlImageDirectoryEntryToData(g, image, 0, 3, out) == 0 && g.Load32(out) == 0x10);
+  CHECK(RtlImageDirectoryEntryToData(g, image, 1, 0, out) == 0);  // empty entry
+  CHECK(RtlImageDirectoryEntryToData(g, image, 1, 4, out) == 0);  // past the directory
+  le16(optional, 0x20B);
+  CHECK(RtlImageDirectoryEntryToData(g, image, 1, 2, out) == 0);  // not PE32
+  CHECK(RtlImageDirectoryEntryToData(g, kScratch + 0x2000, 1, 2, out) == 0);
+  // KeQueryInterruptTime: 100-ns units that move with the clock.
+  const uint64_t t0 = InterruptTime();
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  const uint64_t t1 = InterruptTime();
+  CHECK(t1 > t0 && t1 - t0 >= 150000 && t1 - t0 < 50000000);
+  // KeSetPriorityThread (a thread the scheduler runs: SchedulerTests): null is 0; a KTHREAD the scheduler does not
+  // run is read, not written.
+  CHECK(Threads().SetPriority(g, 0, 5) == 0);
+  g.Store8(out + 0x70, 9);
+  CHECK(Threads().SetPriority(g, out, 5) == 9 && g.Load8(out + 0x70) == 9);
+  // XamGetLocaleDateFormat: the table's ends and outside it; the AV pack is XGetAVPack's.
+  CHECK(XamGetLocaleDateFormat(5) == 2 && XamGetLocaleDateFormat(6) == 1 && XamGetLocaleDateFormat(109) == 5);
+  CHECK(XamGetLocaleDateFormat(37) == 0 && XamGetLocaleDateFormat(110) == 3 && XamGetLocaleDateFormat(4) == 3);
+  CHECK(XamGetLocaleDateFormat(0) == 3 && XGetAVPack() == 6);
+}
+
 // Step 12's Win32 forms (win32.h): what is Win32's own over the kernel calls they use (the last error in the KTHREAD,
 // millisecond timeouts, WaitForSingleObjectEx's documented results, SleepEx's, lstrlenW, the tick count).
 void Win32Step12Tests() {
@@ -3134,6 +3210,7 @@ void Win32Step12Tests() {
 int main() {
   CryptPathTests();
   XamInfoStep12Tests();
+  KernelStep12Tests();
   Win32Step12Tests();
   InputQueueTests();
   InputScriptTests();

@@ -102,6 +102,9 @@ class Scheduler {
   uint32_t SetAffinity(Guest g, uint32_t kthread, uint32_t affinity, uint32_t previous_out);
   uint32_t QueryBasePriority(Guest g, uint32_t kthread);
   uint32_t SetBasePriority(Guest g, uint32_t kthread, uint32_t increment);
+  // KeSetPriorityThread: the KTHREAD's priority byte set (a negative value as 0), the previous one returned; 0 for no
+  // thread, and a KTHREAD the scheduler does not run is read but left as it is (as Xenia).
+  uint32_t SetPriority(Guest g, uint32_t kthread, uint32_t priority);
   uint32_t SetDisableBoost(Guest g, uint32_t kthread, uint32_t disabled);
 
   // Handle-based forms.

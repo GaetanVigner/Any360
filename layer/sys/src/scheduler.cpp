@@ -619,6 +619,13 @@ uint32_t Scheduler::SetBasePriority(Guest g, uint32_t kthread, uint32_t incremen
   return previous;
 }
 
+uint32_t Scheduler::SetPriority(Guest g, uint32_t kthread, uint32_t priority) {
+  if (!kthread) return 0;
+  const uint32_t previous = g.Load8(kthread + kPriority);
+  if (Find(kthread)) g.Store8(kthread + kPriority, uint8_t(std::max(int32_t(priority), 0)));
+  return previous;
+}
+
 uint32_t Scheduler::SetDisableBoost(Guest g, uint32_t kthread, uint32_t disabled) {
   return Byte(g, kthread + kBoostDisabled).exchange(uint8_t(disabled));
 }

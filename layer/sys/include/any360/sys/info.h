@@ -68,6 +68,9 @@ uint32_t XamGetLanguageTypeface(Guest g, uint32_t language, uint32_t buffer_size
 // The locale name a language falls back to ("ja-JP" for Japanese ... "zh-CHS" for Simplified Chinese; empty for
 // English and an unknown language), as XamGetLanguageLocaleFallbackString lays it in guest memory.
 const char16_t* LanguageLocaleFallback(uint32_t language);
+// XamGetLocaleDateFormat: XAM's date format of a locale (Xenia's XamLocaleDateFmtTable, locales 5 to 109); 3 for any
+// other locale.
+uint32_t XamGetLocaleDateFormat(uint32_t locale);
 // XamGetOnlineLanguageAndCountry (xuid, language byte out, country byte out): the profile's language and country,
 // which are the console's here (one local profile); a null out is skipped.
 void XamGetOnlineLanguageAndCountry(Guest g, uint32_t language, uint32_t country);

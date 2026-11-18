@@ -314,6 +314,17 @@ void XamGetOnlineLanguageAndCountry(Guest g, uint32_t language, uint32_t country
   if (language) g.Store8(language, uint8_t(Console().language));
 }
 
+uint32_t XamGetLocaleDateFormat(uint32_t locale) {
+  static constexpr uint8_t kFormats[] = {
+      2, 1, 3, 1, 3, 3, 3, 3, 3, 3, 3, 2, 3, 2, 1, 4, 2, 3, 1, 2, 2, 3, 3, 3, 3, 3, 2, 1, 3, 2, 2, 3, 0, 3, 0,
+      3, 3, 5, 3, 1, 3, 2, 3, 3, 3, 2, 3, 3, 5, 3, 3, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 0,
+      2, 1, 3, 3, 3, 3, 3, 5, 3, 2, 3, 3, 3, 2, 3, 5, 0, 3, 1, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 5,
+      1, 1, 1, 1};
+  // Read up to locale 109 (biased 0x68) as Xenia does, though its table holds four more.
+  const uint32_t biased = locale - 5;
+  return biased <= 0x68 ? kFormats[biased] : 3;
+}
+
 const char16_t* LanguageLocaleFallback(uint32_t language) {
   static constexpr const char16_t* kFallback[] = {u"",      u"",      u"ja-JP", u"de-DE", u"fr-FR",  u"es-ES",
                                                   u"it-IT", u"ko-KR", u"zh-TW", u"pt-BR", u"zh-CHS", u"pl-PL",

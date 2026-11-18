@@ -1,5 +1,7 @@
 #include "any360/sys/rtl.h"
 
+#include <atomic>
+
 #include "any360/sys/memory.h"
 
 #include <algorithm>
@@ -272,6 +274,87 @@ uint32_t RtlUpcaseUnicodeChar(uint32_t c) {
   if (c == 0xFF) return 0x178;
   if (c == 0xB5) return 0x39C;
   return c;
+}
+
+uint32_t RtlDowncaseUnicodeChar(uint32_t c) {
+  c &= 0xFFFF;
+  if (c >= 'A' && c <= 'Z') return c + 0x20;
+  if (c >= 0xC0 && c <= 0xDE && c != 0xD7) return c + 0x20;
+  if (c == 0x178) return 0xFF;
+  if (c == 0x39C) return 0xB5;
+  return c;
+}
+
+namespace {
+
+// XAM's table (Xenia's XamRtlRandomTable), shared by the process as the console's is; each entry exchanged whole.
+std::atomic<int32_t> g_random_table[128] = {
+    1284227242, 1275210071, 573735546,  790525478,  2139871995, 1547161642, 179605362,  789336058,  688789844,  1801674531,
+    1563985344, 1957994488, 1364589140, 1645522239, 287218729,  606747145,  1972579041, 1085031214, 1425521274, 1482476501,
+    1844823847, 57989841,   1897051121, 1935655697, 1078145449, 1960408961, 1682526488, 842925246,  1500820517, 1214440339,
+    1647877149, 682003330,  261478967,  2052111302, 162531612,  583907252,  1336601894, 1715567821, 413027322,  484763869,
+    1383384898, 1004336348, 764733703,  854245398,  651377827,  1614895754, 838170752,  1757981266, 602609370,  1644491937,
+    926492609,  220523388,  115176313,  725345543,  261903793,  746137067,  920026266,  1123561945, 1580818891, 1708537768,
+    616249376,  1292428093, 562591055,  343818398,  1788223648, 1659004503, 2077806209, 299502267,  1604221776, 602162358,
+    630328440,  1606980848, 1580436667, 1078081533, 492894223,  839522115,  1979792683, 117609710,  1767777339, 1454471165,
+    1965331169, 1844237615, 308236825,  329068152,  412668190,  796845957,  1303643608, 436374069,  1677128483, 527237240,
+    813497703,  1060284298, 1770027372, 1177238915, 884357618,  1409082233, 1958367476, 448539723,  1592454029, 861567501,
+    963894560,  73586283,   362288127,  507921405,  113007714,  823518204,  152049171,  1202660629, 1326574676, 2025429265,
+    1035525444, 515967899,  1532298954, 2000478354, 1450960922, 1417001333, 2049760794, 1229272821, 879983540,  1993962763,
+    706699826,  776561741,  2111687655, 1343024091, 1637723038, 1220945662, 484061587,  1390067357};
+
+uint32_t NextRandom(uint32_t seed) { return (0x7FFFFFEDu * seed + 0x7FFFFFC3u) % 0x7FFFFFFFu; }
+
+uint32_t Le32(Guest g, uint32_t at) {
+  uint32_t v;
+  std::memcpy(&v, g.host(at), 4);
+  if constexpr (std::endian::native == std::endian::big) v = std::byteswap(v);
+  return v;
+}
+
+uint32_t Le16(Guest g, uint32_t at) {
+  uint16_t v;
+  std::memcpy(&v, g.host(at), 2);
+  if constexpr (std::endian::native == std::endian::big) v = std::byteswap(v);
+  return v;
+}
+
+}  // namespace
+
+uint32_t RtlRandom(Guest g, uint32_t seed_ptr) {
+  const uint32_t table_seed = NextRandom(g.Load32(seed_ptr));
+  const uint32_t seed = NextRandom(table_seed);
+  g.Store32(seed_ptr, seed);
+  return uint32_t(g_random_table[seed & 0x7F].exchange(int32_t(table_seed)));
+}
+
+void RtlGetStackLimits(Guest g, uint32_t pcr, uint32_t end_out, uint32_t base_out) {
+  const bool alternate = g.Load32(pcr + 0x6C) != 0;
+  g.Store32(base_out, g.Load32(pcr + (alternate ? 0x78 : 0x70)));
+  g.Store32(end_out, g.Load32(pcr + (alternate ? 0x7C : 0x74)));
+}
+
+uint32_t RtlImageDirectoryEntryToData(Guest g, uint32_t base, uint32_t mapped_as_image, uint32_t entry, uint32_t size_out) {
+  bool mapped = uint8_t(mapped_as_image) != 0;
+  if (base & 1) base &= ~1u, mapped = false;
+  const uint32_t nt = RtlImageNtHeader(g, base);
+  if (!nt) return 0;
+  // IMAGE_NT_HEADERS32 (little-endian fields): the optional header at +24, PE32's magic 0x10B.
+  const uint32_t optional = nt + 24;
+  if (Le16(g, optional) != 0x10B) return 0;
+  entry &= 0xFFFF;
+  if (entry >= Le32(g, optional + 92)) return 0;  // NumberOfRvaAndSizes
+  const uint32_t address = Le32(g, optional + 96 + 8 * entry);
+  if (!address) return 0;
+  g.Store32(size_out, Le32(g, optional + 100 + 8 * entry));
+  if (mapped || address < Le32(g, optional + 60)) return base + address;  // SizeOfHeaders
+  // In a file: the section that holds the address (VirtualAddress, SizeOfRawData), its file offset as Xenia gives it.
+  const uint32_t sections = Le16(g, nt + 6), section0 = optional + Le16(g, nt + 20);
+  for (uint32_t i = 0; i < sections; ++i) {
+    const uint32_t section = section0 + 40 * i, virtual_address = Le32(g, section + 12);
+    if (address >= virtual_address && address < virtual_address + Le32(g, section + 16)) return base + address - virtual_address;
+  }
+  return 0;
 }
 
 void RtlCaptureContext() {}

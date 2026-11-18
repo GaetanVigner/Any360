@@ -918,6 +918,23 @@ ANY360_SYS_EXPORT(XamIsNuiUIActive) { ctx.r3.u64 = 0; }  // the system UI opens 
 ANY360_SYS_EXPORT(XamIsSystemExperienceTitleId) { ctx.r3.u64 = XamIsSystemExperienceTitleId(ctx.r3.u32); }
 ANY360_SYS_EXPORT(XamIsSystemTitleId) { ctx.r3.u64 = XamIsSystemTitleId(ctx.r3.u32); }
 ANY360_SYS_EXPORT(XamIsXbox1TitleId) { ctx.r3.u64 = XamIsXbox1TitleId(ctx.r3.u32); }
+
+// Step 12: the kernel and XAM calls Xenia implements (rtl.h, scheduler.h, variables.h, info.h, win32.h).
+ANY360_SYS_EXPORT(RtlGetLastError) { ctx.r3.u64 = Win32LastError({base}, ThreadOf(ctx, base)); }
+ANY360_SYS_EXPORT(RtlSetLastNTError) { ctx.r3.u64 = SetWin32LastNtError({base}, ThreadOf(ctx, base), ctx.r3.u32); }
+// (milliseconds, alertable): SleepEx's delay as an NTSTATUS (STATUS_SUCCESS, or STATUS_USER_APC when an APC ran).
+ANY360_SYS_EXPORT(RtlSleep) { ctx.r3.u64 = Win32SleepResult(Win32Delay(ctx, base, ctx.r3.u32, ctx.r4.u32)); }
+ANY360_SYS_EXPORT(RtlRandom) { ctx.r3.u64 = RtlRandom({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(RtlDowncaseUnicodeChar) { ctx.r3.u64 = RtlDowncaseUnicodeChar(ctx.r3.u32); }
+// (end out, base out), the PCR in r13.
+ANY360_SYS_EXPORT(RtlGetStackLimits) { RtlGetStackLimits({base}, ctx.r13.u32, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(RtlImageDirectoryEntryToData) {
+  ctx.r3.u64 = RtlImageDirectoryEntryToData({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+}
+ANY360_SYS_EXPORT(KeQueryInterruptTime) { ctx.r3.u64 = InterruptTime(); }
+ANY360_SYS_EXPORT(KeSetPriorityThread) { ctx.r3.u64 = Threads().SetPriority({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(HalGetCurrentAVPack) { ctx.r3.u64 = XGetAVPack(); }
+ANY360_SYS_EXPORT(XamGetLocaleDateFormat) { ctx.r3.u64 = XamGetLocaleDateFormat(ctx.r3.u32); }
 ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
@@ -1716,6 +1733,17 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XamIsSystemExperienceTitleId),
     ANY360_SYS_ENTRY(XamIsSystemTitleId),
     ANY360_SYS_ENTRY(XamIsXbox1TitleId),
+    ANY360_SYS_ENTRY(RtlGetLastError),
+    ANY360_SYS_ENTRY(RtlSetLastNTError),
+    ANY360_SYS_ENTRY(RtlSleep),
+    ANY360_SYS_ENTRY(RtlRandom),
+    ANY360_SYS_ENTRY(RtlDowncaseUnicodeChar),
+    ANY360_SYS_ENTRY(RtlGetStackLimits),
+    ANY360_SYS_ENTRY(RtlImageDirectoryEntryToData),
+    ANY360_SYS_ENTRY(KeQueryInterruptTime),
+    ANY360_SYS_ENTRY(KeSetPriorityThread),
+    ANY360_SYS_ENTRY(HalGetCurrentAVPack),
+    ANY360_SYS_ENTRY(XamGetLocaleDateFormat),
     ANY360_SYS_ENTRY(XeCryptAesKey),
     ANY360_SYS_ENTRY(XeCryptAesEcb),
     ANY360_SYS_ENTRY(XeCryptAesCbc),

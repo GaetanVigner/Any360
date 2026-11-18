@@ -430,6 +430,14 @@ XOVERLAPPED's extended error, and the child-account, IPTV and NUI answers. Each 
 (the console's settings, the game region, the last error, the kernel heap); `sys_object_tests` checks every value and
 byte against Xenia's answers (docs/perf/archive/2026-11-18-sys-step12-info/).
 
+Fourth batch, kernel and XAM calls (11, `rtl.h`, `scheduler.h`, `variables.h`, `info.h`): `RtlGetLastError`,
+`RtlSetLastNTError` and `RtlSleep` (the Win32 forms' last error and delay, as NTSTATUS), `RtlRandom` (NT's generator
+and XAM's table), `RtlDowncaseUnicodeChar` (RtlUpcaseUnicodeChar's mapping undone), `RtlGetStackLimits` (the PCR's
+stack or alternate stack), `RtlImageDirectoryEntryToData` (over `RtlImageNtHeader`), `KeQueryInterruptTime` (the
+interrupt time `KeTimeStampBundle` carries, from the host's performance counter), `KeSetPriorityThread`,
+`HalGetCurrentAVPack` (`XGetAVPack`'s VGA) and `XamGetLocaleDateFormat` (XAM's table)
+(docs/perf/archive/2026-11-18-sys-step12-kernel/).
+
 Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
 host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
 SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),

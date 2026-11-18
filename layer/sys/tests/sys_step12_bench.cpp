@@ -23,6 +23,9 @@
 
 #include "any360/sys/alloc_meter.h"
 #include "any360/sys/crypt.h"
+#include <cwctype>
+#include "any360/sys/variables.h"
+#include "any360/sys/rtl.h"
 #include "any360/sys/info.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/threading.h"
@@ -311,7 +314,15 @@ int main(int argc, char** argv) {
 
   // The Win32 forms: what they add over their kernel call.
   const uint32_t kthread = kState + 0x400;
-  PrintRow("GetTickCount", 0, Time(200000, [&] { g_sink = g_sink + TickCount(); }), Measure{});
+  {
+    // The host's GetTickCount64 reads a counter the system updates every 10-16 ms: cheaper, but not the console's
+    // millisecond tick, so a bound only.
+    Measure host;
+#if defined(_WIN32)
+    host = Time(200000, [&] { g_sink = g_sink + uint32_t(GetTickCount64()); }, false);
+#endif
+    PrintRow("GetTickCount (host: GetTickCount64)", 0, Time(200000, [&] { g_sink = g_sink + TickCount(); }), host);
+  }
   PrintRow("GetLastError", 0, Time(200000, [&] { g_sink = g_sink + Win32LastError(g, kthread); }), Measure{});
   PrintRow("RtlSetLastNTError (failed waits)", 0, Time(200000, [&] { g_sink = g_sink + SetWin32LastNtError(g, kthread, 0xC0000008); }), Measure{});
   PrintRow("Wait result (WaitForSingleObject)", 0, Time(200000, [&] { g_sink = g_sink + Win32WaitResult(g, kthread, 0x102); }), Measure{});
@@ -349,6 +360,28 @@ int main(int argc, char** argv) {
   Objects().SetGuest(g);
   Objects().Reset();
   PrintRow("XamGetLanguageLocaleFallbackString", 0, Time(200000, [&] { g_sink = g_sink + XamState().LanguageLocaleFallbackString(g, 2); }), Measure{});
+  // The kernel calls (fourth batch), beside the host's own code where it does the same work.
+  {
+    uint32_t c = 0;
+    const Measure ours = Time(200000, [&] { g_sink = g_sink + RtlDowncaseUnicodeChar(0xC0 + (++c & 0x1F)); });
+    const Measure host = Time(200000, [&] { g_sink = g_sink + uint32_t(std::towlower(wint_t(0xC0 + (++c & 0x1F)))); }, false);
+    PrintRow("RtlDowncaseUnicodeChar (host: towlower)", 0, ours, host);
+    const Measure time = Time(200000, [&] { g_sink = g_sink + uint32_t(InterruptTime()); });
+    const Measure clock = Time(200000, [&] { g_sink = g_sink + uint32_t(std::chrono::steady_clock::now().time_since_epoch().count()); }, false);
+    PrintRow("KeQueryInterruptTime (host: steady_clock)", 0, time, clock);
+#if defined(_WIN32)
+    const Measure counter = Time(200000, [&] {
+      LARGE_INTEGER now;
+      QueryPerformanceCounter(&now);
+      g_sink = g_sink + uint32_t(now.QuadPart);
+    }, false);
+    PrintRow("KeQueryInterruptTime (host: QPC alone)", 0, time, counter);
+#endif
+  }
+  g.Store32(kOut + 0x200, 12345);
+  PrintRow("RtlRandom", 0, Time(200000, [&] { g_sink = g_sink + RtlRandom(g, kOut + 0x200); }), Measure{});
+  PrintRow("RtlGetStackLimits", 0, Time(200000, [&] { RtlGetStackLimits(g, kState, kOut, kOut + 4); }), Measure{});
+  PrintRow("XamGetLocaleDateFormat", 0, Time(200000, [&] { g_sink = g_sink + XamGetLocaleDateFormat(36); }), Measure{});
   std::printf("sys_step12_bench: allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_totals.calls ? double(g_totals.bytes) / double(g_totals.calls) : 0.0,
               g_totals.calls ? double(g_totals.count) / double(g_totals.calls) : 0.0,

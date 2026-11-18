@@ -54,6 +54,22 @@ uint32_t RtlUnicodeStringToAnsiString(Guest g, uint32_t destination, uint32_t so
 void RtlFreeAnsiString(Guest g, uint32_t string);
 // Upper case for the Basic Latin and Latin-1 ranges (the console's table beyond them maps characters to themselves).
 uint32_t RtlUpcaseUnicodeChar(uint32_t c);
+// Step 12 (Xenia's xboxkrnl_rtl.cc and xam_info.cc the source of each answer).
+// RtlDowncaseUnicodeChar: RtlUpcaseUnicodeChar's mapping undone (the Basic Latin and Latin-1 capitals, U+0178 and
+// U+039C), every other character itself. (Xenia calls the host's towlower, whose answer depends on its locale.)
+uint32_t RtlDowncaseUnicodeChar(uint32_t c);
+// RtlRandom: NT's random generator (the seed advanced twice through 0x7FFFFFED * seed + 0x7FFFFFC3 mod 0x7FFFFFFF,
+// 32-bit arithmetic; the result taken from, and replaced in, a 128-entry table shared by the process), the seed stored
+// back. The table starts as XAM's (Xenia's XamRtlRandomTable).
+uint32_t RtlRandom(Guest g, uint32_t seed_ptr);
+// RtlGetStackLimits: the current stack's end (low address) and base, from the PCR (r13): its alternate stack's when
+// the PCR's flag at +0x6C says the thread runs on it.
+void RtlGetStackLimits(Guest g, uint32_t pcr, uint32_t end_out, uint32_t base_out);
+// RtlImageDirectoryEntryToData: the address of a PE image's data directory entry (its size stored big-endian at
+// `size_out`): the image's base plus the entry's address when the image is mapped, else the entry's file offset
+// through the section holding it; 0 for no PE32 header, an entry past the directory, an empty one or no section. An
+// odd base is taken as a file (not mapped), rounded down.
+uint32_t RtlImageDirectoryEntryToData(Guest g, uint32_t base, uint32_t mapped_as_image, uint32_t entry, uint32_t size_out);
 // The number of leading bytes that are equal.
 uint32_t RtlCompareMemory(Guest g, uint32_t source1, uint32_t source2, uint32_t length);
 // Structured exception handling is not provided yet: these do nothing, as the reference runtime does.

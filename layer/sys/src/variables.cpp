@@ -6,11 +6,35 @@
 #include "any360/sys/objects.h"
 #include "any360/sys/xam.h"
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace any360::sys {
 
 namespace {
 
 const auto kBoot = std::chrono::steady_clock::now();
+#if defined(_WIN32)
+// The performance counter at the same start, and its rate: Windows' runs at 10 MHz, already 100-ns units.
+int64_t Counter() {
+  LARGE_INTEGER now;
+  QueryPerformanceCounter(&now);
+  return now.QuadPart;
+}
+const int64_t kBootCounter = Counter();
+const int64_t kCounterRate = [] {
+  LARGE_INTEGER rate;
+  QueryPerformanceFrequency(&rate);
+  return rate.QuadPart;
+}();
+#endif
 
 uint32_t FourCC(const char* tag) { return uint32_t(tag[0]) << 24 | uint32_t(tag[1]) << 16 | uint32_t(tag[2]) << 8 | uint32_t(tag[3]); }
 
@@ -54,14 +78,24 @@ uint32_t KernelVariables::Address(Guest g, const std::string& name) {
 void KernelVariables::Tick(Guest g) {
   const uint32_t bundle = time_stamp_bundle_;
   if (!bundle) return;
-  const auto since_boot = std::chrono::steady_clock::now() - kBoot;
-  g.Store64(bundle, uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(since_boot).count() / 100));
+  g.Store64(bundle, InterruptTime());
   g.Store64(bundle + 8, SystemTime());
   g.Store32(bundle + 16, UptimeMilliseconds());
 }
 
+uint64_t InterruptTime() {
+#if defined(_WIN32)
+  // The counter read directly (steady_clock converts it to nanoseconds, then this to 100 ns units again).
+  const int64_t ticks = Counter() - kBootCounter;
+  if (kCounterRate == 10000000) return uint64_t(ticks);
+  return uint64_t(ticks / kCounterRate * 10000000 + ticks % kCounterRate * 10000000 / kCounterRate);
+#else
+  return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - kBoot).count() / 100);
+#endif
+}
+
 uint32_t UptimeMilliseconds() {
-  return uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - kBoot).count());
+  return uint32_t(InterruptTime() / 10000);
 }
 
 uint32_t KernelVariables::Create(Guest g, const std::string& name) {

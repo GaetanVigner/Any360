@@ -38,5 +38,7 @@ KernelVariables& Variables();
 
 // Milliseconds since the layer started: KeTimeStampBundle's tick count, and GetTickCount's.
 uint32_t UptimeMilliseconds();
+// 100-ns units since the layer started: KeTimeStampBundle's interrupt time, and KeQueryInterruptTime's.
+uint64_t InterruptTime();
 
 }  // namespace any360::sys
