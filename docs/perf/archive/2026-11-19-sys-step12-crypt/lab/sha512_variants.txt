@@ -1,0 +1,9 @@
+﻿V0 current              107496 ns / 64 KiB  1.640 ns/B 
+V1 wk+maj               102184 ns / 64 KiB  1.559 ns/B 
+V2 bmi2                 100318 ns / 64 KiB  1.531 ns/B 
+V3 bmi2+sse sched        85788 ns / 64 KiB  1.309 ns/B 
+V4 regs sched            63414 ns / 64 KiB  0.968 ns/B 
+V5 avx512 ror            63418 ns / 64 KiB  0.968 ns/B 
+V6 ssse3 only            94122 ns / 64 KiB  1.436 ns/B 
+V7 bmi2+ssse3            67330 ns / 64 KiB  1.027 ns/B 
+CNG                      81674 ns / 64 KiB  1.246 ns/B

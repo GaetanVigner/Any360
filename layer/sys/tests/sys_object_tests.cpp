@@ -3584,6 +3584,309 @@ void LinkConcurrencyTests() {
   fs::remove_all(root, ec);
 }
 
+// Step 12, seventh batch: SHA-512 (FIPS 180-4's vectors, streamed at random splits, the state's bytes), the BnQw
+// helpers against Xenia's code as the model (and the arithmetic itself), the two signature formats, the console's
+// identity and the key vault's sizes.
+namespace crypt7 {
+
+// Xenia's XeCryptBnQwNeModInv, as written there.
+uint64_t ModInvModel(uint64_t input) {
+  uint64_t intermediate = input;
+  uint64_t result = (intermediate * 3) ^ 2;
+  intermediate = 1 - (result * intermediate);
+  for (uint32_t i = 5; i < 32; i <<= 1) {
+    result = result * (intermediate + 1);
+    intermediate = intermediate * intermediate;
+  }
+  return result * (intermediate + 1);
+}
+
+// Xenia's XeCryptBnQwNeModMul on host words.
+std::vector<uint64_t> ModMulModel(const std::vector<uint64_t>& a, const std::vector<uint64_t>& b, uint64_t inverse,
+                                  const std::vector<uint64_t>& modulus) {
+  using U = unsigned __int128;
+  const size_t n = a.size();
+  std::vector<uint64_t> ab(n), mn(n), out(n);
+  for (size_t i = 0; i < n; i++) {
+    const uint64_t bi = b[i];
+    const uint64_t m = (ab[0] - mn[0] + bi * a[0]) * inverse;
+    uint64_t ab_carry = 0, mn_carry = 0;
+    for (size_t j = 0; j < n; j++) {
+      const U t = U(bi) * a[j] + ab[j] + ab_carry;
+      const U u = U(m) * modulus[j] + mn[j] + mn_carry;
+      if (j) ab[j - 1] = uint64_t(t), mn[j - 1] = uint64_t(u);
+      ab_carry = uint64_t(t >> 64), mn_carry = uint64_t(u >> 64);
+    }
+    ab[n - 1] = ab_carry, mn[n - 1] = mn_carry;
+  }
+  bool greater = false;
+  for (size_t i = n; i-- > 0;) {
+    if (ab[i] != mn[i]) {
+      greater = ab[i] > mn[i];
+      break;
+    }
+  }
+  uint64_t carry = 0, borrow = 0;
+  for (size_t i = 0; i < n; i++) {
+    const U sum = U(ab[i]) + (greater ? 0 : modulus[i]) + carry;
+    carry = uint64_t(sum >> 64);
+    const uint64_t lo = uint64_t(sum), diff = lo - mn[i];
+    const uint64_t next_borrow = lo < mn[i] || diff < borrow;
+    out[i] = diff - borrow;
+    borrow = next_borrow;
+  }
+  return out;
+}
+
+// RC4 over host bytes (the test's own).
+void Rc4(const uint8_t* key, size_t key_size, uint8_t* data, size_t size) {
+  uint8_t st[256];
+  for (int x = 0; x < 256; ++x) st[x] = uint8_t(x);
+  for (int x = 0, j = 0; x < 256; ++x) {
+    j = (j + st[x] + key[x % key_size]) & 255;
+    std::swap(st[x], st[j]);
+  }
+  for (size_t n = 0, i = 0, j = 0; n < size; ++n) {
+    i = (i + 1) & 255, j = (j + st[i]) & 255;
+    std::swap(st[i], st[j]);
+    data[n] ^= st[(st[i] + st[j]) & 255];
+  }
+}
+
+#pragma pack(push, 1)
+// Xenia's XE_CONSOLE_ID, its fields set as Xenia sets them: the bytes the console id must have.
+struct ConsoleIdModel {
+  union {
+    struct {
+      uint8_t RefurbBits : 4;
+      uint8_t ManufactureMonth : 4;
+      uint32_t ManufactureYear : 4;
+      uint32_t MacIndex3 : 8;
+      uint32_t MacIndex4 : 8;
+      uint32_t MacIndex5 : 8;
+      uint32_t Crc : 4;
+    };
+    uint8_t Data[5];
+  };
+};
+#pragma pack(pop)
+
+}  // namespace crypt7
+
+void CryptStep12SeventhTests() {
+  using namespace crypt7;
+  const uint32_t in = kScratch, out = kScratch + 0x400, state = kScratch + 0x600, other = kScratch + 0x700;
+  auto hex = [](uint32_t at, uint32_t size) {
+    std::string text;
+    for (uint32_t i = 0; i < size; ++i) text += "0123456789abcdef"[g.Load8(at + i) >> 4], text += "0123456789abcdef"[g.Load8(at + i) & 15];
+    return text;
+  };
+  auto put = [](uint32_t at, const std::string& bytes) { std::memcpy(g.host(at), bytes.data(), bytes.size()); };
+  std::mt19937_64 rng(7);
+
+  // SHA-512 on the portable code and on the processor's (BMI2) path when it has one.
+  const ShaPath restore = CurrentShaPath();
+  for (const ShaPath path : {ShaPath::kPortable, DefaultShaPath()}) {
+    SetShaPath(path);
+    // SHA-512: FIPS 180-4's vectors (one block, empty, two padding blocks), one call and streamed.
+    const std::pair<std::string, const char*> sha512[] = {
+        {"abc",
+         "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"},
+        {"",
+         "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"},
+        {"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu",
+         "8e959b75dae313da8cf4f72814fc143f8f7779c6eb9f7fa17299aeadb6889018501d289e4900f7e4331b99dec4b5433ac7d329eeb6dd26545e96e55b874be909"},
+    };
+    for (const auto& [message, digest] : sha512) {
+      put(in, message);
+      XeCryptSha512Init(g, state);
+      XeCryptSha512Update(g, state, in, uint32_t(message.size()));
+      std::memset(g.host(out), 0xAA, 0x48);
+      XeCryptSha512Final(g, state, out, 64);
+      CHECK(hex(out, 64) == digest);
+      CHECK(g.Load8(out + 64) == 0xAA);
+      const auto host = Sha512Digest(reinterpret_cast<const uint8_t*>(message.data()), message.size());
+      CHECK(std::memcmp(host.data(), g.host(out), 64) == 0);
+      // The state: the count kept, the digest in the state words, the last padded block in the buffer.
+      CHECK(g.Load32(state) == message.size() && hex(state + 8, 64) == digest);
+      const uint32_t last = message.size() < 112 ? 0 : 128;  // the second padding block starts zeroed
+      CHECK(g.Load8(state + 0x48 + 127) == uint8_t(message.size() * 8) && g.Load8(state + 0x48 + 126) == uint8_t(message.size() * 8 >> 8));
+      if (!last) CHECK(std::memcmp(g.host(state + 0x48), message.data(), message.size()) == 0 && g.Load8(state + 0x48 + uint32_t(message.size())) == 0x80);
+      if (last) CHECK(g.Load8(state + 0x48) == 0 && g.Load8(state + 0x48 + 111) == 0);
+    }
+    // Init's bytes, and a short output.
+    XeCryptSha512Init(g, state);
+    CHECK(g.Load32(state) == 0 && g.Load32(state + 4) == 0 && g.Load64(state + 8) == 0x6a09e667f3bcc908 &&
+          g.Load64(state + 0x40) == 0x5be0cd19137e2179 && g.Load8(state + 0x48) == 0 && g.Load8(state + 0xC7) == 0);
+    put(in, "abc");
+    XeCryptSha512Update(g, state, in, 3);
+    std::memset(g.host(out), 0xAA, 64);
+    XeCryptSha512Final(g, state, out, 10);
+    CHECK(hex(out, 10) == "ddaf35a193617abacc41" && g.Load8(out + 10) == 0xAA);
+    // Lengths 0 to 400 split into three updates at random places: the digest as the one-call form, and the state between
+    // updates as a byte-by-byte stream leaves it (the count, the words, the buffered bytes).
+    for (uint32_t length = 0; length <= 400; ++length) {
+      for (uint32_t i = 0; i < length; ++i) g.Store8(in + i, uint8_t(rng()));
+      const uint32_t a = uint32_t(rng() % (length + 1)), b = a + uint32_t(rng() % (length - a + 1));
+      XeCryptSha512Init(g, state);
+      XeCryptSha512Update(g, state, in, a);
+      XeCryptSha512Update(g, state, in + a, b - a);
+      XeCryptSha512Update(g, state, in + b, length - b);
+      XeCryptSha512Init(g, other);
+      for (uint32_t i = 0; i < length; ++i) XeCryptSha512Update(g, other, in + i, 1);
+      CHECK(g.Load32(state) == length && std::memcmp(g.host(state), g.host(other), 0x48 + length % 128) == 0);
+      XeCryptSha512Final(g, state, out, 64);
+      const auto host = Sha512Digest(g.host(in), length);
+      CHECK(std::memcmp(host.data(), g.host(out), 64) == 0);
+    }
+  }
+  SetShaPath(restore);
+
+  // XeCryptBnQw_Copy: words copied whole, overlapping both ways.
+  for (uint32_t i = 0; i < 64; ++i) g.Store8(in + i, uint8_t(i));
+  XeCryptBnQw_Copy(g, in, in + 8, 4);
+  CHECK(g.Load8(in + 8) == 0 && g.Load8(in + 39) == 31 && g.Load8(in + 40) == 40);
+  XeCryptBnQw_Copy(g, in + 8, in, 4);
+  CHECK(g.Load8(in) == 0 && g.Load8(in + 31) == 31 && g.Load8(in + 32) == 24);
+  XeCryptBnQw_Copy(g, in, out, 0);
+
+  // XeCryptBnQwNeModInv: Xenia's result for any word, and the inverse for an odd one.
+  for (int i = 0; i < 10000; ++i) {
+    const uint64_t v = rng();
+    CHECK(XeCryptBnQwNeModInv(v) == ModInvModel(v));
+    CHECK(((v | 1) * XeCryptBnQwNeModInv(v | 1)) == 1);
+  }
+
+  // XeCryptBnQwNeModMul: the model's words for sizes 1 to 70 (past the stack's 64), with the output over each input;
+  // and the arithmetic: out * 2^64 = a * b (mod m) for one word.
+  for (uint32_t n = 1; n <= 70; ++n) {
+    std::vector<uint64_t> a(n), b(n), m(n);
+    for (uint32_t i = 0; i < n; ++i) a[i] = rng(), b[i] = rng(), m[i] = rng();
+    m[0] |= 1;
+    m[n - 1] |= uint64_t(1) << 63;
+    if (n % 3 == 0) a[n - 1] >>= 1, b[n - 1] >>= 1;  // below the modulus
+    const uint64_t inverse = XeCryptBnQwNeModInv(m[0]);
+    const auto expected = ModMulModel(a, b, inverse, m);
+    const uint32_t ga = kScratch + 0x1000, gb = ga + 0x400, gm = gb + 0x400, go = gm + 0x400;
+    for (int where = 0; where < 3; ++where) {
+      for (uint32_t i = 0; i < n; ++i) g.Store64(ga + 8 * i, a[i]), g.Store64(gb + 8 * i, b[i]), g.Store64(gm + 8 * i, m[i]);
+      const uint32_t target = where == 0 ? go : where == 1 ? ga : gb;
+      XeCryptBnQwNeModMul(g, ga, gb, target, inverse, gm, n);
+      bool same = true;
+      for (uint32_t i = 0; i < n; ++i) same = same && g.Load64(target + 8 * i) == expected[i];
+      CHECK(same);
+    }
+  }
+  for (int i = 0; i < 1000; ++i) {
+    using U = unsigned __int128;
+    const uint64_t m = rng() | 1 | uint64_t(1) << 63, a = rng() % m, b = rng() % m;
+    g.Store64(in, a), g.Store64(in + 8, b), g.Store64(in + 16, m);
+    XeCryptBnQwNeModMul(g, in, in + 8, out, XeCryptBnQwNeModInv(m), in + 16, 1);
+    const uint64_t r = g.Load64(out);
+    // The remainders bit by bit (no 128-bit division in the MSVC runtime).
+    auto mod = [m](U x) {
+      U r = 0;
+      for (int bit = 127; bit >= 0; --bit) {
+        r = r << 1 | ((x >> bit) & 1);
+        if (r >= m) r -= m;
+      }
+      return uint64_t(r);
+    };
+    CHECK(r < m && mod(U(r) << 64) == mod(U(a) * b));
+  }
+
+  // XeCryptBnQwBeSigFormat: undone with the RC4 key it carries, the block is 0 ... 0, 1, the salt, SHA-1(8 zero bytes,
+  // hash, salt), 0xBC (the top bit cleared), stored as 32 words, least significant first.
+  for (int t = 0; t < 20; ++t) {
+    const uint32_t hash = kScratch + 0x100, salt = kScratch + 0x140, sig = kScratch + 0x200;
+    for (uint32_t i = 0; i < 20; ++i) g.Store8(hash + i, uint8_t(rng()));
+    if (t == 0) {
+      put(salt, "XBOX360SVC");
+    } else {
+      for (uint32_t i = 0; i < 10; ++i) g.Store8(salt + i, uint8_t(rng()));
+    }
+    std::memset(g.host(sig + 256), 0xAA, 8);
+    XeCryptBnQwBeSigFormat(g, sig, hash, salt);
+    CHECK(g.Load8(sig + 256) == 0xAA);
+    uint8_t block[256];
+    for (int i = 0; i < 32; ++i) std::memcpy(block + 8 * i, g.host(sig + 256 - 8 * (i + 1)), 8);
+    uint8_t zeros[8] = {};
+    std::memcpy(g.host(kScratch + 0x180), zeros, 8);
+    XeCryptSha(g, kScratch + 0x180, 8, hash, 20, salt, 10, kScratch + 0x1A0, 20);
+    CHECK(std::memcmp(block + 0xEB, g.host(kScratch + 0x1A0), 20) == 0 && block[0xFF] == 0xBC);
+    const uint8_t top = block[0];
+    Rc4(block + 0xEB, 20, block, 0xEB);
+    bool zero = true;
+    for (int i = 1; i < 0xE0; ++i) zero = zero && block[i] == 0;
+    // The first byte: the stream's top bit was cleared, so only its low 7 bits are known.
+    uint8_t stream = 0;
+    Rc4(block + 0xEB, 20, &stream, 1);
+    CHECK(zero && block[0xE0] == 1 && std::memcmp(block + 0xE1, g.host(salt), 10) == 0 && (top & 0x80) == 0 &&
+          top == (stream & 0x7F));
+  }
+
+  // XeCryptBnDwLePkcs1Format: the hash reversed, the DigestInfo (reversed, with its separator), 0xFF, then 1 and 0 at
+  // the top; sizes outside 39-512 all 0xFF.
+  {
+    const uint32_t hash = kScratch + 0x100, sig = kScratch + 0x200;
+    for (uint32_t i = 0; i < 20; ++i) g.Store8(hash + i, uint8_t(0x10 + i));
+    const std::string info0("\x14\x04\x00\x05\x1A\x02\x03\x0E\x2B\x05\x06\x09\x30\x21\x30\x00", 16);
+    const std::string info1("\x14\x04\x1A\x02\x03\x0E\x2B\x05\x06\x07\x30\x1F\x30\x00", 14);
+    const std::string info2 = std::string(1, '\0');
+    const std::string* infos[] = {&info0, &info1, &info2};
+    for (uint32_t format = 0; format < 4; ++format) {
+      for (const uint32_t size : {39u, 128u, 256u, 512u}) {
+        std::memset(g.host(sig), 0xAA, 520);
+        XeCryptBnDwLePkcs1Format(g, hash, format, sig, size);
+        bool ok = g.Load8(sig + size - 1) == 0 && g.Load8(sig + size - 2) == 1 && g.Load8(sig + size) == 0xAA;
+        for (uint32_t i = 0; i < 20; ++i) ok = ok && g.Load8(sig + i) == 0x10 + 19 - i;
+        const uint32_t prefix = format < 3 ? uint32_t(infos[format]->size()) : 0;
+        if (format < 3) ok = ok && std::memcmp(g.host(sig + 20), infos[format]->data(), prefix) == 0;
+        for (uint32_t i = 20 + prefix; i < size - 2; ++i) ok = ok && g.Load8(sig + i) == 0xFF;
+        CHECK(ok);
+      }
+    }
+    for (const uint32_t size : {0u, 1u, 38u, 513u}) {
+      std::memset(g.host(sig), 0xAA, 520);
+      XeCryptBnDwLePkcs1Format(g, hash, 0, sig, size);
+      bool ok = g.Load8(sig + size) == 0xAA;
+      for (uint32_t i = 0; i < size; ++i) ok = ok && g.Load8(sig + i) == 0xFF;
+      CHECK(ok);
+    }
+  }
+
+  // The console's identity.
+  g.Store32(out, 0xAAAAAAAA);
+  CHECK(XeKeysGetConsoleType(g, out) == 0 && g.Load32(out) == 2);
+  CHECK(XeKeysGetConsoleType(g, 0) == 0);
+  ConsoleIdModel model{};
+  model.RefurbBits = 0b0011, model.ManufactureMonth = 0b1001, model.ManufactureYear = 0b0001;
+  model.MacIndex3 = 0b01000000, model.MacIndex4 = 0b01100110, model.MacIndex5 = 0b01111110, model.Crc = 0;
+  std::memset(g.host(out), 0xAA, 32);
+  CHECK(XeKeysGetConsoleID(g, out, out + 16) == 0);
+  CHECK(std::memcmp(g.host(out), model.Data, 5) == 0 && g.Load8(out + 5) == 0xAA);
+  CHECK(std::memcmp(g.host(out + 16), "245149100000", 12) == 0 && g.Load8(out + 28) == 0xAA);
+  CHECK(XeKeysGetConsoleID(g, 0, 0) == 0);
+  // The key vault's sizes (Xenia's table), 0 past it.
+  const std::pair<uint32_t, uint32_t> sizes[] = {{0x00, 1},     {0x03, 1},     {0x04, 2},     {0x06, 4},    {0x0A, 8},
+                                                 {0x0E, 0x10},  {0x13, 0x10},  {0x14, 0xC},   {0x16, 2},    {0x1B, 0x18},
+                                                 {0x1C, 0x10},  {0x32, 0x10},  {0x33, 0x1D0}, {0x34, 0x390}, {0x36, 0x1A8},
+                                                 {0x37, 0x1288}, {0x38, 0x2108}, {0x39, 0},    {0x43, 0},     {0x44, 0x100},
+                                                 {0x45, 0},     {0x2000, 0},   {0xFFFFFFFF, 0}};
+  for (const auto& [key, size] : sizes) CHECK(XeKeysGetKeyProperties(key) == size);
+
+  // Host memory: none for any of them (ModMul up to the stack's 64 words).
+  const AllocCounts before = ThreadAllocations();
+  XeCryptSha512Init(g, state);
+  XeCryptSha512Update(g, state, in, 300);
+  XeCryptSha512Final(g, state, out, 64);
+  XeCryptBnQwNeModMul(g, kScratch + 0x1000, kScratch + 0x1400, kScratch + 0x1C00, 1, kScratch + 0x1800, 64);
+  XeCryptBnQwBeSigFormat(g, kScratch + 0x200, kScratch + 0x100, kScratch + 0x140);
+  XeCryptBnDwLePkcs1Format(g, kScratch + 0x100, 0, kScratch + 0x200, 256);
+  XeKeysGetConsoleID(g, out, out + 16);
+  CHECK((ThreadAllocations() - before).count == 0);
+}
+
 int main() {
   LinkConcurrencyTests();
   U32MapTests();
@@ -3594,6 +3897,7 @@ int main() {
   KernelStep12Tests();
   GuideNuiStep12Tests();
   ProfileStep12Tests();
+  CryptStep12SeventhTests();
   Win32Step12Tests();
   InputQueueTests();
   InputScriptTests();

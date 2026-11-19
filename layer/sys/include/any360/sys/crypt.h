@@ -153,4 +153,35 @@ uint32_t XeCryptBnDwLePkcs1Verify();
 // The console's keys are not available: STATUS_UNSUCCESSFUL, the buffer zeroed.
 uint32_t XeKeysGetKey(Guest g, uint32_t buffer, uint32_t size_ptr);
 
+// --- step 12, seventh batch (source: Xenia Canary's xboxkrnl_crypt.cc and ExCrypt for the answers; FIPS 180-4 and
+// PKCS #1 v1.5 for the results) ---
+
+// SHA-512, streamed through XECRYPT_SHA512_STATE (0xC8 bytes: the byte count as 32 bits, 4 bytes of padding, eight
+// big-endian state words, a 128-byte buffer). Final writes up to 64 bytes of digest, leaves the count as it was and the
+// last padded block in the buffer.
+void XeCryptSha512Init(Guest g, uint32_t state);
+void XeCryptSha512Update(Guest g, uint32_t state, uint32_t input, uint32_t size);
+void XeCryptSha512Final(Guest g, uint32_t state, uint32_t out, uint32_t out_size);
+// The one-call digest on the host (64 bytes), for tests and benchmarks.
+std::array<uint8_t, 64> Sha512Digest(const uint8_t* data, size_t size);
+// `count` 64-bit words copied (overlap allowed).
+void XeCryptBnQw_Copy(Guest g, uint32_t source, uint32_t dest, uint32_t count);
+// The inverse of an odd 64-bit word modulo 2^64 (what XeCryptBnQwNeModMul takes for the modulus' low word).
+uint64_t XeCryptBnQwNeModInv(uint64_t value);
+// Montgomery's product out = a * b / 2^(64 * size) mod modulus, the kernel's way (the sums of a * b and m * modulus kept
+// apart, subtracted at the end, the modulus added back unless the first is larger). Numbers as XeCryptBnQwNeRsaPubCrypt
+// (big-endian words, least significant first); out may overlap the inputs.
+void XeCryptBnQwNeModMul(Guest g, uint32_t a, uint32_t b, uint32_t out, uint64_t inverse, uint32_t modulus, uint32_t size);
+// The 256-byte block XeCryptBnQwBeSigVerify compares a signature with (from the 20-byte hash and the 10-byte salt), as a
+// BnQwNe number.
+void XeCryptBnQwBeSigFormat(Guest g, uint32_t sig, uint32_t hash, uint32_t salt);
+// A PKCS #1 v1.5 block for a SHA-1 hash as a little-endian number of `size` bytes (39 to 512, else all 0xFF): format 0
+// the standard DigestInfo, 1 without its NULL parameters, 2 without DigestInfo.
+void XeCryptBnDwLePkcs1Format(Guest g, uint32_t hash, uint32_t format, uint32_t sig, uint32_t size);
+// The console's identity: a retail console, Xenia's fixed console id (5 bytes and its 12 hex digits, unterminated).
+uint32_t XeKeysGetConsoleType(Guest g, uint32_t type_out);
+uint32_t XeKeysGetConsoleID(Guest g, uint32_t raw, uint32_t hex);
+// The size in bytes of a key vault entry (0 for an index the key vault does not hold).
+uint32_t XeKeysGetKeyProperties(uint32_t key);
+
 }  // namespace any360::sys

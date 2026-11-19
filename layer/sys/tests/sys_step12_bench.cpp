@@ -476,6 +476,56 @@ int main(int argc, char** argv) {
     Files().Reset();
     fs::remove_all(root, ec);
   }
+  // Step 12, seventh batch. SHA-512 streamed as a title uses it (Init, one Update, Final) against CNG's one call on the
+  // same bytes (the digests compared), then the BnQw helpers, the signature formats, the console's identity.
+  {
+#if defined(_WIN32)
+    const Cng sha512(BCRYPT_SHA512_ALGORITHM, 0);
+#endif
+    for (uint32_t size : sizes) {
+      const uint32_t n = CallsFor(size);
+      const Measure ours = Time(n, [&] {
+        XeCryptSha512Init(g, kState);
+        XeCryptSha512Update(g, kState, kIn, size);
+        XeCryptSha512Final(g, kState, kOut, 64);
+      });
+      Measure host;
+#if defined(_WIN32)
+      host = Time(n, [&] { sha512.Hash(nullptr, 0, g.host(kIn), size, host_out, 64); }, false);
+      if (std::memcmp(host_out, g.host(kOut), 64) != 0) std::printf("  !! SHA-512 differs from CNG at %u bytes\n", size);
+#endif
+      PrintRow("XeCryptSha512 Init+Update+Final", size, ours, host);
+    }
+    // Numbers of 1024, 2048 and 4096 bits (16, 32, 64 words), the modulus odd with its top bit set.
+    const uint32_t kA = kText, kB = kText + 0x200, kM = kText + 0x400, kR = kText + 0x600;
+    for (uint32_t i = 0; i < 64; ++i) {
+      g.Store64(kA + 8 * i, 0x9E3779B97F4A7C15ull * (i + 1)), g.Store64(kB + 8 * i, 0xC2B2AE3D27D4EB4Full * (i + 3));
+      g.Store64(kM + 8 * i, 0xFF51AFD7ED558CCDull * (i + 7) | (i == 63 ? 1ull << 63 : 0) | (i == 0 ? 1 : 0));
+    }
+    const uint64_t inverse = XeCryptBnQwNeModInv(g.Load64(kM));
+    for (uint32_t words : {16u, 32u, 64u}) {
+      g.Store64(kM + 8 * (words - 1), g.Load64(kM + 8 * (words - 1)) | 1ull << 63);
+      PrintRow("XeCryptBnQwNeModMul", words * 8, Time(words == 64 ? 20000 : 100000, [&] {
+                 XeCryptBnQwNeModMul(g, kA, kB, kR, inverse, kM, words);
+               }),
+               Measure{});
+    }
+    uint64_t v = 0x123456789ABCDEF1ull;
+    PrintRow("XeCryptBnQwNeModInv", 8, Time(1000000, [&] { v = XeCryptBnQwNeModInv(v) | 1; }), Measure{});
+    g_sink = g_sink + uint32_t(v);
+    for (uint32_t words : {16u, 64u}) {
+      PrintRow("XeCryptBnQw_Copy", words * 8, Time(1000000, [&] { XeCryptBnQw_Copy(g, kA, kR, words); }),
+               Time(1000000, [&] { std::memmove(g.host(kR), g.host(kA), size_t(words) * 8); }, false));
+    }
+    std::memcpy(g.host(kKey), "XBOX360SVC", 10);
+    PrintRow("XeCryptBnQwBeSigFormat", 256, Time(200000, [&] { XeCryptBnQwBeSigFormat(g, kR, kIn, kKey); }), Measure{});
+    PrintRow("XeCryptBnDwLePkcs1Format", 256, Time(1000000, [&] { XeCryptBnDwLePkcs1Format(g, kIn, 0, kR, 256); }), Measure{});
+    PrintRow("XeKeysGetConsoleID", 5, Time(1000000, [&] { XeKeysGetConsoleID(g, kOut, kOut + 16); }), Measure{});
+    PrintRow("XeKeysGetConsoleType", 4, Time(1000000, [&] { XeKeysGetConsoleType(g, kOut); }), Measure{});
+    uint32_t key = 0;
+    PrintRow("XeKeysGetKeyProperties", 0, Time(1000000, [&] { g_sink = g_sink + XeKeysGetKeyProperties(key++ & 0x7F); }),
+             Measure{});
+  }
   std::printf("sys_step12_bench: allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_totals.calls ? double(g_totals.bytes) / double(g_totals.calls) : 0.0,
               g_totals.calls ? double(g_totals.count) / double(g_totals.calls) : 0.0,

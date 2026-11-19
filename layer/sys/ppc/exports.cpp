@@ -993,6 +993,20 @@ ANY360_SYS_EXPORT(XamUserReadUserPreference) {
 ANY360_SYS_EXPORT(XamUserWriteUserPreference) {
   ctx.r3.u64 = XamState().UserWriteUserPreference({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
 }
+// Step 12, seventh batch: SHA-512, the BnQw helpers, the signature formats, the console's identity.
+ANY360_SYS_EXPORT(XeCryptSha512Init) { XeCryptSha512Init({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XeCryptSha512Update) { XeCryptSha512Update({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptSha512Final) { XeCryptSha512Final({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptBnQw_Copy) { XeCryptBnQw_Copy({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptBnQwNeModInv) { ctx.r3.u64 = XeCryptBnQwNeModInv(ctx.r3.u64); }
+ANY360_SYS_EXPORT(XeCryptBnQwNeModMul) {
+  XeCryptBnQwNeModMul({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u64, ctx.r7.u32, ctx.r8.u32);
+}
+ANY360_SYS_EXPORT(XeCryptBnQwBeSigFormat) { XeCryptBnQwBeSigFormat({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Format) { XeCryptBnDwLePkcs1Format({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XeKeysGetConsoleType) { ctx.r3.u64 = XeKeysGetConsoleType({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XeKeysGetConsoleID) { ctx.r3.u64 = XeKeysGetConsoleID({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XeKeysGetKeyProperties) { ctx.r3.u64 = XeKeysGetKeyProperties(ctx.r3.u32); }
 ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
@@ -1835,6 +1849,17 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XamUserNuiGetUserIndexForSignin),
     ANY360_SYS_ENTRY(XamUserReadUserPreference),
     ANY360_SYS_ENTRY(XamUserWriteUserPreference),
+    ANY360_SYS_ENTRY(XeCryptSha512Init),
+    ANY360_SYS_ENTRY(XeCryptSha512Update),
+    ANY360_SYS_ENTRY(XeCryptSha512Final),
+    ANY360_SYS_ENTRY(XeCryptBnQw_Copy),
+    ANY360_SYS_ENTRY(XeCryptBnQwNeModInv),
+    ANY360_SYS_ENTRY(XeCryptBnQwNeModMul),
+    ANY360_SYS_ENTRY(XeCryptBnQwBeSigFormat),
+    ANY360_SYS_ENTRY(XeCryptBnDwLePkcs1Format),
+    ANY360_SYS_ENTRY(XeKeysGetConsoleType),
+    ANY360_SYS_ENTRY(XeKeysGetConsoleID),
+    ANY360_SYS_ENTRY(XeKeysGetKeyProperties),
     ANY360_SYS_ENTRY(XeCryptAesKey),
     ANY360_SYS_ENTRY(XeCryptAesEcb),
     ANY360_SYS_ENTRY(XeCryptAesCbc),

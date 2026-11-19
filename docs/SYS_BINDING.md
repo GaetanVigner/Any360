@@ -448,6 +448,11 @@ locale and opening (its folder mounted as a content device), the user flags (the
 subscription, tenure and logon answers for the one signed-in profile, and the dashboard's user preferences with
 Xenia's "written" bit rules (docs/perf/archive/2026-11-18-sys-step12-profile/).
 
+Seventh batch, cryptography and keys (11, `crypt.h`): SHA-512 streamed through the kernel's state (BMI2 and SSE on
+x86-64, 1.2-1.7x CNG; portable C++ elsewhere), the BnQw helpers (copy, the 2-adic inverse, the kernel's Montgomery
+product word for word), the signature-check block and the PKCS #1 v1.5 block, a retail console's type and id and the
+key vault's entry sizes (docs/perf/archive/2026-11-19-sys-step12-crypt/).
+
 Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
 host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
 SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),

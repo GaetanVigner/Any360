@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "any360/sys/alloc_meter.h"
+#include "any360/sys/crypt.h"
 #include "any360/sys/exports.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/xam.h"
@@ -45,7 +46,9 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamUserGetCachedUserFlags) X(XamUserGetIndexFromXUID) X(XamUserGetOnlineLanguageFromXUID)                        \
   X(XamUserGetSubscriptionType) X(XamUserGetUserFlags) X(XamUserGetUserFlagsFromXUID) X(XamUserGetUserTenure)        \
   X(XamUserIsParentalControlled) X(XamUserLogon) X(XamUserNuiGetUserIndexForSignin) X(XamUserReadUserPreference)     \
-  X(XamUserWriteUserPreference)
+  X(XamUserWriteUserPreference) X(XeCryptSha512Init) X(XeCryptSha512Update) X(XeCryptSha512Final) X(XeCryptBnQw_Copy)    \
+  X(XeCryptBnQwNeModInv) X(XeCryptBnQwNeModMul) X(XeCryptBnQwBeSigFormat) X(XeCryptBnDwLePkcs1Format)                  \
+  X(XeKeysGetConsoleType) X(XeKeysGetConsoleID) X(XeKeysGetKeyProperties)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -255,6 +258,19 @@ int main(int argc, char** argv) {
       {"XamUserNuiGetUserIndexForSignin", __imp__XamUserNuiGetUserIndexForSignin, Args({kOut})},
       {"XamUserReadUserPreference", __imp__XamUserReadUserPreference, Args({0, 0x020, kOut, 0})},
       {"XamUserWriteUserPreference", __imp__XamUserWriteUserPreference, Args({0, 0x020, 0x020, 0})},
+      // The seventh batch: SHA-512 (a state, 256 bytes in), 1024-bit numbers (16 words), a 256-byte signature.
+      {"XeCryptSha512Init", __imp__XeCryptSha512Init, Args({kOut + 0xA00})},
+      {"XeCryptSha512Update (256 B)", __imp__XeCryptSha512Update, Args({kOut + 0xA00, kText, 256})},
+      {"XeCryptSha512Final", __imp__XeCryptSha512Final, Args({kOut + 0xA00, kOut + 0xB00, 64})},
+      {"XeCryptBnQw_Copy (16 words)", __imp__XeCryptBnQw_Copy, Args({kText, kOut + 0xC00, 16})},
+      {"XeCryptBnQwNeModInv", __imp__XeCryptBnQwNeModInv, Args({0x123456789ABCDEF1ull})},
+      {"XeCryptBnQwNeModMul (16 words)", __imp__XeCryptBnQwNeModMul,
+       Args({kText, kText + 0x80, kOut + 0xC00, any360::sys::XeCryptBnQwNeModInv(0xFF51AFD7ED558CCDull), kText + 0x100, 16})},
+      {"XeCryptBnQwBeSigFormat", __imp__XeCryptBnQwBeSigFormat, Args({kOut + 0xC00, kText, kText + 0x40})},
+      {"XeCryptBnDwLePkcs1Format (256 B)", __imp__XeCryptBnDwLePkcs1Format, Args({kText, 0, kOut + 0xC00, 256})},
+      {"XeKeysGetConsoleType", __imp__XeKeysGetConsoleType, Args({kOut})},
+      {"XeKeysGetConsoleID", __imp__XeKeysGetConsoleID, Args({kOut, kOut + 16})},
+      {"XeKeysGetKeyProperties", __imp__XeKeysGetKeyProperties, Args({0x1B})},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "

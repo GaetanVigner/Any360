@@ -1078,4 +1078,257 @@ void XeCryptDesCbc(Guest g, uint32_t state, uint32_t in, uint32_t size, uint32_t
   g.Store64(feed, last);
 }
 
+
+// --- step 12, seventh batch: SHA-512, the BnQw helpers, the signature formats, the console's identity ---
+
+namespace {
+
+constexpr uint32_t kSha512Count = 0, kSha512State = 8, kSha512Buffer = 0x48;
+constexpr uint64_t kSha512Initial[8] = {0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1,
+                                        0x510e527fade682d1, 0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179};
+
+// The padding after `count` bytes whose last `buffered` are in `buffer`: one or two blocks into `blocks`, the bit count
+// as the reference writes it (the low 32 bits of count << 3 in the last four bytes). Returns the blocks' size.
+size_t Sha512Pad(const uint8_t* buffer, uint32_t count, uint8_t (&blocks)[256]) {
+  const uint32_t buffered = count & 127;
+  std::memcpy(blocks, buffer, buffered);
+  blocks[buffered] = 0x80;
+  const size_t length = buffered < 112 ? 128 : 256;
+  std::memset(blocks + buffered + 1, 0, length - buffered - 1);
+  const uint32_t bits = count << 3;
+  for (int i = 0; i < 4; ++i) blocks[length - 4 + i] = uint8_t(bits >> (24 - 8 * i));
+  return length;
+}
+
+uint64_t Mul64(uint64_t a, uint64_t b, uint64_t& high) {
+#if defined(__SIZEOF_INT128__)
+  const unsigned __int128 p = static_cast<unsigned __int128>(a) * b;
+  high = uint64_t(p >> 64);
+  return uint64_t(p);
+#else
+  return _umul128(a, b, &high);
+#endif
+}
+
+// x + y + z as (high, low): x a full product, y and z words (never more than 2^128 - 1).
+inline void MulAdd(uint64_t a, uint64_t b, uint64_t y, uint64_t z, uint64_t& low, uint64_t& high) {
+  low = Mul64(a, b, high);
+  low += y;
+  high += low < y;
+  low += z;
+  high += low < z;
+}
+
+// RC4 over host bytes with a key of any size (as XeCryptRc4 in the reference kernel). The table in 32-bit words: byte
+// stores and reloads of the same table cost more than the wider table on x86-64.
+void Rc4Host(const uint8_t* key, size_t key_size, uint8_t* data, size_t size) {
+  uint32_t s[256];
+  for (uint32_t x = 0; x < 256; ++x) s[x] = x;
+  uint32_t j = 0;
+  for (uint32_t x = 0, k = 0; x < 256; ++x) {
+    j = (j + s[x] + key[k]) & 255;
+    if (++k == key_size) k = 0;
+    std::swap(s[x], s[j]);
+  }
+  uint32_t i = 0;
+  j = 0;
+  for (size_t n = 0; n < size; ++n) {
+    i = (i + 1) & 255;
+    j = (j + s[i]) & 255;
+    std::swap(s[i], s[j]);
+    data[n] ^= uint8_t(s[(s[i] + s[j]) & 255]);
+  }
+}
+
+}  // namespace
+
+void XeCryptSha512Init(Guest g, uint32_t state) {
+  std::memset(g.host(state), 0, kSha512Buffer + 128);
+  for (int i = 0; i < 8; ++i) g.Store64(state + kSha512State + 8 * i, kSha512Initial[i]);
+}
+
+void XeCryptSha512Update(Guest g, uint32_t state, uint32_t input, uint32_t size) {
+  if (!size) return;
+  uint64_t h[8];
+  for (int i = 0; i < 8; ++i) h[i] = g.Load64(state + kSha512State + 8 * i);
+  const uint32_t count = g.Load32(state + kSha512Count);
+  uint32_t buffered = count & 127;
+  uint8_t* buffer = g.host(state + kSha512Buffer);
+  const uint8_t* data = g.host(input);
+  g.Store32(state + kSha512Count, count + size);
+  // As the reference: top up a partial buffer, then whole blocks straight from the input, the rest buffered (the bytes
+  // after it left as they were).
+  if (buffered) {
+    const uint32_t n = std::min<uint32_t>(128 - buffered, size);
+    std::memcpy(buffer + buffered, data, n);
+    buffered += n, data += n, size -= n;
+    if (buffered < 128) return;
+    crypt_blocks::Sha512(h, buffer, 1);
+  }
+  crypt_blocks::Sha512(h, data, size / 128);
+  std::memcpy(buffer, data + (size & ~127u), size & 127);
+  for (int i = 0; i < 8; ++i) g.Store64(state + kSha512State + 8 * i, h[i]);
+}
+
+void XeCryptSha512Final(Guest g, uint32_t state, uint32_t out, uint32_t out_size) {
+  uint64_t h[8];
+  for (int i = 0; i < 8; ++i) h[i] = g.Load64(state + kSha512State + 8 * i);
+  uint8_t blocks[256];
+  const size_t length = Sha512Pad(g.host(state + kSha512Buffer), g.Load32(state + kSha512Count), blocks);
+  crypt_blocks::Sha512(h, blocks, length / 128);
+  // The state words are big-endian in the guest, so their bytes are the digest; the buffer keeps the last block.
+  for (int i = 0; i < 8; ++i) g.Store64(state + kSha512State + 8 * i, h[i]);
+  std::memcpy(g.host(state + kSha512Buffer), blocks + length - 128, 128);
+  if (out && out_size) std::memcpy(g.host(out), g.host(state + kSha512State), std::min<uint32_t>(64, out_size));
+}
+
+std::array<uint8_t, 64> Sha512Digest(const uint8_t* data, size_t size) {
+  uint64_t h[8];
+  std::memcpy(h, kSha512Initial, sizeof h);
+  crypt_blocks::Sha512(h, data, size / 128);
+  uint8_t blocks[256];
+  const size_t length = Sha512Pad(data + (size & ~size_t(127)), uint32_t(size), blocks);
+  crypt_blocks::Sha512(h, blocks, length / 128);
+  std::array<uint8_t, 64> digest;
+  for (int i = 0; i < 8; ++i) {
+    for (int j = 0; j < 8; ++j) digest[8 * i + j] = uint8_t(h[i] >> (56 - 8 * j));
+  }
+  return digest;
+}
+
+void XeCryptBnQw_Copy(Guest g, uint32_t source, uint32_t dest, uint32_t count) {
+  if (count) std::memmove(g.host(dest), g.host(source), size_t(count) * 8);
+}
+
+uint64_t XeCryptBnQwNeModInv(uint64_t value) {
+  // Newton's iteration: (3v) ^ 2 is the inverse of an odd v to 5 bits, and each step doubles the bits.
+  uint64_t inverse = (value * 3) ^ 2;
+  for (int i = 0; i < 4; ++i) inverse *= 2 - value * inverse;
+  return inverse;
+}
+
+void XeCryptBnQwNeModMul(Guest g, uint32_t a_at, uint32_t b_at, uint32_t out, uint64_t inverse, uint32_t modulus_at,
+                         uint32_t size) {
+  const uint32_t n = size;
+  if (!n) return;
+  // The inputs as host words (the output may overlap them), on the stack up to 4096-bit numbers.
+  constexpr uint32_t kStack = 64;
+  uint64_t stack[5 * kStack];
+  std::vector<uint64_t> heap;
+  uint64_t* words = stack;
+  if (n > kStack) {
+    heap.resize(size_t(5) * n);
+    words = heap.data();
+  }
+  uint64_t *a = words, *b = a + n, *m = b + n, *ab = m + n, *mn = ab + n;
+  for (uint32_t i = 0; i < n; ++i) {
+    a[i] = g.Load64(a_at + 8 * i), b[i] = g.Load64(b_at + 8 * i), m[i] = g.Load64(modulus_at + 8 * i);
+    ab[i] = mn[i] = 0;
+  }
+  for (uint32_t i = 0; i < n; ++i) {
+    const uint64_t bi = b[i];
+    // Makes the low words of both sums equal, so they drop out of the shift.
+    const uint64_t q = (ab[0] - mn[0] + bi * a[0]) * inverse;
+    uint64_t ab_carry, mn_carry, low;
+    MulAdd(bi, a[0], ab[0], 0, low, ab_carry);
+    MulAdd(q, m[0], mn[0], 0, low, mn_carry);
+    // Each step waits on the one before (its carry) and on the last pass' word: unrolled by four, the processor
+    // overlaps more of the next pass (5-8% from 2048 bits; 128-bit sums or mulx / adc gave nothing more).
+#if defined(__clang__)
+#pragma clang loop unroll_count(4)
+#endif
+    for (uint32_t j = 1; j < n; ++j) {
+      MulAdd(bi, a[j], ab[j], ab_carry, ab[j - 1], ab_carry);
+      MulAdd(q, m[j], mn[j], mn_carry, mn[j - 1], mn_carry);
+    }
+    ab[n - 1] = ab_carry;
+    mn[n - 1] = mn_carry;
+  }
+  bool greater = false;
+  for (uint32_t i = n; i-- > 0;) {
+    if (ab[i] != mn[i]) {
+      greater = ab[i] > mn[i];
+      break;
+    }
+  }
+  uint64_t carry = 0, borrow = 0;
+  for (uint32_t i = 0; i < n; ++i) {
+    const uint64_t add = greater ? 0 : m[i];
+    uint64_t sum = ab[i] + add;
+    uint64_t next_carry = sum < add;
+    sum += carry;
+    next_carry += sum < carry;
+    carry = next_carry;
+    const uint64_t diff = sum - mn[i];
+    const uint64_t next_borrow = (sum < mn[i]) | (diff < borrow);
+    g.Store64(out + 8 * i, diff - borrow);
+    borrow = next_borrow;
+  }
+}
+
+void XeCryptBnQwBeSigFormat(Guest g, uint32_t sig, uint32_t hash, uint32_t salt) {
+  // A big-endian number: zero padding, 1, the salt, the SHA-1 of (8 zero bytes, hash, salt), then 0xBC; everything
+  // before the SHA-1 encrypted with it as an RC4 key, the top bit cleared.
+  uint8_t block[256] = {};
+  block[0xE0] = 1;
+  std::memcpy(block + 0xE1, g.host(salt), 10);
+  block[0xFF] = 0xBC;
+  Sha1 sha;
+  sha.Update(block, 8);
+  sha.Update(g.host(hash), 20);
+  sha.Update(g.host(salt), 10);
+  const auto digest = sha.Final();
+  std::memcpy(block + 0xEB, digest.data(), 20);
+  Rc4Host(digest.data(), 20, block, 0xEB);
+  block[0] &= 0x7F;
+  // The words in reverse order (least significant first), each kept big-endian.
+  uint8_t* to = g.host(sig);
+  for (size_t i = 0; i < 32; ++i) std::memcpy(to + 8 * i, block + 256 - 8 * (i + 1), 8);
+}
+
+void XeCryptBnDwLePkcs1Format(Guest g, uint32_t hash, uint32_t format, uint32_t sig, uint32_t size) {
+  // The DigestInfo prefixes reversed, each ending with the 0x00 separator.
+  static constexpr uint8_t kDigestInfo0[] = {0x14, 0x04, 0x00, 0x05, 0x1A, 0x02, 0x03, 0x0E,
+                                             0x2B, 0x05, 0x06, 0x09, 0x30, 0x21, 0x30, 0x00};
+  static constexpr uint8_t kDigestInfo1[] = {0x14, 0x04, 0x1A, 0x02, 0x03, 0x0E, 0x2B,
+                                             0x05, 0x06, 0x07, 0x30, 0x1F, 0x30, 0x00};
+  uint8_t* out = g.host(sig);
+  std::memset(out, 0xFF, size);
+  if (size < 39 || size > 512) return;
+  out[size - 1] = 0;
+  out[size - 2] = 1;
+  const uint8_t* digest = g.host(hash);
+  for (int i = 0; i < 20; ++i) out[i] = digest[19 - i];
+  if (format == 0) {
+    std::memcpy(out + 20, kDigestInfo0, sizeof kDigestInfo0);
+  } else if (format == 1) {
+    std::memcpy(out + 20, kDigestInfo1, sizeof kDigestInfo1);
+  } else if (format == 2) {
+    out[20] = 0;
+  }
+}
+
+uint32_t XeKeysGetConsoleType(Guest g, uint32_t type_out) {
+  if (type_out) g.Store32(type_out, 2);  // retail
+  return 0;
+}
+
+uint32_t XeKeysGetConsoleID(Guest g, uint32_t raw, uint32_t hex) {
+  // Xenia's console id: refurb bits 3, manufactured in month 9 of year 1, MAC index 40 66 7E, checksum 0.
+  static constexpr uint8_t kRaw[5] = {0x93, 0x01, 0x64, 0xE6, 0x07};
+  if (raw) std::memcpy(g.host(raw), kRaw, sizeof kRaw);
+  if (hex) std::memcpy(g.host(hex), "245149100000", 12);
+  return 0;
+}
+
+uint32_t XeKeysGetKeyProperties(uint32_t key) {
+  // The key vault's entries 0x00-0x38 (their sizes), then the vault's signature (0x44).
+  static constexpr uint16_t kSizes[0x39] = {
+      0x1,  0x1,  0x1,  0x1,  0x2,  0x2,  0x4,  0x4,  0x4,  0x4,  0x8,  0x8,  0x8,  0x8,  0x10, 0x10, 0x10,  0x10,  0x10,
+      0x10, 0xC,  0xC,  0x2,  0x10, 0x10, 0x10, 0x10, 0x18, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,  0x10,  0x10,
+      0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1D0, 0x390, 0x1D0, 0x1A8, 0x1288, 0x2108};
+  if (key < 0x39) return kSizes[key];
+  return key == 0x44 ? 0x100 : 0;
+}
+
 }  // namespace any360::sys
