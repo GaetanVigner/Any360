@@ -498,6 +498,60 @@ void CaptureWhileBusy() {
   std::filesystem::remove(path, error);
 }
 
+// A capture records guest memory as the renderer leaves it: what the renderer still writes there for earlier kicks (a
+// resolve read back on its own thread, or once the GPU ran) is in the pages recorded at the next kick.
+void CaptureWaitsForRenderer() {
+  CommandProcessor cp(g_physical.data());
+  Ring ring{cp};
+  Fresh(cp, ring);
+  const uint32_t target = kData + 0x400;
+  struct LateWriter : Renderer {
+    uint32_t address = 0;
+    std::thread worker;
+    void WhenDone(std::function<void()> action) override {
+      if (worker.joinable()) worker.join();
+      worker = std::thread([this, action = std::move(action)] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        SetBig(address, 0x600DF00Du);
+        action();
+      });
+    }
+  } late;
+  late.address = target;
+  cp.SetRenderer(&late);
+  const std::string path = (std::filesystem::temp_directory_path() / "gfx_cp_tests_capture_waits.a360cap").string();
+  capture::Writer writer;
+  CHECK(writer.Open(path, g_physical.data(), uint32_t(g_physical.size()), cp.registers(), reg::kRegisterCount,
+                    "gfx_cp_tests"));
+  cp.SetCapture(&writer, 1);
+  ring.Put({Type2()});
+  ring.Run();
+  if (late.worker.joinable()) late.worker.join();
+  cp.SetRenderer(nullptr);
+  writer.Close();
+  capture::Reader reader;
+  CHECK(reader.Open(path));
+  uint32_t type = 0, found = 0;
+  std::vector<uint8_t> payload;
+  while (reader.Next(type, payload)) {
+    if (type != capture::kPages || payload.size() < 4) continue;
+    uint32_t count;
+    std::memcpy(&count, payload.data(), 4);
+    for (uint32_t i = 0; i < count; ++i) {
+      const uint8_t* entry = payload.data() + 4 + size_t(i) * (4 + capture::kPageBytes);
+      uint32_t page;
+      std::memcpy(&page, entry, 4);
+      if (page != target / capture::kPageBytes) continue;
+      std::memcpy(&found, entry + 4 + target % capture::kPageBytes, 4);
+      found = std::byteswap(found);
+    }
+  }
+  CHECK(found == 0x600DF00Du);
+  std::printf("gfx_cp_tests: capture waits for the renderer's writes (%08X recorded)\n", found);
+  std::error_code error;
+  std::filesystem::remove(path, error);
+}
+
 // Any360's records (any360/xdk/d3d_records.h) against the PM4 they replace: the same registers and draws, in order with PM4 around
 // them, in the ring and in an indirect buffer, across the ring's end.
 void Records() {
@@ -726,6 +780,7 @@ int main() {
   GuestWaits(true);
   Kernel();
   CaptureWhileBusy();
+  CaptureWaitsForRenderer();
   Records();
   DirectSubmission();
   std::printf("gfx_cp_tests: %d failing checks\n", g_failures);

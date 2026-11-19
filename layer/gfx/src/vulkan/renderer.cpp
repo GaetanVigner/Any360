@@ -3433,6 +3433,11 @@ void VulkanRenderer::Flush() {
     for (const VkBufferCopy& region : upload_regions_) stats_.guest_upload_bytes += region.size;
     upload = true;
   }
+  // This batch's copies are recorded: none of them is the next batch's. A batch that reads no guest memory skips
+  // building the list above, and it copied this one again, its sources by then offsets into this batch's staging
+  // buffer: the first megabytes of guest memory (zeros) landed over pages marked current, which were never copied
+  // again (Mirror's Edge's skyline drawn black and without its sky, 4 MB of its level meshes zero in video memory).
+  upload_regions_.clear();
   if (textures_) textures_->TakeStaging(b.staging);  // the batch's uploads read them
   b.uploaded = upload;
   submission.upload = upload;

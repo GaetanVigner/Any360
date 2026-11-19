@@ -15,6 +15,7 @@
 #include <bit>
 #include <chrono>
 #include <cstring>
+#include <future>
 
 #include "any360/sys/objects.h"
 
@@ -479,7 +480,19 @@ bool CommandProcessor::Execute() {
     }
     if (start) start();
   }
-  if (capture_) capture_->Kick(ring_base_, ring_dwords_, read, write);
+  if (capture_) {
+    if (renderer_) {
+      // What the renderer still writes into guest memory for the kicks before (resolves read back on its own thread,
+      // write-backs once the GPU ran) lands before the pages are hashed: else the capture holds memory as it was a
+      // kick or so earlier, and its replay writes that over the replay's own resolves (Mirror's Edge's HDR scene,
+      // captured on a renderer running behind, replayed with its first 512 rows of an older frame).
+      std::promise<void> done;
+      std::future<void> landed = done.get_future();
+      renderer_->WhenDone([&done] { done.set_value(); });
+      landed.wait();
+    }
+    capture_->Kick(ring_base_, ring_dwords_, read, write);
+  }
   Reader r{ring_base_, ring_dwords_, read, (write + ring_dwords_ - read) % ring_dwords_};
   bool ok = true;
   for (;;) {

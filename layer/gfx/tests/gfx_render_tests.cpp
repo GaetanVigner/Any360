@@ -2965,6 +2965,42 @@ int main(int argc, char** argv) {
     std::memcpy(g_memory, saved_memory.data(), kMemory);
   }
 
+  // Guest memory kept in video memory (SetMemoryWatch: a page copied once stays current until a CPU write is reported):
+  // a batch that reads no guest memory between two that draw the same vertices. It copied again the list of the
+  // batch before it, whose sources were by then offsets into that batch's staging buffer: the first bytes of guest
+  // memory landed over the vertices, marked current, and the second draw read them (Mirror's Edge's skyline drawn
+  // black, 4 MB of its level meshes zero in video memory).
+  {
+    renderer.SetMemoryWatch([](uint32_t, uint32_t) {});
+    std::memset(g_memory, 0, 0x1000);  // the bytes the stale copy would bring: no vertex there
+    const uint32_t color = Rgba(90, 160, 30, 255);
+    auto draw = [&] {
+      s.Vertices(0);
+      s.Color(90, 160, 30, 255);
+      s.DrawAuto(kTriangleStrip, 4);
+    };
+    // The resolve's rectangle on a page of its own (the CPU reads it, no shader does).
+    const uint32_t rect = kVertices + 0x2000;
+    const float rv[3][2] = {{0, 0}, {float(kSize), 0}, {float(kSize), float(kSize)}};
+    for (uint32_t i = 0; i < 3; ++i) {
+      SetBig(rect + 8 * i, Bits(rv[i][0]));
+      SetBig(rect + 8 * i + 4, Bits(rv[i][1]));
+    }
+    Pixels first = scenario("video memory copy, first batch", nullptr, draw);  // ReadBack submits the batch
+    // A batch with a resolve only (k_8_8_8_8, kept on the GPU): it reads no guest memory.
+    s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});
+    s.Put({Type0(0x2318, 4), 0u, 0x180000u, 64u | 64u << 16, 2u | 6u << 7});
+    s.Reg(0x2208, 6);
+    s.DrawAuto(8, 3);
+    s.Reg(0x2208, 4);
+    s.Run();
+    renderer.Flush();
+    Pixels second = scenario("video memory copy, after a batch without reads", nullptr, draw);
+    CHECK(first.Count(color) == kSize * kSize && second.Count(color) == kSize * kSize);
+    std::printf("gfx_render_tests: video memory copy of guest memory: %u then %u pixels of the quad (of %u)\n",
+                first.Count(color), second.Count(color), kSize * kSize);
+  }
+
   std::printf("gfx_render_tests: guest memory %s\n", renderer.guest_memory_in_place() ? "read in place" : "copied per draw");
   std::printf("gfx_render_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;
