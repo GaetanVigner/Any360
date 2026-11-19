@@ -826,28 +826,40 @@ loc_82A4CBB0:
 	ctx.r11.s64 = ctx.r11.s64 + 16;
 	// stvlx v0,0,r7
 	ea = ctx.r7.u32;
-	for (size_t i = 0; i < (16 - (ea & 0xF)); i++)
-		Store8(base, ea + i, ctx.v0.u8[15 - i]);
+	{
+		const VReg lanes = ctx.v0;
+		for (size_t i = 0; i < (16 - (ea & 0xF)); i++)
+			Store8(base, ea + i, lanes.u8[15 - i]);
+	}
 	// addi r10,r10,16
 	ctx.r10.s64 = ctx.r10.s64 + 16;
 	// stvrx v0,r3,r6
 	ea = ctx.r3.u32 + ctx.r6.u32;
-	for (size_t i = 0; i < (ea & 0xF); i++)
-		Store8(base, ea - i - 1, ctx.v0.u8[i]);
+	{
+		const VReg lanes = ctx.v0;
+		for (size_t i = 0; i < (ea & 0xF); i++)
+			Store8(base, ea - i - 1, lanes.u8[i]);
+	}
 	// addi r4,r4,16
 	ctx.r4.s64 = ctx.r4.s64 + 16;
 	// stvlx v13,0,r30
 	ea = ctx.r30.u32;
-	for (size_t i = 0; i < (16 - (ea & 0xF)); i++)
-		Store8(base, ea + i, ctx.v13.u8[15 - i]);
+	{
+		const VReg lanes = ctx.v13;
+		for (size_t i = 0; i < (16 - (ea & 0xF)); i++)
+			Store8(base, ea + i, lanes.u8[15 - i]);
+	}
 	// addi r9,r9,16
 	ctx.r9.s64 = ctx.r9.s64 + 16;
 	// cmplwi cr6,r8,0
 	ctx.cr6.compare<uint32_t>(ctx.r8.u32, 0, ctx.xer);
 	// stvrx v13,r29,r28
 	ea = ctx.r29.u32 + ctx.r28.u32;
-	for (size_t i = 0; i < (ea & 0xF); i++)
-		Store8(base, ea - i - 1, ctx.v13.u8[i]);
+	{
+		const VReg lanes = ctx.v13;
+		for (size_t i = 0; i < (ea & 0xF); i++)
+			Store8(base, ea - i - 1, lanes.u8[i]);
+	}
 	// bne cr6,0x82a4cbb0
 	if (!ctx.cr6.eq) goto loc_82A4CBB0;
 	// lis r11,-32251

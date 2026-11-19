@@ -12,7 +12,8 @@
 // Its hot loop (loc_82A4E774: 256 samples through the filters) keeps its stack slots and its memory at invariant
 // addresses (the state's coefficients and filter words) in locals behind a check, the plain loop beside it
 // (--promote loc_82A4E774 --promote-memory loc_82A4E774; its filters' double-buffer words picked by a selector):
-// about 77 -> 48 us a frame. Regenerated with
+// about 77 -> 48 us a frame; with the whole context in host registers (no helper left out of line, no vector lane
+// reached by a variable index) 27 us. Regenerated with
 //   python -I tools/ppc_model.py --native --promote loc_82A4E774 --promote-memory loc_82A4E774
 //       <the title's generated dir> xaudio_reverb layer/xdk/include/any360/xdk/xaudio_reverb_native.h 82A4DCF0
 //

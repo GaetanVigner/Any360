@@ -1,0 +1,13 @@
+reverb 27.28 us a frame, model 91.34 (3.35x)
+reverb 28.05 us a frame, model 86.80 (3.09x)
+reverb 27.15 us a frame, model 86.31 (3.18x)
+reverb 27.18 us a frame, model 86.03 (3.17x)
+reverb 27.14 us a frame, model 86.75 (3.20x)
+reverb, its loop plain: 37.79 us a frame
+reverb, its loop plain: 38.12 us a frame
+reverb, its loop plain: 38.17 us a frame
+reverb, its loop plain: 38.60 us a frame
+reverb, its loop plain: 37.94 us a frame
+xdk_xaudio_reverb_bench: the loop promoted on 10000 of 10000 frames
+xdk_xaudio_reverb_bench: allocated per call 0.00 B in 0.0000 allocations over 30000 timed calls (at most 0.00 B a call in a run)
+exit 0 

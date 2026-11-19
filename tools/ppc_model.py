@@ -109,7 +109,14 @@ SUBSTITUTIONS = [
     (r'\bsimde_mm_', '_mm_'),
     (r'\b__(save|rest)gprlr_(\d+)\(ctx, base\)', lambda m: '%sGprLr(ctx, base, %s)' % (m.group(1).capitalize(), m.group(2))),
     (r'\b__(save|rest)fpr_(\d+)\(ctx, base\)', lambda m: '%sFpr(ctx, base, %s)' % (m.group(1).capitalize(), m.group(2))),
+    # stvlx / stvrx store a vector register's bytes by a variable index: from a copy, so that the context itself is
+    # only ever reached at constant offsets (a context local to a native leaf then stays in host registers).
+    (r'^([\t ]*)(for \(size_t i = 0; i < [^\n]*; i\+\+\)\n[\t ]*Store8\(base, [^\n]*, )ctx\.(v\d+)\.u8\[([^\]\n]*)\]\);',
+     lambda m: '%s{\n%s\tconst VReg lanes = ctx.%s;\n%s\t%slanes.u8[%s]);\n%s}' % (
+         m.group(1), m.group(1), m.group(3), m.group(1), m.group(2).replace('\n', '\n\t'), m.group(4), m.group(1))),
 ]
+
+
 def promote_loop(body, label):
     """The loop at `label` in `body` (a function's statements) with its r1 + K slots in locals (see --promote)."""
     lines = body.split('\n')

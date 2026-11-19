@@ -1,0 +1,5 @@
+﻿=== --any360_xdk_verify=true --any360_input_script=12:start,16:a,20:a,24:a,28:a,32:a,40:a,50:a (crackdown_240.log)
+hangs: 0; errors: 0
+Any360: 48.4 FPS; per frame: 2319 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 8.0 texture 
+Any360: 48.8 FPS; per frame: 2316 draws, 192 skipped, 0 failed, 33 resolves, 0.0 texture uploads, 8.0 texture 
+Any360: command processor per frame: 2.59 ms running the ring (0.08 ms of it in WAIT_REG_MEM), 3.6 kicks (0.0 through the title's ring; 14.2 command buffers and 2.0 tile bin selects submitted directly), 1.0 tiled brackets (0.0 the runtime's), 1.0 tile op runs (0.0 the runtime's); 87.4% of the time with nothing to run

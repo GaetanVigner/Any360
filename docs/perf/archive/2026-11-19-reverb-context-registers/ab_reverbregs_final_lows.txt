@@ -1,0 +1,27 @@
+@exe:crackdown_after.exe: 10 launches
+  crackdown_242.log: dip 1% low 34 FPS, slowest 30.0 ms, 38 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-63
+  crackdown_244.log: dip 1% low 34 FPS, slowest 29.7 ms, 52 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-62
+  crackdown_246.log: dip 1% low 34 FPS, slowest 29.6 ms, 44 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 62-63
+  crackdown_248.log: dip 1% low 34 FPS, slowest 29.8 ms, 47 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-63
+  crackdown_250.log: dip 1% low 34 FPS, slowest 29.3 ms, 36 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_253.log: dip 1% low 34 FPS, slowest 29.8 ms, 44 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-63
+  crackdown_255.log: dip 1% low 53 FPS, slowest 19.1 ms, 5 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-66
+  crackdown_257.log: dip 1% low 57 FPS, slowest 26.5 ms, 19 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-64
+  crackdown_259.log: dip 1% low 57 FPS, slowest 36.9 ms, 18 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-63
+  crackdown_261.log: dip 1% low 56 FPS, slowest 41.9 ms, 19 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-64
+  steady (90 periods): FPS mean 62.6 (median 62.4, min 61.7), 10% low mean 61.2 (median 61.4, min 35.0), 1% low mean 57.8 (median 60.0, min 34.0); process private memory mean 2575 MB, max 2596 MB
+  dips (10): 1% low mean 42.6, slowest frame mean 30.3 ms, over 16.7 ms mean 32.2, texture loading mean 0.06 ms a frame
+@exe:crackdown_before.exe: 10 launches
+  crackdown_243.log: dip 1% low 35 FPS, slowest 30.2 ms, 55 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-62
+  crackdown_245.log: dip 1% low 55 FPS, slowest 26.1 ms, 14 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-63
+  crackdown_247.log: dip 1% low 57 FPS, slowest 36.9 ms, 18 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-63
+  crackdown_249.log: dip 1% low 35 FPS, slowest 28.8 ms, 46 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_251.log: dip 1% low 53 FPS, slowest 28.1 ms, 6 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-68
+  crackdown_252.log: dip 1% low 54 FPS, slowest 38.0 ms, 23 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-64
+  crackdown_254.log: dip 1% low 34 FPS, slowest 29.9 ms, 49 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-63
+  crackdown_256.log: dip 1% low 35 FPS, slowest 28.6 ms, 29 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-64
+  crackdown_258.log: dip 1% low 57 FPS, slowest 24.9 ms, 14 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-63
+  crackdown_260.log: dip 1% low 57 FPS, slowest 36.6 ms, 18 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 62-63
+  steady (90 periods): FPS mean 62.7 (median 62.6, min 61.7), 10% low mean 61.7 (median 61.7, min 60.0), 1% low mean 59.7 (median 60.3, min 34.9); process private memory mean 2571 MB, max 2600 MB
+  dips (10): 1% low mean 47.1, slowest frame mean 30.8 ms, over 16.7 ms mean 27.2, texture loading mean 0.06 ms a frame
+@exe:crackdown_after.exe against @exe:crackdown_before.exe: steady fps z -0.97, p10 z -1.48, p1 z -1.91; dips 1% low z -1.17, slowest z +0.11

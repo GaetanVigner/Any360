@@ -176,22 +176,30 @@ inline std::atomic<uint64_t> g_promoted_loops{0};
 inline std::atomic<uint64_t> g_plain_loops{0};
 inline std::atomic<bool> g_force_plain_loops{false};
 
-// The PowerPC ABI's register save and restore helpers.
-inline void SaveGprLr(Ctx& ctx, const Memory& m, int first) {
+// The PowerPC ABI's register save and restore helpers. Always inlined and unrolled (`first` is a constant where the
+// recompiled code calls them): a call left out of line would take the context's address, and a context local to a
+// native leaf (tools/ppc_model.py --native) would then stay in memory instead of in host registers.
+#define ANY360_PPC_MODEL_HELPER __attribute__((always_inline)) inline
+ANY360_PPC_MODEL_HELPER void SaveGprLr(Ctx& ctx, const Memory& m, int first) {
+#pragma GCC unroll 32
   for (int i = first; i < 32; ++i) Store64(m, ctx.r1.u32 - 8 * (32 - i) - 8, ctx.Gpr(i).u64);
   Store32(m, ctx.r1.u32 - 8, ctx.r12.u32);
 }
-inline void RestGprLr(Ctx& ctx, const Memory& m, int first) {
+ANY360_PPC_MODEL_HELPER void RestGprLr(Ctx& ctx, const Memory& m, int first) {
+#pragma GCC unroll 32
   for (int i = first; i < 32; ++i) ctx.Gpr(i).u64 = Load64(m, ctx.r1.u32 - 8 * (32 - i) - 8);
   ctx.r12.u64 = Load32(m, ctx.r1.u32 - 8);
   ctx.lr = ctx.r12.u64;
 }
-inline void SaveFpr(Ctx& ctx, const Memory& m, int first) {
+ANY360_PPC_MODEL_HELPER void SaveFpr(Ctx& ctx, const Memory& m, int first) {
+#pragma GCC unroll 32
   for (int i = first; i < 32; ++i) Store64(m, ctx.r12.u32 - 8 * (32 - i), ctx.Fpr(i).u64);
 }
-inline void RestFpr(Ctx& ctx, const Memory& m, int first) {
+ANY360_PPC_MODEL_HELPER void RestFpr(Ctx& ctx, const Memory& m, int first) {
+#pragma GCC unroll 32
   for (int i = first; i < 32; ++i) ctx.Fpr(i).u64 = Load64(m, ctx.r12.u32 - 8 * (32 - i));
 }
+#undef ANY360_PPC_MODEL_HELPER
 
 // The byte masks the recompiled code shuffles unaligned vector loads and stores with (lvlx / lvrx and the like).
 alignas(16) inline constexpr uint8_t VectorMaskL[256] = {
