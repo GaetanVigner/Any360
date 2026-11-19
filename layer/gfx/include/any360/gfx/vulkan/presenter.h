@@ -42,7 +42,8 @@ class Presenter {
   void SetOverlay(const std::string& text);
   // The present mode: FIFO (vertical sync) unless another is asked for and the surface has it. FIFO is the one mode
   // every driver must have, and the one that shows: on NVIDIA's Windows driver (2026-11, RTX 5070 Ti, 32.0.16.1088)
-  // MAILBOX and IMMEDIATE went through its layered presentation and the window stayed black. A minimized window has
+  // MAILBOX and IMMEDIATE show nothing on a window a D3D12 flip swapchain presented to before (the runtime's own
+  // presenter draws the title's window first; docs/GFX.md, tools/present_probe.cpp). A minimized window has
   // no swapchain, so measuring runs are not held to the display's rate. Takes effect at the next Resize.
   void PreferPresentMode(VkPresentModeKHR mode) { wanted_ = mode; }
   VkFormat format() const { return format_; }

@@ -739,8 +739,26 @@ read back from the GPU were right), and every frame was presented with no error,
 presenter asked for MAILBOX (IMMEDIATE where there was none), FIFO only with vsync. Shown launches, one variable at a time:
 MAILBOX and IMMEDIATE black (on every monitor, the primary included; MAILBOX showed once after the window was moved), FIFO
 shown, three times (the last as the new default). Each black run had a hidden `__wglDummyWindowFodder` window of NVIDIA's OpenGL driver in the process,
-none of the FIFO runs: the driver's layered presentation, which these modes took. The same build presented with MAILBOX
-the day before. Neither the driver nor Windows changed between the two days, so what changed is not known.
+none of the FIFO runs: the driver's layered presentation, which these modes took.
+
+The cause (found 2026-11-19, reproduced outside the title): **on NVIDIA, a window that a D3D12 flip swapchain has
+presented to shows nothing from a MAILBOX (or IMMEDIATE) Vulkan swapchain made on it afterwards, even once the D3D12
+swapchain is released.** The runtime's own presenter is D3D12 (`DXGI_SWAP_EFFECT_FLIP_DISCARD`) and draws the title's
+window first; since "Present into the title's own window" (2026-11-17) our swapchain goes on that same window. Before,
+the frames went to a child window of our own that DXGI had never presented to, which is why MAILBOX showed the day before.
+`tools/present_probe.cpp` (Windows) shows it: four windows on one screen, each cleared to a pulsing colour by Vulkan
+from a render thread, with every present reported successful:
+
+| Window | Before Vulkan | Vulkan surface made | Mode | Seen |
+|---|---|---|---|---|
+| 1 | nothing | - | MAILBOX | colour |
+| 2 | a D3D12 flip swapchain, 10 presents, released | while the D3D12 swapchain lived | MAILBOX | black |
+| 3 | the same | after it was released | MAILBOX | black |
+| 4 | the same | while the D3D12 swapchain lived | FIFO | colour |
+
+The monitor does not matter (`vkcube` in MAILBOX shows on the 240 Hz primary and the 165 Hz secondary), nor when the
+surface is made (2 and 3). MAILBOX can come back on Windows once the title's window has never been presented to by D3D12:
+when the runtime's presenter no longer draws it, or with a fresh window for our swapchain.
 
 The presenter now makes its swapchain with FIFO, the one mode every surface must have, unless another is asked for
 (`Presenter::PreferPresentMode`; in the binding `ANY360_PRESENT_MODE=mailbox|immediate`) and the surface has it
