@@ -14,6 +14,7 @@
 #include <string>
 
 #include "any360/sys/exports.h"
+#include "any360/sys/files.h"
 #include "any360/sys/ldi.h"
 #include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
@@ -132,6 +133,66 @@ void AvatarAdapters() {
   CHECK(G().Load32(setting + 32) == 0x3E8 && std::memcmp(g_base + G().Load32(setting + 36), g_base + kData, 0x3E8) == 0);
 }
 
+void UserAdapters() {
+  const uint64_t xuid = XamState().title().xuid;
+  // XamProfileClose: a profile XamProfileOpen mounted is unmounted (closing it again fails), an unknown name fails.
+  std::memcpy(g_base + kData + 0x100, "UPROF", 6);
+  CHECK(Call("XamProfileOpen", {xuid, kData + 0x100, 0, 0}) == 0 && !Files().Resolve("UPROF:\\a").empty());
+  CHECK(Call("XamProfileClose", {kData + 0x100}) == 0 && Files().Resolve("UPROF:\\a").empty());
+  CHECK(Call("XamProfileClose", {kData + 0x100}) == 0x65B);
+  // XamProfileClose closes content opened under the name too (Xenia's CloseContent), as XamContentClose would.
+  std::memset(g_base + kData + 0x200, 0, 0x134);
+  G().Store32(kData + 0x200, 1), G().Store32(kData + 0x204, 1);
+  std::memcpy(g_base + kData + 0x200 + 0x108, "pclose", 7);
+  std::memcpy(g_base + kData + 0x180, "PSAVE", 6);
+  CHECK(Call("XamContentCreate", {0, kData + 0x180, kData + 0x200, 4, 0, 0, 0}) == 0);
+  CHECK(!Files().Resolve("PSAVE:\\a").empty());
+  CHECK(Call("XamProfileClose", {kData + 0x180}) == 0 && Files().Resolve("PSAVE:\\a").empty());
+  CHECK(Call("XamContentClose", {kData + 0x180, 0}) == 2);  // already closed: ERROR_FILE_NOT_FOUND
+  CHECK(Call("XamContentDelete", {0, kData + 0x200, 0}) == 0);
+  // XamProfileCreate: no other profile; the creation info out set to 0, the device out 1 (as Xenia's).
+  G().Store32(kOut, 0x1234), G().Store32(kOut + 4, 0x5678);
+  CHECK(Call("XamProfileCreate", {0, kOut + 4, 0, kData, 0, 0, 0, kOut}) == 87);
+  CHECK(G().Load32(kOut) == 0 && G().Load32(kOut + 4) == 1);
+  // XamProfileGetCreationStatus: the info's offline XUID (at 0xA78: after the flags, device, account 0x17C, payment
+  // info 0x8F0 and a word) out; no info, success and nothing written.
+  G().Store64(kBuf + 0xA70, 0xBAD), G().Store64(kBuf + 0xA78, 0xE000000000001234ull);
+  CHECK(Call("XamProfileGetCreationStatus", {kBuf, kOut + 8}) == 0 && G().Load64(kOut + 8) == 0xE000000000001234ull);
+  G().Store64(kOut + 8, 7);
+  CHECK(Call("XamProfileGetCreationStatus", {0, kOut + 8}) == 0 && G().Load64(kOut + 8) == 7);
+  // XamProfileLoadAccountInfo: the account XamProfileFindAccount gives, for the local XUID only.
+  std::memset(g_base + kOut + 0x100, 0xAA, 0x400);
+  CHECK(Call("XamProfileFindAccount", {xuid, kOut + 0x100, 0}) == 0);
+  CHECK(Call("XamProfileLoadAccountInfo", {1, xuid, kOut + 0x300}) == 0);
+  CHECK(!std::memcmp(g_base + kOut + 0x100, g_base + kOut + 0x300, XamState().kAccountSize));
+  CHECK(Call("XamProfileLoadAccountInfo", {1, xuid + 1, kOut + 0x300}) == 87);
+  CHECK(Call("XamProfileLoadAccountInfo", {1, 0, kOut + 0x300}) == 87 && Call("XamProfileLoadAccountInfo", {1, xuid, 0}) == 87);
+  // XamUserCreateTitlesPlayedEnumerator: an empty enumerator of 0xA8-byte items; its first enumeration is the end.
+  CHECK(Call("XamUserCreateTitlesPlayedEnumerator", {0, 0, 0, 0, 5, kOut, kOut + 4}) == 0 && G().Load32(kOut) == 5 * 0xA8);
+  const uint32_t titles = G().Load32(kOut + 4);
+  CHECK(titles != 0 && Call("XamEnumerate", {titles, 0, kBuf, 5 * 0xA8, kOut + 8, 0}) == 18);
+  CHECK(Call("NtClose", {titles}) == 0);
+  CHECK(Call("XamUserCreateTitlesPlayedEnumerator", {0, 1, 0, 0, 5, kOut, kOut + 4}) == 0x65B);
+  CHECK(Call("XamUserCreateTitlesPlayedEnumerator", {0, 4, 0, 0, 5, kOut, kOut + 4}) == 87);
+  CHECK(Call("XamUserCreateTitlesPlayedEnumerator", {0, 0, 0, 0, 0, kOut, kOut + 4}) == 87);
+  CHECK(Call("XamUserCreateTitlesPlayedEnumerator", {0, 0, 0, 0, 5, 0, kOut + 4}) == 87);
+  CHECK(Call("XamUserCreateTitlesPlayedEnumerator", {0, 0, 0, 0, 5, kOut, 0}) == 87);
+  CHECK(Call("XamUserIsGuest", {0}) == 0 && Call("XamUserIsGuest", {7}) == 0);
+  // XamUserIsUnsafeProgrammingAllowed: allowed for users 0-3 and XUSER_INDEX_ANY.
+  for (const uint32_t user : {0u, 3u, 0xFFu}) {
+    G().Store32(kOut, 0);
+    CHECK(Call("XamUserIsUnsafeProgrammingAllowed", {user, 0, kOut}) == 0 && G().Load32(kOut) == 1);
+  }
+  CHECK(Call("XamUserIsUnsafeProgrammingAllowed", {4, 0, kOut}) == 87 && Call("XamUserIsUnsafeProgrammingAllowed", {0, 0, 0}) == 87);
+  // XamUserLogonEx: success, through the overlapped when given.
+  CHECK(Call("XamUserLogonEx", {kData, 0, 0}) == 0);
+  FreshOverlapped();
+  CHECK(Call("XamUserLogonEx", {kData, 0, kOv}) == 997 && Completed(0, 0));
+  CHECK(Call("XamUserNuiEnableBiometric", {0, 1}) == 0x80070057);
+  CHECK(Call("XamUserNuiGetUserIndex", {0, kOut}) == 0x80070525);
+  CHECK(Call("XamUserNuiGetUserIndexForBind", {kOut}) == 0x80004005 && Call("XamUserNuiGetUserIndexForBind", {0}) == 0x80070057);
+}
+
 void MediaAdapters() {
   for (const char* name : {"EnumerateMediaObjects", "EnumerateMediaObjects_", "EnumerateMediaObjects_0", "EnumerateMediaObjects_1"}) {
     CHECK(Call(name, {kData, 1, kOut}) == 0x80004001);
@@ -244,6 +305,7 @@ int main() {
   XamState().title().profile_root = root / "profile";
   AvatarAdapters();
   MediaAdapters();
+  UserAdapters();
   EarlierBatchAdapters();
   Threads().SetDispatcher(nullptr, nullptr);
   std::filesystem::remove_all(root, error);

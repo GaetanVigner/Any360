@@ -71,7 +71,10 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(EnumerateMediaObjects) X(EnumerateMediaObjects_) X(EnumerateMediaObjects_0) X(EnumerateMediaObjects_1)             \
   X(XamMediaVerificationClose) X(XamMediaVerificationCreate) X(XamMediaVerificationFailedBlocks)                       \
   X(XamMediaVerificationInject) X(XamMediaVerificationVerify) X(XampWebInstrumentationSetProfileCounts)                \
-  X(XampXAuthGetTitleBuffer) X(XampXAuthShutdown) X(XampXAuthStartup)
+  X(XampXAuthGetTitleBuffer) X(XampXAuthShutdown) X(XampXAuthStartup)                                                  \
+  X(XamProfileClose) X(XamProfileCreate) X(XamProfileGetCreationStatus) X(XamProfileLoadAccountInfo)                   \
+  X(XamUserCreateTitlesPlayedEnumerator) X(XamUserIsGuest) X(XamUserIsUnsafeProgrammingAllowed) X(XamUserLogonEx)      \
+  X(XamUserNuiEnableBiometric) X(XamUserNuiGetUserIndex) X(XamUserNuiGetUserIndexForBind)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -202,6 +205,32 @@ constexpr uint32_t kEnumeratorOut = 0x40020E00;
 constexpr uint32_t kObjectBlock = 0x4002D000;
 uint64_t AllocateProcedure(uint32_t, uint32_t, uint32_t, const uint64_t*, uint32_t, void*) { return kObjectBlock; }
 
+// XamUserCreateTitlesPlayedEnumerator on Any360's side with the NtClose that releases its enumerator.
+Function g_titles_played = nullptr;
+void TitlesPlayedAndClose(PPCContext& ctx, uint8_t* base) {
+  g_titles_played(ctx, base);
+  any360::sys::Objects().Close(Load32(kEnumeratorOut));
+}
+// XamProfileCreateEnumerator on Any360's side with the NtClose that releases its enumerator (left open, the
+// enumerators piled up would be searched by every later enumerator row).
+Function g_profile_enumerator = nullptr;
+void ProfileEnumeratorAndClose(PPCContext& ctx, uint8_t* base) {
+  g_profile_enumerator(ctx, base);
+  any360::sys::Objects().Close(Load32(kEnumeratorOut));
+}
+// XamProfileOpen then XamProfileClose of the same name (the mount made and removed each time), on either side.
+Function g_profile_open[2], g_profile_close[2];
+uint64_t g_profile_xuid = 0;
+constexpr uint32_t kProfileName = 0x4002CA00;
+void ProfileOpenClose(int side, PPCContext& ctx, uint8_t* base) {
+  ctx.r3.u64 = g_profile_xuid, ctx.r4.u64 = kProfileName, ctx.r5.u64 = 0, ctx.r6.u64 = 0;
+  g_profile_open[side](ctx, base);
+  ctx.r3.u64 = kProfileName;
+  g_profile_close[side](ctx, base);
+}
+void ProfileOpenCloseReference(PPCContext& ctx, uint8_t* base) { ProfileOpenClose(0, ctx, base); }
+void ProfileOpenCloseNative(PPCContext& ctx, uint8_t* base) { ProfileOpenClose(1, ctx, base); }
+
 void EnumeratorAndClose(PPCContext& ctx, uint8_t* base) {
   g_enumerator_internal(ctx, base);
   any360::sys::Objects().Close(Load32(kEnumeratorOut));
@@ -295,6 +324,13 @@ int main(int argc, char** argv) {
   // The ninth batch: two content packages of type 1 (saved games), an XCONTENT_DATA_INTERNAL naming the first, a size
   // for XamReadString.
   g_enumerator_internal = Native("XamContentCreateEnumeratorInternal");
+  g_titles_played = Native("XamUserCreateTitlesPlayedEnumerator");
+  g_profile_enumerator = Native("XamProfileCreateEnumerator");
+  g_profile_open[0] = __imp__XamProfileOpen, g_profile_open[1] = Native("XamProfileOpen");
+  g_profile_close[0] = __imp__XamProfileClose, g_profile_close[1] = Native("XamProfileClose");
+  g_profile_xuid = xuid;
+  std::memcpy(g_base + kProfileName, "BENCHPROF", 10);
+  std::memcpy(g_base + kProfileName + 0x20, "NOTMOUNTED", 11);
   constexpr uint32_t kContentData = 0x4002C000, kMetadata = 0x40021000, kWsaData = 0x4002B000;  // 0x134, 0x93D6, 0x190 bytes
   {
     // Two packages made as a title makes them (XamContentCreate: the folder and its header), closed again.
@@ -395,7 +431,8 @@ int main(int argc, char** argv) {
       {"XamShowGamerCardUI (no listener)", __imp__XamShowGamerCardUI, Args({0})},
       {"XamShowMultiplayerUpgradeUI", __imp__XamShowMultiplayerUpgradeUI, Args({0})},
       {"XamShowNuiHardwareRequiredUI", __imp__XamShowNuiHardwareRequiredUI, Args({0})},
-      {"XamProfileCreateEnumerator (left open)", __imp__XamProfileCreateEnumerator, Args({1, kOut + 0x300}), 200},
+      {"XamProfileCreateEnumerator (+ NtClose)", __imp__XamProfileCreateEnumerator, Args({1, kEnumeratorOut}), 2000,
+       ProfileEnumeratorAndClose, 0},
       {"XamProfileEnumerate (at the end)", __imp__XamProfileEnumerate, Args({profiles, 0, kOut + 0x400, 0})},
       {"XamProfileFindAccount", __imp__XamProfileFindAccount, Args({xuid, kOut + 0x600, kOut + 0x7F0})},
       {"XamProfileGetLiveLegalLocale", __imp__XamProfileGetLiveLegalLocale, Args({xuid, 16, kOut + 0x800})},
@@ -502,6 +539,25 @@ int main(int argc, char** argv) {
       {"XampXAuthStartup", __imp__XampXAuthStartup, Args({kMediaInfo + 0x20}), 20000, nullptr, 0x80158406},
       {"XampXAuthShutdown", __imp__XampXAuthShutdown, Args({kOut + 0xDD0}), 20000, nullptr, -1},
       {"XampXAuthGetTitleBuffer", __imp__XampXAuthGetTitleBuffer, Args({}), 20000, nullptr, 0},
+      // The profile and user calls.
+      {"XamProfileClose (not mounted)", __imp__XamProfileClose, Args({kProfileName + 0x20}), 20000, nullptr, 0x65B},
+      {"XamProfileOpen + XamProfileClose (mounted, unmounted)", ProfileOpenCloseReference, Args({}), 2000,
+       ProfileOpenCloseNative, 0},
+      {"XamProfileCreate", __imp__XamProfileCreate, Args({0, kOut + 0xDD0, 0, kIn, 0, 0, 0, kOut + 0xDD4}), 20000, nullptr,
+       87},
+      {"XamProfileGetCreationStatus", __imp__XamProfileGetCreationStatus, Args({kIn, kOut + 0xDD8}), 20000, nullptr, 0},
+      {"XamProfileLoadAccountInfo", __imp__XamProfileLoadAccountInfo, Args({1, g_profile_xuid, kOut + 0x1A00}), 20000,
+       nullptr, 0},
+      {"XamUserCreateTitlesPlayedEnumerator (+ NtClose)", __imp__XamUserCreateTitlesPlayedEnumerator,
+       Args({0, 0, 0, 0, 5, kEnumeratorOut + 4, kEnumeratorOut}), 2000, TitlesPlayedAndClose, 0},
+      {"XamUserIsGuest", __imp__XamUserIsGuest, Args({0}), 20000, nullptr, 0},
+      {"XamUserIsUnsafeProgrammingAllowed", __imp__XamUserIsUnsafeProgrammingAllowed, Args({0, 0, kOut + 0xDD0}), 20000,
+       nullptr, 0},
+      {"XamUserLogonEx", __imp__XamUserLogonEx, Args({kIn, 0, 0}), 20000, nullptr, 0},
+      {"XamUserNuiEnableBiometric", __imp__XamUserNuiEnableBiometric, Args({0, 1}), 20000, nullptr, 0x80070057},
+      {"XamUserNuiGetUserIndex", __imp__XamUserNuiGetUserIndex, Args({0, kOut + 0xDD0}), 20000, nullptr, 0x80070525},
+      {"XamUserNuiGetUserIndexForBind", __imp__XamUserNuiGetUserIndexForBind, Args({kOut + 0xDD0}), 20000, nullptr,
+       0x80004005},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "

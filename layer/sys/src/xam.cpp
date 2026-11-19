@@ -68,6 +68,7 @@ void Xam::Reset() {
   nui_session_id_ = 0;
   user_preferences_ = 0;
   profile_mounts_.clear();
+  profile_dir_.clear(), profile_dir_root_.clear();
   language_fallback_ = 0;
   iptv_name_ = 0;
   content_change_callback_ = launch_request_callback_ = 0;
@@ -150,8 +151,11 @@ void Xam::Notify(uint32_t id, uint32_t param) {
 }
 
 void Xam::OnClose(uint32_t object) {
-  std::erase_if(listeners_, [&](const Listener& l) { return l.object == object; });
-  std::erase_if(enumerators_, [&](const Enumerator& e) { return e.object == object; });
+  // An object is in each list once at most, and the one closed is most often the last made: searched from the end.
+  auto listener = std::find_if(listeners_.rbegin(), listeners_.rend(), [&](const Listener& l) { return l.object == object; });
+  if (listener != listeners_.rend()) listeners_.erase(std::next(listener).base());
+  auto enumerator = std::find_if(enumerators_.rbegin(), enumerators_.rend(), [&](const Enumerator& e) { return e.object == object; });
+  if (enumerator != enumerators_.rend()) enumerators_.erase(std::next(enumerator).base());
 }
 
 uint32_t Xam::UserGetGamerTag(Guest g, uint32_t user, uint32_t buffer, uint32_t length) {
@@ -295,10 +299,13 @@ uint32_t Xam::ProfileOpen(Guest g, uint64_t xuid, uint32_t mount_name, uint32_t 
   }
   if (!root[0]) std::snprintf(root, sizeof root, "User_%s", hex);
   if (std::find(profile_mounts_.begin(), profile_mounts_.end(), root) == profile_mounts_.end()) {
-    const std::filesystem::path path = title_.content_root / "profile" / hex;
-    std::error_code error;
-    std::filesystem::create_directories(path, error);
-    Files().Mount(std::string("\\Device\\Content\\") + root, path, false);
+    if (profile_dir_.empty() || profile_dir_root_ != title_.content_root) {
+      profile_dir_ = title_.content_root / "profile" / hex;
+      profile_dir_root_ = title_.content_root;
+      std::error_code error;
+      std::filesystem::create_directories(profile_dir_, error);
+    }
+    Files().Mount(std::string("\\Device\\Content\\") + root, profile_dir_, false);
     Files().Link(std::string(root) + ":", std::string("\\Device\\Content\\") + root);
     profile_mounts_.emplace_back(root);
   }
@@ -330,6 +337,56 @@ uint32_t Xam::UserGetSubscriptionType(Guest g, uint32_t user, uint32_t length_pt
 uint32_t Xam::UserLogon(Guest g, uint32_t xuids, uint32_t overlapped) {
   if (!xuids) return kErrorInvalidParameter;
   return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::ProfileClose(Guest g, uint32_t mount_name) {
+  const std::string root = GuestString(g, mount_name, 64);
+  auto mount = std::find(profile_mounts_.begin(), profile_mounts_.end(), root);
+  if (mount != profile_mounts_.end()) {
+    profile_mounts_.erase(mount);
+  } else {
+    auto content = std::find(open_content_.begin(), open_content_.end(), root);
+    if (content == open_content_.end()) return kErrorFunctionFailed;
+    open_content_.erase(content);
+  }
+  Files().Unlink(root + ":");
+  Files().Unmount("\\Device\\Content\\" + root);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ProfileCreate(Guest g, uint32_t device_ptr, uint32_t creation_info_ptr) const {
+  if (device_ptr) g.Store32(device_ptr, 1);
+  if (creation_info_ptr) g.Store32(creation_info_ptr, 0);
+  return kErrorInvalidParameter;
+}
+
+uint32_t Xam::ProfileGetCreationStatus(Guest g, uint32_t creation_info, uint32_t xuid_ptr) const {
+  if (creation_info && xuid_ptr) g.Store64(xuid_ptr, g.Load64(creation_info + 0xA78));
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ProfileLoadAccountInfo(Guest g, uint64_t xuid, uint32_t account) const {
+  if (!account || !xuid || xuid != title_.xuid) return kErrorInvalidParameter;
+  WriteAccount(g, account);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::UserCreateTitlesPlayedEnumerator(Guest g, uint32_t user, uint32_t count, uint32_t size_ptr,
+                                               uint32_t handle_ptr) {
+  if (user >= 4 || !count || !size_ptr || !handle_ptr) return kErrorInvalidParameter;
+  if (!UserGetSigninState(user)) return kErrorFunctionFailed;
+  constexpr uint32_t kTitlePlayedSize = 0x28 + 64 * 2;
+  g.Store32(size_ptr, count * kTitlePlayedSize);
+  const uint32_t handle = CreateEnumerator(g, kTitlePlayedSize, count, {});
+  if (!handle) return kErrorFunctionFailed;
+  g.Store32(handle_ptr, handle);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::UserIsUnsafeProgrammingAllowed(Guest g, uint32_t user, uint32_t result_ptr) const {
+  if (!result_ptr || (user != 0xFF && user >= 4)) return kErrorInvalidParameter;
+  g.Store32(result_ptr, 1);
+  return kErrorSuccess;
 }
 
 uint32_t Xam::UserNuiGetUserIndexForSignin(Guest g, uint32_t index_ptr) const {
@@ -856,8 +913,9 @@ uint32_t Xam::CreateEnumerator(Guest g, uint32_t item_size, uint32_t per_call, s
 
 Xam::Enumerator* Xam::FindEnumerator(uint32_t handle) {
   const uint32_t object = Objects().Lookup(handle);
-  for (Enumerator& e : enumerators_) {
-    if (object && e.object == object) return &e;
+  if (!object) return nullptr;
+  for (auto e = enumerators_.rbegin(); e != enumerators_.rend(); ++e) {
+    if (e->object == object) return &*e;
   }
   return nullptr;
 }

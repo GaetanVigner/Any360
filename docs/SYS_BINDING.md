@@ -488,6 +488,13 @@ Media and the dashboard's services (13): no media library (`EnumerateMediaObject
 verification succeeding (a `XamMediaVerificationVerify` callback queued as a user APC, `FailedBlocks` reporting
 nothing failed), no XAuth service; Xenia's answers (docs/perf/archive/2026-11-19-sys-step12-media/).
 
+Profile and user calls (11): `XamProfileClose` unmounts what `XamProfileOpen` mounted, `XamProfileLoadAccountInfo`
+gives the local profile's account; no other profile is made (`XamProfileCreate` fails with Xenia's answer when its
+profile manager cannot create one, but hands out no creation info; `XamProfileGetCreationStatus` copies an info's XUID
+out), the titles-played
+enumerator is empty (Xenia lists only titles with achievements, and the profile has none), no guest, unsafe
+programming allowed, `XamUserLogonEx` succeeds, and no Kinect user (docs/perf/archive/2026-11-19-sys-step12-user/).
+
 Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
 host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
 SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),

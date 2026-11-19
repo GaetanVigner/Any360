@@ -200,6 +200,30 @@ class Xam {
   // overlapped when given). The one local profile stays signed in: adding it changes nothing, and Any360 has no other
   // profile to add nor a sign-out state (removing or logging off every user leaves it signed in).
   uint32_t UserLogon(Guest g, uint32_t xuids, uint32_t overlapped);
+  // The profile and user calls Xenia stubs too (its xam_profile.cc, xam_user.cc, xam_nui.cc).
+  // XamProfileClose (mount name): a profile mounted by XamProfileOpen (or content opened under that name) unmounted;
+  // ERROR_FUNCTION_FAILED for a name nothing is mounted under.
+  uint32_t ProfileClose(Guest g, uint32_t mount_name);
+  // XamProfileCreate (flags, device out, XUID, account, payment, tokens, creation info out): Any360 keeps one local
+  // profile and makes no other (as XamShowCreateProfileUI), so the creation fails as Xenia's does when its profile
+  // manager cannot create one: ERROR_INVALID_PARAMETER, the device out set to 1 (as Xenia's). Unlike Xenia, which
+  // allocates the creation info first (and keeps it), no info is handed out: 0.
+  uint32_t ProfileCreate(Guest g, uint32_t device_ptr, uint32_t creation_info_ptr) const;
+  // XamProfileGetCreationStatus (X_PROFILE_CREATION_INFO, XUID out): success; with an info, its offline XUID (at
+  // 0xA78) copied out. Any360 hands out no info, so none is freed.
+  uint32_t ProfileGetCreationStatus(Guest g, uint32_t creation_info, uint32_t xuid_ptr) const;
+  // XamProfileLoadAccountInfo (device, XUID, account out): the local profile's account (X_XAMACCOUNTINFO);
+  // ERROR_INVALID_PARAMETER without an account out, for XUID 0 or another XUID.
+  uint32_t ProfileLoadAccountInfo(Guest g, uint64_t xuid, uint32_t account) const;
+  // XamUserCreateTitlesPlayedEnumerator (title id, user, XUID, first, count, size out, handle out): the titles the
+  // profile played that have achievements (Xenia's user tracker lists only those); Any360's profile has none, so an
+  // empty enumerator of XTITLE_PLAYED items (0xA8 bytes: X_XDBF_GPD_TITLE_PLAYED and a 64-character name), its buffer
+  // size count * 0xA8. ERROR_INVALID_PARAMETER for a user past 3, no count, size or handle out;
+  // ERROR_FUNCTION_FAILED for a user not signed in.
+  uint32_t UserCreateTitlesPlayedEnumerator(Guest g, uint32_t user, uint32_t count, uint32_t size_ptr, uint32_t handle_ptr);
+  // XamUserIsUnsafeProgrammingAllowed (user, check, result out): allowed (1); ERROR_INVALID_PARAMETER without a result
+  // out or for a user past 3 that is not XUSER_INDEX_ANY (0xFF).
+  uint32_t UserIsUnsafeProgrammingAllowed(Guest g, uint32_t user, uint32_t result_ptr) const;
   // XamUserNuiGetUserIndexForSignin: user 0 (the signed-in profile), S_OK; E_INVALIDARG without an index out.
   uint32_t UserNuiGetUserIndexForSignin(Guest g, uint32_t index_ptr) const;
   // XamUserReadUserPreference / XamUserWriteUserPreference (user, mask, value [out], overlapped): the dashboard's
@@ -462,6 +486,9 @@ class Xam {
   uint64_t nui_session_id_ = 0;
   uint32_t user_preferences_ = 0;
   std::vector<std::string> profile_mounts_;  // the names XamProfileOpen mounted the profile under
+  // The profile's host folder once made, and the content root it was made under: a profile opened again after
+  // XamProfileClose is mounted without asking the host file system again.
+  std::filesystem::path profile_dir_, profile_dir_root_;
   uint32_t language_fallback_ = 0;  // the 18 fallback locale names in the kernel heap, laid out at first use
   uint32_t language_fallback_at_[18] = {};
   uint32_t iptv_name_ = 0;  // the IPTV provider's name in the kernel heap, laid out at first use

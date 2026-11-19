@@ -987,6 +987,26 @@ ANY360_SYS_EXPORT(XamUserIsParentalControlled) { ctx.r3.u64 = 0; }  // no parent
 // (XUIDs, flags, overlapped)
 ANY360_SYS_EXPORT(XamUserLogon) { ctx.r3.u64 = XamState().UserLogon({base}, ctx.r3.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XamUserNuiGetUserIndexForSignin) { ctx.r3.u64 = XamState().UserNuiGetUserIndexForSignin({base}, ctx.r3.u32); }
+// Step 12, the profile and user calls Xenia stubs too.
+ANY360_SYS_EXPORT(XamProfileClose) { ctx.r3.u64 = XamState().ProfileClose({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamProfileCreate) { ctx.r3.u64 = XamState().ProfileCreate({base}, ctx.r4.u32, ctx.r10.u32); }
+ANY360_SYS_EXPORT(XamProfileGetCreationStatus) {
+  ctx.r3.u64 = XamState().ProfileGetCreationStatus({base}, ctx.r3.u32, ctx.r4.u32);
+}
+ANY360_SYS_EXPORT(XamProfileLoadAccountInfo) { ctx.r3.u64 = XamState().ProfileLoadAccountInfo({base}, ctx.r4.u64, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamUserCreateTitlesPlayedEnumerator) {
+  ctx.r3.u64 = XamState().UserCreateTitlesPlayedEnumerator({base}, ctx.r4.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32);
+}
+ANY360_SYS_EXPORT(XamUserIsGuest) { ctx.r3.u64 = 0; }  // no guest: the one local profile
+ANY360_SYS_EXPORT(XamUserIsUnsafeProgrammingAllowed) {
+  ctx.r3.u64 = XamState().UserIsUnsafeProgrammingAllowed({base}, ctx.r3.u32, ctx.r5.u32);
+}
+// (profile, flags, overlapped): the local profile stays signed in, as XamUserLogon; success (through the overlapped).
+ANY360_SYS_EXPORT(XamUserLogonEx) { ctx.r3.u64 = XamState().Finish({base}, ctx.r5.u32, 0); }
+ANY360_SYS_EXPORT(XamUserNuiEnableBiometric) { ctx.r3.u64 = 0x80070057; }  // E_INVALIDARG, as Xenia: no Kinect
+ANY360_SYS_EXPORT(XamUserNuiGetUserIndex) { ctx.r3.u64 = 0x80070525; }  // the NO_SUCH_USER HRESULT: no Kinect user
+// (index out): E_INVALIDARG without one, else E_FAIL (no Kinect user to bind).
+ANY360_SYS_EXPORT(XamUserNuiGetUserIndexForBind) { ctx.r3.u64 = ctx.r3.u32 ? 0x80004005 : 0x80070057; }
 // (user, mask, value out / value, overlapped)
 ANY360_SYS_EXPORT(XamUserReadUserPreference) {
   ctx.r3.u64 = XamState().UserReadUserPreference({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
@@ -1980,6 +2000,17 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XamUserIsParentalControlled),
     ANY360_SYS_ENTRY(XamUserLogon),
     ANY360_SYS_ENTRY(XamUserNuiGetUserIndexForSignin),
+    ANY360_SYS_ENTRY(XamProfileClose),
+    ANY360_SYS_ENTRY(XamProfileCreate),
+    ANY360_SYS_ENTRY(XamProfileGetCreationStatus),
+    ANY360_SYS_ENTRY(XamProfileLoadAccountInfo),
+    ANY360_SYS_ENTRY(XamUserCreateTitlesPlayedEnumerator),
+    ANY360_SYS_ENTRY(XamUserIsGuest),
+    ANY360_SYS_ENTRY(XamUserIsUnsafeProgrammingAllowed),
+    ANY360_SYS_ENTRY(XamUserLogonEx),
+    ANY360_SYS_ENTRY(XamUserNuiEnableBiometric),
+    ANY360_SYS_ENTRY(XamUserNuiGetUserIndex),
+    ANY360_SYS_ENTRY(XamUserNuiGetUserIndexForBind),
     ANY360_SYS_ENTRY(XamUserReadUserPreference),
     ANY360_SYS_ENTRY(XamUserWriteUserPreference),
     ANY360_SYS_ENTRY(XeCryptSha512Init),
