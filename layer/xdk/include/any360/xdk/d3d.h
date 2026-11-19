@@ -2,6 +2,7 @@
 // docs/NATIVE_FUNCTIONS.md.
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <bit>
 #include <chrono>
@@ -353,6 +354,48 @@ inline bool D3dResourceRelease(const Memory& m, uint32_t resource, Destroy&& des
   if (!detail::ResourceChainPlain(m, resource)) return false;
   count = detail::ReleaseOne(m, resource, destroy, 0);
   return true;
+}
+
+// D3DResource_GetType (Crackdown sub_826ACDB0): the resource's type, the low 4 bits of its first word, refined for
+// textures and surfaces. A texture (3) by its dimension, bits 9-10 of its word at +48: 0 a line texture (20), 2 a
+// volume texture (17), 3 a cube texture (18), 1 a 2D texture (3), or an array texture (19) when its word at +32 has
+// bit 10. A surface (4) that holds a parent (bit 30, the parent at +24) whose dimension bits are 2: a volume (16).
+// Declined (false, the runtime's code runs): the resource's first 52 bytes or its parent's word not plain memory.
+inline bool D3dResourceType(const Memory& m, uint32_t resource, uint32_t& type) {
+  if (!IsPlainMemory(resource, 52)) [[unlikely]] return false;
+  const uint32_t word = detail::ResourceWord(m, resource);
+  uint32_t t = word & 0xF;
+  if (t == 3) {
+    // The dimension's type, 2D (1) left to the array bit: 20, 2D, 17, 18.
+    constexpr uint32_t kByDimension = 20u | 0u << 8 | 17u << 16 | 18u << 24;
+    const uint32_t dimension = (detail::ResourceWord(m, resource + 48) >> 9) & 3;
+    t = dimension == 1 ? (detail::ResourceWord(m, resource + 32) & 0x400 ? 19 : 3) : (kByDimension >> (8 * dimension)) & 0xFF;
+  } else if (t == 4 && (word & 0x40000000u)) {
+    const uint32_t parent = detail::ResourceWord(m, resource + 24);
+    if (!IsPlainMemory(parent + 48, 4)) [[unlikely]] return false;
+    if ((detail::ResourceWord(m, parent + 48) & 0x600) == 0x400) t = 16;
+  }
+  type = t;
+  return true;
+}
+
+// The block of a GPU texture format, in texels (Crackdown sub_826ACFE8; r3 the format's number, 0-63): 4x4 for the
+// block-compressed formats (18-20, 49, 51-53, 58-61), 4x1 (39, 44), 2x1 (11, 12, 40), 1x1 for the others and for any
+// number past 63. The runtime writes the width to *r4, then the height to *r5.
+namespace detail {
+// Width in the low 4 bits, height in the high ones.
+inline constexpr std::array<uint8_t, 64> kFormatBlocks = [] {
+  std::array<uint8_t, 64> t{};
+  for (uint8_t& b : t) b = 0x11;
+  for (uint32_t f : {18u, 19u, 20u, 49u, 51u, 52u, 53u, 58u, 59u, 60u, 61u}) t[f] = 0x44;
+  t[39] = t[44] = 0x14;
+  t[11] = t[12] = t[40] = 0x12;
+  return t;
+}();
+}  // namespace detail
+inline void D3dFormatBlock(uint32_t format, uint32_t& width, uint32_t& height) {
+  const uint8_t b = format < 64 ? detail::kFormatBlocks[format] : 0x11;
+  width = b & 0xF, height = b >> 4;
 }
 
 }  // namespace any360::xdk

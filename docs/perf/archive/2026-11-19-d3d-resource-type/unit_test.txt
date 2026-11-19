@@ -1,0 +1,3 @@
+xdk_d3d_tests: GetType 1.04 ns a call (reference 0.84), format block 0.22 ns (reference 1.92); 0 bytes, 0 allocations
+xdk_d3d_tests: 662711 checks, 0 failing
+exit 0 

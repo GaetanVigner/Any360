@@ -1300,4 +1300,53 @@ inline uint64_t Release(const Memory& m, uint64_t r3, Destroy& destroy, uint32_t
 }
 }  // namespace refcount
 
+// D3DResource_GetType (Crackdown sub_826ACDB0) and the GPU format's block (sub_826ACFE8), as their code reads.
+namespace resource {
+using refcount::lwz;
+using refcount::stw;
+inline uint64_t GetType(const Memory& m, uint64_t r3) {
+  uint32_t r10 = lwz(m, uint32_t(r3));                       // lwz r10,0(r3)
+  uint32_t r11 = r10 & 0xF;                                  // clrlwi r11,r10,28
+  if (r11 == 3) {                                            // cmplwi cr6,r11,3; bne 0x826ace0c
+    r10 = lwz(m, uint32_t(r3) + 48);                         // lwz r10,48(r3)
+    r10 = std::rotl(r10, 23) & 3;                            // rlwinm r10,r10,23,30,31
+    if (r10 == 3) return 18;                                 // li r11,18
+    if (r10 == 2) return 17;                                 // li r11,17
+    if (r10 == 0) return 20;                                 // li r11,20
+    r10 = lwz(m, uint32_t(r3) + 32);                         // lwz r10,32(r3)
+    if (r10 & 0x400) r11 = 19;                               // rlwinm. r10,r10,0,21,21; li r11,19
+    return r11;
+  }
+  if (r11 != 4) return r11;                                  // cmplwi cr6,r11,4; bne 0x826ace34
+  if (!(r10 & 0x40000000u)) return r11;                      // rlwinm. r10,r10,0,1,1; beq
+  r10 = lwz(m, uint32_t(r3) + 24);                           // lwz r10,24(r3)
+  r10 = lwz(m, r10 + 48);                                    // lwz r10,48(r10)
+  r10 &= 0x600;                                              // rlwinm r10,r10,0,21,22
+  if (r10 == 1024) r11 = 16;                                 // cmplwi cr6,r10,1024; li r11,16
+  return r11;                                                // mr r3,r11
+}
+inline void FormatBlock(const Memory& m, uint64_t r3, uint64_t r4, uint64_t r5) {
+  const uint32_t f = uint32_t(r3);
+  const auto both = [&](uint32_t r11, uint32_t r10) {        // loc_826AD028: stw r11,0(r4); stw r10,0(r5)
+    stw(m, uint32_t(r4), r11), stw(m, uint32_t(r5), r10);
+  };
+  if (f > 44) {                                              // bgt cr6,0x826ad040
+    if (f == 49) return both(4, 4);                          // beq 0x826ad070
+    if (f <= 50) return both(1, 1);                          // ble 0x826ad068
+    if (f <= 53) return both(4, 4);
+    if (f <= 57) return both(1, 1);
+    if (f <= 61) return both(4, 4);
+    return both(1, 1);                                       // loc_826AD068
+  }
+  if (f == 44) return both(4, 1);                            // beq 0x826ad038: li r11,4
+  if (f < 11) return both(1, 1);                             // blt 0x826ad068
+  if (f <= 12) return both(2, 1);                            // ble 0x826ad024: li r11,2
+  if (f <= 17) return both(1, 1);
+  if (f <= 20) return both(4, 4);                            // ble 0x826ad070
+  if (f == 39) return both(4, 1);
+  if (f != 40) return both(1, 1);                            // bne 0x826ad068
+  return both(2, 1);                                         // li r11,2; li r10,1
+}
+}  // namespace resource
+
 }  // namespace any360::xdk::reference

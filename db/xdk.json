@@ -439,11 +439,20 @@
  {
   "name": "D3DDevice_DrawVerticesUP",
   "library": "D3D",
-  "any360": "todo",
+  "any360": "native",
   "titles": {
    "simpsons": "0x8244C910"
   },
   "note": ""
+ },
+ {
+  "name": "D3DDevice_DrawVerticesUP",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B9688"
+  },
+  "note": "DrawPrimitiveUP's body: BeginVertices, the vertices copied into its block, EndVertices"
  },
  {
   "name": "D3DDevice_EndTiling",
@@ -947,6 +956,15 @@
   "note": "reference count + 1, a type-4 resource's parent too at 1"
  },
  {
+  "name": "D3DResource_GetType",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826ACDB0"
+  },
+  "note": "the resource's type: textures by dimension (line, 2D, array, volume, cube), a volume texture's surface a volume"
+ },
+ {
   "name": "D3DResource_LockCpu",
   "library": "D3D",
   "any360": "native",
@@ -1143,6 +1161,15 @@
    "crackdown": "0x826C5BC0"
   },
   "note": "the draws' wait group: VGT 0x2007, the copy registers, a wait, the group's registers"
+ },
+ {
+  "name": "D3D_GpuFormatBlock",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826ACFE8"
+  },
+  "note": "a GPU texture format's block in texels (4x4 compressed, 4x1, 2x1, 1x1)"
  },
  {
   "name": "D3D_GpuTimestamp",

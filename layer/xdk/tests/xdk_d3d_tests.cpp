@@ -15,6 +15,7 @@
 
 #include "any360/xdk/d3d.h"
 #include "any360/xdk/d3d_reference.h"
+#include "any360/sys/alloc_meter.h"
 #include "xdk_test.h"
 
 namespace {
@@ -495,8 +496,87 @@ void ResourceRefCounts() {
               native, model);
 }
 
+// D3DResource_GetType (Crackdown sub_826ACDB0) and the GPU format's block (sub_826ACFE8) against their code read line
+// by line. GetType: random resources, mostly textures and surfaces, every dimension, the array bit, a surface's parent
+// bit and its parent's dimension; r3 the same, every type it can give reached; and what it declines (read nothing).
+// The block: every format up to 300 and random 32-bit numbers, the width and height words apart, the same word or
+// overlapping; the bytes around them the same. Then the time a call and the bytes and allocations a call.
+void ResourceTypesAndBlocks() {
+  namespace xdk = any360::xdk;
+  namespace ref = any360::xdk::reference::resource;
+  xdk_test::Pair p(47);
+  std::mt19937_64 rng(53);
+  const auto put = [&](uint32_t address, uint32_t value) {
+    xdk::detail::Set32(p.a.Host(address), value);
+    xdk::detail::Set32(p.b.Host(address), value);
+  };
+  uint64_t by_type[32] = {};
+  for (int i = 0; i < 200000; ++i) {
+    const uint32_t resource = 0x10000 + 64 * uint32_t(rng() % 1024), parent = 0x30000 + 64 * uint32_t(rng() % 1024);
+    const uint32_t pick = uint32_t(rng() % 8);
+    const uint32_t type = pick < 3 ? 3 : pick < 6 ? 4 : uint32_t(rng() % 16);
+    put(resource, (uint32_t(rng()) & ~0xFu) | type);
+    put(resource + 24, parent);
+    put(resource + 32, uint32_t(rng()));
+    put(resource + 48, uint32_t(rng()));
+    put(parent + 48, uint32_t(rng()));
+    uint32_t got = 0xDEAD;
+    CHECK(xdk::D3dResourceType(p.a, resource, got));
+    const uint64_t expect = ref::GetType(p.b, resource);
+    CHECK(got == expect);
+    ++by_type[expect & 31];
+  }
+  for (uint32_t t : {3u, 4u, 16u, 17u, 18u, 19u, 20u, 0u, 15u}) CHECK(by_type[t] > 500);
+  uint32_t type = 0;
+  CHECK(!xdk::D3dResourceType(p.a, 0x7F000000u - 2, type));  // its first word not plain
+  put(0x20000, 0x40000004u), put(0x20018, 0x7F000000u - 48);  // a surface whose parent's word is not plain
+  CHECK(!xdk::D3dResourceType(p.a, 0x20000, type));
+  CHECK(p.SameEverywhere());
+  uint64_t blocks = 0;
+  for (int i = 0; i < 20000; ++i) {
+    const uint64_t format = i < 300 ? uint64_t(i) : rng();
+    const uint32_t width_at = 0x50000 + 4 * uint32_t(rng() % 256);
+    const uint32_t height_at = rng() % 8 == 0 ? width_at : rng() % 8 == 0 ? width_at + 2 : 0x51000 + 4 * uint32_t(rng() % 256);
+    uint32_t w, h;
+    xdk::D3dFormatBlock(uint32_t(format), w, h);
+    xdk::detail::Set32(p.a.Host(width_at), w), xdk::detail::Set32(p.a.Host(height_at), h);
+    ref::FormatBlock(p.b, format, width_at, height_at);
+    CHECK(p.Same(width_at, width_at + 4) && p.Same(height_at, height_at + 4));
+    blocks += w * h > 1;
+  }
+  CHECK(p.SameEverywhere() && blocks >= 16);  // the 16 formats with a block past 1x1
+  // Time a call, and the bytes and allocations a call (none), the native against the reference.
+  put(0x20000, 0x40000004u), put(0x20018, 0x30000), put(0x30030, 0x400);
+  const auto time = [&](auto&& call) {
+    const auto start = steady_clock::now();
+    for (int i = 0; i < 10000000; ++i) call(i);
+    return double(std::chrono::duration_cast<std::chrono::nanoseconds>(steady_clock::now() - start).count()) / 1e7;
+  };
+  volatile uint32_t sink = 0;
+  const any360::sys::AllocCounts before = any360::sys::ThreadAllocations();
+  const double type_native = time([&](int i) {
+    uint32_t t = 0;
+    xdk::D3dResourceType(p.a, i & 1 ? 0x20000 : 0x10000, t);
+    sink = t;
+  });
+  const double block_native = time([&](int i) {
+    uint32_t w, h;
+    xdk::D3dFormatBlock(uint32_t(i & 63), w, h);
+    xdk::detail::Set32(p.a.Host(0x50000), w), xdk::detail::Set32(p.a.Host(0x50004), h);
+  });
+  const any360::sys::AllocCounts spent = any360::sys::ThreadAllocations() - before;
+  const double type_model = time([&](int i) { sink = uint32_t(ref::GetType(p.b, i & 1 ? 0x20000 : 0x10000)); });
+  const double block_model = time([&](int i) { ref::FormatBlock(p.b, uint64_t(i & 63), 0x50000, 0x50004); });
+  CHECK(spent.count == 0 && spent.bytes == 0);
+  std::printf("xdk_d3d_tests: GetType %.2f ns a call (reference %.2f), format block %.2f ns (reference %.2f); "
+              "%llu bytes, %llu allocations\n",
+              type_native, type_model, block_native, block_model, static_cast<unsigned long long>(spent.bytes),
+              static_cast<unsigned long long>(spent.count));
+}
+
 int main() {
   ResourceRefCounts();
+  ResourceTypesAndBlocks();
   Orders();
   Raced(20000, false);
   Raced(20000, true);

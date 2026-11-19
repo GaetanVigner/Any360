@@ -51,7 +51,8 @@ enum class Function : uint32_t {
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
   kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kSin, kCos, kAsin,
-  kD3dRenderState, kAtan2, kPow, kD3dSurfaces, kXAudioReverb, kD3dViewport, kD3dQuery, kCount
+  kD3dRenderState, kAtan2, kPow, kD3dSurfaces, kXAudioReverb, kD3dViewport, kD3dQuery,
+  kD3dResourceType, kD3dFormatBlock, kD3dDrawUp, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -1091,6 +1092,72 @@ struct QueryGetData {
     if (written) AddRange(w, ctx.r4.u32, written);
     return true;
   }
+};
+// D3DResource_GetType: r3 the resource -> r3 its type (any360/xdk/d3d.h). Reads only.
+struct ResourceType {
+  static constexpr Function kFunction = Function::kD3dResourceType;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    uint32_t type;
+    if (!any360::xdk::D3dResourceType(m, ctx.r3.u32, type)) return false;
+    ctx.r3.u64 = type;
+    return true;
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>&) {
+    uint32_t type;
+    return any360::xdk::D3dResourceType(g_memory, ctx.r3.u32, type);
+  }
+};
+// The block of a GPU texture format: r3 the format, its width to *r4 and then its height to *r5 (r3 kept).
+struct FormatBlock {
+  static constexpr Function kFunction = Function::kD3dFormatBlock;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    const uint32_t width_at = ctx.r4.u32, height_at = ctx.r5.u32;
+    if (!any360::xdk::IsPlainMemory(width_at, 4) || !any360::xdk::IsPlainMemory(height_at, 4)) return false;
+    uint32_t width, height;
+    any360::xdk::D3dFormatBlock(ctx.r3.u32, width, height);
+    any360::xdk::detail::Set32(m.Host(width_at), width);
+    any360::xdk::detail::Set32(m.Host(height_at), height);
+    return true;
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    if (!any360::xdk::IsPlainMemory(ctx.r4.u32, 4) || !any360::xdk::IsPlainMemory(ctx.r5.u32, 4)) return false;
+    AddRange(w, ctx.r4.u32, 4), AddRange(w, ctx.r5.u32, 4);
+    return true;
+  }
+};
+// DrawPrimitiveUP's body (Crackdown sub_826B9688): r3 the device, r4 the primitive type, r5 the vertex count, r6 the
+// vertices, r7 the stride -> r3 the block (0: none). BeginVertices (the title's entry, `g_begin_vertices`: its hooks
+// and bindings run) from its 128-byte frame with r6 the stride; when it gives a block, the vertices copied into it
+// (count x stride bytes, 32 bits) by the CRT's memcpy, here natively, by the title's (`g_vertex_copy`) when the copy
+// is one the native declines; then EndVertices: the cursor (+48) moved past the draw (+13076).
+// Declined when verified or timed: BeginVertices makes room in the command buffer (the draw would be sent twice).
+inline GuestFunction g_begin_vertices = nullptr, g_vertex_copy = nullptr;
+inline constexpr uint32_t kDrawUpFrame = 128, kBeginEnd = 13076;
+struct DrawVerticesUp {
+  static constexpr Function kFunction = Function::kD3dDrawUp;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t device = ctx.r3.u32, vertices = ctx.r6.u32;
+    if (!g_begin_vertices || !g_vertex_copy || !any360::xdk::IsPlainMemory(device + l.command_cursor, 4) ||
+        !any360::xdk::IsPlainMemory(device + kBeginEnd, 4))
+      return false;
+    const uint32_t bytes = ctx.r5.u32 * ctx.r7.u32;  // mullw r5,r30,r29
+    const uint64_t r1 = ctx.r1.u64;
+    ctx.r1.u64 = r1 - kDrawUpFrame;
+    ctx.r6.u64 = ctx.r7.u64;  // mr r6,r29: the stride
+    g_begin_vertices(ctx, m.base);
+    if (const uint64_t block = ctx.r3.u64; uint32_t(block)) {
+      if (!any360::xdk::CrtMemcpy(m, block, vertices, bytes, ctx.r1.u32)) {
+        ctx.r4.u64 = vertices, ctx.r5.u64 = bytes;
+        g_vertex_copy(ctx, m.base);
+      }
+      uint8_t* d = m.Host(device);
+      any360::xdk::detail::Set32(d + l.command_cursor, any360::xdk::detail::At32(d + kBeginEnd));
+    }
+    ctx.r1.u64 = r1;
+    return true;
+  }
+  static bool Writes(const PPCContext&, std::vector<any360::xdk::Range>&) { return false; }
 };
 // The render state fields' setters (any360/xdk/d3d_state.h): r4 the value; each writes its fields and the state's
 // dirty bits.

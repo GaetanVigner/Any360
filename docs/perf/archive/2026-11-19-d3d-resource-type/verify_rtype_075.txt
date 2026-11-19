@@ -1,0 +1,7 @@
+crackdown_075.log (city route, --any360_xdk_verify=true, the three bound), the last report line's parts:
+170000000 calls verified
+D3D resource type 192885
+D3D format block 124594
+), 0 different
+D3D DrawVerticesUP 360251
+different at first and the same when run again: none

@@ -748,6 +748,44 @@ struct Queries {
   }
 };
 
+// D3DResource_GetType (xdk_natives.h): a resource in the scratch, its type mostly a texture (3) or a surface (4),
+// every dimension, the array bit at +32 on or off, a surface's parent bit on or off and its parent (in the scratch)
+// of every dimension.
+struct ResourceTypes {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t resource = s.scratch + 0x1000 + 64 * uint32_t(rng() % 32);
+    const uint32_t parent = s.scratch + 0x3000 + 64 * uint32_t(rng() % 32);
+    const uint32_t pick = uint32_t(rng() % 8);
+    const uint32_t type = pick < 3 ? 3 : pick < 6 ? 4 : uint32_t(rng() % 16);
+    Put32(s, resource, (uint32_t(rng()) & ~0xFu) | type);
+    Put32(s, resource + 24, parent);
+    Put32(s, parent + 48, uint32_t(rng()));
+    ctx.r3.u64 = resource;
+  }
+};
+// The block of a GPU texture format (xdk_natives.h): formats 0-70 mostly, any 32 bits now and then; the width and
+// height words in the scratch, now and then the same word or overlapping ones.
+struct FormatBlocks {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    ctx.r3.u64 = rng() % 16 ? rng() % 71 : rng();
+    const uint32_t width = s.scratch + 0x1000 + 4 * uint32_t(rng() % 64);
+    ctx.r4.u64 = width;
+    switch (rng() % 8) {
+      case 0: ctx.r5.u64 = width; break;
+      case 1: ctx.r5.u64 = width + 2; break;
+      default: ctx.r5.u64 = s.scratch + 0x2000 + 4 * uint32_t(rng() % 64); break;
+    }
+  }
+};
+// DrawPrimitiveUP's body (xdk_natives.h): BeginVertices' inputs (Begin), small draws half the time (the part that is
+// not BeginVertices or the copy), the vertices in the scratch at 0x34000 (up to 16 KB), r7 the stride. Both sides call
+// the title's BeginVertices entry (its binding), the copy the title's CRT memcpy (bound) or the native.
+struct DrawUps {
+  static void Setup(CallSetup& s, PPCContext& ctx);
+};
+
 // The window scissor's packets (d3d_draw.h): the viewport cases' device, the rect's corners as they set them (and any
 // 32 bits now and then); now and then a tiling past the 15 tiles the native takes (declined).
 template <bool kRecords>
@@ -1482,6 +1520,13 @@ void Begin<kRecords, kIndexed>::Setup(CallSetup& s, PPCContext& ctx) {
     ctx.r5.u64 = 1 + rng() % 256;
     ctx.r6.u64 = 4 * (1 + rng() % 16);
   }
+}
+inline void DrawUps::Setup(CallSetup& s, PPCContext& ctx) {
+  Begin<false, false>::Setup(s, ctx);
+  std::mt19937_64& rng = *s.rng;
+  ctx.r7.u64 = ctx.r6.u64;
+  if (rng() % 2) ctx.r5.u64 = 1 + rng() % 8;
+  ctx.r6.u64 = s.scratch + 0x34000 + 4 * uint32_t(rng() % 64);
 }
 // SetPixelShaderConstantF: as SetShaderConstants.
 struct PixelFloats {
