@@ -321,6 +321,12 @@ class Xam {
   // XexLoadImage / XexUnloadImage: the title's own module and the system ones ("xam.xex", "xboxkrnl.exe", already
   // loaded) by name, a path's directories ignored; no other image is loaded (STATUS_NO_SUCH_FILE).
   uint32_t LoadImage(Guest g, uint32_t name, uint32_t handle_ptr);
+  // XexLoadImageFromMemory (image, size, name, flags, minimum version, handle out), as Xenia's xeXexLoadImage: no handle
+  // pointer is ERROR_INVALID_PARAMETER (a Win32 code, as Xenia returns it); a name of a module already loaded (the
+  // title's, xam.xex, xboxkrnl.exe) writes 0 and is STATUS_OBJECT_NAME_COLLISION. Any other image would be new code,
+  // which a statically recompiled title cannot run: it is not loaded (0, STATUS_NO_SUCH_FILE, Xenia's answer when an
+  // image does not load).
+  uint32_t LoadImageFromMemory(Guest g, uint32_t name, uint32_t handle_ptr);
   uint32_t UnloadImage(uint32_t handle);
   // XexLoadImageHeaders: the XEX2 headers of the image an ANSI_STRING path names, copied to `buffer` (its first
   // header-size bytes); STATUS_NO_SUCH_FILE, STATUS_INVALID_IMAGE_FORMAT, STATUS_BUFFER_TOO_SMALL otherwise.

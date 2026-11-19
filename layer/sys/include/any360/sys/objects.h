@@ -255,4 +255,20 @@ class ObjectManager {
 
 ObjectManager& Objects();
 
+// Step 12, tenth batch: ObCreateObject (object type, OBJECT_ATTRIBUTES, object size, object out), as Xenia's
+// xboxkrnl_ob.cc builds an object of a title's own type: the type's allocate procedure (X_OBJECT_TYPE +0x00, its pool
+// tag at +0x18) is called as allocate(size, pool tag, pool) in guest code (`call`), and the allocation starts with an
+// OBJECT_HEADER (pointer count 1, handle count 0, the type, the flags) with the object after it. The pool and the
+// title-object flag (0x10): from the attributes (0x1000: title pool and flag; 0x2000: system pool), else from the
+// calling thread's process type (`process_type`: 1, a title's, gives the title pool and the flag). A named object
+// (the attributes' ANSI_STRING) holds an OBJECT_HEADER_NAME_INFO first (no directory, its name pointing at the
+// copy of the path's last component after the object, which is 4-byte aligned) and the named flag (1); Xenia stops
+// on a name (its name splitting is not written), so the layout is its structures' and the split is NT's: components
+// between backslashes, a leading one allowed, an empty one (a doubled or trailing backslash, or no name) is
+// STATUS_OBJECT_NAME_INVALID. No object directory is entered. The object (0 on failure) is written;
+// STATUS_INSUFFICIENT_RESOURCES when the allocation fails.
+using GuestCall3 = uint32_t (*)(uint32_t function, uint32_t a, uint32_t b, uint32_t c, void* user);
+uint32_t ObCreateObject(Guest g, uint32_t type, uint32_t attributes, uint32_t size, uint32_t object_out,
+                        uint32_t process_type, GuestCall3 call, void* user);
+
 }  // namespace any360::sys

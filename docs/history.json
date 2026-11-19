@@ -322,9 +322,9 @@
  {
   "date": "2026-11-19",
   "system_calls": {
-   "native": 726,
+   "native": 728,
    "ported": 0,
-   "runnable": 730,
+   "runnable": 732,
    "total": 2914
   },
   "instructions": {

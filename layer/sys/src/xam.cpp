@@ -1233,6 +1233,14 @@ uint32_t Xam::LoadImage(Guest g, uint32_t name, uint32_t handle_ptr) {
   return handle ? kStatusSuccess : kStatusNoSuchFile;
 }
 
+uint32_t Xam::LoadImageFromMemory(Guest g, uint32_t name, uint32_t handle_ptr) {
+  constexpr uint32_t kErrorInvalidParameter = 0x57, kStatusObjectNameCollision = 0xC0000035;
+  if (!handle_ptr) return kErrorInvalidParameter;
+  const bool loaded = name && LoadImage(g, name, handle_ptr) == kStatusSuccess;
+  g.Store32(handle_ptr, 0);
+  return loaded ? kStatusObjectNameCollision : kStatusNoSuchFile;
+}
+
 uint32_t Xam::UnloadImage(uint32_t handle) {
   if (handle && (handle == title_.module_handle || handle == system_module_)) return kStatusSuccess;
   return kStatusInvalidHandle;

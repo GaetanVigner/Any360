@@ -27,6 +27,7 @@
 #include "any360/sys/exports.h"
 #include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
+#include "any360/sys/scheduler.h"
 #include "any360/sys/xam.h"
 #include "guest_memory.h"
 #if defined(_WIN32)
@@ -59,7 +60,7 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(LDIDestroyDecompression) X(XamContentCreateEnumeratorInternal) X(XamContentGetMetaDataInternal)                     \
   X(XamContentSetThumbnailInternal) X(XamContentRegisterChangeCallback) X(XamLoaderRegisterLaunchRequestCallback)      \
   X(XamReadString) X(NetDll_WSAStartupEx) X(NetDll_XNetStartupEx) X(XamNetworkStorageUserHasPrivilege)                 \
-  X(ObLookupAnyThreadByThreadId)
+  X(ObLookupAnyThreadByThreadId) X(ObCreateObject) X(XexLoadImageFromMemory)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -185,6 +186,11 @@ void LdiNative(PPCContext& ctx, uint8_t* base) { LdiStream(g_ldi_native, ctx, ba
 // stub creates none).
 Function g_enumerator_internal = nullptr;
 constexpr uint32_t kEnumeratorOut = 0x40020E00;
+// The guest code ObCreateObject calls (an object type's allocate procedure), played by the host: the same block each
+// time (an allocator a title would free into), so the row times the kernel's part.
+constexpr uint32_t kObjectBlock = 0x4002D000;
+uint64_t AllocateProcedure(uint32_t, uint32_t, uint32_t, const uint64_t*, uint32_t, void*) { return kObjectBlock; }
+
 void EnumeratorAndClose(PPCContext& ctx, uint8_t* base) {
   g_enumerator_internal(ctx, base);
   any360::sys::Objects().Close(Load32(kEnumeratorOut));
@@ -295,6 +301,17 @@ int main(int argc, char** argv) {
     }
   }
   Store32(kOut + 0xD90, 16);
+
+  // The tenth batch: an object type whose allocate procedure the dispatcher plays, attributes naming an object, a
+  // module name no title loaded.
+  constexpr uint32_t kObjectType = 0x4002C800, kObjectAttributes = 0x4002C840, kObjectName = 0x4002C860;
+  std::memset(g_base + kObjectType, 0, 0x100);
+  Store32(kObjectType, 0x82001000), Store32(kObjectType + 0x18, 0x54657374);
+  Store32(kObjectAttributes + 4, kObjectName);
+  Store16(kObjectName, 13), Store16(kObjectName + 2, 13), Store32(kObjectName + 4, kObjectName + 8);
+  std::memcpy(g_base + kObjectName + 8, "\\Title\\Event7", 13);
+  std::memcpy(g_base + kObjectName + 0x40, "dlc.xex", 8);
+  any360::sys::Threads().SetDispatcher(&AllocateProcedure, nullptr);
 
   const uint32_t stack_args = kStack + kStackSize - 0x1000 + 0x54;
   const Row rows[] = {
@@ -418,6 +435,12 @@ int main(int argc, char** argv) {
       {"XamNetworkStorageUserHasPrivilege", __imp__XamNetworkStorageUserHasPrivilege, Args({0}), 20000, nullptr, 0},
       {"ObLookupAnyThreadByThreadId (unknown id)", __imp__ObLookupAnyThreadByThreadId, Args({0x7777, kOut + 0xDB0}), 20000,
        nullptr, 0xC0000225},
+      // The tenth batch.
+      {"ObCreateObject (unnamed, 0x40 B)", __imp__ObCreateObject, Args({kObjectType, 0, 0x40, kOut + 0xDC0}), 20000, nullptr, 0},
+      {"ObCreateObject (named, 0x40 B)", __imp__ObCreateObject, Args({kObjectType, kObjectAttributes, 0x40, kOut + 0xDC0}),
+       20000, nullptr, 0},
+      {"XexLoadImageFromMemory (not loaded)", __imp__XexLoadImageFromMemory,
+       Args({kIn, 0x1000, kObjectName + 0x40, 0, 0, kOut + 0xDC4}), 20000, nullptr, 0xC000000F},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "

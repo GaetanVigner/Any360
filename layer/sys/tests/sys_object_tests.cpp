@@ -29,6 +29,7 @@
 #include "any360/sys/win32.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -3421,6 +3422,109 @@ void MiscStep12EighthTests() {
   Memory().Reset();
 }
 
+// Step 12, tenth batch: ObCreateObject and XexLoadImageFromMemory (Xenia's xboxkrnl_ob.cc and xboxkrnl_modules.cc).
+struct ObAllocations {
+  std::vector<std::array<uint32_t, 4>> calls;  // function, size, pool tag, pool
+  uint32_t next = 0x20000;
+  bool fail = false;
+};
+uint32_t ObAllocate(uint32_t function, uint32_t size, uint32_t tag, uint32_t pool, void* user) {
+  auto& a = *static_cast<ObAllocations*>(user);
+  a.calls.push_back({function, size, tag, pool});
+  if (a.fail) return 0;
+  const uint32_t at = a.next;
+  std::memset(g.host(at), 0xCC, size + 8);
+  a.next += (size + 0xFF) & ~0xFFu;
+  return at;
+}
+
+void ObStep12TenthTests() {
+  Fresh();
+  const uint32_t type = kScratch, attributes = kScratch + 0x40, name = kScratch + 0x60, text = kScratch + 0x80,
+                 out = kScratch + 0x100;
+  std::memset(g.host(type), 0, 0x20);
+  g.Store32(type, 0x82001000);        // allocate procedure
+  g.Store32(type + 0x18, 0x54657374);  // pool tag "Test"
+  ObAllocations a;
+  // Unnamed, no attributes, a title thread: the title pool (1) and the title-object flag; the object after its header.
+  g.Store32(out, 0xFFFFFFFF);
+  CHECK(ObCreateObject(g, type, 0, 0x22, out, 1, ObAllocate, &a) == 0);
+  CHECK(a.calls.size() == 1 && a.calls[0] == (std::array<uint32_t, 4>{0x82001000, 0x32, 0x54657374, 1}));
+  CHECK(g.Load32(out) == 0x20010 && g.Load32(0x20000) == 1 && g.Load32(0x20004) == 0 && g.Load32(0x20008) == type);
+  CHECK(g.Load16(0x2000C) == 0x10 && g.Load8(0x2000E) == 0xCC);  // the hash index is left as allocated
+  // A system thread: the system pool (2), no flag.
+  CHECK(ObCreateObject(g, type, 0, 8, out, 2, ObAllocate, &a) == 0 && a.calls.back()[3] == 2 && g.Load16(g.Load32(out) - 4) == 0);
+  // The attributes choose: 0x1000 title, 0x2000 system (whatever the thread), neither the thread's.
+  std::memset(g.host(attributes), 0, 12);
+  for (const auto& [bits, process, pool, flag] : std::initializer_list<std::array<uint32_t, 4>>{
+           {0x1000, 2, 1, 0x10}, {0x2000, 1, 2, 0}, {0x3000, 2, 1, 0x10}, {0, 1, 1, 0x10}, {0x40, 2, 2, 0}}) {
+    g.Store32(attributes + 8, bits);
+    CHECK(ObCreateObject(g, type, attributes, 8, out, process, ObAllocate, &a) == 0);
+    CHECK(a.calls.back()[3] == pool && g.Load16(g.Load32(out) - 4) == flag);
+  }
+  // Named: the name info first, the header, the object (its size rounded to 4), then the last component's copy.
+  g.Store32(attributes + 4, name);
+  g.Store32(attributes + 8, 0);
+  auto set_name = [&](const char* value) {
+    g.Store16(name, uint16_t(std::strlen(value)));
+    g.Store16(name + 2, uint16_t(std::strlen(value)));
+    g.Store32(name + 4, text);
+    std::memcpy(g.host(text), value, std::strlen(value));
+  };
+  set_name("\\BaseNamedObjects\\Title\\Event7");
+  a.calls.clear();
+  CHECK(ObCreateObject(g, type, attributes, 0x1A, out, 1, ObAllocate, &a) == 0);
+  CHECK(a.calls.size() == 1 && a.calls[0][1] == 6 + 0x1C + 0x10 + 0x10 && a.calls[0][3] == 1);
+  const uint32_t at = a.next - ((a.calls[0][1] + 0xFF) & ~0xFFu), object = g.Load32(out);
+  CHECK(object == at + 0x20 && g.Load32(at) == 0 && g.Load32(at + 4) == 0 && g.Load16(at + 8) == 6 && g.Load16(at + 10) == 6);
+  CHECK(g.Load32(at + 12) == object + 0x1C && std::memcmp(g.host(object + 0x1C), "Event7", 6) == 0);
+  CHECK(g.Load32(at + 0x10) == 1 && g.Load32(at + 0x14) == 0 && g.Load32(at + 0x18) == type && g.Load16(at + 0x1C) == 0x11);
+  set_name("Plain");
+  CHECK(ObCreateObject(g, type, attributes, 4, out, 2, ObAllocate, &a) == 0 && a.calls.back()[1] == 5 + 4 + 0x20);
+  CHECK(std::memcmp(g.host(g.Load32(out) + 4), "Plain", 5) == 0 && g.Load16(g.Load32(out) - 4) == 1);
+  // Invalid names: empty, a lone backslash, a trailing one, a doubled one; nothing allocated, 0 written.
+  a.calls.clear();
+  for (const char* bad : {"", "\\", "A\\", "A\\\\B", "\\\\A"}) {
+    set_name(bad);
+    g.Store32(out, 0xFFFFFFFF);
+    CHECK(ObCreateObject(g, type, attributes, 4, out, 1, ObAllocate, &a) == 0xC0000033 && g.Load32(out) == 0);
+  }
+  CHECK(a.calls.empty());
+  // A failed allocation: STATUS_INSUFFICIENT_RESOURCES and 0, named or not.
+  a.fail = true;
+  g.Store32(out, 0xFFFFFFFF);
+  CHECK(ObCreateObject(g, type, 0, 4, out, 1, ObAllocate, &a) == 0xC000009A && g.Load32(out) == 0);
+  set_name("Named");
+  CHECK(ObCreateObject(g, type, attributes, 4, out, 1, ObAllocate, &a) == 0xC000009A && g.Load32(out) == 0);
+  // No host allocation once the log is sized.
+  a.fail = false;
+  a.calls.reserve(64);
+  a.calls.clear();
+  const AllocCounts before = ThreadAllocations();
+  for (int i = 0; i < 20; ++i) {
+    a.next = 0x20000;
+    ObCreateObject(g, type, attributes, 4, out, 1, ObAllocate, &a);
+  }
+  CHECK((ThreadAllocations() - before).count == 0);
+
+  // XexLoadImageFromMemory: a loaded module's name collides; any other image is not loaded; no handle pointer.
+  XamState().Reset();
+  XamState().title().module_name = "game.xex";
+  XamState().title().module_handle = 0x40001000;
+  const uint32_t module = kScratch + 0x200, handle = kScratch + 0x280;
+  for (const char* loaded : {"game.xex", "GAME:\\game.xex", "xam.xex", "xboxkrnl.exe", "default.xex"}) {
+    std::memcpy(g.host(module), loaded, std::strlen(loaded) + 1);
+    g.Store32(handle, 0xFFFFFFFF);
+    CHECK(XamState().LoadImageFromMemory(g, module, handle) == 0xC0000035 && g.Load32(handle) == 0);
+  }
+  std::memcpy(g.host(module), "dlc.xex", 8);
+  g.Store32(handle, 0xFFFFFFFF);
+  CHECK(XamState().LoadImageFromMemory(g, module, handle) == 0xC000000F && g.Load32(handle) == 0);
+  CHECK(XamState().LoadImageFromMemory(g, 0, handle) == 0xC000000F && g.Load32(handle) == 0);
+  CHECK(XamState().LoadImageFromMemory(g, module, 0) == 0x57);
+  XamState().Reset();
+}
+
 // Step 12, ninth batch: the content "Internal" forms, the registered callbacks, XamReadString, the Ex startups,
 // network storage's privilege, ObLookupAnyThreadByThreadId (Xenia's xam_content.cc, xam_info.cc, xam_net.cc,
 // xam_user.cc, xboxkrnl_ob.cc).
@@ -4151,6 +4255,7 @@ int main() {
   CryptStep12SeventhTests();
   MiscStep12EighthTests();
   XamStep12NinthTests();
+  ObStep12TenthTests();
   Win32Step12Tests();
   InputQueueTests();
   InputScriptTests();

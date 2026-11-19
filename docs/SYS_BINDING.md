@@ -467,6 +467,13 @@ Ninth batch, content, network and the rest (10): the content calls' "Internal" f
 `NetDll_XNetStartupEx` (the plain forms), `XamNetworkStorageUserHasPrivilege`, `ObLookupAnyThreadByThreadId`
 (docs/perf/archive/2026-11-19-sys-step12-content/).
 
+Tenth batch, the last two (2): `ObCreateObject` (an object of a title's own type: the type's allocate procedure called
+in guest code on the calling thread, the object header, the pool and title-object flag from the attributes or the
+process; named objects with their name info, which Xenia stops on) and `XexLoadImageFromMemory` (a loaded module's
+name collides; any other image is new code a statically recompiled title cannot run, so it is not loaded, as Xenia
+answers an image that does not load). With it every call Xenia implements and the reference stubs is answered
+(docs/perf/archive/2026-11-19-sys-step12-ob/).
+
 Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
 host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
 SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),

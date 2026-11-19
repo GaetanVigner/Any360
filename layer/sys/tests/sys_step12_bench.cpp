@@ -715,6 +715,28 @@ int main(int argc, char** argv) {
     XamState().title().content_root.clear();
     fs::remove_all(content, ec);
   }
+  // Step 12, tenth batch: ObCreateObject with the type's allocate procedure played by the host (the same block each
+  // time), unnamed and named; XexLoadImageFromMemory for a module no title loaded.
+  {
+    const uint32_t type = 0xED000, attributes = 0xED040, name = 0xED060, out = 0xED100, block = 0xEE000;
+    std::memset(g.host(type), 0, 0x20);
+    g.Store32(type, 0x82001000), g.Store32(type + 0x18, 0x54657374);
+    std::memset(g.host(attributes), 0, 12);
+    g.Store32(attributes + 4, name);
+    g.Store16(name, 13), g.Store16(name + 2, 13), g.Store32(name + 4, name + 8);
+    std::memcpy(g.host(name + 8), "\\Title\\Event7", 13);
+    auto allocate = [](uint32_t, uint32_t, uint32_t, uint32_t, void*) -> uint32_t { return 0xEE000; };
+    bool ok = true;
+    PrintRow("ObCreateObject unnamed", 0x40,
+             Time(1000000, [&] { ok &= ObCreateObject(g, type, 0, 0x40, out, 1, allocate, nullptr) == 0; }), Measure{});
+    PrintRow("ObCreateObject named", 0x40,
+             Time(1000000, [&] { ok &= ObCreateObject(g, type, attributes, 0x40, out, 1, allocate, nullptr) == 0; }), Measure{});
+    ok &= g.Load32(out) == block + 0x20;
+    std::memcpy(g.host(name + 0x40), "dlc.xex", 8);
+    PrintRow("XexLoadImageFromMemory (not loaded)", 0,
+             Time(1000000, [&] { ok &= XamState().LoadImageFromMemory(g, name + 0x40, out) == 0xC000000F; }), Measure{});
+    if (!ok) std::printf("  !! a tenth-batch row failed\n");
+  }
   std::printf("sys_step12_bench: allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_totals.calls ? double(g_totals.bytes) / double(g_totals.calls) : 0.0,
               g_totals.calls ? double(g_totals.count) / double(g_totals.calls) : 0.0,

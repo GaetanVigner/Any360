@@ -1075,6 +1075,20 @@ ANY360_SYS_EXPORT(NetDll_XNetStartupEx) { ctx.r3.u64 = XamState().XNetStartup({b
 ANY360_SYS_EXPORT(XamNetworkStorageUserHasPrivilege) { ctx.r3.u64 = XamState().NetworkStorageUserHasPrivilege(ctx.r3.u32); }
 // (thread id, KTHREAD out): ObLookupThreadByThreadId.
 ANY360_SYS_EXPORT(ObLookupAnyThreadByThreadId) { ctx.r3.u64 = Threads().LookupThreadById({base}, ctx.r3.u32, ctx.r4.u32); }
+// Step 12, tenth batch: ObCreateObject (the type's allocate procedure run on the calling thread, below its frame, as
+// LDI's allocator is) and XexLoadImageFromMemory.
+static uint32_t CallAllocate(uint32_t function, uint32_t a, uint32_t b, uint32_t c, void* user) {
+  const auto& caller = *static_cast<const LdiCaller*>(user);
+  return uint32_t(Threads().Dispatch(function, {caller.kthread, caller.pcr, caller.stack_top}, {a, b, c}));
+}
+// (object type, OBJECT_ATTRIBUTES, object size, object out): the process type is the calling thread's (KTHREAD +0x73).
+ANY360_SYS_EXPORT(ObCreateObject) {
+  LdiCaller caller = LdiCallerOf(ctx, base);
+  const uint32_t process_type = caller.kthread ? Guest{base}.Load8(caller.kthread + 0x73) : 1;
+  ctx.r3.u64 = ObCreateObject({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, process_type, &CallAllocate, &caller);
+}
+// (image, size, name, flags, minimum version, handle out)
+ANY360_SYS_EXPORT(XexLoadImageFromMemory) { ctx.r3.u64 = XamState().LoadImageFromMemory({base}, ctx.r5.u32, ctx.r8.u32); }
 ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
@@ -1947,6 +1961,8 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(NetDll_XNetStartupEx),
     ANY360_SYS_ENTRY(XamNetworkStorageUserHasPrivilege),
     ANY360_SYS_ENTRY(ObLookupAnyThreadByThreadId),
+    ANY360_SYS_ENTRY(ObCreateObject),
+    ANY360_SYS_ENTRY(XexLoadImageFromMemory),
     ANY360_SYS_ENTRY(XeCryptAesKey),
     ANY360_SYS_ENTRY(XeCryptAesEcb),
     ANY360_SYS_ENTRY(XeCryptAesCbc),

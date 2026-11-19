@@ -968,4 +968,61 @@ uint32_t ObjectManager::RemoveIoCompletion(Guest g, uint32_t handle, uint32_t ke
   return kStatusSuccess;
 }
 
+uint32_t ObCreateObject(Guest g, uint32_t type, uint32_t attributes, uint32_t size, uint32_t object_out,
+                        uint32_t process_type, GuestCall3 call, void* user) {
+  constexpr uint32_t kHeaderSize = 0x10, kNameInfoSize = 0x10, kFlagNamed = 1, kFlagTitleObject = 0x10;
+  constexpr uint32_t kStatusObjectNameInvalid = 0xC0000033, kStatusInsufficientResources = 0xC000009A;
+  constexpr uint32_t kProcessTitle = 1;
+  if (object_out) g.Store32(object_out, 0);
+  uint32_t flags = 0, pool = 0;
+  const uint32_t attribute_bits = attributes ? g.Load32(attributes + 8) : 0;
+  if (attributes && (attribute_bits & 0x1000)) {
+    pool = 1, flags = kFlagTitleObject;
+  } else if (attributes && (attribute_bits & 0x2000)) {
+    pool = 2;
+  } else if (process_type == kProcessTitle) {
+    pool = 1, flags = kFlagTitleObject;
+  } else {
+    pool = 2;
+  }
+  const uint32_t allocate = g.Load32(type), pool_tag = g.Load32(type + 0x18);
+  auto header = [&](uint32_t at, uint32_t header_flags) {
+    g.Store32(at, 1);      // pointer count
+    g.Store32(at + 4, 0);  // handle count
+    g.Store32(at + 8, type);
+    g.Store16(at + 12, uint16_t(header_flags));
+  };
+  const uint32_t name = attributes ? g.Load32(attributes + 4) : 0;
+  if (!name) {
+    const uint32_t at = call(allocate, size + kHeaderSize, pool_tag, pool, user);
+    if (!at) return kStatusInsufficientResources;
+    header(at, flags);
+    if (object_out) g.Store32(object_out, at + kHeaderSize);
+    return kStatusSuccess;
+  }
+  // The path's last component: components between backslashes, a leading backslash allowed, none empty.
+  const uint32_t length = g.Load16(name), text = g.Load32(name + 4);
+  const char* chars = reinterpret_cast<const char*>(g.host(text));
+  uint32_t start = length && chars[0] == '\\' ? 1 : 0, last = start;
+  for (uint32_t i = start; i < length; ++i) {
+    if (chars[i] != '\\') continue;
+    if (i == last) return kStatusObjectNameInvalid;  // an empty component
+    last = i + 1;
+  }
+  if (last >= length) return kStatusObjectNameInvalid;  // no name, or a trailing backslash
+  const uint32_t name_length = length - last, aligned = (size + 3) & ~3u;
+  const uint32_t at = call(allocate, name_length + aligned + kNameInfoSize + kHeaderSize, pool_tag, pool, user);
+  if (!at) return kStatusInsufficientResources;
+  const uint32_t object = at + kNameInfoSize + kHeaderSize, copy = object + aligned;
+  g.Store32(at, 0);      // next in directory
+  g.Store32(at + 4, 0);  // object directory
+  g.Store16(at + 8, uint16_t(name_length));
+  g.Store16(at + 10, uint16_t(name_length));
+  g.Store32(at + 12, copy);
+  std::memmove(g.host(copy), g.host(text + last), name_length);
+  header(at + kNameInfoSize, (flags & 0xFFFE) | kFlagNamed);
+  if (object_out) g.Store32(object_out, object);
+  return kStatusSuccess;
+}
+
 }  // namespace any360::sys
