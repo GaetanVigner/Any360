@@ -3,6 +3,10 @@
 // any360/xdk/ppc_model.h's context: `ctx` the registers, `base` the guest memory.
 #pragma once
 
+#include <algorithm>
+#include <atomic>
+#include <cstdint>
+
 #include "any360/xdk/ppc_model.h"
 
 namespace any360::xdk::detail::xaudio_reverb_native {

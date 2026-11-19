@@ -78,4 +78,5 @@ No difference: rank z +0.42 to +1.69, none against. The city stays GPU-bound on 
 
 ## Next
 
-The loop's vector form (its filters run four lanes of the same operations).
+To look at next: what the loop's compiled instructions are spent on (its filters running side by side in vector
+lanes is not established: the compiler interleaved them, nothing found repeated yet).
