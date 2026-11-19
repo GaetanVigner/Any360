@@ -44,3 +44,4 @@ Every step's measured results, kept for later optimization passes: the self-test
 - [2026-11-19-d3d-resource-type](archive/2026-11-19-d3d-resource-type/): D3DResource_GetType (sub_826ACDB0), the GPU format's block (sub_826ACFE8) and DrawVerticesUP (sub_826B9688) bound
 - [2026-11-19-d3d-texture-sizes](archive/2026-11-19-d3d-texture-sizes/): A texture's dimensions (sub_826AD598) and a texture level's bytes (sub_826AD108) bound
 - [2026-11-19-d3d-state-fields](archive/2026-11-19-d3d-state-fields/): 94 render and sampler state fields (SetRenderState / GetRenderState, SetSamplerState / GetSamplerState of one register field each) bound
+- [2026-11-19-profile](archive/2026-11-19-profile/): the first function profile of Crackdown (the function profiler, any360/host/profiler.h, and a call count): where the processor time goes, function by function (titles/crackdown/HOT_FUNCTIONS.md)

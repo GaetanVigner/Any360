@@ -7,6 +7,7 @@
 #include "any360/host/rexglue.h"
 #include "any360/sys/activity.h"
 #include "any360/host/hitch_tracer.h"
+#include "any360/host/profiler.h"
 #include "any360/host/settings.h"
 
 #include "any360/gfx/png.h"
@@ -1220,6 +1221,11 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->renderer->show_fps_ = options.show_fps;
   if (const int hitch_ms = HitchTraceMs(); hitch_ms > 0) {
     binding->renderer->StartHitchTracer(hitch_ms, HitchTraceFolder());
+  }
+  if (const int seconds = ProfileSeconds(); seconds > 0) {
+    static std::unique_ptr<diagnostics::Profiler> profiler;  // for the process's life
+    profiler = std::make_unique<diagnostics::Profiler>(double(ProfileAfterSeconds()), double(seconds), HitchTraceFolder(),
+                                                       options.log);
   }
   binding->renderer->SetAsyncPipelines(options.async_pipelines);
   binding->renderer->SetMsaa(options.msaa_samples);

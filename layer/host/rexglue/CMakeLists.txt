@@ -1,8 +1,9 @@
 # any360_host_rexglue: binds a title built on the ReXGlue runtime (stage 0) to Any360's layers, a piece at a time
 # (include/any360/host/rexglue.h). Compiled in the title's build, against the runtime's headers; layer/sys adds it
 # when ANY360_REFERENCE_SDK names a runtime install. A title adds layer/sys with EXCLUDE_FROM_ALL and links this.
-# Diagnostics with no runtime or renderer behind them: thread stacks, the hitch tracer (any360/host/hitch_tracer.h).
-add_library(any360_host_diagnostics STATIC src/thread_stacks.cpp src/hitch_tracer.cpp)
+# Diagnostics with no runtime or renderer behind them: thread stacks, the hitch tracer (any360/host/hitch_tracer.h),
+# the function profiler (any360/host/profiler.h).
+add_library(any360_host_diagnostics STATIC src/thread_stacks.cpp src/hitch_tracer.cpp src/profiler.cpp)
 target_include_directories(any360_host_diagnostics PUBLIC include)
 target_compile_options(any360_host_diagnostics PRIVATE -Wall -Wextra)
 if(WIN32)

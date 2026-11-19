@@ -43,6 +43,10 @@ void StopSystemFromSettings();
 // (any360_hitch_trace_ms, 0: off) and the folder its reports go to (any360_hitch_trace_folder).
 int HitchTraceMs();
 std::string HitchTraceFolder();
+// The function profiler's settings (any360/host/profiler.h): how long it samples (any360_profile_seconds, 0: off)
+// and how long after the graphics start it begins (any360_profile_after); its reports go to the hitch tracer's folder.
+int ProfileSeconds();
+int ProfileAfterSeconds();
 
 // A host folder over a guest folder on any360::sys's file system too (read-only), for the redirections a title sets
 // up on the runtime's file system (a mod or language folder). Nothing while the binding is off.

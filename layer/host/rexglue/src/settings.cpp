@@ -21,6 +21,11 @@ REXCVAR_DEFINE_INT32(any360_hitch_trace_ms, 0, "GPU",
                      "Any360: a frame of play longer than this many milliseconds has every thread's stack sampled until "
                      "it ends, and hitch_<n>.txt says what each thread did meanwhile (any360/host/hitch_tracer.h); 0: off");
 REXCVAR_DEFINE_STRING(any360_hitch_trace_folder, "logs", "GPU", "Any360: the folder the hitch tracer's reports go to");
+REXCVAR_DEFINE_INT32(any360_profile_seconds, 0, "GPU",
+                     "Any360: samples where every thread spends its processor time for this many seconds and writes "
+                     "profile.txt and profile.csv, function by function (any360/host/profiler.h); 0: off");
+REXCVAR_DEFINE_INT32(any360_profile_after, 60, "GPU",
+                     "Any360: the seconds after the graphics start the profiler waits before it samples");
 REXCVAR_DEFINE_BOOL(any360_sys_trace, false, "Kernel",
                     "Any360: log the first call of each system call that goes to any360::sys, and to the runtime");
 REXCVAR_DEFINE_BOOL(any360_sys_trace_all, false, "Kernel",
@@ -219,4 +224,6 @@ void MountFolderIfStarted(const std::string& guest_folder, const std::filesystem
 namespace any360::host::rexglue {
 int HitchTraceMs() { return REXCVAR_GET(any360_hitch_trace_ms); }
 std::string HitchTraceFolder() { return REXCVAR_GET(any360_hitch_trace_folder); }
+int ProfileSeconds() { return REXCVAR_GET(any360_profile_seconds); }
+int ProfileAfterSeconds() { return REXCVAR_GET(any360_profile_after); }
 }  // namespace any360::host::rexglue
