@@ -771,9 +771,11 @@ void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFu
     const uint64_t verified = g_verified.fetch_add(1, std::memory_order_relaxed) + 1;
     if (verified == 1000 || verified % 1000000 == 0) {
       REXLOG_INFO("Any360 xdk: {} calls verified against the functions' own code ({}), {} different; left to its own "
-                  "code: {}; different at first and the same when run again: {}",
+                  "code: {}; different at first and the same when run again: {}; loops in locals (tools/ppc_model.py "
+                  "--promote-memory): {} promoted, {} plain",
                   verified, CountsByFunction(g_verified_by), g_different.load(), CountsByFunction(g_declined_by),
-                  CountsByFunction(g_settled));
+                  CountsByFunction(g_settled), any360::xdk::ppc_model::g_promoted_loops.load(),
+                  any360::xdk::ppc_model::g_plain_loops.load());
     }
     if (!(same_bytes && !register_differs) && g_different.fetch_add(1, std::memory_order_relaxed) < 20) {
       REXLOG_ERROR("Any360 xdk: {} differs from the function's own code: {}: {}{}{} (first byte different: range {} "

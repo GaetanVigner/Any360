@@ -10,6 +10,7 @@
 // r1 and lr at r1 - 8; __savefpr_N stores f_N..f31 below r12).
 #pragma once
 
+#include <atomic>
 #include <bit>
 #include <climits>
 #include <cmath>
@@ -158,6 +159,22 @@ inline void Store64(const Memory& m, uint32_t a, uint64_t v) {
   v = std::byteswap(v);
   std::memcpy(m.Host(a), &v, 8);
 }
+
+// tools/ppc_model.py --promote-memory's check: [lo, hi) shares no byte with any of the n spans
+// [base + spans[i][0], base + spans[i][1]) (guest addresses, unwrapped).
+inline bool ApartFromAll(int64_t lo, int64_t hi, int64_t base, const int64_t (*spans)[2], int n) {
+  for (int i = 0; i < n; ++i) {
+    if (lo < base + spans[i][1] && base + spans[i][0] < hi) return false;
+  }
+  return true;
+}
+
+// How many times the loops tools/ppc_model.py --promote-memory promoted took their promoted path, and how many times
+// their check sent them to the plain copy (the tests assert which); and a switch that makes every check fail (the
+// tests run the plain copies with it).
+inline std::atomic<uint64_t> g_promoted_loops{0};
+inline std::atomic<uint64_t> g_plain_loops{0};
+inline std::atomic<bool> g_force_plain_loops{false};
 
 // The PowerPC ABI's register save and restore helpers.
 inline void SaveGprLr(Ctx& ctx, const Memory& m, int first) {

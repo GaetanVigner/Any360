@@ -1,7 +1,9 @@
 // Timings of XAudio's I3DL2 reverb (any360/xdk/xaudio_reverb.h) against its model: microseconds a frame (256
 // samples, two channels in, four out) on a state made as in xdk_xaudio_reverb_tests, and what it allocates. The first
 // version is the generated leaf itself (tools/ppc_model.py --native); hand-written stages, if any come, are timed
-// against it here. Not a test: the figures that decide a binding are the title's own (--any360_xdk_bench).
+// against it here; its hot loop runs promoted (tools/ppc_model.py --promote-memory: every frame here must take that
+// path, checked), and is timed plain too (its check forced to fail). Not a test: the figures that decide a binding are
+// the title's own (--any360_xdk_bench).
 // Run: xdk_xaudio_reverb_bench [repeats]
 #include <algorithm>
 #include <chrono>
@@ -40,12 +42,15 @@ int main(int argc, char** argv) {
     a.max_bytes_a_call = std::max(a.max_bytes_a_call, double(spent.bytes) / frames);
     return us;
   };
+  const auto native_frame = [&] {
+    uint32_t csr = _mm_getcsr();
+    xdk::XAudioReverb(side.m, kStack, kState, kPointers, kPointers + 0x40, csr);
+    _mm_setcsr(csr);
+  };
+  const uint64_t promoted_at_start = xdk::ppc_model::g_promoted_loops.load();
+  const uint64_t plain_at_start = xdk::ppc_model::g_plain_loops.load();
   for (int r = 0; r < repeats; ++r) {
-    const double native = run([&] {
-      uint32_t csr = _mm_getcsr();
-      xdk::XAudioReverb(side.m, kStack, kState, kPointers, kPointers + 0x40, csr);
-      _mm_setcsr(csr);
-    });
+    const double native = run(native_frame);
     const double model = run([&] {
       xdk::reference::xaudio_reverb::Ctx ctx;
       ctx.r1.u64 = kStack;
@@ -57,6 +62,14 @@ int main(int argc, char** argv) {
     });
     std::printf("reverb %.2f us a frame, model %.2f (%.2fx)\n", native, model, model / native);
   }
+  const uint64_t promoted = xdk::ppc_model::g_promoted_loops.load() - promoted_at_start;
+  const bool all_promoted =
+      promoted == uint64_t(repeats) * frames && xdk::ppc_model::g_plain_loops.load() == plain_at_start;
+  xdk::ppc_model::g_force_plain_loops.store(true);
+  for (int r = 0; r < repeats; ++r) std::printf("reverb, its loop plain: %.2f us a frame\n", run(native_frame));
+  xdk::ppc_model::g_force_plain_loops.store(false);
+  std::printf("xdk_xaudio_reverb_bench: the loop promoted on %llu of %llu frames\n", (unsigned long long)promoted,
+              (unsigned long long)repeats * frames);
   xdk_bench::PrintAllocated("xdk_xaudio_reverb_bench");
-  return 0;
+  return all_promoted ? 0 : 1;
 }

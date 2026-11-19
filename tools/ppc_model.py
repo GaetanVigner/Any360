@@ -11,7 +11,35 @@ without the runtime's volatile accesses. The same operations in the same order, 
 recompiled code's traffic through the shared context. A header so made is a native function's first version, kept
 only when the benchmark and the check in game say so (docs/NATIVE_FUNCTIONS.md).
 
-usage: python -I tools/ppc_model.py [--native] <generated dir> <namespace> <out header> <root address> [...]
+With --promote <label> (repeatable, --native only), the loop from that label to its last branch back to it keeps the
+stack slots it reads and writes at r1 + K (K a constant) in locals: loaded where the loop is entered, stored back where
+it leaves, so memory is the same after the loop and every load and store of them inside it is gone. Checked, else the
+tool stops: one way in (a branch to a label of the loop right before it, or falling into it), one way out (falling
+out of the branch back), r1 unchanged in it, only 32-bit accesses to the slots, and no stack address the function
+forms (addi rX,r1,K) falling among them.
+
+With --promote-memory <label> (after --promote of the same loop), the loop's memory at addresses that do not change
+from one iteration to the next is kept in locals too. The loop is read as an abstract interpretation of one iteration
+over the registers: a register holds an invariant (a C++ expression computed where the loop's check runs: registers
+it never sets, stack slots it never writes, memory read at invariant addresses it never writes), or an invariant base
+plus an offset known to lie in [lo, hi] (masks and shifts of a changing value: a ring's index; counters, slots and
+registers stepped by a constant each iteration, bounded by the loop's counter), or something else. Every 32-bit load
+and store is then either at an invariant address (a word) or within an invariant base plus a bounded range (a delay
+line: left in memory). Anything else and the tool stops.
+
+Each invariant also carries a guess of where it lies: root + k (+ a spread, for an index such as a double buffer's),
+from the function's statements before the loop (a struct's fields reached through pointers the function made: all
+on one root). Words with the same place share one local; a word whose place has a spread, or which shares bytes with
+another while one of the two is written, stays in memory. The guess is checked, not trusted: the first iteration runs
+the plain copy of the loop (kept beside it; the carried registers then hold what each iteration sets them to), then a
+check computes the bases and finds each where the guess puts it (one comparison a base), each root's words within the
+32-bit space, and every access left in memory apart from the words in locals that matter (every one for a written
+access, the written ones for a read). When it fails the plain copy runs the remaining iterations. So the bits are the
+original's for every input. any360::xdk::ppc_model::g_promoted_loops / g_plain_loops count which path ran, and
+g_force_plain_loops makes every check fail (the tests run the plain copies with it).
+
+usage: python -I tools/ppc_model.py [--native] [--promote <label>]... [--promote-memory <label>]... <generated dir>
+       <namespace> <out header> <root address> [...]
   e.g. python -I tools/ppc_model.py F:/Crackdown/crackdown-any360-sys/generated/default xaudio_reverb \\
            layer/xdk/include/any360/xdk/xaudio_reverb_reference.h 82A4DCF0
 """
@@ -50,6 +78,7 @@ using any360::xdk::ppc_model::VectorMaskL;
 using any360::xdk::ppc_model::VectorMaskR;
 using any360::xdk::ppc_model::ShuffleEpi8;
 using any360::xdk::ppc_model::Vmaddfp;
+using any360::xdk::ppc_model::ApartFromAll;
 using u8 = uint8_t;
 using u16 = uint16_t;
 using u32 = uint32_t;
@@ -74,6 +103,694 @@ SUBSTITUTIONS = [
     (r'\b__(save|rest)gprlr_(\d+)\(ctx, base\)', lambda m: '%sGprLr(ctx, base, %s)' % (m.group(1).capitalize(), m.group(2))),
     (r'\b__(save|rest)fpr_(\d+)\(ctx, base\)', lambda m: '%sFpr(ctx, base, %s)' % (m.group(1).capitalize(), m.group(2))),
 ]
+def promote_loop(body, label):
+    """The loop at `label` in `body` (a function's statements) with its r1 + K slots in locals (see --promote)."""
+    lines = body.split('\n')
+    start = lines.index(label + ':')
+    back = max(i for i, l in enumerate(lines) if l.strip().endswith('goto %s;' % label))
+    region = lines[start:back + 1]
+    text = '\n'.join(region)
+    inside = set(re.findall(r'^(loc_[0-9A-F]+):', text, flags=re.M))
+    outside_lines = lines[:start] + lines[back + 1:]
+    entries = [i for i, l in enumerate(lines[:start] + [''] + lines[back + 1:])
+               if re.search(r'goto (%s);' % '|'.join(inside), l)]
+    before = lines[start - 1].strip()
+    entered_by_branch = re.fullmatch(r'goto (%s);' % '|'.join(inside), before) is not None
+    if len(entries) != (1 if entered_by_branch else 0):
+        sys.exit('--promote %s: the loop has more than one way in' % label)
+    for target in re.findall(r'goto (loc_[0-9A-F]+);', text):
+        if target not in inside:
+            sys.exit('--promote %s: the loop branches out to %s' % (label, target))
+    if re.search(r'ctx\.r1\.(u64|s64|u32|s32) =|SaveGprLr|RestGprLr|SaveFpr|RestFpr', text):
+        sys.exit('--promote %s: r1 or the register save area changes in the loop' % label)
+    if re.search(r'(Load|Store)(8|16|64)\(base, ctx\.r1\.u32 \+|Raw\(base, ctx\.r1', text):
+        sys.exit('--promote %s: an access to the stack other than 32 bits' % label)
+    loads = set(int(k) for k in re.findall(r'Load32\(base, ctx\.r1\.u32 \+ (\d+)\)', text))
+    stores = set(int(k) for k in re.findall(r'Store32\(base, ctx\.r1\.u32 \+ (\d+),', text))
+    slots = sorted(loads | stores)
+    if not slots:
+        return body, [], set()
+    formed = [int(k) for k in re.findall(r'ctx\.r\d+\.s64 = ctx\.r1\.s64 \+ (-?\d+);', body)]
+    if any(slots[0] - 4 < k < slots[-1] + 4 for k in formed):
+        sys.exit('--promote %s: the function forms a stack address among the slots' % label)
+    text = re.sub(r'Load32\(base, ctx\.r1\.u32 \+ (\d+)\)', r's_\1', text)
+    text = re.sub(r'Store32\(base, ctx\.r1\.u32 \+ (\d+), ([^;]+)\);', r's_\1 = \2;', text)
+    loading = ['\t// the loop at %s keeps its stack slots in locals (tools/ppc_model.py --promote)' % label]
+    loading += ['\ts_%d = Load32(base, ctx.r1.u32 + %d);' % (k, k) for k in slots]
+    storing = ['\tStore32(base, ctx.r1.u32 + %d, s_%d);' % (k, k) for k in sorted(stores)]
+    enter = start - 1 if entered_by_branch else start
+    lines = lines[:enter] + loading + lines[enter:start] + text.split('\n') + storing + lines[back + 1:]
+    return '\n'.join(lines), slots, stores
+
+
+GPR = r'ctx\.r(\d+)'
+ADDR = r'(?:ctx\.r(\d+)\.u32 \+ (-?\d+)|ctx\.r(\d+)\.u32 \+ ctx\.r(\d+)\.u32)'
+
+
+class Inv:
+    """A value the loop does not change: `code` computes it where the loop's check runs. `aff` = (root, k, spread), a
+    guess that it is root + k + [0, spread] (root a symbol, None for 0): bases on one root are checked at run time to
+    stand where the guess puts them, the guess only decides what is checked."""
+
+    def __init__(self, code, aff=None):
+        self.code = code
+        self.aff = aff if aff is not None else (code, 0, 0)
+
+
+class Var:
+    """A value the loop changes: `base` (an Inv, or None for 0) plus an offset in [lo, hi] (C++ int64 expressions
+    computed where the loop's check runs), or unbounded (lo None). `ind` = (K, c) when it is induction slot K's value
+    at the iteration's top plus c."""
+
+    def __init__(self, base=None, lo=None, hi=None, ind=None):
+        self.base, self.lo, self.hi, self.ind = base, lo, hi, ind
+
+    def bounded(self):
+        return self.lo is not None
+
+
+def u32(code):
+    return '(uint32_t)(%s)' % code
+
+
+def plus(code, k):
+    return code if k == 0 else '(%s + %d)' % (code, k)
+
+
+def aff_add(a, b, code):
+    """The guess for a + b: affine when one side is a number."""
+    if a[0] is None:
+        return (b[0], a[1] + b[1], a[2] + b[2])
+    if b[0] is None:
+        return (a[0], a[1] + b[1], a[2] + b[2])
+    return (code, 0, 0)
+
+
+def guess_entry(lines):
+    """A guess of each register and of each stack slot the loop keeps in a local (`s_K = Load32(base, r1 + K)`),
+    where the loop is entered, as (root, k): the function's statements before the loop read in order, branches
+    ignored. Wrong guesses only make the check fail (the plain copy then runs)."""
+    regs = {n: ('r%d@entry' % n, 0) for n in range(32)}
+    slots, svals, fresh = {}, {}, [0]
+
+    def opaque():
+        fresh[0] += 1
+        return ('v%d' % fresh[0], 0)
+
+    frame = [0]
+
+    def slot(k):
+        if k not in slots:
+            slots[k] = ('S%d@%d' % (k, frame[0]), 0)
+        return slots[k]
+
+    for line in lines:
+        s = line.strip()
+        if not s or s.startswith('//'):
+            continue
+        m = re.fullmatch(r'ctx\.r(\d+)\.s64 = ctx\.r(\d+)\.s64 \+ (-?\d+);', s)
+        if m:
+            d, a = int(m.group(1)), regs[int(m.group(2))]
+            regs[d] = (a[0], a[1] + int(m.group(3)))
+        elif re.fullmatch(r'ctx\.r(\d+)\.s64 = (-?\d+);', s):
+            m = re.fullmatch(r'ctx\.r(\d+)\.s64 = (-?\d+);', s)
+            d = int(m.group(1))
+            regs[d] = (None, int(m.group(2)))
+        elif re.fullmatch(r'ctx\.r(\d+)\.u64 = ctx\.r(\d+)\.u64 \| (\d+);', s):
+            m = re.fullmatch(r'ctx\.r(\d+)\.u64 = ctx\.r(\d+)\.u64 \| (\d+);', s)
+            d, a = int(m.group(1)), regs[int(m.group(2))]
+            regs[d] = (None, (a[1] & 0xFFFFFFFF) | int(m.group(3))) if a[0] is None else opaque()
+        elif re.fullmatch(r'ctx\.r(\d+)\.u64 = ctx\.r(\d+)\.u64 \+ ctx\.r(\d+)\.u64;', s):
+            m = re.fullmatch(r'ctx\.r(\d+)\.u64 = ctx\.r(\d+)\.u64 \+ ctx\.r(\d+)\.u64;', s)
+            d, a, b = int(m.group(1)), regs[int(m.group(2))], regs[int(m.group(3))]
+            if a[0] is None:
+                regs[d] = (b[0], a[1] + b[1])
+            elif b[0] is None:
+                regs[d] = (a[0], a[1] + b[1])
+            else:
+                regs[d] = opaque()
+        elif re.fullmatch(r'ctx\.r(\d+)\.u64 = ctx\.r(\d+)\.u64;', s):
+            m = re.fullmatch(r'ctx\.r(\d+)\.u64 = ctx\.r(\d+)\.u64;', s)
+            d = int(m.group(1))
+            regs[d] = regs[int(m.group(2))]
+        elif re.fullmatch(r'ctx\.r(\d+)\.u64 = Load32\(base, ctx\.r1\.u32 \+ (-?\d+)\);', s):
+            m = re.fullmatch(r'ctx\.r(\d+)\.u64 = Load32\(base, ctx\.r1\.u32 \+ (-?\d+)\);', s)
+            d = int(m.group(1))
+            regs[d] = slot(int(m.group(2)))
+        elif re.fullmatch(r'Store32\(base, ctx\.r1\.u32 \+ (-?\d+), ctx\.r(\d+)\.u32\);', s):
+            m = re.fullmatch(r'Store32\(base, ctx\.r1\.u32 \+ (-?\d+), ctx\.r(\d+)\.u32\);', s)
+            slots[int(m.group(1))] = regs[int(m.group(2))]
+            d = None
+        elif re.fullmatch(r'Store\d+\(base, ctx\.r1\.u32 \+ (-?\d+), .*\);', s):
+            m = re.fullmatch(r'Store\d+\(base, ctx\.r1\.u32 \+ (-?\d+), .*\);', s)
+            slots[int(m.group(1))] = opaque()
+            d = None
+        elif re.fullmatch(r's_(\d+) = Load32\(base, ctx\.r1\.u32 \+ \1\);', s):
+            k = int(re.fullmatch(r's_(\d+) = .*', s).group(1))
+            svals[k] = slot(k)
+            d = None
+        elif re.match(r'ctx\.r(\d+)\.(?:u64|s64|u32|s32) =', s):
+            d = int(re.match(r'ctx\.r(\d+)\.', s).group(1))
+            regs[d] = opaque()
+        else:
+            d = None
+        if d == 1:  # a new frame: the slots are others
+            frame[0] += 1
+            slots = {}
+    return regs, svals
+
+
+class Analysis:
+    def __init__(self, lines, slots_written, entry_regs, entry_slots):
+        self.lines = lines
+        self.slots_written = slots_written
+        self.entry_regs, self.entry_slots = entry_regs, entry_slots
+        self.const_sites = {}   # line index -> (base Inv, offset)
+        self.range_sites = {}   # line index -> (base Inv or None, lo code, hi code)
+        self.stored = set()     # word keys the loop stores
+        self.failed = None
+        self.skipped = self.find_skipped()
+        self.inductions = self.find_inductions()
+
+    @staticmethod
+    def key(base, off):
+        """A word's place on its root: (root, k, spread), the word in [root + k, root + k + spread + 4)."""
+        root, k, spread = base.aff
+        return (root, k + off, spread)
+
+    @staticmethod
+    def overlap(a, b):
+        return a[0] == b[0] and a[1] < b[1] + b[2] + 4 and b[1] < a[1] + a[2] + 4
+
+    def find_skipped(self):
+        """The lines on a path a forward branch can skip."""
+        labels = {l.strip()[:-1]: i for i, l in enumerate(self.lines) if re.fullmatch(r'loc_[0-9A-F]+:', l.strip())}
+        skipped = set()
+        for i, l in enumerate(self.lines):
+            m = re.fullmatch(r'if \(.*\) goto (loc_[0-9A-F]+);', l.strip())
+            if m and labels.get(m.group(1), -1) > i:
+                skipped.update(range(i + 1, labels[m.group(1)]))
+        return skipped
+
+    def find_inductions(self):
+        """The slots the loop steps by a constant each iteration, with the number of iterations they bound.
+        The counter: a slot the loop steps by c and leaves while it is under N, its tail
+        `rX = s_K; rX += c; cr6 = rX < N (signed); s_K = rX; if (cr6.lt) goto top` (s_K written nowhere else): at the
+        top of iteration j (from 0 to J = (max(e, N - c) - e) / c, e its value where the check runs) it is e + c * j.
+        An induction slot: written once an iteration, on every path, with its own value plus a constant c > 0
+        (`rX = s_K; ... rX += c; ... s_K = rX`): at the top of iteration j it is its value at the check plus c * j.
+        The interpretation checks each write against that. An induction register: set once in the loop, on every
+        path, by `rX += c` (c > 0). Returns {K: (c, write line)}; self.iterations = J's code."""
+        self.iterations = None
+        self.register_inductions = {}
+        code = [(i, l.strip()) for i, l in enumerate(self.lines) if l.strip() and not l.strip().startswith('//')]
+        tail = [s for _, s in code[-5:]]
+        if len(tail) < 5:
+            return {}
+        m0 = re.fullmatch(r'ctx\.r(\d+)\.u64 = s_(\d+);', tail[0])
+        m1 = re.fullmatch(r'ctx\.r(\d+)\.s64 = ctx\.r(\d+)\.s64 \+ (\d+);', tail[1])
+        m2 = re.fullmatch(r'ctx\.cr6\.compare<int32_t>\(ctx\.r(\d+)\.s32, (-?\d+), ctx\.xer\);', tail[2])
+        m3 = re.fullmatch(r's_(\d+) = ctx\.r(\d+)\.u32;', tail[3])
+        m4 = re.fullmatch(r'if \(ctx\.cr6\.lt\) goto loc_[0-9A-F]+;', tail[4])
+        if not (m0 and m1 and m2 and m3 and m4):
+            return {}
+        r, k = m0.group(1), int(m0.group(2))
+        if not (m1.group(1) == m1.group(2) == r and m2.group(1) == r and m3.group(1) == str(k) and m3.group(2) == r):
+            return {}
+        c, n = int(m1.group(3)), int(m2.group(2))
+        if c <= 0:
+            return {}
+        e = 'int64_t(int32_t(s_%d))' % k
+        self.iterations = '((std::max<int64_t>(%s, %d) - %s) / %d)' % (e, n - c, e, c)
+        found = {}
+        for slot in sorted(set(int(x) for _, s in code for x in re.findall(r'^s_(\d+) = ', s))):
+            writes = [(i, s) for i, s in code if re.match(r'^s_%d = ' % slot, s)]
+            if len(writes) != 1 or writes[0][0] in self.skipped:
+                continue
+            w, s = writes[0]
+            m = re.fullmatch(r's_%d = ctx\.r(\d+)\.u32;' % slot, s)
+            if not m:
+                continue
+            x = m.group(1)
+            defs = [s for i, s in code if i < w and re.match(r'^ctx\.r%s\.(?:u64|s64) =' % x, s)]
+            if len(defs) < 2:
+                continue
+            step = re.fullmatch(r'ctx\.r%s\.s64 = ctx\.r%s\.s64 \+ (\d+);' % (x, x), defs[-1])
+            if step and int(step.group(1)) > 0 and defs[-2] == 'ctx.r%s.u64 = s_%d;' % (x, slot):
+                found[slot] = (int(step.group(1)), w)
+        if not (k in found and found[k][0] == c):
+            return {}
+        for x in sorted(set(int(y) for _, s in code for y in re.findall(r'^ctx\.r(\d+)\.(?:u64|s64) =', s))):
+            defs = [(i, s) for i, s in code if re.match(r'^ctx\.r%d\.(?:u64|s64) =' % x, s)]
+            if len(defs) != 1 or defs[0][0] in self.skipped:
+                continue
+            step = re.fullmatch(r'ctx\.r%d\.s64 = ctx\.r%d\.s64 \+ (\d+);' % (x, x), defs[0][1])
+            if step and int(step.group(1)) > 0:
+                self.register_inductions[x] = int(step.group(1))
+        return found
+
+    def stored_ranges(self):
+        """Each stored word's [lo, hi] over every value this iteration stored to it, or None."""
+        out = {}
+        for word, bounds in self.word_stores.items():
+            if None in bounds:
+                out[word] = None
+            elif len(bounds) == 1:
+                out[word] = bounds[0]
+            else:
+                out[word] = ('std::min<int64_t>({%s})' % ', '.join(lo for lo, _ in bounds),
+                             'std::max<int64_t>({%s})' % ', '.join(hi for _, hi in bounds))
+        return out
+
+    def entry_reg(self, n):
+        root, k = self.entry_regs[n]
+        return Inv('ctx.r%d.u32' % n, (root, k, 0))
+
+    def run(self, assumed_stored, carried):
+        """One iteration from its top: registers the loop never sets, and the `carried` ones (each set again to the
+        value it had at the top: checked), hold their values at the check."""
+        self.assigned = set(int(r) for l in self.lines for r in re.findall(r'^\s*ctx\.r(\d+)\.(?:u64|s64) =', l))
+        regs = {}
+        for n in range(32):
+            regs[n] = Var() if n in self.assigned and n not in carried else self.entry_reg(n)
+            if n in self.register_inductions:
+                regs[n] = Var(self.entry_reg(n), '0', '(%d * %s)' % (self.register_inductions[n], self.iterations))
+        self.const_sites, self.range_sites, stored = {}, {}, set()
+        self.range_stores = set()  # the range sites that store
+        self.const_stores = set()  # the invariant-address sites that store
+        self.unknown = []
+        self.slot_values = {}  # slot -> the value this iteration wrote to it
+        self.word_stores = {}  # word key -> [(lo, hi) of each value stored, or None when unbounded]
+        self.conditions = []
+        set_since = {}
+        for i, line in enumerate(self.lines):
+            s = line.strip()
+            if not s or s.startswith('//'):
+                continue
+            m = re.match(r'^(loc_[0-9A-F]+):$', s)
+            if m:
+                for n in set_since.pop(m.group(1), set()):
+                    regs[n] = Var()
+                continue
+            m = re.match(r'^if \(.*\) goto (loc_[0-9A-F]+);$', s)
+            if m:
+                set_since.setdefault(m.group(1), set())
+                continue
+            for open_set in set_since.values():
+                d = re.match(r'^ctx\.r(\d+)\.(?:u64|s64) =', s)
+                if d:
+                    open_set.add(int(d.group(1)))
+            if not self.step(i, s, regs, assumed_stored, stored):
+                return False
+        self.stored = stored
+        self.end = regs
+        return True
+
+    def address(self, regs, m):
+        if m.group(1) is not None:
+            a, k = regs[int(m.group(1))], int(m.group(2))
+            if isinstance(a, Inv):
+                return ('const', a, k)
+            if a.bounded():
+                return ('range', a.base, plus(a.lo, k), plus(a.hi, k))
+            return None
+        a, b = regs[int(m.group(3))], regs[int(m.group(4))]
+        if isinstance(a, Inv) and isinstance(b, Inv):
+            code = u32('%s + %s' % (a.code, b.code))
+            return ('const', Inv(code, aff_add(a.aff, b.aff, code)), 0)
+        if isinstance(a, Var) and isinstance(b, Var):
+            return None
+        inv, var = (a, b) if isinstance(a, Inv) else (b, a)
+        if var.bounded():
+            if var.base is None:
+                return ('range', inv, var.lo, var.hi)
+            code = u32('%s + %s' % (inv.code, var.base.code))
+            return ('range', Inv(code, aff_add(inv.aff, var.base.aff, code)), var.lo, var.hi)
+        return None
+
+    def site(self, i, addr):
+        if addr is None:
+            self.unknown.append('line %d: an address neither invariant nor a bounded range: %s' % (i, self.lines[i].strip()))
+            return ('unknown',)
+        if addr[0] == 'const':
+            self.const_sites[i] = (addr[1], addr[2])
+            return addr
+        self.range_sites[i] = (addr[1], addr[2], addr[3])
+        return addr
+
+    def step(self, i, s, regs, assumed_stored, stored):
+        m = re.match(r'^ctx\.r(\d+)\.u64 = Load32\(base, %s\);$' % ADDR, s)
+        if m:
+            addr = self.site(i, self.address(regs, re.match(ADDR, s[s.index('base, ') + 6:])))
+            d = int(m.group(1))
+            word = self.key(addr[1], addr[2]) if addr[0] == 'const' else None
+            touched = [w for w in assumed_stored if word is not None and self.overlap(w, word)]
+            if word is not None and not touched:
+                regs[d] = Inv('Load32(base, %s)' % u32('%s + %d' % (addr[1].code, addr[2])))
+            elif word is not None and touched == [word] and self.word_ranges.get(word):
+                # A word the loop stores values in [lo, hi] to: its value at the check, or one of those.
+                lo, hi = self.word_ranges[word]
+                e = 'int64_t(Load32(base, %s))' % u32('%s + %d' % (addr[1].code, addr[2]))
+                regs[d] = Var(None, 'std::min<int64_t>(%s, %s)' % (lo, e), 'std::max<int64_t>(%s, %s)' % (hi, e))
+            else:
+                regs[d] = Var()
+            return True
+        m = re.match(r'^temp\.u32 = Load32\(base, (.*)\);$', s)
+        if m:
+            self.site(i, self.address(regs, re.match(ADDR, m.group(1))))
+            return True
+        m = re.match(r'^Store32\(base, (ctx\.r\d+\.u32 \+ (?:-?\d+|ctx\.r\d+\.u32)), (temp\.u32|ctx\.r\d+\.u32)\);$', s)
+        if m:
+            addr = self.site(i, self.address(regs, re.match(ADDR, m.group(1))))
+            if addr[0] == 'range':
+                self.range_stores.add(i)
+            if addr[0] == 'const':
+                self.const_stores.add(i)
+                word = self.key(addr[1], addr[2])
+                stored.add(word)
+                src = re.fullmatch(r'ctx\.r(\d+)\.u32', m.group(2))
+                v = regs[int(src.group(1))] if src else None
+                if isinstance(v, Inv):
+                    bounds = ('int64_t(%s)' % v.code,) * 2
+                elif isinstance(v, Var) and v.bounded() and v.base is None:
+                    bounds = (v.lo, v.hi)
+                else:
+                    bounds = None
+                self.word_stores.setdefault(word, []).append(bounds)
+            return True
+        if re.search(r'\b(Load|Store)(8|16|32|64)\(|\bRaw\(|_mm_|Vmaddfp|ShuffleEpi8|SaveGprLr|RestGprLr|SaveFpr|RestFpr', s):
+            self.failed = 'line %d: an access this pass does not read: %s' % (i, s)
+            return False
+        m = re.match(r'^ctx\.r(\d+)\.s64 = ctx\.r(\d+)\.s64 \+ (-?\d+);$', s)
+        if m:
+            d, a, k = int(m.group(1)), regs[int(m.group(2))], int(m.group(3))
+            if isinstance(a, Inv):
+                regs[d] = Inv(u32(plus(a.code, k)), (a.aff[0], a.aff[1] + k, a.aff[2]))
+            elif a.bounded():
+                regs[d] = Var(a.base, plus(a.lo, k), plus(a.hi, k), (a.ind[0], a.ind[1] + k) if a.ind else None)
+            else:
+                regs[d] = Var()
+            return True
+        m = re.match(r'^ctx\.r(\d+)\.u64 = ctx\.r(\d+)\.u32 & (0x[0-9A-F]+|\d+);$', s)
+        if m:
+            d, a, k = int(m.group(1)), regs[int(m.group(2))], int(m.group(3), 0)
+            if isinstance(a, Inv):
+                code = '(%s & %du)' % (a.code, k)
+                if a.aff[0] is None and a.aff[2] == 0:
+                    regs[d] = Inv(code, (None, a.aff[1] & k, 0))
+                else:
+                    regs[d] = Inv(code, (None, 0, k) if k & (k + 1) == 0 else None)
+            elif k & (k + 1) == 0:  # a low mask: [0, k]
+                regs[d] = Var(None, '0', str(k))
+            else:
+                regs[d] = Var()
+            return True
+        m = re.match(r'^ctx\.r(\d+)\.u64 = __builtin_rotateleft64\(ctx\.r(\d+)\.u32 \| \(ctx\.r\2\.u64 << 32\), (\d+)\) & (0x[0-9A-F]+|\d+);$', s)
+        if m:
+            d, a, sh, mask = int(m.group(1)), regs[int(m.group(2))], int(m.group(3)), int(m.group(4), 0)
+            shift = mask <= 0xFFFFFFFF and (mask | ((1 << sh) - 1)) & 0xFFFFFFFF == 0xFFFFFFFF
+            if mask > 0xFFFFFFFF:
+                regs[d] = Var()
+            elif isinstance(a, Inv):
+                code = '(__builtin_rotateleft32(%s, %d) & %du)' % (a.code, sh, mask)
+                root, k, spread = a.aff
+                fits = root is None and 0 <= k and k + spread < (1 << (32 - sh))
+                regs[d] = Inv(code, (None, k << sh, spread << sh) if shift and fits else None)
+            elif a.bounded() and a.base is None and shift:
+                # A shift left, the mask keeping every bit it can have, when the value is in [0, 2^(32 - sh)):
+                # checked.
+                self.conditions.append('(%s) >= 0 && (%s) < (int64_t(1) << %d)' % (a.lo, a.hi, 32 - sh))
+                regs[d] = Var(None, '((%s) << %d)' % (a.lo, sh), '((%s) << %d)' % (a.hi, sh))
+            else:
+                regs[d] = Var()
+            return True
+        m = re.match(r'^ctx\.r(\d+)\.u64 = ctx\.r(\d+)\.u64 ([-+]) ctx\.r(\d+)\.u64;$', s)
+        if m:
+            d, a, op, b = int(m.group(1)), regs[int(m.group(2))], m.group(3), regs[int(m.group(4))]
+            if isinstance(a, Inv) and isinstance(b, Inv):
+                code = u32('%s %s %s' % (a.code, op, b.code))
+                regs[d] = Inv(code, aff_add(a.aff, b.aff, code) if op == '+' else None)
+            elif op == '+' and isinstance(a, Inv) != isinstance(b, Inv):
+                inv, var = (a, b) if isinstance(a, Inv) else (b, a)
+                if var.bounded() and var.base is None:
+                    regs[d] = Var(inv, var.lo, var.hi)
+                elif var.bounded():
+                    code = u32('%s + %s' % (inv.code, var.base.code))
+                    regs[d] = Var(Inv(code, aff_add(inv.aff, var.base.aff, code)), var.lo, var.hi)
+                else:
+                    regs[d] = Var()
+            else:
+                regs[d] = Var()
+            return True
+        m = re.match(r'^ctx\.r(\d+)\.u64 = ctx\.r(\d+)\.u64;$', s)
+        if m:
+            regs[int(m.group(1))] = regs[int(m.group(2))]
+            return True
+        m = re.match(r'^ctx\.r(\d+)\.u64 = s_(\d+);$', s)
+        if m:
+            k = int(m.group(2))
+            if k in self.slot_values and k not in self.inductions:
+                regs[int(m.group(1))] = self.slot_values[k]
+            elif k in self.inductions:
+                c, w = self.inductions[k]
+                after = c if i > w else 0
+                lo = 'int64_t(int32_t(s_%d))' % k
+                regs[int(m.group(1))] = Var(None, plus(lo, after), plus('(%s + %d * %s)' % (lo, c, self.iterations), after),
+                                            (k, after))
+            elif k in self.slots_written:
+                regs[int(m.group(1))] = Var()
+            else:
+                root, kk = self.entry_slots.get(k, ('s_%d' % k, 0))
+                regs[int(m.group(1))] = Inv('s_%d' % k, (root, kk, 0))
+            return True
+        m = re.match(r'^ctx\.r(\d+)\.(?:u64|s64) =', s)
+        if m:
+            self.failed = 'line %d: a register this pass does not read: %s' % (i, s)
+            return False
+        m = re.match(r'^s_(\d+) = (.*);$', s)
+        if m:
+            src = re.fullmatch(r'ctx\.r(\d+)\.u32', m.group(2))
+            self.slot_values[int(m.group(1))] = regs[int(src.group(1))] if src and i not in self.skipped else Var()
+        if m and int(m.group(1)) in self.inductions:
+            k = int(m.group(1))
+            src = re.fullmatch(r'ctx\.r(\d+)\.u32', m.group(2))
+            v = regs[int(src.group(1))] if src else None
+            if not (isinstance(v, Var) and v.ind == (k, self.inductions[k][0])):
+                self.failed = 'line %d: induction slot %d written with another value: %s' % (i, k, s)
+                return False
+        return True  # floating point, temp, slots, compares: no address
+
+
+def clusters(spans):
+    """Byte spans [lo, hi) merged where they touch or overlap."""
+    out = []
+    for lo, hi in sorted(spans):
+        if out and lo <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], hi)
+        else:
+            out.append([lo, hi])
+    return out
+
+
+def promote_memory(body, label, slots_written):
+    """`body` with the loop at `label` promoted, and the names of the locals it declares; or (body, None, why)."""
+    lines = body.split('\n')
+    start = lines.index(label + ':')
+    back = max(i for i, l in enumerate(lines) if l.strip().endswith('goto %s;' % label))
+    region = lines[start:back + 1]
+    entry_regs, entry_slots = guess_entry(lines[:start])
+    an = Analysis(region, slots_written, entry_regs, entry_slots)
+    # A fixed point: a pointer read from a word the loop stores is not invariant; a register the loop sets each
+    # iteration to an invariant (its end value no function of the carried registers' own) holds that at the top too.
+    assumed, carried = set(), set()
+    an.word_ranges = {}
+    for _ in range(32):
+        if not an.run(assumed, carried):
+            return body, None, an.failed
+        ends = {n: an.end[n] for n in an.assigned if isinstance(an.end[n], Inv)}
+        again = set(ends)
+        while True:
+            cyclic = {n for n in again if any(re.search(r'ctx\.r%d\.u32' % c, ends[n].code) for c in again)}
+            if not cyclic:
+                break
+            again -= cyclic
+        ranges_now = an.stored_ranges()
+        if an.stored == assumed and again == carried and ranges_now == an.word_ranges:
+            break
+        assumed, carried, an.word_ranges = set(an.stored), again, ranges_now
+    else:
+        return body, None, 'no fixed point'
+    if an.unknown:
+        return body, None, an.unknown[0]
+    keys = {i: an.key(b, off) for i, (b, off) in an.const_sites.items()}
+    written = set(an.stored)
+    # A word is held in a local when its place is exact (no spread) and no other access with another place on its
+    # root shares a byte with it while one of the two is written; the others stay in memory.
+    all_keys = set(keys.values())
+    demoted = set(w for w in all_keys if w[2] != 0)
+    for a in all_keys:
+        for b in all_keys:
+            if a != b and an.overlap(a, b) and (a in written or b in written):
+                demoted.update((a, b))
+    words = sorted((w for w in all_keys if w not in demoted), key=lambda w: (str(w[0]), w[1]))
+    if not words:
+        return body, None, 'nothing at invariant addresses'
+    index = {w: j for j, w in enumerate(words)}
+    # The bases the check computes: each distinct code, with its guessed root.
+    base_codes = {}
+    for i, (b, off) in an.const_sites.items():
+        base_codes.setdefault(b.code, b.aff)
+    for i, (b, lo, hi) in an.range_sites.items():
+        if b is not None:
+            base_codes.setdefault(b.code, b.aff)
+    tag = label.lower()
+    names = {code: 'b_%s_%d' % (tag, n) for n, code in enumerate(sorted(base_codes))}
+    roots = sorted(set(aff[0] for aff in base_codes.values()), key=str)
+    root_names = {None: '0'}
+    checks = ['ctx.r%d.u32 == %s' % (n, an.end[n].code) for n in sorted(carried)]
+    checks += sorted(set(an.conditions))
+    for r in roots:
+        members = sorted(code for code, aff in base_codes.items() if aff[0] == r)
+        if r is None:
+            root_names[r] = '0'
+            for code in members:
+                checks.append('%s == %du' % (names[code], base_codes[code][1] & 0xFFFFFFFF))
+            continue
+        # The representative: a base with an exact place (one with a spread is anywhere in it).
+        rep = min(members, key=lambda code: (base_codes[code][2] != 0, code))
+        k_rep = base_codes[rep][1]
+        root_names[r] = '(int64_t(%s) - %d)' % (names[rep], k_rep)
+        for code in members:
+            if code == rep:
+                continue
+            _, k, spread = base_codes[code]
+            if spread == 0:
+                checks.append('uint32_t(%s - %s) == %du' % (names[code], names[rep], (k - k_rep) & 0xFFFFFFFF))
+            else:
+                checks.append('uint32_t(%s - %s - %du) <= %du' % (names[code], names[rep], (k - k_rep) & 0xFFFFFFFF,
+                                                                   spread))
+    # The words in locals, by root, merged into spans: written ones and read ones.
+    spans = {}
+    for w in words:
+        spans.setdefault(w[0], {True: [], False: []})[w in written].append((w[1], w[1] + 4))
+    span_arrays = {}
+    pre_arrays = []
+    for n, r in enumerate(sorted(spans, key=str)):
+        for kind in (True, False):
+            merged = clusters(spans[r][kind])
+            if merged:
+                name = 'k_%s_%d_%s' % (tag, n, 'w' if kind else 'r')
+                pre_arrays.append('\tstatic constexpr int64_t %s[][2] = {%s};' % (
+                    name, ', '.join('{%d, %d}' % (lo, hi) for lo, hi in merged)))
+                span_arrays[(r, kind)] = (name, len(merged))
+    for r in sorted(spans, key=str):  # each root's words within the 32-bit space, unwrapped
+        lo = min(w[1] for w in words if w[0] == r)
+        hi = max(w[1] for w in words if w[0] == r) + 4
+        if r is None:
+            checks.append('%d >= 0 && %d <= (int64_t(1) << 32)' % (lo, hi))
+        else:
+            checks.append('%s + %d >= 0 && %s + %d <= (int64_t(1) << 32)' % (root_names[r], lo, root_names[r], hi))
+
+    def apart(lo_code, hi_code, write):
+        """[lo, hi) apart from the words in locals that matter: every one when it is written, else the written."""
+        out = []
+        for r in sorted(spans, key=str):
+            for kind in ((True, False) if write else (True,)):
+                if (r, kind) in span_arrays:
+                    name, count = span_arrays[(r, kind)]
+                    out.append('ApartFromAll(%s, %s, %s, %s, %d)' % (lo_code, hi_code, root_names[r], name, count))
+        return out
+
+    # Words in locals on different roots.
+    for x, rx in enumerate(sorted(spans, key=str)):
+        for ry in sorted(spans, key=str)[x + 1:]:
+            for kind in (True, False):
+                if (rx, kind) not in span_arrays:
+                    continue
+                for lo, hi in clusters(spans[rx][kind]):
+                    for other in ((True, False) if kind else (True,)):
+                        if (ry, other) in span_arrays:
+                            name, count = span_arrays[(ry, other)]
+                            checks.append('ApartFromAll(%s + %d, %s + %d, %s, %s, %d)' % (
+                                root_names[rx], lo, root_names[rx], hi, root_names[ry], name, count))
+    # The accesses that stay in memory: the words not in locals and the ranges.
+    accesses = {}
+    for i, w in keys.items():
+        if w in demoted:
+            b, off = an.const_sites[i]
+            place = (w[0], str(w[1]), str(w[1] + w[2] + 4))
+            accesses[place] = accesses.get(place, False) or i in an.const_stores
+    for i, (b, lo, hi) in an.range_sites.items():
+        root, k, spread = b.aff if b is not None else (None, 0, 0)
+        place = (root, '(%d + (%s))' % (k, lo), '(%d + (%s) + 4)' % (k + spread, hi))
+        accesses[place] = accesses.get(place, False) or i in an.range_stores
+    placed = []
+    for (root, lo, hi), write in sorted(accesses.items(), key=lambda a: (str(a[0][0]), a[0][1], a[0][2])):
+        lo_code, hi_code = '%s + %s' % (root_names[root], lo), '%s + %s' % (root_names[root], hi)
+        placed.append((lo_code, hi_code, write, re.fullmatch(r'-?\d+', lo) is not None))
+        checks.append('%s <= %s && %s >= 0 && %s <= (int64_t(1) << 32)' % (lo, hi, lo_code, hi_code))
+        checks += apart(lo_code, hi_code, write)
+    # A word left in memory may still be read as an invariant (a pointer, a bound): apart from the written ranges.
+    for lo_a, hi_a, write_a, word_a in placed:
+        for lo_b, hi_b, write_b, word_b in placed:
+            if word_a and not word_b and write_b:
+                checks.append('(%s <= %s || %s <= %s)' % (hi_b, lo_a, hi_a, lo_b))
+    # The promoted loop: each word in a local.
+    site_of = {}
+    for i, w in keys.items():
+        if w in index:
+            site_of.setdefault(w, an.const_sites[i])
+    out = []
+    for i, line in enumerate(region):
+        if i in keys and keys[i] in index:
+            j = index[keys[i]]
+            line = re.sub(r'Load32\(base, [^)]*\)', 'm_%d' % j, line)
+            line = re.sub(r'^(\s*)Store32\(base, [^,]+, ([^;]+)\);$',
+                          lambda m: '%sm_%d = %s;' % (m.group(1), j, m.group(2)), line)
+        out.append(line)
+    # The promoted loop is entered at its top only: a label of it nothing branches to any more goes.
+    targets = set(re.findall(r'goto (loc_[0-9A-F]+);', '\n'.join(out)))
+    out = [l for l in out if not (re.fullmatch(r'loc_[0-9A-F]+:', l.strip()) and l.strip()[:-1] not in targets)]
+    # The plain copy runs the first iteration (the carried registers then hold what each iteration sets them to);
+    # at its first branch back, the check: the promoted loop for the other iterations, or the plain one.
+    plain = [re.sub(r'\b(loc_[0-9A-F]+)\b', r'\1_plain', l) for l in region]
+    assert plain[-1].strip() == 'if (ctx.cr6.lt) goto %s_plain;' % label, plain[-1]
+    plain[-1] = '\tif (ctx.cr6.lt) { if (!p_%s) { p_%s = 1; goto %s_check; } goto %s_plain; }' % (tag, tag, tag, label)
+    entry_line = lines[start - 1].strip()
+    entry = re.fullmatch(r'goto (loc_[0-9A-F]+);', entry_line)
+    entry_label = entry.group(1) if entry else label
+    pre = ['\t// the loop at %s keeps the memory at its invariant addresses in locals (tools/ppc_model.py '
+           '--promote-memory) when the check finds its bases where the guess puts them and its accesses apart'
+           % label, '%s_check:' % tag]
+    for code in sorted(base_codes):
+        pre.append('\t%s = %s;' % (names[code], code))
+    pre += pre_arrays
+    pre.append('\tif (any360::xdk::ppc_model::g_force_plain_loops.load(std::memory_order_relaxed) ||\n\t    !(%s)) {'
+               % (' &&\n\t      '.join(checks) or 'true'))
+    pre.append('\t\tany360::xdk::ppc_model::g_plain_loops.fetch_add(1, std::memory_order_relaxed);')
+    pre.append('\t\tgoto %s_plain;' % label)
+    pre.append('\t}')
+    pre.append('\tany360::xdk::ppc_model::g_promoted_loops.fetch_add(1, std::memory_order_relaxed);')
+    for w, j in index.items():
+        b, off = site_of[w]
+        pre.append('\tm_%d = Load32(base, %s + %d);' % (j, names[b.code], off))
+    stored_words = [w for w in words if w in written]
+    post = []
+    for w in stored_words:
+        b, off = site_of[w]
+        post.append('\tStore32(base, %s + %d, m_%d);' % (names[b.code], off, index[w]))
+    post.append('\tgoto %s_done;' % tag)
+    enter_at = start - 1 if entry else start
+    enter = ['\tp_%s = 0;' % tag, '\tgoto %s_plain;' % entry_label]
+    new = lines[:enter_at] + enter + pre + out + post + plain + ['%s_done:' % tag] + lines[back + 1:]
+    declared = (['p_%s' % tag] + [names[c] for c in sorted(base_codes)] + ['m_%d' % j for j in range(len(words))])
+    stats = ('%d words in locals (%d written) on %d roots, %d accesses in memory, %d bases, %d carried registers, '
+             '%d checks; %d of %d loads and stores promoted' % (
+                 len(words), len(stored_words), len(spans), len(accesses), len(base_codes), len(carried), len(checks),
+                 sum(1 for w in keys.values() if w in index), len(keys) + len(an.range_sites)))
+    return '\n'.join(new), declared, stats
+
+
 UNSUPPORTED = re.compile(r'\b(REX_MM_|PPC_CALL_INDIRECT|ctx\.ctr|__imp__|rex::(?!ppc::simde_mm_vmaddfp)|REX_LOAD_STRING|simde_mm_v(?!maddfp))')
 
 
@@ -99,6 +816,12 @@ def main():
     native = args[:1] == ['--native']
     if native:
         args = args[1:]
+    promote, promote_memory_at = [], []
+    while args[:1] in (['--promote'], ['--promote-memory']):
+        (promote if args[0] == '--promote' else promote_memory_at).append(args[1])
+        args = args[2:]
+    if promote and not native:
+        sys.exit('--promote goes with --native')
     generated, namespace, out, *roots = args
     qualifier = '[[gnu::always_inline]] inline' if native else 'inline'
     full_namespace = ('any360::xdk::detail::%s_native' if native else 'any360::xdk::reference::%s') % namespace
@@ -133,6 +856,20 @@ def main():
         for pattern, replacement in SUBSTITUTIONS:
             body = re.sub(pattern, replacement, body, flags=re.M)
         body = body.replace('QUALIFIER', qualifier, 1)
+        promoted, declared = [], []
+        for label in promote:
+            if '\n%s:\n' % label in body:
+                body, slots, written = promote_loop(body, label)
+                promoted += slots
+                if label in promote_memory_at:
+                    body, names, stats = promote_memory(body, label, written)
+                    if names is None:
+                        sys.exit('--promote-memory %s: %s' % (label, stats))
+                    declared += names
+                    print('--promote-memory %s: %s' % (label, stats))
+        if promoted:
+            head = body.index('{\n') + 2
+            body = body[:head] + '\tuint32_t %s;\n' % ', '.join(['s_%d' % k for k in sorted(set(promoted))] + declared) + body[head:]
         text += body + '\n'
     text += '}  // namespace %s\n' % full_namespace
     with open(out, 'w', encoding='utf-8', newline='\n') as f:

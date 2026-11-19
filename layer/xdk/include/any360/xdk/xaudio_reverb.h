@@ -9,6 +9,12 @@
 // through the shared register context. Its model is any360/xdk/xaudio_reverb_reference.h (the same tool, unchanged
 // statements); the title's own code is checked against it in game.
 //
+// Its hot loop (loc_82A4E774: 256 samples through the filters) keeps its stack slots and its memory at invariant
+// addresses (the state's coefficients and filter words) in locals behind a check, the plain loop beside it
+// (--promote loc_82A4E774 --promote-memory loc_82A4E774): about 66 -> 50 us a frame. Regenerated with
+//   python -I tools/ppc_model.py --native --promote loc_82A4E774 --promote-memory loc_82A4E774
+//       <the title's generated dir> xaudio_reverb layer/xdk/include/any360/xdk/xaudio_reverb_native.h 82A4DCF0
+//
 // The state (r3) holds everything the effect keeps between frames, in line: delay buffers, positions, coefficients,
 // and last a 256-sample buffer one frame leaves for the next (0x4B9D0 bytes in all). r4 points to the two input
 // channels' buffers, r5 to the output channels' (it writes the first, second, fourth and fifth); the frame uses about
@@ -72,11 +78,21 @@ namespace detail {
 // The leaf compiled twice: with the processor's fused multiply-add when it has one (FMA3), and without. Its fmadd and
 // fmsub are std::fma, which the title's build (and the model) compute by the C library's function: rounded once,
 // the same bits as the instruction, at a fraction of the cost (164 of them in the effect's code).
+// The registers and the memory's description are copied into locals of the leaf: a context reached through a
+// reference is memory the leaf's guest stores (through byte pointers, which may alias anything) could change, so every
+// register would be read again from it after every store; a local whose address never leaves the leaf stays in host
+// registers.
 __attribute__((target("fma"))) inline void XAudioReverbLeafFma(ppc_model::Ctx& ctx, const Memory& memory) {
-  xaudio_reverb_native::sub_82A4DCF0(ctx, memory);
+  ppc_model::Ctx local = ctx;
+  const Memory m = memory;
+  xaudio_reverb_native::sub_82A4DCF0(local, m);
+  ctx = local;
 }
 inline void XAudioReverbLeaf(ppc_model::Ctx& ctx, const Memory& memory) {
-  xaudio_reverb_native::sub_82A4DCF0(ctx, memory);
+  ppc_model::Ctx local = ctx;
+  const Memory m = memory;
+  xaudio_reverb_native::sub_82A4DCF0(local, m);
+  ctx = local;
 }
 }  // namespace detail
 

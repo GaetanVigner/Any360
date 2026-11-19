@@ -5,7 +5,10 @@
 // input modes; and reverbs dying out in silence (products in the denormal range), entered with the host's flush mode
 // off and on. The guest memory is a sparse reservation of the 32-bit space, so that the few constants the effect
 // reads from its build's image sit at their addresses (made-up values of the same kind: 1, 2, 10000 ...).
-// Declined: memory that is not plain.
+// Declined: memory that is not plain. The hot loop runs promoted (its memory at invariant addresses in locals,
+// tools/ppc_model.py --promote-memory) on every frame of those, counted; its plain copy (what runs when the check
+// finds its accesses not apart: the loop's memory is the state and the stack's work buffers, so only a stack laid over
+// the state, which the effect does not survive) runs on sequences of their own, forced.
 #include <algorithm>
 #include <bit>
 #include <cstdint>
@@ -26,19 +29,19 @@ using namespace xaudio_reverb_test;
 
 uint64_t g_frames = 0;
 
-// One frame on both sides, each entered with the host's floating-point control word `entry`; true when every byte
-// the frame may write is the same.
-bool Frame(Side& native, Side& model, uint32_t entry) {
+// One frame on both sides, each entered with the host's floating-point control word `entry` and the stack at `r1`;
+// true when every byte the frame may write is the same.
+bool Frame(Side& native, Side& model, uint32_t entry, uint32_t r1 = kStack) {
   // What the call may leave changed, from its plan (the in-game check compares those ranges only), and its frame.
   xdk::XAudioReverbPlan plan;
-  CHECK(xdk::XAudioReverbPlanned(native.m, kStack, kState, kPointers, kPointers + 0x40, plan));
+  CHECK(xdk::XAudioReverbPlanned(native.m, r1, kState, kPointers, kPointers + 0x40, plan));
   const std::vector<uint8_t> work_before(native.At(kWorkBegin), native.At(kWorkEnd));
   _mm_setcsr(entry);
   uint32_t csr = entry;
-  xdk::XAudioReverb(native.m, kStack, kState, kPointers, kPointers + 0x40, csr);
+  xdk::XAudioReverb(native.m, r1, kState, kPointers, kPointers + 0x40, csr);
   _mm_setcsr(entry);
   for (uint32_t at = kWorkBegin; at < kWorkEnd; ++at) {
-    bool planned = at >= kStack - xdk::kXAudioReverbStackBelow && at < kStack;
+    bool planned = at >= r1 - xdk::kXAudioReverbStackBelow && at < r1;
     for (const xdk::Range& w : plan.writes) planned = planned || (at >= w.at && at < w.at + w.size);
     if (!planned && *native.At(at) != work_before[at - kWorkBegin]) {
       if (xdk_test::g_failures < 3) std::printf("  written outside its plan: %08X\n", at);
@@ -47,14 +50,14 @@ bool Frame(Side& native, Side& model, uint32_t entry) {
     }
   }
   xdk::reference::xaudio_reverb::Ctx ctx;  // its control word read from the host: `entry`
-  ctx.r1.u64 = kStack;
+  ctx.r1.u64 = r1;
   ctx.r3.u64 = kState;
   ctx.r4.u64 = kPointers;
   ctx.r5.u64 = kPointers + 0x40;
   xdk::reference::xaudio_reverb::sub_82A4DCF0(ctx, model.m);
   _mm_setcsr(ctx.fpscr.csr);
   ++g_frames;
-  bool same = csr == ctx.fpscr.csr && ctx.r1.u32 == kStack;
+  bool same = csr == ctx.fpscr.csr && ctx.r1.u32 == r1;
   if (!same && xdk_test::g_failures < 3) std::printf("  csr %08X / %08X, r1 %08X\n", csr, ctx.fpscr.csr, ctx.r1.u32);
   for (uint32_t at = kWorkBegin; at < kWorkEnd; at += 4) {
     if (std::memcmp(native.At(at), model.At(at), 4) != 0) {
@@ -78,6 +81,8 @@ int main() {
   std::mt19937 rng(0x7E5E);
   uint32_t sequences = 0;
   const uint32_t plain = _mm_getcsr() & ~xdk::ppc_model::Fpscr::kFlushMask;
+  const uint64_t promoted_at_start = xdk::ppc_model::g_promoted_loops.load();
+  const uint64_t plain_at_start = xdk::ppc_model::g_plain_loops.load();
   for (uint32_t mode = 0; mode < 3; ++mode) {
     for (int s = 0; s < 6; ++s) {
       NewState(native, model, rng, mode, s % 2 == 1);
@@ -120,6 +125,29 @@ int main() {
   _mm_setcsr(plain);
   // The effect reads them from its delay lines and coefficients (the outputs, written by vector steps, are flushed).
   CHECK(denormals > 0);
+  const uint64_t promoted = xdk::ppc_model::g_promoted_loops.load() - promoted_at_start;
+  CHECK(promoted == g_frames && xdk::ppc_model::g_plain_loops.load() == plain_at_start);
+  // The plain copy: sequences of frames with the check forced to fail.
+  uint64_t forced_frames = 0;
+  xdk::ppc_model::g_force_plain_loops.store(true);
+  for (uint32_t mode = 0; mode < 3; ++mode) {
+    NewState(native, model, rng, mode, mode == 1);
+    ++sequences;
+    for (int f = 0; f < 8; ++f) {
+      NewInputs(native, model, rng);
+      const bool same = Frame(native, model, plain);
+      ++forced_frames;
+      CHECK(same);
+      if (!same) {
+        std::printf("  plain copy, mode %u, frame %d: native and model differ\n", mode, f);
+        break;
+      }
+    }
+  }
+  xdk::ppc_model::g_force_plain_loops.store(false);
+  const uint64_t fell_back = xdk::ppc_model::g_plain_loops.load() - plain_at_start;
+  CHECK(fell_back == forced_frames);
+  CHECK(xdk::ppc_model::g_promoted_loops.load() - promoted_at_start + fell_back == g_frames);
   // Planned: what one call writes, from its pointers; declined: memory that is not plain.
   {
     xdk::XAudioReverbPlan plan;
@@ -131,7 +159,9 @@ int main() {
     CHECK(!xdk::XAudioReverbPlanned(native.m, kStack, kState, kPointers, kPointers + 0x40, plan));
   }
   std::printf("xdk_xaudio_reverb_tests: %llu frames compared with the model (state, outputs, stack) in %u sequences; "
-              "%llu denormal words left in the dying-out states\n",
-              (unsigned long long)g_frames, sequences, (unsigned long long)denormals);
+              "%llu denormal words left in the dying-out states; the loop promoted on %llu frames, plain on the %llu "
+              "forced\n",
+              (unsigned long long)g_frames, sequences, (unsigned long long)denormals, (unsigned long long)promoted,
+              (unsigned long long)fell_back);
   return xdk_test::Finish("xdk_xaudio_reverb_tests");
 }
