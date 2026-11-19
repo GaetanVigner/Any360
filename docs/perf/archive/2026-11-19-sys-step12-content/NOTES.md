@@ -6,7 +6,7 @@ The calls Xenia implements and the reference runtime stubs (docs/SYS_STUBS.md): 
 `XamLoaderRegisterLaunchRequestCallback`, `ObLookupAnyThreadByThreadId`. Measured on 2026-11-19 (AMD Ryzen 7 7800X3D,
 cores 0-7) with `sys_abi_bench 9` and `sys_step12_bench 9`, three times each (`sys_abi_bench_run1-3.txt`,
 `sys_step12_bench_run1-3.txt`; run 3 of the ABI bench and run 2 of the other had the machine busier, hence the ranges).
-The content rows work on packages made as a title makes them (`XamContentCreate`: the folder and its header), in the
+A second set on a quiet machine (`*_run4-6.txt`, 11:45) gives the same picture: the answers 2.6-15 ns (14-27x), the content rows 59-63 us (metadata), 105-114 us (enumerator), 183-199 us (thumbnail), the enumerator 1.07-1.10x the host floor on the quiet passes; one pass had a slow spike on its 32-package enumerator row (0.71x, 1.57 ms against 1.07-1.08 ms in the other two): the file rows swing with the host's background disk work (Windows Defender scans the new files). The content rows work on packages made as a title makes them (`XamContentCreate`: the folder and its header), in the
 temporary folder; every new ABI row's result is checked after its timing (none differed).
 
 Reused, not recoded: the content packages (`ContentItems`, `ContentPath`, `ContentHeaderPath`, `ContentSetThumbnail`,
