@@ -1,0 +1,154 @@
+sys_step12_bench: ns a call (fastest of 9 runs); host = what the host offers for the same work (ratio > 1: Any360 faster)
+sys_step12_bench: SHA paths: processor (SHA-NI) yes, host (CNG) yes; default processor. Rows marked [SHA-NI], [host] or [C++] force that path (SetShaPath)
+  call (guest state it uses)              bytes |        ns    B/call  allocs |   host ns    B/call  allocs |   speed
+  XeCryptMd5                                  0 |      98.8       0.0    0.00 |     166.0       0.0    0.00 |   1.68x
+  XeCryptMd5                                 16 |      96.5       0.0    0.00 |     168.4       0.0    0.00 |   1.74x
+  XeCryptMd5                                 64 |     173.4       0.0    0.00 |     253.4       0.0    0.00 |   1.46x
+  XeCryptMd5                                256 |     428.4       0.0    0.00 |     509.4       0.0    0.00 |   1.19x
+  XeCryptMd5                               1024 |    1440.5       0.0    0.00 |    1533.6       0.0    0.00 |   1.06x
+  XeCryptMd5                               4096 |    5453.0       0.0    0.00 |    5639.4       0.0    0.00 |   1.03x
+  XeCryptMd5                              65536 |   86725.2       0.0    0.00 |   87785.8       0.0    0.00 |   1.01x
+  XeCryptSha                                  0 |      43.6       0.0    0.00 |     157.2       0.0    0.00 |   3.61x
+  XeCryptSha                                 16 |      44.1       0.0    0.00 |     159.7       0.0    0.00 |   3.62x
+  XeCryptSha                                 64 |      48.7       0.0    0.00 |     229.4       0.0    0.00 |   4.71x
+  XeCryptSha                                256 |     116.5       0.0    0.00 |     435.1       0.0    0.00 |   3.73x
+  XeCryptSha                               1024 |     408.1       0.0    0.00 |    1254.3       0.0    0.00 |   3.07x
+  XeCryptSha                               4096 |    1644.1       0.0    0.00 |    4546.7       0.0    0.00 |   2.77x
+  XeCryptSha                              65536 |   25444.9       0.0    0.00 |   70276.4       0.0    0.00 |   2.76x
+  XeCryptSha256                               0 |      44.5       0.0    0.00 |      98.3       0.0    0.00 |   2.21x
+  XeCryptSha256                              16 |      44.8       0.0    0.00 |     106.4       0.0    0.00 |   2.37x
+  XeCryptSha256                              64 |      68.3       0.0    0.00 |     130.6       0.0    0.00 |   1.91x
+  XeCryptSha256                             256 |     146.1       0.0    0.00 |     206.3       0.0    0.00 |   1.41x
+  XeCryptSha256                            1024 |     453.5       0.0    0.00 |     531.1       0.0    0.00 |   1.17x
+  XeCryptSha256                            4096 |    1782.9       0.0    0.00 |    1748.6       0.0    0.00 |   0.98x
+  XeCryptSha256                           65536 |   26249.6       0.0    0.00 |   26496.1       0.0    0.00 |   1.01x
+  XeCryptSha [host]                           0 |     129.5       0.0    0.00 |     157.7       0.0    0.00 |   1.22x
+  XeCryptSha [host]                          16 |     132.9       0.0    0.00 |     157.1       0.0    0.00 |   1.18x
+  XeCryptSha [host]                          64 |     198.8       0.0    0.00 |     225.7       0.0    0.00 |   1.14x
+  XeCryptSha [host]                         256 |     403.0       0.0    0.00 |     431.7       0.0    0.00 |   1.07x
+  XeCryptSha [host]                        1024 |    1224.8       0.0    0.00 |    1250.0       0.0    0.00 |   1.02x
+  XeCryptSha [host]                        4096 |    4488.0       0.0    0.00 |    4514.1       0.0    0.00 |   1.01x
+  XeCryptSha [host]                       65536 |   70955.1       0.0    0.00 |   70207.1       0.0    0.00 |   0.99x
+  XeCryptSha256 [host]                        0 |     176.2       0.0    0.00 |      99.8       0.0    0.00 |   0.57x
+  XeCryptSha256 [host]                       16 |     182.5       0.0    0.00 |     108.5       0.0    0.00 |   0.59x
+  XeCryptSha256 [host]                       64 |     100.7       0.0    0.00 |     130.8       0.0    0.00 |   1.30x
+  XeCryptSha256 [host]                      256 |     177.8       0.0    0.00 |     207.7       0.0    0.00 |   1.17x
+  XeCryptSha256 [host]                     1024 |     488.7       0.0    0.00 |     522.7       0.0    0.00 |   1.07x
+  XeCryptSha256 [host]                     4096 |    1732.9       0.0    0.00 |    1769.9       0.0    0.00 |   1.02x
+  XeCryptSha256 [host]                    65536 |   26739.4       0.0    0.00 |   26748.0       0.0    0.00 |   1.00x
+  XeCryptSha [C++]                            0 |     130.0       0.0    0.00 |     156.4       0.0    0.00 |   1.20x
+  XeCryptSha [C++]                           16 |     131.5       0.0    0.00 |     160.1       0.0    0.00 |   1.22x
+  XeCryptSha [C++]                           64 |     243.4       0.0    0.00 |     227.6       0.0    0.00 |   0.94x
+  XeCryptSha [C++]                          256 |     589.9       0.0    0.00 |     431.9       0.0    0.00 |   0.73x
+  XeCryptSha [C++]                         1024 |    1906.7       0.0    0.00 |    1240.2       0.0    0.00 |   0.65x
+  XeCryptSha [C++]                         4096 |    7222.7       0.0    0.00 |    4480.7       0.0    0.00 |   0.62x
+  XeCryptSha [C++]                        65536 |  113968.5       0.0    0.00 |   69292.9       0.0    0.00 |   0.61x
+  XeCryptSha256 [C++]                         0 |     180.0       0.0    0.00 |      99.2       0.0    0.00 |   0.55x
+  XeCryptSha256 [C++]                        16 |     178.9       0.0    0.00 |     101.5       0.0    0.00 |   0.57x
+  XeCryptSha256 [C++]                        64 |     344.2       0.0    0.00 |     132.5       0.0    0.00 |   0.38x
+  XeCryptSha256 [C++]                       256 |     856.4       0.0    0.00 |     207.2       0.0    0.00 |   0.24x
+  XeCryptSha256 [C++]                      1024 |    2782.9       0.0    0.00 |     544.1       0.0    0.00 |   0.20x
+  XeCryptSha256 [C++]                      4096 |   10664.9       0.0    0.00 |    1758.6       0.0    0.00 |   0.16x
+  XeCryptSha256 [C++]                     65536 |  167270.1       0.0    0.00 |   26715.7       0.0    0.00 |   0.16x
+  XeCryptHmacMd5                              0 |     190.4       0.0    0.00 |     442.1       0.0    0.00 |   2.32x
+  XeCryptHmacMd5                             16 |     190.2       0.0    0.00 |     443.4       0.0    0.00 |   2.33x
+  XeCryptHmacMd5                             64 |     270.7       0.0    0.00 |     527.5       0.0    0.00 |   1.95x
+  XeCryptHmacMd5                            256 |     522.5       0.0    0.00 |     785.3       0.0    0.00 |   1.50x
+  XeCryptHmacMd5                           1024 |    1528.4       0.0    0.00 |    1888.8       0.0    0.00 |   1.24x
+  XeCryptHmacMd5                           4096 |    5643.0       0.0    0.00 |    5932.4       0.0    0.00 |   1.05x
+  XeCryptHmacMd5                          65536 |   86970.9       0.0    0.00 |   87057.5       0.0    0.00 |   1.00x
+  XeCryptHmacMd5 (new key each call)          0 |     354.6       0.0    0.00 |         -         -       - |
+  XeCryptHmacSha (new key each call)          0 |     127.8       0.0    0.00 |         -         -       - |
+  XeCryptHmacMd5 (new key each call)        256 |     691.1       0.0    0.00 |         -         -       - |
+  XeCryptHmacSha (new key each call)        256 |     224.4       0.0    0.00 |         -         -       - |
+  HmacSha Init+Update+Final (0xB0)            0 |      96.1       0.0    0.00 |     396.5       0.0    0.00 |   4.12x
+  HmacSha Init+Update+Final (0xB0)           16 |     102.6       0.0    0.00 |     391.1       0.0    0.00 |   3.81x
+  HmacSha Init+Update+Final (0xB0)           64 |     128.6       0.0    0.00 |     471.9       0.0    0.00 |   3.67x
+  HmacSha Init+Update+Final (0xB0)          256 |     199.8       0.0    0.00 |     670.3       0.0    0.00 |   3.35x
+  HmacSha Init+Update+Final (0xB0)         1024 |     512.3       0.0    0.00 |    1478.4       0.0    0.00 |   2.89x
+  HmacSha Init+Update+Final (0xB0)         4096 |    1679.6       0.0    0.00 |    4788.7       0.0    0.00 |   2.85x
+  HmacSha Init+Update+Final (0xB0)        65536 |   24856.7       0.0    0.00 |   70091.3       0.0    0.00 |   2.82x
+  HmacSha Init+Update+Final (0xB0) [host]        0 |     274.1       0.0    0.00 |     388.2       0.0    0.00 |   1.42x
+  HmacSha Init+Update+Final (0xB0) [host]       16 |     277.5       0.0    0.00 |     391.6       0.0    0.00 |   1.41x
+  HmacSha Init+Update+Final (0xB0) [host]       64 |     391.0       0.0    0.00 |     467.1       0.0    0.00 |   1.19x
+  HmacSha Init+Update+Final (0xB0) [host]      256 |     725.2       0.0    0.00 |     669.5       0.0    0.00 |   0.92x
+  HmacSha Init+Update+Final (0xB0) [host]     1024 |    2047.7       0.0    0.00 |    1473.8       0.0    0.00 |   0.72x
+  HmacSha Init+Update+Final (0xB0) [host]     4096 |    7358.6       0.0    0.00 |    4913.0       0.0    0.00 |   0.67x
+  HmacSha Init+Update+Final (0xB0) [host]    65536 |  114771.7       0.0    0.00 |   70077.2       0.0    0.00 |   0.61x
+  HmacSha Init+Update+Final (0xB0) [C++]        0 |     274.3       0.0    0.00 |     389.2       0.0    0.00 |   1.42x
+  HmacSha Init+Update+Final (0xB0) [C++]       16 |     283.8       0.0    0.00 |     398.2       0.0    0.00 |   1.40x
+  HmacSha Init+Update+Final (0xB0) [C++]       64 |     392.4       0.0    0.00 |     467.8       0.0    0.00 |   1.19x
+  HmacSha Init+Update+Final (0xB0) [C++]      256 |     720.6       0.0    0.00 |     677.7       0.0    0.00 |   0.94x
+  HmacSha Init+Update+Final (0xB0) [C++]     1024 |    2072.0       0.0    0.00 |    1506.9       0.0    0.00 |   0.73x
+  HmacSha Init+Update+Final (0xB0) [C++]     4096 |    7384.7       0.0    0.00 |    4722.5       0.0    0.00 |   0.64x
+  HmacSha Init+Update+Final (0xB0) [C++]    65536 |  113300.0       0.0    0.00 |   69979.5       0.0    0.00 |   0.62x
+  XeCryptHmacShaVerify                        0 |      84.0       0.0    0.00 |         -         -       - |
+  XeCryptHmacShaVerify                       16 |      85.1       0.0    0.00 |         -         -       - |
+  XeCryptHmacShaVerify                       64 |     109.3       0.0    0.00 |         -         -       - |
+  XeCryptHmacShaVerify                      256 |     181.4       0.0    0.00 |         -         -       - |
+  XeCryptHmacShaVerify                     1024 |     472.0       0.0    0.00 |         -         -       - |
+  XeCryptHmacShaVerify                     4096 |    1693.2       0.0    0.00 |         -         -       - |
+  XeCryptHmacShaVerify                    65536 |   31311.8       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)             0 |      98.9       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)            16 |     105.3       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)            64 |     182.4       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)           256 |     448.8       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)          1024 |    1504.0       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)          4096 |    5746.4       0.0    0.00 |         -         -       - |
+  Md5 Init+Update/64+Final (0x54)         65536 |   90918.1       0.0    0.00 |         -         -       - |
+  XeCryptDesKey (0x80)                        8 |      41.9       0.0    0.00 |         -         -       - |
+  XeCryptDesEcb                               8 |      64.0       0.0    0.00 |         -         -       - |
+  XeCryptDesCbc                               8 |      65.3       0.0    0.00 |     188.6       0.0    0.00 |   2.89x
+  XeCryptDesCbc                              64 |     528.4       0.0    0.00 |    1413.5       0.0    0.00 |   2.68x
+  XeCryptDesCbc                            1024 |    8467.2       0.0    0.00 |   22633.5       0.0    0.00 |   2.67x
+  XeCryptDesCbc                           65536 |  546251.1       0.0    0.00 | 1444321.3       0.0    0.00 |   2.64x
+  XeCryptDesCbc decrypt                       8 |      65.3       0.0    0.00 |         -         -       - |
+  XeCryptDesCbc decrypt                    1024 |    5539.5       0.0    0.00 |         -         -       - |
+  XeCryptDes3Key (0x180)                     24 |     132.9       0.0    0.00 |         -         -       - |
+  XeCryptDes3Cbc                              8 |     180.6       0.0    0.00 |     188.7       0.0    0.00 |   1.05x
+  XeCryptDes3Cbc                             64 |    1415.5       0.0    0.00 |    1415.6       0.0    0.00 |   1.00x
+  XeCryptDes3Cbc                           1024 |   22575.7       0.0    0.00 |   22487.0       0.0    0.00 |   1.00x
+  XeCryptDes3Cbc                          65536 | 1459925.8       0.0    0.00 | 1437338.7       0.0    0.00 |   0.98x
+  XeCryptDes3Cbc decrypt                      8 |     179.9       0.0    0.00 |         -         -       - |
+  XeCryptDes3Cbc decrypt                   1024 |   22210.5       0.0    0.00 |         -         -       - |
+  GetTickCount (host: GetTickCount64)         0 |      16.9       0.0    0.00 |       1.0       0.0    0.00 |   0.06x
+  GetLastError                                0 |       1.4       0.0    0.00 |         -         -       - |
+  RtlSetLastNTError (failed waits)            0 |       5.0       0.0    0.00 |         -         -       - |
+  Wait result (WaitForSingleObject)           0 |       1.0       0.0    0.00 |         -         -       - |
+  Timeout (Sleep, waits)                      0 |       1.3       0.0    0.00 |         -         -       - |
+  GetSystemTimeAsFileTime                     0 |      19.4       0.0    0.00 |         -         -       - |
+  QueryPerformanceFrequency                   0 |       1.2       0.0    0.00 |         -         -       - |
+  GetModuleHandleA                            0 |      24.8       0.0    0.00 |         -         -       - |
+  lstrlenW (host: wcslen, own string)         0 |       1.0       0.0    0.00 |       1.6       0.0    0.00 |   1.60x
+  lstrlenW (host: wcslen, own string)         8 |       3.1       0.0    0.00 |       4.1       0.0    0.00 |   1.33x
+  lstrlenW (host: wcslen, own string)        64 |       6.9       0.0    0.00 |       3.4       0.0    0.00 |   0.49x
+  lstrlenW (host: wcslen, own string)       256 |       9.8       0.0    0.00 |       7.1       0.0    0.00 |   0.73x
+  XGetAudioFlags                              0 |       1.0       0.0    0.00 |         -         -       - |
+  XamGetLanguage                              0 |       2.6       0.0    0.00 |         -         -       - |
+  XamGetOnlineCountryFeatures (US)            0 |       5.6       0.0    0.00 |         -         -       - |
+  XamGetOnlineCountryFeatures (unlisted)        0 |       5.8       0.0    0.00 |         -         -       - |
+  XamGetOnlineLanguageAndCountry              0 |       4.0       0.0    0.00 |         -         -       - |
+  XamIsSystemTitleId                          0 |       2.2       0.0    0.00 |         -         -       - |
+  XamIsSystemExperienceTitleId                0 |       1.7       0.0    0.00 |         -         -       - |
+  XamIsXbox1TitleId                           0 |       1.2       0.0    0.00 |         -         -       - |
+  XamGetLanguageTypeface                      0 |      16.7       0.0    0.00 |         -         -       - |
+  XamSetActiveDashAppInfo (12 B)              0 |       3.4       0.0    0.00 |         -         -       - |
+  XamGetActiveDashAppInfo (12 B)              0 |       3.6       0.0    0.00 |         -         -       - |
+  XamGetCachedTitleName (22 chars)            0 |      20.5       0.0    0.00 |         -         -       - |
+  XGetOverlappedExtendedError                 0 |       1.2       0.0    0.00 |         -         -       - |
+  XamGetLanguageLocaleFallbackString          0 |       2.8       0.0    0.00 |         -         -       - |
+  RtlDowncaseUnicodeChar (host: towlower)        0 |       1.5       0.0    0.00 |       2.3       0.0    0.00 |   1.60x
+  KeQueryInterruptTime (host: steady_clock)        0 |      16.1       0.0    0.00 |      16.4       0.0    0.00 |   1.02x
+  KeQueryInterruptTime (host: QPC alone)        0 |      16.1       0.0    0.00 |      16.4       0.0    0.00 |   1.02x
+  RtlRandom                                   0 |       5.9       0.0    0.00 |         -         -       - |
+  RtlGetStackLimits                           0 |       2.0       0.0    0.00 |         -         -       - |
+  XamGetLocaleDateFormat                      0 |       1.2       0.0    0.00 |         -         -       - |
+  XamShowGamerCardUI + 2 XNotifyGetNext        0 |      36.5       0.0    0.00 |         -         -       - |
+  XamProfile Create+Enumerate x2+Close        0 |     119.3       0.0    0.00 |         -         -       - |
+  Objects NtCreateEvent+NtClose               0 |      82.4       0.0    0.00 |         -         -       - |
+  Objects Create+ObRef+ObDeref+Close          0 |     117.5       0.0    0.00 |         -         -       - |
+  Objects 2 creates, lower closed first        0 |     171.0       0.0    0.00 |         -         -       - |
+  Objects NtCreateEvent+NtClose, 64 open        0 |      86.6       0.0    0.00 |         -         -       - |
+  Files NtCreateFile+NtReadFile 16+NtClose        0 |  122028.0    1422.0   14.00 |         -         -       - |
+  Files Knows (link + 17 mounts)              0 |     201.1      64.0    2.00 |         -         -       - |
+sys_step12_bench: allocated per call 3.11 B in 0.0513 allocations over 119213010 timed calls

@@ -154,8 +154,11 @@ void FileSystem::Reset() {
     std::unique_lock lock(mounts_mutex_);
     mounts_.clear();
   }
-  links_.clear();
-  link_objects_.clear();
+  {
+    std::unique_lock lock(links_mutex_);
+    links_.clear();
+    link_objects_.clear();
+  }
   {
     std::lock_guard lock(open_mutex_);
     open_.clear();
@@ -184,6 +187,7 @@ void FileSystem::AddMount(const std::string& device, const std::filesystem::path
 void FileSystem::Link(const std::string& link, const std::string& target) {
   std::string name = Lower(link);
   if (name.rfind("\\??\\", 0) == 0) name = name.substr(4);
+  std::unique_lock lock(links_mutex_);
   links_[name] = target;
 }
 
@@ -196,6 +200,7 @@ void FileSystem::Unmount(const std::string& device) {
 void FileSystem::Unlink(const std::string& link) {
   std::string name = Lower(link);
   if (name.rfind("\\??\\", 0) == 0) name = name.substr(4);
+  std::unique_lock lock(links_mutex_);
   links_.erase(name);
 }
 
@@ -209,6 +214,7 @@ uint32_t FileSystem::CreateSymbolicLink(Guest g, uint32_t link, uint32_t target)
 uint32_t FileSystem::DeleteSymbolicLink(Guest g, uint32_t link) {
   std::string name = Lower(AnsiString(g, link));
   if (name.rfind("\\??\\", 0) == 0) name = name.substr(4);
+  std::unique_lock lock(links_mutex_);
   return links_.erase(name) ? kStatusSuccess : kStatusObjectNameNotFound;
 }
 
@@ -219,10 +225,12 @@ std::string FileSystem::Canonical(const std::string& guest_path) const {
   const size_t colon = path.find(':');
   const size_t slash = path.find_first_of("\\/");
   if (colon != std::string::npos && (slash == std::string::npos || colon < slash)) {
-    const auto it = links_.find(Lower(path.substr(0, colon + 1)));
-    if (it == links_.end()) return {};
+    const std::string link = Lower(path.substr(0, colon + 1));
     std::string rest = path.substr(colon + 1);
     while (!rest.empty() && (rest[0] == '\\' || rest[0] == '/')) rest.erase(0, 1);  // "game:\x": one separator
+    std::shared_lock lock(links_mutex_);
+    const auto it = links_.find(link);
+    if (it == links_.end()) return {};
     path = it->second + "\\" + rest;
   }
   return path;
@@ -916,7 +924,10 @@ uint32_t FileSystem::Flush(Guest g, uint32_t handle, uint32_t io_status) {
 }
 
 void FileSystem::OnClose(uint32_t object) {
-  link_objects_.erase(object);
+  {
+    std::unique_lock lock(links_mutex_);
+    link_objects_.erase(object);
+  }
   bool remove = false;
   std::filesystem::path host;
   uint32_t port = 0;
@@ -1195,19 +1206,29 @@ uint32_t FileSystem::OpenSymbolicLink(Guest g, uint32_t handle_out, uint32_t att
   }
   name = Lower(name);
   if (name.rfind("\\??\\", 0) == 0) name = name.substr(4);
-  const auto it = links_.find(name);
-  if (it == links_.end()) return kStatusNoSuchFile;
+  std::string target;
+  {
+    std::shared_lock lock(links_mutex_);
+    const auto it = links_.find(name);
+    if (it == links_.end()) return kStatusNoSuchFile;
+    target = it->second;
+  }
   const uint32_t object = Objects().AllocateObject(16, true);
   if (!object) return 0xC0000017;
   std::memset(g.host(object), 0, 16);
-  link_objects_[object] = it->second;
+  {
+    std::unique_lock lock(links_mutex_);
+    link_objects_[object] = std::move(target);
+  }
   const uint32_t handle = Objects().OpenHandle(object);
   if (handle_out) g.Store32(handle_out, handle);
   return kStatusSuccess;
 }
 
 uint32_t FileSystem::QuerySymbolicLink(Guest g, uint32_t handle, uint32_t target) {
-  const auto it = link_objects_.find(Objects().Lookup(handle));
+  const uint32_t object = Objects().Lookup(handle);
+  std::shared_lock lock(links_mutex_);
+  const auto it = link_objects_.find(object);
   if (it == link_objects_.end()) return kStatusNoSuchFile;
   const uint16_t length = uint16_t(std::min<size_t>(g.Load16(target + 2), it->second.size()));
   if (length) std::memcpy(g.host(g.Load32(target + 4)), it->second.data(), length);

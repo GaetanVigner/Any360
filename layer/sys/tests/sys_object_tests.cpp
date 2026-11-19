@@ -3517,7 +3517,75 @@ void MountStabilityTests() {
   fs::remove_all(root, ec);
 }
 
+// Links and mounts changed on one thread (a title creating and closing content) while three others open files
+// through a link and query a symbolic link object: every open of the stable link succeeds, nothing crashes.
+void LinkConcurrencyTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "any360-sys-links";
+  std::error_code ec;
+  fs::remove_all(root, ec);
+  fs::create_directories(root / "game");
+  fs::create_directories(root / "dlc");
+  { std::ofstream(root / "game" / "data.bin", std::ios::binary) << "0123456789ABCDEF"; }
+  Files().Reset();
+  Files().Mount("\\Device\\Cdrom0", root / "game", true);
+  Files().Link("game:", "\\Device\\Cdrom0");
+  std::atomic<bool> stop{false};
+  std::atomic<int> opened{0}, failed{0}, queried{0};
+  std::thread changer([&] {
+    for (int i = 0; !stop; ++i) {
+      const std::string device = "\\Device\\Content\\" + std::to_string(i % 8), link = "dlc" + std::to_string(i % 8) + ":";
+      Files().Mount(device, root / "dlc", false);
+      Files().Link(link, device);
+      Files().Unlink(link);
+      Files().Unmount(device);
+    }
+  });
+  std::vector<std::thread> readers;
+  for (int t = 0; t < 3; ++t) {
+    readers.emplace_back([&, t] {
+      // Each thread its own guest scratch (the object attributes, the name, the handle and status block).
+      const uint32_t base = kScratch + 0x800 + uint32_t(t) * 0x200, attrs = base, name = base + 0x20, text = base + 0x40,
+                     iosb = base + 0x100, out = base + 0x120, target = base + 0x140, target_text = base + 0x160;
+      auto path = [&](const char* p) {
+        g.Store32(attrs, 0);
+        g.Store32(attrs + 4, name);
+        g.Store16(name, uint16_t(std::strlen(p)));
+        g.Store32(name + 4, text);
+        std::memcpy(g.host(text), p, std::strlen(p) + 1);
+        return attrs;
+      };
+      for (int i = 0; i < 300; ++i) {
+        if (Files().CreateFile(g, out, 0x80000000, path("game:\\data.bin"), iosb, 0, kOpen, kFileNonDirectoryFile | kFileSynchronousIo) == 0) {
+          ++opened;
+          Objects().Close(g.Load32(out));
+        } else {
+          ++failed;
+        }
+        if (Files().OpenSymbolicLink(g, out, path("\\??\\game:")) == 0) {
+          const uint32_t link = g.Load32(out);
+          g.Store16(target + 2, 64);
+          g.Store32(target + 4, target_text);
+          if (Files().QuerySymbolicLink(g, link, target) == 0 && g.Load16(target) == 14 &&
+              std::memcmp(g.host(target_text), "\\Device\\Cdrom0", 14) == 0) {
+            ++queried;
+          }
+          Objects().Close(link);
+        }
+      }
+    });
+  }
+  for (auto& r : readers) r.join();
+  stop = true;
+  changer.join();
+  CHECK(opened == 900 && failed == 0 && queried == 900);
+  Files().Reset();
+  fs::remove_all(root, ec);
+}
+
 int main() {
+  LinkConcurrencyTests();
   U32MapTests();
   ObjectBookkeepingTests();
   MountStabilityTests();

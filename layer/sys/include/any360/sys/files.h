@@ -205,6 +205,9 @@ class FileSystem {
   // into the object manager, which calls OnClose under its own lock.
   mutable std::mutex open_mutex_;
   std::map<uint32_t, std::string> link_objects_;  // object -> the target of the link it was opened on
+  // links_ and link_objects_: a title links content (XamContentCreate) on one thread while others resolve paths.
+  // Never held across a call into the object manager.
+  mutable std::shared_mutex links_mutex_;
 };
 
 FileSystem& Files();

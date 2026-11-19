@@ -471,6 +471,8 @@ int main(int argc, char** argv) {
                Objects().Close(handle);
              }),
              Measure{});
+    // The path alone through the link and the mount list (no host file): what the locks around them cost.
+    PrintRow("Files Knows (link + 17 mounts)", 0, Time(200000, [&] { g_sink = g_sink + Files().Knows("game:\\data.bin"); }), Measure{});
     Files().Reset();
     fs::remove_all(root, ec);
   }
