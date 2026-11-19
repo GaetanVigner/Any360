@@ -45,3 +45,4 @@ Every step's measured results, kept for later optimization passes: the self-test
 - [2026-11-19-d3d-texture-sizes](archive/2026-11-19-d3d-texture-sizes/): A texture's dimensions (sub_826AD598) and a texture level's bytes (sub_826AD108) bound
 - [2026-11-19-d3d-state-fields](archive/2026-11-19-d3d-state-fields/): 94 render and sampler state fields (SetRenderState / GetRenderState, SetSamplerState / GetSamplerState of one register field each) bound
 - [2026-11-19-profile](archive/2026-11-19-profile/): the first function profile of Crackdown (the function profiler, any360/host/profiler.h, and a call count): where the processor time goes, function by function (titles/crackdown/HOT_FUNCTIONS.md)
+- [2026-11-19-audio-barrier](archive/2026-11-19-audio-barrier/): Crackdown's XAudio mix worker rendezvous waits blocked instead of spinning: about 125 -> 10 ms/s of a core, the city unchanged 10 v 10 (the first item of titles/crackdown/HOT_FUNCTIONS.md)
