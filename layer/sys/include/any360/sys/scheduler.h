@@ -157,7 +157,7 @@ class Scheduler {
   uint32_t EnsureProcess(Guest g);
   void Run(Thread* thread);
   // The free hook: a KTHREAD going back to the heap takes its PCR, TLS block, stack and host thread with it.
-  void OnFree(uint32_t kthread);
+  bool OnFree(uint32_t kthread);  // whether the block was a thread's
   void PauseWhileSuspended(Guest g, Thread* thread);
 
   Dispatcher dispatcher_ = nullptr;

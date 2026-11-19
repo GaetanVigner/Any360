@@ -40,6 +40,16 @@ std::string Lower(std::string s) {
   return s;
 }
 
+// Whether `lower` (lower case) is `s` ignoring ASCII case, without a copy.
+bool EqualsLower(const std::string& lower, const std::string& s) {
+  if (lower.size() != s.size()) return false;
+  for (size_t i = 0; i < s.size(); ++i) {
+    const char c = s[i];
+    if (lower[i] != char(c >= 'A' && c <= 'Z' ? c + 32 : c)) return false;
+  }
+  return true;
+}
+
 std::vector<std::string> Split(const std::string& path) {
   std::vector<std::string> parts;
   std::string part;
@@ -163,38 +173,39 @@ void FileSystem::Reset() {
     std::lock_guard lock(open_mutex_);
     open_.clear();
   }
-  Objects().AddCloseHook([](uint32_t object) { Files().OnClose(object); });
+  Objects().AddCloseHook([](uint32_t object) { return Files().OnClose(object); });
 }
 
-void FileSystem::Mount(const std::string& device, const std::filesystem::path& host, bool read_only) {
-  AddMount(device, host, read_only, false);
+void FileSystem::Mount(std::string device, const std::filesystem::path& host, bool read_only) {
+  AddMount(std::move(device), host, read_only, false);
 }
 
-void FileSystem::MountNull(const std::string& device) { AddMount(device, {}, false, true); }
+void FileSystem::MountNull(std::string device) { AddMount(std::move(device), {}, false, true); }
 
-void FileSystem::AddMount(const std::string& device, const std::filesystem::path& host, bool read_only, bool null) {
+void FileSystem::AddMount(std::string device, const std::filesystem::path& host, bool read_only, bool null) {
   // A device mounted again (a title opening the same content or profile twice) is replaced, not listed twice; the
-  // files open on the entry it replaces keep that one.
-  const std::string name = Lower(device);
-  auto entry = std::make_shared<const Mounted>(Mounted{name, host, read_only, null});
+  // files open on the entry it replaces keep that one. The name lowered in place and moved into the entry (no copy).
+  for (char& c : device) c = char(c >= 'A' && c <= 'Z' ? c + 32 : c);
+  auto entry = std::make_shared<const Mounted>(Mounted{std::move(device), host, read_only, null});
+  const std::string& name = entry->device;
   std::unique_lock lock(mounts_mutex_);
   std::erase_if(mounts_, [&](const MountRef& m) { return m->device == name; });
-  mounts_.push_back(std::move(entry));
-  // Longest device paths first, so "\device\harddisk0\partition1" wins over "\device\harddisk0".
-  std::stable_sort(mounts_.begin(), mounts_.end(), [](const MountRef& a, const MountRef& b) { return a->device.size() > b->device.size(); });
+  // Longest device paths first, so "\device\harddisk0\partition1" wins over "\device\harddisk0": inserted after
+  // the last entry at least as long (the order a stable sort gave, without its buffer).
+  auto at = std::find_if(mounts_.begin(), mounts_.end(), [&](const MountRef& m) { return m->device.size() < name.size(); });
+  mounts_.insert(at, std::move(entry));
 }
 
-void FileSystem::Link(const std::string& link, const std::string& target) {
-  std::string name = Lower(link);
-  if (name.rfind("\\??\\", 0) == 0) name = name.substr(4);
+void FileSystem::Link(std::string link, std::string target) {
+  for (char& c : link) c = char(c >= 'A' && c <= 'Z' ? c + 32 : c);
+  if (link.rfind("\\??\\", 0) == 0) link.erase(0, 4);
   std::unique_lock lock(links_mutex_);
-  links_[name] = target;
+  links_.insert_or_assign(std::move(link), std::move(target));
 }
 
 void FileSystem::Unmount(const std::string& device) {
-  const std::string lower = Lower(device);
   std::unique_lock lock(mounts_mutex_);
-  std::erase_if(mounts_, [&](const MountRef& m) { return m->device == lower; });
+  std::erase_if(mounts_, [&](const MountRef& m) { return EqualsLower(m->device, device); });
 }
 
 void FileSystem::Unlink(const std::string& link) {
@@ -923,10 +934,11 @@ uint32_t FileSystem::Flush(Guest g, uint32_t handle, uint32_t io_status) {
   return kStatusSuccess;
 }
 
-void FileSystem::OnClose(uint32_t object) {
+bool FileSystem::OnClose(uint32_t object) {
+  bool link;
   {
     std::unique_lock lock(links_mutex_);
-    link_objects_.erase(object);
+    link = link_objects_.erase(object) != 0;
   }
   bool remove = false;
   std::filesystem::path host;
@@ -934,7 +946,7 @@ void FileSystem::OnClose(uint32_t object) {
   {
     std::lock_guard lock(open_mutex_);
     auto it = open_.find(object);
-    if (it == open_.end()) return;
+    if (it == open_.end()) return link;
     remove = it->second.delete_on_close;
     host = it->second.host;
     port = it->second.port;
@@ -947,6 +959,7 @@ void FileSystem::OnClose(uint32_t object) {
     std::filesystem::remove(host, error);
   }
   if (port) Objects().DereferenceObject(Objects().guest(), port);
+  return true;
 }
 
 // --- the Win32 file calls XAM exports, on the same open files ---------------------------------------------------

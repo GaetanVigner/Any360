@@ -46,12 +46,12 @@ class FileSystem {
   FileSystem();
   void Reset();
   // `device` is a guest device path ("\Device\Cdrom0", "\Device\Harddisk0\Partition1").
-  void Mount(const std::string& device, const std::filesystem::path& host, bool read_only);
+  void Mount(std::string device, const std::filesystem::path& host, bool read_only);
   // A raw device titles probe and format but need not keep (the hard drive's Partition0, Cache0, Cache1, as the
   // reference answers them): the device opens, reads and writes succeed and transfer nothing.
-  void MountNull(const std::string& device);
+  void MountNull(std::string device);
   // A symbolic link from a DOS name ("game:", "\??\D:") to a device path.
-  void Link(const std::string& link, const std::string& target);
+  void Link(std::string link, std::string target);
   void Unmount(const std::string& device);
   void Unlink(const std::string& link);
 
@@ -121,7 +121,7 @@ class FileSystem {
   // The host path a guest path resolves to; empty when the device or a parent directory does not exist.
   std::filesystem::path Resolve(const std::string& guest_path, bool* parent_exists = nullptr) const;
   // Called by the object manager when the last handle of an object closes.
-  void OnClose(uint32_t object);
+  bool OnClose(uint32_t object);  // whether it held state for the object (a link or an open file)
 
  private:
   struct Mounted {
@@ -155,7 +155,7 @@ class FileSystem {
   // A transfer's answer to NtReadFile / NtWriteFile: STATUS_PENDING for a completed one on an asynchronous file.
   uint32_t Pending(uint32_t handle, uint32_t status);
   MountRef MountOf(const std::string& device_path, std::string& rest) const;
-  void AddMount(const std::string& device, const std::filesystem::path& host, bool read_only, bool null);
+  void AddMount(std::string device, const std::filesystem::path& host, bool read_only, bool null);
   std::string Canonical(const std::string& guest_path) const;
   std::string PathOf(Guest g, uint32_t attributes) const;
   uint32_t DeviceControl(Guest g, uint32_t code, uint32_t output, uint32_t output_length, uint32_t& written);

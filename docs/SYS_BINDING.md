@@ -495,6 +495,13 @@ out), the titles-played
 enumerator is empty (Xenia lists only titles with achievements, and the profile has none), no guest, unsafe
 programming allowed, `XamUserLogonEx` succeeds, and no Kinect user (docs/perf/archive/2026-11-19-sys-step12-user/).
 
+The rows under 1x (docs/perf/archive/2026-11-19-sys-step12-below-1x/): an object's close holds the object manager's
+lock once, and an object only one close hook keeps state for (`AllocatePlainObject`: XAM's enumerators, listeners and
+session handles) runs that hook alone and skips the timer and port tables and the free hooks at release. The suite
+runs every hook anyway (`ANY360_VERIFY_OBJECT_HINTS`) and stops on one that held state for such an object. An XAM
+enumerator's cycle went from 0.6x to 1.0-1.1x the original. Mounts and links copy their names no more than they keep
+them (XamProfileOpen + Close: 10 to 6 allocations).
+
 Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
 host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
 SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),

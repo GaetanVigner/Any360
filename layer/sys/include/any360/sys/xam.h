@@ -499,7 +499,8 @@ class Xam {
   XamHost host_;
   TitleSettings title_;
   // The close hook: a listener's or enumerator's state goes with its last handle.
-  void OnClose(uint32_t object);
+  bool OnClose(uint32_t object);  // whether a listener or an enumerator was the object
+  int close_hook_ = -1;          // OnClose's index among the object manager's close hooks
   std::vector<Listener> listeners_;
   std::vector<Enumerator> enumerators_;
   // The handle system modules answer by: a zeroed loader entry from the kernel heap, made at first use.

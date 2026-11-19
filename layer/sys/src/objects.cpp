@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -57,6 +59,8 @@ void ObjectManager::SetKernelHeap(uint32_t begin, uint32_t size) {
 void ObjectManager::Reset() {
   std::lock_guard lock(lifetime_mutex_);
   std::lock_guard dispatcher(dispatcher_mutex_);
+  const char* verify = std::getenv("ANY360_VERIFY_OBJECT_HINTS");
+  verify_hints_ = verify && *verify && *verify != '0';
   entries_.clear();
   first_free_ = 0;
   open_handles_.Clear();
@@ -73,7 +77,7 @@ void ObjectManager::Reset() {
   heap_next_ = heap_begin_;
 }
 
-uint32_t ObjectManager::Allocate(uint32_t size, bool freed_on_close) {
+uint32_t ObjectManager::Allocate(uint32_t size, bool freed_on_close, uint32_t hint) {
   const uint32_t aligned = (size + 15) & ~15u;
   std::lock_guard lock(lifetime_mutex_);
   uint32_t at = 0;
@@ -95,11 +99,27 @@ uint32_t ObjectManager::Allocate(uint32_t size, bool freed_on_close) {
     at = heap_next_;
     heap_next_ += aligned;
   }
-  if (freed_on_close) freeable_[at] = aligned;
+  if (freed_on_close) freeable_[at] = aligned | hint;
   return at;
 }
 
 uint32_t ObjectManager::AllocateObject(uint32_t size, bool freed_on_close) { return Allocate(size, freed_on_close); }
+
+uint32_t ObjectManager::AllocatePlainObject(uint32_t size, int close_hook) {
+  const bool hinted = close_hook >= kNoCloseHook && close_hook < 7;
+  return Allocate(size, true, hinted ? kHintPlain | uint32_t(close_hook + 1) << 1 : 0);
+}
+
+void ObjectManager::ClearHint(uint32_t object) {
+  std::lock_guard lock(lifetime_mutex_);
+  if (uint32_t* owned = freeable_.Find(object)) *owned &= ~kHintMask;
+}
+
+void ObjectManager::HintBroken(uint32_t object, const char* what) {
+  std::fprintf(stderr, "any360::sys: object %08X was allocated plain, but %s held state for it\n", object, what);
+  std::fflush(stderr);
+  std::abort();
+}
 
 void ObjectManager::ReferenceObject(uint32_t object) {
   std::lock_guard lock(lifetime_mutex_);
@@ -116,17 +136,26 @@ void ObjectManager::Release(uint32_t object) {
   std::lock_guard lock(lifetime_mutex_);
   const uint32_t* owned = freeable_.Find(object);
   if (!owned || references_.Contains(object) || HasOpenHandle(object)) return;
-  {
-    std::lock_guard dispatcher(dispatcher_mutex_);
-    timers_.erase(std::remove(timers_.begin(), timers_.end(), object), timers_.end());
-    timer_apcs_.erase(object);
-  }
-  uint32_t at = object, size = *owned;
-  freeable_.Erase(object);
-  for (auto hook : free_hooks_) hook(object);
-  {
-    std::lock_guard lock(ports_mutex_);
-    ports_.erase(object);
+  const bool plain = *owned & kHintPlain;
+  uint32_t at = object, size = *owned & ~kHintMask;
+  if (plain && !verify_hints_) {
+    freeable_.Erase(object);
+  } else {
+    bool timer, freed = false, port;
+    {
+      std::lock_guard dispatcher(dispatcher_mutex_);
+      const size_t armed = timers_.size();
+      timers_.erase(std::remove(timers_.begin(), timers_.end(), object), timers_.end());
+      timer = timers_.size() != armed;
+      timer |= timer_apcs_.erase(object) != 0;
+    }
+    freeable_.Erase(object);
+    for (auto hook : free_hooks_) freed |= hook(object);
+    {
+      std::lock_guard lock(ports_mutex_);
+      port = ports_.erase(object) != 0;
+    }
+    if (plain && (timer || freed || port)) HintBroken(object, timer ? "a timer" : freed ? "a free hook" : "a port");
   }
   // Merged with the free blocks on either side; one that reaches the untouched rest of the heap joins it.
   auto next = std::lower_bound(free_blocks_.begin(), free_blocks_.end(), std::pair<uint32_t, uint32_t>{at, 0});
@@ -460,6 +489,7 @@ uint32_t ObjectManager::NtSetTimerEx(Guest g, uint32_t handle, uint32_t due_time
   const Entry* e = Find(handle);
   if (!e) return kStatusInvalidHandle;
   if (!due_time_ptr) return kStatusInvalidParameter;
+  ClearHint(e->object);  // a timer's state: the full close path (taken before the dispatcher lock, in lock order)
   {
     std::lock_guard lock(dispatcher_mutex_);
     if (routine) {
@@ -481,32 +511,49 @@ uint32_t ObjectManager::NtCancelTimer(Guest g, uint32_t handle, uint32_t current
   return kStatusSuccess;
 }
 
-void ObjectManager::AddCloseHook(void (*hook)(uint32_t object)) {
-  if (std::find(close_hooks_.begin(), close_hooks_.end(), hook) == close_hooks_.end()) close_hooks_.push_back(hook);
+int ObjectManager::AddCloseHook(bool (*hook)(uint32_t object)) {
+  auto it = std::find(close_hooks_.begin(), close_hooks_.end(), hook);
+  if (it != close_hooks_.end()) return int(it - close_hooks_.begin());
+  close_hooks_.push_back(hook);
+  return int(close_hooks_.size() - 1);
 }
 
-void ObjectManager::AddFreeHook(void (*hook)(uint32_t object)) {
+void ObjectManager::AddFreeHook(bool (*hook)(uint32_t object)) {
   if (std::find(free_hooks_.begin(), free_hooks_.end(), hook) == free_hooks_.end()) free_hooks_.push_back(hook);
 }
 
-void ObjectManager::Closed(uint32_t object) {
-  {
-    std::lock_guard lock(lifetime_mutex_);
-    if (HasOpenHandle(object)) return;
-  }
-  for (auto hook : close_hooks_) hook(object);
-}
-
 uint32_t ObjectManager::Close(uint32_t handle) {
-  uint32_t object;
+  if (handle < handle_base_ || (handle & 3)) return kStatusInvalidHandle;
+  uint32_t object, hint = 0;
+  bool last;
   {
-    std::lock_guard lock(lifetime_mutex_);  // one of two threads closing a handle closes it
-    Entry* e = Find(handle);
-    if (!e) return kStatusInvalidHandle;
-    object = e->object;
-    HandleClosed(handle, *e);
+    // One section: the handle found and closed, and whether it was the object's last (one of two threads closing a
+    // handle closes it).
+    std::lock_guard lock(lifetime_mutex_);
+    const uint32_t index = (handle - handle_base_) / 4;
+    if (index >= entries_.size() || !entries_[index].open) return kStatusInvalidHandle;
+    Entry& e = entries_[index];
+    object = e.object;
+    HandleClosed(handle, e);
+    last = !HasOpenHandle(object);
+    if (const uint32_t* owned = freeable_.Find(object)) hint = *owned & kHintMask;
   }
-  Closed(object);
+  // The close hooks outside the lock (they take their own), and before Release: once the block is freed another
+  // thread may reuse its address, and a hook run then would strip the new object's state. A plain object's own hook
+  // alone (the hint read under the lock).
+  if (last) {
+    const int owner = int(hint >> 1) - 1;
+    if ((hint & kHintPlain) && !verify_hints_) {
+      if (owner >= 0 && size_t(owner) < close_hooks_.size()) close_hooks_[owner](object);
+    } else {
+      for (size_t i = 0; i < close_hooks_.size(); ++i) {
+        if (close_hooks_[i](object) && (hint & kHintPlain) && int(i) != owner) {
+          static const char* const kHooks[] = {"close hook 0", "close hook 1", "close hook 2", "close hook 3", "a close hook"};
+          HintBroken(object, kHooks[std::min<size_t>(i, 4)]);
+        }
+      }
+    }
+  }
   Release(object);
   return kStatusSuccess;
 }

@@ -72,7 +72,7 @@ void Xam::Reset() {
   language_fallback_ = 0;
   iptv_name_ = 0;
   content_change_callback_ = launch_request_callback_ = 0;
-  Objects().AddCloseHook([](uint32_t object) { XamState().OnClose(object); });
+  close_hook_ = Objects().AddCloseHook([](uint32_t object) { return XamState().OnClose(object); });
   system_module_ = 0;
   settings_.clear();
   terminate_notifications_.clear();
@@ -150,12 +150,17 @@ void Xam::Notify(uint32_t id, uint32_t param) {
   }
 }
 
-void Xam::OnClose(uint32_t object) {
+bool Xam::OnClose(uint32_t object) {
   // An object is in each list once at most, and the one closed is most often the last made: searched from the end.
   auto listener = std::find_if(listeners_.rbegin(), listeners_.rend(), [&](const Listener& l) { return l.object == object; });
-  if (listener != listeners_.rend()) listeners_.erase(std::next(listener).base());
+  if (listener != listeners_.rend()) {
+    listeners_.erase(std::next(listener).base());
+    return true;
+  }
   auto enumerator = std::find_if(enumerators_.rbegin(), enumerators_.rend(), [&](const Enumerator& e) { return e.object == object; });
-  if (enumerator != enumerators_.rend()) enumerators_.erase(std::next(enumerator).base());
+  if (enumerator == enumerators_.rend()) return false;
+  enumerators_.erase(std::next(enumerator).base());
+  return true;
 }
 
 uint32_t Xam::UserGetGamerTag(Guest g, uint32_t user, uint32_t buffer, uint32_t length) {
@@ -497,7 +502,7 @@ uint32_t Xam::UserGetDeviceContext(Guest g, uint32_t user, uint32_t context_out)
 }
 
 uint32_t Xam::NotifyCreateListener(Guest g, uint64_t mask, uint32_t) {
-  const uint32_t object = Objects().AllocateObject(16, true);
+  const uint32_t object = Objects().AllocatePlainObject(16, close_hook_);
   if (!object) return 0;
   std::memset(g.host(object), 0, 16);
   Listener l{object, mask, {}};
@@ -791,7 +796,7 @@ std::vector<Xam::Setting>::const_iterator Xam::FindSetting(uint32_t id) {
 }
 
 uint32_t Xam::SessionCreateHandle(Guest g, uint32_t handle_ptr) {
-  const uint32_t object = Objects().AllocateObject(16, true);
+  const uint32_t object = Objects().AllocatePlainObject(16, ObjectManager::kNoCloseHook);
   if (!object) return kErrorInvalidParameter;
   std::memset(g.host(object), 0, 16);
   g.Store32(handle_ptr, Objects().OpenHandle(object));
@@ -904,7 +909,7 @@ uint32_t Xam::ShowDeviceSelectorUI(Guest g, uint32_t device_id_ptr, uint32_t ove
 // --- enumerators --------------------------------------------------------------------------------------------------
 
 uint32_t Xam::CreateEnumerator(Guest g, uint32_t item_size, uint32_t per_call, std::vector<std::vector<uint8_t>> items) {
-  const uint32_t object = Objects().AllocateObject(16, true);
+  const uint32_t object = Objects().AllocatePlainObject(16, close_hook_);
   if (!object) return 0;
   std::memset(g.host(object), 0, 16);
   enumerators_.push_back({object, item_size, std::max<uint32_t>(1, per_call), 0, std::move(items)});

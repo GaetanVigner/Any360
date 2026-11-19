@@ -51,6 +51,9 @@ try {
     if ($LASTEXITCODE) { throw "CMake configure failed ($LASTEXITCODE)" }
     & $cmake --build $BuildDir | Out-Host
     if ($LASTEXITCODE) { throw "Build failed ($LASTEXITCODE)" }
+    # Objects allocated plain (AllocatePlainObject) take a short close path. From here on, in every test executable,
+    # every hook and table still runs for them, and one that held state for such an object stops that test.
+    $env:ANY360_VERIFY_OBJECT_HINTS = '1'
     & (Join-Path $BuildDir 'sys_object_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "sys_object_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_ldi_tests.exe') | Out-Host

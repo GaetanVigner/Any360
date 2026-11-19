@@ -1,0 +1,120 @@
+﻿-- run 1, before
+alloc+free (no handle)  38.6
+alloc+open+close        93.6
+CreateEnumerator+close  102.5
+TitlesPlayed+close      103.2
+recursive_mutex lock    6.7
+mutex lock              6.7
+Files().OnClose         16.4
+-- run 1, A (one lock in Close)
+alloc+free (no handle)  38.4
+alloc+open+close        76.8
+CreateEnumerator+close  92.2
+TitlesPlayed+close      90.9
+recursive_mutex lock    6.2
+mutex lock              6.3
+Files().OnClose         15.2
+-- run 1, A+B (plain objects), mount before
+alloc+free (no handle)  38.4
+alloc+open+close        83.6
+CreateEnumerator+close  58.5
+TitlesPlayed+close      58.0
+recursive_mutex lock    6.2
+mutex lock              6.5
+Files().OnClose         16.7
+open+close               745.9 ns, 10 allocs, 568 B
+open again (mounted)     88.0 ns, 0 allocs, 0 B
+Mount+Unmount            278.9 ns, 7 allocs, 360 B
+Link+Unlink              137.2 ns, 3 allocs, 160 B
+-- run 1, A+B, mount after
+alloc+free (no handle)  42.6
+alloc+open+close        79.6
+CreateEnumerator+close  59.8
+TitlesPlayed+close      58.0
+recursive_mutex lock    6.2
+mutex lock              6.2
+Files().OnClose         15.8
+open+close               404.9 ns, 6 allocs, 440 B
+open again (mounted)     61.4 ns, 0 allocs, 0 B
+Mount+Unmount            136.8 ns, 4 allocs, 264 B
+Link+Unlink              98.0 ns, 2 allocs, 128 B
+-- run 2, before
+alloc+free (no handle)  37.7
+alloc+open+close        93.0
+CreateEnumerator+close  103.8
+TitlesPlayed+close      101.7
+recursive_mutex lock    6.5
+mutex lock              6.0
+Files().OnClose         15.5
+-- run 2, A (one lock in Close)
+alloc+free (no handle)  37.7
+alloc+open+close        77.9
+CreateEnumerator+close  90.3
+TitlesPlayed+close      90.7
+recursive_mutex lock    6.2
+mutex lock              6.1
+Files().OnClose         16.1
+-- run 2, A+B (plain objects), mount before
+alloc+free (no handle)  38.5
+alloc+open+close        85.2
+CreateEnumerator+close  53.6
+TitlesPlayed+close      59.8
+recursive_mutex lock    6.1
+mutex lock              5.9
+Files().OnClose         15.5
+open+close               664.5 ns, 10 allocs, 568 B
+open again (mounted)     62.0 ns, 0 allocs, 0 B
+Mount+Unmount            210.5 ns, 7 allocs, 360 B
+Link+Unlink              135.9 ns, 3 allocs, 160 B
+-- run 2, A+B, mount after
+alloc+free (no handle)  37.7
+alloc+open+close        81.6
+CreateEnumerator+close  60.6
+TitlesPlayed+close      57.7
+recursive_mutex lock    6.1
+mutex lock              5.9
+Files().OnClose         15.4
+open+close               399.8 ns, 6 allocs, 440 B
+open again (mounted)     63.8 ns, 0 allocs, 0 B
+Mount+Unmount            140.4 ns, 4 allocs, 264 B
+Link+Unlink              96.7 ns, 2 allocs, 128 B
+-- run 3, before
+alloc+free (no handle)  37.7
+alloc+open+close        93.5
+CreateEnumerator+close  102.5
+TitlesPlayed+close      101.3
+recursive_mutex lock    6.5
+mutex lock              6.5
+Files().OnClose         16.5
+-- run 3, A (one lock in Close)
+alloc+free (no handle)  36.3
+alloc+open+close        79.7
+CreateEnumerator+close  87.1
+TitlesPlayed+close      89.5
+recursive_mutex lock    6.5
+mutex lock              6.0
+Files().OnClose         15.3
+-- run 3, A+B (plain objects), mount before
+alloc+free (no handle)  37.4
+alloc+open+close        85.6
+CreateEnumerator+close  55.9
+TitlesPlayed+close      56.3
+recursive_mutex lock    6.3
+mutex lock              6.5
+Files().OnClose         16.6
+open+close               512.9 ns, 10 allocs, 568 B
+open again (mounted)     62.0 ns, 0 allocs, 0 B
+Mount+Unmount            212.8 ns, 7 allocs, 360 B
+Link+Unlink              136.1 ns, 3 allocs, 160 B
+-- run 3, A+B, mount after
+alloc+free (no handle)  37.7
+alloc+open+close        83.3
+CreateEnumerator+close  56.4
+TitlesPlayed+close      57.6
+recursive_mutex lock    6.4
+mutex lock              6.6
+Files().OnClose         15.6
+open+close               405.9 ns, 6 allocs, 440 B
+open again (mounted)     61.7 ns, 0 allocs, 0 B
+Mount+Unmount            138.4 ns, 4 allocs, 264 B
+Link+Unlink              97.3 ns, 2 allocs, 128 B

@@ -3,6 +3,7 @@
 // returned states and the guest fields. Handles are abstracted: a test keeps what it was given.
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -3813,6 +3814,69 @@ void ObjectBookkeepingTests() {
   for (uint32_t h : held) CHECK(Objects().Close(h) == 0);
 }
 
+// Plain objects (AllocatePlainObject): their last close runs their owner's close hook alone, their memory goes back to
+// the heap; with ANY360_VERIFY_OBJECT_HINTS every hook still runs (and one holding state for such an object stops the
+// process). A timer set on a plain object clears its hint: the full close path cancels it.
+uint32_t g_hinted_object = 0;
+int g_owner_calls = 0, g_other_calls = 0;
+bool g_owner_claims = true;  // whether the owner hook says it held state for g_hinted_object
+void SetVerifyHints(bool on) {
+#if defined(_WIN32)
+  _putenv_s("ANY360_VERIFY_OBJECT_HINTS", on ? "1" : "0");
+#else
+  setenv("ANY360_VERIFY_OBJECT_HINTS", on ? "1" : "0", 1);
+#endif
+}
+void PlainObjectTests() {
+  const char* suite = std::getenv("ANY360_VERIFY_OBJECT_HINTS");
+  const bool suite_verifies = suite && *suite && *suite != '0';
+  const int owner = Objects().AddCloseHook([](uint32_t object) {
+    if (object != g_hinted_object) return false;
+    ++g_owner_calls;
+    return g_owner_claims;
+  });
+  Objects().AddCloseHook([](uint32_t object) {
+    if (object == g_hinted_object) ++g_other_calls;
+    return false;
+  });
+  for (const bool verify : {false, true}) {
+    SetVerifyHints(verify);
+    Fresh();
+    XamState().Reset();  // no enumerator or listener left by an earlier test at a reused address
+    g_owner_calls = g_other_calls = 0;
+    g_hinted_object = Objects().AllocatePlainObject(16, owner);
+    const uint32_t h = Objects().OpenHandle(g_hinted_object), again = Objects().OpenHandle(g_hinted_object);
+    CHECK(Objects().Close(h) == 0 && g_owner_calls == 0);  // a handle still open: no hook yet
+    CHECK(Objects().Close(again) == 0 && g_owner_calls == 1 && g_other_calls == (verify ? 1 : 0));
+    CHECK(Objects().AllocateObject(16, true) == g_hinted_object);  // its memory went back
+    // An object with no hint still runs every hook.
+    g_owner_calls = g_other_calls = 0;
+    g_hinted_object = Objects().AllocateObject(16, true);
+    CHECK(Objects().Close(Objects().OpenHandle(g_hinted_object)) == 0 && g_owner_calls == 1 && g_other_calls == 1);
+    // A plain object no hook keeps: none runs (under verify all run, none holding state for it).
+    g_owner_calls = g_other_calls = 0;
+    g_owner_claims = false;
+    g_hinted_object = Objects().AllocatePlainObject(16, ObjectManager::kNoCloseHook);
+    CHECK(Objects().Close(Objects().OpenHandle(g_hinted_object)) == 0 && g_owner_calls == (verify ? 1 : 0));
+    g_owner_claims = true;
+    // A timer with an APC set on a plain object: cancelled with it (the hint cleared; under verify a release still
+    // marked plain would stop here).
+    const uint32_t out = kScratch + 0x200;
+    g_hinted_object = 0;
+    const uint32_t timer_at = Objects().AllocatePlainObject(kTimerSize, ObjectManager::kNoCloseHook);
+    Objects().InitializeTimer(g, timer_at, 0, 0);
+    const uint32_t timer = Objects().OpenHandle(timer_at);
+    g.Store64(out + 8, uint64_t(int64_t(-10000)));  // 1 ms
+    CHECK(Objects().NtSetTimerEx(g, timer, out + 8, 0x82000000, 0, kMainThread, 0, 0) == 0 && Objects().Close(timer) == 0);
+    CHECK(Objects().AllocateObject(kTimerSize, true) == timer_at);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    CHECK(Threads().PendingApcs(kMainThread) == 0);  // the cancelled timer queued nothing
+  }
+  g_hinted_object = 0;
+  SetVerifyHints(suite_verifies);
+  Fresh();
+}
+
 // A file stays usable while devices are mounted, remounted and unmounted around it: an open handle keeps the mount
 // entry it was opened on (the list is reordered and its entries replaced under it).
 void MountStabilityTests() {
@@ -4246,6 +4310,7 @@ int main() {
   LinkConcurrencyTests();
   U32MapTests();
   ObjectBookkeepingTests();
+  PlainObjectTests();
   MountStabilityTests();
   CryptPathTests();
   XamInfoStep12Tests();

@@ -166,15 +166,23 @@ class ObjectManager {
   // the guest memory the heap lives in. With `freed_on_close` the region goes back to the heap once its last handle is
   // closed and its last Ob reference dropped (after the close hook), as the Nt-created objects do.
   uint32_t AllocateObject(uint32_t size, bool freed_on_close = false);
+  // A freed-on-close object whose state only one close hook keeps (`close_hook`, the index AddCloseHook returned), or
+  // none (kNoCloseHook): no timer, port, thread or file state. Its last close runs that hook alone and its release
+  // skips the timer and port tables and the free hooks. Setting a timer on it clears the hint (back to the full
+  // path). With ANY360_VERIFY_OBJECT_HINTS set (the suite sets it), every hook and table still runs, and one that held
+  // state for such an object stops the process.
+  static constexpr int kNoCloseHook = -1;
+  uint32_t AllocatePlainObject(uint32_t size, int close_hook);
   uint32_t OpenHandle(uint32_t object) { return AddHandle(object, {}); }
   Guest guest() const { return guest_; }
   void SetGuest(Guest g) { guest_ = g; }
   // Called with the object when its last handle closes (the file system frees an open file there, XAM its listeners
-  // and enumerators); a hook added twice is called once.
-  void AddCloseHook(void (*hook)(uint32_t object));
+  // and enumerators); a hook added twice is called once. A hook returns whether it held state for the object. Returns
+  // the hook's index (for AllocatePlainObject).
+  int AddCloseHook(bool (*hook)(uint32_t object));
   // Called with a freed-on-close object just before its memory returns to the heap (the scheduler frees a thread's
-  // other blocks there).
-  void AddFreeHook(void (*hook)(uint32_t object));
+  // other blocks there); returns whether it held state for the object.
+  void AddFreeHook(bool (*hook)(uint32_t object));
   // Returns a freed-on-close block no handle or reference keeps to the heap at once.
   void FreeObject(uint32_t object) { Release(object); }
 
@@ -186,7 +194,7 @@ class ObjectManager {
     bool open = false;
     std::string name;
   };
-  uint32_t Allocate(uint32_t size, bool freed_on_close = false);
+  uint32_t Allocate(uint32_t size, bool freed_on_close = false, uint32_t hint = 0);
   // Frees a freed-on-close object no handle or reference keeps (an armed timer is cancelled first).
   void Release(uint32_t object);
   uint32_t AddHandle(uint32_t object, const std::string& name);
@@ -215,7 +223,12 @@ class ObjectManager {
   ForeignHandles foreign_;
   // The heap's freed blocks, (address, size) sorted by address and coalesced, in a vector kept at its capacity.
   std::vector<std::pair<uint32_t, uint32_t>> free_blocks_;
-  U32Map freeable_{256};  // freed-on-close object -> its size
+  U32Map freeable_{256};  // freed-on-close object -> its size (16-aligned), its low 4 bits the close-path hint
+  // The hint: bit 0 a plain object (AllocatePlainObject), bits 1-3 its close hook's index + 1 (0: none).
+  static constexpr uint32_t kHintMask = 15, kHintPlain = 1;
+  bool verify_hints_ = false;
+  void ClearHint(uint32_t object);
+  [[noreturn]] void HintBroken(uint32_t object, const char* what);
   std::recursive_mutex lifetime_mutex_;              // allocation, references, release, the handle table
   // The dispatcher's lock, as the kernel's: signal states, timers and their APCs change under it, and a wait takes or
   // tests its objects under it, so a release and a wait on two threads never lose a count. A wait sleeps on its
@@ -249,8 +262,7 @@ class ObjectManager {
   std::condition_variable ports_ready_;
   std::unordered_map<uint32_t, std::deque<Packet>> ports_;  // port object -> its packets
   Guest guest_{nullptr};
-  std::vector<void (*)(uint32_t)> close_hooks_, free_hooks_;
-  void Closed(uint32_t object);
+  std::vector<bool (*)(uint32_t)> close_hooks_, free_hooks_;
 };
 
 ObjectManager& Objects();
