@@ -1,0 +1,6 @@
+# xma_bench (Release, the shipped libavcodec), the conversion switched by ANY360_XMA_SCALAR, alternating, ns a frame
+# (2 replays each; output hash 47221808C06B2A03 in all)
+vector 7000 6963
+scalar 7556 7532
+vector 6992 6972
+scalar 7511 7507

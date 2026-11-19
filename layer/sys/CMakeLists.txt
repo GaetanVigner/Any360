@@ -99,6 +99,13 @@ if(ANY360_REFERENCE_SDK)
         target_link_libraries(xma_tests PRIVATE any360_sys_xma)
         target_compile_options(xma_tests PRIVATE -Wall -Wextra)
         add_test(NAME xma_tests COMMAND xma_tests)
+        if(WIN32)
+            # Timings of the frame decoder on a capture from a title (not committed: xma_bench <capture>); it counts
+            # the C runtime's allocations through the program's import table.
+            add_executable(xma_bench tests/xma_bench.cpp)
+            target_link_libraries(xma_bench PRIVATE any360_sys_xma)
+            target_compile_options(xma_bench PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
+        endif()
     endif()
 
     # The binding of a ReXGlue title to these layers (graphics first): built here to keep it compiling.

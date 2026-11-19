@@ -1,0 +1,1 @@
+kicks 20000, decoding nothing 348; frames 57808; ns in kicks 566084800 (9792 a frame), in the frame decoder 496761500 (8593 a frame); conversion vector; verified 0 frames, 0 bytes different

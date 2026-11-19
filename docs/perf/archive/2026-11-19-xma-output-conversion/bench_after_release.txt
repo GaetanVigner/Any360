@@ -1,0 +1,4 @@
+capture: 110108 frames (51970 stereo), 718 resets, 15 contexts
+decode: 7020 ns a frame (110108 decoded, 0 dropped); host heap a frame: 14.06 C runtime allocations (2015 B), 0.00 operator new (0 B); output hash 47221808C06B2A03
+decode: 6995 ns a frame (110108 decoded, 0 dropped); host heap a frame: 14.06 C runtime allocations (2015 B), 0.00 operator new (0 B); output hash 47221808C06B2A03
+decode: 6994 ns a frame (110108 decoded, 0 dropped); host heap a frame: 14.06 C runtime allocations (2015 B), 0.00 operator new (0 B); output hash 47221808C06B2A03

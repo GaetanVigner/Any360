@@ -9,7 +9,14 @@
 #include <atomic>
 #include <bit>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <mutex>
+#include <string>
+
+#include <emmintrin.h>
+#include <tmmintrin.h>
 
 extern "C" {
 #include "libavcodec/avcodec.h"
@@ -184,17 +191,203 @@ struct PacketInfo {
   bool LastFrameInPacket() const { return frame_count == 0 || current_frame == frame_count - 1; }
 };
 
+// ANY360_XMA_CAPTURE=<file>: every frame the decoders are given, and every stream reset, appended for xma_bench
+// (ANY360_XMA_CAPTURE_FRAMES of them, 100000 by default). A capture holds a title's audio: never commit one.
+// A record: context (u32), rate id (u8), stereo (u8), 0 (u16), frame bits (u32, 0 for a reset), padding (u32), byte
+// count (u32), then the frame's bytes (after the padding byte). Host byte order.
+class Capture {
+ public:
+  static Capture& Get() {
+    static Capture capture;
+    return capture;
+  }
+  bool on() const { return file_ != nullptr; }
+  void Write(uint32_t context, uint32_t rate_id, bool stereo, uint32_t frame_bits, uint32_t padding,
+             const uint8_t* bytes, uint32_t count) {
+    std::lock_guard guard(mutex_);
+    if (!file_) return;
+    const uint32_t head[5] = {context, (rate_id & 0xFF) | (uint32_t(stereo) << 8), frame_bits, padding, count};
+    std::fwrite(head, sizeof(head), 1, file_);
+    if (count) std::fwrite(bytes, count, 1, file_);
+    if (frame_bits && ++frames_ >= limit_) {
+      std::fclose(file_);
+      file_ = nullptr;
+    }
+  }
+
+ private:
+  Capture() {
+    const char* path = std::getenv("ANY360_XMA_CAPTURE");
+    if (!path || !*path) return;
+    const char* limit = std::getenv("ANY360_XMA_CAPTURE_FRAMES");
+    if (limit && *limit) limit_ = std::strtoull(limit, nullptr, 10);
+    file_ = std::fopen(path, "wb");
+  }
+  std::mutex mutex_;
+  std::FILE* file_ = nullptr;
+  uint64_t frames_ = 0, limit_ = 100000;
+};
+
+// ANY360_XMA_STATS=<file>: where the decoders' time goes, written at exit (kicks, kicks that decoded nothing,
+// frames decoded, nanoseconds in the kicks and in the frame decoder). ANY360_XMA_VERIFY=1 also converts each frame
+// with the scalar statement and counts the bytes that differ; ANY360_XMA_SCALAR=1 converts with the scalar statement
+// only (the conversion's before, in the same build). Diagnostics: off, they cost a load and a branch.
+struct Stats {
+  bool on = false, verify = false, scalar = false;
+  std::atomic<uint64_t> kicks{0}, empty_kicks{0}, frames{0}, kick_ns{0}, decode_ns{0}, verified{0}, mismatches{0};
+  std::string path;
+  std::mutex write_mutex;
+  static Stats& Get() {
+    static Stats stats;
+    return stats;
+  }
+  Stats() {
+    const char* p = std::getenv("ANY360_XMA_STATS");
+    on = p && *p;
+    if (on) path = p;
+    const char* v = std::getenv("ANY360_XMA_VERIFY");
+    verify = v && *v == '1';
+    const char* s = std::getenv("ANY360_XMA_SCALAR");
+    scalar = s && *s == '1';
+  }
+  ~Stats() { Write(); }
+  // Rewritten every 20000 kicks too (a title stopped from outside never runs its destructors).
+  void Write() {
+    if (!on) return;
+    std::lock_guard guard(write_mutex);
+    if (std::FILE* f = std::fopen(path.c_str(), "w")) {
+      const double n = double(std::max<uint64_t>(1, frames.load()));
+      std::fprintf(f, "kicks %llu, decoding nothing %llu; frames %llu; ns in kicks %llu (%.0f a frame), in the frame "
+                      "decoder %llu (%.0f a frame); conversion %s; verified %llu frames, %llu bytes different\n",
+                   (unsigned long long)kicks.load(), (unsigned long long)empty_kicks.load(),
+                   (unsigned long long)frames.load(), (unsigned long long)kick_ns.load(), double(kick_ns.load()) / n,
+                   (unsigned long long)decode_ns.load(), double(decode_ns.load()) / n, scalar ? "scalar" : "vector",
+                   (unsigned long long)verified.load(), (unsigned long long)mismatches.load());
+      std::fclose(f);
+    }
+  }
+};
+
+uint64_t NowNs() {
+  return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                      std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+void CaptureReset(uint32_t context) {
+  if (Capture::Get().on()) Capture::Get().Write(context, 0, false, 0, 0, nullptr, 0);
+}
+void CaptureFrame(uint32_t context, uint32_t rate_id, bool stereo, uint32_t frame_bits, uint32_t padding,
+                  const uint8_t* frame) {
+  if (Capture::Get().on()) {
+    Capture::Get().Write(context, rate_id, stereo, frame_bits, padding, frame + 1, (padding + frame_bits + 7) / 8);
+  }
+}
+
 }  // namespace
+
+XmaFrameDecoder::XmaFrameDecoder() {
+  packet_ = av_packet_alloc();
+  codec_ = avcodec_find_decoder(AV_CODEC_ID_XMAFRAMES);
+  frame_ = av_frame_alloc();
+}
+
+XmaFrameDecoder::~XmaFrameDecoder() {
+  if (context_) avcodec_free_context(&context_);
+  if (frame_) av_frame_free(&frame_);
+  if (packet_) av_packet_free(&packet_);
+}
+
+void XmaFrameDecoder::Reset() {
+  if (context_) {
+    context_->sample_rate = 0;
+    context_->channels = 0;
+  }
+}
+
+int XmaFrameDecoder::Prepare(uint32_t rate_id, bool stereo) {
+  const int rate = kSampleRates[std::min<uint32_t>(rate_id, 3)];
+  const int channels = stereo ? 2 : 1;
+  if (context_ && context_->sample_rate == rate && context_->channels == channels) return 0;
+  if (context_) avcodec_free_context(&context_);
+  if (!codec_) return -1;
+  context_ = avcodec_alloc_context3(codec_);
+  if (!context_) return -1;
+  context_->sample_rate = rate;
+  context_->channels = channels;
+  context_->flags2 |= AV_CODEC_FLAG2_SKIP_MANUAL;
+  return avcodec_open2(context_, codec_, nullptr) < 0 ? -1 : 1;
+}
+
+bool XmaFrameDecoder::Decode(uint8_t* frame, uint32_t frame_bits, uint32_t padding, bool stereo, uint8_t* out) {
+  if (!context_ || !packet_ || !frame_) return false;
+  packet_->data = frame;
+  packet_->size = int(1 + (padding + frame_bits) / 8 + ((padding + frame_bits) % 8 ? 1 : 0));
+  const uint32_t padding_end = uint32_t(packet_->size) * 8 - (8 + padding + frame_bits);
+  frame[0] = uint8_t(((padding & 7) << 5) | ((padding_end & 7) << 2));
+  if (avcodec_send_packet(context_, packet_) < 0) return false;
+  if (avcodec_receive_frame(context_, frame_) < 0) return false;
+  const float* planes[2] = {reinterpret_cast<const float*>(frame_->data[0]),
+                            reinterpret_cast<const float*>(frame_->data[stereo ? 1 : 0])};
+  Stats& stats = Stats::Get();
+  if (stats.scalar) ConvertReference(planes, stereo, out);
+  else Convert(planes, stereo, out);
+  if (stats.verify) {
+    uint8_t reference[kBytesPerFrameChannel * 2];
+    ConvertReference(planes, stereo, reference);
+    uint64_t different = 0;
+    for (size_t i = 0; i < (size_t(kBytesPerFrameChannel) << stereo); ++i) different += reference[i] != out[i];
+    stats.verified++;
+    stats.mismatches += different;
+  }
+  return true;
+}
+
+void XmaFrameDecoder::ConvertReference(const float* const* planes, bool stereo, uint8_t* out) {
+  auto* samples = reinterpret_cast<uint16_t*>(out);
+  uint32_t o = 0;
+  for (uint32_t i = 0; i < kSamplesPerFrame; ++i) {
+    for (uint32_t c = 0; c <= uint32_t(stereo); ++c) {
+      const float v = std::clamp(planes[c][i], -1.0f, 1.0f) * 32767.0f;
+      // As x86 converts: out of int32's range (a NaN) gives 0x80000000, whose low 16 bits are 0.
+      const int32_t whole = v == v ? int32_t(v) : int32_t(0x80000000u);
+      samples[o++] = std::byteswap(uint16_t(whole));
+    }
+  }
+}
+
+// SSSE3 for the byte shuffle (every x86-64 processor Any360 targets has it).
+__attribute__((target("ssse3"))) void XmaFrameDecoder::Convert(const float* const* planes, bool stereo, uint8_t* out) {
+  const __m128 lo = _mm_set1_ps(-1.0f), hi = _mm_set1_ps(1.0f), scale = _mm_set1_ps(32767.0f);
+  // std::clamp's order: below lo gives lo, else above hi gives hi, else the value (a NaN stays a NaN).
+  const auto clamp = [&](__m128 v) {
+    const __m128 below = _mm_cmplt_ps(v, lo), above = _mm_cmplt_ps(hi, v);
+    v = _mm_or_ps(_mm_and_ps(below, lo), _mm_andnot_ps(below, v));
+    v = _mm_or_ps(_mm_and_ps(above, hi), _mm_andnot_ps(above, v));
+    return _mm_cvttps_epi32(_mm_mul_ps(v, scale));  // a NaN converts to 0x80000000
+  };
+  // Each 32-bit result's low 16 bits, byte-swapped (big-endian), packed: no saturation, as the scalar's truncation.
+  const __m128i low_swapped = _mm_setr_epi8(1, 0, 5, 4, 9, 8, 13, 12, -1, -1, -1, -1, -1, -1, -1, -1);
+  if (!stereo) {
+    for (uint32_t i = 0; i < kSamplesPerFrame; i += 8) {
+      const __m128i a = _mm_shuffle_epi8(clamp(_mm_loadu_ps(planes[0] + i)), low_swapped);
+      const __m128i b = _mm_shuffle_epi8(clamp(_mm_loadu_ps(planes[0] + i + 4)), low_swapped);
+      _mm_storeu_si128(reinterpret_cast<__m128i*>(out + 2 * i), _mm_unpacklo_epi64(a, b));
+    }
+    return;
+  }
+  for (uint32_t i = 0; i < kSamplesPerFrame; i += 4) {
+    const __m128i l = _mm_shuffle_epi8(clamp(_mm_loadu_ps(planes[0] + i)), low_swapped);
+    const __m128i r = _mm_shuffle_epi8(clamp(_mm_loadu_ps(planes[1] + i)), low_swapped);
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(out + 4 * i), _mm_unpacklo_epi16(l, r));  // L0 R0 L1 R1 ...
+  }
+}
 
 struct XmaDecoder::Context {
   Guest g;
   uint32_t address;
   std::mutex lock;
   std::atomic<bool> enabled{false};
-  AVPacket* packet = nullptr;
-  const AVCodec* codec = nullptr;
-  AVCodecContext* codec_context = nullptr;
-  AVFrame* frame = nullptr;
+  XmaFrameDecoder codec;
   std::array<uint8_t, kBytesPerPacketData * 2> input{};
   std::array<uint8_t, 1 + 4096> xma_frame{};  // the first byte holds the frame's bit padding
   std::array<uint8_t, kBytesPerFrameChannel * 2> raw{}, decoded{}, carry{};
@@ -202,31 +395,14 @@ struct XmaDecoder::Context {
   uint8_t remaining_subframes = 0, loop_output_limit = 0, pending_output_limit = 0, pending_start_skip = 0;
   bool loop_start_skip_pending = false, carry_valid = false;
 
-  Context(Guest guest, uint32_t at) : g(guest), address(at) {
-    packet = av_packet_alloc();
-    codec = avcodec_find_decoder(AV_CODEC_ID_XMAFRAMES);
-    codec_context = codec ? avcodec_alloc_context3(codec) : nullptr;
-    if (codec_context) {
-      codec_context->channels = 0;
-      codec_context->sample_rate = 0;
-    }
-    frame = av_frame_alloc();
-  }
-  ~Context() {
-    if (codec_context) avcodec_free_context(&codec_context);
-    if (frame) av_frame_free(&frame);
-    if (packet) av_packet_free(&packet);
-  }
+  Context(Guest guest, uint32_t at) : g(guest), address(at) {}
   uint8_t* Guest32(uint32_t a) const { return g.host(a); }
   // A physical address as the host sees it: the 0xA0000000 view maps all of physical memory.
   uint8_t* Physical(uint32_t p) const { return g.host(0xA0000000u | (p & 0x1FFFFFFFu)); }
 
   void ResetDecoder() {
-    // A new logical stream: reopening the codec (next decode) drops the previous one's overlap-add tail.
-    if (codec_context) {
-      codec_context->sample_rate = 0;
-      codec_context->channels = 0;
-    }
+    codec.Reset();
+    CaptureReset(address);
     raw.fill(0);
     decoded.fill(0);
     carry.fill(0);
@@ -365,41 +541,6 @@ struct XmaDecoder::Context {
     remaining_subframes = uint8_t(remaining_subframes - write);
   }
 
-  // 1 when the codec was (re)opened for a new format, 0 when kept, -1 on failure.
-  int PrepareCodec(uint32_t rate_id, bool stereo) {
-    const int rate = kSampleRates[std::min<uint32_t>(rate_id, 3)];
-    const int channels = stereo ? 2 : 1;
-    if (codec_context && codec_context->sample_rate == rate && codec_context->channels == channels) return 0;
-    if (codec_context) avcodec_free_context(&codec_context);
-    codec_context = avcodec_alloc_context3(codec);
-    if (!codec_context) return -1;
-    codec_context->sample_rate = rate;
-    codec_context->channels = channels;
-    codec_context->flags2 |= AV_CODEC_FLAG2_SKIP_MANUAL;
-    return avcodec_open2(codec_context, codec, nullptr) < 0 ? -1 : 1;
-  }
-
-  bool DecodeFrame(uint32_t frame_size, uint32_t padding) {
-    packet->data = xma_frame.data();
-    packet->size = int(1 + (padding + frame_size) / 8 + ((padding + frame_size) % 8 ? 1 : 0));
-    const uint32_t padding_end = uint32_t(packet->size) * 8 - (8 + padding + frame_size);
-    xma_frame[0] = uint8_t(((padding & 7) << 5) | ((padding_end & 7) << 2));
-    if (avcodec_send_packet(codec_context, packet) < 0) return false;
-    return avcodec_receive_frame(codec_context, frame) >= 0;
-  }
-
-  // Planar floats to big-endian 16-bit samples, interleaved, saturated.
-  static void Convert(const uint8_t* const* planes, bool stereo, uint8_t* out) {
-    auto* samples = reinterpret_cast<uint16_t*>(out);
-    uint32_t o = 0;
-    for (uint32_t i = 0; i < kSamplesPerFrame; ++i) {
-      for (uint32_t c = 0; c <= uint32_t(stereo); ++c) {
-        const float v = std::clamp(reinterpret_cast<const float*>(planes[c])[i], -1.0f, 1.0f) * 32767.0f;
-        samples[o++] = std::byteswap(uint16_t(int16_t(v)));
-      }
-    }
-  }
-
   void Decode(ContextData* d) {
     const ActivityTimer timer(SysActivity().xma_ns);
     if (!d->AnyInputValid() || remaining_subframes > 0) return;
@@ -471,10 +612,19 @@ struct XmaDecoder::Context {
     xma_frame.fill(0);
     const uint32_t padding = uint32_t(frame_stream.Copy(xma_frame.data() + 1, info.current_frame_size));
     decoded.fill(0);
-    const int prepared = PrepareCodec(d->sample_rate, d->is_stereo);
+    const int prepared = codec.Prepare(d->sample_rate, d->is_stereo);
     if (prepared == 1) carry_valid = false;  // the carried tail belongs to the previous stream
-    if (prepared >= 0 && DecodeFrame(info.current_frame_size, padding)) {
-      Convert(frame->data, d->is_stereo, decoded.data());
+    CaptureFrame(address, d->sample_rate, d->is_stereo, info.current_frame_size, padding, xma_frame.data());
+    Stats& stats = Stats::Get();
+    const uint64_t decode_start = stats.on ? NowNs() : 0;
+    const bool frame_decoded =
+        prepared >= 0 && codec.Decode(xma_frame.data(), info.current_frame_size, padding, d->is_stereo, decoded.data());
+    if (stats.on) {
+      stats.decode_ns += NowNs() - decode_start;
+      stats.frames += frame_decoded;
+      ++decoded_this_kick;
+    }
+    if (frame_decoded) {
       // Realign onto the bitstream's numbering: the frame's samples start kDecoderStartPadding into this block and
       // end in the head of the next one.
       const size_t pad_bytes = size_t(kDecoderStartPadding * kBytesPerSample) << d->is_stereo;
@@ -521,6 +671,20 @@ struct XmaDecoder::Context {
 
   // One kick's worth of decoding; false when the context had nothing to do.
   bool Work() {
+    Stats& stats = Stats::Get();
+    if (!stats.on) return WorkOnce();
+    decoded_this_kick = 0;
+    const uint64_t start = NowNs();
+    const bool worked = WorkOnce();
+    stats.kick_ns += NowNs() - start;
+    stats.empty_kicks += decoded_this_kick == 0;
+    if (++stats.kicks % 20000 == 0) stats.Write();
+    return worked;
+  }
+
+  uint32_t decoded_this_kick = 0;  // frames given to the decoder in this kick (ANY360_XMA_STATS)
+
+  bool WorkOnce() {
     if (!enabled.load(std::memory_order_acquire)) return false;
     std::lock_guard guard(lock);
     if (!enabled.exchange(false, std::memory_order_acq_rel)) return false;

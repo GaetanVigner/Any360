@@ -1,8 +1,14 @@
 // The XMA decoder's context machinery (no XMA stream ships with the repository: decoding itself is checked in game):
 // the codec is there, a clear resets a context, a kick with no input reports the stall titles look for, a packet
 // with no frame start moves the decoder on to the other input buffer, a disabled context is left alone.
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
+#include <limits>
+#include <random>
+#include <vector>
 
 #include "any360/sys/audio.h"
 #include "any360/sys/xma.h"
@@ -78,6 +84,36 @@ int main() {
   decoder.Start(g);
   decoder.ContextReleased(g, context);
   decoder.Stop();
+
+  // The output conversion: four samples at a time against its scalar statement, every byte, mono and stereo, on
+  // random samples and the edges (the clamp's bounds and just past them, infinities, NaNs, denormals, signed zeros).
+  {
+    std::mt19937 rng(0x58A1);
+    std::uniform_real_distribution<float> wide(-1.5f, 1.5f);
+    const float edges[] = {0.0f, -0.0f, 1.0f, -1.0f, std::nextafter(1.0f, 2.0f), std::nextafter(-1.0f, -2.0f),
+                           std::nextafter(1.0f, 0.0f), 0.5f / 32767.0f, -0.5f / 32767.0f, 1e-40f, -1e-40f,
+                           std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity(),
+                           std::numeric_limits<float>::quiet_NaN(), -std::numeric_limits<float>::quiet_NaN()};
+    std::vector<float> left(512), right(512);
+    std::vector<uint8_t> fast(2048), slow(2048);
+    uint32_t compared = 0;
+    for (int round = 0; round < 200; ++round) {
+      for (uint32_t i = 0; i < 512; ++i) {
+        left[i] = rng() % 4 ? wide(rng) : edges[rng() % std::size(edges)];
+        right[i] = rng() % 4 ? wide(rng) : edges[rng() % std::size(edges)];
+      }
+      const float* planes[2] = {left.data(), right.data()};
+      for (const bool stereo : {false, true}) {
+        std::fill(fast.begin(), fast.end(), uint8_t(0xCD));
+        std::fill(slow.begin(), slow.end(), uint8_t(0xCD));
+        XmaFrameDecoder::Convert(planes, stereo, fast.data());
+        XmaFrameDecoder::ConvertReference(planes, stereo, slow.data());
+        CHECK(fast == slow);
+        ++compared;
+      }
+    }
+    CHECK(compared == 400);
+  }
 
   std::printf("xma_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;

@@ -16,7 +16,46 @@
 #include "audio.h"
 #include "guest.h"
 
+extern "C" {
+struct AVCodec;
+struct AVCodecContext;
+struct AVFrame;
+struct AVPacket;
+}
+
 namespace any360::sys {
+
+// One XMA stream's frames through FFmpeg's xmaframes decoder, each frame's samples out as big-endian 16-bit,
+// interleaved (512 a channel, saturated): what XmaDecoder writes to a title's output ring. XmaDecoder keeps one a
+// context; xma_bench replays captured frames through one.
+class XmaFrameDecoder {
+ public:
+  XmaFrameDecoder();
+  ~XmaFrameDecoder();
+  XmaFrameDecoder(const XmaFrameDecoder&) = delete;
+  XmaFrameDecoder& operator=(const XmaFrameDecoder&) = delete;
+
+  // A new logical stream: the next Prepare reopens the codec (the previous stream's overlap-add tail dropped).
+  void Reset();
+  // The codec for a stream of `rate_id` (0-3: 24, 32, 44.1, 48 kHz) and channels: 1 when (re)opened for it, 0 when
+  // kept, -1 on failure.
+  int Prepare(uint32_t rate_id, bool stereo);
+  // One frame: `frame` holds a byte for the bit paddings (set here) then the frame's `frame_bits` bits, starting
+  // `padding` bits into its first byte. Writes 512 samples a channel to `out`; false when FFmpeg drops the frame.
+  bool Decode(uint8_t* frame, uint32_t frame_bits, uint32_t padding, bool stereo, uint8_t* out);
+
+  // A frame's planar float samples (512 a channel) as big-endian 16-bit, interleaved: each clamped to [-1, 1], times
+  // 32767, truncated toward zero, its low 16 bits kept (a NaN gives 0). Four samples at a time; the same bits as
+  // ConvertReference, its scalar statement (both public for the tests).
+  static void Convert(const float* const* planes, bool stereo, uint8_t* out);
+  static void ConvertReference(const float* const* planes, bool stereo, uint8_t* out);
+
+ private:
+  AVPacket* packet_ = nullptr;
+  const AVCodec* codec_ = nullptr;
+  AVCodecContext* context_ = nullptr;
+  AVFrame* frame_ = nullptr;
+};
 
 class XmaDecoder : public XmaBackend {
  public:
