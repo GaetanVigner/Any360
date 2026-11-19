@@ -4383,6 +4383,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
           for (uint32_t j = 0; j < 3; ++j) color_value.color.float32[j] = float((clear >> (10 * j)) & 0x3FF) / 1023.0f;
           color_value.color.float32[3] = float((clear >> 30) & 3) / 3.0f;
           break;
+        case 3: case 12:  // 2_10_10_10_FLOAT (and AS_16_16_16_16): three 7e3 components and a 2-bit alpha
+          for (uint32_t j = 0; j < 3; ++j) color_value.color.float32[j] = Float7e3ToFloat(uint32_t(clear >> (10 * j)) & 0x3FF);
+          color_value.color.float32[3] = float((clear >> 30) & 3) / 3.0f;
+          break;
         case 6: case 7:  // 16-bit float
           for (uint32_t j = 0; j < 4; ++j) color_value.color.float32[j] = HalfToFloat(uint16_t(clear >> (16 * j)));
           break;

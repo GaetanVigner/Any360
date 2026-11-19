@@ -181,6 +181,12 @@ float Float20e4ToFloat(uint32_t f24) {
                   : std::ldexp(float(mantissa) / float(1u << 20), -14);
 }
 
+float Float7e3ToFloat(uint32_t f10) {
+  const uint32_t mantissa = f10 & 0x7F, exponent = (f10 >> 7) & 7;
+  return exponent ? std::ldexp(1.0f + float(mantissa) / 128.0f, int(exponent) - 3)
+                  : std::ldexp(float(mantissa) / 128.0f, -2);
+}
+
 uint32_t FloatTo20e4(float value) {
   uint32_t f32 = std::bit_cast<uint32_t>(value);
   if (int32_t(f32) <= 0 || f32 > 0x7F800000u) return 0;  // negative, zero, NaN

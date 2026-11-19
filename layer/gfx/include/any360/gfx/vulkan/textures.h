@@ -48,6 +48,9 @@ struct TextureFormatInfo {
 // reference converts it (round to nearest even; negative and NaN give 0, too large the largest value).
 float Float20e4ToFloat(uint32_t f24);
 uint32_t FloatTo20e4(float value);
+// Xenos 7e3 (the k_2_10_10_10_FLOAT colour target's 10-bit components: 3 exponent bits, bias 3, 7 mantissa bits, no
+// sign) to float, as the reference decodes a colour clear value (xenos::Float7e3To32).
+float Float7e3ToFloat(uint32_t f10);
 // The host format of a Xenos texture format, or nullptr when it is not handled yet.
 const TextureFormatInfo* GuestTextureFormat(uint32_t xenos_format);
 

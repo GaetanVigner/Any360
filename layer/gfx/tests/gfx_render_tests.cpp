@@ -1488,6 +1488,57 @@ int main(int argc, char** argv) {
       round_trip_wrong += std::fabs(vk::Float20e4ToFloat(vk::FloatTo20e4(v)) - v) > v * 1e-6f;
     }
     CHECK(vk::FloatTo20e4(1.0f) == 0xF00000 && vk::FloatTo20e4(0.5f) == 0xE00000 && round_trip_wrong == 0);
+    // 7e3 (k_2_10_10_10_FLOAT clears): every one of the 1024 values against the reference's bit construction
+    // (exponent + 124 into a float's exponent, the mantissa's 7 bits at 16; the denormals normalized), and fixed values.
+    uint32_t f7e3_wrong = 0;
+    for (uint32_t f10 = 0; f10 < 1024; ++f10) {
+      uint32_t mantissa = f10 & 0x7F, exponent = f10 >> 7;
+      float expected = 0.0f;
+      if (f10) {
+        if (!exponent) {
+          const uint32_t lz = uint32_t(std::countl_zero(mantissa)) - 24;
+          exponent = uint32_t(1 - int32_t(lz));
+          mantissa = (mantissa << lz) & 0x7F;
+        }
+        expected = std::bit_cast<float>(uint32_t(((exponent + 124) << 23) | (mantissa << 16)));
+      }
+      f7e3_wrong += vk::Float7e3ToFloat(f10) != expected;
+    }
+    CHECK(f7e3_wrong == 0 && vk::Float7e3ToFloat(0x180) == 1.0f && vk::Float7e3ToFloat(0x3FF) == 31.875f &&
+          vk::Float7e3ToFloat(0x040) == 0.125f);
+    // A resolve clearing a k_2_10_10_10_FLOAT target (Mirror's Edge's HDR scene): RB_COLOR_CLEAR's three 7e3 fields
+    // and 2-bit alpha land in the target's 16-bit floats (1.0, 0.125, 31.875, 2/3 here).
+    {
+      const vk::SurfaceKey hdr{1536, kSize, 3, 0};
+      scenario("7e3 resolve clear", nullptr, [&] {
+        s.Reg(0x2001, 1536u | 3u << 16);  // RB_COLOR_INFO: base 1536, k_2_10_10_10_FLOAT
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, (kVertices + 0x800) | 3, 2u | 6u << 2});  // vf0: the copy rectangle written above
+        // Control (colour 0, clear colour), base, pitch, info (k_16_16_16_16_FLOAT, 8-in-64).
+        s.Put({Type0(0x2318, 4), 0u | 1u << 8, 0xA0000u, 64u | 64u << 16, 3u | 32u << 7});
+        s.Reg(0x231E, 0x180u | 0x040u << 10 | 0x3FFu << 20 | 2u << 30);  // RB_COLOR_CLEAR
+        s.Reg(0x2208, 6);  // EDRAM copy mode
+        s.DrawAuto(8, 3);
+        s.Reg(0x2208, 4);
+      });
+      std::vector<uint8_t> bytes;
+      CHECK(renderer.ReadBack(hdr, kSize, kSize, bytes));
+      // IEEE half to float (no infinities or NaNs here).
+      const auto half = [](uint16_t h) {
+        const uint32_t exponent = (h >> 10) & 0x1F, mantissa = h & 0x3FF;
+        const float value = exponent ? std::ldexp(1.0f + mantissa / 1024.0f, int(exponent) - 15)
+                                     : std::ldexp(mantissa / 1024.0f, -14);
+        return (h & 0x8000) ? -value : value;
+      };
+      uint32_t wrong = bytes.size() == size_t(kSize) * kSize * 8 ? 0 : 1;
+      for (size_t i = 0; !wrong && i < size_t(kSize) * kSize; ++i) {
+        uint16_t h[4];
+        std::memcpy(h, bytes.data() + 8 * i, 8);
+        const float expected[4] = {1.0f, 0.125f, 31.875f, 2.0f / 3.0f};
+        for (uint32_t c = 0; c < 4; ++c) wrong += std::fabs(half(h[c]) - expected[c]) > 1e-3f;
+      }
+      std::printf("gfx_render_tests: 7e3 resolve clear: %u wrong texels\n", wrong);
+      CHECK(wrong == 0);
+    }
     const uint32_t rect = kVertices + 0x800, quad = kVertices + 0x400, resolved = 0x90000;
     std::memset(g_memory + resolved, 0xCD, 64 * 64 * 4);
     scenario("depth resolve", nullptr, [&] {
