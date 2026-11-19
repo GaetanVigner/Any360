@@ -779,6 +779,28 @@ struct FormatBlocks {
     }
   }
 };
+// The render and sampler state fields (xdk_natives.h, d3d_fields): the field's word (a stage's for the sampler ones)
+// random half the time; a stage 0-31 (past it now and then: declined); values small or any 64 bits.
+template <const any360::xdk::D3dField& F>
+struct FieldInputs {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    using Op = any360::xdk::D3dField::Op;
+    std::mt19937_64& rng = *s.rng;
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint64_t stage = rng() % 16 ? rng() % 32 : 32 + rng() % 8;
+    const uint32_t slot = uint32_t(stage % 32);
+    const uint32_t at = s.device + l.*F.field + F.offset +
+                        (F.op == Op::kStageByte ? slot : F.Staged() ? 24 * slot : 0);
+    if (rng() % 2) {
+      if (F.op == Op::kSetByte || F.op == Op::kStageByte) s.Host(at)[0] = uint8_t(rng());
+      else Put32(s, at, uint32_t(rng()));
+    }
+    const uint64_t value = rng() % 2 ? rng() % 16 : rng() % 4 ? rng() % 256 : rng();
+    ctx.r3.u64 = s.device;
+    if (F.Staged()) ctx.r4.u64 = stage, ctx.r5.u64 = value;
+    else ctx.r4.u64 = value;
+  }
+};
 // A texture's sizes from its fetch constant (xdk_natives.h): a texture in the scratch, every dimension, +40's bit 31
 // on or off; the three output words in the scratch, now and then one over the texture's word at +36 or over another.
 struct TextureDimensionInputs {

@@ -994,8 +994,184 @@ void TestQueryGetData(uint32_t seed) {
               static_cast<unsigned long long>(declined));
 }
 
+// The render and sampler state fields (d3d_fields): each descriptor (from the register definitions) against its
+// function's code (the shape and operands read off the recompiled function, run by reference::fields) on random
+// devices, values (small, any 64 bits) and stages (past 31 now and then: declined, memory as it was); r3 and the
+// device the same. Then the time a call of all of them and the bytes and allocations (none).
+template <const xdk::D3dField& F>
+bool CallField(const xdk::Memory& m, const xdk::D3dLayout& l, uint64_t r3, uint64_t r4, uint64_t r5, uint64_t& out) {
+  if constexpr (F.Reads()) {
+    return xdk::D3dGetField<F>(m, l, uint32_t(r3), r4, out);
+  } else {
+    out = r3;
+    return xdk::D3dSetField<F>(m, l, uint32_t(r3), r4, r5);
+  }
+}
+void TestStateFields(uint32_t seed) {
+  namespace ref = any360::xdk::reference::fields;
+  struct Row {
+    const char* name;
+    uint32_t address;
+    bool (*call)(const xdk::Memory&, const xdk::D3dLayout&, uint64_t, uint64_t, uint64_t, uint64_t&);
+    ref::Code code;
+  };
+  static const Row kRows[] = {
+      {"SetRenderState_PrimitiveResetEnable", 0x826B0E90U, &CallField<xdk::d3d_fields::kPrimitiveResetEnable>, {ref::Shape::kInsert, 10440, 21, 10, 10, 0, 0, 0, 16, 0x40ULL}},
+      {"SetRenderState_FillMode", 0x826AF8E8U, &CallField<xdk::d3d_fields::kFillMode>, {ref::Shape::kInsert, 10440, 3, 21, 28, 0, 0, 0, 16, 0x40ULL}},
+      {"SetRenderState_MultiSampleAntiAlias", 0x826B0530U, &CallField<xdk::d3d_fields::kMultiSampleAntiAlias>, {ref::Shape::kInsert, 10440, 15, 16, 16, 0, 0, 0, 16, 0x40ULL}},
+      {"GetRenderState_PrimitiveResetEnable", 0x826B0EB0U, &CallField<xdk::d3d_fields::kGetPrimitiveResetEnable>, {ref::Shape::kGet, 10440, 11, 31, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_FillMode", 0x826AF908U, &CallField<xdk::d3d_fields::kGetFillMode>, {ref::Shape::kGet, 10440, 29, 24, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_MultiSampleAntiAlias", 0x826B0550U, &CallField<xdk::d3d_fields::kGetMultiSampleAntiAlias>, {ref::Shape::kGet, 10440, 17, 31, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"SetRenderState_PrimitiveResetIndex", 0x826B0EC0U, &CallField<xdk::d3d_fields::kPrimitiveResetIndex>, {ref::Shape::kStore, 10328, 0, 0, 0, 0, 0, 0, 16, 0x4000000000ULL}},
+      {"GetRenderState_PrimitiveResetIndex", 0x826B0EE0U, &CallField<xdk::d3d_fields::kGetPrimitiveResetIndex>, {ref::Shape::kGetWord, 10328, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"SetRenderState_ZFunc", 0x826B0048U, &CallField<xdk::d3d_fields::kZFunc>, {ref::Shape::kInsert, 10420, 4, 25, 27, 0, 0, 0, 16, 0x20800ULL}},
+      {"SetRenderState_TwoSidedStencilMode", 0x826B00C0U, &CallField<xdk::d3d_fields::kTwoSidedStencilMode>, {ref::Shape::kInsert, 10420, 7, 24, 24, 0, 0, 0, 16, 0x20800ULL}},
+      {"SetRenderState_StencilFunc", 0x826B00F8U, &CallField<xdk::d3d_fields::kStencilFunc>, {ref::Shape::kInsert, 10420, 8, 21, 23, 0, 0, 0, 16, 0x800ULL}},
+      {"SetRenderState_StencilFail", 0x826B0128U, &CallField<xdk::d3d_fields::kStencilFail>, {ref::Shape::kInsert, 10420, 11, 18, 20, 0, 0, 0, 16, 0x20800ULL}},
+      {"SetRenderState_StencilPass", 0x826B0198U, &CallField<xdk::d3d_fields::kStencilPass>, {ref::Shape::kInsert, 10420, 14, 15, 17, 0, 0, 0, 16, 0x800ULL}},
+      {"SetRenderState_StencilZFail", 0x826B0160U, &CallField<xdk::d3d_fields::kStencilZFail>, {ref::Shape::kInsert, 10420, 17, 12, 14, 0, 0, 0, 16, 0x20800ULL}},
+      {"SetRenderState_CCW_StencilFunc", 0x826B01C8U, &CallField<xdk::d3d_fields::kCcwStencilFunc>, {ref::Shape::kInsert, 10420, 20, 9, 11, 0, 0, 0, 16, 0x800ULL}},
+      {"SetRenderState_CCW_StencilFail", 0x826B01F8U, &CallField<xdk::d3d_fields::kCcwStencilFail>, {ref::Shape::kInsert, 10420, 23, 6, 8, 0, 0, 0, 16, 0x20800ULL}},
+      {"SetRenderState_CCW_StencilPass", 0x826B0268U, &CallField<xdk::d3d_fields::kCcwStencilPass>, {ref::Shape::kInsert, 10420, 26, 3, 5, 0, 0, 0, 16, 0x800ULL}},
+      {"SetRenderState_CCW_StencilZFail", 0x826B0230U, &CallField<xdk::d3d_fields::kCcwStencilZFail>, {ref::Shape::kInsert, 10420, 29, 0, 2, 0, 0, 0, 16, 0x20800ULL}},
+      {"GetRenderState_ZFunc", 0x826B0070U, &CallField<xdk::d3d_fields::kGetZFunc>, {ref::Shape::kGet, 10420, 28, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_TwoSidedStencilMode", 0x826B00E8U, &CallField<xdk::d3d_fields::kGetTwoSidedStencilMode>, {ref::Shape::kGet, 10420, 25, 31, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_StencilFunc", 0x826B0118U, &CallField<xdk::d3d_fields::kGetStencilFunc>, {ref::Shape::kGet, 10420, 24, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_StencilFail", 0x826B0150U, &CallField<xdk::d3d_fields::kGetStencilFail>, {ref::Shape::kGet, 10420, 21, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_StencilPass", 0x826B01B8U, &CallField<xdk::d3d_fields::kGetStencilPass>, {ref::Shape::kGet, 10420, 18, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_StencilZFail", 0x826B0188U, &CallField<xdk::d3d_fields::kGetStencilZFail>, {ref::Shape::kGet, 10420, 15, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_CCW_StencilFunc", 0x826B01E8U, &CallField<xdk::d3d_fields::kGetCcwStencilFunc>, {ref::Shape::kGet, 10420, 12, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_CCW_StencilFail", 0x826B0220U, &CallField<xdk::d3d_fields::kGetCcwStencilFail>, {ref::Shape::kGet, 10420, 9, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_CCW_StencilPass", 0x826B0288U, &CallField<xdk::d3d_fields::kGetCcwStencilPass>, {ref::Shape::kGet, 10420, 6, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_CCW_StencilZFail", 0x826B0258U, &CallField<xdk::d3d_fields::kGetCcwStencilZFail>, {ref::Shape::kGet, 10420, 3, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"SetRenderState_AlphaToMaskEnable", 0x826B0EE8U, &CallField<xdk::d3d_fields::kAlphaToMaskEnable>, {ref::Shape::kInsert, 10428, 4, 27, 27, 0, 0, 0, 16, 0x200ULL}},
+      {"SetRenderState_AlphaToMaskOffsets", 0x826B0F18U, &CallField<xdk::d3d_fields::kAlphaToMaskOffsets>, {ref::Shape::kInsert, 10428, 24, 0, 7, 0, 0, 0, 16, 0x200ULL}},
+      {"GetRenderState_AlphaToMaskEnable", 0x826B0F08U, &CallField<xdk::d3d_fields::kGetAlphaToMaskEnable>, {ref::Shape::kGet, 10428, 28, 31, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"D3D_SetHiZControlBit3", 0x826B10A0U, &CallField<xdk::d3d_fields::kHiZControlBit3>, {ref::Shape::kInsert, 10432, 3, 28, 28, 0, 0, 0, 16, 0x100ULL}},
+      {"D3D_SetHiZControlBit2", 0x826B10D0U, &CallField<xdk::d3d_fields::kHiZControlBit2>, {ref::Shape::kInsert, 10432, 2, 29, 29, 0, 0, 0, 16, 0x100ULL}},
+      {"D3D_SetHiZControlBit5", 0x826B1100U, &CallField<xdk::d3d_fields::kHiZControlBit5>, {ref::Shape::kInsert, 10432, 5, 26, 26, 0, 0, 0, 16, 0x100ULL}},
+      {"D3D_SetHiZControlByte1", 0x826B1130U, &CallField<xdk::d3d_fields::kHiZControlByte1>, {ref::Shape::kStoreByte, 10434, 0, 0, 0, 0, 0, 0, 16, 0x100ULL}},
+      {"D3D_GetHiZControlBit3", 0x826B10C0U, &CallField<xdk::d3d_fields::kGetHiZControlBit3>, {ref::Shape::kGet, 10432, 29, 31, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"D3D_GetHiZControlBit2", 0x826B10F0U, &CallField<xdk::d3d_fields::kGetHiZControlBit2>, {ref::Shape::kGet, 10432, 30, 31, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"D3D_GetHiZControlBit5", 0x826B1120U, &CallField<xdk::d3d_fields::kGetHiZControlBit5>, {ref::Shape::kGet, 10432, 27, 31, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"SetRenderState_StencilRef", 0x826B0298U, &CallField<xdk::d3d_fields::kStencilRef>, {ref::Shape::kStoreByte, 10371, 0, 0, 0, 0, 0, 0, 16, 0x10000000ULL}},
+      {"SetRenderState_StencilMask", 0x826B02B8U, &CallField<xdk::d3d_fields::kStencilMask>, {ref::Shape::kStoreByte, 10370, 0, 0, 0, 0, 0, 0, 16, 0x10000000ULL}},
+      {"SetRenderState_StencilWriteMask", 0x826B02D8U, &CallField<xdk::d3d_fields::kStencilWriteMask>, {ref::Shape::kStoreByte, 10369, 0, 0, 0, 0, 0, 0, 16, 0x10000000ULL}},
+      {"SetRenderState_CCW_StencilRef", 0x826B02F8U, &CallField<xdk::d3d_fields::kCcwStencilRef>, {ref::Shape::kStoreByte, 10367, 0, 0, 0, 0, 0, 0, 16, 0x20000000ULL}},
+      {"SetRenderState_CCW_StencilMask", 0x826B0318U, &CallField<xdk::d3d_fields::kCcwStencilMask>, {ref::Shape::kStoreByte, 10366, 0, 0, 0, 0, 0, 0, 16, 0x20000000ULL}},
+      {"SetRenderState_CCW_StencilWriteMask", 0x826B0338U, &CallField<xdk::d3d_fields::kCcwStencilWriteMask>, {ref::Shape::kStoreByte, 10365, 0, 0, 0, 0, 0, 0, 16, 0x20000000ULL}},
+      {"GetRenderState_ZEnable", 0x826B0010U, &CallField<xdk::d3d_fields::kGetZEnable>, {ref::Shape::kGetWord, 11596, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_StencilEnable", 0x826B00B8U, &CallField<xdk::d3d_fields::kGetStencilEnable>, {ref::Shape::kGetWord, 11600, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_ScissorTestEnable", 0x826B03B8U, &CallField<xdk::d3d_fields::kGetScissorTestEnable>, {ref::Shape::kGetWord, 11576, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_ColorWriteEnable", 0x826B05B8U, &CallField<xdk::d3d_fields::kGetColorWriteEnable>, {ref::Shape::kGetWord, 11580, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_ColorWriteEnable1", 0x826B05F8U, &CallField<xdk::d3d_fields::kGetColorWriteEnable1>, {ref::Shape::kGetWord, 11584, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_ColorWriteEnable2", 0x826B0638U, &CallField<xdk::d3d_fields::kGetColorWriteEnable2>, {ref::Shape::kGetWord, 11588, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_ColorWriteEnable3", 0x826B0678U, &CallField<xdk::d3d_fields::kGetColorWriteEnable3>, {ref::Shape::kGetWord, 11592, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_HighPrecisionBlendEnable", 0x826B0B98U, &CallField<xdk::d3d_fields::kGetHighPrecisionBlendEnable>, {ref::Shape::kGetWord, 11748, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_HighPrecisionBlendEnable1", 0x826B0C48U, &CallField<xdk::d3d_fields::kGetHighPrecisionBlendEnable1>, {ref::Shape::kGetWord, 11752, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_HighPrecisionBlendEnable2", 0x826B0CF8U, &CallField<xdk::d3d_fields::kGetHighPrecisionBlendEnable2>, {ref::Shape::kGetWord, 11756, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_HighPrecisionBlendEnable3", 0x826B0DA8U, &CallField<xdk::d3d_fields::kGetHighPrecisionBlendEnable3>, {ref::Shape::kGetWord, 11760, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_BlendOp", 0x826AFA60U, &CallField<xdk::d3d_fields::kGetBlendOp>, {ref::Shape::kGet, 11568, 27, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_BlendOpAlpha", 0x826AFBF0U, &CallField<xdk::d3d_fields::kGetBlendOpAlpha>, {ref::Shape::kGet, 11568, 11, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"SetSamplerState_AddressU", 0x826B18B0U, &CallField<xdk::d3d_fields::kAddressU>, {ref::Shape::kStageInsert, 1024, 10, 19, 21, 0, 0, 0, 0, 0x0ULL}},
+      {"SetSamplerState_AddressV", 0x826B1900U, &CallField<xdk::d3d_fields::kAddressV>, {ref::Shape::kStageInsert, 1024, 13, 16, 18, 0, 0, 0, 0, 0x0ULL}},
+      {"SetSamplerState_AddressW", 0x826B1950U, &CallField<xdk::d3d_fields::kAddressW>, {ref::Shape::kStageInsert, 1024, 16, 13, 15, 0, 0, 0, 0, 0x0ULL}},
+      {"SetSamplerState_MipFilter", 0x826B1490U, &CallField<xdk::d3d_fields::kMipFilter>, {ref::Shape::kStageInsert, 1036, 23, 7, 8, 0, 0, 0, 0, 0x0ULL}},
+      {"SetSamplerState_HGradientExpAdjust", 0x826B19F8U, &CallField<xdk::d3d_fields::kHGradientExpAdjust>, {ref::Shape::kStageInsert, 1040, 22, 5, 9, 0, 0, 0, 0, 0x0ULL}},
+      {"SetSamplerState_VGradientExpAdjust", 0x826B1A50U, &CallField<xdk::d3d_fields::kVGradientExpAdjust>, {ref::Shape::kStageInsert, 1040, 27, 0, 4, 0, 0, 0, 0, 0x0ULL}},
+      {"D3D_SetSamplerForceBorderWToMax", 0x826B1AA8U, &CallField<xdk::d3d_fields::kForceBorderWToMax>, {ref::Shape::kStageInsert, 1044, 2, 29, 29, 0, 0, 0, 0, 0x0ULL}},
+      {"SetSamplerState_TrilinearThreshold", 0x826B19A0U, &CallField<xdk::d3d_fields::kTrilinearThreshold>, {ref::Shape::kStageInsert, 1044, 3, 27, 28, 0, 0, 0, 0, 0x0ULL}},
+      {"SetSamplerState_BorderColor", 0x826B1840U, &CallField<xdk::d3d_fields::kBorderColor>, {ref::Shape::kStageBool, 1044, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetSamplerState_AddressU", 0x826B18E8U, &CallField<xdk::d3d_fields::kGetAddressU>, {ref::Shape::kStageGet, 1024, 22, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetSamplerState_AddressV", 0x826B1938U, &CallField<xdk::d3d_fields::kGetAddressV>, {ref::Shape::kStageGet, 1024, 19, 29, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetSamplerState_AddressW", 0x826B1988U, &CallField<xdk::d3d_fields::kGetAddressW>, {ref::Shape::kStageGetHalf, 1024, 0, 0, 0, 0, 0, 29, 0, 0x0ULL}},
+      {"GetSamplerState_MipFilter", 0x826B14D0U, &CallField<xdk::d3d_fields::kGetMipFilter>, {ref::Shape::kStageGet, 1036, 9, 30, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetSamplerState_BorderColor", 0x826B1890U, &CallField<xdk::d3d_fields::kGetBorderColor>, {ref::Shape::kStageGetMask, 1044, 0, 0, 0, 0, 0, 30, 0, 0x0ULL}},
+      {"GetSamplerState_MaxAnisotropy", 0x826B15E8U, &CallField<xdk::d3d_fields::kGetMaxAnisotropy>, {ref::Shape::kStageByte, 11644, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"GetSamplerState_MaxMipLevel", 0x826B17B0U, &CallField<xdk::d3d_fields::kGetMaxMipLevel>, {ref::Shape::kStageByte, 11670, 0, 0, 0, 0, 0, 0, 0, 0x0ULL}},
+      {"SetRenderState_Wrap0", 0x826B07A0U, &CallField<xdk::d3d_fields::kWrap0>, {ref::Shape::kOrAll, 10412, 0, 0, 27, 0, 0, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap1", 0x826B07C0U, &CallField<xdk::d3d_fields::kWrap1>, {ref::Shape::kOrRotated, 10412, 4, 0, 27, 28, 23, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap2", 0x826B07E8U, &CallField<xdk::d3d_fields::kWrap2>, {ref::Shape::kOrRotated, 10412, 8, 0, 23, 24, 19, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap3", 0x826B0810U, &CallField<xdk::d3d_fields::kWrap3>, {ref::Shape::kOrRotated, 10412, 12, 0, 19, 20, 15, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap4", 0x826B0838U, &CallField<xdk::d3d_fields::kWrap4>, {ref::Shape::kOrRotated, 10412, 16, 0, 15, 16, 11, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap5", 0x826B0860U, &CallField<xdk::d3d_fields::kWrap5>, {ref::Shape::kOrRotated, 10412, 20, 0, 11, 12, 7, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap6", 0x826B0888U, &CallField<xdk::d3d_fields::kWrap6>, {ref::Shape::kOrRotated, 10412, 24, 0, 7, 8, 3, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap7", 0x826B08B0U, &CallField<xdk::d3d_fields::kWrap7>, {ref::Shape::kInsert, 10412, 28, 0, 3, 0, 0, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap8", 0x826B08D0U, &CallField<xdk::d3d_fields::kWrap8>, {ref::Shape::kOrAll, 10416, 0, 0, 27, 0, 0, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap9", 0x826B08F0U, &CallField<xdk::d3d_fields::kWrap9>, {ref::Shape::kOrRotated, 10416, 4, 0, 27, 28, 23, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap10", 0x826B0918U, &CallField<xdk::d3d_fields::kWrap10>, {ref::Shape::kOrRotated, 10416, 8, 0, 23, 24, 19, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap11", 0x826B0940U, &CallField<xdk::d3d_fields::kWrap11>, {ref::Shape::kOrRotated, 10416, 12, 0, 19, 20, 15, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap12", 0x826B0968U, &CallField<xdk::d3d_fields::kWrap12>, {ref::Shape::kOrRotated, 10416, 16, 0, 15, 16, 11, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap13", 0x826B0990U, &CallField<xdk::d3d_fields::kWrap13>, {ref::Shape::kOrRotated, 10416, 20, 0, 11, 12, 7, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap14", 0x826B09B8U, &CallField<xdk::d3d_fields::kWrap14>, {ref::Shape::kOrRotated, 10416, 24, 0, 7, 8, 3, 0, 16, 0x2000ULL}},
+      {"SetRenderState_Wrap15", 0x826B09E0U, &CallField<xdk::d3d_fields::kWrap15>, {ref::Shape::kInsert, 10416, 28, 0, 3, 0, 0, 0, 16, 0x2000ULL}},
+      {"GetRenderState_Wrap1", 0x826B0A10U, &CallField<xdk::d3d_fields::kGetWrap1>, {ref::Shape::kGet, 10412, 28, 28, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_Wrap2", 0x826B0A20U, &CallField<xdk::d3d_fields::kGetWrap2>, {ref::Shape::kGet, 10412, 24, 28, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_Wrap3", 0x826B0A30U, &CallField<xdk::d3d_fields::kGetWrap3>, {ref::Shape::kGet, 10412, 20, 28, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_Wrap5", 0x826B0A50U, &CallField<xdk::d3d_fields::kGetWrap5>, {ref::Shape::kGet, 10412, 12, 28, 31, 0, 0, 0, 0, 0x0ULL}},
+      {"GetRenderState_Wrap7", 0x826B0A70U, &CallField<xdk::d3d_fields::kGetWrap7>, {ref::Shape::kGet, 10412, 4, 28, 31, 0, 0, 0, 0, 0x0ULL}},
+  };
+  const xdk::D3dLayout l;
+  std::mt19937_64 rng(seed);
+  Pair p(seed);
+  uint64_t compared = 0, declined = 0;
+  for (const Row& row : kRows) {
+    for (int call = 0; call < 3000; ++call) {
+      if (call % 500 == 0) {
+        for (uint32_t i = 0; i < 16384; i += 8) {
+          const uint64_t v = rng();
+          std::memcpy(&p.native[kDevice + i], &v, 8);
+        }
+        std::memcpy(&p.model[kDevice], &p.native[kDevice], 16384);
+      }
+      const uint64_t r4 = row.code.shape >= ref::Shape::kStageInsert ? (rng() % 16 ? rng() % 32 : rng() % 4 ? 32 + rng() % 64 : rng())
+                                                                       : (rng() % 2 ? rng() % 16 : rng() % 4 ? rng() % 256 : rng());
+      const uint64_t r5 = rng() % 2 ? rng() % 16 : rng() % 4 ? rng() % 256 : rng();
+      uint64_t out = 0xDEADu;
+      if (!row.call(p.a, l, kDevice, r4, r5, out)) {
+        ++declined;
+        CHECK(row.code.shape >= ref::Shape::kStageInsert && r4 >= 32);
+        CHECK(p.Same(kDevice, kDevice + 16384, 0));
+        continue;
+      }
+      ++compared;
+      const uint64_t expect = ref::Run(p.b, row.code, kDevice, r4, r5);
+      const bool same = out == expect && p.Same(kDevice, kDevice + 16384, 0);
+      CHECK(same);
+      if (!same && xdk_test::g_failures <= 20)
+        std::printf("field %s (sub_%08X) r4 %llX r5 %llX: r3 %llX, reference %llX\n", row.name, row.address,
+                    static_cast<unsigned long long>(r4), static_cast<unsigned long long>(r5),
+                    static_cast<unsigned long long>(out), static_cast<unsigned long long>(expect));
+    }
+  }
+  CHECK(compared > 250000 && declined > 2000);
+  // Time a call of each, and the bytes and allocations (none), the native against the reference.
+  const auto time = [&](auto&& one) {
+    const auto start = std::chrono::steady_clock::now();
+    for (int i = 0; i < 20000; ++i)
+      for (const Row& row : kRows) one(row, uint64_t(i & 31));
+    return double(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()) /
+           (20000.0 * std::size(kRows));
+  };
+  volatile uint64_t sink = 0;
+  const any360::sys::AllocCounts before = any360::sys::ThreadAllocations();
+  const double native = time([&](const Row& row, uint64_t r) {
+    uint64_t out = 0;
+    row.call(p.a, l, kDevice, r, r + 1, out);
+    sink = out;
+  });
+  const any360::sys::AllocCounts spent = any360::sys::ThreadAllocations() - before;
+  const double model = time([&](const Row& row, uint64_t r) { sink = ref::Run(p.b, row.code, kDevice, r, r + 1); });
+  CHECK(spent.count == 0 && spent.bytes == 0);
+  std::printf("xdk_d3d_state_tests: state fields: %zu functions, %llu calls compared, %llu declined; %.2f ns a call "
+              "(reference %.2f); %llu bytes, %llu allocations\n",
+              std::size(kRows), static_cast<unsigned long long>(compared), static_cast<unsigned long long>(declined),
+              native, model, static_cast<unsigned long long>(spent.bytes), static_cast<unsigned long long>(spent.count));
+}
+
 int main() {
   const xdk::D3dLayout standard, shifted = Shifted();
+  TestStateFields(2800);
   TestViewportChain(standard, 2500);
   TestViewportChain(shifted, 2600);
   TestQueryGetData(2700);

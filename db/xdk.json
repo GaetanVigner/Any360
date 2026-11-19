@@ -493,6 +493,15 @@
   "note": "RB_COLORCONTROL bit 3"
  },
  {
+  "name": "D3DDevice_GetRenderState_AlphaToMaskEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0F08"
+  },
+  "note": "returns ALPHA_TO_MASK_ENABLE (RB_COLORCONTROL)"
+ },
+ {
   "name": "D3DDevice_GetRenderState_BlendFactor",
   "library": "D3D",
   "any360": "native",
@@ -500,6 +509,96 @@
    "crackdown": "0x826AFEB0"
   },
   "note": "RB_BLEND_RED-ALPHA back to a D3DCOLOR (fmadds, fctidz)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_BlendOp",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFA60"
+  },
+  "note": "returns COLOR_COMB_FCN (the blend word as set)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_BlendOpAlpha",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AFBF0"
+  },
+  "note": "returns ALPHA_COMB_FCN (the blend word as set)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_CCW_StencilFail",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0220"
+  },
+  "note": "returns STENCILFAIL_BF (RB_DEPTHCONTROL)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_CCW_StencilFunc",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B01E8"
+  },
+  "note": "returns STENCILFUNC_BF (RB_DEPTHCONTROL)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_CCW_StencilPass",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0288"
+  },
+  "note": "returns STENCILZPASS_BF (RB_DEPTHCONTROL)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_CCW_StencilZFail",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0258"
+  },
+  "note": "returns STENCILZFAIL_BF (RB_DEPTHCONTROL)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_ColorWriteEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B05B8"
+  },
+  "note": "returns as set (the word as set)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_ColorWriteEnable1",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B05F8"
+  },
+  "note": "returns as set (the word as set)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_ColorWriteEnable2",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0638"
+  },
+  "note": "returns as set (the word as set)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_ColorWriteEnable3",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0678"
+  },
+  "note": "returns as set (the word as set)"
  },
  {
   "name": "D3DDevice_GetRenderState_CullMode",
@@ -520,6 +619,87 @@
   "note": "the blend word as set, bits 8-12"
  },
  {
+  "name": "D3DDevice_GetRenderState_FillMode",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AF908"
+  },
+  "note": "returns POLYMODE, FRONT_PTYPE, BACK_PTYPE (PA_SU_SC_MODE_CNTL)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_HighPrecisionBlendEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0B98"
+  },
+  "note": "returns as set (the word as set)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_HighPrecisionBlendEnable1",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0C48"
+  },
+  "note": "returns as set (the word as set)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_HighPrecisionBlendEnable2",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0CF8"
+  },
+  "note": "returns as set (the word as set)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_HighPrecisionBlendEnable3",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0DA8"
+  },
+  "note": "returns as set (the word as set)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_MultiSampleAntiAlias",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0550"
+  },
+  "note": "returns MSAA_ENABLE (PA_SU_SC_MODE_CNTL)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_PrimitiveResetEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0EB0"
+  },
+  "note": "returns MULTI_PRIM_IB_ENA (PA_SU_SC_MODE_CNTL)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_PrimitiveResetIndex",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0EE0"
+  },
+  "note": "returns the whole register (VGT_MULTI_PRIM_IB_RESET_INDX)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_ScissorTestEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B03B8"
+  },
+  "note": "returns as set (the word as set)"
+ },
+ {
   "name": "D3DDevice_GetRenderState_SrcBlend",
   "library": "D3D",
   "any360": "native",
@@ -529,6 +709,123 @@
   "note": "the blend word as set, bits 0-4"
  },
  {
+  "name": "D3DDevice_GetRenderState_StencilEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B00B8"
+  },
+  "note": "returns as set (the word as set)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_StencilFail",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0150"
+  },
+  "note": "returns STENCILFAIL (RB_DEPTHCONTROL)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_StencilFunc",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0118"
+  },
+  "note": "returns STENCILFUNC (RB_DEPTHCONTROL)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_StencilPass",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B01B8"
+  },
+  "note": "returns STENCILZPASS (RB_DEPTHCONTROL)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_StencilZFail",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0188"
+  },
+  "note": "returns STENCILZFAIL (RB_DEPTHCONTROL)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_TwoSidedStencilMode",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B00E8"
+  },
+  "note": "returns BACKFACE_ENABLE (RB_DEPTHCONTROL)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_Wrap1",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0A10"
+  },
+  "note": "returns PARAM_WRAP_1 (SQ_WRAPPING_0/1)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_Wrap2",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0A20"
+  },
+  "note": "returns PARAM_WRAP_2 (SQ_WRAPPING_0/1)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_Wrap3",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0A30"
+  },
+  "note": "returns PARAM_WRAP_3 (SQ_WRAPPING_0/1)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_Wrap5",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0A50"
+  },
+  "note": "returns PARAM_WRAP_5 (SQ_WRAPPING_0/1)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_Wrap7",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0A70"
+  },
+  "note": "returns PARAM_WRAP_7 (SQ_WRAPPING_0/1)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_ZEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0010"
+  },
+  "note": "returns as set (the word as set)"
+ },
+ {
+  "name": "D3DDevice_GetRenderState_ZFunc",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0070"
+  },
+  "note": "returns ZFUNC (RB_DEPTHCONTROL)"
+ },
+ {
   "name": "D3DDevice_GetRenderState_ZWriteEnable",
   "library": "D3D",
   "any360": "native",
@@ -536,6 +833,69 @@
    "crackdown": "0x826B0038"
   },
   "note": "RB_DEPTHCONTROL bit 2"
+ },
+ {
+  "name": "D3DDevice_GetSamplerState_AddressU",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B18E8"
+  },
+  "note": "returns CLAMP_X (the stage's fetch constant)"
+ },
+ {
+  "name": "D3DDevice_GetSamplerState_AddressV",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1938"
+  },
+  "note": "returns CLAMP_Y (the stage's fetch constant)"
+ },
+ {
+  "name": "D3DDevice_GetSamplerState_AddressW",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1988"
+  },
+  "note": "returns CLAMP_Z (the stage's fetch constant)"
+ },
+ {
+  "name": "D3DDevice_GetSamplerState_BorderColor",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1890"
+  },
+  "note": "returns border_color (the stage's fetch constant)"
+ },
+ {
+  "name": "D3DDevice_GetSamplerState_MaxAnisotropy",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B15E8"
+  },
+  "note": "returns the stage's index (the stage's byte)"
+ },
+ {
+  "name": "D3DDevice_GetSamplerState_MaxMipLevel",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B17B0"
+  },
+  "note": "returns the stage's floor (the stage's byte)"
+ },
+ {
+  "name": "D3DDevice_GetSamplerState_MipFilter",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B14D0"
+  },
+  "note": "returns mip_filter (the stage's fetch constant)"
  },
  {
   "name": "D3DDevice_GpuBeginShaderConstantF4",
@@ -658,6 +1018,24 @@
   "note": "RB_COLORCONTROL bit 3; dirty 0x200, 0x40000"
  },
  {
+  "name": "D3DDevice_SetRenderState_AlphaToMaskEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0EE8"
+  },
+  "note": "sets ALPHA_TO_MASK_ENABLE (RB_COLORCONTROL) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_AlphaToMaskOffsets",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0F18"
+  },
+  "note": "sets ALPHA_TO_MASK_OFFSET0-3 (RB_COLORCONTROL) and its dirty bits"
+ },
+ {
   "name": "D3DDevice_SetRenderState_BlendFactor",
   "library": "D3D",
   "any360": "native",
@@ -683,6 +1061,69 @@
    "crackdown": "0x826AFB90"
   },
   "note": "blend word bits 21-23"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_CCW_StencilFail",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B01F8"
+  },
+  "note": "sets STENCILFAIL_BF (RB_DEPTHCONTROL) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_CCW_StencilFunc",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B01C8"
+  },
+  "note": "sets STENCILFUNC_BF (RB_DEPTHCONTROL) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_CCW_StencilMask",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0318"
+  },
+  "note": "sets STENCILMASK_BF (RB_STENCILREFMASK_BF) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_CCW_StencilPass",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0268"
+  },
+  "note": "sets STENCILZPASS_BF (RB_DEPTHCONTROL) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_CCW_StencilRef",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B02F8"
+  },
+  "note": "sets STENCILREF_BF (RB_STENCILREFMASK_BF) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_CCW_StencilWriteMask",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0338"
+  },
+  "note": "sets STENCILWRITEMASK_BF (RB_STENCILREFMASK_BF) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_CCW_StencilZFail",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0230"
+  },
+  "note": "sets STENCILZFAIL_BF (RB_DEPTHCONTROL) and its dirty bits"
  },
  {
   "name": "D3DDevice_SetRenderState_ClipPlaneEnable",
@@ -730,6 +1171,42 @@
   "note": "blend word bits 24-28"
  },
  {
+  "name": "D3DDevice_SetRenderState_FillMode",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AF8E8"
+  },
+  "note": "sets POLYMODE, FRONT_PTYPE, BACK_PTYPE (PA_SU_SC_MODE_CNTL) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_MultiSampleAntiAlias",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0530"
+  },
+  "note": "sets MSAA_ENABLE (PA_SU_SC_MODE_CNTL) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_PrimitiveResetEnable",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0E90"
+  },
+  "note": "sets MULTI_PRIM_IB_ENA (PA_SU_SC_MODE_CNTL) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_PrimitiveResetIndex",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0EC0"
+  },
+  "note": "sets the whole register (VGT_MULTI_PRIM_IB_RESET_INDX) and its dirty bits"
+ },
+ {
   "name": "D3DDevice_SetRenderState_SeparateAlphaBlendEnable",
   "library": "D3D",
   "any360": "native",
@@ -766,6 +1243,78 @@
   "note": "blend word bits 16-20"
  },
  {
+  "name": "D3DDevice_SetRenderState_StencilFail",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0128"
+  },
+  "note": "sets STENCILFAIL (RB_DEPTHCONTROL) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_StencilFunc",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B00F8"
+  },
+  "note": "sets STENCILFUNC (RB_DEPTHCONTROL) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_StencilMask",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B02B8"
+  },
+  "note": "sets STENCILMASK (RB_STENCILREFMASK) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_StencilPass",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0198"
+  },
+  "note": "sets STENCILZPASS (RB_DEPTHCONTROL) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_StencilRef",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0298"
+  },
+  "note": "sets STENCILREF (RB_STENCILREFMASK) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_StencilWriteMask",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B02D8"
+  },
+  "note": "sets STENCILWRITEMASK (RB_STENCILREFMASK) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_StencilZFail",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0160"
+  },
+  "note": "sets STENCILZFAIL (RB_DEPTHCONTROL) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_TwoSidedStencilMode",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B00C0"
+  },
+  "note": "sets BACKFACE_ENABLE (RB_DEPTHCONTROL) and its dirty bits"
+ },
+ {
   "name": "D3DDevice_SetRenderState_ViewportEnable",
   "library": "D3D",
   "any360": "native",
@@ -775,6 +1324,150 @@
   "note": "PA_CL_VTE_CNTL and the clip disable"
  },
  {
+  "name": "D3DDevice_SetRenderState_Wrap0",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B07A0"
+  },
+  "note": "sets PARAM_WRAP_0 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap1",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B07C0"
+  },
+  "note": "sets PARAM_WRAP_1 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap10",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0918"
+  },
+  "note": "sets PARAM_WRAP_10 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap11",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0940"
+  },
+  "note": "sets PARAM_WRAP_11 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap12",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0968"
+  },
+  "note": "sets PARAM_WRAP_12 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap13",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0990"
+  },
+  "note": "sets PARAM_WRAP_13 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap14",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B09B8"
+  },
+  "note": "sets PARAM_WRAP_14 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap15",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B09E0"
+  },
+  "note": "sets PARAM_WRAP_15 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap2",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B07E8"
+  },
+  "note": "sets PARAM_WRAP_2 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap3",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0810"
+  },
+  "note": "sets PARAM_WRAP_3 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap4",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0838"
+  },
+  "note": "sets PARAM_WRAP_4 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap5",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0860"
+  },
+  "note": "sets PARAM_WRAP_5 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap6",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0888"
+  },
+  "note": "sets PARAM_WRAP_6 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap7",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B08B0"
+  },
+  "note": "sets PARAM_WRAP_7 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap8",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B08D0"
+  },
+  "note": "sets PARAM_WRAP_8 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_Wrap9",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B08F0"
+  },
+  "note": "sets PARAM_WRAP_9 (SQ_WRAPPING_0/1) and its dirty bits"
+ },
+ {
   "name": "D3DDevice_SetRenderState_ZEnable",
   "library": "D3D",
   "any360": "native",
@@ -782,6 +1475,15 @@
    "crackdown": "0x826AFFD8"
   },
   "note": "the value kept; RB_DEPTHCONTROL bit 1 with a depth surface; dirty 0x800, 0x20000"
+ },
+ {
+  "name": "D3DDevice_SetRenderState_ZFunc",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B0048"
+  },
+  "note": "sets ZFUNC (RB_DEPTHCONTROL) and its dirty bits"
  },
  {
   "name": "D3DDevice_SetRenderState_ZWriteEnable",
@@ -800,6 +1502,51 @@
    "crackdown": "0x826B1EE0"
   },
   "note": "a render target's surface and registers; the runtime's viewport function for target 0"
+ },
+ {
+  "name": "D3DDevice_SetSamplerState_AddressU",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B18B0"
+  },
+  "note": "sets CLAMP_X (the stage's fetch constant) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetSamplerState_AddressV",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1900"
+  },
+  "note": "sets CLAMP_Y (the stage's fetch constant) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetSamplerState_AddressW",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1950"
+  },
+  "note": "sets CLAMP_Z (the stage's fetch constant) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetSamplerState_BorderColor",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1840"
+  },
+  "note": "sets border_color (the stage's fetch constant) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetSamplerState_HGradientExpAdjust",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B19F8"
+  },
+  "note": "sets grad_exp_adjust_h (the stage's fetch constant) and its dirty bits"
  },
  {
   "name": "D3DDevice_SetSamplerState_LodByteBit0",
@@ -845,6 +1592,33 @@
    "crackdown": "0x826B1180"
   },
   "note": "fetch constant words 3-4: min filter and anisotropy"
+ },
+ {
+  "name": "D3DDevice_SetSamplerState_MipFilter",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1490"
+  },
+  "note": "sets mip_filter (the stage's fetch constant) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetSamplerState_TrilinearThreshold",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B19A0"
+  },
+  "note": "sets tri_clamp (the stage's fetch constant) and its dirty bits"
+ },
+ {
+  "name": "D3DDevice_SetSamplerState_VGradientExpAdjust",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1A50"
+  },
+  "note": "sets grad_exp_adjust_v (the stage's fetch constant) and its dirty bits"
  },
  {
   "name": "D3DDevice_SetStreamSource",
@@ -1155,6 +1929,33 @@
   "note": "the draws' wait group: VGT 0x2007, the copy registers, a wait, the group's registers"
  },
  {
+  "name": "D3D_GetHiZControlBit2",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B10F0"
+  },
+  "note": "returns bit 2 (RB_HIZCONTROL)"
+ },
+ {
+  "name": "D3D_GetHiZControlBit3",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B10C0"
+  },
+  "note": "returns bit 3 (RB_HIZCONTROL)"
+ },
+ {
+  "name": "D3D_GetHiZControlBit5",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1120"
+  },
+  "note": "returns bit 5 (RB_HIZCONTROL)"
+ },
+ {
   "name": "D3D_GpuFormatBlock",
   "library": "D3D",
   "any360": "native",
@@ -1326,6 +2127,51 @@
    "crackdown": "0x826BB348"
   },
   "note": "a segment submitted: straight to the ring's submit, or chained after the pending ones under the kernel's lock"
+ },
+ {
+  "name": "D3D_SetHiZControlBit2",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B10D0"
+  },
+  "note": "sets bit 2 (RB_HIZCONTROL) and its dirty bits"
+ },
+ {
+  "name": "D3D_SetHiZControlBit3",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B10A0"
+  },
+  "note": "sets bit 3 (RB_HIZCONTROL) and its dirty bits"
+ },
+ {
+  "name": "D3D_SetHiZControlBit5",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1100"
+  },
+  "note": "sets bit 5 (RB_HIZCONTROL) and its dirty bits"
+ },
+ {
+  "name": "D3D_SetHiZControlByte1",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1130"
+  },
+  "note": "sets bits 8-15 (RB_HIZCONTROL) and its dirty bits"
+ },
+ {
+  "name": "D3D_SetSamplerForceBorderWToMax",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826B1AA8"
+  },
+  "note": "sets force_bc_w_to_max (the stage's fetch constant) and its dirty bits"
  },
  {
   "name": "D3D_SetViewportFloats",

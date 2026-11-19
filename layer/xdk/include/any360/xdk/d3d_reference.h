@@ -1417,4 +1417,107 @@ inline uint64_t TextureLevelBytes(const Memory& m, uint64_t r3, uint64_t r4, uin
 }
 }  // namespace resource
 
+// The state fields (d3d_state.h, d3d_fields): their code's shapes, read off the recompiled functions (the unit test
+// lists each one's operands), run instruction by instruction.
+namespace fields {
+enum class Shape : uint8_t {
+  kInsert,       // lwz; rlwimi r11,r4,sh,mb,me; stw; the dirty bits (ld/ori/oris/or/std)
+  kOrAll,        // lwz; rlwinm r11,r11,0,mb,me; or r11,r11,r4; stw; dirty
+  kOrRotated,    // lwz r10; rlwinm r11,r4,sh,mb,me; rlwinm r10,r10,0,kmb,kme; or; stw; dirty
+  kStore,        // stw r4; dirty
+  kStoreByte,    // stb r4; dirty
+  kGet,          // lwz; rlwinm r3,r11,sh,mb,me
+  kGetWord,      // lwz r3
+  kStageInsert,  // the stage's dirty bit (srd of 1 << 63 by stage + 32); mulli r4,24; lwz; rlwimi r9,r5,sh,mb,me; stw; or +24
+  kStageBool,    // the same with cntlzw r5 >> 5 ^ 1 into word 5's low two bits cleared (rlwinm r9,r9,0,0,29)
+  kStageGet,     // mulli r4,24; lwz; rlwinm r3,r11,sh,mb,me
+  kStageGetHalf, // mulli r4,24; lhz; clrlwi r3,r11,clr
+  kStageGetMask, // mulli r4,24; lwz; clrlwi r11,r11,clr; subfic r11,r11,0; subfe r3,r11,r11
+  kStageByte,    // add r11,r3,r4; lbz r3
+};
+struct Code {
+  Shape shape;
+  uint32_t at, sh, mb, me, kmb, kme, clr, dirty_at;
+  uint64_t dirty;
+};
+// MASK(mb, me) of the 32-bit rotate instructions, big-endian bit numbers, wrapping when mb > me.
+inline uint32_t Mask(uint32_t mb, uint32_t me) {
+  uint32_t mask = 0;
+  for (uint32_t i = mb;; i = (i + 1) & 31) {
+    mask |= 0x80000000u >> i;
+    if (i == me) break;
+  }
+  return mask;
+}
+inline uint64_t ld(const Memory& m, uint32_t ea) { return uint64_t(refcount::lwz(m, ea)) << 32 | refcount::lwz(m, ea + 4); }
+inline void std_(const Memory& m, uint32_t ea, uint64_t v) {
+  refcount::stw(m, ea, uint32_t(v >> 32)), refcount::stw(m, ea + 4, uint32_t(v));
+}
+// r3 after the call (r3, r4, r5 its arguments).
+inline uint64_t Run(const Memory& m, const Code& c, uint64_t r3, uint64_t r4, uint64_t r5) {
+  using refcount::lwz;
+  using refcount::stw;
+  const uint32_t device = uint32_t(r3);
+  const auto dirty = [&] { std_(m, device + c.dirty_at, ld(m, device + c.dirty_at) | c.dirty); };
+  const auto stage_word = [&] { return uint32_t(r4 * 24 + r3) + c.at; };  // mulli r11,r4,24; add r11,r11,r3
+  const auto stage_dirty = [&] {
+    const uint64_t r10 = (r4 + 32) & 0xFFFFFFFFu;                   // addi r10,r4,32; clrldi r10,r10,32
+    const uint32_t n = uint32_t(r10 & 0x7F);                         // srd: the low 7 bits
+    const uint64_t bit = n >= 64 ? 0 : (uint64_t(1) << 63) >> n;    // li r9,1; rldicr r9,r9,63,63; srd
+    std_(m, device + 24, ld(m, device + 24) | bit);                  // ld r11,24(r3); or; std
+  };
+  switch (c.shape) {
+    case Shape::kInsert: {
+      const uint32_t mask = Mask(c.mb, c.me);
+      stw(m, device + c.at, (std::rotl(uint32_t(r4), int(c.sh)) & mask) | (lwz(m, device + c.at) & ~mask));
+      dirty();
+      return r3;
+    }
+    case Shape::kOrAll:
+      stw(m, device + c.at, (lwz(m, device + c.at) & Mask(c.mb, c.me)) | uint32_t(r4));
+      dirty();
+      return r3;
+    case Shape::kOrRotated:
+      stw(m, device + c.at, (std::rotl(uint32_t(r4), int(c.sh)) & Mask(c.mb, c.me)) | (lwz(m, device + c.at) & Mask(c.kmb, c.kme)));
+      dirty();
+      return r3;
+    case Shape::kStore:
+      stw(m, device + c.at, uint32_t(r4));
+      dirty();
+      return r3;
+    case Shape::kStoreByte:
+      m.Host(device + c.at)[0] = uint8_t(r4);
+      dirty();
+      return r3;
+    case Shape::kGet: return std::rotl(lwz(m, device + c.at), int(c.sh)) & Mask(c.mb, c.me);
+    case Shape::kGetWord: return lwz(m, device + c.at);
+    case Shape::kStageInsert: {
+      const uint32_t at = stage_word(), mask = Mask(c.mb, c.me);
+      stw(m, at, (std::rotl(uint32_t(r5), int(c.sh)) & mask) | (lwz(m, at) & ~mask));
+      stage_dirty();
+      return r3;
+    }
+    case Shape::kStageBool: {
+      const uint32_t at = stage_word();
+      const uint32_t r8 = ((uint32_t(std::countl_zero(uint32_t(r5))) >> 5) & 1) ^ 1;  // cntlzw; rlwinm 27,31,31; xori
+      stw(m, at, (lwz(m, at) & Mask(0, 29)) | r8);
+      stage_dirty();
+      return r3;
+    }
+    case Shape::kStageGet: return std::rotl(lwz(m, stage_word()), int(c.sh)) & Mask(c.mb, c.me);
+    case Shape::kStageGetHalf: {
+      const uint8_t* h = m.Host(stage_word());
+      return (uint32_t(h[0]) << 8 | h[1]) & (0xFFFFFFFFu >> c.clr);
+    }
+    case Shape::kStageGetMask: {
+      const uint64_t r11 = lwz(m, stage_word()) & (0xFFFFFFFFu >> c.clr);
+      const uint64_t carry = r11 == 0 ? 1 : 0;              // subfic r11,r11,0: CA when nothing is borrowed
+      return ~(uint64_t(0) - r11) + (uint64_t(0) - r11) + carry;  // subfe r3,r11,r11 (r11 now 0 - r11)
+    }
+    case Shape::kStageByte: return m.Host(uint32_t(r3 + r4) + c.at)[0];
+  }
+  return r3;
+}
+}  // namespace fields
+
 }  // namespace any360::xdk::reference

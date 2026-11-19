@@ -1,0 +1,7 @@
+Any360 D3D self-test: 201 cases on a copy of device 40259D00
+Field_GetRenderState_StencilPass   3000 calls, 0 declined, 0 different; median original 3.8 ns, native 2.5 ns (1.49x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Field_GetRenderState_CCW_StencilFunc   3000 calls, 0 declined, 0 different; median original 2.5 ns, native 2.5 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Field_GetRenderState_CCW_StencilPass   3000 calls, 0 declined, 0 different; median original 2.5 ns, native 2.5 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Field_GetRenderState_StencilEnable   3000 calls, 0 declined, 0 different; median original 2.5 ns, native 2.5 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Field_SetSamplerState_TrilinearThreshold   3000 calls, 190 declined, 0 different; median original 3.8 ns, native 3.8 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Field_SetRenderState_Wrap13    3000 calls, 0 declined, 0 different; median original 3.8 ns, native 2.5 ns (1.50x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00

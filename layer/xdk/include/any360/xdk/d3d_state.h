@@ -92,6 +92,9 @@ struct D3dLayout {
   uint32_t viewport_set = 12368, scissor_set = 12396, window_scissor = 10308, viewport_scale = 10376;
   uint32_t scissor_enable = 11576, tiled_size = 12900, tile_count = 12468, tile_rects = 12472, tile_offsets = 12712;
   uint32_t tile_bins = 12428, sample_control = 10556;
+  // The mirror's VGT_MULTI_PRIM_IB_RESET_INDX (0x2103), SQ_WRAPPING_0 (0x2183; SQ_WRAPPING_1 after it), RB_STENCILREFMASK
+  // (0x210D) and RB_STENCILREFMASK_BF (0x210C): the state fields' (d3d_fields).
+  uint32_t reset_index = 10328, wrapping = 10412, stencil_ref_mask = 10368, stencil_ref_mask_back = 10364;
   // The runtime's viewport and scissor a surface's viewport starts from (guest addresses in the title's image: a
   // D3DVIEWPORT9 of words and floats, a rect of four words).
   uint32_t surface_viewport = 0x820E9E08u, surface_scissor = 0x820E9E20u;
@@ -1390,6 +1393,201 @@ inline bool D3dQueryGetData(const Memory& m, const D3dLayout& l, uint32_t query,
     } else {
       SetFloat(out + 16, float(double(int32_t(half(8) << 13))));
       SetFloat(out + 20, float(double(int32_t(((half(10) + 1) << 13) & 0xFFFFE000u))));
+    }
+  }
+  return true;
+}
+
+// The render and sampler state fields: SetRenderState / SetSamplerState of one register field and their getters
+// (Crackdown sub_826AF8E8-sub_826B1AA8, 94 of them), each a descriptor named after its state in `d3d_fields`: the
+// field of the device's register mirror it writes or reads (from the register definitions: RB_DEPTHCONTROL,
+// RB_COLORCONTROL, RB_HIZCONTROL, PA_SU_SC_MODE_CNTL, SQ_WRAPPING_0/1, RB_STENCILREFMASK(_BF),
+// VGT_MULTI_PRIM_IB_RESET_INDX, a stage's texture fetch constant), the dirty bits the runtime sets for it, or the
+// device's word the state was kept in as the title set it.
+//  kSet: word = (word & keep) | (rotl(value, rotate) & take), the state dirty bits ORed in (the wraps OR the value's
+//    bits above their nibble in too, as the runtime does; a store keeps nothing).
+//  kSetByte: the value's low byte at the field + offset; the dirty bits.
+//  kStageSet, kStageBorder: r4 the stage (past 31: declined), r5 the value, in the stage's fetch constant word
+//    (border: its low two bits cleared, bit 0 the value not 0); the stage's fetch dirty bit.
+//  kGet: (word >> rotate) & take, zero-extended. kStageGet: a stage's. kStageGetAll: all 64 bits set when the stage's
+//    word has a bit of take, else 0. kStageByte: the byte at the field + the stage.
+// Declined (false): the device not plain, a stage past 31.
+struct D3dField {
+  enum class Op : uint8_t { kSet, kSetByte, kStageSet, kStageBorder, kGet, kStageGet, kStageGetAll, kStageByte };
+  Op op;
+  uint32_t D3dLayout::*field;
+  uint32_t offset;  // bytes past the field: a word's or a byte's; a stage's word (4 x its index)
+  uint32_t keep, take, rotate;
+  uint64_t dirty;
+  constexpr bool Reads() const { return op >= Op::kGet; }
+  constexpr bool Staged() const { return op != Op::kSet && op != Op::kSetByte && op != Op::kGet; }
+};
+namespace d3d_fields {
+constexpr uint32_t Bits(uint32_t width) { return width >= 32 ? ~0u : (1u << width) - 1u; }
+constexpr D3dField Set(uint32_t D3dLayout::*f, uint32_t lsb, uint32_t width, uint64_t dirty) {
+  return {D3dField::Op::kSet, f, 0, ~(Bits(width) << lsb), Bits(width) << lsb, lsb, dirty};
+}
+// D3DRS_WRAPk: SQ_WRAPPING_0/1's nibble k % 8, the value ORed in from that nibble up; both words dirty as 0x2000.
+constexpr D3dField Wrap(uint32_t k) {
+  const uint32_t n = 4 * (k % 8);
+  return {D3dField::Op::kSet, &D3dLayout::wrapping, 4 * (k / 8), ~(0xFu << n), ~0u << n, n, 0x2000};
+}
+constexpr D3dField Store(uint32_t D3dLayout::*f, uint64_t dirty) { return {D3dField::Op::kSet, f, 0, 0, ~0u, 0, dirty}; }
+constexpr D3dField Byte(uint32_t D3dLayout::*f, uint32_t byte, uint64_t dirty) {
+  return {D3dField::Op::kSetByte, f, byte, 0, 0xFF, 0, dirty};
+}
+constexpr D3dField Get(uint32_t D3dLayout::*f, uint32_t lsb, uint32_t width) {
+  return {D3dField::Op::kGet, f, 0, 0, Bits(width), lsb, 0};
+}
+constexpr D3dField Word(uint32_t D3dLayout::*f, uint32_t offset) { return {D3dField::Op::kGet, f, offset, 0, ~0u, 0, 0}; }
+constexpr D3dField StageSet(uint32_t word, uint32_t lsb, uint32_t width) {
+  return {D3dField::Op::kStageSet, &D3dLayout::fetch_constants, 4 * word, ~(Bits(width) << lsb), Bits(width) << lsb, lsb, 0};
+}
+constexpr D3dField StageBorder() { return {D3dField::Op::kStageBorder, &D3dLayout::fetch_constants, 20, ~3u, 1, 0, 0}; }
+constexpr D3dField StageGet(uint32_t word, uint32_t lsb, uint32_t width) {
+  return {D3dField::Op::kStageGet, &D3dLayout::fetch_constants, 4 * word, 0, Bits(width), lsb, 0};
+}
+constexpr D3dField StageGetAll(uint32_t word, uint32_t lsb, uint32_t width) {
+  return {D3dField::Op::kStageGetAll, &D3dLayout::fetch_constants, 4 * word, 0, Bits(width) << lsb, 0, 0};
+}
+constexpr D3dField StageByte(uint32_t D3dLayout::*f) { return {D3dField::Op::kStageByte, f, 0, 0, 0xFF, 0, 0}; }
+inline constexpr D3dField kPrimitiveResetEnable = Set(&D3dLayout::mode_control, 21, 1, 0x40);  // SetRenderState_PrimitiveResetEnable (sub_826B0E90): MULTI_PRIM_IB_ENA
+inline constexpr D3dField kFillMode = Set(&D3dLayout::mode_control, 3, 8, 0x40);  // SetRenderState_FillMode (sub_826AF8E8): POLYMODE, FRONT_PTYPE, BACK_PTYPE
+inline constexpr D3dField kMultiSampleAntiAlias = Set(&D3dLayout::mode_control, 15, 1, 0x40);  // SetRenderState_MultiSampleAntiAlias (sub_826B0530): MSAA_ENABLE
+inline constexpr D3dField kGetPrimitiveResetEnable = Get(&D3dLayout::mode_control, 21, 1);  // GetRenderState_PrimitiveResetEnable (sub_826B0EB0): MULTI_PRIM_IB_ENA
+inline constexpr D3dField kGetFillMode = Get(&D3dLayout::mode_control, 3, 8);  // GetRenderState_FillMode (sub_826AF908): POLYMODE, FRONT_PTYPE, BACK_PTYPE
+inline constexpr D3dField kGetMultiSampleAntiAlias = Get(&D3dLayout::mode_control, 15, 1);  // GetRenderState_MultiSampleAntiAlias (sub_826B0550): MSAA_ENABLE
+inline constexpr D3dField kPrimitiveResetIndex = Store(&D3dLayout::reset_index, 0x4000000000);  // SetRenderState_PrimitiveResetIndex (sub_826B0EC0): the whole register
+inline constexpr D3dField kGetPrimitiveResetIndex = Word(&D3dLayout::reset_index, 0);  // GetRenderState_PrimitiveResetIndex (sub_826B0EE0): the whole register
+inline constexpr D3dField kZFunc = Set(&D3dLayout::depth_control, 4, 3, 0x20800);  // SetRenderState_ZFunc (sub_826B0048): ZFUNC
+inline constexpr D3dField kTwoSidedStencilMode = Set(&D3dLayout::depth_control, 7, 1, 0x20800);  // SetRenderState_TwoSidedStencilMode (sub_826B00C0): BACKFACE_ENABLE
+inline constexpr D3dField kStencilFunc = Set(&D3dLayout::depth_control, 8, 3, 0x800);  // SetRenderState_StencilFunc (sub_826B00F8): STENCILFUNC
+inline constexpr D3dField kStencilFail = Set(&D3dLayout::depth_control, 11, 3, 0x20800);  // SetRenderState_StencilFail (sub_826B0128): STENCILFAIL
+inline constexpr D3dField kStencilPass = Set(&D3dLayout::depth_control, 14, 3, 0x800);  // SetRenderState_StencilPass (sub_826B0198): STENCILZPASS
+inline constexpr D3dField kStencilZFail = Set(&D3dLayout::depth_control, 17, 3, 0x20800);  // SetRenderState_StencilZFail (sub_826B0160): STENCILZFAIL
+inline constexpr D3dField kCcwStencilFunc = Set(&D3dLayout::depth_control, 20, 3, 0x800);  // SetRenderState_CCW_StencilFunc (sub_826B01C8): STENCILFUNC_BF
+inline constexpr D3dField kCcwStencilFail = Set(&D3dLayout::depth_control, 23, 3, 0x20800);  // SetRenderState_CCW_StencilFail (sub_826B01F8): STENCILFAIL_BF
+inline constexpr D3dField kCcwStencilPass = Set(&D3dLayout::depth_control, 26, 3, 0x800);  // SetRenderState_CCW_StencilPass (sub_826B0268): STENCILZPASS_BF
+inline constexpr D3dField kCcwStencilZFail = Set(&D3dLayout::depth_control, 29, 3, 0x20800);  // SetRenderState_CCW_StencilZFail (sub_826B0230): STENCILZFAIL_BF
+inline constexpr D3dField kGetZFunc = Get(&D3dLayout::depth_control, 4, 3);  // GetRenderState_ZFunc (sub_826B0070): ZFUNC
+inline constexpr D3dField kGetTwoSidedStencilMode = Get(&D3dLayout::depth_control, 7, 1);  // GetRenderState_TwoSidedStencilMode (sub_826B00E8): BACKFACE_ENABLE
+inline constexpr D3dField kGetStencilFunc = Get(&D3dLayout::depth_control, 8, 3);  // GetRenderState_StencilFunc (sub_826B0118): STENCILFUNC
+inline constexpr D3dField kGetStencilFail = Get(&D3dLayout::depth_control, 11, 3);  // GetRenderState_StencilFail (sub_826B0150): STENCILFAIL
+inline constexpr D3dField kGetStencilPass = Get(&D3dLayout::depth_control, 14, 3);  // GetRenderState_StencilPass (sub_826B01B8): STENCILZPASS
+inline constexpr D3dField kGetStencilZFail = Get(&D3dLayout::depth_control, 17, 3);  // GetRenderState_StencilZFail (sub_826B0188): STENCILZFAIL
+inline constexpr D3dField kGetCcwStencilFunc = Get(&D3dLayout::depth_control, 20, 3);  // GetRenderState_CCW_StencilFunc (sub_826B01E8): STENCILFUNC_BF
+inline constexpr D3dField kGetCcwStencilFail = Get(&D3dLayout::depth_control, 23, 3);  // GetRenderState_CCW_StencilFail (sub_826B0220): STENCILFAIL_BF
+inline constexpr D3dField kGetCcwStencilPass = Get(&D3dLayout::depth_control, 26, 3);  // GetRenderState_CCW_StencilPass (sub_826B0288): STENCILZPASS_BF
+inline constexpr D3dField kGetCcwStencilZFail = Get(&D3dLayout::depth_control, 29, 3);  // GetRenderState_CCW_StencilZFail (sub_826B0258): STENCILZFAIL_BF
+inline constexpr D3dField kAlphaToMaskEnable = Set(&D3dLayout::color_control, 4, 1, 0x200);  // SetRenderState_AlphaToMaskEnable (sub_826B0EE8): ALPHA_TO_MASK_ENABLE
+inline constexpr D3dField kAlphaToMaskOffsets = Set(&D3dLayout::color_control, 24, 8, 0x200);  // SetRenderState_AlphaToMaskOffsets (sub_826B0F18): ALPHA_TO_MASK_OFFSET0-3
+inline constexpr D3dField kGetAlphaToMaskEnable = Get(&D3dLayout::color_control, 4, 1);  // GetRenderState_AlphaToMaskEnable (sub_826B0F08): ALPHA_TO_MASK_ENABLE
+inline constexpr D3dField kHiZControlBit3 = Set(&D3dLayout::depth_word, 3, 1, 0x100);  // D3D_SetHiZControlBit3 (sub_826B10A0): bit 3
+inline constexpr D3dField kHiZControlBit2 = Set(&D3dLayout::depth_word, 2, 1, 0x100);  // D3D_SetHiZControlBit2 (sub_826B10D0): bit 2
+inline constexpr D3dField kHiZControlBit5 = Set(&D3dLayout::depth_word, 5, 1, 0x100);  // D3D_SetHiZControlBit5 (sub_826B1100): bit 5
+inline constexpr D3dField kHiZControlByte1 = Byte(&D3dLayout::depth_word, 2, 0x100);  // D3D_SetHiZControlByte1 (sub_826B1130): bits 8-15
+inline constexpr D3dField kGetHiZControlBit3 = Get(&D3dLayout::depth_word, 3, 1);  // D3D_GetHiZControlBit3 (sub_826B10C0): bit 3
+inline constexpr D3dField kGetHiZControlBit2 = Get(&D3dLayout::depth_word, 2, 1);  // D3D_GetHiZControlBit2 (sub_826B10F0): bit 2
+inline constexpr D3dField kGetHiZControlBit5 = Get(&D3dLayout::depth_word, 5, 1);  // D3D_GetHiZControlBit5 (sub_826B1120): bit 5
+inline constexpr D3dField kStencilRef = Byte(&D3dLayout::stencil_ref_mask, 3, 0x10000000);  // SetRenderState_StencilRef (sub_826B0298): STENCILREF
+inline constexpr D3dField kStencilMask = Byte(&D3dLayout::stencil_ref_mask, 2, 0x10000000);  // SetRenderState_StencilMask (sub_826B02B8): STENCILMASK
+inline constexpr D3dField kStencilWriteMask = Byte(&D3dLayout::stencil_ref_mask, 1, 0x10000000);  // SetRenderState_StencilWriteMask (sub_826B02D8): STENCILWRITEMASK
+inline constexpr D3dField kCcwStencilRef = Byte(&D3dLayout::stencil_ref_mask_back, 3, 0x20000000);  // SetRenderState_CCW_StencilRef (sub_826B02F8): STENCILREF_BF
+inline constexpr D3dField kCcwStencilMask = Byte(&D3dLayout::stencil_ref_mask_back, 2, 0x20000000);  // SetRenderState_CCW_StencilMask (sub_826B0318): STENCILMASK_BF
+inline constexpr D3dField kCcwStencilWriteMask = Byte(&D3dLayout::stencil_ref_mask_back, 1, 0x20000000);  // SetRenderState_CCW_StencilWriteMask (sub_826B0338): STENCILWRITEMASK_BF
+inline constexpr D3dField kGetZEnable = Word(&D3dLayout::depth_enable_set, 0);  // GetRenderState_ZEnable (sub_826B0010): as set
+inline constexpr D3dField kGetStencilEnable = Word(&D3dLayout::stencil_enable_set, 0);  // GetRenderState_StencilEnable (sub_826B00B8): as set
+inline constexpr D3dField kGetScissorTestEnable = Word(&D3dLayout::scissor_enable, 0);  // GetRenderState_ScissorTestEnable (sub_826B03B8): as set
+inline constexpr D3dField kGetColorWriteEnable = Word(&D3dLayout::color_mask_set, 0);  // GetRenderState_ColorWriteEnable (sub_826B05B8): as set
+inline constexpr D3dField kGetColorWriteEnable1 = Word(&D3dLayout::color_mask_set, 4);  // GetRenderState_ColorWriteEnable1 (sub_826B05F8): as set
+inline constexpr D3dField kGetColorWriteEnable2 = Word(&D3dLayout::color_mask_set, 8);  // GetRenderState_ColorWriteEnable2 (sub_826B0638): as set
+inline constexpr D3dField kGetColorWriteEnable3 = Word(&D3dLayout::color_mask_set, 12);  // GetRenderState_ColorWriteEnable3 (sub_826B0678): as set
+inline constexpr D3dField kGetHighPrecisionBlendEnable = Word(&D3dLayout::target_as_wide, 0);  // GetRenderState_HighPrecisionBlendEnable (sub_826B0B98): as set
+inline constexpr D3dField kGetHighPrecisionBlendEnable1 = Word(&D3dLayout::target_as_wide, 4);  // GetRenderState_HighPrecisionBlendEnable1 (sub_826B0C48): as set
+inline constexpr D3dField kGetHighPrecisionBlendEnable2 = Word(&D3dLayout::target_as_wide, 8);  // GetRenderState_HighPrecisionBlendEnable2 (sub_826B0CF8): as set
+inline constexpr D3dField kGetHighPrecisionBlendEnable3 = Word(&D3dLayout::target_as_wide, 12);  // GetRenderState_HighPrecisionBlendEnable3 (sub_826B0DA8): as set
+inline constexpr D3dField kGetBlendOp = Get(&D3dLayout::blend_control, 5, 3);  // GetRenderState_BlendOp (sub_826AFA60): COLOR_COMB_FCN
+inline constexpr D3dField kGetBlendOpAlpha = Get(&D3dLayout::blend_control, 21, 3);  // GetRenderState_BlendOpAlpha (sub_826AFBF0): ALPHA_COMB_FCN
+inline constexpr D3dField kAddressU = StageSet(0, 10, 3);  // SetSamplerState_AddressU (sub_826B18B0): CLAMP_X
+inline constexpr D3dField kAddressV = StageSet(0, 13, 3);  // SetSamplerState_AddressV (sub_826B1900): CLAMP_Y
+inline constexpr D3dField kAddressW = StageSet(0, 16, 3);  // SetSamplerState_AddressW (sub_826B1950): CLAMP_Z
+inline constexpr D3dField kMipFilter = StageSet(3, 23, 2);  // SetSamplerState_MipFilter (sub_826B1490): mip_filter
+inline constexpr D3dField kHGradientExpAdjust = StageSet(4, 22, 5);  // SetSamplerState_HGradientExpAdjust (sub_826B19F8): grad_exp_adjust_h
+inline constexpr D3dField kVGradientExpAdjust = StageSet(4, 27, 5);  // SetSamplerState_VGradientExpAdjust (sub_826B1A50): grad_exp_adjust_v
+inline constexpr D3dField kForceBorderWToMax = StageSet(5, 2, 1);  // D3D_SetSamplerForceBorderWToMax (sub_826B1AA8): force_bc_w_to_max
+inline constexpr D3dField kTrilinearThreshold = StageSet(5, 3, 2);  // SetSamplerState_TrilinearThreshold (sub_826B19A0): tri_clamp
+inline constexpr D3dField kBorderColor = StageBorder();  // SetSamplerState_BorderColor (sub_826B1840): border_color
+inline constexpr D3dField kGetAddressU = StageGet(0, 10, 3);  // GetSamplerState_AddressU (sub_826B18E8): CLAMP_X
+inline constexpr D3dField kGetAddressV = StageGet(0, 13, 3);  // GetSamplerState_AddressV (sub_826B1938): CLAMP_Y
+inline constexpr D3dField kGetAddressW = StageGet(0, 16, 3);  // GetSamplerState_AddressW (sub_826B1988): CLAMP_Z
+inline constexpr D3dField kGetMipFilter = StageGet(3, 23, 2);  // GetSamplerState_MipFilter (sub_826B14D0): mip_filter
+inline constexpr D3dField kGetBorderColor = StageGetAll(5, 0, 2);  // GetSamplerState_BorderColor (sub_826B1890): border_color
+inline constexpr D3dField kGetMaxAnisotropy = StageByte(&D3dLayout::stage_filter_index);  // GetSamplerState_MaxAnisotropy (sub_826B15E8): the stage's index
+inline constexpr D3dField kGetMaxMipLevel = StageByte(&D3dLayout::texture_mip_floor);  // GetSamplerState_MaxMipLevel (sub_826B17B0): the stage's floor
+inline constexpr D3dField kWrap0 = Wrap(0);  // SetRenderState_Wrap0 (sub_826B07A0): PARAM_WRAP_0
+inline constexpr D3dField kWrap1 = Wrap(1);  // SetRenderState_Wrap1 (sub_826B07C0): PARAM_WRAP_1
+inline constexpr D3dField kWrap2 = Wrap(2);  // SetRenderState_Wrap2 (sub_826B07E8): PARAM_WRAP_2
+inline constexpr D3dField kWrap3 = Wrap(3);  // SetRenderState_Wrap3 (sub_826B0810): PARAM_WRAP_3
+inline constexpr D3dField kWrap4 = Wrap(4);  // SetRenderState_Wrap4 (sub_826B0838): PARAM_WRAP_4
+inline constexpr D3dField kWrap5 = Wrap(5);  // SetRenderState_Wrap5 (sub_826B0860): PARAM_WRAP_5
+inline constexpr D3dField kWrap6 = Wrap(6);  // SetRenderState_Wrap6 (sub_826B0888): PARAM_WRAP_6
+inline constexpr D3dField kWrap7 = Wrap(7);  // SetRenderState_Wrap7 (sub_826B08B0): PARAM_WRAP_7
+inline constexpr D3dField kWrap8 = Wrap(8);  // SetRenderState_Wrap8 (sub_826B08D0): PARAM_WRAP_8
+inline constexpr D3dField kWrap9 = Wrap(9);  // SetRenderState_Wrap9 (sub_826B08F0): PARAM_WRAP_9
+inline constexpr D3dField kWrap10 = Wrap(10);  // SetRenderState_Wrap10 (sub_826B0918): PARAM_WRAP_10
+inline constexpr D3dField kWrap11 = Wrap(11);  // SetRenderState_Wrap11 (sub_826B0940): PARAM_WRAP_11
+inline constexpr D3dField kWrap12 = Wrap(12);  // SetRenderState_Wrap12 (sub_826B0968): PARAM_WRAP_12
+inline constexpr D3dField kWrap13 = Wrap(13);  // SetRenderState_Wrap13 (sub_826B0990): PARAM_WRAP_13
+inline constexpr D3dField kWrap14 = Wrap(14);  // SetRenderState_Wrap14 (sub_826B09B8): PARAM_WRAP_14
+inline constexpr D3dField kWrap15 = Wrap(15);  // SetRenderState_Wrap15 (sub_826B09E0): PARAM_WRAP_15
+inline constexpr D3dField kGetWrap1 = Get(&D3dLayout::wrapping, 4, 4);  // GetRenderState_Wrap1 (sub_826B0A10): PARAM_WRAP_1
+inline constexpr D3dField kGetWrap2 = Get(&D3dLayout::wrapping, 8, 4);  // GetRenderState_Wrap2 (sub_826B0A20): PARAM_WRAP_2
+inline constexpr D3dField kGetWrap3 = Get(&D3dLayout::wrapping, 12, 4);  // GetRenderState_Wrap3 (sub_826B0A30): PARAM_WRAP_3
+inline constexpr D3dField kGetWrap5 = Get(&D3dLayout::wrapping, 20, 4);  // GetRenderState_Wrap5 (sub_826B0A50): PARAM_WRAP_5
+inline constexpr D3dField kGetWrap7 = Get(&D3dLayout::wrapping, 28, 4);  // GetRenderState_Wrap7 (sub_826B0A70): PARAM_WRAP_7
+}  // namespace d3d_fields
+
+template <const D3dField& F>
+inline bool D3dSetField(const Memory& m, const D3dLayout& l, uint32_t device, uint64_t r4, uint64_t r5) {
+  using Op = D3dField::Op;
+  if (!detail::DeviceAccepts(l, device)) [[unlikely]] return false;
+  uint8_t* d = m.Host(device);
+  if constexpr (F.op == Op::kSet) {
+    uint8_t* w = d + l.*F.field + F.offset;
+    detail::Set32(w, (detail::At32(w) & F.keep) | (std::rotl(uint32_t(r4), int(F.rotate)) & F.take));
+    detail::Or64(m, device + l.state_dirty, F.dirty);
+  } else if constexpr (F.op == Op::kSetByte) {
+    d[l.*F.field + F.offset] = uint8_t(r4);
+    detail::Or64(m, device + l.state_dirty, F.dirty);
+  } else {
+    static_assert(F.op == Op::kStageSet || F.op == Op::kStageBorder);
+    if (r4 >= 32) [[unlikely]] return false;
+    const uint32_t stage = uint32_t(r4);
+    uint8_t* w = d + l.*F.field + 24 * stage + F.offset;
+    if constexpr (F.op == Op::kStageSet)
+      detail::Set32(w, (detail::At32(w) & F.keep) | (std::rotl(uint32_t(r5), int(F.rotate)) & F.take));
+    else
+      detail::Set32(w, (detail::At32(w) & F.keep) | (uint32_t(r5) != 0 ? 1u : 0u));
+    detail::Or64(m, device + l.fetch_dirty, uint64_t(1) << (31 - stage));
+  }
+  return true;
+}
+template <const D3dField& F>
+inline bool D3dGetField(const Memory& m, const D3dLayout& l, uint32_t device, uint64_t r4, uint64_t& value) {
+  using Op = D3dField::Op;
+  if (!detail::DeviceAccepts(l, device)) [[unlikely]] return false;
+  const uint8_t* d = m.Host(device);
+  if constexpr (F.op == Op::kGet) {
+    value = (detail::At32(d + l.*F.field + F.offset) >> F.rotate) & F.take;
+  } else {
+    if (r4 >= 32) [[unlikely]] return false;
+    const uint32_t stage = uint32_t(r4);
+    if constexpr (F.op == Op::kStageByte) {
+      value = d[l.*F.field + stage];
+    } else {
+      const uint32_t w = detail::At32(d + l.*F.field + 24 * stage + F.offset);
+      if constexpr (F.op == Op::kStageGet) value = (w >> F.rotate) & F.take;
+      else value = (w & F.take) ? ~uint64_t(0) : 0;
     }
   }
   return true;

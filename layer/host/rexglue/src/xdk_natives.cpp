@@ -67,7 +67,8 @@ constexpr const char* kNames[kFunctions] = {"memcpy", "forward copy", "memset", 
                                             "D3D CPU range flush", "zlib inflate_fast", "png_read_filter_row", "XMemSet", "sin", "cos", "asin",
                                             "D3D render state", "atan2", "pow", "D3D surfaces", "XAudio reverb", "D3D viewport",
                                             "D3D query", "D3D resource type", "D3D format block",
-                                            "D3D DrawVerticesUP", "D3D texture size"};
+                                            "D3D DrawVerticesUP", "D3D texture size",
+                                            "D3D state field"};
 // Calls larger than this are not verified or timed (their snapshot would cost more than they tell).
 constexpr uint32_t kMostChecked = 4u << 20;
 // The bytes compared on each side of a destination, to see a write outside it.

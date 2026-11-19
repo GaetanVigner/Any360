@@ -1,0 +1,924 @@
+[
+{
+"shape": "stage_insert",
+"at": 1024,
+"sh": 13,
+"mb": 16,
+"me": 18,
+"address": "826B1900",
+"calls": 3352535
+},
+{
+"shape": "stage_insert",
+"at": 1036,
+"sh": 23,
+"mb": 7,
+"me": 8,
+"address": "826B1490",
+"calls": 3324398
+},
+{
+"shape": "stage_bool_low2",
+"at": 1044,
+"address": "826B1840",
+"calls": 2233448
+},
+{
+"shape": "stage_insert",
+"at": 1024,
+"sh": 16,
+"mb": 13,
+"me": 15,
+"address": "826B1950",
+"calls": 2233448
+},
+{
+"shape": "insert",
+"word": 10440,
+"sh": 21,
+"mb": 10,
+"me": 10,
+"dirty_at": 16,
+"dirty": 64,
+"address": "826B0E90",
+"calls": 2114637
+},
+{
+"shape": "store",
+"word": 10328,
+"dirty_at": 16,
+"dirty": 274877906944,
+"address": "826B0EC0",
+"calls": 2114637
+},
+{
+"shape": "insert",
+"word": 10420,
+"sh": 4,
+"mb": 25,
+"me": 27,
+"dirty_at": 16,
+"dirty": 133120,
+"address": "826B0048",
+"calls": 1813471
+},
+{
+"shape": "stage_insert",
+"at": 1044,
+"sh": 3,
+"mb": 27,
+"me": 28,
+"address": "826B19A0",
+"calls": 1788666
+},
+{
+"shape": "stage_insert",
+"at": 1024,
+"sh": 10,
+"mb": 19,
+"me": 21,
+"address": "826B18B0",
+"calls": 1701155
+},
+{
+"shape": "stage_get",
+"at": 1036,
+"sh": 9,
+"mb": 30,
+"me": 31,
+"address": "826B14D0",
+"calls": 444912
+},
+{
+"shape": "get_stage_byte",
+"at": 11644,
+"address": "826B15E8",
+"calls": 444912
+},
+{
+"shape": "get_stage_byte",
+"at": 11670,
+"address": "826B17B0",
+"calls": 444912
+},
+{
+"shape": "stage_get_mask",
+"at": 1044,
+"clr": 30,
+"address": "826B1890",
+"calls": 444912
+},
+{
+"shape": "stage_get",
+"at": 1024,
+"sh": 22,
+"mb": 29,
+"me": 31,
+"address": "826B18E8",
+"calls": 444912
+},
+{
+"shape": "stage_get",
+"at": 1024,
+"sh": 19,
+"mb": 29,
+"me": 31,
+"address": "826B1938",
+"calls": 444912
+},
+{
+"shape": "stage_get_half",
+"at": 1024,
+"clr": 29,
+"address": "826B1988",
+"calls": 444912
+},
+{
+"shape": "insert",
+"word": 10440,
+"sh": 3,
+"mb": 21,
+"me": 28,
+"dirty_at": 16,
+"dirty": 64,
+"address": "826AF8E8",
+"calls": 415691
+},
+{
+"shape": "insert",
+"word": 10420,
+"sh": 14,
+"mb": 15,
+"me": 17,
+"dirty_at": 16,
+"dirty": 2048,
+"address": "826B0198",
+"calls": 209223
+},
+{
+"shape": "store_byte",
+"at": 10371,
+"dirty_at": 16,
+"dirty": 268435456,
+"address": "826B0298",
+"calls": 204545
+},
+{
+"shape": "insert",
+"word": 10420,
+"sh": 8,
+"mb": 21,
+"me": 23,
+"dirty_at": 16,
+"dirty": 2048,
+"address": "826B00F8",
+"calls": 176535
+},
+{
+"shape": "get",
+"word": 10440,
+"sh": 11,
+"mb": 31,
+"me": 31,
+"address": "826B0EB0",
+"calls": 171336
+},
+{
+"shape": "get_word",
+"word": 10328,
+"address": "826B0EE0",
+"calls": 171336
+},
+{
+"shape": "get",
+"word": 10440,
+"sh": 29,
+"mb": 24,
+"me": 31,
+"address": "826AF908",
+"calls": 141714
+},
+{
+"shape": "get_word",
+"word": 11596,
+"address": "826B0010",
+"calls": 141714
+},
+{
+"shape": "get",
+"word": 10420,
+"sh": 28,
+"mb": 29,
+"me": 31,
+"address": "826B0070",
+"calls": 141714
+},
+{
+"shape": "insert",
+"word": 10440,
+"sh": 15,
+"mb": 16,
+"me": 16,
+"dirty_at": 16,
+"dirty": 64,
+"address": "826B0530",
+"calls": 122058
+},
+{
+"shape": "or_all",
+"word": 10412,
+"mb": 0,
+"me": 27,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B07A0",
+"calls": 122058
+},
+{
+"shape": "or_rotated",
+"word": 10412,
+"sh": 4,
+"mb": 0,
+"me": 27,
+"kmb": 28,
+"kme": 23,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B07C0",
+"calls": 122058
+},
+{
+"shape": "or_rotated",
+"word": 10412,
+"sh": 8,
+"mb": 0,
+"me": 23,
+"kmb": 24,
+"kme": 19,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B07E8",
+"calls": 122058
+},
+{
+"shape": "or_rotated",
+"word": 10412,
+"sh": 12,
+"mb": 0,
+"me": 19,
+"kmb": 20,
+"kme": 15,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B0810",
+"calls": 122058
+},
+{
+"shape": "or_rotated",
+"word": 10412,
+"sh": 16,
+"mb": 0,
+"me": 15,
+"kmb": 16,
+"kme": 11,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B0838",
+"calls": 122058
+},
+{
+"shape": "or_rotated",
+"word": 10412,
+"sh": 20,
+"mb": 0,
+"me": 11,
+"kmb": 12,
+"kme": 7,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B0860",
+"calls": 122058
+},
+{
+"shape": "or_rotated",
+"word": 10412,
+"sh": 24,
+"mb": 0,
+"me": 7,
+"kmb": 8,
+"kme": 3,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B0888",
+"calls": 122058
+},
+{
+"shape": "insert",
+"word": 10412,
+"sh": 28,
+"mb": 0,
+"me": 3,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B08B0",
+"calls": 122058
+},
+{
+"shape": "or_all",
+"word": 10416,
+"mb": 0,
+"me": 27,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B08D0",
+"calls": 122058
+},
+{
+"shape": "or_rotated",
+"word": 10416,
+"sh": 4,
+"mb": 0,
+"me": 27,
+"kmb": 28,
+"kme": 23,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B08F0",
+"calls": 122058
+},
+{
+"shape": "or_rotated",
+"word": 10416,
+"sh": 8,
+"mb": 0,
+"me": 23,
+"kmb": 24,
+"kme": 19,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B0918",
+"calls": 122058
+},
+{
+"shape": "or_rotated",
+"word": 10416,
+"sh": 12,
+"mb": 0,
+"me": 19,
+"kmb": 20,
+"kme": 15,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B0940",
+"calls": 122058
+},
+{
+"shape": "or_rotated",
+"word": 10416,
+"sh": 16,
+"mb": 0,
+"me": 15,
+"kmb": 16,
+"kme": 11,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B0968",
+"calls": 122058
+},
+{
+"shape": "or_rotated",
+"word": 10416,
+"sh": 20,
+"mb": 0,
+"me": 11,
+"kmb": 12,
+"kme": 7,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B0990",
+"calls": 122058
+},
+{
+"shape": "or_rotated",
+"word": 10416,
+"sh": 24,
+"mb": 0,
+"me": 7,
+"kmb": 8,
+"kme": 3,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B09B8",
+"calls": 122058
+},
+{
+"shape": "insert",
+"word": 10416,
+"sh": 28,
+"mb": 0,
+"me": 3,
+"dirty_at": 16,
+"dirty": 8192,
+"address": "826B09E0",
+"calls": 122058
+},
+{
+"shape": "insert",
+"word": 10428,
+"sh": 4,
+"mb": 27,
+"me": 27,
+"dirty_at": 16,
+"dirty": 512,
+"address": "826B0EE8",
+"calls": 122058
+},
+{
+"shape": "insert",
+"word": 10428,
+"sh": 24,
+"mb": 0,
+"me": 7,
+"dirty_at": 16,
+"dirty": 512,
+"address": "826B0F18",
+"calls": 122058
+},
+{
+"shape": "insert",
+"word": 10420,
+"sh": 23,
+"mb": 6,
+"me": 8,
+"dirty_at": 16,
+"dirty": 133120,
+"address": "826B01F8",
+"calls": 122057
+},
+{
+"shape": "insert",
+"word": 10420,
+"sh": 29,
+"mb": 0,
+"me": 2,
+"dirty_at": 16,
+"dirty": 133120,
+"address": "826B0230",
+"calls": 122057
+},
+{
+"shape": "insert",
+"word": 10420,
+"sh": 26,
+"mb": 3,
+"me": 5,
+"dirty_at": 16,
+"dirty": 2048,
+"address": "826B0268",
+"calls": 122057
+},
+{
+"shape": "store_byte",
+"at": 10370,
+"dirty_at": 16,
+"dirty": 268435456,
+"address": "826B02B8",
+"calls": 122057
+},
+{
+"shape": "store_byte",
+"at": 10369,
+"dirty_at": 16,
+"dirty": 268435456,
+"address": "826B02D8",
+"calls": 122057
+},
+{
+"shape": "insert",
+"word": 10420,
+"sh": 20,
+"mb": 9,
+"me": 11,
+"dirty_at": 16,
+"dirty": 2048,
+"address": "826B01C8",
+"calls": 122056
+},
+{
+"shape": "insert",
+"word": 10420,
+"sh": 7,
+"mb": 24,
+"me": 24,
+"dirty_at": 16,
+"dirty": 133120,
+"address": "826B00C0",
+"calls": 122055
+},
+{
+"shape": "insert",
+"word": 10420,
+"sh": 11,
+"mb": 18,
+"me": 20,
+"dirty_at": 16,
+"dirty": 133120,
+"address": "826B0128",
+"calls": 122055
+},
+{
+"shape": "insert",
+"word": 10420,
+"sh": 17,
+"mb": 12,
+"me": 14,
+"dirty_at": 16,
+"dirty": 133120,
+"address": "826B0160",
+"calls": 122055
+},
+{
+"shape": "store_byte",
+"at": 10367,
+"dirty_at": 16,
+"dirty": 536870912,
+"address": "826B02F8",
+"calls": 104951
+},
+{
+"shape": "store_byte",
+"at": 10366,
+"dirty_at": 16,
+"dirty": 536870912,
+"address": "826B0318",
+"calls": 104951
+},
+{
+"shape": "store_byte",
+"at": 10365,
+"dirty_at": 16,
+"dirty": 536870912,
+"address": "826B0338",
+"calls": 104951
+},
+{
+"shape": "get",
+"word": 11568,
+"sh": 27,
+"mb": 29,
+"me": 31,
+"address": "826AFA60",
+"calls": 79410
+},
+{
+"shape": "get",
+"word": 11568,
+"sh": 11,
+"mb": 29,
+"me": 31,
+"address": "826AFBF0",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 11572,
+"sh": 2,
+"mb": 31,
+"me": 31,
+"address": "826AFD68",
+"calls": 17112
+},
+{
+"shape": "get_word",
+"word": 11600,
+"address": "826B00B8",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10420,
+"sh": 25,
+"mb": 31,
+"me": 31,
+"address": "826B00E8",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10420,
+"sh": 24,
+"mb": 29,
+"me": 31,
+"address": "826B0118",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10420,
+"sh": 21,
+"mb": 29,
+"me": 31,
+"address": "826B0150",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10420,
+"sh": 15,
+"mb": 29,
+"me": 31,
+"address": "826B0188",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10420,
+"sh": 18,
+"mb": 29,
+"me": 31,
+"address": "826B01B8",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10420,
+"sh": 12,
+"mb": 29,
+"me": 31,
+"address": "826B01E8",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10420,
+"sh": 9,
+"mb": 29,
+"me": 31,
+"address": "826B0220",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10420,
+"sh": 3,
+"mb": 29,
+"me": 31,
+"address": "826B0258",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10420,
+"sh": 6,
+"mb": 29,
+"me": 31,
+"address": "826B0288",
+"calls": 17112
+},
+{
+"shape": "get_word",
+"word": 11576,
+"address": "826B03B8",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10440,
+"sh": 17,
+"mb": 31,
+"me": 31,
+"address": "826B0550",
+"calls": 17112
+},
+{
+"shape": "get_word",
+"word": 10624,
+"address": "826B0578",
+"calls": 17112
+},
+{
+"shape": "get_word",
+"word": 11580,
+"address": "826B05B8",
+"calls": 17112
+},
+{
+"shape": "get_word",
+"word": 11584,
+"address": "826B05F8",
+"calls": 17112
+},
+{
+"shape": "get_word",
+"word": 11588,
+"address": "826B0638",
+"calls": 17112
+},
+{
+"shape": "get_word",
+"word": 11592,
+"address": "826B0678",
+"calls": 17112
+},
+{
+"shape": "get_word",
+"word": 11604,
+"address": "826B0688",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10412,
+"sh": 28,
+"mb": 28,
+"me": 31,
+"address": "826B0A10",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10412,
+"sh": 24,
+"mb": 28,
+"me": 31,
+"address": "826B0A20",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10412,
+"sh": 20,
+"mb": 28,
+"me": 31,
+"address": "826B0A30",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10412,
+"sh": 12,
+"mb": 28,
+"me": 31,
+"address": "826B0A50",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10412,
+"sh": 4,
+"mb": 28,
+"me": 31,
+"address": "826B0A70",
+"calls": 17112
+},
+{
+"shape": "get_word",
+"word": 11748,
+"address": "826B0B98",
+"calls": 17112
+},
+{
+"shape": "get_word",
+"word": 11752,
+"address": "826B0C48",
+"calls": 17112
+},
+{
+"shape": "get_word",
+"word": 11756,
+"address": "826B0CF8",
+"calls": 17112
+},
+{
+"shape": "get_word",
+"word": 11760,
+"address": "826B0DA8",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10428,
+"sh": 28,
+"mb": 31,
+"me": 31,
+"address": "826B0F08",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10432,
+"sh": 29,
+"mb": 31,
+"me": 31,
+"address": "826B10C0",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10432,
+"sh": 30,
+"mb": 31,
+"me": 31,
+"address": "826B10F0",
+"calls": 17112
+},
+{
+"shape": "get",
+"word": 10432,
+"sh": 27,
+"mb": 31,
+"me": 31,
+"address": "826B1120",
+"calls": 17112
+},
+{
+"shape": "insert",
+"word": 10432,
+"sh": 3,
+"mb": 28,
+"me": 28,
+"dirty_at": 16,
+"dirty": 256,
+"address": "826B10A0",
+"calls": 17108
+},
+{
+"shape": "insert",
+"word": 10432,
+"sh": 2,
+"mb": 29,
+"me": 29,
+"dirty_at": 16,
+"dirty": 256,
+"address": "826B10D0",
+"calls": 17108
+},
+{
+"shape": "insert",
+"word": 10432,
+"sh": 5,
+"mb": 26,
+"me": 26,
+"dirty_at": 16,
+"dirty": 256,
+"address": "826B1100",
+"calls": 17108
+},
+{
+"shape": "store_byte",
+"at": 10434,
+"dirty_at": 16,
+"dirty": 256,
+"address": "826B1130",
+"calls": 17108
+},
+{
+"shape": "stage_insert",
+"at": 1040,
+"sh": 22,
+"mb": 5,
+"me": 9,
+"address": "826B19F8",
+"calls": 46
+},
+{
+"shape": "stage_insert",
+"at": 1040,
+"sh": 27,
+"mb": 0,
+"me": 4,
+"address": "826B1A50",
+"calls": 46
+},
+{
+"shape": "stage_insert",
+"at": 1044,
+"sh": 2,
+"mb": 29,
+"me": 29,
+"address": "826B1AA8",
+"calls": 46
+},
+{
+"shape": "insert",
+"word": 10552,
+"sh": 10,
+"mb": 21,
+"me": 21,
+"dirty_at": 32,
+"dirty": 137438953472,
+"address": "826AFF30",
+"calls": 1
+},
+{
+"shape": "insert",
+"word": 11572,
+"sh": 20,
+"mb": 9,
+"me": 11,
+"dirty_at": 16,
+"dirty": 131072,
+"address": "826B1008",
+"calls": 1
+}
+]

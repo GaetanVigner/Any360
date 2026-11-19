@@ -52,7 +52,7 @@ enum class Function : uint32_t {
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
   kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kSin, kCos, kAsin,
   kD3dRenderState, kAtan2, kPow, kD3dSurfaces, kXAudioReverb, kD3dViewport, kD3dQuery,
-  kD3dResourceType, kD3dFormatBlock, kD3dDrawUp, kD3dTextureSize, kCount
+  kD3dResourceType, kD3dFormatBlock, kD3dDrawUp, kD3dTextureSize, kD3dField, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -1196,6 +1196,36 @@ struct DrawVerticesUp {
     return true;
   }
   static bool Writes(const PPCContext&, std::vector<any360::xdk::Range>&) { return false; }
+};
+// The render and sampler state fields (any360/xdk/d3d_state.h, d3d_fields): r3 the device; a setter's r4 the value
+// (a stage's: r4 the stage, r5 the value), a getter's r3 the value back.
+template <const any360::xdk::D3dField& F>
+struct Field {
+  static constexpr Function kFunction = Function::kD3dField;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    if constexpr (F.Reads()) {
+      uint64_t value;
+      if (!any360::xdk::D3dGetField<F>(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u64, value)) return false;
+      ctx.r3.u64 = value;
+      return true;
+    } else {
+      return any360::xdk::D3dSetField<F>(m, g_d3d_layout, ctx.r3.u32, ctx.r4.u64, ctx.r5.u64);
+    }
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    using Op = any360::xdk::D3dField::Op;
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t device = ctx.r3.u32;
+    if (!any360::xdk::detail::DeviceAccepts(l, device) || (F.Staged() && ctx.r4.u64 >= 32)) return false;
+    if constexpr (F.op == Op::kSet) {
+      AddRange(w, device + l.*F.field + F.offset, 4), AddRange(w, device + l.state_dirty, 8);
+    } else if constexpr (F.op == Op::kSetByte) {
+      AddRange(w, device + l.*F.field + F.offset, 1), AddRange(w, device + l.state_dirty, 8);
+    } else if constexpr (F.op == Op::kStageSet || F.op == Op::kStageBorder) {
+      AddRange(w, device + l.*F.field + 24 * ctx.r4.u32 + F.offset, 4), AddRange(w, device + l.fetch_dirty, 8);
+    }
+    return true;
+  }
 };
 // The render state fields' setters (any360/xdk/d3d_state.h): r4 the value; each writes its fields and the state's
 // dirty bits.

@@ -1,0 +1,5 @@
+crackdown_137.log (city route, --any360_xdk_verify=true, the 94 bound), the last report line's parts:
+188000000 calls verified
+D3D state field 25371278
+), 0 different
+different at first and the same when run again: none
