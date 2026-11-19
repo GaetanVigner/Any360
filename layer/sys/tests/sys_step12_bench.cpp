@@ -30,6 +30,8 @@
 #include "any360/sys/variables.h"
 #include "any360/sys/rtl.h"
 #include "any360/sys/info.h"
+#include "any360/sys/ldi.h"
+#include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/threading.h"
 #include "any360/sys/win32.h"
@@ -46,6 +48,7 @@
 #include <bcrypt.h>
 #undef CreateEvent  // windows.h's macros would rename the object manager's and the file system's methods
 #undef CreateFile
+#include "lzx_cab.h"
 #endif
 
 using namespace any360::sys;
@@ -525,6 +528,119 @@ int main(int argc, char** argv) {
     uint32_t key = 0;
     PrintRow("XeKeysGetKeyProperties", 0, Time(1000000, [&] { g_sink = g_sink + XeKeysGetKeyProperties(key++ & 0x7F); }),
              Measure{});
+  }
+  // Step 12, eighth batch: the language and locale, the Xapi helpers, IPTV's name, XamAllocEx (with the XamFree that
+  // returns its pages, against the host's VirtualAlloc + VirtualFree of as many zeroed pages), and LDI: a whole LZX
+  // stream decoded chunk by chunk (Create on scratch memory, every chunk, Destroy) against cabinet.dll's FDI decoding
+  // the same CAB from memory (its allocations counted through its allocator).
+  {
+    PrintRow("XTLGetLanguageV2", 0, Time(1000000, [&] { g_sink = g_sink + XTLGetLanguageV2(); }), Measure{});
+    PrintRow("XapipGetLocale", 16, Time(1000000, [&] { g_sink = g_sink + XapipGetLocale(g, 16, kOut); }), Measure{});
+    PrintRow("XapiFormatTimeOut", 8, Time(1000000, [&] { g_sink = g_sink + XapiFormatTimeOut(g, kOut, 1500); }), Measure{});
+    uint32_t processor = 0;
+    PrintRow("XapiThreadFlags (XapipCreateThread)", 0,
+             Time(1000000, [&] { g_sink = g_sink + XapiThreadFlags(4, processor++ & 7); }), Measure{});
+    PrintRow("XamIptvGetServiceName", 4, Time(1000000, [&] { g_sink = g_sink + XamState().IptvServiceName(g, kOut); }),
+             Measure{});
+
+    std::vector<uint8_t> memory(0x1000000);
+    const Guest gm{memory.data()};
+    Memory().Reset({{0x00000000, 0x400000, 0x1000, false}, {0x400000, 0x400000, 0x10000, false},
+                    {0x800000, 0x400000, 0x1000, true}, {0xC00000, 0x400000, 0x10000, true}});
+    const uint32_t io = 0x3FF000;
+    for (const uint32_t size : {0x2345u, 0x40000u}) {
+      Measure host;
+#if defined(_WIN32)
+      host = Time(20000, [&] {
+        void* p = VirtualAlloc(nullptr, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        static_cast<volatile uint8_t*>(p)[0] = 1;
+        VirtualFree(p, 0, MEM_RELEASE);
+      }, false);
+#endif
+      PrintRow("XamAllocEx physical + XamFree", size, Time(20000, [&] {
+                 Memory().XamAllocEx(gm, 0x20000000, 0x40000000, size, io);
+                 Memory().XamFree(gm, gm.Load32(io));
+               }),
+               host);
+      PrintRow("XamAllocEx virtual + XamFree", size, Time(20000, [&] {
+                 Memory().XamAllocEx(gm, 0, 0, size, io);
+                 Memory().XamFree(gm, gm.Load32(io));
+               }),
+               host);
+    }
+    Memory().Reset();
+
+#if defined(_WIN32)
+    // Streams of 1 MiB: text and x86-like code (E8 calls), and incompressible bytes (uncompressed blocks).
+    std::vector<uint8_t> text_code, noise(1u << 20);
+    {
+      uint32_t x = 12345;
+      auto next = [&] { return x = x * 1664525u + 1013904223u; };
+      static const char* kWords[] = {"the ", "kernel ", "frame ", "window ", "of ", "LZX ", "decoder ", "block ", "\n",
+                                     "tree ", "match ", "offset ", "length ", "and ", "a ", "title "};
+      while (text_code.size() < (1u << 20)) {
+        if ((next() >> 20) % 3) {
+          const char* w = kWords[(next() >> 16) % 16];
+          text_code.insert(text_code.end(), w, w + std::strlen(w));
+        } else {
+          const uint32_t target = (next() >> 8) % 0x60000;
+          const uint8_t call[] = {0xE8, uint8_t(target), uint8_t(target >> 8), uint8_t(target >> 16), 0, 0x8B, 0x45, 0xF8};
+          text_code.insert(text_code.end(), call, call + 8);
+        }
+      }
+      text_code.resize(1u << 20);
+      for (auto& b : noise) b = uint8_t(next() >> 24);
+    }
+    struct Stream {
+      const char* name;
+      const std::vector<uint8_t>* data;
+      uint32_t bits;
+    };
+    const Stream streams[] = {{"LDI stream, text and code, 2^17", &text_code, 17},
+                              {"LDI stream, text and code, 2^21", &text_code, 21},
+                              {"LDI stream, random bytes, 2^17", &noise, 17}};
+    for (const Stream& s : streams) {
+      const any360::test::cab::Bytes cab = any360::test::cab::MakeCab(*s.data, s.bits);
+      const auto chunks = any360::test::cab::Chunks(cab);
+      if (chunks.empty()) {
+        std::printf("  !! FCI gave no LZX stream for %s\n", s.name);
+        continue;
+      }
+      // The chunks laid out in guest memory one after the other; the frame out at 0x10000.
+      std::vector<uint32_t> at;
+      uint32_t next = 0x100000;
+      for (const auto& c : chunks) {
+        at.push_back(next);
+        std::memcpy(gm.host(next), c.data.data(), c.data.size());
+        next += uint32_t(c.data.size() + 15) & ~15u;
+      }
+      const uint32_t scratch = 0x1000, out = 0x10000, sizes = 0x2000;
+      gm.Store32(sizes, 0x8000);
+      gm.Store32(sizes + 4, 1u << s.bits);
+      bool same = true;
+      const uint32_t n = 20;
+      const Measure ours = Time(n, [&] {
+        Ldi().Create(gm, sizes, sizes + 4, 0, 0, scratch, 0, sizes + 8, nullptr, nullptr);
+        uint32_t offset = 0;
+        for (size_t i = 0; i < chunks.size(); ++i) {
+          gm.Store32(sizes + 12, chunks[i].frame);
+          same &= Ldi().Decompress(gm, scratch, at[i], uint32_t(chunks[i].data.size()), out, sizes + 12) == 0 &&
+                  std::memcmp(gm.host(out), s.data->data() + offset, chunks[i].frame) == 0;
+          offset += chunks[i].frame;
+        }
+        Ldi().Destroy(gm, scratch, nullptr, nullptr);
+      });
+      any360::test::cab::Fdi fdi;
+      std::vector<uint8_t> host_out(s.data->size());
+      const Measure host = Time(n, [&] { same &= fdi.Decode(cab, host_out); }, false);
+      same &= host_out == *s.data;
+      PrintRow(s.name, uint32_t(s.data->size()), ours,
+               {host.ns, double(fdi.bytes) / double(n * g_repeats), double(fdi.allocations) / double(n * g_repeats)});
+      std::printf("    %zu chunks, %zu bytes compressed: Any360 %.1f MB/s, FDI %.1f MB/s%s\n", chunks.size(), cab.size(),
+                  double(s.data->size()) / ours.ns * 1e3, double(s.data->size()) / host.ns * 1e3,
+                  same ? "" : "  !! output differs");
+    }
+#endif
   }
   std::printf("sys_step12_bench: allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_totals.calls ? double(g_totals.bytes) / double(g_totals.calls) : 0.0,

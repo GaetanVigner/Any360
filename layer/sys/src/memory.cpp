@@ -502,6 +502,19 @@ void MemoryManager::FreePages(uint32_t address) {
   if (Heap* heap = Find(address)) Release(*heap, address, nullptr);
 }
 
+uint32_t MemoryManager::XamAllocEx(Guest g, uint32_t physical_flags, uint32_t flags, uint32_t size, uint32_t out_ptr) {
+  if (!(flags & 0x40000000)) return XamAlloc(g, flags, size, out_ptr);
+  static constexpr uint32_t kProtect[4] = {kPageReadOnly, kPageReadWrite | kPageNoCache, kPageReadWrite,
+                                           kPageReadWrite | kPageWriteCombine};
+  // No alignment given: 4 KB (1 << 12).
+  const uint32_t remapped = (physical_flags & 0x0F000000) ? physical_flags : 0x0C000000 | (physical_flags & 0xF0FFFFFF);
+  // Physical pages come zeroed (bit 30 of the physical flags asks for it).
+  const uint32_t address = AllocatePhysical(g, 2, size, kProtect[(remapped >> 28) & 3], 0, 0xFFFFFFFF,
+                                            1u << ((remapped >> 24) & 0xF));
+  g.Store32(out_ptr, address);
+  return address ? 0 : 0x8007000E;
+}
+
 uint32_t MemoryManager::XamFree(Guest, uint32_t address) {
   std::lock_guard lock(mutex_);
   if (Heap* heap = Find(address)) Release(*heap, address, nullptr);

@@ -22,6 +22,17 @@ uint32_t SetWin32LastNtError(Guest g, uint32_t kthread, uint32_t status) {
   return error;
 }
 
+uint32_t XapiFormatTimeOut(Guest g, uint32_t interval, uint32_t milliseconds) {
+  const std::optional<int64_t> timeout = Win32Timeout(milliseconds);
+  if (!timeout) return 0;
+  g.Store64(interval, uint64_t(*timeout));
+  return interval;
+}
+
+uint32_t XapiThreadFlags(uint32_t creation_flags, uint32_t processor) {
+  return ((creation_flags >> 2) & 1) | (processor < 8 ? 1u << (24 + processor) : 0);
+}
+
 std::optional<int64_t> Win32Timeout(uint32_t milliseconds) {
   if (milliseconds == kInfinite) return std::nullopt;
   return -int64_t(10000) * int64_t(milliseconds);

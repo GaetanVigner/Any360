@@ -3302,6 +3302,125 @@ void ProfileStep12Tests() {
 
 // Step 12's Win32 forms (win32.h): what is Win32's own over the kernel calls they use (the last error in the KTHREAD,
 // millisecond timeouts, WaitForSingleObjectEx's documented results, SleepEx's, lstrlenW, the tick count).
+// Step 12, eighth batch: the language and locale, XamAllocEx, the Xapi timeout and thread flags, IPTV's name (Xenia's
+// xam_locale.cc and xam_info.cc). LDI has its own executable (sys_ldi_tests).
+void MiscStep12EighthTests() {
+  // XTLGetLanguageV2: the console's language up to Russian (12); past it the region's, English outside NTSC-J.
+  const ConsoleSettings saved = Console();
+  for (uint32_t language = 0; language <= 20; ++language) {
+    Console().language = language;
+    CHECK(XTLGetLanguageV2() == (language < 13 ? language : 1));
+  }
+  Console() = saved;
+
+  // XapipGetLocale: "en-US" as ANSI, truncated to length - 1 and terminated; nothing for a length of 0.
+  const uint32_t text = kScratch + 0x400;
+  for (const uint32_t length : {0u, 1u, 3u, 5u, 6u, 7u, 64u}) {
+    std::memset(g.host(text), 0xAA, 16);
+    CHECK(XapipGetLocale(g, length, text) == 0);
+    const std::string expected = std::string("en-US").substr(0, length ? length - 1 : 0);
+    if (length) {
+      CHECK(std::memcmp(g.host(text), expected.data(), expected.size()) == 0 && g.Load8(text + uint32_t(expected.size())) == 0);
+      CHECK(g.Load8(text + uint32_t(expected.size()) + 1) == 0xAA);
+    } else {
+      CHECK(g.Load8(text) == 0xAA);
+    }
+  }
+  // Another language and country (German, Austria: online country 5); an unknown country (17) is E_NOTFOUND with
+  // nothing written.
+  Console().language = 3;
+  Console().country = 5;
+  CHECK(XapipGetLocale(g, 16, text) == 0 && std::strcmp(reinterpret_cast<const char*>(g.host(text)), "de-AT") == 0);
+  Console().country = 17;
+  std::memset(g.host(text), 0xAA, 16);
+  CHECK(XapipGetLocale(g, 16, text) == 0x80070490 && g.Load8(text) == 0xAA);
+  Console() = saved;
+
+  // XapiFormatTimeOut: the relative interval (big-endian) and its address; INFINITE gives 0 and writes nothing.
+  const uint32_t interval = kScratch + 0x500;
+  g.Store64(interval, 0x1122334455667788);
+  CHECK(XapiFormatTimeOut(g, interval, 0xFFFFFFFF) == 0 && g.Load64(interval) == 0x1122334455667788);
+  CHECK(XapiFormatTimeOut(g, interval, 1500) == interval && int64_t(g.Load64(interval)) == -15000000);
+  CHECK(XapiFormatTimeOut(g, interval, 0) == interval && g.Load64(interval) == 0);
+  CHECK(XapiFormatTimeOut(g, interval, 0xFFFFFFFE) == interval && int64_t(g.Load64(interval)) == -int64_t(10000) * 0xFFFFFFFE);
+  // The creation flags: CREATE_SUSPENDED is the kernel's 1, a processor its affinity bit; none for -1 or past 7.
+  CHECK(XapiThreadFlags(4, 0xFFFFFFFF) == 1 && XapiThreadFlags(0x10, 0xFFFFFFFF) == 0);
+  CHECK(XapiThreadFlags(0, 2) == 1u << 26 && XapiThreadFlags(4, 5) == (1u | 1u << 29) && XapiThreadFlags(0, 7) == 1u << 31);
+  CHECK(XapiThreadFlags(0, 8) == 0 && XapiThreadFlags(4, 31) == 1 && XapiThreadFlags(0, 0x80000000) == 0);
+  // A thread created with a processor runs on it (suspended here: nothing runs).
+  {
+    Fresh();
+    Objects().SetKernelHeap(0x10000, 0x70000);
+    Objects().Reset();
+    Threads().SetDispatcher(&Dispatch, nullptr);
+    for (const uint32_t processor : {0u, 3u, 5u}) {
+      uint32_t handle = 0;
+      CHECK(Threads().CreateThreadHandle(g, &handle, 0, 0, 0, 0x1000, 0, XapiThreadFlags(4, processor)) == 0);
+      const uint32_t kthread = Objects().Lookup(handle);
+      CHECK(kthread && g.Load8(kthread + 0xBF) == processor && g.Load8(kthread + 0xBC) == 1);
+      // Resumed, it runs (no code at its start: it returns at once) and ends.
+      const int64_t second = -10000000;
+      CHECK(Threads().NtResumeThread(g, handle, kScratch + 0x580) == 0);
+      CHECK(Objects().WaitForHandle(g, handle, kMainThread, &second) == 0);
+    }
+    Threads().Shutdown();
+  }
+
+  // XamIptvGetServiceName: one name buffer (0x78 bytes, empty: IPTV is off), the same address every call, no host
+  // allocation.
+  Fresh();
+  XamState().Reset();
+  const uint32_t out = kScratch + 0x600;
+  CHECK(XamState().IptvServiceName(g, out) == 0);
+  const uint32_t name = g.Load32(out);
+  CHECK(name != 0);
+  bool zero = true;
+  for (uint32_t i = 0; i < 0x78; ++i) zero = zero && g.Load8(name + i) == 0;
+  CHECK(zero);
+  g.Store32(out, 0);
+  const AllocCounts before = ThreadAllocations();
+  CHECK(XamState().IptvServiceName(g, out) == 0 && g.Load32(out) == name);
+  CHECK((ThreadAllocations() - before).count == 0);
+
+  // XamAllocEx: without bit 30 it is XamAlloc; with it, zeroed physical pages, the protection and alignment from the
+  // physical flags; failure writes 0 and gives E_OUTOFMEMORY.
+  std::vector<uint8_t> memory(0x400000, 0xAA);
+  const Guest gm{memory.data()};
+  Memory().Reset({{0x00000000, 0x40000, 0x1000, false}, {0x40000, 0x80000, 0x10000, false},
+                  {0x100000, 0x100000, 0x1000, true}, {0x200000, 0x100000, 0x10000, true}});
+  const uint32_t io = 0x3F000;
+  CHECK(Memory().XamAllocEx(gm, 0, 0, 0x1800, io) == 0);
+  const uint32_t plain = gm.Load32(io);
+  CHECK(plain && plain < 0x40000 && memory[plain] == 0 && memory[plain + 0x1FFF] == 0);
+  struct Case {
+    uint32_t physical_flags, protect, alignment;
+  };
+  const Case cases[] = {
+      {0x00000000, kPageReadOnly, 0x1000},
+      {0x10000000, kPageReadWrite | kPageNoCache, 0x1000},
+      {0x20000000, kPageReadWrite, 0x1000},
+      {0x30000000, kPageReadWrite | kPageWriteCombine, 0x1000},
+      {0x6E000000, kPageReadWrite, 0x4000},   // read-write, 16 KB alignment, zeroing asked
+      {0x2F000000, kPageReadWrite, 0x8000},
+      {0x0D000000, kPageReadOnly, 0x2000},
+  };
+  for (const Case& c : cases) {
+    gm.Store32(io, 0xFFFFFFFF);
+    CHECK(Memory().XamAllocEx(gm, c.physical_flags, 0x40000000, 0x2345, io) == 0);
+    const uint32_t at = gm.Load32(io);
+    CHECK(at >= 0x100000 && at < 0x200000 && at % c.alignment == 0);
+    CHECK(Memory().QueryProtect(at) == c.protect);
+    bool zeroed = true;
+    for (uint32_t i = 0; i < 0x3000; ++i) zeroed = zeroed && memory[at + i] == 0;
+    CHECK(zeroed);
+    std::memset(memory.data() + at, 0x55, 0x3000);
+    CHECK(Memory().XamFree(gm, at) == 0);
+  }
+  gm.Store32(io, 0xFFFFFFFF);
+  CHECK(Memory().XamAllocEx(gm, 0x20000000, 0x40000000, 0x200000, io) == 0x8007000E && gm.Load32(io) == 0);
+  Memory().Reset();
+}
+
 void Win32Step12Tests() {
   const uint32_t kthread = kScratch + 0x800, text = kScratch + 0x400;
   std::memset(g.host(kthread), 0, 0x200);
@@ -3898,6 +4017,7 @@ int main() {
   GuideNuiStep12Tests();
   ProfileStep12Tests();
   CryptStep12SeventhTests();
+  MiscStep12EighthTests();
   Win32Step12Tests();
   InputQueueTests();
   InputScriptTests();

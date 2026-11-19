@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(any360_sys STATIC src/rtl.cpp src/info.cpp src/config.cpp src/error_tables.cpp src/video.cpp src/net.cpp
-            src/threading.cpp src/format.cpp src/objects.cpp src/scheduler.cpp src/memory.cpp src/files.cpp src/host_times.cpp src/xam.cpp src/win32.cpp src/input.cpp src/crypt.cpp src/crypt_blocks.cpp src/crypt_host.cpp
+            src/threading.cpp src/format.cpp src/objects.cpp src/scheduler.cpp src/memory.cpp src/files.cpp src/host_times.cpp src/xam.cpp src/win32.cpp src/input.cpp src/crypt.cpp src/crypt_blocks.cpp src/crypt_host.cpp src/ldi.cpp
             src/graphics.cpp src/audio.cpp src/variables.cpp src/host_sockets.cpp)
 target_include_directories(any360_sys PUBLIC include)
 if(WIN32)
@@ -38,12 +38,22 @@ add_test(NAME sys_object_tests COMMAND sys_object_tests)
 # results kept in docs/perf/archive/ (sys_step12_bench [repeats]).
 add_executable(sys_step12_bench tests/sys_step12_bench.cpp)
 target_link_libraries(sys_step12_bench PRIVATE any360_sys any360_alloc_meter)
+target_include_directories(sys_step12_bench PRIVATE tests)
 if(WIN32)
-    target_link_libraries(sys_step12_bench PRIVATE bcrypt)
+    target_link_libraries(sys_step12_bench PRIVATE bcrypt cabinet)
 endif()
 target_compile_options(sys_step12_bench PRIVATE -Wall -Wextra)
 
 # The network over the host's loopback sockets.
+# LDI's LZX decoder and contexts; on Windows checked against cabinet.dll's LZX encoder (FCI).
+add_executable(sys_ldi_tests tests/sys_ldi_tests.cpp)
+target_link_libraries(sys_ldi_tests PRIVATE any360_sys)
+target_include_directories(sys_ldi_tests PRIVATE tests)
+target_compile_options(sys_ldi_tests PRIVATE -Wall -Wextra)
+if(WIN32)
+  target_link_libraries(sys_ldi_tests PRIVATE cabinet)
+endif()
+add_test(NAME sys_ldi_tests COMMAND sys_ldi_tests)
 add_executable(sys_net_tests tests/sys_net_tests.cpp)
 target_link_libraries(sys_net_tests PRIVATE any360_sys)
 target_compile_options(sys_net_tests PRIVATE -Wall -Wextra)
@@ -116,6 +126,7 @@ if(ANY360_REFERENCE_SDK)
     if(WIN32)
         target_link_libraries(sys_abi_bench PRIVATE any360_sys_ppc "${ANY360_REFERENCE_SDK}/lib/rexruntimerd.lib"
                               "${ANY360_REFERENCE_SDK}/lib/spdlogrd.lib" "${ANY360_REFERENCE_SDK}/lib/fmtrd.lib")
+        target_link_libraries(sys_abi_bench PRIVATE cabinet)
     else()
         target_link_libraries(sys_abi_bench PRIVATE any360_sys_ppc "${ANY360_REFERENCE_SDK}/lib/librexruntimerd.so")
     endif()

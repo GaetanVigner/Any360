@@ -46,4 +46,14 @@ uint32_t TickCount();
 // still ERROR_IO_PENDING; with no XOVERLAPPED, the thread's last error.
 uint32_t XGetOverlappedExtendedError(Guest g, uint32_t kthread, uint32_t overlapped);
 
+// Step 12, eighth batch (Xenia's xam_info.cc).
+// XapiFormatTimeOut (interval out, milliseconds): the timeout as a relative kernel interval (big-endian, 100 ns,
+// negative) written at `interval` and that address returned, the pointer a kernel wait takes; INFINITE writes nothing
+// and returns 0 (no timeout). Xenia returns the host address of its buffer: the guest's is returned here.
+uint32_t XapiFormatTimeOut(Guest g, uint32_t interval, uint32_t milliseconds);
+// XapipCreateThread's creation flags for ExCreateThread: CREATE_SUSPENDED (4) is the kernel's suspended flag (1), a
+// processor (0-5 on the console) its affinity bit at 24 + processor; -1 (CreateThread) or any processor past the
+// affinity byte (8 or more, which Xenia's shift overflows) asks for none.
+uint32_t XapiThreadFlags(uint32_t creation_flags, uint32_t processor);
+
 }  // namespace any360::sys

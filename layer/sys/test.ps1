@@ -53,6 +53,8 @@ try {
     if ($LASTEXITCODE) { throw "Build failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_object_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "sys_object_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'sys_ldi_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "sys_ldi_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_net_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "sys_net_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'xdk/xdk_crt_tests.exe') | Out-Host

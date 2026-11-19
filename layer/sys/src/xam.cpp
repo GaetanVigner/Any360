@@ -69,6 +69,7 @@ void Xam::Reset() {
   user_preferences_ = 0;
   profile_mounts_.clear();
   language_fallback_ = 0;
+  iptv_name_ = 0;
   Objects().AddCloseHook([](uint32_t object) { XamState().OnClose(object); });
   system_module_ = 0;
   settings_.clear();
@@ -418,6 +419,18 @@ uint32_t Xam::LanguageLocaleFallbackString(Guest g, uint32_t language) {
     language_fallback_ = at;
   }
   return language_fallback_at_[language];
+}
+
+uint32_t Xam::IptvServiceName(Guest g, uint32_t name_out) {
+  constexpr uint32_t kNameBytes = 0x78;
+  if (!iptv_name_) {
+    const uint32_t at = Objects().AllocateObject(kNameBytes);
+    if (!at) return 0x8007000E;
+    std::memset(g.host(at), 0, kNameBytes);
+    iptv_name_ = at;
+  }
+  g.Store32(name_out, iptv_name_);
+  return 0;
 }
 
 uint32_t Xam::UserGetDeviceContext(Guest g, uint32_t user, uint32_t context_out) {

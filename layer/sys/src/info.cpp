@@ -332,4 +332,33 @@ const char16_t* LanguageLocaleFallback(uint32_t language) {
   return language < std::size(kFallback) ? kFallback[language] : u"";
 }
 
+// --- step 12, eighth batch (Xenia's xam_locale.cc) ---
+
+uint32_t XTLGetLanguageV2() {
+  constexpr uint32_t kSwedish = 13;
+  if (Console().language < kSwedish) return Console().language;
+  const uint32_t region = XGetGameRegion();
+  if ((region & 0xFF00) != 0x100) return 1;  // English
+  return region == 0x101 ? 2 : 7;           // Japanese, Korean
+}
+
+uint32_t XapipGetLocale(Guest g, uint32_t length, uint32_t buffer) {
+  const char* language = Lookup(kOnlineLanguageStrings, Console().language, static_cast<const char*>(nullptr));
+  const char* country = Lookup(kOnlineCountryStrings, Console().country, static_cast<const char*>(nullptr));
+  if (!language || !country) return kENotFound;
+  // The profile's legal locale goes through a 7-character UTF-16 buffer first.
+  const size_t language_size = std::strlen(language), country_size = std::strlen(country);
+  const size_t size = language_size + 1 + country_size;
+  if (size + 1 > 7) return kEInsufficientBuffer;
+  char text[8];
+  std::memcpy(text, language, language_size);
+  text[language_size] = '-';
+  std::memcpy(text + language_size + 1, country, country_size);
+  if (!length) return 0;
+  const size_t n = std::min<size_t>(size, length - 1);
+  std::memcpy(g.host(buffer), text, n);
+  g.Store8(buffer + uint32_t(n), 0);
+  return 0;
+}
+
 }  // namespace any360::sys

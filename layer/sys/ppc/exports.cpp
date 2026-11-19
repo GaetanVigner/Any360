@@ -17,6 +17,7 @@
 #include "any360/sys/format.h"
 #include "any360/sys/graphics.h"
 #include "any360/sys/info.h"
+#include "any360/sys/ldi.h"
 #include "any360/sys/memory.h"
 #include "any360/sys/net.h"
 #include "any360/sys/objects.h"
@@ -860,7 +861,7 @@ ANY360_SYS_EXPORT(CreateThread) {
   // flag (1); no processor asked for.
   uint32_t handle = 0;
   const uint32_t status = Threads().CreateThreadHandle({base}, &handle, ctx.r4.u32, ctx.r8.u32, 0, ctx.r5.u32, ctx.r6.u32,
-                                                       (ctx.r7.u32 >> 2) & 1);
+                                                       XapiThreadFlags(ctx.r7.u32, 0xFFFFFFFF));
   if (status != kStatusSuccess) SetWin32LastNtError({base}, ThreadOf(ctx, base), status);
   ctx.r3.u64 = status == kStatusSuccess ? handle : 0;
 }
@@ -1007,6 +1008,49 @@ ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Format) { XeCryptBnDwLePkcs1Format({base}, c
 ANY360_SYS_EXPORT(XeKeysGetConsoleType) { ctx.r3.u64 = XeKeysGetConsoleType({base}, ctx.r3.u32); }
 ANY360_SYS_EXPORT(XeKeysGetConsoleID) { ctx.r3.u64 = XeKeysGetConsoleID({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeKeysGetKeyProperties) { ctx.r3.u64 = XeKeysGetKeyProperties(ctx.r3.u32); }
+// Step 12, eighth batch: the language and locale, XamAllocEx, the Xapi thread and timeout forms, IPTV's name, LDI.
+ANY360_SYS_EXPORT(XTLGetLanguageV2) { ctx.r3.u64 = XTLGetLanguageV2(); }
+// (buffer length, buffer)
+ANY360_SYS_EXPORT(XapipGetLocale) { ctx.r3.u64 = XapipGetLocale({base}, ctx.r3.u32, ctx.r4.u32); }
+// (physical flags, flags, size, address out)
+ANY360_SYS_EXPORT(XamAllocEx) { ctx.r3.u64 = Memory().XamAllocEx({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+// (interval out, milliseconds): the interval's address, or 0 for INFINITE.
+ANY360_SYS_EXPORT(XapiFormatTimeOut) { ctx.r3.u64 = XapiFormatTimeOut({base}, ctx.r3.u32, ctx.r4.u32); }
+// (attributes, stack size, start, parameter, flags, processor, thread id out): the handle, or 0 with the last error set.
+ANY360_SYS_EXPORT(XapipCreateThread) {
+  uint32_t handle = 0;
+  const uint32_t status = Threads().CreateThreadHandle({base}, &handle, ctx.r4.u32, ctx.r9.u32, 0, ctx.r5.u32, ctx.r6.u32,
+                                                       XapiThreadFlags(ctx.r7.u32, ctx.r8.u32));
+  if (status != kStatusSuccess) SetWin32LastNtError({base}, ThreadOf(ctx, base), status);
+  ctx.r3.u64 = status == kStatusSuccess ? handle : 0;
+}
+// (name out)
+ANY360_SYS_EXPORT(XamIptvGetServiceName) { ctx.r3.u64 = XamState().IptvServiceName({base}, ctx.r3.u32); }
+// The title's LDI allocator and freer run on the calling thread, below its frame (as an APC does).
+struct LdiCaller {
+  uint32_t kthread, pcr, stack_top;
+};
+static uint32_t LdiCall(uint32_t function, uint32_t argument, void* user) {
+  const auto& caller = *static_cast<const LdiCaller*>(user);
+  return uint32_t(Threads().Dispatch(function, {caller.kthread, caller.pcr, caller.stack_top}, {argument}));
+}
+static LdiCaller LdiCallerOf(PPCContext& ctx, uint8_t* base) {
+  return {ThreadOf(ctx, base), ctx.r13.u32, (ctx.r1.u32 - 0x400) & ~0xFu};
+}
+// (data block max in, config, alloc, free, scratch, source min out, handle out)
+ANY360_SYS_EXPORT(LDICreateDecompression) {
+  LdiCaller caller = LdiCallerOf(ctx, base);
+  ctx.r3.u64 = Ldi().Create({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32,
+                            &LdiCall, &caller);
+}
+// (handle, source, source size, destination, destination size in/out)
+ANY360_SYS_EXPORT(LDIDecompress) {
+  ctx.r3.u64 = Ldi().Decompress({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(LDIDestroyDecompression) {
+  LdiCaller caller = LdiCallerOf(ctx, base);
+  ctx.r3.u64 = Ldi().Destroy({base}, ctx.r3.u32, &LdiCall, &caller);
+}
 ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
@@ -1860,6 +1904,15 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XeKeysGetConsoleType),
     ANY360_SYS_ENTRY(XeKeysGetConsoleID),
     ANY360_SYS_ENTRY(XeKeysGetKeyProperties),
+    ANY360_SYS_ENTRY(XTLGetLanguageV2),
+    ANY360_SYS_ENTRY(XapipGetLocale),
+    ANY360_SYS_ENTRY(XamAllocEx),
+    ANY360_SYS_ENTRY(XapiFormatTimeOut),
+    ANY360_SYS_ENTRY(XapipCreateThread),
+    ANY360_SYS_ENTRY(XamIptvGetServiceName),
+    ANY360_SYS_ENTRY(LDICreateDecompression),
+    ANY360_SYS_ENTRY(LDIDecompress),
+    ANY360_SYS_ENTRY(LDIDestroyDecompression),
     ANY360_SYS_ENTRY(XeCryptAesKey),
     ANY360_SYS_ENTRY(XeCryptAesEcb),
     ANY360_SYS_ENTRY(XeCryptAesCbc),

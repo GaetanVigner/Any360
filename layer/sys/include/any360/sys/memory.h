@@ -62,6 +62,11 @@ class MemoryManager {
   // XamAlloc / XamFree: committed 4 KB pages, zeroed.
   uint32_t XamAlloc(Guest g, uint32_t flags, uint32_t size, uint32_t out_ptr);
   uint32_t XamFree(Guest g, uint32_t address);
+  // XamAllocEx (physical flags, flags, size, address out), as Xenia's xam_info.cc: without bit 30 of `flags` it is
+  // XamAlloc. With it, physical memory in 4 KB pages: the protection from bits 28-29 of the physical flags (read-only,
+  // read-write uncached, read-write, read-write write-combined), the alignment 1 << bits 24-27 (4 KB when they are
+  // 0), zeroed. The address is written, 0 on failure; 0 or E_OUTOFMEMORY.
+  uint32_t XamAllocEx(Guest g, uint32_t physical_flags, uint32_t flags, uint32_t size, uint32_t out_ptr);
 
   bool QueryRegion(uint32_t address, RegionInfo& info) const;
   // Another allocator sharing the guest address space (a binder's runtime, which goes on allocating its own

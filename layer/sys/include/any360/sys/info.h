@@ -75,4 +75,14 @@ uint32_t XamGetLocaleDateFormat(uint32_t locale);
 // which are the console's here (one local profile); a null out is skipped.
 void XamGetOnlineLanguageAndCountry(Guest g, uint32_t language, uint32_t country);
 
+// Step 12, eighth batch (Xenia's xam_locale.cc).
+// XTLGetLanguageV2: the base language (up to Russian, 12): the console's language when it is one, else the game
+// region's (English outside NTSC-J, Japanese for NTSC-J Japan, Korean for the other NTSC-J regions).
+uint32_t XTLGetLanguageV2();
+// XapipGetLocale (buffer length, buffer): the profile's legal locale ("en-US", the console's language and country) as
+// ANSI, truncated to length - 1 characters and terminated (nothing written for a length of 0). It goes through a
+// 7-character buffer as XAM's: a locale of 7 characters or more is ERROR_INSUFFICIENT_BUFFER (as an HRESULT) and an
+// unknown language or country E_NOTFOUND, nothing written.
+uint32_t XapipGetLocale(Guest g, uint32_t length, uint32_t buffer);
+
 }  // namespace any360::sys

@@ -219,6 +219,11 @@ class Xam {
   // XamGetLanguageLocaleFallbackString: the guest address of the language's fallback locale name (info.h:
   // LanguageLocaleFallback), the 18 laid out once in the kernel heap; 0 for a language past Simplified Chinese.
   uint32_t LanguageLocaleFallbackString(Guest g, uint32_t language);
+  // XamIptvGetServiceName: the guest address of the IPTV provider's name (0x78 bytes, 59 UTF-16 characters and a
+  // terminator, laid out once in the kernel heap) written at `name_out`; 0, or E_OUTOFMEMORY when the heap has no
+  // room. The name is the console's IPTV setting, which is empty here (IPTV is off, as XamIsIptvEnabled answers);
+  // Xenia writes its own name when the setting is empty.
+  uint32_t IptvServiceName(Guest g, uint32_t name_out);
   // The title id of the XEX header's execution info (0 without a header).
   uint32_t TitleId(Guest g) const;
   // Tasks: the callback runs on a new thread with the message as its context.
@@ -379,6 +384,7 @@ class Xam {
   std::vector<std::string> profile_mounts_;  // the names XamProfileOpen mounted the profile under
   uint32_t language_fallback_ = 0;  // the 18 fallback locale names in the kernel heap, laid out at first use
   uint32_t language_fallback_at_[18] = {};
+  uint32_t iptv_name_ = 0;  // the IPTV provider's name in the kernel heap, laid out at first use
   // The packages of a type as enumerator items of `item_size` bytes starting with their XCONTENT_DATA, sorted by name.
   std::vector<std::vector<uint8_t>> ContentItems(uint32_t device_id, uint32_t content_type, uint32_t item_size) const;
 

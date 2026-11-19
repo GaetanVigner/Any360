@@ -453,6 +453,13 @@ x86-64, 1.2-1.7x CNG; portable C++ elsewhere), the BnQw helpers (copy, the 2-adi
 product word for word), the signature-check block and the PKCS #1 v1.5 block, a retail console's type and id and the
 key vault's entry sizes (docs/perf/archive/2026-11-19-sys-step12-crypt/).
 
+Eighth batch, the other calls (9): `XTLGetLanguageV2` and `XapipGetLocale` from the console's language and country,
+`XamAllocEx` (XamAlloc, or zeroed physical pages with the protection and alignment its flags give), the Xapi forms
+`XapiFormatTimeOut` and `XapipCreateThread` (its processor as the kernel's affinity bit), IPTV's provider name (empty:
+IPTV is off), and LDI (`ldi.h`): `LDICreateDecompression`, `LDIDecompress`, `LDIDestroyDecompression` with Any360's own
+LZX decoder (checked against cabinet.dll's encoder on every window size), the title's allocator and freer called on
+the calling thread (docs/perf/archive/2026-11-19-sys-step12-misc/).
+
 Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
 host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
 SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),

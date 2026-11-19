@@ -3,8 +3,10 @@
 // Any360's adapter (any360::sys::kExports), each on the same registers and guest memory. Prints nanoseconds a call
 // (fastest of the runs) and the host heap a call (bytes, allocations) of Any360's side; the reference runtime is a
 // DLL with its own heap, which the allocation meter (operator new of this executable) does not see.
-// The calls that block (Sleep, SleepEx, RtlSleep, the waits, CreateThread, ResumeThread, ExitThread) are left out: they are their
-// kernel call (measured with it) plus the Win32 part sys_step12_bench times.
+// The calls that block (Sleep, SleepEx, RtlSleep, the waits, CreateThread, XapipCreateThread, ResumeThread, ExitThread) are
+// left out: they are their kernel call (measured with it) plus the Win32 part sys_step12_bench times. Calls that work
+// in pairs or streams are timed as such on both sides (XamAllocEx with the XamFree that returns its pages on Any360's
+// side; LDI's Create and Destroy, and a whole LZX stream: Create, every chunk, Destroy).
 //
 //   sys_abi_bench [repeats]   (results kept in docs/perf/archive/<date>-<step>/)
 #include <rex/ppc.h>
@@ -23,9 +25,13 @@
 #include "any360/sys/alloc_meter.h"
 #include "any360/sys/crypt.h"
 #include "any360/sys/exports.h"
+#include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/xam.h"
 #include "guest_memory.h"
+#if defined(_WIN32)
+#include "lzx_cab.h"
+#endif
 
 using Function = void (*)(PPCContext& ctx, uint8_t* base);
 
@@ -48,7 +54,9 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamUserIsParentalControlled) X(XamUserLogon) X(XamUserNuiGetUserIndexForSignin) X(XamUserReadUserPreference)     \
   X(XamUserWriteUserPreference) X(XeCryptSha512Init) X(XeCryptSha512Update) X(XeCryptSha512Final) X(XeCryptBnQw_Copy)    \
   X(XeCryptBnQwNeModInv) X(XeCryptBnQwNeModMul) X(XeCryptBnQwBeSigFormat) X(XeCryptBnDwLePkcs1Format)                  \
-  X(XeKeysGetConsoleType) X(XeKeysGetConsoleID) X(XeKeysGetKeyProperties)
+  X(XeKeysGetConsoleType) X(XeKeysGetConsoleID) X(XeKeysGetKeyProperties) X(XTLGetLanguageV2) X(XapipGetLocale)     \
+  X(XamAllocEx) X(XapiFormatTimeOut) X(XamIptvGetServiceName) X(LDICreateDecompression) X(LDIDecompress)               \
+  X(LDIDestroyDecompression)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -124,7 +132,50 @@ struct Row {
   Function reference;
   Arguments args;
   uint32_t calls = 20000;  // a run's calls (fewer for a call that leaves an object behind each time)
+  Function native = nullptr;  // Any360's side when it is not the export of the row's name alone (a pair, a stream)
 };
+
+uint32_t Load32(uint32_t at) {
+  uint32_t v;
+  std::memcpy(&v, g_base + at, 4);
+  return __builtin_bswap32(v);
+}
+
+// XamAllocEx on Any360's side with the XamFree that returns its pages (the reference's stub allocates nothing).
+Function g_alloc_ex = nullptr, g_free = nullptr;
+constexpr uint32_t kAllocOut = 0x40020D00;
+void AllocExAndFree(PPCContext& ctx, uint8_t* base) {
+  g_alloc_ex(ctx, base);
+  ctx.r3.u64 = Load32(kAllocOut);
+  g_free(ctx, base);
+}
+
+// LDI on scratch memory: Create, then each chunk of a stream (none for the Create + Destroy row), then Destroy, each
+// side through its own three entry points.
+struct LdiSide {
+  Function create, decompress, destroy;
+};
+LdiSide g_ldi_reference, g_ldi_native;
+std::vector<uint32_t> g_chunk_at, g_chunk_size, g_chunk_frame;
+size_t g_chunks = 0;  // chunks a call decodes
+constexpr uint32_t kLdiIo = 0x40040000, kLdiScratch = 0x40041000, kLdiOut = 0x40050000;
+void LdiStream(const LdiSide& side, PPCContext& ctx, uint8_t* base) {
+  Store32(kLdiIo + 16, 0);
+  ctx.r3.u64 = kLdiIo, ctx.r4.u64 = kLdiIo + 8, ctx.r5.u64 = 0, ctx.r6.u64 = 0, ctx.r7.u64 = kLdiScratch, ctx.r8.u64 = 0;
+  ctx.r9.u64 = kLdiIo + 16;
+  side.create(ctx, base);
+  const uint32_t handle = Load32(kLdiIo + 16);
+  for (size_t i = 0; i < g_chunks; ++i) {
+    Store32(kLdiIo + 24, g_chunk_frame[i]);
+    ctx.r3.u64 = handle, ctx.r4.u64 = g_chunk_at[i], ctx.r5.u64 = g_chunk_size[i], ctx.r6.u64 = kLdiOut;
+    ctx.r7.u64 = kLdiIo + 24;
+    side.decompress(ctx, base);
+  }
+  ctx.r3.u64 = handle;
+  side.destroy(ctx, base);
+}
+void LdiReference(PPCContext& ctx, uint8_t* base) { LdiStream(g_ldi_reference, ctx, base); }
+void LdiNative(PPCContext& ctx, uint8_t* base) { LdiStream(g_ldi_native, ctx, base); }
 
 Arguments Args(std::initializer_list<uint64_t> regs, std::initializer_list<uint64_t> stack = {}) {
   Arguments a;
@@ -173,6 +224,43 @@ int main(int argc, char** argv) {
   any360::sys::XamState().ProfileEnumerate({g_base}, profiles, kOut + 0x400, 0);
   std::memcpy(g_base + kText + 0x300, "PROFILE", 8);
   const uint64_t xuid = any360::sys::XamState().title().xuid;
+
+  // The eighth batch: guest heaps for XamAllocEx, an LZX stream for LDI (1 MiB of text and x86-like code compressed by
+  // the host's FCI with a 2^17 window: 32 chunks; Windows only).
+  any360::sys::Memory().Reset({{0x48000000, 0x1000000, 0x1000, false}, {0x49000000, 0x1000000, 0x1000, true}});
+  g_alloc_ex = Native("XamAllocEx"), g_free = Native("XamFree");
+  g_ldi_reference = {__imp__LDICreateDecompression, __imp__LDIDecompress, __imp__LDIDestroyDecompression};
+  g_ldi_native = {Native("LDICreateDecompression"), Native("LDIDecompress"), Native("LDIDestroyDecompression")};
+  Store32(kLdiIo, 0x8000);
+  Store32(kLdiIo + 8, 0x20000);
+  size_t stream_chunks = 0;
+#if defined(_WIN32)
+  {
+    std::vector<uint8_t> data;
+    uint32_t x = 12345;
+    auto next = [&] { return x = x * 1664525u + 1013904223u; };
+    static const char* kWords[] = {"the ", "kernel ", "frame ", "window ", "of ", "LZX ", "decoder ", "block ", "\n",
+                                   "tree ", "match ", "offset ", "length ", "and ", "a ", "title "};
+    while (data.size() < (1u << 20)) {
+      if ((next() >> 20) % 3) {
+        const char* w = kWords[(next() >> 16) % 16];
+        data.insert(data.end(), w, w + std::strlen(w));
+      } else {
+        const uint32_t target = (next() >> 8) % 0x60000;
+        const uint8_t call[] = {0xE8, uint8_t(target), uint8_t(target >> 8), uint8_t(target >> 16), 0, 0x8B, 0x45, 0xF8};
+        data.insert(data.end(), call, call + 8);
+      }
+    }
+    data.resize(1u << 20);
+    uint32_t at = 0x40100000 + kStackSize;
+    for (const auto& c : any360::test::cab::CabChunks(data, 17)) {
+      g_chunk_at.push_back(at), g_chunk_size.push_back(uint32_t(c.data.size())), g_chunk_frame.push_back(c.frame);
+      std::memcpy(g_base + at, c.data.data(), c.data.size());
+      at += (uint32_t(c.data.size()) + 15) & ~15u;
+    }
+    stream_chunks = g_chunk_at.size();
+  }
+#endif
 
   const uint32_t stack_args = kStack + kStackSize - 0x1000 + 0x54;
   const Row rows[] = {
@@ -271,6 +359,16 @@ int main(int argc, char** argv) {
       {"XeKeysGetConsoleType", __imp__XeKeysGetConsoleType, Args({kOut})},
       {"XeKeysGetConsoleID", __imp__XeKeysGetConsoleID, Args({kOut, kOut + 16})},
       {"XeKeysGetKeyProperties", __imp__XeKeysGetKeyProperties, Args({0x1B})},
+      // The eighth batch.
+      {"XTLGetLanguageV2", __imp__XTLGetLanguageV2, Args({})},
+      {"XapipGetLocale", __imp__XapipGetLocale, Args({16, kOut + 0xD80})},
+      {"XapiFormatTimeOut", __imp__XapiFormatTimeOut, Args({kOut + 0xD80, 1500})},
+      {"XamIptvGetServiceName", __imp__XamIptvGetServiceName, Args({kOut + 0xD80})},
+      {"XamAllocEx (physical 9 KB, + XamFree)", __imp__XamAllocEx, Args({0x20000000, 0x40000000, 0x2345, kAllocOut}), 20000,
+       AllocExAndFree},
+      {"XamAllocEx (virtual 9 KB, + XamFree)", __imp__XamAllocEx, Args({0, 0, 0x2345, kAllocOut}), 20000, AllocExAndFree},
+      {"LDICreateDecompression + Destroy", LdiReference, Args({}), 20000, LdiNative},
+      {"LDIDecompress (stream: 32 chunks, 1 MiB)", LdiReference, Args({}), 20, LdiNative},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "
@@ -282,9 +380,13 @@ int main(int argc, char** argv) {
     Store32(stack_args + 4, uint32_t(row.args.stack[0]));
     Store32(stack_args + 12, uint32_t(row.args.stack[1]));
     const uint32_t n = row.calls;
+    // The LDI rows: Create + Destroy decode no chunk, the stream row every chunk (none off Windows: skipped).
+    const bool stream = row.native == LdiNative && std::strstr(row.name, "stream");
+    if (stream && !stream_chunks) continue;
+    g_chunks = stream ? stream_chunks : 0;
     const Measure original = Time(row.reference, row.args, n, false);
     const std::string name(row.name, std::strcspn(row.name, " "));
-    const Measure ours = Time(Native(name.c_str()), row.args, n, true);
+    const Measure ours = Time(row.native ? row.native : Native(name.c_str()), row.args, n, true);
     std::printf("  %-36s | %10.1f | %10.1f %9.1f %7.2f | %8.1fx\n", row.name, original.ns, ours.ns, ours.bytes,
                 ours.allocations, original.ns / ours.ns);
   }

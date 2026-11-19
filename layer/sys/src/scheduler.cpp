@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 
+#include "any360/sys/ldi.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/threading.h"
 #include "any360/sys/variables.h"
@@ -120,6 +121,7 @@ void Scheduler::Shutdown() {
   next_cpu_ = 0;
   ResetDpcs();           // the DPC thread runs guest code too
   Variables().Reset();   // and the clock thread writes guest memory
+  Ldi().Reset();         // the LZX contexts are keyed by guest addresses
   std::lock_guard lock(apc_mutex_);
   apcs_.clear();
 }
