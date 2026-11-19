@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <algorithm>
 #include <atomic>
 #include <bit>
 #include <chrono>
@@ -396,6 +397,98 @@ inline constexpr std::array<uint8_t, 64> kFormatBlocks = [] {
 inline void D3dFormatBlock(uint32_t format, uint32_t& width, uint32_t& height) {
   const uint8_t b = format < 64 ? detail::kFormatBlocks[format] : 0x11;
   width = b & 0xF, height = b >> 4;
+}
+
+// A texture's size in texels, from its fetch constant (Crackdown sub_826AD598; r3 the texture, its words at +36, +40
+// and +48): its dimension (+48 bits 9-10) says which fields of +36 hold the sizes less one. 1D (0): the width in bits
+// 0-23, height and depth 1. 3D (2): width bits 0-10, height bits 11-21, depth bits 22-31. 2D and cube (1, 3): width
+// bits 0-12, height bits 13-25, depth 1. Each size has 1 added, or 3 when +40 has bit 31. Written to *r4, *r5, *r6 in
+// that order, the word at +36 read again after each write (the runtime's order: a size written over it is read back).
+// Declined (false): the texture's words or an output word not plain memory.
+inline bool D3dTextureDimensions(const Memory& m, uint32_t texture, uint32_t width_at, uint32_t height_at,
+                                 uint32_t depth_at) {
+  const auto word = [&](uint32_t at) { return detail::ResourceWord(m, at); };
+  const auto put = [&](uint32_t at, uint32_t v) { detail::Store32(m.Host(at), std::byteswap(v)); };
+  // Every address below 0x7EFFFF00 (the common case; each is at most their OR): all plain and below the physical
+  // view, so straight off the base.
+  if ((texture | width_at | height_at | depth_at) >= 0x7EFFFF00u) [[unlikely]] {
+    if (!IsPlainMemory(texture + 36, 16) || !IsPlainMemory(width_at, 4) || !IsPlainMemory(height_at, 4) ||
+        !IsPlainMemory(depth_at, 4))
+      return false;
+  } else if (width_at - (texture + 33) >= 7 && height_at - (texture + 33) >= 7) [[likely]] {
+    // No size written over the word at +36 before it is read again: read once.
+    uint8_t* const base = m.base;
+    const auto get = [&](uint32_t at) { return std::byteswap(detail::Load32(base + at)); };
+    const auto set = [&](uint32_t at, uint32_t v) { detail::Store32(base + at, std::byteswap(v)); };
+    const uint32_t sizes = get(texture + 36), extra = (get(texture + 40) >> 31) * 2 + 1;
+    const uint32_t dimension = (get(texture + 48) >> 9) & 3;
+    uint32_t width, height, depth = 1;
+    if (dimension == 0) {
+      width = (sizes & 0xFFFFFF) + extra, height = 1;
+    } else if (dimension == 2) {
+      width = (sizes & 0x7FF) + extra, height = ((sizes >> 11) & 0x7FF) + extra, depth = (sizes >> 22) + extra;
+    } else {
+      width = (sizes & 0x1FFF) + extra, height = ((sizes >> 13) & 0x1FFF) + extra;
+    }
+    set(width_at, width), set(height_at, height), set(depth_at, depth);
+    return true;
+  }
+  const uint32_t extra = (word(texture + 40) >> 31) * 2 + 1;
+  switch ((word(texture + 48) >> 9) & 3) {
+    case 0:
+      put(width_at, (word(texture + 36) & 0xFFFFFF) + extra);
+      put(height_at, 1), put(depth_at, 1);
+      break;
+    case 2:
+      put(width_at, (word(texture + 36) & 0x7FF) + extra);
+      put(height_at, ((word(texture + 36) >> 11) & 0x7FF) + extra);
+      put(depth_at, (word(texture + 36) >> 22) + extra);
+      break;
+    default:
+      put(width_at, (word(texture + 36) & 0x1FFF) + extra);
+      put(height_at, ((word(texture + 36) >> 13) & 0x1FFF) + extra);
+      put(depth_at, 1);
+      break;
+  }
+  return true;
+}
+
+// The bytes of a texture level (Crackdown sub_826AD108): r3, r4, r5 its width, height and depth in texels (in and
+// out: aligned up), r6 the bits per texel (`bits`), r7 the GPU format, r8 the
+// dimension (`kind`: 0, 1, 2 a volume), r9 `fixed_pitch`. The format's block (D3dFormatBlock) gives the units: the
+// width aligned to `pitch` blocks (32; without fixed_pitch, 256 bytes of blocks when that is more than 32 blocks), the
+// height to 1 block (kind 0) or 32, the depth to 4 for a volume. Then the size: (width x bits / 8) x height bytes,
+// rounded up to 4 KB, x depth (a signed 64-bit product, as the runtime's mullw leaves it in r3); a volume's whole
+// size rounded up instead (32 bits). Each value read, aligned and written back in
+// turn (width, height, depth), the width and height read again after (the runtime's order, its pointers may meet).
+// Declined (false): an output word not plain memory, or a block of 0 bytes without fixed_pitch (the runtime traps on
+// its division by 0).
+inline bool D3dTextureLevelBytes(const Memory& m, uint32_t width_at, uint32_t height_at, uint32_t depth_at,
+                                 uint32_t bits, uint32_t format, uint32_t kind, uint32_t fixed_pitch, uint64_t& bytes) {
+  if (!IsPlainMemory(width_at, 4) || !IsPlainMemory(height_at, 4) || !IsPlainMemory(depth_at, 4)) [[unlikely]]
+    return false;
+  uint32_t block_w, block_h;
+  D3dFormatBlock(format, block_w, block_h);
+  uint32_t pitch = 32;
+  if (!fixed_pitch) {
+    const uint32_t block_bytes = (block_w * block_h * bits) >> 3;
+    if (!block_bytes) [[unlikely]] return false;
+    if (const uint32_t fit = 256 / block_bytes; fit >= 32) pitch = fit;
+  }
+  const auto get = [&](uint32_t at) { return detail::ResourceWord(m, at); };
+  const auto align = [&](uint32_t at, uint32_t unit) {
+    const uint32_t v = (get(at) + unit - 1) & ~(unit - 1);
+    detail::Store32(m.Host(at), std::byteswap(v));
+    return v;
+  };
+  align(width_at, block_w * pitch);
+  align(height_at, block_h * (kind ? 32 : 1));
+  const uint32_t depth = align(depth_at, kind == 2 ? 4 : 1);
+  const uint32_t slice = ((get(width_at) * bits) >> 3) * get(height_at);
+  // The volume's size in 32 bits; the others' a signed 64-bit product (the runtime's mullw into r3).
+  bytes = kind == 2 ? uint64_t((depth * slice + 4095) & ~4095u)
+                    : uint64_t(int64_t(int32_t((slice + 4095) & ~4095u)) * int64_t(int32_t(depth)));
+  return true;
 }
 
 }  // namespace any360::xdk

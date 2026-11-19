@@ -1,0 +1,4 @@
+xdk_d3d_tests: GetType 1.04 ns a call (reference 0.84), format block 0.22 ns (reference 2.01); 0 bytes, 0 allocations
+xdk_d3d_tests: texture sizes 0.08 ns a call (reference 0.08), level bytes 2.09 ns (reference 2.15), 177661 level calls compared, 22339 declined; 0 bytes, 0 allocations
+xdk_d3d_tests: 1262719 checks, 0 failing
+exit 0 

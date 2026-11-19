@@ -1347,6 +1347,74 @@ inline void FormatBlock(const Memory& m, uint64_t r3, uint64_t r4, uint64_t r5) 
   if (f != 40) return both(1, 1);                            // bne 0x826ad068
   return both(2, 1);                                         // li r11,2; li r10,1
 }
+// sub_826AD598: a texture's sizes from its fetch constant, to *r4, *r5, *r6.
+inline void TextureDimensions(const Memory& m, uint64_t r3, uint64_t r4, uint64_t r5, uint64_t r6) {
+  const uint32_t t = uint32_t(r3);
+  uint32_t r11 = lwz(m, t + 48);                             // lwz r11,48(r3)
+  const uint32_t r9w = lwz(m, t + 40);                       // lwz r9,40(r3)
+  uint32_t r10 = std::rotl(r11, 23) & 3;                     // rlwinm. r10,r11,23,30,31
+  r11 = std::rotl(r9w, 2) & 2;                               // rlwinm r11,r9,2,30,30
+  r11 += 1;                                                  // addi r11,r11,1
+  uint32_t r9 = 0;
+  if (r10 == 0) {                                            // bne 0x826ad5cc
+    r10 = lwz(m, t + 36) & 0xFFFFFF;                         // lwz r10,36(r3); clrlwi r10,r10,8
+    r9 = 1;                                                  // li r9,1
+    stw(m, uint32_t(r4), r10 + r11);                         // add r11,r10,r11; stw r11,0(r4)
+    stw(m, uint32_t(r5), r9);                                // stw r9,0(r5)
+  } else if (r10 == 2) {                                     // cmplwi cr6,r10,2; bne 0x826ad608
+    stw(m, uint32_t(r4), (lwz(m, t + 36) & 0x7FF) + r11);    // clrlwi r10,r10,21; add; stw r10,0(r4)
+    stw(m, uint32_t(r5), (std::rotl(lwz(m, t + 36), 21) & 0x7FF) + r11);  // rlwinm r10,r10,21,21,31
+    stw(m, uint32_t(r6), (std::rotl(lwz(m, t + 36), 10) & 0x3FF) + r11);  // rlwinm r10,r10,10,22,31
+    return;                                                  // blr
+  } else {
+    stw(m, uint32_t(r4), (lwz(m, t + 36) & 0x1FFF) + r11);   // clrlwi r10,r10,19; li r9,1; stw r10,0(r4)
+    r9 = 1;
+    stw(m, uint32_t(r5), (std::rotl(lwz(m, t + 36), 19) & 0x1FFF) + r11);  // rlwinm r10,r10,19,19,31
+  }
+  stw(m, uint32_t(r6), r9);                                  // loc_826AD628: stw r9,0(r6)
+}
+// sub_826AD108: a texture level's sizes aligned (r3-r5 their words), r6 bits, r7 format, r8 kind, r9 fixed pitch ->
+// r3 its bytes. Its block from sub_826ACFE8 (FormatBlock above, into its stack words 84 and 80).
+inline uint64_t TextureLevelBytes(const Memory& m, uint64_t r3, uint64_t r4, uint64_t r5, uint64_t r6, uint64_t r7,
+                                  uint64_t r8, uint64_t r9) {
+  const uint32_t r31 = uint32_t(r3), r30 = uint32_t(r4), r29 = uint32_t(r5);
+  const uint32_t r28 = uint32_t(r8), r26 = uint32_t(r6), r23 = uint32_t(r9);
+  uint32_t r11 = r28 == 0 ? 0 : 0xFFFFFFFFu;                 // subfic r11,r28,0; subfe r11,r11,r11
+  r11 &= 31;                                                 // clrlwi r11,r11,27
+  uint32_t r25 = 32;                                         // li r25,32
+  const uint32_t r24 = r11 + 1;                              // addi r24,r11,1
+  const uint32_t r27 = r28 == 2 ? 4 : 1;                     // li r27,4; beq; li r27,1
+  uint8_t stack[8];                                          // the words at r1+80 (height) and r1+84 (width)
+  Memory s;
+  s.base = stack - 0x1000;
+  FormatBlock(s, r7, 0x1004, 0x1000);                        // addi r5,r1,80; addi r4,r1,84; mr r3,r7; bl
+  uint32_t r10 = lwz(s, 0x1000);                             // lwz r10,80(r1)
+  r11 = lwz(s, 0x1004);                                      // lwz r11,84(r1)
+  if (r23 == 0) {                                            // cmpwi cr6,r23,0; bne
+    uint32_t q = r11 * r10;                                  // mullw r9,r11,r10
+    q *= r26;                                                // mullw r9,r9,r26
+    q = std::rotl(q, 29) & 0x1FFFFFFFu;                      // rlwinm r9,r9,29,3,31
+    q = 256 / q;                                             // li r8,256; twllei r9,0; divwu r9,r8,r9 (q != 0 here)
+    if (q >= 32) r25 = q;                                    // cmplwi cr6,r9,32; blt; mr r25,r9
+  }
+  r11 *= r25;                                                // mullw r11,r11,r25
+  uint32_t v = lwz(m, r31) + r11 - 1;                        // lwz r9,0(r31); add; addi r9,r9,-1
+  r10 *= r24;                                                // mullw r10,r10,r24
+  stw(m, r31, v & ~(r11 - 1));                               // addi r11,r11,-1; andc r11,r9,r11; stw r11,0(r31)
+  v = lwz(m, r30) + r10 - 1;                                 // lwz r11,0(r30); add; addi
+  stw(m, r30, v & ~(r10 - 1));                               // andc r11,r11,r9; stw r11,0(r30)
+  v = lwz(m, r29) + r27 - 1;                                 // lwz r11,0(r29); add; addi
+  r11 = v & ~(r27 - 1);                                      // andc r11,r11,r8
+  stw(m, r29, r11);                                          // stw r11,0(r29)
+  r10 = lwz(m, r31);                                         // lwz r10,0(r31)
+  const uint32_t h = lwz(m, r30);                            // lwz r9,0(r30)
+  r10 *= r26;                                                // mullw r10,r10,r26
+  r10 = std::rotl(r10, 29) & 0x1FFFFFFFu;                    // rlwinm r10,r10,29,3,31
+  r10 *= h;                                                  // mullw r10,r10,r9
+  if (r28 == 2) return ((r11 * r10) + 4095) & 0xFFFFF000u;   // mullw r11,r11,r10; addi 4095; rlwinm 0,0,19
+  r10 = (r10 + 4095) & 0xFFFFF000u;                          // addi r10,r10,4095; rlwinm r10,r10,0,0,19
+  return uint64_t(int64_t(int32_t(r10)) * int64_t(int32_t(r11)));  // mullw r3,r10,r11: the signed 64-bit product
+}
 }  // namespace resource
 
 }  // namespace any360::xdk::reference

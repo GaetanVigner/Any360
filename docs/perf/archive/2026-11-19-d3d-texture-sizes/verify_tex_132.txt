@@ -1,0 +1,5 @@
+crackdown_132.log (city route, --any360_xdk_verify=true, both bound; 108: before the dimensions' last change, 132: the version committed), the last report line's parts:
+173000000 calls verified
+D3D texture size 219463
+), 0 different
+different at first and the same when run again: none

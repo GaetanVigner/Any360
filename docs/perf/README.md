@@ -39,3 +39,4 @@ Every step's measured results, kept for later optimization passes: the self-test
 - [2026-11-19-sys-link-lock](archive/2026-11-19-sys-link-lock/): FileSystem's symbolic links and link objects under a shared lock (a title links content while others resolve paths): the concurrency test lost opens 2 runs of 5 before, 0 of 8 after; path look-up at par (194-201 ns, 64 B / 2 allocations, both sides) (NOTES.md)
 - [2026-11-19-d3d-query-getdata](archive/2026-11-19-d3d-query-getdata/): 2026-11-19, IDirect3DQuery9
 - [2026-11-19-d3d-resource-type](archive/2026-11-19-d3d-resource-type/): D3DResource_GetType (sub_826ACDB0), the GPU format's block (sub_826ACFE8) and DrawVerticesUP (sub_826B9688) bound
+- [2026-11-19-d3d-texture-sizes](archive/2026-11-19-d3d-texture-sizes/): A texture's dimensions (sub_826AD598) and a texture level's bytes (sub_826AD108) bound

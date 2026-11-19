@@ -52,7 +52,7 @@ enum class Function : uint32_t {
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
   kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kSin, kCos, kAsin,
   kD3dRenderState, kAtan2, kPow, kD3dSurfaces, kXAudioReverb, kD3dViewport, kD3dQuery,
-  kD3dResourceType, kD3dFormatBlock, kD3dDrawUp, kCount
+  kD3dResourceType, kD3dFormatBlock, kD3dDrawUp, kD3dTextureSize, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -1123,6 +1123,44 @@ struct FormatBlock {
     if (!any360::xdk::IsPlainMemory(ctx.r4.u32, 4) || !any360::xdk::IsPlainMemory(ctx.r5.u32, 4)) return false;
     AddRange(w, ctx.r4.u32, 4), AddRange(w, ctx.r5.u32, 4);
     return true;
+  }
+};
+// A texture's sizes from its fetch constant: r3 the texture, to *r4, *r5, *r6 (r3 kept).
+struct TextureDimensions {
+  static constexpr Function kFunction = Function::kD3dTextureSize;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    return any360::xdk::D3dTextureDimensions(m, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    if (!any360::xdk::IsPlainMemory(ctx.r3.u32 + 36, 16)) return false;
+    for (const uint32_t at : {ctx.r4.u32, ctx.r5.u32, ctx.r6.u32}) {
+      if (!any360::xdk::IsPlainMemory(at, 4)) return false;
+      AddRange(w, at, 4);
+    }
+    return true;
+  }
+};
+// A texture level's bytes: r3, r4, r5 its width, height and depth words (aligned in place), r6 bits, r7 the format, r8
+// the dimension, r9 the fixed pitch -> r3 the bytes.
+struct TextureLevelBytes {
+  static constexpr Function kFunction = Function::kD3dTextureSize;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    uint64_t bytes;
+    if (!any360::xdk::D3dTextureLevelBytes(m, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32,
+                                           ctx.r9.u32, bytes))
+      return false;
+    ctx.r3.u64 = bytes;
+    return true;
+  }
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    for (const uint32_t at : {ctx.r3.u32, ctx.r4.u32, ctx.r5.u32}) {
+      if (!any360::xdk::IsPlainMemory(at, 4)) return false;
+      AddRange(w, at, 4);
+    }
+    // The runtime traps on a block of 0 bytes without the fixed pitch: declined.
+    uint32_t block_w, block_h;
+    any360::xdk::D3dFormatBlock(ctx.r7.u32, block_w, block_h);
+    return ctx.r9.u32 || ((block_w * block_h * ctx.r6.u32) >> 3) != 0;
   }
 };
 // DrawPrimitiveUP's body (Crackdown sub_826B9688): r3 the device, r4 the primitive type, r5 the vertex count, r6 the

@@ -4,6 +4,8 @@
  "0x826ACD08": ["D3DResource_Release", "atomic decrement of the count; at 0, the parent released and the resource destroyed (sub_826AC6C8)"],
  "0x826ACDB0": ["D3DResource_GetType", "the common word's type, a texture's refined by its dimension (+48 bits 9-10, the array bit at +32), a surface of a volume texture 16"],
  "0x826ACFE8": ["D3D_GpuFormatBlock", "a GPU texture format's block width and height in texels, to *r4 then *r5"],
+ "0x826AD108": ["D3D_TextureLevelBytes", "r3-r5 a level's sizes aligned in place to the format's blocks (sub_826ACFE8), the pitch and the depth; r3 its bytes, 4 KB rounded"],
+ "0x826AD598": ["D3D_TextureDimensions", "the width, height and depth from the fetch constant's +36 by its dimension (+48), +1 (or +3 with +40 bit 31), to *r4, *r5, *r6"],
  "0x826B0AA0": ["D3DDevice_SetRenderState_ViewportEnable", "PA_CL_VTE_CNTL 0x43F or 0x400, PA_CL_CLIP_CNTL clip_disable with the viewport off; dirty 0x20, 0x80"],
  "0x826B0488": ["D3DDevice_SetRenderState_DepthBias", "the bias as both polygon offsets, PA_SU_SC_MODE_CNTL poly offset enables unless scale and bias are 0"],
  "0x826B1EE0": ["D3DDevice_SetRenderTarget", "the target's surface, COLOR_INFO (2_10_10_10 _AS_ variant fixed), viewport for target 0, query flag, color mask"],

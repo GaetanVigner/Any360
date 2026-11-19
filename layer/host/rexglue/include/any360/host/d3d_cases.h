@@ -779,6 +779,42 @@ struct FormatBlocks {
     }
   }
 };
+// A texture's sizes from its fetch constant (xdk_natives.h): a texture in the scratch, every dimension, +40's bit 31
+// on or off; the three output words in the scratch, now and then one over the texture's word at +36 or over another.
+struct TextureDimensionInputs {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const uint32_t texture = s.scratch + 0x1000 + 64 * uint32_t(rng() % 32);
+    const auto out = [&]() -> uint64_t {
+      switch (rng() % 12) {
+        case 0: return texture + 36;
+        case 1: return texture + 34;
+        default: return s.scratch + 0x3000 + 4 * uint32_t(rng() % 16);
+      }
+    };
+    ctx.r3.u64 = texture;
+    ctx.r4.u64 = out(), ctx.r5.u64 = out(), ctx.r6.u64 = out();
+  }
+};
+// A texture level's bytes (xdk_natives.h): sizes 0-4096 mostly (any 32 bits now and then), bits 4-128 or 0, formats
+// 0-70, dimensions 0-3, the fixed pitch on or off; the size words in the scratch, now and then the same word.
+struct TextureLevelInputs {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    uint32_t at[3];
+    for (uint32_t& a : at) {
+      a = s.scratch + 0x3000 + 4 * uint32_t(rng() % 16);
+      Put32(s, a, rng() % 8 ? uint32_t(rng() % 4097) : uint32_t(rng()));
+    }
+    if (rng() % 8 == 0) at[1] = at[0];
+    ctx.r3.u64 = at[0], ctx.r4.u64 = at[1], ctx.r5.u64 = at[2];
+    constexpr uint32_t kBits[] = {4, 8, 16, 32, 64, 128, 0, 24};
+    ctx.r6.u64 = kBits[rng() % 8];
+    ctx.r7.u64 = rng() % 71;
+    ctx.r8.u64 = rng() % 4;
+    ctx.r9.u64 = rng() % 2 ? 0 : 1 + rng() % 4;
+  }
+};
 // DrawPrimitiveUP's body (xdk_natives.h): BeginVertices' inputs (Begin), small draws half the time (the part that is
 // not BeginVertices or the copy), the vertices in the scratch at 0x34000 (up to 16 KB), r7 the stride. Both sides call
 // the title's BeginVertices entry (its binding), the copy the title's CRT memcpy (bound) or the native.

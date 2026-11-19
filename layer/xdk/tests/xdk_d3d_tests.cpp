@@ -574,9 +574,108 @@ void ResourceTypesAndBlocks() {
               static_cast<unsigned long long>(spent.count));
 }
 
+// A texture's sizes from its fetch constant (Crackdown sub_826AD598) and a texture level's bytes (sub_826AD108) against
+// their code read line by line. Sizes: random fetch words, every dimension, +40's bit 31; the outputs apart, the same
+// word, or over the texture's word at +36 (whole or in part). Level bytes: sizes small and any 32 bits, bits 0-128,
+// formats 0-70 and past, dimensions 0-3, the fixed pitch on or off, the size words apart or the same; r3 and memory the
+// same, the decline (a block of 0 bytes without the fixed pitch) leaving memory as it was. Then the time a call and
+// the bytes and allocations a call.
+void TextureSizes() {
+  namespace xdk = any360::xdk;
+  namespace ref = any360::xdk::reference::resource;
+  xdk_test::Pair p(59);
+  std::mt19937_64 rng(61);
+  const auto put = [&](uint32_t address, uint32_t value) {
+    xdk::detail::Set32(p.a.Host(address), value);
+    xdk::detail::Set32(p.b.Host(address), value);
+  };
+  uint64_t by_dimension[4] = {}, overlapped = 0;
+  for (int i = 0; i < 100000; ++i) {
+    const uint32_t texture = 0x10000 + 64 * uint32_t(rng() % 1024);
+    put(texture + 36, uint32_t(rng())), put(texture + 40, uint32_t(rng())), put(texture + 48, uint32_t(rng()));
+    uint32_t out[3] = {0x50000, 0x50004, 0x50008};
+    for (uint32_t& o : out) {
+      switch (rng() % 12) {
+        case 0: o = texture + 36; break;
+        case 1: o = texture + 34; break;
+        case 2: o = out[0]; break;
+        default: o = 0x50000 + 4 * uint32_t(rng() % 64); break;
+      }
+    }
+    overlapped += out[0] == texture + 36 || out[1] == texture + 36 || out[0] == texture + 34;
+    CHECK(xdk::D3dTextureDimensions(p.a, texture, out[0], out[1], out[2]));
+    ref::TextureDimensions(p.b, texture, out[0], out[1], out[2]);
+    CHECK(p.Same(texture, texture + 64) && p.Same(0x50000, 0x50100));
+    ++by_dimension[(xdk::detail::At32(p.b.Host(texture + 48)) >> 9) & 3];
+  }
+  for (uint64_t n : by_dimension) CHECK(n > 20000);
+  CHECK(overlapped > 10000 && p.SameEverywhere());
+  CHECK(!xdk::D3dTextureDimensions(p.a, 0x7F000000u - 40, 0x50000, 0x50004, 0x50008));  // its words not plain
+  uint64_t taken = 0, declined = 0, wide = 0;
+  for (int i = 0; i < 200000; ++i) {
+    uint32_t at[3];
+    for (uint32_t& a : at) {
+      a = 0x60000 + 4 * uint32_t(rng() % 16);
+      put(a, rng() % 8 ? uint32_t(rng() % 4097) : uint32_t(rng()));
+    }
+    if (rng() % 8 == 0) at[1] = at[0];
+    if (rng() % 16 == 0) at[2] = at[1];
+    constexpr uint32_t kBits[] = {4, 8, 16, 32, 64, 128, 0, 24};
+    const uint32_t bits = kBits[rng() % 8], format = rng() % 16 ? uint32_t(rng() % 71) : uint32_t(rng());
+    const uint32_t kind = uint32_t(rng() % 4), fixed = rng() % 2 ? 0 : 1 + uint32_t(rng() % 4);
+    uint64_t bytes = 0;
+    if (!xdk::D3dTextureLevelBytes(p.a, at[0], at[1], at[2], bits, format, kind, fixed, bytes)) {
+      ++declined;
+      uint32_t w, h;
+      xdk::D3dFormatBlock(format, w, h);
+      CHECK(!fixed && ((w * h * bits) >> 3) == 0);
+      CHECK(p.Same(0x60000, 0x60040));
+      continue;
+    }
+    ++taken;
+    CHECK(bytes == ref::TextureLevelBytes(p.b, at[0], at[1], at[2], bits, format, kind, fixed));
+    wide += bytes >> 32 != 0;
+    CHECK(p.Same(0x60000, 0x60040));
+  }
+  CHECK(taken > 150000 && declined > 5000 && wide > 1000 && p.SameEverywhere());  // wide: past 32 bits
+  // Time a call, and the bytes and allocations a call (none), the native against the reference.
+  put(0x10024, 0x0123ABCDu), put(0x10028, 0x80000000u), put(0x10030, 0x200u);
+  const auto time = [&](auto&& call) {
+    const auto start = steady_clock::now();
+    for (int i = 0; i < 10000000; ++i) call(i);
+    return double(std::chrono::duration_cast<std::chrono::nanoseconds>(steady_clock::now() - start).count()) / 1e7;
+  };
+  volatile uint32_t sink = 0;
+  const auto sizes = [&](const xdk::Memory& m, int i) {
+    xdk::detail::Set32(m.Host(0x60000), 1024 + uint32_t(i & 255));
+    xdk::detail::Set32(m.Host(0x60004), 512), xdk::detail::Set32(m.Host(0x60008), 1);
+  };
+  const any360::sys::AllocCounts before = any360::sys::ThreadAllocations();
+  const double dims_native = time([&](int) { xdk::D3dTextureDimensions(p.a, 0x10000, 0x50000, 0x50004, 0x50008); });
+  const double level_native = time([&](int i) {
+    sizes(p.a, i);
+    uint64_t bytes = 0;
+    xdk::D3dTextureLevelBytes(p.a, 0x60000, 0x60004, 0x60008, 32, uint32_t(i & 63), 1, 0, bytes);
+    sink = uint32_t(bytes);
+  });
+  const any360::sys::AllocCounts spent = any360::sys::ThreadAllocations() - before;
+  const double dims_model = time([&](int) { ref::TextureDimensions(p.b, 0x10000, 0x50000, 0x50004, 0x50008); });
+  const double level_model = time([&](int i) {
+    sizes(p.b, i);
+    sink = uint32_t(ref::TextureLevelBytes(p.b, 0x60000, 0x60004, 0x60008, 32, uint64_t(i & 63), 1, 0));
+  });
+  CHECK(spent.count == 0 && spent.bytes == 0);
+  std::printf("xdk_d3d_tests: texture sizes %.2f ns a call (reference %.2f), level bytes %.2f ns (reference %.2f), "
+              "%llu level calls compared, %llu declined; %llu bytes, %llu allocations\n",
+              dims_native, dims_model, level_native, level_model, static_cast<unsigned long long>(taken),
+              static_cast<unsigned long long>(declined), static_cast<unsigned long long>(spent.bytes),
+              static_cast<unsigned long long>(spent.count));
+}
+
 int main() {
   ResourceRefCounts();
   ResourceTypesAndBlocks();
+  TextureSizes();
   Orders();
   Raced(20000, false);
   Raced(20000, true);

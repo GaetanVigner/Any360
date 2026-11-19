@@ -441,15 +441,7 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "simpsons": "0x8244C910"
-  },
-  "note": ""
- },
- {
-  "name": "D3DDevice_DrawVerticesUP",
-  "library": "D3D",
-  "any360": "native",
-  "titles": {
+   "simpsons": "0x8244C910",
    "crackdown": "0x826B9688"
   },
   "note": "DrawPrimitiveUP's body: BeginVertices, the vertices copied into its block, EndVertices"
@@ -1361,6 +1353,24 @@
    "crackdown": "0x826BC568"
   },
   "note": "the swap's PM4"
+ },
+ {
+  "name": "D3D_TextureDimensions",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AD598"
+  },
+  "note": "a texture's width, height and depth in texels from its fetch constant, by dimension"
+ },
+ {
+  "name": "D3D_TextureLevelBytes",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826AD108"
+  },
+  "note": "a texture level's sizes aligned to the format's blocks and pitch, and its bytes (4 KB rounded)"
  },
  {
   "name": "D3D_TileOps",

@@ -81,6 +81,8 @@
   "D3DResource_GetType",
   "D3D_GpuFormatBlock",
   "D3DDevice_DrawVerticesUP",
+  "D3D_TextureDimensions",
+  "D3D_TextureLevelBytes",
   "D3DDevice_SetRenderState_CullMode",
   "D3DDevice_SetRenderState_AlphaTestEnable",
   "D3DDevice_SetRenderState_AlphaFunc",

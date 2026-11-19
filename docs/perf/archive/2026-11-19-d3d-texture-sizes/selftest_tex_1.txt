@@ -1,0 +1,3 @@
+Any360 D3D self-test: 107 cases on a copy of device 40259D00
+Texture dimensions             3000 calls, 0 declined, 0 different; median original 7.5 ns, native 7.5 ns (1.00x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Texture level bytes            3000 calls, 300 declined, 1515 different; median original 38.8 ns, native 12.5 ns (3.10x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00; first: call 0: r3 at 00000000 (r3 34095004 r4 0000000034095008 r5 3409501C r6 00000008 r7 0000000000000021)

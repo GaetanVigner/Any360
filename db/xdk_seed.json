@@ -3,7 +3,7 @@
  "functions": [
   {"name": "D3DDevice_DrawVertices", "library": "D3D", "titles": {"simpsons": "0x8244CF78", "crackdown": "0x826B9C08"}},
   {"name": "D3DDevice_DrawIndexedVertices", "library": "D3D", "titles": {"simpsons": "0x8244D360", "crackdown": "0x826B9FF8"}},
-  {"name": "D3DDevice_DrawVerticesUP", "library": "D3D", "titles": {"simpsons": "0x8244C910"}},
+  {"name": "D3DDevice_DrawVerticesUP", "library": "D3D", "titles": {"simpsons": "0x8244C910", "crackdown": "0x826B9688"}, "note": "DrawPrimitiveUP's body: BeginVertices, the vertices copied into its block, EndVertices"},
   {"name": "D3DDevice_BeginVertices", "library": "D3D", "titles": {"simpsons": "0x8244C450", "crackdown": "0x826B91E0"}},
   {"name": "D3DDevice_EndVertices", "library": "D3D", "titles": {"simpsons": "0x8244CEA0"}},
   {"name": "D3DDevice_Clear", "library": "D3D", "titles": {"simpsons": "0x82453C30", "crackdown": "0x826BFD88"}},
@@ -55,7 +55,8 @@
   {"name": "D3DResource_Release", "library": "D3D", "titles": {"crackdown": "0x826ACD08"}, "note": "reference count - 1; at 0 the parent released, the resource destroyed"},
   {"name": "D3DResource_GetType", "library": "D3D", "titles": {"crackdown": "0x826ACDB0"}, "note": "the resource's type: textures by dimension (line, 2D, array, volume, cube), a volume texture's surface a volume"},
   {"name": "D3D_GpuFormatBlock", "library": "D3D", "titles": {"crackdown": "0x826ACFE8"}, "note": "a GPU texture format's block in texels (4x4 compressed, 4x1, 2x1, 1x1)"},
-  {"name": "D3DDevice_DrawVerticesUP", "library": "D3D", "titles": {"crackdown": "0x826B9688"}, "note": "DrawPrimitiveUP's body: BeginVertices, the vertices copied into its block, EndVertices"},
+  {"name": "D3D_TextureDimensions", "library": "D3D", "titles": {"crackdown": "0x826AD598"}, "note": "a texture's width, height and depth in texels from its fetch constant, by dimension"},
+  {"name": "D3D_TextureLevelBytes", "library": "D3D", "titles": {"crackdown": "0x826AD108"}, "note": "a texture level's sizes aligned to the format's blocks and pitch, and its bytes (4 KB rounded)"},
   {"name": "D3DDevice_CreateTexture", "library": "D3D", "titles": {"simpsons": "0x82440578"}},
   {"name": "D3DVertexBuffer_Lock", "library": "D3D", "titles": {"simpsons": "0x824418A0"}},
   {"name": "D3DVertexBuffer_Unlock", "library": "D3D", "titles": {"simpsons": "0x824419A0"}},
