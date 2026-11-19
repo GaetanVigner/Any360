@@ -474,6 +474,16 @@ name collides; any other image is new code a statically recompiled title cannot 
 answers an image that does not load). With it every call Xenia implements and the reference stubs is answered
 (docs/perf/archive/2026-11-19-sys-step12-ob/).
 
+The calls Xenia stubs too (114, answered from Xenia's stubs: its return values and completions, with tests and
+measures as the others). First, avatars (22, `xam.h`): avatars are not initialized (`XamAvatarInitialize` fails as
+Xenia's does), so a title meets these only past that failure; the asynchronous ones succeed and complete their
+overlapped, `XamAvatarGetAssets` completes with ERROR_FUNCTION_FAILED / E_FAIL, `XamAvatarEnumAssets` has nothing to
+enumerate, and the manifest is the profile's `XPROFILE_GAMERCARD_AVATAR_INFO_1` setting, kept (and written to the
+profile folder) by `XamAvatarSetManifest` and read back by `XamAvatarGetManifestLocalUser` and by
+`XamUserReadProfileSettings`. `sys_adapter_tests` calls these adapters, and the earlier batches' adapter-only ones, as
+a title calls them: arguments in their registers, r3 and the guest bytes checked
+(docs/perf/archive/2026-11-19-sys-step12-avatar/).
+
 Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
 host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
 SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),

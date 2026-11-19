@@ -327,6 +327,36 @@ class Xam {
   // which a statically recompiled title cannot run: it is not loaded (0, STATUS_NO_SUCH_FILE, Xenia's answer when an
   // image does not load).
   uint32_t LoadImageFromMemory(Guest g, uint32_t name, uint32_t handle_ptr);
+
+  // Step 12, the calls Xenia stubs too: avatars (Xenia's xam_avatar.cc). Avatars are not initialized
+  // (XamAvatarInitialize fails), so a title meets these only past that failure.
+  // The asynchronous ones that do nothing (asset icon, binary, enumeration begin and end, mipmaps, animation, the
+  // metadata of random and signed-out avatars, manifests by XUID, wear-now): success, completed through the
+  // overlapped when given (ERROR_IO_PENDING). XamAvatarWearNow run by the avatar editor (0x584D07D1) completes nothing.
+  uint32_t AvatarComplete(Guest g, uint32_t overlapped) { return Finish(g, overlapped, kErrorSuccess); }
+  uint32_t AvatarWearNow(Guest g, uint32_t overlapped);
+  // XamAvatarGetAssets: no asset; through an overlapped ERROR_FUNCTION_FAILED with E_FAIL as its extended error, as
+  // Xenia completes it; 0 without one.
+  uint32_t AvatarGetAssets(Guest g, uint32_t overlapped);
+  // XamAvatarGetAssetsResultSize (mask, result size out, GPU resource size out): both 0.
+  uint32_t AvatarGetAssetsResultSize(Guest g, uint32_t result_size_ptr, uint32_t gpu_size_ptr);
+  // XamAvatarGetInstalledAssetPackageDescription (X_ASSET_ID, XCONTENT_DATA_AGGREGATE out): the package an asset
+  // installs to: avatar item (0x9000), XUID 0, the asset's title id, the file name "%016X%08X%08X" of the asset's
+  // id, second id and title id. Xenia reads the X_ASSET_ID's fields without swapping them; they are read big-endian,
+  // as a title writes them, here.
+  void AvatarGetInstalledAssetPackageDescription(Guest g, uint32_t asset_id, uint32_t content_data);
+  // XamAvatarGetInstrumentation (unknown, value out): the value 0, the result 1.
+  uint32_t AvatarGetInstrumentation(Guest g, uint32_t value_ptr);
+  // XamAvatarGetManifestLocalUser (user, X_AVATAR_METADATA out, overlapped): the avatar XamAvatarSetManifest kept in
+  // the profile (setting XPROFILE_GAMERCARD_AVATAR_INFO_1, 0x63E80044, as the dashboard keeps it). A user past 3 or no
+  // buffer: ERROR_INVALID_PARAMETER with E_INVALIDARG; a user with no profile (not 0): ERROR_FUNCTION_FAILED with
+  // E_NO_SUCH_USER; no avatar kept: ERROR_FUNCTION_FAILED with E_FAIL. Without an overlapped the extended error
+  // (an HRESULT) is returned on failure, as Xenia does.
+  uint32_t AvatarGetManifestLocalUser(Guest g, uint32_t user, uint32_t metadata, uint32_t overlapped);
+  // XamAvatarSetManifest (user, avatar info, overlapped): the avatar's 1000 bytes kept in the profile as
+  // XPROFILE_GAMERCARD_AVATAR_INFO_1 (written to profile_root as XamUserWriteProfileSettings keeps a binary
+  // setting); a user with no profile: ERROR_FUNCTION_FAILED with E_NO_SUCH_USER.
+  uint32_t AvatarSetManifest(Guest g, uint32_t user, uint32_t info, uint32_t overlapped);
   uint32_t UnloadImage(uint32_t handle);
   // XexLoadImageHeaders: the XEX2 headers of the image an ANSI_STRING path names, copied to `buffer` (its first
   // header-size bytes); STATUS_NO_SUCH_FILE, STATUS_INVALID_IMAGE_FORMAT, STATUS_BUFFER_TOO_SMALL otherwise.
@@ -410,6 +440,10 @@ class Xam {
   Listener* FindListener(uint32_t handle);
   // A setting the title wrote: this run's, or a binary one kept in profile_root by an earlier run.
   std::vector<Setting>::const_iterator FindSetting(uint32_t id);
+  // A setting kept (replacing one of its id), a binary one also written to profile_root.
+  void PutSetting(Setting setting);
+  // Completes an overlapped with a result, its extended error and a length.
+  void CompleteEx(Guest g, uint32_t overlapped, uint32_t result, uint32_t extended, uint32_t length);
   Enumerator* FindEnumerator(uint32_t handle);
   std::filesystem::path ContentPath(Guest g, uint32_t content_data) const;
   std::filesystem::path ContentHeaderPath(const std::filesystem::path& package) const;

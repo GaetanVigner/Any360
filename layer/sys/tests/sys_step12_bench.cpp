@@ -737,6 +737,21 @@ int main(int argc, char** argv) {
              Time(1000000, [&] { ok &= XamState().LoadImageFromMemory(g, name + 0x40, out) == 0xC000000F; }), Measure{});
     if (!ok) std::printf("  !! a tenth-batch row failed\n");
   }
+  // Step 12, the avatar calls Xenia stubs too: the manifest kept in the profile (in memory, then also written to the
+  // profile folder as a binary setting) and read back; the package of an asset.
+  {
+    const uint32_t info = 0xE0000, meta = 0xE1000, asset = 0xE2000, package = 0xE2100;
+    for (uint32_t i = 0; i < 0x3E8; ++i) g.Store8(info + i, uint8_t(i));
+    bool ok = true;
+    PrintRow("XamAvatarSetManifest (in memory)", 0x3E8, Time(200000, [&] { ok &= XamState().AvatarSetManifest(g, 0, info, 0) == 0; }),
+             Measure{});
+    PrintRow("XamAvatarGetManifestLocalUser", 0x3E8,
+             Time(200000, [&] { ok &= XamState().AvatarGetManifestLocalUser(g, 0, meta, 0) == 0; }), Measure{});
+    g.Store64(asset, 0x0123456789ABCDEFull), g.Store32(asset + 8, 0x11223344), g.Store32(asset + 12, 0x4D5307E6);
+    PrintRow("XamAvatarGetInstalledAssetPackageDescription", 0x148,
+             Time(200000, [&] { XamState().AvatarGetInstalledAssetPackageDescription(g, asset, package); }), Measure{});
+    if (!ok) std::printf("  !! an avatar row failed\n");
+  }
   std::printf("sys_step12_bench: allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_totals.calls ? double(g_totals.bytes) / double(g_totals.calls) : 0.0,
               g_totals.calls ? double(g_totals.count) / double(g_totals.calls) : 0.0,

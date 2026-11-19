@@ -1089,6 +1089,35 @@ ANY360_SYS_EXPORT(ObCreateObject) {
 }
 // (image, size, name, flags, minimum version, handle out)
 ANY360_SYS_EXPORT(XexLoadImageFromMemory) { ctx.r3.u64 = XamState().LoadImageFromMemory({base}, ctx.r5.u32, ctx.r8.u32); }
+// Step 12, the calls Xenia stubs too: avatars (the overlapped is the last argument of each).
+ANY360_SYS_EXPORT(XamAvatarBeginEnumAssets) { ctx.r3.u64 = XamState().AvatarComplete({base}, ctx.r8.u32); }
+ANY360_SYS_EXPORT(XamAvatarEndEnumAssets) { ctx.r3.u64 = XamState().AvatarComplete({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamAvatarEnumAssets) { ctx.r3.u64 = 0x80070012; }  // E_NO_MORE_FILES: nothing to enumerate
+ANY360_SYS_EXPORT(XamAvatarGenerateMipMaps) { ctx.r3.u64 = XamState().AvatarComplete({base}, ctx.r7.u32); }
+ANY360_SYS_EXPORT(XamAvatarGetAssetBinary) { ctx.r3.u64 = XamState().AvatarComplete({base}, ctx.r7.u32); }
+ANY360_SYS_EXPORT(XamAvatarGetAssetIcon) { ctx.r3.u64 = XamState().AvatarComplete({base}, ctx.r7.u32); }
+ANY360_SYS_EXPORT(XamAvatarGetAssets) { ctx.r3.u64 = XamState().AvatarGetAssets({base}, ctx.r8.u32); }
+ANY360_SYS_EXPORT(XamAvatarGetAssetsResultSize) {
+  ctx.r3.u64 = XamState().AvatarGetAssetsResultSize({base}, ctx.r4.u32, ctx.r5.u32);
+}
+ANY360_SYS_EXPORT(XamAvatarGetInstalledAssetPackageDescription) {
+  XamState().AvatarGetInstalledAssetPackageDescription({base}, ctx.r3.u32, ctx.r4.u32);
+}
+ANY360_SYS_EXPORT(XamAvatarGetInstrumentation) { ctx.r3.u64 = XamState().AvatarGetInstrumentation({base}, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamAvatarGetManifestLocalUser) {
+  ctx.r3.u64 = XamState().AvatarGetManifestLocalUser({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);
+}
+ANY360_SYS_EXPORT(XamAvatarGetManifestsByXuid) { ctx.r3.u64 = XamState().AvatarComplete({base}, ctx.r8.u32); }
+ANY360_SYS_EXPORT(XamAvatarGetMetadataRandom) { ctx.r3.u64 = XamState().AvatarComplete({base}, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XamAvatarGetMetadataSignedOutProfile) { ctx.r3.u64 = XamState().AvatarComplete({base}, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamAvatarGetMetadataSignedOutProfileCount) { ctx.r3.u64 = XamState().AvatarComplete({base}, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamAvatarLoadAnimation) { ctx.r3.u64 = XamState().AvatarComplete({base}, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XamAvatarManifestGetBodyType) { ctx.r3.u64 = 1; }  // male, as Xenia answers every manifest
+ANY360_SYS_EXPORT(XamAvatarReinstallAwardedAsset) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamAvatarSetCustomAsset) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamAvatarSetManifest) { ctx.r3.u64 = XamState().AvatarSetManifest({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamAvatarSetMocks) {}
+ANY360_SYS_EXPORT(XamAvatarWearNow) { ctx.r3.u64 = XamState().AvatarWearNow({base}, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
@@ -1963,6 +1992,28 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(ObLookupAnyThreadByThreadId),
     ANY360_SYS_ENTRY(ObCreateObject),
     ANY360_SYS_ENTRY(XexLoadImageFromMemory),
+    ANY360_SYS_ENTRY(XamAvatarBeginEnumAssets),
+    ANY360_SYS_ENTRY(XamAvatarEndEnumAssets),
+    ANY360_SYS_ENTRY(XamAvatarEnumAssets),
+    ANY360_SYS_ENTRY(XamAvatarGenerateMipMaps),
+    ANY360_SYS_ENTRY(XamAvatarGetAssetBinary),
+    ANY360_SYS_ENTRY(XamAvatarGetAssetIcon),
+    ANY360_SYS_ENTRY(XamAvatarGetAssets),
+    ANY360_SYS_ENTRY(XamAvatarGetAssetsResultSize),
+    ANY360_SYS_ENTRY(XamAvatarGetInstalledAssetPackageDescription),
+    ANY360_SYS_ENTRY(XamAvatarGetInstrumentation),
+    ANY360_SYS_ENTRY(XamAvatarGetManifestLocalUser),
+    ANY360_SYS_ENTRY(XamAvatarGetManifestsByXuid),
+    ANY360_SYS_ENTRY(XamAvatarGetMetadataRandom),
+    ANY360_SYS_ENTRY(XamAvatarGetMetadataSignedOutProfile),
+    ANY360_SYS_ENTRY(XamAvatarGetMetadataSignedOutProfileCount),
+    ANY360_SYS_ENTRY(XamAvatarLoadAnimation),
+    ANY360_SYS_ENTRY(XamAvatarManifestGetBodyType),
+    ANY360_SYS_ENTRY(XamAvatarReinstallAwardedAsset),
+    ANY360_SYS_ENTRY(XamAvatarSetCustomAsset),
+    ANY360_SYS_ENTRY(XamAvatarSetManifest),
+    ANY360_SYS_ENTRY(XamAvatarSetMocks),
+    ANY360_SYS_ENTRY(XamAvatarWearNow),
     ANY360_SYS_ENTRY(XeCryptAesKey),
     ANY360_SYS_ENTRY(XeCryptAesEcb),
     ANY360_SYS_ENTRY(XeCryptAesCbc),

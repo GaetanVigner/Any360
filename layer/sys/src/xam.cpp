@@ -593,19 +593,112 @@ uint32_t Xam::UserWriteProfileSettings(Guest g, uint32_t, uint32_t user, uint32_
       const uint32_t bytes = g.Load32(at + 32), pointer = g.Load32(at + 36);
       if (pointer) s.data.insert(s.data.end(), g.host(pointer), g.host(pointer) + bytes);
     }
-    if (type == 6 && !title_.profile_root.empty()) {
-      std::error_code error;
-      std::filesystem::create_directories(title_.profile_root, error);
-      char file[16];
-      std::snprintf(file, sizeof file, "%08X", id);
-      std::ofstream out(title_.profile_root / file, std::ios::binary | std::ios::trunc);
-      out.write(reinterpret_cast<const char*>(s.data.data() + 16), std::streamsize(s.data.size() - 16));
-    }
-    auto it = std::find_if(settings_.begin(), settings_.end(), [&](const Setting& x) { return x.id == id; });
-    if (it != settings_.end()) *it = std::move(s);
-    else settings_.push_back(std::move(s));
+    PutSetting(std::move(s));
   }
   return Finish(g, overlapped, kErrorSuccess);
+}
+
+void Xam::PutSetting(Setting s) {
+  if (s.id >> 28 == 6 && !title_.profile_root.empty()) {
+    std::error_code error;
+    std::filesystem::create_directories(title_.profile_root, error);
+    char file[16];
+    std::snprintf(file, sizeof file, "%08X", s.id);
+    std::ofstream out(title_.profile_root / file, std::ios::binary | std::ios::trunc);
+    out.write(reinterpret_cast<const char*>(s.data.data() + 16), std::streamsize(s.data.size() - 16));
+  }
+  auto it = std::find_if(settings_.begin(), settings_.end(), [&](const Setting& x) { return x.id == s.id; });
+  if (it != settings_.end()) *it = std::move(s);
+  else settings_.push_back(std::move(s));
+}
+
+void Xam::CompleteEx(Guest g, uint32_t overlapped, uint32_t result, uint32_t extended, uint32_t length) {
+  g.Store32(overlapped + 0x00, result);
+  g.Store32(overlapped + 0x04, length);
+  g.Store32(overlapped + 0x18, extended);
+  const uint32_t event = g.Load32(overlapped + 0x0C);
+  if (event) Objects().NtSetEvent(g, event, 0);
+}
+
+// --- step 12, the calls Xenia stubs too: avatars (Xenia's xam_avatar.cc) ---
+
+namespace {
+constexpr uint32_t kAvatarEditorTitleId = 0x584D07D1, kAvatarInfoSetting = 0x63E80044, kAvatarInfoSize = 0x3E8;
+constexpr uint32_t kEFail = 0x80004005, kEInvalidArgument = 0x80070057, kENoSuchUser = 0x80070525;
+}  // namespace
+
+uint32_t Xam::AvatarWearNow(Guest g, uint32_t overlapped) {
+  if (title_.title_id == kAvatarEditorTitleId) return kErrorSuccess;
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::AvatarGetAssets(Guest g, uint32_t overlapped) {
+  if (!overlapped) return kErrorSuccess;
+  CompleteEx(g, overlapped, kErrorFunctionFailed, kEFail, 0);
+  return kErrorIoPending;
+}
+
+uint32_t Xam::AvatarGetAssetsResultSize(Guest g, uint32_t result_size_ptr, uint32_t gpu_size_ptr) {
+  if (result_size_ptr) g.Store32(result_size_ptr, 0);
+  if (gpu_size_ptr) g.Store32(gpu_size_ptr, 0);
+  return kErrorSuccess;
+}
+
+void Xam::AvatarGetInstalledAssetPackageDescription(Guest g, uint32_t asset_id, uint32_t content_data) {
+  std::memset(g.host(content_data), 0, kContentAggregateSize);
+  g.Store32(content_data + 4, 0x9000);  // avatar item
+  const uint32_t title_id = g.Load32(asset_id + 12);
+  // The 32 hexadecimal digits of the id, the second id and the title id: the 16 bytes as they lie, big-endian.
+  static constexpr char kHex[] = "0123456789ABCDEF";
+  const uint8_t* id = g.host(asset_id);
+  char* name = reinterpret_cast<char*>(g.host(content_data + kContentFileNameOffset));
+  for (int i = 0; i < 16; ++i) name[2 * i] = kHex[id[i] >> 4], name[2 * i + 1] = kHex[id[i] & 15];
+  g.Store32(content_data + 0x140, title_id);
+}
+
+uint32_t Xam::AvatarGetInstrumentation(Guest g, uint32_t value_ptr) {
+  if (value_ptr) g.Store32(value_ptr, 0);
+  return 1;
+}
+
+uint32_t Xam::AvatarGetManifestLocalUser(Guest g, uint32_t user, uint32_t metadata, uint32_t overlapped) {
+  uint32_t result = kErrorSuccess, extended = kErrorSuccess;
+  if (user >= 4 || !metadata) {
+    result = kErrorInvalidParameter, extended = kEInvalidArgument;
+  } else if (user != 0) {
+    result = kErrorFunctionFailed, extended = kENoSuchUser;
+  } else {
+    const auto stored = FindSetting(kAvatarInfoSetting);
+    if (stored == settings_.end() || stored->data.size() <= 16) {
+      result = kErrorFunctionFailed, extended = kEFail;
+    } else {
+      std::memcpy(g.host(metadata), stored->data.data() + 16, std::min<size_t>(stored->data.size() - 16, kAvatarInfoSize));
+    }
+  }
+  if (!overlapped) return result == kErrorSuccess ? result : extended;
+  CompleteEx(g, overlapped, result, extended, 0);
+  return kErrorIoPending;
+}
+
+uint32_t Xam::AvatarSetManifest(Guest g, uint32_t user, uint32_t info, uint32_t overlapped) {
+  uint32_t result = kErrorSuccess, extended = kErrorSuccess;
+  if (user != 0) {
+    result = kErrorFunctionFailed, extended = kENoSuchUser;
+  } else {
+    // The kept setting's bytes rewritten in place when it has its full size (no host allocation), else a new one.
+    auto kept = std::find_if(settings_.begin(), settings_.end(), [](const Setting& x) { return x.id == kAvatarInfoSetting; });
+    Setting s{kAvatarInfoSetting, {}};
+    if (kept != settings_.end() && kept->data.size() == 16 + kAvatarInfoSize) s.data = std::move(kept->data);
+    else s.data.assign(16 + kAvatarInfoSize, 0);
+    s.data[0] = 6;  // binary
+    for (int i = 0; i < 4; ++i) s.data[8 + i] = uint8_t(kAvatarInfoSize >> (24 - 8 * i));
+    if (info) std::memcpy(s.data.data() + 16, g.host(info), kAvatarInfoSize);
+    else std::memset(s.data.data() + 16, 0, kAvatarInfoSize);
+    PutSetting(std::move(s));
+  }
+  if (!overlapped) return result == kErrorSuccess ? result : extended;
+  CompleteEx(g, overlapped, result, extended, 0);
+  return kErrorIoPending;
 }
 
 std::vector<Xam::Setting>::const_iterator Xam::FindSetting(uint32_t id) {

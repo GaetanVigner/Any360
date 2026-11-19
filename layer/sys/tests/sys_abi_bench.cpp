@@ -60,7 +60,14 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(LDIDestroyDecompression) X(XamContentCreateEnumeratorInternal) X(XamContentGetMetaDataInternal)                     \
   X(XamContentSetThumbnailInternal) X(XamContentRegisterChangeCallback) X(XamLoaderRegisterLaunchRequestCallback)      \
   X(XamReadString) X(NetDll_WSAStartupEx) X(NetDll_XNetStartupEx) X(XamNetworkStorageUserHasPrivilege)                 \
-  X(ObLookupAnyThreadByThreadId) X(ObCreateObject) X(XexLoadImageFromMemory)
+  X(ObLookupAnyThreadByThreadId) X(ObCreateObject) X(XexLoadImageFromMemory)                                          \
+  X(XamAvatarBeginEnumAssets) X(XamAvatarEndEnumAssets) X(XamAvatarEnumAssets) X(XamAvatarGenerateMipMaps)             \
+  X(XamAvatarGetAssetBinary) X(XamAvatarGetAssetIcon) X(XamAvatarGetAssets) X(XamAvatarGetAssetsResultSize)            \
+  X(XamAvatarGetInstalledAssetPackageDescription) X(XamAvatarGetInstrumentation) X(XamAvatarGetManifestLocalUser)      \
+  X(XamAvatarGetManifestsByXuid) X(XamAvatarGetMetadataRandom) X(XamAvatarGetMetadataSignedOutProfile)                 \
+  X(XamAvatarGetMetadataSignedOutProfileCount) X(XamAvatarLoadAnimation) X(XamAvatarManifestGetBodyType)               \
+  X(XamAvatarReinstallAwardedAsset) X(XamAvatarSetCustomAsset) X(XamAvatarSetManifest) X(XamAvatarSetMocks)            \
+  X(XamAvatarWearNow)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -441,6 +448,37 @@ int main(int argc, char** argv) {
        20000, nullptr, 0},
       {"XexLoadImageFromMemory (not loaded)", __imp__XexLoadImageFromMemory,
        Args({kIn, 0x1000, kObjectName + 0x40, 0, 0, kOut + 0xDC4}), 20000, nullptr, 0xC000000F},
+      // The avatar calls Xenia stubs too (no overlapped: their synchronous answer).
+      {"XamAvatarBeginEnumAssets", __imp__XamAvatarBeginEnumAssets, Args({0, 0, 0, 0, 0, 0}), 20000, nullptr, 0},
+      {"XamAvatarEndEnumAssets", __imp__XamAvatarEndEnumAssets, Args({0}), 20000, nullptr, 0},
+      {"XamAvatarEnumAssets", __imp__XamAvatarEnumAssets, Args({kIn, kIn + 8, 0}), 20000, nullptr, 0x80070012},
+      {"XamAvatarGenerateMipMaps", __imp__XamAvatarGenerateMipMaps, Args({kIn, 0, 0, kIn, 0}), 20000, nullptr, 0},
+      {"XamAvatarGetAssetBinary", __imp__XamAvatarGetAssetBinary, Args({kIn, 0, 0, 0, 0}), 20000, nullptr, 0},
+      {"XamAvatarGetAssetIcon", __imp__XamAvatarGetAssetIcon, Args({kIn, 0, kIn, kIn, 0}), 20000, nullptr, 0},
+      {"XamAvatarGetAssets", __imp__XamAvatarGetAssets, Args({kIn, 0xFF, 0, kOut + 0xDD0, kOut + 0xDD4, 0}), 20000,
+       nullptr, 0},
+      {"XamAvatarGetAssetsResultSize", __imp__XamAvatarGetAssetsResultSize, Args({0xFF, kOut + 0xDD0, kOut + 0xDD4}),
+       20000, nullptr, 0},
+      {"XamAvatarGetInstalledAssetPackageDescription", __imp__XamAvatarGetInstalledAssetPackageDescription,
+       Args({kIn, kOut + 0x1E00}), 20000, nullptr, -1},
+      {"XamAvatarGetInstrumentation", __imp__XamAvatarGetInstrumentation, Args({6, kOut + 0xDD0}), 20000, nullptr, 1},
+      {"XamAvatarSetManifest (in memory)", __imp__XamAvatarSetManifest, Args({0, kIn, 0}), 2000, nullptr, 0},
+      {"XamAvatarGetManifestLocalUser", __imp__XamAvatarGetManifestLocalUser, Args({0, kOut + 0x1A00, 0}), 20000,
+       nullptr, 0},
+      {"XamAvatarGetManifestsByXuid", __imp__XamAvatarGetManifestsByXuid, Args({0, 1, kIn, 0, kOut + 0x1A00, 0}), 20000,
+       nullptr, 0},
+      {"XamAvatarGetMetadataRandom", __imp__XamAvatarGetMetadataRandom, Args({1, 1, kOut + 0x1A00, 0}), 20000, nullptr, 0},
+      {"XamAvatarGetMetadataSignedOutProfile", __imp__XamAvatarGetMetadataSignedOutProfile, Args({0, kOut + 0x1A00, 0}),
+       20000, nullptr, 0},
+      {"XamAvatarGetMetadataSignedOutProfileCount", __imp__XamAvatarGetMetadataSignedOutProfileCount,
+       Args({kOut + 0xDD0, 0}), 20000, nullptr, 0},
+      {"XamAvatarLoadAnimation", __imp__XamAvatarLoadAnimation, Args({kIn, 0, kOut + 0x1A00, 0}), 20000, nullptr, 0},
+      {"XamAvatarManifestGetBodyType", __imp__XamAvatarManifestGetBodyType, Args({kIn}), 20000, nullptr, 1},
+      {"XamAvatarReinstallAwardedAsset", __imp__XamAvatarReinstallAwardedAsset, Args({kOut + 0x1A00, 16, kOut + 0xDD0}),
+       20000, nullptr, 0},
+      {"XamAvatarSetCustomAsset", __imp__XamAvatarSetCustomAsset, Args({16, kIn, 0, 0, kIn}), 20000, nullptr, 0},
+      {"XamAvatarSetMocks", __imp__XamAvatarSetMocks, Args({}), 20000, nullptr, -1},
+      {"XamAvatarWearNow", __imp__XamAvatarWearNow, Args({0, kIn, 0}), 20000, nullptr, 0},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "
