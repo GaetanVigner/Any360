@@ -70,6 +70,7 @@ void Xam::Reset() {
   profile_mounts_.clear();
   language_fallback_ = 0;
   iptv_name_ = 0;
+  content_change_callback_ = launch_request_callback_ = 0;
   Objects().AddCloseHook([](uint32_t object) { XamState().OnClose(object); });
   system_module_ = 0;
   settings_.clear();
@@ -862,6 +863,25 @@ uint32_t Xam::ContentDelete(Guest g, uint32_t, uint32_t content_data, uint32_t o
   return Finish(g, overlapped, kErrorSuccess);
 }
 
+namespace {
+
+// `size` bytes of a host file from `offset` (a package's header), a wide path on Windows (the
+// content root may hold any character). False when the file is missing or shorter.
+bool ReadHostFile(const std::filesystem::path& path, long offset, void* buffer, size_t size) {
+  std::FILE* file = nullptr;
+#if defined(_WIN32)
+  if (_wfopen_s(&file, path.c_str(), L"rb")) file = nullptr;
+#else
+  file = std::fopen(path.c_str(), "rb");
+#endif
+  if (!file) return false;
+  const bool read = std::fseek(file, offset, SEEK_SET) == 0 && std::fread(buffer, 1, size, file) == size;
+  std::fclose(file);
+  return read;
+}
+
+}  // namespace
+
 std::vector<std::vector<uint8_t>> Xam::ContentItems(uint32_t device_id, uint32_t content_type, uint32_t item_size) const {
   std::vector<std::vector<uint8_t>> items;
   char type[16];
@@ -900,6 +920,49 @@ uint32_t Xam::ContentCreateEnumerator(Guest g, uint32_t, uint32_t device_id, uin
   if (!handle) return kErrorInvalidParameter;
   g.Store32(handle_out, handle);
   return kErrorSuccess;
+}
+
+uint32_t Xam::ContentCreateEnumeratorInternal(Guest g, uint32_t device_id, uint32_t content_type, uint32_t per_call,
+                                              uint32_t size_ptr, uint32_t handle_out) {
+  constexpr uint32_t kEInvalidArg = 0x80070057;
+  if (device_id > 2 || !handle_out) {
+    if (size_ptr) g.Store32(size_ptr, 0);
+    return kEInvalidArg;
+  }
+  if (size_ptr) g.Store32(size_ptr, kContentDataSize * per_call);
+  std::vector<std::vector<uint8_t>> items;
+  if (device_id != 2) items = ContentItems(device_id, content_type, kContentDataSize);  // the disc holds none
+  const uint32_t handle = CreateEnumerator(g, kContentDataSize, per_call, std::move(items));
+  if (!handle) return kEInvalidArg;
+  g.Store32(handle_out, handle);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ContentGetMetaDataInternal(Guest g, uint32_t content_data, uint32_t metadata, uint32_t overlapped) {
+  // XCONTENT_METADATA (Xenia's XContentMetadata, packed, 0x93D6 bytes): type 0x00, version 0x04, execution info 0x10
+  // (title id at +0x0C), data file count 0x59, volume type 0x65 (0: STFS), display names 0xCD (9 x 256 bytes).
+  constexpr uint32_t kSize = 0x93D6, kTitleId = 0x1C, kDataFileCount = 0x59, kDisplayName = 0xCD;
+  if (!content_data || title_.content_root.empty()) return kErrorFunctionFailed;
+  const std::filesystem::path path = ContentPath(g, content_data);
+  std::error_code error;
+  if (path.empty() || !std::filesystem::is_directory(path, error)) return kErrorFunctionFailed;
+  std::memset(g.host(metadata), 0, kSize);
+  uint8_t header[kContentAggregateSize];
+  if (ReadHostFile(ContentHeaderPath(path), 0, header, sizeof header)) {
+    std::memcpy(g.host(metadata), header + 4, 4);  // the type, big-endian as stored
+    g.Store32(metadata + 4, 2);
+    g.Store32(metadata + kDataFileCount, 1);
+    std::memcpy(g.host(metadata + kTitleId), header + 0x140, 4);
+    std::memcpy(g.host(metadata + kDisplayName), header + 8, 0xFE);
+  }
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::ReadString(Guest g, uint64_t id, uint32_t buffer, uint32_t size_ptr, uint32_t overlapped) {
+  if (!buffer || id == 0xFFFF) return 0x80070057;  // E_INVALIDARG
+  if (!size_ptr) return 0x8007007A;                // ERROR_INSUFFICIENT_BUFFER
+  if (g.Load32(size_ptr)) g.Store16(buffer, 0);
+  return Finish(g, overlapped, kErrorSuccess);
 }
 
 uint32_t Xam::ContentAggregateCreateEnumerator(Guest g, uint32_t device_id, uint32_t content_type, uint32_t handle_out) {

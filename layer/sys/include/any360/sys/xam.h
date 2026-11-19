@@ -224,6 +224,37 @@ class Xam {
   // room. The name is the console's IPTV setting, which is empty here (IPTV is off, as XamIsIptvEnabled answers);
   // Xenia writes its own name when the setting is empty.
   uint32_t IptvServiceName(Guest g, uint32_t name_out);
+
+  // Step 12, ninth batch (Xenia's xam_content.cc, xam_info.cc, xam_net.cc, xam_user.cc).
+  // XamContentCreateEnumeratorInternal (XUID, device, type, title id, flags, items a call, buffer size out, handle out):
+  // the packages of a type as XCONTENT_DATA items, as XamContentCreateEnumerator lists them (one local profile and one
+  // title: the XUID and title id select nothing more). A device other than 0 (any), 1 (the hard drive) or 2 (the disc,
+  // which holds no package here), or no handle pointer: the size written as 0 and E_INVALIDARG. The size is
+  // 0x134 times the items a call.
+  uint32_t ContentCreateEnumeratorInternal(Guest g, uint32_t device_id, uint32_t content_type, uint32_t per_call,
+                                           uint32_t size_ptr, uint32_t handle_out);
+  // XamContentGetMetaDataInternal (XCONTENT_DATA_INTERNAL, XCONTENT_METADATA out, overlapped): the package's 0x93D6-byte
+  // metadata as Xenia's folder packages give it, from the header the package was created with (an
+  // XCONTENT_AGGREGATE_DATA): its type, version 2, one data file, an STFS volume, the header's title id in the execution
+  // info and its display name in the English slot, the rest 0; all 0 for a package without a header. The content
+  // data only names the package. ERROR_FUNCTION_FAILED when the package does not exist, nothing written and the
+  // overlapped left alone (as Xenia); otherwise completed through the overlapped when given.
+  uint32_t ContentGetMetaDataInternal(Guest g, uint32_t content_data, uint32_t metadata, uint32_t overlapped);
+  // XamContentRegisterChangeCallback / XamLoaderRegisterLaunchRequestCallback: the title's callback kept (no content
+  // changes and no launch requests come from outside a title here, so neither is called).
+  void ContentRegisterChangeCallback(uint32_t callback) { content_change_callback_ = callback; }
+  uint32_t content_change_callback() const { return content_change_callback_; }
+  void LoaderRegisterLaunchRequestCallback(uint32_t callback) { launch_request_callback_ = callback; }
+  uint32_t launch_request_callback() const { return launch_request_callback_; }
+  // XamReadString (title id, string id, user, buffer, size in/out, overlapped): the title's localized string, from its
+  // SPA's string table in Xenia's game database; Any360 keeps no such table, so the string is empty: the terminator
+  // written when the size is not 0. E_INVALIDARG for no buffer or id 0xFFFF, ERROR_INSUFFICIENT_BUFFER (an HRESULT)
+  // for no size pointer; completed through the overlapped when given.
+  uint32_t ReadString(Guest g, uint64_t id, uint32_t buffer, uint32_t size_ptr, uint32_t overlapped);
+  // XamNetworkStorageUserHasPrivilege (user index): whether the user (or, for 0xFF, any user) holds the network
+  // storage privilege (0xD1). Xenia grants it only to a profile signed in to Xbox Live; the local profile is offline,
+  // so 0 for every user.
+  uint32_t NetworkStorageUserHasPrivilege(uint32_t) const { return 0; }
   // The title id of the XEX header's execution info (0 without a header).
   uint32_t TitleId(Guest g) const;
   // Tasks: the callback runs on a new thread with the message as its context.
@@ -385,6 +416,7 @@ class Xam {
   uint32_t language_fallback_ = 0;  // the 18 fallback locale names in the kernel heap, laid out at first use
   uint32_t language_fallback_at_[18] = {};
   uint32_t iptv_name_ = 0;  // the IPTV provider's name in the kernel heap, laid out at first use
+  uint32_t content_change_callback_ = 0, launch_request_callback_ = 0;
   // The packages of a type as enumerator items of `item_size` bytes starting with their XCONTENT_DATA, sorted by name.
   std::vector<std::vector<uint8_t>> ContentItems(uint32_t device_id, uint32_t content_type, uint32_t item_size) const;
 

@@ -460,6 +460,13 @@ IPTV is off), and LDI (`ldi.h`): `LDICreateDecompression`, `LDIDecompress`, `LDI
 LZX decoder (checked against cabinet.dll's encoder on every window size), the title's allocator and freer called on
 the calling thread (docs/perf/archive/2026-11-19-sys-step12-misc/).
 
+Ninth batch, content, network and the rest (10): the content calls' "Internal" forms (`XamContentCreateEnumeratorInternal`,
+`XamContentGetMetaDataInternal` with the 0x93D6-byte metadata Xenia lays out for a folder package,
+`XamContentSetThumbnailInternal`), the callbacks a title registers (`XamContentRegisterChangeCallback`,
+`XamLoaderRegisterLaunchRequestCallback`: kept), `XamReadString` (empty: no SPA string table), `NetDll_WSAStartupEx` and
+`NetDll_XNetStartupEx` (the plain forms), `XamNetworkStorageUserHasPrivilege`, `ObLookupAnyThreadByThreadId`
+(docs/perf/archive/2026-11-19-sys-step12-content/).
+
 Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
 host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
 SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),

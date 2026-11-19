@@ -642,6 +642,79 @@ int main(int argc, char** argv) {
     }
 #endif
   }
+  // Step 12, ninth batch: the content "Internal" forms on packages made as a title makes them (XamContentCreate: the
+  // folder and its header; 2 and 32 of them), the enumerator closed again; XamReadString; network storage's
+  // privilege. The host's floor beside the enumerator: the same folder listed and the same headers read with nothing
+  // else (std::filesystem's iterator, fopen / fread / fclose); and what two folder date reads cost (a listing cache
+  // would still pay them).
+  {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path content = fs::temp_directory_path() / "any360-step12-bench-content";
+    // Past the other rows' buffers, beside the kernel heap (0x80000) the enumerators live in.
+    const uint32_t out = 0xEC000, data = 0xE0000, meta = 0xE1000, root_name = 0xEC100;
+    std::memcpy(g.host(root_name), "bench", 6);
+    for (const uint32_t packages : {2u, 32u}) {
+      fs::remove_all(content, ec);
+      XamState().title().content_root = content;
+      for (uint32_t p = 0; p < packages; ++p) {
+        std::memset(g.host(data), 0, 0x134);
+        g.Store32(data, 1), g.Store32(data + 4, 1);
+        char name[16];
+        std::snprintf(name, sizeof name, "slot%02u", p);
+        for (uint32_t k = 0; name[k]; ++k) g.Store16(data + 8 + 2 * k, uint16_t(name[k]));
+        std::memcpy(g.host(data + 0x108), name, std::strlen(name) + 1);
+        XamState().ContentCreate(g, 0, root_name, data, 2, 0, 0, 0);
+        XamState().ContentClose(g, root_name, 0);
+      }
+      std::memcpy(g.host(data + 0x108), "slot00", 7);
+      bool ok = true;
+      const Measure ours = Time(packages > 2 ? 500 : 2000, [&] {
+        ok &= XamState().ContentCreateEnumeratorInternal(g, 1, 1, packages, out + 4, out) == 0;
+        Objects().Close(g.Load32(out));
+      });
+      const Measure host = Time(packages > 2 ? 500 : 2000, [&] {
+        uint8_t header[0x148];
+        for (const auto& entry : fs::directory_iterator(content / "00000001", ec)) {
+          if (!entry.is_directory()) continue;
+          const fs::path path = content / "Headers" / "00000001" / (entry.path().filename().string() + ".header");
+          std::FILE* file = nullptr;
+#if defined(_WIN32)
+          if (_wfopen_s(&file, path.c_str(), L"rb")) file = nullptr;
+#else
+          file = std::fopen(path.c_str(), "rb");
+#endif
+          if (file) {
+            g_sink = g_sink + uint32_t(std::fread(header, 1, sizeof header, file));
+            std::fclose(file);
+          }
+        }
+      }, false);
+      char label[64];
+      std::snprintf(label, sizeof label, "XamContentCreateEnumeratorInternal+close (host: list+headers)");
+      PrintRow(label, packages, ours, host);
+      const Measure meta_row = Time(2000, [&] { ok &= XamState().ContentGetMetaDataInternal(g, data, meta, 0) == 0; });
+      PrintRow("XamContentGetMetaDataInternal", packages, meta_row, Measure{});
+      if (packages == 2) {
+        PrintRow("XamContentSetThumbnailInternal", 4, Time(1000, [&] { ok &= XamState().ContentSetThumbnail(g, data, out, 4, 0) == 0; }),
+                 Measure{});
+        PrintRow("two folder dates (a cache's check)", 2, Time(5000, [&] {
+                   g_sink = g_sink + uint32_t(fs::last_write_time(content / "00000001", ec).time_since_epoch().count());
+                   g_sink = g_sink + uint32_t(fs::last_write_time(content / "Headers" / "00000001", ec).time_since_epoch().count());
+                 }, false),
+                 Measure{});
+      }
+      if (!ok) std::printf("  !! a content row failed (%u packages)\n", packages);
+    }
+    g.Store32(out + 8, 16);
+    PrintRow("XamReadString", 2, Time(1000000, [&] { g_sink = g_sink + XamState().ReadString(g, 5, out + 16, out + 8, 0); }),
+             Measure{});
+    uint32_t user = 0;
+    PrintRow("XamNetworkStorageUserHasPrivilege", 0,
+             Time(1000000, [&] { g_sink = g_sink + XamState().NetworkStorageUserHasPrivilege(user++ & 3); }), Measure{});
+    XamState().title().content_root.clear();
+    fs::remove_all(content, ec);
+  }
   std::printf("sys_step12_bench: allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_totals.calls ? double(g_totals.bytes) / double(g_totals.calls) : 0.0,
               g_totals.calls ? double(g_totals.count) / double(g_totals.calls) : 0.0,

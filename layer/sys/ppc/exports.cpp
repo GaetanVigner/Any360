@@ -1051,6 +1051,30 @@ ANY360_SYS_EXPORT(LDIDestroyDecompression) {
   LdiCaller caller = LdiCallerOf(ctx, base);
   ctx.r3.u64 = Ldi().Destroy({base}, ctx.r3.u32, &LdiCall, &caller);
 }
+// Step 12, ninth batch: the content "Internal" forms, the callbacks a title registers, XamReadString, the Ex startups,
+// network storage's privilege, ObLookupAnyThreadByThreadId.
+// (XUID, device, type, title id, flags, items a call, buffer size out, handle out)
+ANY360_SYS_EXPORT(XamContentCreateEnumeratorInternal) {
+  ctx.r3.u64 = XamState().ContentCreateEnumeratorInternal({base}, ctx.r4.u32, ctx.r5.u32, ctx.r8.u32, ctx.r9.u32, ctx.r10.u32);
+}
+// (content data, metadata out, overlapped)
+ANY360_SYS_EXPORT(XamContentGetMetaDataInternal) {
+  ctx.r3.u64 = XamState().ContentGetMetaDataInternal({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);
+}
+// (content data, buffer, size): XamContentSetThumbnail with no user and no overlapped.
+ANY360_SYS_EXPORT(XamContentSetThumbnailInternal) {
+  ctx.r3.u64 = XamState().ContentSetThumbnail({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, 0);
+}
+ANY360_SYS_EXPORT(XamContentRegisterChangeCallback) { XamState().ContentRegisterChangeCallback(ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamLoaderRegisterLaunchRequestCallback) { XamState().LoaderRegisterLaunchRequestCallback(ctx.r3.u32); }
+// (title id, string id, user, buffer, size in/out, overlapped)
+ANY360_SYS_EXPORT(XamReadString) { ctx.r3.u64 = XamState().ReadString({base}, ctx.r4.u64, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32); }
+// (caller, version, WSADATA, version required) and (caller, params, version required): the plain forms.
+ANY360_SYS_EXPORT(NetDll_WSAStartupEx) { ctx.r3.u64 = XamState().WsaStartup({base}, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(NetDll_XNetStartupEx) { ctx.r3.u64 = XamState().XNetStartup({base}, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamNetworkStorageUserHasPrivilege) { ctx.r3.u64 = XamState().NetworkStorageUserHasPrivilege(ctx.r3.u32); }
+// (thread id, KTHREAD out): ObLookupThreadByThreadId.
+ANY360_SYS_EXPORT(ObLookupAnyThreadByThreadId) { ctx.r3.u64 = Threads().LookupThreadById({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
@@ -1913,6 +1937,16 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(LDICreateDecompression),
     ANY360_SYS_ENTRY(LDIDecompress),
     ANY360_SYS_ENTRY(LDIDestroyDecompression),
+    ANY360_SYS_ENTRY(XamContentCreateEnumeratorInternal),
+    ANY360_SYS_ENTRY(XamContentGetMetaDataInternal),
+    ANY360_SYS_ENTRY(XamContentSetThumbnailInternal),
+    ANY360_SYS_ENTRY(XamContentRegisterChangeCallback),
+    ANY360_SYS_ENTRY(XamLoaderRegisterLaunchRequestCallback),
+    ANY360_SYS_ENTRY(XamReadString),
+    ANY360_SYS_ENTRY(NetDll_WSAStartupEx),
+    ANY360_SYS_ENTRY(NetDll_XNetStartupEx),
+    ANY360_SYS_ENTRY(XamNetworkStorageUserHasPrivilege),
+    ANY360_SYS_ENTRY(ObLookupAnyThreadByThreadId),
     ANY360_SYS_ENTRY(XeCryptAesKey),
     ANY360_SYS_ENTRY(XeCryptAesEcb),
     ANY360_SYS_ENTRY(XeCryptAesCbc),

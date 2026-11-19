@@ -56,7 +56,10 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XeCryptBnQwNeModInv) X(XeCryptBnQwNeModMul) X(XeCryptBnQwBeSigFormat) X(XeCryptBnDwLePkcs1Format)                  \
   X(XeKeysGetConsoleType) X(XeKeysGetConsoleID) X(XeKeysGetKeyProperties) X(XTLGetLanguageV2) X(XapipGetLocale)     \
   X(XamAllocEx) X(XapiFormatTimeOut) X(XamIptvGetServiceName) X(LDICreateDecompression) X(LDIDecompress)               \
-  X(LDIDestroyDecompression)
+  X(LDIDestroyDecompression) X(XamContentCreateEnumeratorInternal) X(XamContentGetMetaDataInternal)                     \
+  X(XamContentSetThumbnailInternal) X(XamContentRegisterChangeCallback) X(XamLoaderRegisterLaunchRequestCallback)      \
+  X(XamReadString) X(NetDll_WSAStartupEx) X(NetDll_XNetStartupEx) X(XamNetworkStorageUserHasPrivilege)                 \
+  X(ObLookupAnyThreadByThreadId)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -133,6 +136,7 @@ struct Row {
   Arguments args;
   uint32_t calls = 20000;  // a run's calls (fewer for a call that leaves an object behind each time)
   Function native = nullptr;  // Any360's side when it is not the export of the row's name alone (a pair, a stream)
+  int64_t expect = -1;        // when set, the r3 Any360's side must return (checked once after the timing)
 };
 
 uint32_t Load32(uint32_t at) {
@@ -176,6 +180,15 @@ void LdiStream(const LdiSide& side, PPCContext& ctx, uint8_t* base) {
 }
 void LdiReference(PPCContext& ctx, uint8_t* base) { LdiStream(g_ldi_reference, ctx, base); }
 void LdiNative(PPCContext& ctx, uint8_t* base) { LdiStream(g_ldi_native, ctx, base); }
+
+// XamContentCreateEnumeratorInternal on Any360's side with the NtClose that releases its enumerator (the reference's
+// stub creates none).
+Function g_enumerator_internal = nullptr;
+constexpr uint32_t kEnumeratorOut = 0x40020E00;
+void EnumeratorAndClose(PPCContext& ctx, uint8_t* base) {
+  g_enumerator_internal(ctx, base);
+  any360::sys::Objects().Close(Load32(kEnumeratorOut));
+}
 
 Arguments Args(std::initializer_list<uint64_t> regs, std::initializer_list<uint64_t> stack = {}) {
   Arguments a;
@@ -261,6 +274,27 @@ int main(int argc, char** argv) {
     stream_chunks = g_chunk_at.size();
   }
 #endif
+
+  // The ninth batch: two content packages of type 1 (saved games), an XCONTENT_DATA_INTERNAL naming the first, a size
+  // for XamReadString.
+  g_enumerator_internal = Native("XamContentCreateEnumeratorInternal");
+  constexpr uint32_t kContentData = 0x4002C000, kMetadata = 0x40021000, kWsaData = 0x4002B000;  // 0x134, 0x93D6, 0x190 bytes
+  {
+    // Two packages made as a title makes them (XamContentCreate: the folder and its header), closed again.
+    std::error_code error;
+    std::filesystem::remove_all(any360::sys::XamState().title().content_root / "00000001", error);
+    std::filesystem::remove_all(any360::sys::XamState().title().content_root / "Headers" / "00000001", error);
+    std::memcpy(g_base + kContentData + 0x180, "bench", 6);
+    for (const char* name : {"slotB", "slotA"}) {
+      std::memset(g_base + kContentData, 0, 0x180);
+      Store32(kContentData, 1), Store32(kContentData + 4, 1);
+      for (uint32_t i = 0; i < 6; ++i) Store16(kContentData + 8 + 2 * i, uint16_t(u"Slot A"[i]));
+      std::memcpy(g_base + kContentData + 0x108, name, 6);
+      any360::sys::XamState().ContentCreate({g_base}, 0, kContentData + 0x180, kContentData, 2, 0, 0, 0);
+      any360::sys::XamState().ContentClose({g_base}, kContentData + 0x180, 0);
+    }
+  }
+  Store32(kOut + 0xD90, 16);
 
   const uint32_t stack_args = kStack + kStackSize - 0x1000 + 0x54;
   const Row rows[] = {
@@ -369,6 +403,21 @@ int main(int argc, char** argv) {
       {"XamAllocEx (virtual 9 KB, + XamFree)", __imp__XamAllocEx, Args({0, 0, 0x2345, kAllocOut}), 20000, AllocExAndFree},
       {"LDICreateDecompression + Destroy", LdiReference, Args({}), 20000, LdiNative},
       {"LDIDecompress (stream: 32 chunks, 1 MiB)", LdiReference, Args({}), 20, LdiNative},
+      // The ninth batch.
+      {"XamContentCreateEnumeratorInternal (2, + NtClose)", __imp__XamContentCreateEnumeratorInternal,
+       Args({0, 1, 1, 0, 0, 2, kEnumeratorOut + 4, kEnumeratorOut}), 2000, EnumeratorAndClose, 0},
+      {"XamContentGetMetaDataInternal", __imp__XamContentGetMetaDataInternal, Args({kContentData, kMetadata, 0}), 2000,
+       nullptr, 0},
+      {"XamContentSetThumbnailInternal (4 B)", __imp__XamContentSetThumbnailInternal, Args({kContentData, kText, 4}), 2000,
+       nullptr, 0},
+      {"XamContentRegisterChangeCallback", __imp__XamContentRegisterChangeCallback, Args({0x82001234})},
+      {"XamLoaderRegisterLaunchRequestCallback", __imp__XamLoaderRegisterLaunchRequestCallback, Args({0x82005678})},
+      {"XamReadString", __imp__XamReadString, Args({0x4D5307E6, 5, 0, kOut + 0xDA0, kOut + 0xD90, 0}), 20000, nullptr, 0},
+      {"NetDll_WSAStartupEx", __imp__NetDll_WSAStartupEx, Args({0, 0x0202, kWsaData, 0x0202}), 20000, nullptr, 0},
+      {"NetDll_XNetStartupEx", __imp__NetDll_XNetStartupEx, Args({0, kText, 0x20501400}), 20000, nullptr, 0},
+      {"XamNetworkStorageUserHasPrivilege", __imp__XamNetworkStorageUserHasPrivilege, Args({0}), 20000, nullptr, 0},
+      {"ObLookupAnyThreadByThreadId (unknown id)", __imp__ObLookupAnyThreadByThreadId, Args({0x7777, kOut + 0xDB0}), 20000,
+       nullptr, 0xC0000225},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "
@@ -389,6 +438,19 @@ int main(int argc, char** argv) {
     const Measure ours = Time(row.native ? row.native : Native(name.c_str()), row.args, n, true);
     std::printf("  %-36s | %10.1f | %10.1f %9.1f %7.2f | %8.1fx\n", row.name, original.ns, ours.ns, ours.bytes,
                 ours.allocations, original.ns / ours.ns);
+    if (row.expect >= 0) {
+      // The timed path is the one the row names: Any360's result once more, on the same registers.
+      PPCContext ctx{};
+      ctx.fpscr.InitHost();
+      PPCRegister* regs[] = {&ctx.r3, &ctx.r4, &ctx.r5, &ctx.r6, &ctx.r7, &ctx.r8, &ctx.r9, &ctx.r10};
+      for (int k = 0; k < 8; ++k) regs[k]->u64 = row.args.r[k];
+      ctx.r1.u64 = kStack + kStackSize - 0x1000;
+      ctx.r13.u64 = kPcr;
+      (row.native ? row.native : Native(name.c_str()))(ctx, g_base);
+      if (ctx.r3.u32 != uint32_t(row.expect)) {
+        std::printf("    !! %s returned 0x%X, not 0x%X\n", row.name, ctx.r3.u32, uint32_t(row.expect));
+      }
+    }
   }
   std::printf("sys_abi_bench: Any360 allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_calls ? double(g_bytes) / double(g_calls) : 0.0, g_calls ? double(g_count) / double(g_calls) : 0.0,

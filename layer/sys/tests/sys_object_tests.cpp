@@ -3421,6 +3421,138 @@ void MiscStep12EighthTests() {
   Memory().Reset();
 }
 
+// Step 12, ninth batch: the content "Internal" forms, the registered callbacks, XamReadString, the Ex startups,
+// network storage's privilege, ObLookupAnyThreadByThreadId (Xenia's xam_content.cc, xam_info.cc, xam_net.cc,
+// xam_user.cc, xboxkrnl_ob.cc).
+void XamStep12NinthTests() {
+  Fresh();
+  namespace fs = std::filesystem;
+  XamState().Reset();
+  std::error_code ec;
+  const fs::path content = fs::temp_directory_path() / "any360-sys-step12-ninth";
+  fs::remove_all(content, ec);
+  fs::create_directories(content / "00000001" / "slotB");
+  fs::create_directories(content / "00000001" / "slotA");
+  XamState().title().content_root = content;
+  XamState().title().title_id = 0x4D5307E6;
+  XamState().title().title_name = u"Bench Title";
+  std::vector<uint8_t> memory(0x100000);
+  const Guest gm{memory.data()};
+  const uint32_t out = 0x1000, buf = 0x2000, data = 0x3000, meta = 0x10000, ov = 0x1800;
+
+  // XamContentCreateEnumeratorInternal: XCONTENT_DATA items, the size 0x134 a call; the disc lists none; an unknown
+  // device or no handle pointer clears the size and is E_INVALIDARG.
+  for (const uint32_t device : {0u, 1u}) {
+    gm.Store32(out + 8, 0xFFFFFFFF);
+    CHECK(XamState().ContentCreateEnumeratorInternal(gm, device, 1, 2, out + 8, out) == 0 && gm.Load32(out + 8) == 0x268);
+    const uint32_t handle = gm.Load32(out);
+    CHECK(XamState().Enumerate(gm, handle, 0, buf, 0x268, out + 4, 0) == 0 && gm.Load32(out + 4) == 2);
+    CHECK(gm.Load32(buf) == 1 && gm.Load32(buf + 4) == 1);
+    CHECK(std::string(reinterpret_cast<const char*>(gm.host(buf + 0x108))) == "slotA" &&
+          std::string(reinterpret_cast<const char*>(gm.host(buf + 0x134 + 0x108))) == "slotB");
+    CHECK(XamState().Enumerate(gm, handle, 0, buf, 0x268, out + 4, 0) != 0);
+  }
+  CHECK(XamState().ContentCreateEnumeratorInternal(gm, 2, 1, 1, out + 8, out) == 0 && gm.Load32(out + 8) == 0x134);
+  CHECK(XamState().Enumerate(gm, gm.Load32(out), 0, buf, 0x134, out + 4, 0) != 0);
+  for (const uint32_t device : {3u, 0x80u}) {
+    gm.Store32(out + 8, 0x55);
+    CHECK(XamState().ContentCreateEnumeratorInternal(gm, device, 1, 1, out + 8, out) == 0x80070057 && gm.Load32(out + 8) == 0);
+  }
+  gm.Store32(out + 8, 0x55);
+  CHECK(XamState().ContentCreateEnumeratorInternal(gm, 1, 1, 1, out + 8, 0) == 0x80070057 && gm.Load32(out + 8) == 0);
+
+  // XamContentGetMetaDataInternal: the package's metadata (0x93D6 bytes) from its header; the content data only names
+  // the package. Without a header: all 0. A missing package fails, nothing written, an overlapped left alone.
+  std::memset(gm.host(data), 0, 0x200);
+  gm.Store32(data, 1);
+  gm.Store32(data + 4, 1);
+  const char16_t display[] = u"Slot A";
+  for (uint32_t i = 0; i < 6; ++i) gm.Store16(data + 8 + 2 * i, uint16_t(display[i]));
+  std::memcpy(gm.host(data + 0x108), "slotA", 6);
+  gm.Store64(data + 0x138, 0xE000000000000001ull);
+  gm.Store32(data + 0x140, 0x11111111);
+  auto all = [&](uint32_t from, uint32_t to, uint8_t value) {
+    bool same = true;
+    for (uint32_t i = from; i < to; ++i) same = same && gm.Load8(meta + i) == value;
+    return same;
+  };
+  std::memset(gm.host(meta), 0xAA, 0x9500);
+  CHECK(XamState().ContentGetMetaDataInternal(gm, data, meta, 0) == 0);
+  CHECK(all(0, 0x93D6, 0) && gm.Load8(meta + 0x93D6) == 0xAA);
+  // A header as XamContentCreate writes it (XCONTENT_AGGREGATE_DATA: the content data, the title id at 0x140).
+  fs::create_directories(content / "Headers" / "00000001", ec);
+  auto write_header = [&](size_t size) {
+    std::vector<uint8_t> header(size, 0);
+    header[7] = 1;  // type 1, big-endian
+    const char16_t created[] = u"Created";
+    for (uint32_t i = 0; i < 7; ++i) header[8 + 2 * i + 1] = uint8_t(created[i]);
+    if (size >= 0x144) header[0x140] = 0x4D, header[0x141] = 0x53, header[0x142] = 0x07, header[0x143] = 0xE6;
+    std::ofstream(content / "Headers" / "00000001" / "slotA.header", std::ios::binary | std::ios::trunc)
+        .write(reinterpret_cast<const char*>(header.data()), std::streamsize(header.size()));
+  };
+  write_header(0x148);
+  std::memset(gm.host(meta), 0xAA, 0x9500);
+  CHECK(XamState().ContentGetMetaDataInternal(gm, data, meta, 0) == 0);
+  CHECK(gm.Load32(meta) == 1 && gm.Load32(meta + 4) == 2 && all(8, 0x1C, 0));
+  CHECK(gm.Load32(meta + 0x1C) == 0x4D5307E6 && all(0x20, 0x59, 0));  // the header's title id; no profile id
+  CHECK(gm.Load32(meta + 0x59) == 1 && all(0x5D, 0xCD, 0));           // one data file, an STFS volume (0)
+  CHECK(gm.Load16(meta + 0xCD) == 'C' && gm.Load16(meta + 0xCD + 12) == 'd' && all(0xCD + 14, 0xCD + 0x100, 0));
+  CHECK(all(0x1CD, 0x93D6, 0) && gm.Load8(meta + 0x93D6) == 0xAA);
+  // A header shorter than an XCONTENT_AGGREGATE_DATA is not read: all 0.
+  write_header(0x134);
+  CHECK(XamState().ContentGetMetaDataInternal(gm, data, meta, 0) == 0 && all(0, 0x93D6, 0));
+  write_header(0x148);
+  // Through an overlapped: completed at once, ERROR_IO_PENDING returned.
+  std::memset(gm.host(ov), 0xFF, 0x1C);
+  gm.Store32(ov + 0x0C, 0);
+  CHECK(XamState().ContentGetMetaDataInternal(gm, data, meta, ov) == 997 && gm.Load32(ov) == 0);
+  // A missing package: ERROR_FUNCTION_FAILED, nothing written, the overlapped untouched.
+  std::memcpy(gm.host(data + 0x108), "slotZ", 6);
+  std::memset(gm.host(meta), 0xAA, 16);
+  std::memset(gm.host(ov), 0xFF, 0x1C);
+  gm.Store32(ov + 0x0C, 0);
+  CHECK(XamState().ContentGetMetaDataInternal(gm, data, meta, ov) == 0x65B && gm.Load8(meta) == 0xAA &&
+        gm.Load32(ov) == 0xFFFFFFFF);
+  std::memset(gm.host(data + 0x108), 0, 42);
+  CHECK(XamState().ContentGetMetaDataInternal(gm, data, meta, 0) == 0x65B);
+
+  // XamContentSetThumbnailInternal is XamContentSetThumbnail: the thumbnail is kept beside the package.
+  std::memcpy(gm.host(data + 0x108), "slotB", 6);
+  std::memcpy(gm.host(buf), "\x89PNG", 4);
+  CHECK(XamState().ContentSetThumbnail(gm, data, buf, 4, 0) == 0);
+  gm.Store32(out, 64);
+  CHECK(XamState().ContentGetThumbnail(gm, data, buf + 0x100, out, 0) == 0 && gm.Load32(out) == 4 &&
+        std::memcmp(gm.host(buf + 0x100), "\x89PNG", 4) == 0);
+
+  // The callbacks are kept (and cleared by a reset).
+  XamState().ContentRegisterChangeCallback(0x82001234);
+  XamState().LoaderRegisterLaunchRequestCallback(0x82005678);
+  CHECK(XamState().content_change_callback() == 0x82001234 && XamState().launch_request_callback() == 0x82005678);
+
+  // XamReadString: an empty string (no SPA string table), the terminator only when the size allows; the errors.
+  gm.Store32(buf, 0xAAAAAAAA);
+  gm.Store32(out, 16);
+  CHECK(XamState().ReadString(gm, 5, buf, out, 0) == 0 && gm.Load16(buf) == 0 && gm.Load16(buf + 2) == 0xAAAA);
+  gm.Store32(buf, 0xAAAAAAAA);
+  gm.Store32(out, 0);
+  CHECK(XamState().ReadString(gm, 5, buf, out, 0) == 0 && gm.Load32(buf) == 0xAAAAAAAA);
+  CHECK(XamState().ReadString(gm, 0xFFFF, buf, out, 0) == 0x80070057 && XamState().ReadString(gm, 5, 0, out, 0) == 0x80070057);
+  CHECK(XamState().ReadString(gm, 5, buf, 0, 0) == 0x8007007A);
+  gm.Store32(out, 16);
+  std::memset(gm.host(ov), 0xFF, 0x1C);
+  gm.Store32(ov + 0x0C, 0);
+  CHECK(XamState().ReadString(gm, 5, buf, out, ov) == 997 && gm.Load32(ov) == 0);
+
+  // Network storage's privilege: only a profile signed in to Xbox Live holds it; the local profile is offline.
+  for (const uint32_t user : {0u, 1u, 2u, 3u, 4u, 0xFEu, 0xFFu, 0x100u}) CHECK(XamState().NetworkStorageUserHasPrivilege(user) == 0);
+  // The Ex startups are the plain ones (WSADATA's versions; the startup parameters kept).
+  CHECK(XamState().WsaStartup(gm, 0x0202, buf) == 0 && gm.Load16(buf) == 0x0202 && gm.Load16(buf + 2) == 0x0202);
+
+  XamState().Reset();
+  CHECK(XamState().content_change_callback() == 0 && XamState().launch_request_callback() == 0);
+  fs::remove_all(content, ec);
+}
+
 void Win32Step12Tests() {
   const uint32_t kthread = kScratch + 0x800, text = kScratch + 0x400;
   std::memset(g.host(kthread), 0, 0x200);
@@ -4018,6 +4150,7 @@ int main() {
   ProfileStep12Tests();
   CryptStep12SeventhTests();
   MiscStep12EighthTests();
+  XamStep12NinthTests();
   Win32Step12Tests();
   InputQueueTests();
   InputScriptTests();
