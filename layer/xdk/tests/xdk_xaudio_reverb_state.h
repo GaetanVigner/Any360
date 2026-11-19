@@ -86,6 +86,8 @@ constexpr uint32_t kTaps[] = {0x200F0, 0x200FC, 0x20108, 0x2091C, 0x20B34, 0x20B
                               0x27228, 0x27640, 0x27E58, 0x27E64, 0x28E78, 0x29690, 0x2DF1C, 0x2DF34, 0x2E74C,
                               0x32FD8, 0x32FF0, 0x35008, 0x37024, 0x3903C, 0x3A054, 0x3A060, 0x3E074, 0x3E090,
                               0x400A8, 0x420C4, 0x440DC, 0x450F4, 0x45100, 0x49130, 0x49948, 0x4A160, 0x4A978};
+// The filters' double-buffer flags: bit 0 picks which of two words a filter reads (three of them are taps too).
+constexpr uint32_t kFlags[] = {0x29EA8, 0x29EC0, 0x29EE0, 0x2DF1C, 0x2EF64, 0x2EF7C, 0x2EF9C, 0x32FD8, 0x3E074, 0x49114};
 // The crossfading delay lines: their fraction (a float) and their target tap.
 constexpr uint32_t kFractions[] = {0x0006C, 0x1008C, 0x4B194, 0x4B5B4};
 constexpr uint32_t kTargets[] = {0x00078, 0x10098, 0x4B1A0, 0x4B5C0};
@@ -106,8 +108,10 @@ struct Side {
 };
 
 // Lays out a fresh state and the channels on both sides (the same bytes). `scale` multiplies its floats (delay lines
-// and coefficients): a small one makes a reverb dying out, every product in the denormal range.
-inline void NewState(Side& a, Side& b, std::mt19937& rng, uint32_t mode, bool crossfade, float scale = 1.0f) {
+// and coefficients): a small one makes a reverb dying out, every product in the denormal range. `flags` draws the
+// double-buffer flags' bit 0 (else they keep the integers' 0 or the taps' value).
+inline void NewState(Side& a, Side& b, std::mt19937& rng, uint32_t mode, bool crossfade, float scale = 1.0f,
+                     bool flags = false) {
   std::uniform_real_distribution<float> sample(-1.0f, 1.0f), coefficient(-0.9f, 0.9f), fraction(0.0f, 0.06f);
   std::vector<uint8_t> state(xdk::kXAudioReverbStateSize, 0);
   for (uint32_t at = 0; at < state.size(); at += 4) {
@@ -120,6 +124,13 @@ inline void NewState(Side& a, Side& b, std::mt19937& rng, uint32_t mode, bool cr
   };
   for (uint32_t at : kIntegers) put(at, 0);
   for (uint32_t at : kTaps) put(at, rng() % 2048);
+  if (flags) {
+    for (uint32_t at : kFlags) {  // bit 0 drawn, the rest kept (a tap's value, else 0)
+      uint32_t v;
+      std::memcpy(&v, &state[at], 4);
+      put(at, (std::byteswap(v) & ~1u) | (rng() % 2));
+    }
+  }
   for (uint32_t at : kFractions) put(at, std::bit_cast<uint32_t>(rng() % 4 ? fraction(rng) : coefficient(rng)));
   if (crossfade) {
     for (uint32_t at : kTargets) put(at, rng() % 4096);

@@ -85,7 +85,7 @@ int main() {
   const uint64_t plain_at_start = xdk::ppc_model::g_plain_loops.load();
   for (uint32_t mode = 0; mode < 3; ++mode) {
     for (int s = 0; s < 6; ++s) {
-      NewState(native, model, rng, mode, s % 2 == 1);
+      NewState(native, model, rng, mode, s % 2 == 1, 1.0f, s / 2 == 1);
       ++sequences;
       for (int f = 0; f < 12; ++f) {
         NewInputs(native, model, rng);
@@ -131,7 +131,7 @@ int main() {
   uint64_t forced_frames = 0;
   xdk::ppc_model::g_force_plain_loops.store(true);
   for (uint32_t mode = 0; mode < 3; ++mode) {
-    NewState(native, model, rng, mode, mode == 1);
+    NewState(native, model, rng, mode, mode == 1, 1.0f, mode == 2);
     ++sequences;
     for (int f = 0; f < 8; ++f) {
       NewInputs(native, model, rng);

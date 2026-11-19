@@ -29,9 +29,12 @@ line: left in memory). Anything else and the tool stops.
 
 Each invariant also carries a guess of where it lies: root + k (+ a spread, for an index such as a double buffer's),
 from the function's statements before the loop (a struct's fields reached through pointers the function made: all
-on one root). Words with the same place share one local; a word whose place has a spread, or which shares bytes with
-another while one of the two is written, stays in memory. The guess is checked, not trusted: the first iteration runs
-the plain copy of the loop (kept beside it; the carried registers then hold what each iteration sets them to), then a
+on one root). Words with the same place share one local. A word whose place has a spread that is a multiple of 4 (a
+double buffer's 4 * (x & 1), x invariant) is one of the exact words it covers for the whole loop: each of those in a
+local, its accesses picking among them with a selector the check computes (landing exactly on one). A word which
+shares bytes with another while one of the two is written stays in memory. The guess is checked, not trusted: the
+first iteration runs the plain copy of the loop (kept beside it; the carried registers then hold what each iteration
+sets them to), then a
 check computes the bases and finds each where the guess puts it (one comparison a base), each root's words within the
 32-bit space, and every access left in memory apart from the words in locals that matter (every one for a written
 access, the written ones for a read). When it fails the plain copy runs the remaining iterations. So the bits are the
@@ -623,16 +626,30 @@ def promote_memory(body, label, slots_written):
     if an.unknown:
         return body, None, an.unknown[0]
     keys = {i: an.key(b, off) for i, (b, off) in an.const_sites.items()}
-    written = set(an.stored)
-    # A word is held in a local when its place is exact (no spread) and no other access with another place on its
-    # root shares a byte with it while one of the two is written; the others stay in memory.
     all_keys = set(keys.values())
-    demoted = set(w for w in all_keys if w[2] != 0)
-    for a in all_keys:
-        for b in all_keys:
-            if a != b and an.overlap(a, b) and (a in written or b in written):
-                demoted.update((a, b))
-    words = sorted((w for w in all_keys if w not in demoted), key=lambda w: (str(w[0]), w[1]))
+    # A word whose place has a spread that is a multiple of 4 (an index such as a double buffer's 4 * (x & 1)) is one
+    # of the exact words its spread covers, the same one for the whole loop: each of those in a local, and the
+    # access picks among them with a selector the check computes (and finds landing exactly on one).
+    selected = {w: [(w[0], w[1] + 4 * j, 0) for j in range(w[2] // 4 + 1)]
+                for w in all_keys if w[2] != 0 and w[2] % 4 == 0}
+    demoted = set(w for w in all_keys if w[2] != 0 and w not in selected)
+    # A word is held in a local when its place is exact and no other access with another place on its root shares a
+    # byte with it while one of the two is written; the others stay in memory (and a spread word with them when one
+    # of its candidates does).
+    while True:
+        written = set(an.stored) | set(c for w, cs in selected.items() if w in an.stored for c in cs)
+        pool = set(w for w in all_keys if w[2] == 0) | set(c for cs in selected.values() for c in cs) | demoted
+        for a in pool:
+            for b in pool:
+                if a != b and an.overlap(a, b) and (a in written or b in written):
+                    demoted.update((a, b))
+        lost = [w for w, cs in selected.items() if any(c in demoted for c in cs)]
+        if not lost:
+            break
+        for w in lost:
+            del selected[w]
+            demoted.add(w)
+    words = sorted((w for w in pool if w[2] == 0 and w not in demoted), key=lambda w: (str(w[0]), w[1]))
     if not words:
         return body, None, 'nothing at invariant addresses'
     index = {w: j for j, w in enumerate(words)}
@@ -669,6 +686,14 @@ def promote_memory(body, label, slots_written):
             else:
                 checks.append('uint32_t(%s - %s - %du) <= %du' % (names[code], names[rep], (k - k_rep) & 0xFFFFFFFF,
                                                                    spread))
+    # The selectors: where each spread word lands among its candidates (a multiple of 4 within its spread).
+    selector_names, selector_code = {}, []
+    for n, w in enumerate(sorted(selected, key=lambda w: (str(w[0]), w[1]))):
+        b, off = next(an.const_sites[i] for i, k in sorted(keys.items()) if k == w)
+        selector_names[w] = 'q_%s_%d' % (tag, n)
+        selector_code.append('\t%s = uint32_t(int64_t(uint32_t(%s + %d)) - (%s + %d));' % (
+            selector_names[w], names[b.code], off, root_names[w[0]], w[1]))
+        checks.append('%s <= %du && (%s & 3u) == 0' % (selector_names[w], w[2], selector_names[w]))
     # The words in locals, by root, merged into spans: written ones and read ones.
     spans = {}
     for w in words:
@@ -747,6 +772,17 @@ def promote_memory(body, label, slots_written):
             line = re.sub(r'Load32\(base, [^)]*\)', 'm_%d' % j, line)
             line = re.sub(r'^(\s*)Store32\(base, [^,]+, ([^;]+)\);$',
                           lambda m: '%sm_%d = %s;' % (m.group(1), j, m.group(2)), line)
+        elif i in keys and keys[i] in selected:
+            q, cs = selector_names[keys[i]], [index[c] for c in selected[keys[i]]]
+            pick = 'm_%d' % cs[-1]
+            for d in range(len(cs) - 2, -1, -1):
+                pick = '(%s == %du ? m_%d : %s)' % (q, 4 * d, cs[d], pick)
+            line = re.sub(r'Load32\(base, [^)]*\)', pick, line)
+
+            def put(m):
+                arms = ['if (%s == %du) m_%d = %s;' % (q, 4 * d, cs[d], m.group(2)) for d in range(len(cs) - 1)]
+                return m.group(1) + ' else '.join(arms + ['m_%d = %s;' % (cs[-1], m.group(2))])
+            line = re.sub(r'^(\s*)Store32\(base, [^,]+, ([^;]+)\);$', put, line)
         out.append(line)
     # The promoted loop is entered at its top only: a label of it nothing branches to any more goes.
     targets = set(re.findall(r'goto (loc_[0-9A-F]+);', '\n'.join(out)))
@@ -764,6 +800,7 @@ def promote_memory(body, label, slots_written):
            % label, '%s_check:' % tag]
     for code in sorted(base_codes):
         pre.append('\t%s = %s;' % (names[code], code))
+    pre += selector_code
     pre += pre_arrays
     pre.append('\tif (any360::xdk::ppc_model::g_force_plain_loops.load(std::memory_order_relaxed) ||\n\t    !(%s)) {'
                % (' &&\n\t      '.join(checks) or 'true'))
@@ -771,23 +808,29 @@ def promote_memory(body, label, slots_written):
     pre.append('\t\tgoto %s_plain;' % label)
     pre.append('\t}')
     pre.append('\tany360::xdk::ppc_model::g_promoted_loops.fetch_add(1, std::memory_order_relaxed);')
+    def place(w):
+        if w in site_of:
+            b, off = site_of[w]
+            return '%s + %d' % (names[b.code], off)
+        return 'uint32_t(%s + %d)' % (root_names[w[0]], w[1])
+
     for w, j in index.items():
-        b, off = site_of[w]
-        pre.append('\tm_%d = Load32(base, %s + %d);' % (j, names[b.code], off))
+        pre.append('\tm_%d = Load32(base, %s);' % (j, place(w)))
     stored_words = [w for w in words if w in written]
     post = []
     for w in stored_words:
-        b, off = site_of[w]
-        post.append('\tStore32(base, %s + %d, m_%d);' % (names[b.code], off, index[w]))
+        post.append('\tStore32(base, %s, m_%d);' % (place(w), index[w]))
     post.append('\tgoto %s_done;' % tag)
     enter_at = start - 1 if entry else start
     enter = ['\tp_%s = 0;' % tag, '\tgoto %s_plain;' % entry_label]
     new = lines[:enter_at] + enter + pre + out + post + plain + ['%s_done:' % tag] + lines[back + 1:]
-    declared = (['p_%s' % tag] + [names[c] for c in sorted(base_codes)] + ['m_%d' % j for j in range(len(words))])
-    stats = ('%d words in locals (%d written) on %d roots, %d accesses in memory, %d bases, %d carried registers, '
-             '%d checks; %d of %d loads and stores promoted' % (
-                 len(words), len(stored_words), len(spans), len(accesses), len(base_codes), len(carried), len(checks),
-                 sum(1 for w in keys.values() if w in index), len(keys) + len(an.range_sites)))
+    declared = (['p_%s' % tag] + [names[c] for c in sorted(base_codes)] + sorted(selector_names.values()) +
+                ['m_%d' % j for j in range(len(words))])
+    stats = ('%d words in locals (%d written) on %d roots, %d picked by a selector, %d accesses in memory, %d bases, '
+             '%d carried registers, %d checks; %d of %d loads and stores promoted' % (
+                 len(words), len(stored_words), len(spans), len(selected), len(accesses), len(base_codes),
+                 len(carried), len(checks), sum(1 for w in keys.values() if w in index or w in selected),
+                 len(keys) + len(an.range_sites)))
     return '\n'.join(new), declared, stats
 
 

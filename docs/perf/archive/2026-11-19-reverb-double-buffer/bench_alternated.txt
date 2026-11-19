@@ -1,0 +1,80 @@
+== mem run 1
+reverb 49.76 us a frame, model 87.81 (1.76x)
+reverb 49.70 us a frame, model 88.18 (1.77x)
+reverb 50.10 us a frame, model 88.27 (1.76x)
+reverb 49.50 us a frame, model 87.23 (1.76x)
+reverb 49.53 us a frame, model 87.61 (1.77x)
+xdk_xaudio_reverb_bench: allocated per call 0.00 B in 0.0000 allocations over 20000 timed calls (at most 0.00 B a call in a run)
+== sel run 1
+reverb 47.71 us a frame, model 87.38 (1.83x)
+reverb 47.78 us a frame, model 87.37 (1.83x)
+reverb 48.01 us a frame, model 86.86 (1.81x)
+reverb 47.68 us a frame, model 86.23 (1.81x)
+reverb 47.79 us a frame, model 86.22 (1.80x)
+reverb, its loop plain: 64.60 us a frame
+reverb, its loop plain: 64.87 us a frame
+reverb, its loop plain: 64.67 us a frame
+reverb, its loop plain: 64.91 us a frame
+reverb, its loop plain: 65.12 us a frame
+xdk_xaudio_reverb_bench: the loop promoted on 10000 of 10000 frames
+xdk_xaudio_reverb_bench: allocated per call 0.00 B in 0.0000 allocations over 30000 timed calls (at most 0.00 B a call in a run)
+== mem run 2
+reverb 49.71 us a frame, model 88.48 (1.78x)
+reverb 49.56 us a frame, model 86.62 (1.75x)
+reverb 49.63 us a frame, model 86.97 (1.75x)
+reverb 49.58 us a frame, model 86.84 (1.75x)
+reverb 49.66 us a frame, model 86.80 (1.75x)
+xdk_xaudio_reverb_bench: allocated per call 0.00 B in 0.0000 allocations over 20000 timed calls (at most 0.00 B a call in a run)
+== sel run 2
+reverb 68.40 us a frame, model 87.64 (1.28x)
+reverb 68.28 us a frame, model 87.94 (1.29x)
+reverb 67.96 us a frame, model 87.73 (1.29x)
+reverb 68.31 us a frame, model 87.23 (1.28x)
+reverb 68.03 us a frame, model 88.45 (1.30x)
+reverb, its loop plain: 85.81 us a frame
+reverb, its loop plain: 85.90 us a frame
+reverb, its loop plain: 85.38 us a frame
+reverb, its loop plain: 85.69 us a frame
+reverb, its loop plain: 85.55 us a frame
+xdk_xaudio_reverb_bench: the loop promoted on 10000 of 10000 frames
+xdk_xaudio_reverb_bench: allocated per call 0.00 B in 0.0000 allocations over 30000 timed calls (at most 0.00 B a call in a run)
+== mem run 3
+reverb 50.01 us a frame, model 88.14 (1.76x)
+reverb 50.05 us a frame, model 87.30 (1.74x)
+reverb 49.92 us a frame, model 86.26 (1.73x)
+reverb 50.13 us a frame, model 87.18 (1.74x)
+reverb 50.00 us a frame, model 87.33 (1.75x)
+xdk_xaudio_reverb_bench: allocated per call 0.00 B in 0.0000 allocations over 20000 timed calls (at most 0.00 B a call in a run)
+== sel run 3
+reverb 48.29 us a frame, model 88.11 (1.82x)
+reverb 48.52 us a frame, model 88.72 (1.83x)
+reverb 48.40 us a frame, model 88.08 (1.82x)
+reverb 48.12 us a frame, model 87.32 (1.81x)
+reverb 48.47 us a frame, model 87.20 (1.80x)
+reverb, its loop plain: 66.15 us a frame
+reverb, its loop plain: 65.83 us a frame
+reverb, its loop plain: 66.10 us a frame
+reverb, its loop plain: 65.49 us a frame
+reverb, its loop plain: 65.48 us a frame
+xdk_xaudio_reverb_bench: the loop promoted on 10000 of 10000 frames
+xdk_xaudio_reverb_bench: allocated per call 0.00 B in 0.0000 allocations over 30000 timed calls (at most 0.00 B a call in a run)
+== mem run 4
+reverb 50.33 us a frame, model 88.39 (1.76x)
+reverb 50.14 us a frame, model 88.01 (1.76x)
+reverb 50.47 us a frame, model 87.61 (1.74x)
+reverb 50.31 us a frame, model 87.46 (1.74x)
+reverb 50.19 us a frame, model 86.60 (1.73x)
+xdk_xaudio_reverb_bench: allocated per call 0.00 B in 0.0000 allocations over 20000 timed calls (at most 0.00 B a call in a run)
+== sel run 4
+reverb 48.33 us a frame, model 87.26 (1.81x)
+reverb 47.76 us a frame, model 86.83 (1.82x)
+reverb 47.77 us a frame, model 86.80 (1.82x)
+reverb 47.88 us a frame, model 86.68 (1.81x)
+reverb 48.02 us a frame, model 87.38 (1.82x)
+reverb, its loop plain: 65.41 us a frame
+reverb, its loop plain: 65.93 us a frame
+reverb, its loop plain: 65.41 us a frame
+reverb, its loop plain: 65.96 us a frame
+reverb, its loop plain: 65.49 us a frame
+xdk_xaudio_reverb_bench: the loop promoted on 10000 of 10000 frames
+xdk_xaudio_reverb_bench: allocated per call 0.00 B in 0.0000 allocations over 30000 timed calls (at most 0.00 B a call in a run)
