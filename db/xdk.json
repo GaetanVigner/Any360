@@ -920,6 +920,15 @@
   "note": ""
  },
  {
+  "name": "D3DQuery_GetData",
+  "library": "D3D",
+  "any360": "native",
+  "titles": {
+   "crackdown": "0x826C0D38"
+  },
+  "note": "an event, occlusion (its blocks summed) or extent query's result, S_FALSE while the GPU is behind its frame (the command buffer kicked when issued this frame)"
+ },
+ {
   "name": "D3DQuery_Issue",
   "library": "D3D",
   "any360": "native",

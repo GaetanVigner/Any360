@@ -77,6 +77,7 @@
   "D3D_SetViewportFloats",
   "D3DDevice_SetViewport",
   "D3D_SurfaceViewport",
+  "D3DQuery_GetData",
   "D3DDevice_SetRenderState_CullMode",
   "D3DDevice_SetRenderState_AlphaTestEnable",
   "D3DDevice_SetRenderState_AlphaFunc",

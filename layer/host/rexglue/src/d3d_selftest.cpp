@@ -147,7 +147,7 @@ struct Result {
 struct Runner {
   bool started = false;
   uint8_t* base = nullptr;
-  uint32_t title_device = 0, device = 0, scratch = 0;
+  uint32_t title_device = 0, device = 0, scratch = 0, physical = 0, physical_address = 0;
   PPCContext seed{};
   std::string report;
   uint64_t last_slice_end = 0;
@@ -182,10 +182,12 @@ void StartCase(Runner& run, const Case& c) {
   run.rng.seed(0x5EED0000u ^ uint32_t(std::hash<std::string>{}(c.name)));
   run.s = CallSetup{};
   run.s.base = run.base, run.s.device = run.device, run.s.scratch = run.scratch, run.s.rng = &run.rng;
+  run.s.physical = run.physical, run.s.physical_address = run.physical_address;
   // The call's stack: in the self-test's own memory past the scratch (seed.r1). The 4 KB from its pointer up (the
   // caller's frames) are compared; below it is the callee's own, which the original fills and the replacement not.
   run.s.stack = (uint32_t(run.seed.r1.u32) - 0x1000u) & ~0xFu;
   run.regions = {{run.device, kDeviceBytes}, {run.scratch, kScratchBytes}, {run.s.stack, 0x1000}};
+  if (run.physical) run.regions.push_back({run.physical, kPhysicalBytes});
   // Below the stack pointer: the callee's own, not compared, but each side finds it as the other did (a function
   // may read what an earlier call left there).
   run.restored = run.regions;
@@ -194,6 +196,10 @@ void StartCase(Runner& run, const Case& c) {
   REXLOG_INFO("Any360 D3D self-test: {}", c.name);
 }
 
+// The MXCSR a context says it has: the recompiled code keeps the flush-to-zero bits cached in the context and sets
+// MXCSR only when the cache differs (disableFlushMode), so each side starts with the MXCSR its context claims (else a
+// side left with flush on by the one before would flush a denormal its code means to keep).
+inline void SyncCsr(const PPCContext& ctx) { _mm_setcsr(ctx.fpscr.csr); }
 // The calls timed in a row, and the registers a call takes (put back before each).
 constexpr int kRepeat = 8;
 inline void RestoreArguments(PPCContext& ctx, const PPCContext& call) {
@@ -230,6 +236,7 @@ void OneCall(Runner& run, const Case& c) {
     Result& r = run.r;
     PPCContext own = call;
     const any360::sys::AllocCounts own_start = any360::sys::ThreadAllocations();
+    SyncCsr(own);
     c.original(own, base);
     const any360::sys::AllocCounts own_spent = any360::sys::ThreadAllocations() - own_start;
     if (c.normalize) c.normalize(s, own);
@@ -238,6 +245,7 @@ void OneCall(Runner& run, const Case& c) {
     PPCContext mine = call;
     ++r.calls;
     const any360::sys::AllocCounts mine_start = any360::sys::ThreadAllocations();
+    SyncCsr(mine);
     const bool taken = c.native(mine, base);
     const any360::sys::AllocCounts mine_spent = any360::sys::ThreadAllocations() - mine_start;
     if (!taken) {
@@ -273,6 +281,7 @@ void OneCall(Runner& run, const Case& c) {
   for (int side = 0; side < 2; ++side) {
     const bool original_now = (side == 0) == bool(run.i & 1);
     PPCContext& ctx = original_now ? own : mine;
+    SyncCsr(ctx);
     const uint64_t a = Ticks();
     for (int k = 0; k < kRepeat; ++k) {
       RestoreArguments(ctx, call);
@@ -352,6 +361,21 @@ bool Start(Runner& run, const PPCContext& ctx, uint8_t* base, uint32_t device) {
   run.scratch = own + kDeviceBytes;
   run.seed = ctx;
   run.seed.r1.u64 = run.scratch + kScratchBytes + 0x10000 - 0x100;
+  // Physical memory for the cases that read what the GPU writes (a query's blocks), through the view at 0xC0000000
+  // as the runtime reads it; none when the heap gives none or its view is past the plain range.
+  const uint32_t at = kernel->memory()->SystemHeapAlloc(kPhysicalBytes, 4096, rex::memory::kSystemHeapPhysical);
+  const uint32_t physical = at ? kernel->memory()->GetPhysicalAddress(at) : UINT32_MAX;
+  if (physical != UINT32_MAX && uint64_t(physical) + kPhysicalBytes <= 0x20000000u) {
+    run.physical_address = physical;
+    run.physical = 0xC0000000u + physical;
+    std::memset(g_mem.Host(run.physical), 0, kPhysicalBytes);
+  } else {
+    char line[160];
+    std::snprintf(line, sizeof line,
+                  "no physical memory for the self-test (heap %08X, physical %08X): the cases that need it decline\n", at,
+                  physical);
+    run.report += line;
+  }
   return true;
 }
 
@@ -393,6 +417,8 @@ void FirstDevice(const PPCContext& ctx, uint8_t* base, uint32_t device) {
   const uint64_t now = Ticks();
   if (run.last_slice_end && double(now - run.last_slice_end) * ns < 16e6) return;
   const uint64_t budget = uint64_t(double(std::max(REXCVAR_GET(any360_d3d_selftest_slice_ms), 1)) * 1e6 / ns);
+  // The title's thread gets its MXCSR back as it was (its context's cache of the flush bits stays true).
+  const uint32_t title_csr = _mm_getcsr();
   while (Ticks() - now < budget) {
     const std::string only = REXCVAR_GET(any360_d3d_selftest_only);
     const auto wanted = [&](const std::string& name) {
@@ -414,6 +440,7 @@ void FirstDevice(const PPCContext& ctx, uint8_t* base, uint32_t device) {
       if (++run.phase == 2) EndCase(run);
     }
   }
+  _mm_setcsr(title_csr);
   run.last_slice_end = Ticks();
 }
 

@@ -1,0 +1,2 @@
+xdk_d3d_state_tests: GetData 17495 calls compared (event 3426, occlusion 6225, extent 5565, other 2279), 2320 kicks, 2505 declined
+xdk_d3d_state_tests: 571444 checks, 0 failing

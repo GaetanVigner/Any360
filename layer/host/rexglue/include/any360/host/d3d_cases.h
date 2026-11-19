@@ -683,6 +683,71 @@ struct Predication {
   }
 };
 
+// IDirect3DQuery9::GetData (xdk_natives.h): a query in the scratch on the device copy (event, occlusion, extent and
+// other types; issued in no frame, this frame, in flight or done), its blocks in the self-test's physical memory (by
+// either physical form; written, unwritten, or only the first word unwritten; 0-4 of them, past 30 now and then), the
+// device's GPU frame word in the scratch, its frame now, the flags' bit 2, float depth or not; the data in the scratch
+// (never over the query: the timed calls run in a row, and the original's writes there would change the next call's
+// query; the unit tests check that decline), its size. No kick: a query issued this frame has the GPU done with it
+// (a title's hooks on make_room keep the real ring's segment switches, which the copy's would corrupt); the unit tests
+// check the kick, and the verify mode declines it. Should one run anyway, the copy's command buffer is in the scratch
+// and its allocation failed (+10813 bit 6, as the Replay case): make_room only rounds the cursor there.
+struct Queries {
+  static void Setup(CallSetup& s, PPCContext& ctx) {
+    std::mt19937_64& rng = *s.rng;
+    const any360::xdk::D3dLayout& l = g_d3d_layout;
+    const uint32_t query = s.scratch + 0x1000 + 4 * uint32_t(rng() % 16);
+    const uint32_t pick = uint32_t(rng() % 16);
+    // Without physical memory only event queries (they read no block).
+    const uint32_t type = !s.physical || pick < 3 ? 8 : pick < 9 ? 9 : pick < 14 ? 10 : uint32_t(rng() % 32);
+    Put32(s, query + l.query_device, s.device), Put32(s, query + l.query_type, type);
+    const uint32_t cursor = s.scratch + 0x10000 + 4 * uint32_t(rng() % 64);
+    Put32(s, s.device + l.command_cursor, cursor), Put32(s, s.device + 52, s.scratch + 0x30000);
+    Put32(s, s.device + l.command_end, s.scratch + 0x2F000);
+    uint8_t& flags = s.Host(s.device + l.query_flags)[0];
+    flags = uint8_t((flags & ~0x04) | 0x40 | (rng() % 4 == 0 ? 0x04 : 0));
+    s.Host(s.device + l.depth_info + 1)[0] = uint8_t(rng());
+    const uint32_t now = rng() % 4 ? uint32_t(rng()) : uint32_t(rng() % 8);
+    Put32(s, s.device + l.resource_fence, now);
+    uint32_t stamp;
+    switch (rng() % 6) {
+      case 0: stamp = 0; break;
+      case 1: stamp = now; break;
+      case 2: stamp = now - uint32_t(rng() % 4); break;
+      default: stamp = uint32_t(rng()); break;
+    }
+    Put32(s, query + l.query_frame, stamp);
+    const uint32_t done_word = s.scratch + 0x7E00;
+    Put32(s, s.device + l.gpu_done_frame, done_word);
+    Put32(s, done_word, stamp == now ? now : rng() % 8 ? now - uint32_t(rng() % 4) : uint32_t(rng()));
+    const uint32_t count = rng() % 12 ? uint32_t(rng() % 5) : 31 + uint32_t(rng() % 4);
+    Put32(s, query + l.query_block_count, count);
+    constexpr uint32_t kBlocks = 32;
+    for (uint32_t i = 0; i < 30; ++i) {
+      const uint32_t offset = 64 * uint32_t(rng() % kBlocks);
+      uint32_t word = s.physical_address + offset;
+      if (rng() % 2 && word >= 0x1000) word = 0xE0000000u + word - 0x1000;  // the second form: 0x1000 further on
+      Put32(s, query + l.query_blocks + 4 * i, s.physical ? word : 0x1FFFFFF8u);  // none: a block not plain
+    }
+    if (s.physical) {
+      for (uint32_t k = 0; k < kBlocks; ++k) {
+        const uint32_t at = s.physical + 64 * k;
+        for (uint32_t w = 0; w < 16; ++w) Put32(s, at + 4 * w, uint32_t(rng()));
+        switch (rng() % 5) {
+          case 0: for (uint32_t w = 0; w < 4; ++w) Put32(s, at + 4 * w, any360::xdk::detail::kQueryUnwritten); break;
+          case 1: Put32(s, at, any360::xdk::detail::kQueryUnwritten); break;
+          case 2: for (uint32_t w = 0; w < 16; ++w) Put32(s, at + 4 * w, uint32_t(rng() % 4096)); break;
+          default: break;
+        }
+      }
+    }
+    const uint32_t data = s.scratch + 0x3000 + 4 * uint32_t(rng() % 64);
+    ctx.r3.u64 = query;
+    ctx.r4.u64 = data;
+    ctx.r5.u64 = rng() % 3 ? (rng() % 2 ? 16u : 4u) : uint32_t(rng() % 40);
+  }
+};
+
 // The window scissor's packets (d3d_draw.h): the viewport cases' device, the rect's corners as they set them (and any
 // 32 bits now and then); now and then a tiling past the 15 tiles the native takes (declined).
 template <bool kRecords>

@@ -1,0 +1,8 @@
+crackdown_031.log (city route, --any360_xdk_verify=true, GetData bound), the last report line's parts:
+202000000 calls verified
+D3D query 1671643 calls verified
+different: D viewport 1751557, D3D query 1671643), 0 different| different at first and the same when ru|
+different at first and the same when run again: D3D query 3
+[2026-11-19 01:24:21.071] [warning] [core] [t41056] Any360 xdk: D3D query differs at first: device 4138CB10 r4 302B9000 r5 10 r6 0 r7 1: bytes written r3 (range 0 at +3, word 302B9000: replacement 00000000, own code 00000001)
+[2026-11-19 01:24:22.317] [warning] [core] [t41056] Any360 xdk: D3D query differs at first: device 4138CEF0 r4 302B9000 r5 10 r6 0 r7 2: bytes written r3 (range 0 at +3, word 302B9000: replacement 00000000, own code 00000001)
+[2026-11-19 01:24:31.759] [warning] [core] [t41056] Any360 xdk: D3D query differs at first: device 413A1110 r4 302B9000 r5 10 r6 0 r7 9: bytes written r3 (range 0 at +3, word 302B9000: replacement 00000000, own code 00000001)

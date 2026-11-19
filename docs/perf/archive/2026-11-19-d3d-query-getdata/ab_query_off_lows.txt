@@ -1,0 +1,17 @@
+@exe:crackdown_after.exe --any360_d3d_records=false: 5 launches
+  crackdown_043.log: dip 1% low 52 FPS, slowest 19.2 ms, 20 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_045.log: dip 1% low 61 FPS, slowest 16.4 ms, 0 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 63-63
+  crackdown_047.log: dip 1% low 61 FPS, slowest 16.4 ms, 0 over 16.7 ms, texture loading up to 0.08 ms a frame; steady FPS 63-63
+  crackdown_049.log: dip 1% low 62 FPS, slowest 16.3 ms, 0 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 63-63
+  crackdown_051.log: dip 1% low 52 FPS, slowest 19.2 ms, 27 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  steady (45 periods): FPS mean 63.0 (median 63.0, min 62.6), 10% low mean 62.5 (median 62.5, min 61.7), 1% low mean 61.7 (median 61.7, min 61.2); process private memory mean 2583 MB, max 2591 MB
+  dips (5): 1% low mean 57.7, slowest frame mean 17.5 ms, over 16.7 ms mean 9.4, texture loading mean 0.07 ms a frame
+@exe:crackdown_before.exe --any360_d3d_records=false: 5 launches
+  crackdown_044.log: dip 1% low 62 FPS, slowest 16.3 ms, 0 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_046.log: dip 1% low 61 FPS, slowest 16.3 ms, 0 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 63-63
+  crackdown_048.log: dip 1% low 52 FPS, slowest 19.3 ms, 16 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 63-63
+  crackdown_050.log: dip 1% low 61 FPS, slowest 16.3 ms, 0 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 63-63
+  crackdown_052.log: dip 1% low 62 FPS, slowest 16.4 ms, 0 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 63-63
+  steady (45 periods): FPS mean 63.0 (median 63.1, min 62.7), 10% low mean 62.6 (median 62.5, min 62.0), 1% low mean 61.7 (median 61.7, min 61.2); process private memory mean 2585 MB, max 2591 MB
+  dips (5): 1% low mean 59.6, slowest frame mean 16.9 ms, over 16.7 ms mean 3.2, texture loading mean 0.07 ms a frame
+@exe:crackdown_after.exe --any360_d3d_records=false against @exe:crackdown_before.exe --any360_d3d_records=false: steady fps z -0.95, p10 z -1.03, p1 z -1.15; dips 1% low z -1.15, slowest z +0.84

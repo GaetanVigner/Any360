@@ -27,6 +27,7 @@
   {"name": "D3D_SetViewportFloats", "library": "D3D", "titles": {"crackdown": "0x826AF650"}, "note": "the viewport as set (+12368, clamped to the surface or the tiling), its scale and offset (+10376), the scissor; dirty bits 21-26"},
   {"name": "D3DDevice_SetViewport", "library": "D3D", "titles": {"crackdown": "0x826B1C60"}, "note": "a D3DVIEWPORT9 (words to floats) into the viewport function"},
   {"name": "D3D_SurfaceViewport", "library": "D3D", "titles": {"crackdown": "0x826AF2D8"}, "note": "a surface into SURFACE_INFO and the multisample word, the runtime's scissor and viewport; dirty bits 57 and 36"},
+  {"name": "D3DQuery_GetData", "library": "D3D", "titles": {"crackdown": "0x826C0D38"}, "note": "an event, occlusion (its blocks summed) or extent query's result, S_FALSE while the GPU is behind its frame (the command buffer kicked when issued this frame)"},
   {"name": "D3DDevice_SetRenderState_CullMode", "library": "D3D", "titles": {"crackdown": "0x826AF8B8"}, "note": "PA_SU_SC_MODE_CNTL bits 0-2; dirty 0x40"},
   {"name": "D3DDevice_SetRenderState_AlphaTestEnable", "library": "D3D", "titles": {"crackdown": "0x826AF918"}, "note": "RB_COLORCONTROL bit 3; dirty 0x200, 0x40000"},
   {"name": "D3DDevice_SetRenderState_AlphaFunc", "library": "D3D", "titles": {"crackdown": "0x826AFDE0"}, "note": "RB_COLORCONTROL bits 0-2; dirty 0x200"},

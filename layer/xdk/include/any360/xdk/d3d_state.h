@@ -95,6 +95,13 @@ struct D3dLayout {
   // The runtime's viewport and scissor a surface's viewport starts from (guest addresses in the title's image: a
   // D3DVIEWPORT9 of words and floats, a rect of four words).
   uint32_t surface_viewport = 0x820E9E08u, surface_scissor = 0x820E9E20u;
+  // The queries (IDirect3DQuery9): the query's device, type, the frame it was issued in, its result blocks (a physical
+  // address a word) and how many, its size; the device's pointer to the frame the GPU is done with, the flags byte
+  // whose bit 2 answers every occlusion and extent query at once, RB_DEPTH_INFO's mirror (its high half's bit 0: float
+  // depth). The frame now is resource_fence's word.
+  uint32_t query_device = 0, query_type = 4, query_frame = 20, query_blocks = 24, query_block_count = 144;
+  uint32_t query_bytes = 148;
+  uint32_t gpu_done_frame = 10768, query_flags = 10813, depth_info = 10248;
 };
 
 namespace detail {
@@ -1224,6 +1231,168 @@ inline bool D3dViewportOfSurface(const Memory& m, const D3dLayout& l, uint32_t d
   detail::Or64(m, device + l.constant_dirty, uint64_t(1) << 36);
   std::memcpy(d + l.scissor_set, m.Host(l.surface_scissor), 16);
   return D3dSetViewport(m, l, device, l.surface_viewport, packets);
+}
+
+// The queries.
+namespace detail {
+// A query block's address as the runtime reads it: its physical address in the view at 0xC0000000.
+inline uint32_t QueryBlockAddress(uint32_t physical) {
+  return (((physical >> 20) + 512) & 0x1000u) + (physical & 0x1FFFFFFFu) + 0xC0000000u;
+}
+// What Issue leaves in a block the GPU has not written yet.
+inline constexpr uint32_t kQueryUnwritten = 0xFFFFFEEDu;
+// The extent query's depth with float depth (a 16-bit word of the block; + 1 for the far one) as the runtime's bits
+// make a float of it: its 11 bits at 13-23; with any of bits 20-23 set, exponent 127 - (the four bits' complement)
+// over the bits shifted up 3; else the bits shifted to their leading one, over an exponent word built as the runtime
+// builds it (113 less the shift, rotated left 8: its own bits, kept).
+inline uint32_t QueryDepthBits(uint32_t h) {
+  const uint32_t v = (h << 13) & 0x00FFE000u;
+  if (!v) return 0;
+  if (v & 0x00F00000u) return (((127u - (std::rotl(~v, 12) & 0xFu)) << 23) & 0xFF800000u) | ((v << 3) & 0x007FFFF8u);
+  const uint32_t lead = uint32_t(std::countl_zero(v << 12)) + 1, shift = lead + 3;
+  const uint32_t exponent = std::rotl(113u - lead, 8) & 0xFFFFFF00u;
+  return exponent | ((shift & 0x20u ? 0u : v << shift) & 0x007FFFFFu);
+}
+}  // namespace detail
+
+// What GetData would do, without doing it: false when it declines; else the bytes it may write at the data (0 for a
+// type it ignores) and whether it would kick the command buffer (from the GPU's frame as read now: the GPU may move
+// it before the call).
+inline bool D3dQueryGetDataPlan(const Memory& m, const D3dLayout& l, uint32_t query, uint32_t data, uint32_t size,
+                                uint32_t& written, bool& kicks) {
+  using namespace detail;
+  written = 0, kicks = false;
+  if (!IsPlainMemory(query, l.query_bytes)) return false;
+  const uint8_t* q = m.Host(query);
+  const uint32_t device = At32(q + l.query_device), type = At32(q + l.query_type);
+  if (type < 8 || type > 10) return true;
+  written = type == 10 ? 24 : type == 9 && size >= 16 ? 16 : 4;
+  if (!IsPlainMemory(device, l.device_bytes) || !IsPlainMemory(data, written) ||
+      Overlap(data, written, device, l.device_bytes) || Overlap(data, written, query, l.query_bytes))
+    return false;
+  const uint8_t* d = m.Host(device);
+  if (type != 8 && (d[l.query_flags] & 4)) return true;
+  const uint32_t stamp = At32(q + l.query_frame), now = At32(d + l.resource_fence);
+  bool flight = false;
+  if (type != 9 || stamp != 0) {
+    const uint32_t done_at = At32(d + l.gpu_done_frame);
+    if (!IsPlainMemory(done_at, 4)) return false;
+    flight = now - stamp < now - At32(m.Host(done_at));
+  }
+  if (flight) {
+    kicks = stamp == now;
+    return true;
+  }
+  if (type == 8) return true;
+  const uint32_t count = type == 9 ? At32(q + l.query_block_count) : 1;
+  if (count > 30) return false;
+  const uint32_t read = type == 9 ? 64 : 12;
+  for (uint32_t i = 0; i < count; ++i) {
+    const uint32_t block = QueryBlockAddress(At32(q + l.query_blocks + 4 * i));
+    if (!IsPlainMemory(block, read) || Overlap(block, read, data, written)) return false;
+  }
+  return true;
+}
+
+// IDirect3DQuery9::GetData (Crackdown sub_826C0D38): `query` (its device, type, issued frame, blocks), `data`, `size`
+// -> `result` S_OK (0) or S_FALSE (1: not done). A query in flight (the frame now less the query's below the frame now
+// less the GPU's) answers 1, the command buffer kicked first (`make_room()`, the runtime's make_room on the query's
+// device) when it was issued this frame. Event (8): TRUE (data's first word 1), in flight or not. Occlusion (9): with
+// the flags' bit 2, TRUE at once; issued (frame not 0) and in flight: TRUE, 0, 0, TRUE (the last three when `size` is
+// 16 or more); else the counters summed over its blocks (16 words each, little-endian as the GPU writes them: words 4
+// + 5 - 12 - 13 into the first, 2 + 3 - 10 - 11, 6 + 7 - 14 - 15, 0 + 1 - 8 - 9 into the next three), or as in
+// flight when a block is still unwritten (its first four words 0xFFFFFEED). Extent (10): with the flags' bit 2, 24
+// zero bytes; in flight or unwritten: nothing written; else the block's x and y (min, max + 1, in eighths) and its
+// depth (min, max + 1) as floats (from RB_DEPTH_INFO's float-depth bit, the runtime's bits; else the 24-bit value).
+// Any other type: 0. Declined, before any write: memory not plain, more than 30 blocks, the data over the query, the
+// device or a block it reads after writing.
+template <class MakeRoom>
+inline bool D3dQueryGetData(const Memory& m, const D3dLayout& l, uint32_t query, uint32_t data, uint32_t size,
+                            uint32_t& result, MakeRoom&& make_room) {
+  using namespace detail;
+  if (!IsPlainMemory(query, l.query_bytes)) return false;
+  const uint8_t* q = m.Host(query);
+  const uint32_t device = At32(q + l.query_device), type = At32(q + l.query_type);
+  if (type < 8 || type > 10) {
+    result = 0;
+    return true;
+  }
+  const uint32_t written = type == 10 ? 24 : type == 9 && size >= 16 ? 16 : 4;
+  if (!IsPlainMemory(device, l.device_bytes) || !IsPlainMemory(data, written) ||
+      Overlap(data, written, device, l.device_bytes) || Overlap(data, written, query, l.query_bytes))
+    return false;
+  const uint8_t* d = m.Host(device);
+  uint8_t* out = m.Host(data);
+  if (type != 8 && (d[l.query_flags] & 4)) {
+    if (type == 9) Set32(out, 1);
+    else std::memset(out, 0, 24);
+    result = 0;
+    return true;
+  }
+  const uint32_t stamp = At32(q + l.query_frame), now = At32(d + l.resource_fence);
+  bool flight = false;
+  if (type != 9 || stamp != 0) {
+    const uint32_t done_at = At32(d + l.gpu_done_frame);
+    if (!IsPlainMemory(done_at, 4)) return false;
+    flight = now - stamp < now - At32(m.Host(done_at));
+  }
+  const uint32_t count = type == 9 ? At32(q + l.query_block_count) : 1;
+  if (!flight && type != 8) {
+    if (count > 30) return false;
+    const uint32_t read = type == 9 ? 64 : 12;
+    for (uint32_t i = 0; i < count; ++i) {
+      const uint32_t block = QueryBlockAddress(At32(q + l.query_blocks + 4 * i));
+      if (!IsPlainMemory(block, read) || Overlap(block, read, data, written)) return false;
+    }
+  }
+  const bool wide = size >= 16;
+  const auto busy = [&] {
+    Set32(out, 1);
+    if (wide) Set32(out + 4, 0), Set32(out + 8, 0), Set32(out + 12, 1);
+  };
+  if (type == 8) Set32(out, 1);
+  if (flight) {
+    if (stamp == now) make_room();
+    if (type == 9) busy();
+    result = 1;
+    return true;
+  }
+  result = 0;
+  if (type == 9) {
+    uint32_t sum[4] = {};
+    for (uint32_t i = 0; i < count; ++i) {
+      const uint8_t* b = m.Host(QueryBlockAddress(At32(q + l.query_blocks + 4 * i)));
+      if (At32(b) == kQueryUnwritten && At32(b + 4) == kQueryUnwritten && At32(b + 8) == kQueryUnwritten &&
+          At32(b + 12) == kQueryUnwritten) {
+        busy();
+        result = 1;
+        return true;
+      }
+      const auto le = [&](uint32_t word) { return Load32(b + 4 * word); };
+      sum[0] += le(4) + le(5) - le(12) - le(13);
+      sum[1] += le(2) + le(3) - le(10) - le(11);
+      sum[2] += le(6) + le(7) - le(14) - le(15);
+      sum[3] += le(0) + le(1) - le(8) - le(9);
+    }
+    Set32(out, sum[0]);
+    if (wide) Set32(out + 4, sum[1]), Set32(out + 8, sum[2]), Set32(out + 12, sum[3]);
+  } else if (type == 10) {
+    const uint8_t* b = m.Host(QueryBlockAddress(At32(q + l.query_blocks)));
+    if (At32(b) == kQueryUnwritten) {
+      result = 1;
+      return true;
+    }
+    const auto half = [&](uint32_t at) { return uint32_t(b[at]) << 8 | b[at + 1]; };
+    Set32(out, half(0) << 3), Set32(out + 4, (half(2) + 1) << 3);
+    Set32(out + 8, half(4) << 3), Set32(out + 12, (half(6) + 1) << 3);
+    if ((uint32_t(d[l.depth_info]) << 8 | d[l.depth_info + 1]) & 1) {
+      Set32(out + 16, QueryDepthBits(half(8))), Set32(out + 20, QueryDepthBits(half(10) + 1));
+    } else {
+      SetFloat(out + 16, float(double(int32_t(half(8) << 13))));
+      SetFloat(out + 20, float(double(int32_t(((half(10) + 1) << 13) & 0xFFFFE000u))));
+    }
+  }
+  return true;
 }
 
 }  // namespace any360::xdk

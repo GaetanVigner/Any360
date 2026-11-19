@@ -869,10 +869,136 @@ void TestViewportChain(xdk::D3dLayout l, uint32_t seed) {
   CHECK(p.native == q.native);
 }
 
+// IDirect3DQuery9::GetData against its instruction-by-instruction model (Crackdown's offsets: the standard layout).
+// The guest memory of these calls lies in the view at 0xC0000000, where the query's blocks are read: the query, the
+// device, the GPU's frame word, blocks given by either physical form (below 1 MB, or 0xE0000000 up: 0x1000 further on)
+// and the data. Random types (the three and others), the flags' bit 2, issued frames (0, this frame, in flight, done),
+// block counts (0-4, past 30 now and then), blocks unwritten (all four first words, or only the first), sizes, float
+// depth on or off, and data over the query, the device or a block (declined: memory as it was).
+void TestQueryGetData(uint32_t seed) {
+  constexpr uint32_t kView = 0xC0000000u;
+  const xdk::D3dLayout l;
+  std::mt19937_64 rng(seed);
+  std::vector<uint8_t> mem_a(kArena), mem_b(kArena);
+  xdk::Memory a, b;
+  a.base = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(mem_a.data()) - kView);
+  b.base = reinterpret_cast<uint8_t*>(reinterpret_cast<uintptr_t>(mem_b.data()) - kView);
+  const uint32_t query = kView + 0x1000, device = kView + 0x20000, done_word = kView + 0x30000;
+  const auto block_at = [&](uint32_t k) { return kView + 0x40000 + 0x1000 * k; };  // blocks 0-7
+  const auto put = [&](uint32_t at, uint32_t v) { ref::stw(a, at, v), ref::stw(b, at, v); };
+  uint64_t taken = 0, declined = 0, kicked = 0;
+  uint64_t by_type[4] = {};
+  for (int round = 0; round < 40; ++round) {
+    for (uint32_t i = 0; i < kArena; i += 8) {
+      const uint64_t v = rng();
+      std::memcpy(&mem_a[i], &v, 8);
+    }
+    mem_b = mem_a;
+    for (int call = 0; call < 500; ++call) {
+      const uint32_t pick = uint32_t(rng() % 16);
+      const uint32_t type = pick < 3 ? 8 : pick < 9 ? 9 : pick < 14 ? 10 : uint32_t(rng() % 32);
+      put(query + l.query_device, device), put(query + l.query_type, type);
+      const uint32_t now = rng() % 4 ? uint32_t(rng()) : uint32_t(rng() % 8);
+      put(device + l.resource_fence, now);
+      put(device + l.gpu_done_frame, rng() % 32 ? done_word : uint32_t(0x7F000000u + rng() % 64));
+      put(done_word, rng() % 8 ? now - uint32_t(rng() % 4) : uint32_t(rng()));
+      uint32_t stamp;
+      switch (rng() % 6) {
+        case 0: stamp = 0; break;
+        case 1: stamp = now; break;
+        case 2: stamp = now - uint32_t(rng() % 4); break;
+        default: stamp = uint32_t(rng()); break;
+      }
+      put(query + l.query_frame, stamp);
+      const uint8_t flags = uint8_t(rng() % 4 ? rng() & ~4u : rng());
+      *a.Host(device + l.query_flags) = *b.Host(device + l.query_flags) = flags;
+      const uint8_t depth_hi = uint8_t(rng());
+      *a.Host(device + l.depth_info + 1) = *b.Host(device + l.depth_info + 1) = depth_hi;
+      const uint32_t count = rng() % 12 ? uint32_t(rng() % 5) : 31 + uint32_t(rng() % 4);
+      put(query + l.query_block_count, count);
+      bool bad_block = false;
+      for (uint32_t i = 0; i < 30; ++i) {
+        const uint32_t k = uint32_t(rng() % 8), x = block_at(k) - kView;
+        uint32_t physical = rng() % 2 ? x : 0xE0000000u + x - 0x1000;  // the second form lands 0x1000 further on
+        if (rng() % 64 == 0) physical = 0x1FFFFFF8u;  // its block crosses into the physical view: not plain
+        if (i < (type == 9 ? count : 1) && physical == 0x1FFFFFF8u) bad_block = true;
+        put(query + l.query_blocks + 4 * i, physical);
+      }
+      for (uint32_t k = 0; k < 8; ++k) {
+        const uint32_t at = block_at(k);
+        for (uint32_t w = 0; w < 16; ++w) put(at + 4 * w, uint32_t(rng()));
+        switch (rng() % 5) {
+          case 0: for (uint32_t w = 0; w < 4; ++w) put(at + 4 * w, xdk::detail::kQueryUnwritten); break;
+          case 1: put(at, xdk::detail::kQueryUnwritten); break;  // the extent query's test, not the occlusion's
+          case 2: for (uint32_t w = 0; w < 16; ++w) put(at + 4 * w, uint32_t(rng() % 4096)); break;
+          default: break;
+        }
+      }
+      const uint32_t size = rng() % 3 ? (rng() % 2 ? 16u : 4u) : uint32_t(rng() % 40);
+      uint32_t data = kView + 0x60000 + 4 * uint32_t(rng() % 64);
+      switch (rng() % 24) {
+        case 0: data = query + 4 * uint32_t(rng() % 40); break;
+        case 1: data = device + 4 * uint32_t(rng() % 4096); break;
+        case 2: data = block_at(uint32_t(rng() % 8)) + 4 * uint32_t(rng() % 16) - 8; break;
+        default: break;
+      }
+      // The calls write only the data: compared around it after each call, everywhere after each round.
+      const auto window = [&](const std::vector<uint8_t>& mem, const std::vector<uint8_t>& other) {
+        const uint32_t from = data - kView >= 64 ? data - kView - 64 : 0, to = std::min<uint32_t>(data - kView + 88, kArena);
+        return std::memcmp(&mem[from], &other[from], to - from) == 0;
+      };
+      uint32_t kicks_a = 0, kicks_b = 0, result = 0xDEADu, planned_bytes = 0;
+      bool planned_kick = false;
+      const bool planned = xdk::D3dQueryGetDataPlan(a, l, query, data, size, planned_bytes, planned_kick);
+      const bool took = xdk::D3dQueryGetData(a, l, query, data, size, result, [&] { ++kicks_a; });
+      CHECK(planned == took);  // the plan (what verification compares) says what the call does
+      CHECK(!took || planned_kick == (kicks_a != 0));
+      CHECK(!took || planned_bytes == (type >= 8 && type <= 10 ? (type == 10 ? 24u : type == 9 && size >= 16 ? 16u : 4u) : 0u));
+      if (!took) {
+        ++declined;
+        CHECK(window(mem_a, mem_b));  // as it was: nothing ran on the model's side
+        CHECK(kicks_a == 0);
+        // A decline has a reason: the GPU word or a block not plain, more than 30 blocks, the data over the query,
+        // the device or a block.
+        const uint32_t written = type == 10 ? 24 : type == 9 && size >= 16 ? 16 : 4;
+        const bool over = xdk::detail::Overlap(data, written, query, l.query_bytes) ||
+                          xdk::detail::Overlap(data, written, device, l.device_bytes) ||
+                          (data >= block_at(0) - 64 && data < block_at(7) + 64);
+        CHECK(over || bad_block || count > 30 || ref::lwz(b, device + l.gpu_done_frame) != done_word);
+        continue;
+      }
+      ++taken;
+      ++by_type[type == 8 ? 0 : type == 9 ? 1 : type == 10 ? 2 : 3];
+      const uint32_t expect = ref::QueryGetData(b, query, data, size, [&] { ++kicks_b; });
+      CHECK(result == expect);
+      CHECK(kicks_a == kicks_b);
+      kicked += kicks_a;
+      const bool same = window(mem_a, mem_b);
+      CHECK(same);
+      if (!same) {
+        if (xdk_test::g_failures <= 40)
+          std::printf("query type %u size %u stamp %08X now %08X flags %02X count %u\n", type, size, stamp, now, flags, count);
+      }
+    }
+    CHECK(mem_a == mem_b);
+  }
+  CHECK(taken > 10000 && declined > 300 && kicked > 100);
+  CHECK(by_type[0] > 1000 && by_type[1] > 4000 && by_type[2] > 3000 && by_type[3] > 300);
+  // The extent query's float-depth bits on every 16-bit value and its + 1, against the reference's.
+  for (uint32_t h = 0; h <= 0x10000; ++h) CHECK(xdk::detail::QueryDepthBits(h) == ref::QueryDepthWord(h));
+  std::printf("xdk_d3d_state_tests: GetData %llu calls compared (event %llu, occlusion %llu, extent %llu, other %llu), "
+              "%llu kicks, %llu declined\n",
+              static_cast<unsigned long long>(taken), static_cast<unsigned long long>(by_type[0]),
+              static_cast<unsigned long long>(by_type[1]), static_cast<unsigned long long>(by_type[2]),
+              static_cast<unsigned long long>(by_type[3]), static_cast<unsigned long long>(kicked),
+              static_cast<unsigned long long>(declined));
+}
+
 int main() {
   const xdk::D3dLayout standard, shifted = Shifted();
   TestViewportChain(standard, 2500);
   TestViewportChain(shifted, 2600);
+  TestQueryGetData(2700);
   TestRenderStateFields(standard, 2300);
   TestRenderStateFields(shifted, 2400);
   TestSurfaceSetters(standard, 2100);

@@ -1,0 +1,4 @@
+Any360 D3D self-test: 102 cases on a copy of device 40259D00
+Query GetData                  3000 calls, 67 declined, 3 different; median original 32.5 ns, native 13.8 ns (2.36x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00; first: call 319: memory at 340950A5 (r3 34093030 r4 0000000034095090 r5 00000010 r6 00000008 r7 C000000000000000)
+Replay command buffer (PM4)    3000 calls, 0 declined, 0 different; median original 440.0 ns, native 402.5 ns (1.09x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Replay command buffer (records)   3000 calls, 0 declined, 0 different; median original 451.3 ns, native 412.5 ns (1.09x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00

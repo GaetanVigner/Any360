@@ -1,0 +1,17 @@
+@exe:crackdown_after.exe: 5 launches
+  crackdown_053.log: dip 1% low 52 FPS, slowest 28.4 ms, 42 over 16.7 ms, texture loading up to 0.05 ms a frame; steady FPS 63-64
+  crackdown_055.log: dip 1% low 35 FPS, slowest 28.7 ms, 32 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_057.log: dip 1% low 35 FPS, slowest 28.7 ms, 36 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 63-63
+  crackdown_059.log: dip 1% low 35 FPS, slowest 31.1 ms, 28 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_061.log: dip 1% low 35 FPS, slowest 28.5 ms, 12 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  steady (45 periods): FPS mean 63.0 (median 63.0, min 62.6), 10% low mean 62.1 (median 62.2, min 57.0), 1% low mean 58.3 (median 61.5, min 35.1); process private memory mean 2586 MB, max 2594 MB
+  dips (5): 1% low mean 38.4, slowest frame mean 29.1 ms, over 16.7 ms mean 30.0, texture loading mean 0.06 ms a frame
+@exe:crackdown_before.exe: 5 launches
+  crackdown_054.log: dip 1% low 35 FPS, slowest 28.7 ms, 23 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_056.log: dip 1% low 52 FPS, slowest 31.5 ms, 34 over 16.7 ms, texture loading up to 0.07 ms a frame; steady FPS 63-63
+  crackdown_058.log: dip 1% low 35 FPS, slowest 28.6 ms, 29 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_060.log: dip 1% low 35 FPS, slowest 28.7 ms, 45 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  crackdown_062.log: dip 1% low 35 FPS, slowest 28.7 ms, 56 over 16.7 ms, texture loading up to 0.06 ms a frame; steady FPS 63-63
+  steady (45 periods): FPS mean 63.0 (median 63.0, min 62.7), 10% low mean 62.3 (median 62.3, min 61.7), 1% low mean 60.8 (median 61.6, min 52.3); process private memory mean 2582 MB, max 2589 MB
+  dips (5): 1% low mean 38.4, slowest frame mean 29.2 ms, over 16.7 ms mean 37.4, texture loading mean 0.06 ms a frame
+@exe:crackdown_after.exe against @exe:crackdown_before.exe: steady fps z +0.19, p10 z -1.22, p1 z -1.98; dips 1% low z -0.10, slowest z -0.73

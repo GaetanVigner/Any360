@@ -11,6 +11,7 @@
  "0x826AF650": ["D3D_SetViewportFloats", "the viewport as set (+12368, clamped to the surface or the tiling), its scale and offset (+10376), the scissor; dirty bits 21-26"],
  "0x826B1C60": ["D3DDevice_SetViewport", "a D3DVIEWPORT9 (words to floats) into the viewport function"],
  "0x826AF2D8": ["D3D_SurfaceViewport", "a surface into SURFACE_INFO and the multisample word, the runtime's scissor and viewport; dirty bits 57 and 36"],
+ "0x826C0D38": ["D3DQuery_GetData", "an event, occlusion (its blocks summed) or extent query's result, S_FALSE while the GPU is behind its frame (the command buffer kicked when issued this frame)"],
  "0x826AF8B8": ["D3DDevice_SetRenderState_CullMode", "PA_SU_SC_MODE_CNTL bits 0-2; dirty 0x40"],
  "0x826AF918": ["D3DDevice_SetRenderState_AlphaTestEnable", "RB_COLORCONTROL bit 3; dirty 0x200, 0x40000"],
  "0x826AFDE0": ["D3DDevice_SetRenderState_AlphaFunc", "RB_COLORCONTROL bits 0-2; dirty 0x200"],

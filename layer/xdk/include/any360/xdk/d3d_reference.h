@@ -1118,6 +1118,153 @@ inline void ViewportOfSurface(const Memory& m, const D3dLayout& l, uint32_t r3, 
   SetViewport(m, l, r3, l.surface_viewport, call);  // b 0x826b1c60
 }
 
+// IDirect3DQuery9::GetData (sub_826C0D38): r3 the query, r4 the data, r5 its size -> r3; `make_room()` its
+// bl 0x826bb408 (r3 the device). The device's fields at Crackdown's offsets (+10768, +10780, +10813, +10248), the
+// query's at +0, +4, +20, +24, +144.
+inline uint32_t lwbrx(const Memory& m, uint32_t ea) {
+  uint32_t v = 0;
+  for (int i = 3; i >= 0; --i) v = v << 8 | *m.Host(ea + i);
+  return v;
+}
+inline uint32_t cntlzw(uint32_t v) { return uint32_t(std::countl_zero(v)); }
+inline uint32_t slw(uint32_t v, uint32_t n) { return n & 0x20 ? 0u : v << (n & 0x1F); }
+// The block's address: rlwinm r9,r11,12,20,31; clrlwi r10,r11,3; addi r11,r9,512; rlwinm r11,r11,0,19,19;
+// add r11,r11,r10; addis r11,r11,-16384.
+inline uint32_t QueryBlock(uint32_t r11) {
+  return (rlwinm(rlwinm(r11, 12, 20, 31) + 512, 0, 19, 19) + (r11 & 0x1FFFFFFFu)) + 0xC0000000u;
+}
+// The float-depth path's word (r10 the halfword, its + 1 done by the caller).
+inline uint32_t QueryDepthWord(uint32_t r10) {
+  r10 = rlwinm(r10, 13, 8, 18);
+  if (r10 == 0) return 0;  // stw r27,80(r1)
+  uint32_t r9;
+  if (rlwinm(r10, 0, 8, 11) != 0) {
+    r9 = rlwinm(r10, 3, 9, 28);
+    r10 = ~r10;
+    r10 = rlwinm(r10, 12, 28, 31);
+    r10 = 127 - r10;
+    r10 = rlwinm(r10, 23, 0, 8);
+  } else {
+    r9 = rlwinm(r10, 12, 0, 19);
+    r9 = cntlzw(r9);
+    r9 = r9 + 1;
+    const uint32_t r8 = r9 + 3;
+    r9 = 113 - r9;
+    r9 = rlwinm(r9, 8, 0, 23);
+    r10 = slw(r10, r8);
+    r10 = r10 & 0x7FFFFFu;
+  }
+  return r10 | r9;
+}
+template <class Call>
+inline uint32_t QueryGetData(const Memory& m, uint32_t r3, uint32_t r4, uint32_t r5, Call&& make_room) {
+  const uint32_t r11 = r3, r31 = r4, r28 = r5;
+  r3 = lwz(m, r11);
+  uint32_t r10 = lwz(m, r11 + 4);
+  if (r10 == 9) {
+    if (lbz(m, r3 + 10813) & 4) {
+      stw(m, r31, 1);
+      return 0;
+    }
+    const uint32_t r9 = lwz(m, r11 + 20);
+    if (r9 != 0) {
+      r10 = lwz(m, r3 + 10768);
+      uint32_t r8 = lwz(m, r10);
+      r10 = lwz(m, r3 + 10780);
+      r8 = r10 - r8;
+      r10 = r10 - r9;
+      if (r10 < r8) {
+        if (r9 == lwz(m, r3 + 10780)) make_room();
+        stw(m, r31, 1);
+        if (r28 >= 16) stw(m, r31 + 4, 0), stw(m, r31 + 8, 0), stw(m, r31 + 12, 1);
+        return 1;
+      }
+    }
+    stw(m, r31, 0);
+    if (r28 >= 16) stw(m, r31 + 4, 0), stw(m, r31 + 8, 0), stw(m, r31 + 12, 0);
+    const uint32_t r29 = lwz(m, r11 + 144);
+    if (r29 == 0) return 0;
+    uint32_t a = r11 + 24;
+    for (uint32_t r30 = 0;;) {
+      const uint32_t b = QueryBlock(lwz(m, a));
+      r10 = lwz(m, b);
+      if (r10 == 0xFFFFFEEDu && lwz(m, b + 4) == 0xFFFFFEEDu && lwz(m, b + 8) == 0xFFFFFEEDu &&
+          lwz(m, b + 12) == 0xFFFFFEEDu) {
+        stw(m, r31, 1);
+        if (r28 >= 16) stw(m, r31 + 4, 0), stw(m, r31 + 8, 0), stw(m, r31 + 12, 1);
+        return 1;
+      }
+      uint32_t s = lwz(m, r31) - lwbrx(m, b + 48);
+      s = s - lwbrx(m, b + 52) + lwbrx(m, b + 20) + lwbrx(m, b + 16);
+      stw(m, r31, s);
+      if (r28 >= 16) {
+        uint32_t r22 = rlwinm(r10, 8, 24, 31);
+        r22 = rlwimi(r22, r10, 24, 16, 23);
+        r22 = rlwimi(r22, r10, 8, 8, 15);
+        r22 = rlwimi(r22, r10, 24, 0, 7);
+        const uint32_t d3 = lwz(m, r31 + 12), d1 = lwz(m, r31 + 4), d2 = lwz(m, r31 + 8);
+        uint32_t r7 = d3 - lwbrx(m, b + 32) - lwbrx(m, b + 36);
+        const uint32_t r9b = d1 - lwbrx(m, b + 40) - lwbrx(m, b + 44) + lwbrx(m, b + 12) + lwbrx(m, b + 8);
+        const uint32_t r11b = d2 - lwbrx(m, b + 56) - lwbrx(m, b + 60) + lwbrx(m, b + 28) + lwbrx(m, b + 24);
+        r7 = r7 + lwbrx(m, b + 4);
+        stw(m, r31 + 8, r11b);
+        stw(m, r31 + 4, r9b);
+        stw(m, r31 + 12, r7 + r22);
+      }
+      ++r30, a += 4;
+      if (!(r30 < r29)) return 0;
+    }
+  }
+  if (r10 == 10) {
+    if (lbz(m, r3 + 10813) & 4) {
+      for (uint32_t k = 0; k < 24; ++k) *m.Host(r31 + k) = 0;  // bl memset
+      return 0;
+    }
+    r10 = lwz(m, r3 + 10768);
+    const uint32_t r9 = lwz(m, r11 + 20);
+    uint32_t r8 = lwz(m, r10);
+    r10 = lwz(m, r3 + 10780);
+    r8 = r10 - r8;
+    r10 = r10 - r9;
+    if (r10 < r8) {
+      if (r9 == lwz(m, r3 + 10780)) make_room();
+      return 1;
+    }
+    const uint32_t b = QueryBlock(lwz(m, r11 + 24));
+    if (lwz(m, b) == 0xFFFFFEEDu) return 1;
+    uint32_t h2 = lhz(m, b + 2), h6 = lhz(m, b + 6), h0 = lhz(m, b), h4 = lhz(m, b + 4);
+    h2 += 1, h6 += 1;
+    const uint32_t r6 = lhz(m, r3 + 10248) & 1;
+    stw(m, r31, rotlw(h0, 3));
+    stw(m, r31 + 4, rlwinm(h2, 3, 0, 28));
+    stw(m, r31 + 8, rotlw(h4, 3));
+    stw(m, r31 + 12, rlwinm(h6, 3, 0, 28));
+    if (r6 == 1) {
+      stfs_(m, r31 + 16, double(std::bit_cast<float>(QueryDepthWord(lhz(m, b + 8)))));  // stw; lfs; stfs
+      stfs_(m, r31 + 20, double(std::bit_cast<float>(QueryDepthWord(lhz(m, b + 10) + 1))));
+    } else {
+      const uint32_t r10b = rlwinm(lhz(m, b + 10) + 1, 13, 0, 18), r11b = rotlw(lhz(m, b + 8), 13);
+      // extsw; std; lfd; fcfid; frsp
+      stfs_(m, r31 + 16, double(float(double(int64_t(int32_t(r11b))))));
+      stfs_(m, r31 + 20, double(float(double(int64_t(int32_t(r10b))))));
+    }
+    return 0;
+  }
+  if (r10 == 8) {
+    stw(m, r31, 1);
+    const uint32_t r9 = lwz(m, r3 + 10768), r10b = lwz(m, r11 + 20);
+    uint32_t r11b = lwz(m, r3 + 10780);
+    const uint32_t r8 = r11b - r10b;
+    r11b = r11b - lwz(m, r9);
+    if (r8 < r11b) {
+      if (r10b == lwz(m, r3 + 10780)) make_room();
+      return 1;
+    }
+    return 0;
+  }
+  return 0;
+}
+
 }  // namespace state
 
 // D3DResource_AddRef (Crackdown sub_826ACC90) and D3DResource_Release (sub_826ACD08), as their code reads.

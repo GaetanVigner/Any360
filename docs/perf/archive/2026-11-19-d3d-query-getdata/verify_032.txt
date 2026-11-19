@@ -1,0 +1,5 @@
+crackdown_032.log (city route, --any360_xdk_verify=true, GetData bound), the last report line's parts:
+200000000 calls verified
+D3D query 1647997 calls verified
+different: D viewport 1738610, D3D query 1647997), 0 different| different at first and the same when ru|
+different at first and the same when run again: none

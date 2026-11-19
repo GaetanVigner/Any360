@@ -51,7 +51,7 @@ enum class Function : uint32_t {
   kGetLastError, kSetLastError, kStricmp, kStrstr, kFinite, kIsnan, kSptype, kGetExp, kSetExp, kAddExp, kMixRamp, kDirtyConstants, kDirtyWords, kSetConstants, kFill,
   kD3dBlend, kD3dBoolConstants, kD3dIntConstants, kD3dPixelConstants, kD3dSetTexture, kD3dSetStreamSource,
   kD3dSamplerFilter, kD3dSetVertexDeclaration, kD3dSetShader, kD3dFlushCpuRange, kInflateFast, kPngFilterRow, kXMemSet, kSin, kCos, kAsin,
-  kD3dRenderState, kAtan2, kPow, kD3dSurfaces, kXAudioReverb, kD3dViewport, kCount
+  kD3dRenderState, kAtan2, kPow, kD3dSurfaces, kXAudioReverb, kD3dViewport, kD3dQuery, kCount
 };
 
 // How bound functions run: resolved from the settings at the first call.
@@ -1049,6 +1049,46 @@ struct ViewportOfSurface {
     AddRange(w, device + l.surface_info, 4);
     AddRange(w, device + l.sample_control, 4);
     AddRange(w, device + l.constant_dirty, 8);
+    return true;
+  }
+};
+// IDirect3DQuery9::GetData: r3 the query, r4 the data, r5 its size -> r3 S_OK or S_FALSE. Its kick is the runtime's
+// make_room (`g_make_room`, the title's) on the query's device, from GetData's frame (208 bytes).
+inline GuestFunction g_make_room = nullptr;
+inline constexpr uint32_t kGetDataFrame = 208;
+struct MakeRoomCall {
+  PPCContext& ctx;
+  uint8_t* base;
+  uint32_t query;
+  void operator()() const {
+    const uint64_t r1 = ctx.r1.u64;
+    ctx.r1.u64 = r1 - kGetDataFrame;
+    ctx.r3.u64 = any360::xdk::detail::Get32(g_memory, query + g_d3d_layout.query_device);
+    g_make_room(ctx, base);
+    ctx.r1.u64 = r1;
+  }
+};
+struct QueryGetData {
+  static constexpr Function kFunction = Function::kD3dQuery;
+  static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
+    if (!g_make_room) return false;
+    const uint32_t query = ctx.r3.u32;
+    uint32_t result;
+    if (!any360::xdk::D3dQueryGetData(m, g_d3d_layout, query, ctx.r4.u32, ctx.r5.u32, result,
+                                      MakeRoomCall{ctx, m.base, query}))
+      return false;
+    ctx.r3.u64 = result;
+    return true;
+  }
+  // The data's bytes. Declined when the call would kick the command buffer (twice when verified).
+  static bool Writes(const PPCContext& ctx, std::vector<any360::xdk::Range>& w) {
+    uint32_t written;
+    bool kicks;
+    if (!g_make_room ||
+        !any360::xdk::D3dQueryGetDataPlan(g_memory, g_d3d_layout, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, written, kicks) ||
+        kicks)
+      return false;
+    if (written) AddRange(w, ctx.r4.u32, written);
     return true;
   }
 };

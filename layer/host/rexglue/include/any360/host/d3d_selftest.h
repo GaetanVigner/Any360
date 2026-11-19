@@ -25,10 +25,14 @@ struct CallSetup {
   uint32_t device = 0;           // a copy of the title's device (its fields, pointers to the title's memory)
   uint32_t scratch = 0;          // guest memory for the case (kScratchBytes), random bytes before each call
   uint32_t stack = 0;            // the call's stack pointer (free below it, the 4 KB above it compared)
+  // Physical memory for the case (kPhysicalBytes, compared and put back like the scratch, not randomized), as the
+  // view at 0xC0000000 reads it (what the GPU writes, a query's blocks) and as its physical address; 0: none.
+  uint32_t physical = 0, physical_address = 0;
   std::mt19937_64* rng = nullptr;
   uint8_t* Host(uint32_t address) const;
 };
 constexpr uint32_t kScratchBytes = 256u << 10;
+constexpr uint32_t kPhysicalBytes = 16u << 10;
 // The device's bytes compared and put back (the runtime's device is under 16 KB in the titles read).
 constexpr uint32_t kDeviceBytes = 32u << 10;
 
