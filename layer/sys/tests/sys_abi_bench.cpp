@@ -67,7 +67,11 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamAvatarGetManifestsByXuid) X(XamAvatarGetMetadataRandom) X(XamAvatarGetMetadataSignedOutProfile)                 \
   X(XamAvatarGetMetadataSignedOutProfileCount) X(XamAvatarLoadAnimation) X(XamAvatarManifestGetBodyType)               \
   X(XamAvatarReinstallAwardedAsset) X(XamAvatarSetCustomAsset) X(XamAvatarSetManifest) X(XamAvatarSetMocks)            \
-  X(XamAvatarWearNow)
+  X(XamAvatarWearNow) \
+  X(EnumerateMediaObjects) X(EnumerateMediaObjects_) X(EnumerateMediaObjects_0) X(EnumerateMediaObjects_1)             \
+  X(XamMediaVerificationClose) X(XamMediaVerificationCreate) X(XamMediaVerificationFailedBlocks)                       \
+  X(XamMediaVerificationInject) X(XamMediaVerificationVerify) X(XampWebInstrumentationSetProfileCounts)                \
+  X(XampXAuthGetTitleBuffer) X(XampXAuthShutdown) X(XampXAuthStartup)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -319,6 +323,10 @@ int main(int argc, char** argv) {
   std::memcpy(g_base + kObjectName + 8, "\\Title\\Event7", 13);
   std::memcpy(g_base + kObjectName + 0x40, "dlc.xex", 8);
   any360::sys::Threads().SetDispatcher(&AllocateProcedure, nullptr);
+  // Media: an X_SECURITY_FAILURE_INFORMATION (its size first) and XAUTH_SETTINGS of size 8.
+  constexpr uint32_t kMediaInfo = 0x4002C900;
+  std::memset(g_base + kMediaInfo, 0, 0x40);
+  Store32(kMediaInfo, 0x18), Store32(kMediaInfo + 0x20, 8);
 
   const uint32_t stack_args = kStack + kStackSize - 0x1000 + 0x54;
   const Row rows[] = {
@@ -479,6 +487,21 @@ int main(int argc, char** argv) {
       {"XamAvatarSetCustomAsset", __imp__XamAvatarSetCustomAsset, Args({16, kIn, 0, 0, kIn}), 20000, nullptr, 0},
       {"XamAvatarSetMocks", __imp__XamAvatarSetMocks, Args({}), 20000, nullptr, -1},
       {"XamAvatarWearNow", __imp__XamAvatarWearNow, Args({0, kIn, 0}), 20000, nullptr, 0},
+      // Media and the dashboard's services.
+      {"EnumerateMediaObjects", __imp__EnumerateMediaObjects, Args({kIn, 1, kOut + 0xDD0}), 20000, nullptr, 0x80004001},
+      {"EnumerateMediaObjects_", __imp__EnumerateMediaObjects_, Args({kIn, 1, kOut + 0xDD0}), 20000, nullptr, 0x80004001},
+      {"EnumerateMediaObjects_0", __imp__EnumerateMediaObjects_0, Args({kIn, 1, kOut + 0xDD0}), 20000, nullptr, 0x80004001},
+      {"EnumerateMediaObjects_1", __imp__EnumerateMediaObjects_1, Args({kIn, 1, kOut + 0xDD0}), 20000, nullptr, 0x80004001},
+      {"XamMediaVerificationCreate", __imp__XamMediaVerificationCreate, Args({1}), 20000, nullptr, 0},
+      {"XamMediaVerificationClose", __imp__XamMediaVerificationClose, Args({}), 20000, nullptr, 0},
+      {"XamMediaVerificationInject", __imp__XamMediaVerificationInject, Args({1, 2}), 20000, nullptr, 0},
+      {"XamMediaVerificationVerify (no callback)", __imp__XamMediaVerificationVerify, Args({0, 0, 0}), 20000, nullptr, 0},
+      {"XamMediaVerificationFailedBlocks", __imp__XamMediaVerificationFailedBlocks, Args({kMediaInfo}), 20000, nullptr, 0},
+      {"XampWebInstrumentationSetProfileCounts", __imp__XampWebInstrumentationSetProfileCounts, Args({0, 1, 1, 0}), 20000,
+       nullptr, -1},
+      {"XampXAuthStartup", __imp__XampXAuthStartup, Args({kMediaInfo + 0x20}), 20000, nullptr, 0x80158406},
+      {"XampXAuthShutdown", __imp__XampXAuthShutdown, Args({kOut + 0xDD0}), 20000, nullptr, -1},
+      {"XampXAuthGetTitleBuffer", __imp__XampXAuthGetTitleBuffer, Args({}), 20000, nullptr, 0},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "

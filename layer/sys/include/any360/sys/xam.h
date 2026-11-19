@@ -357,6 +357,15 @@ class Xam {
   // XPROFILE_GAMERCARD_AVATAR_INFO_1 (written to profile_root as XamUserWriteProfileSettings keeps a binary
   // setting); a user with no profile: ERROR_FUNCTION_FAILED with E_NO_SUCH_USER.
   uint32_t AvatarSetManifest(Guest g, uint32_t user, uint32_t info, uint32_t overlapped);
+
+  // Media and the dashboard's services (Xenia's xam_media.cc, xam_enum.cc, xam_net.cc, xam_info.cc), stubs as Xenia's.
+  // XamMediaVerificationFailedBlocks (X_SECURITY_FAILURE_INFORMATION, 0x18 bytes, its size first): no read or hash
+  // failed, no block checked, the check complete (1); a size other than 0x18 is ERROR_NOT_ENOUGH_MEMORY (8). No
+  // structure: success.
+  uint32_t MediaVerificationFailedBlocks(Guest g, uint32_t information);
+  // XampXAuthStartup (XAUTH_SETTINGS): the service is not there: 0x80158401 for settings whose size field is not 8 (or
+  // none), else 0x80158406, as Xenia answers.
+  uint32_t XAuthStartup(Guest g, uint32_t settings);
   uint32_t UnloadImage(uint32_t handle);
   // XexLoadImageHeaders: the XEX2 headers of the image an ANSI_STRING path names, copied to `buffer` (its first
   // header-size bytes); STATUS_NO_SUCH_FILE, STATUS_INVALID_IMAGE_FORMAT, STATUS_BUFFER_TOO_SMALL otherwise.

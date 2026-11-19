@@ -132,6 +132,39 @@ void AvatarAdapters() {
   CHECK(G().Load32(setting + 32) == 0x3E8 && std::memcmp(g_base + G().Load32(setting + 36), g_base + kData, 0x3E8) == 0);
 }
 
+void MediaAdapters() {
+  for (const char* name : {"EnumerateMediaObjects", "EnumerateMediaObjects_", "EnumerateMediaObjects_0", "EnumerateMediaObjects_1"}) {
+    CHECK(Call(name, {kData, 1, kOut}) == 0x80004001);
+  }
+  CHECK(Call("XamMediaVerificationCreate", {1}) == 0 && Call("XamMediaVerificationClose", {}) == 0);
+  CHECK(Call("XamMediaVerificationInject", {1, 2}) == 0);
+  // Verify: a callback becomes a user APC on the calling thread (its low bit cleared); none without one.
+  const size_t queued = Threads().PendingApcs(kKThread);
+  CHECK(Call("XamMediaVerificationVerify", {0, kOv, 0}) == 0 && Threads().PendingApcs(kKThread) == queued);
+  CHECK(Call("XamMediaVerificationVerify", {0, kOv, 0x82001235}) == 0 && Threads().PendingApcs(kKThread) == queued + 1);
+  // FailedBlocks: the structure's size first; 0x18 gets zeros and "complete", another size ERROR_NOT_ENOUGH_MEMORY.
+  std::memset(g_base + kOut, 0xAA, 0x20);
+  G().Store32(kOut, 0x18);
+  CHECK(Call("XamMediaVerificationFailedBlocks", {kOut}) == 0);
+  CHECK(G().Load32(kOut) == 0x18 && G().Load32(kOut + 4) == 0 && G().Load32(kOut + 16) == 0 && G().Load32(kOut + 20) == 1);
+  CHECK(g_base[kOut + 0x18] == 0xAA);
+  G().Store32(kOut, 0x14);
+  G().Store32(kOut + 4, 0x55);
+  CHECK(Call("XamMediaVerificationFailedBlocks", {kOut}) == 8 && G().Load32(kOut + 4) == 0x55);
+  CHECK(Call("XamMediaVerificationFailedBlocks", {0}) == 0);
+  Call("XampWebInstrumentationSetProfileCounts", {0, 1, 1, 0});
+  // XAuth: not there.
+  G().Store32(kData, 8);
+  CHECK(Call("XampXAuthStartup", {kData}) == 0x80158406);
+  G().Store32(kData, 12);
+  CHECK(Call("XampXAuthStartup", {kData}) == 0x80158401 && Call("XampXAuthStartup", {0}) == 0x80158401);
+  G().Store32(kOut, 5);
+  Call("XampXAuthShutdown", {kOut});
+  CHECK(G().Load32(kOut) == 0);
+  Call("XampXAuthShutdown", {0});
+  CHECK(Call("XampXAuthGetTitleBuffer", {}) == 0);
+}
+
 // Step 12's eighth to tenth batches: the registers of the adapters sys_object_tests checks only behind them.
 uint64_t AllocateProcedure(uint32_t, uint32_t, uint32_t, const uint64_t* args, uint32_t count, void*) {
   return count == 3 && args[1] == 0x54657374 ? 0x40038000 : 0;
@@ -210,6 +243,7 @@ int main() {
   XamState().title().content_root = root / "content";
   XamState().title().profile_root = root / "profile";
   AvatarAdapters();
+  MediaAdapters();
   EarlierBatchAdapters();
   Threads().SetDispatcher(nullptr, nullptr);
   std::filesystem::remove_all(root, error);

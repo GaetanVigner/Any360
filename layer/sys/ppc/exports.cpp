@@ -1118,6 +1118,28 @@ ANY360_SYS_EXPORT(XamAvatarSetCustomAsset) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(XamAvatarSetManifest) { ctx.r3.u64 = XamState().AvatarSetManifest({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XamAvatarSetMocks) {}
 ANY360_SYS_EXPORT(XamAvatarWearNow) { ctx.r3.u64 = XamState().AvatarWearNow({base}, ctx.r5.u32); }
+// Step 12, the calls Xenia stubs too: media and the dashboard's services.
+ANY360_SYS_EXPORT(EnumerateMediaObjects) { ctx.r3.u64 = 0x80004001; }  // E_NOTIMPL, as Xenia: no media library
+ANY360_SYS_EXPORT(EnumerateMediaObjects_) { ctx.r3.u64 = 0x80004001; }
+ANY360_SYS_EXPORT(EnumerateMediaObjects_0) { ctx.r3.u64 = 0x80004001; }
+ANY360_SYS_EXPORT(EnumerateMediaObjects_1) { ctx.r3.u64 = 0x80004001; }
+ANY360_SYS_EXPORT(XamMediaVerificationCreate) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamMediaVerificationClose) { ctx.r3.u64 = 0; }
+ANY360_SYS_EXPORT(XamMediaVerificationInject) { ctx.r3.u64 = 0; }
+// (unknown, overlapped, callback): the disc verifies; a callback is queued as a user APC on the calling thread (its
+// low bit cleared, no arguments), as Xenia does.
+ANY360_SYS_EXPORT(XamMediaVerificationVerify) {
+  if (ctx.r5.u32) Threads().QueueApcTo(ThreadOf(ctx, base), ctx.r5.u32 & ~1u, 0, 0, 0);
+  ctx.r3.u64 = 0;
+}
+ANY360_SYS_EXPORT(XamMediaVerificationFailedBlocks) { ctx.r3.u64 = XamState().MediaVerificationFailedBlocks({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XampWebInstrumentationSetProfileCounts) {}
+ANY360_SYS_EXPORT(XampXAuthStartup) { ctx.r3.u64 = XamState().XAuthStartup({base}, ctx.r3.u32); }
+// (count out): no service started, so its count is 0.
+ANY360_SYS_EXPORT(XampXAuthShutdown) {
+  if (ctx.r3.u32) Guest{base}.Store32(ctx.r3.u32, 0);
+}
+ANY360_SYS_EXPORT(XampXAuthGetTitleBuffer) { ctx.r3.u64 = 0; }  // no title buffer (Xenia: a non-zero one crashes)
 ANY360_SYS_EXPORT(XeCryptBnQw_SwapDwQwLeBe) { XeCryptBnQwSwapDwQwLeBe({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XeCryptRandom) { XeCryptRandom({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XeCryptBnDwLePkcs1Verify) { ctx.r3.u64 = XeCryptBnDwLePkcs1Verify(); }
@@ -2014,6 +2036,19 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XamAvatarSetManifest),
     ANY360_SYS_ENTRY(XamAvatarSetMocks),
     ANY360_SYS_ENTRY(XamAvatarWearNow),
+    ANY360_SYS_ENTRY(EnumerateMediaObjects),
+    ANY360_SYS_ENTRY(EnumerateMediaObjects_),
+    ANY360_SYS_ENTRY(EnumerateMediaObjects_0),
+    ANY360_SYS_ENTRY(EnumerateMediaObjects_1),
+    ANY360_SYS_ENTRY(XamMediaVerificationClose),
+    ANY360_SYS_ENTRY(XamMediaVerificationCreate),
+    ANY360_SYS_ENTRY(XamMediaVerificationFailedBlocks),
+    ANY360_SYS_ENTRY(XamMediaVerificationInject),
+    ANY360_SYS_ENTRY(XamMediaVerificationVerify),
+    ANY360_SYS_ENTRY(XampWebInstrumentationSetProfileCounts),
+    ANY360_SYS_ENTRY(XampXAuthGetTitleBuffer),
+    ANY360_SYS_ENTRY(XampXAuthShutdown),
+    ANY360_SYS_ENTRY(XampXAuthStartup),
     ANY360_SYS_ENTRY(XeCryptAesKey),
     ANY360_SYS_ENTRY(XeCryptAesEcb),
     ANY360_SYS_ENTRY(XeCryptAesCbc),

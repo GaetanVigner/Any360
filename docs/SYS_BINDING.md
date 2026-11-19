@@ -484,6 +484,10 @@ profile folder) by `XamAvatarSetManifest` and read back by `XamAvatarGetManifest
 a title calls them: arguments in their registers, r3 and the guest bytes checked
 (docs/perf/archive/2026-11-19-sys-step12-avatar/).
 
+Media and the dashboard's services (13): no media library (`EnumerateMediaObjects*` E_NOTIMPL), the disc's
+verification succeeding (a `XamMediaVerificationVerify` callback queued as a user APC, `FailedBlocks` reporting
+nothing failed), no XAuth service; Xenia's answers (docs/perf/archive/2026-11-19-sys-step12-media/).
+
 Performance pass on both batches (docs/perf/archive/2026-11-18-sys-step12-opt/): where Any360 was slower than what the
 host already offers, it was made faster, and where it could not be, the host's own code runs behind one switch.
 SHA-1 and SHA-256 compress on the processor's SHA instructions (x86-64 SHA-NI, the Steam Deck's Zen 2 has them),

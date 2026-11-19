@@ -627,6 +627,19 @@ constexpr uint32_t kAvatarEditorTitleId = 0x584D07D1, kAvatarInfoSetting = 0x63E
 constexpr uint32_t kEFail = 0x80004005, kEInvalidArgument = 0x80070057, kENoSuchUser = 0x80070525;
 }  // namespace
 
+uint32_t Xam::MediaVerificationFailedBlocks(Guest g, uint32_t information) {
+  if (!information) return kErrorSuccess;
+  if (g.Load32(information) != 0x18) return 8;  // ERROR_NOT_ENOUGH_MEMORY
+  // Failed reads, failed hashes, blocks checked, total blocks: 0; complete.
+  std::memset(g.host(information + 4), 0, 16);
+  g.Store32(information + 20, 1);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::XAuthStartup(Guest g, uint32_t settings) {
+  return !settings || g.Load32(settings) != 8 ? 0x80158401 : 0x80158406;
+}
+
 uint32_t Xam::AvatarWearNow(Guest g, uint32_t overlapped) {
   if (title_.title_id == kAvatarEditorTitleId) return kErrorSuccess;
   return Finish(g, overlapped, kErrorSuccess);
