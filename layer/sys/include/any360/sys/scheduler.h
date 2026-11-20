@@ -61,6 +61,14 @@ class Scheduler {
     if (size) default_stack_size_ = size;
   }
   uint32_t default_stack_size() const { return default_stack_size_; }
+  // The id of the next thread created here (KTHREAD thread id, ExCreateThread's thread id), then counting up; 1 by
+  // default and after Reset. A host whose runtime makes threads of its own numbers them apart: titles tell their
+  // threads apart by these ids, and two threads with one id each took the other for itself (Mirror's Edge's render
+  // thread, id 8 as its main thread, used the D3D device as the main thread did, at once).
+  void SetFirstThreadId(uint32_t id) {
+    first_thread_id_ = id;
+    next_thread_id_ = id;
+  }
 
   // Stack watch. Stacks live in the kernel heap next to other threads' blocks with no guard page, so a thread that
   // runs past the end of its stack silently writes over whatever lies below. Each stack and a red zone of
@@ -170,7 +178,7 @@ class Scheduler {
   std::chrono::milliseconds stack_interval_{0};
   bool log_creation_ = false;
   std::atomic<int64_t> next_stack_report_{0};  // steady-clock milliseconds
-  uint32_t next_thread_id_ = 1;
+  uint32_t first_thread_id_ = 1, next_thread_id_ = 1;
   uint8_t next_cpu_ = 0;  // the hardware thread a new thread without a processor mask gets (round-robin)
   struct Apc {
     uint32_t kthread, routine, context, arg1, arg2;

@@ -443,6 +443,9 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
     for (const std::string& link : mount.links) any360::sys::Files().Link(link, mount.device);
   }
   any360::sys::Threads().SetDispatcher(&DispatchGuest, nullptr);
+  // The runtime numbers its own threads (the title's main thread among them) from 1: any360::sys numbers its threads
+  // from 0x1000, so that no two threads share an id (Mirror's Edge's render thread had its main thread's).
+  any360::sys::Threads().SetFirstThreadId(options.first_thread_id);
   // The runtime answers calls (its XAM, audio, input, memory while they are its) only on its own threads: any360::sys's
   // threads run inside one each (an XHostThread, whose KTHREAD and PCR the guest code never sees).
   any360::sys::Threads().SetThreadRunner(&RunInRuntimeThread, nullptr);

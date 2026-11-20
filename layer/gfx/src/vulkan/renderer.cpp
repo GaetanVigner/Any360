@@ -275,6 +275,9 @@ VulkanRenderer::~VulkanRenderer() {
   if (depth_pipeline_) f.vkDestroyPipeline(d, depth_pipeline_, nullptr);
   if (depth_pipeline_layout_) f.vkDestroyPipelineLayout(d, depth_pipeline_layout_, nullptr);
   if (depth_layout_) f.vkDestroyDescriptorSetLayout(d, depth_layout_, nullptr);
+  if (scale_pipeline_) f.vkDestroyPipeline(d, scale_pipeline_, nullptr);
+  if (scale_pipeline_layout_) f.vkDestroyPipelineLayout(d, scale_pipeline_layout_, nullptr);
+  if (scale_layout_) f.vkDestroyDescriptorSetLayout(d, scale_layout_, nullptr);
   if (gamma_layout_) f.vkDestroyDescriptorSetLayout(d, gamma_layout_, nullptr);
   for (GammaFrame& g : gamma_frames_) {
     DestroyBuffer(device_, g.lut);
@@ -3866,7 +3869,7 @@ bool VulkanRenderer::ResolveDepth(Surface& surface, bool float24, int32_t x0, in
 bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint32_t width, uint32_t height,
                                   uint32_t sample_x, uint32_t sample_y, uint32_t dest_base, uint32_t dest_pitch,
                                   uint32_t dest_endian, VkFormat format, int32_t dest_dx, int32_t dest_dy,
-                                  bool fill_half_pixel) {
+                                  bool fill_half_pixel, int32_t bias) {
   const Functions& f = device_.fn();
   // The destination's texels: the source's coordinates, moved by dest_dx/dest_dy within a containing resolve.
   // Within the source surface (its pixels: samples x scale a guest pixel).
@@ -3892,10 +3895,20 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
     r.image = Image{};
     r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
   }
+  // Half-float images can take an exponent bias in place (ScaleOnGpu: a storage image).
+  const VkImageUsageFlags storage = format == VK_FORMAT_R16G16B16A16_SFLOAT ? VK_IMAGE_USAGE_STORAGE_BIT : 0;
   if (!EnsureResolveImage(r, format, pitch * scale_, rows * scale_,
-                          VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)) {
+                          VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                              storage)) {
     resolved_.erase(dest_base);
     return Fail("resolve image");
+  }
+  // An exponent bias takes a set from the batch's depth pool: a full pool is reset by a flush, before this resolve
+  // records anything (a flush in the middle left the rest recorded into a command buffer already submitted: Mirror's
+  // Edge's renderer hung a few frames in, its HDR resolves no longer each flushing on the CPU path).
+  if (bias) {
+    if (!ScalePass()) return false;
+    if (depth_sets_ >= kDepthSets) Flush();
   }
   // After the draws in the batch: the surface's samples over the rectangle into the destination's texels, one sample
   // copied as it is, or the samples averaged (a linear blit to half the size averages each 2x2 or 1x2 block).
@@ -3952,6 +3965,9 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
       column.extent = {1, height * uint32_t(s), 1};
       f.vkCmdCopyImage(cb, r.image.image, VK_IMAGE_LAYOUT_GENERAL, r.image.image, VK_IMAGE_LAYOUT_GENERAL, 1, &column);
     }
+  }
+  if (bias && !ScaleOnGpu(cb, r.image, r.layout, dx0 * s, dy0 * s, width * uint32_t(s), height * uint32_t(s), bias)) {
+    return false;
   }
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   // The rectangle to write back: this one, with what earlier ones left unwritten (another player's half).
@@ -4103,7 +4119,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   // also read back into guest memory for the CPU. Any other is read back (the batch runs first).
   const VkFormat host_format = surface->image.format;
   VkFormat gpu_format = VK_FORMAT_UNDEFINED;
-  if (!is_depth && !dest_bias && (!msaa || sample_count == sample_x * sample_y)) {
+  if (!is_depth && (!msaa || sample_count == sample_x * sample_y)) {
     if (dest_format == 6 && host_format == VK_FORMAT_R8G8B8A8_UNORM) {
       gpu_format = dest_swap ? VK_FORMAT_B8G8R8A8_UNORM : VK_FORMAT_R8G8B8A8_UNORM;
     } else if (!dest_swap && dest_format == 32 && host_format == VK_FORMAT_R16G16B16A16_SFLOAT) {
@@ -4120,6 +4136,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       // in the image's component order as the 8-bit path does.
       gpu_format = dest_swap ? VK_FORMAT_A2R10G10B10_UNORM_PACK32 : VK_FORMAT_A2B10G10R10_UNORM_PACK32;
     }
+    // An exponent bias on the GPU for half floats only (each component times 2^bias, ScaleOnGpu); any other format
+    // with a bias goes through the CPU path. Mirror's Edge resolves its HDR scene (k_2_10_10_10_FLOAT targets to
+    // k_16_16_16_16_FLOAT, bias -3) every frame: read back on the CPU it ran at 5 frames a second.
+    if (dest_bias && gpu_format != VK_FORMAT_R16G16B16A16_SFLOAT) gpu_format = VK_FORMAT_UNDEFINED;
   }
   // A depth resolve: one sample a pixel, the depth value for the depth texture formats, on the GPU too.
   const bool depth_on_gpu = is_depth && (dest_format == 6 || dest_format == 22 || dest_format == 23 || dest_format == 36);
@@ -4153,9 +4173,12 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       }
       const uint32_t held_rows = c.image.height / c.scale;
       const uint32_t delta = dest_base - it->first;
-      if (uint64_t(delta) >= (uint64_t(aligned_pitch) * held_rows << texel_log2)) continue;
+      // Within the image, or its first row right below it: the next band of a screen resolved in bands (Mirror's
+      // Edge resolves rows 0-511, then 512-719 at the base plus 512 rows; apart, a texture of the whole screen found
+      // neither image whole and read guest memory, the bands written back first every frame).
+      if (uint64_t(delta) > (uint64_t(aligned_pitch) * held_rows << texel_log2)) continue;
       int32_t dx = -1, dy = -1;
-      for (uint32_t ty = 0; ty < held_rows && dx < 0; ty += 32) {
+      for (uint32_t ty = 0; ty <= held_rows && dx < 0; ty += 32) {
         for (uint32_t tx = 0; tx < aligned_pitch; tx += 32) {
           if (uint32_t(TiledOffset2D(int32_t(tx), int32_t(ty), dest_pitch, texel_log2)) == delta) {
             dx = int32_t(tx), dy = int32_t(ty);
@@ -4186,7 +4209,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       break;
     }
     if (!ResolveOnGpu(*surface, x0, y0, width, height, sample_x, sample_y, dest_base, dest_pitch, dest_endian,
-                      gpu_format, dest_dx, dest_dy, (regs[kPaSuVtxCntl] & 1) == 0)) {
+                      gpu_format, dest_dx, dest_dy, (regs[kPaSuVtxCntl] & 1) == 0, dest_bias)) {
       return;
     }
   }
@@ -5031,6 +5054,78 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
 
 std::vector<uint32_t> BuildGammaShader();  // gamma_shader.cpp
 std::vector<uint32_t> BuildDepthCopyShader();  // depth_shader.cpp
+std::vector<uint32_t> BuildScaleShader();      // scale_shader.cpp
+
+bool VulkanRenderer::ScalePass() {
+  if (scale_pipeline_) return true;
+  if (!DepthPass()) return false;  // its per-batch pools hold the sets
+  const Functions& f = device_.fn();
+  const VkDevice d = device_.device();
+  const VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+  VkDescriptorSetLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+  layout_info.bindingCount = 1;
+  layout_info.pBindings = &binding;
+  if (f.vkCreateDescriptorSetLayout(d, &layout_info, nullptr, &scale_layout_) != VK_SUCCESS) return Fail("scale set layout");
+  const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 20};
+  VkPipelineLayoutCreateInfo pipeline_layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  pipeline_layout_info.setLayoutCount = 1;
+  pipeline_layout_info.pSetLayouts = &scale_layout_;
+  pipeline_layout_info.pushConstantRangeCount = 1;
+  pipeline_layout_info.pPushConstantRanges = &push;
+  if (f.vkCreatePipelineLayout(d, &pipeline_layout_info, nullptr, &scale_pipeline_layout_) != VK_SUCCESS) {
+    return Fail("scale pipeline layout");
+  }
+  const std::vector<uint32_t> code = BuildScaleShader();
+  VkShaderModuleCreateInfo module_info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+  module_info.codeSize = code.size() * 4;
+  module_info.pCode = code.data();
+  VkShaderModule module = VK_NULL_HANDLE;
+  if (f.vkCreateShaderModule(d, &module_info, nullptr, &module) != VK_SUCCESS) return Fail("scale shader");
+  VkComputePipelineCreateInfo pipeline_info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+  pipeline_info.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+  pipeline_info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+  pipeline_info.stage.module = module;
+  pipeline_info.stage.pName = "main";
+  pipeline_info.layout = scale_pipeline_layout_;
+  const VkResult created = f.vkCreateComputePipelines(d, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &scale_pipeline_);
+  f.vkDestroyShaderModule(d, module, nullptr);
+  if (created != VK_SUCCESS) return Fail("scale pipeline");
+  return true;
+}
+
+bool VulkanRenderer::ScaleOnGpu(VkCommandBuffer cb, Image& image, VkImageLayout& layout, int32_t x, int32_t y,
+                                uint32_t width, uint32_t height, int32_t bias) {
+  if (!ScalePass()) return false;
+  const Functions& f = device_.fn();
+  if (depth_sets_ >= kDepthSets) return Fail("scale set: the pool is full");  // the caller flushes before recording
+  VkDescriptorSet set = VK_NULL_HANDLE;
+  VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+  alloc.descriptorPool = batch().depth_pool;
+  alloc.descriptorSetCount = 1;
+  alloc.pSetLayouts = &scale_layout_;
+  if (f.vkAllocateDescriptorSets(device_.device(), &alloc, &set) != VK_SUCCESS) return Fail("scale set");
+  ++depth_sets_;
+  const VkDescriptorImageInfo target{VK_NULL_HANDLE, image.view, VK_IMAGE_LAYOUT_GENERAL};
+  VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+  write.dstSet = set;
+  write.dstBinding = 0;
+  write.descriptorCount = 1;
+  write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+  write.pImageInfo = &target;
+  f.vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
+  Transition(cb, image, layout, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
+  f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, scale_pipeline_);
+  f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, scale_pipeline_layout_, 0, 1, &set, 0, nullptr);
+  struct {
+    int32_t x, y;
+    uint32_t width, height;
+    float scale;
+  } region{x, y, width, height, std::ldexp(1.0f, bias)};
+  f.vkCmdPushConstants(cb, scale_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(region), &region);
+  f.vkCmdDispatch(cb, (width + 7) / 8, (height + 7) / 8, 1);
+  ++stats_.resolves_biased_on_gpu;
+  return true;
+}
 
 bool VulkanRenderer::DepthPass() {
   if (depth_pipeline_) return true;

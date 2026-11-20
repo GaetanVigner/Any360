@@ -117,7 +117,7 @@ void Scheduler::Shutdown() {
     delete t;
   }
   process_ = 0;
-  next_thread_id_ = 1;
+  next_thread_id_ = first_thread_id_;
   next_cpu_ = 0;
   ResetDpcs();           // the DPC thread runs guest code too
   Variables().Reset();   // and the clock thread writes guest memory

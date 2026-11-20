@@ -88,6 +88,7 @@ struct RendererStats {
   uint32_t texture_direct_views = 0;  // textures that sampled a resolve's image in place (no copy)
   uint32_t resolves = 0;
   uint32_t resolves_on_gpu = 0, resolves_read_back = 0, resolves_depth = 0;  // kinds of resolves among them
+  uint32_t resolves_biased_on_gpu = 0;  // GPU resolves with an exponent bias (ScaleOnGpu)
   uint32_t resolves_superseded = 0;  // resolves kept on the GPU the CPU wrote over before they were written back
   uint32_t resolve_write_backs = 0;  // GPU resolves written into guest memory later (read by a texture otherwise)
   // Their pixels written into guest memory (WriteBackTiled), and with ANY360_WRITE_BACK_BENCH the first version on
@@ -680,6 +681,14 @@ class VulkanRenderer : public gfx::Renderer {
   VkDescriptorSetLayout depth_layout_ = VK_NULL_HANDLE;
   VkPipelineLayout depth_pipeline_layout_ = VK_NULL_HANDLE;
   VkPipeline depth_pipeline_ = VK_NULL_HANDLE;
+  // A resolve's exponent bias on the GPU: an RGBA16F resolve image's texels over a rectangle times 2^bias, in place
+  // (scale_shader.cpp; its sets from the batch's depth pool).
+  bool ScalePass();
+  bool ScaleOnGpu(VkCommandBuffer cb, Image& image, VkImageLayout& layout, int32_t x, int32_t y, uint32_t width,
+                  uint32_t height, int32_t bias);
+  VkDescriptorSetLayout scale_layout_ = VK_NULL_HANDLE;
+  VkPipelineLayout scale_pipeline_layout_ = VK_NULL_HANDLE;
+  VkPipeline scale_pipeline_ = VK_NULL_HANDLE;
   static constexpr uint32_t kDepthSets = 64;
   uint32_t depth_sets_ = 0;
   std::map<uint32_t, Resolved> resolved_;
@@ -704,7 +713,7 @@ class VulkanRenderer : public gfx::Renderer {
   // resolve with the red/blue swap: the blit places each component, the texture copies the bytes as they are).
   bool ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint32_t width, uint32_t height, uint32_t sample_x,
                     uint32_t sample_y, uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian, VkFormat format,
-                    int32_t dest_dx = 0, int32_t dest_dy = 0, bool fill_half_pixel = false);
+                    int32_t dest_dx = 0, int32_t dest_dy = 0, bool fill_half_pixel = false, int32_t bias = 0);
   std::set<uint32_t> front_buffers_;  // bases swapped as front buffers: resolves there are always read back
   void ReadsGuestMemory(uint32_t address, uint32_t bytes);
   VkQueryPool timestamps_ = VK_NULL_HANDLE;  // four a batch: start, end, its upload's start, end

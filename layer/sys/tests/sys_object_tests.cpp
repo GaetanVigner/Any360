@@ -497,6 +497,21 @@ void SchedulerTests() {
   CHECK(Threads().NtResumeThread(gm, hs, out + 8) == 0 && gm.Load32(out + 8) == 1);
   CHECK(Objects().WaitForHandle(gm, hs, kMainThread, &second) == 0 && gm.Load32(ev + 4) == 1);
   CHECK(Threads().NtResumeThread(gm, kHandleBase + 0x700, out + 8) == kStatusInvalidHandle);
+  // Thread ids from a first id the host sets, apart from its runtime's own threads (numbered from 1): two threads
+  // with one id took each other for themselves (Mirror's Edge's render thread had its main thread's id).
+  {
+    Threads().SetFirstThreadId(0x1000);
+    g_code[0x1900] = [&](uint32_t, uint64_t, uint64_t) { return 0; };
+    CHECK(Threads().CreateThread(gm, out, 0, out + 4, 0, 0x1900, 0, 0) == 0);
+    const uint32_t first = gm.Load32(out + 4), h1 = gm.Load32(out);
+    CHECK(Threads().CreateThread(gm, out, 0, out + 4, 0, 0x1900, 0, 0) == 0);
+    const uint32_t second_id = gm.Load32(out + 4), h2 = gm.Load32(out);
+    CHECK(first == 0x1000 && second_id == 0x1001 && gm.Load32(Objects().Lookup(h1) + 0x14C) == 0x1000);
+    CHECK(Objects().WaitForHandle(gm, h1, kMainThread, &second) == 0 && Objects().WaitForHandle(gm, h2, kMainThread, &second) == 0);
+    CHECK(Objects().Close(h1) == 0 && Objects().Close(h2) == 0);
+    Threads().SetFirstThreadId(1);  // as the other tests expect
+    std::printf("sys_object_tests: thread ids from the host's first id: %X, %X\n", first, second_id);
+  }
   // The XAPI start-up path receives (start, context); ExTerminateThread inside the thread records its code; the
   // handle-is-object flag hands the KTHREAD back; a delay sleeps for its interval.
   g_code[0x2000] = [&](uint32_t pcr, uint64_t start, uint64_t context) {

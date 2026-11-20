@@ -662,6 +662,131 @@ int main(int argc, char** argv) {
       std::printf("gfx_render_tests: k_16_16_16_16 resolve, bias -4: %u wrong words\n", wrong);
       CHECK(wrong == 0);
     }
+    // A k_16_16_16_16_FLOAT target resolved to a k_16_16_16_16_FLOAT texture with an exponent bias of -3, on the GPU
+    // (ScaleOnGpu): every component times 1/8, as the CPU path writes it (half floats, 8-in-16). Small, it is read
+    // back into guest memory once the batch has run.
+    {
+      const uint32_t rect = kVertices + 0x800, resolved = 0xE0000;
+      std::memset(g_memory + resolved, 0xCD, kSize * kSize * 8);
+      const vk::SurfaceKey key{1536, kSize, 7, 0};
+      const float zero[4] = {};
+      CHECK(renderer.ClearColor(key, zero));
+      const uint32_t biased_before = renderer.stats().resolves_biased_on_gpu;
+      scenario("k_16_16_16_16_FLOAT resolve with bias", nullptr, [&] {
+        s.Reg(0x2001, 7u << 16 | 1536);
+        s.Vertices(0);
+        s.Put({Type3(pm4::SET_CONSTANT, 5), 0u << 16 | 1024, Bits(8.0f), Bits(-2.0f), Bits(0.5f), Bits(3.0f)});
+        s.DrawAuto(kTriangleStrip, 4);
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});  // vf0: the copy rectangle
+        // Control (colour 0), base, pitch | height, info: endian 8-in-16, k_16_16_16_16_FLOAT, exponent bias -3.
+        s.Put({Type0(0x2318, 4), 0u, resolved, kSize | kSize << 16, 1u | 32u << 7 | 0x3Du << 16});
+        s.Reg(0x2208, 6);
+        s.DrawAuto(8, 3);
+        s.Reg(0x2208, 4);
+      });
+      renderer.Flush();
+      renderer.WaitIdle();  // its write into guest memory lands once the batch has run
+      const uint16_t expect[4] = {0x3C00, 0xB400, 0x2C00, 0x3600};  // 1, -0.25, 0.0625, 0.375
+      uint32_t wrong = 0;
+      for (uint32_t y = 0; y < kSize; y += 7) {
+        for (uint32_t x = 0; x < kSize; x += 7) {
+          const uint8_t* texel = g_memory + resolved + vk::TiledOffset2D(int32_t(x), int32_t(y), kSize, 3);
+          for (uint32_t c = 0; c < 4; ++c) wrong += uint16_t(texel[2 * c] << 8 | texel[2 * c + 1]) != expect[c];
+        }
+      }
+      const uint32_t on_gpu = renderer.stats().resolves_biased_on_gpu - biased_before;
+      std::printf("gfx_render_tests: k_16_16_16_16_FLOAT resolve, bias -3, 64x64 (%u on the GPU): %u wrong halves\n",
+                  on_gpu, wrong);
+      CHECK(wrong == 0 && on_gpu == 1);
+    }
+    // The same on the GPU (ScaleOnGpu): a 256x256 k_16_16_16_16_FLOAT surface (512 KB: not read back), cleared to the
+    // values, resolved 70 times in one batch, more than the batch's pool has sets (kDepthSets, 64): the batch
+    // flushes before the resolve that finds the pool full, never in the middle of it. Written back for the check.
+    {
+      constexpr uint32_t kBig = 256;
+      const uint32_t rect = kVertices + 0x800, resolved = 0x100000;
+      const float rv[3][2] = {{0, 0}, {float(kBig), 0}, {float(kBig), float(kBig)}};
+      for (uint32_t i = 0; i < 3; ++i) {
+        SetBig(rect + 8 * i, Bits(rv[i][0]));
+        SetBig(rect + 8 * i + 4, Bits(rv[i][1]));
+      }
+      std::memset(g_memory + resolved, 0xCD, kBig * kBig * 8);
+      const vk::SurfaceKey key{0, kBig, 7, 0};
+      const float values[4] = {8.0f, -2.0f, 0.5f, 3.0f};
+      CHECK(renderer.ClearColor(key, values));
+      const uint32_t biased_before = renderer.stats().resolves_biased_on_gpu;
+      s.Put({Type0(0x2000, 2), kBig, 7u << 16 | 0});  // RB_SURFACE_INFO pitch 256, RB_COLOR_INFO k_16_16_16_16_FLOAT
+      s.Put({Type0(0x2080, 3), 0, 0, kBig << 16 | kBig});  // window scissor over the surface
+      s.Put({Type0(0x200E, 2), 0, kBig << 16 | kBig});     // screen scissor
+      s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});  // vf0: the copy rectangle
+      for (uint32_t i = 0; i < 70; ++i) {
+        s.Put({Type0(0x2318, 4), 0u, resolved, kBig | kBig << 16, 1u | 32u << 7 | 0x3Du << 16});
+        s.Reg(0x2208, 6);
+        s.DrawAuto(8, 3);
+        s.Reg(0x2208, 4);
+      }
+      s.Run();
+      CHECK(renderer.WriteBackForTools(resolved));
+      renderer.Flush();
+      renderer.WaitIdle();
+      const uint16_t expect[4] = {0x3C00, 0xB400, 0x2C00, 0x3600};  // 1, -0.25, 0.0625, 0.375
+      uint32_t wrong = 0;
+      for (uint32_t y = 0; y < kBig; y += 13) {
+        for (uint32_t x = 0; x < kBig; x += 13) {
+          const uint8_t* texel = g_memory + resolved + vk::TiledOffset2D(int32_t(x), int32_t(y), kBig, 3);
+          for (uint32_t c = 0; c < 4; ++c) wrong += uint16_t(texel[2 * c] << 8 | texel[2 * c + 1]) != expect[c];
+        }
+      }
+      const uint32_t on_gpu = renderer.stats().resolves_biased_on_gpu - biased_before;
+      std::printf("gfx_render_tests: k_16_16_16_16_FLOAT resolve, bias -3, 256x256 on the GPU (%u in one batch): %u wrong halves\n",
+                  on_gpu, wrong);
+      CHECK(wrong == 0 && on_gpu == 70);
+    }
+    // A screen resolved in bands: a band right below the image an earlier resolve keeps on the GPU (its base the
+    // earlier base plus its rows' tiled offset) joins that image, so a texture of the whole screen finds one image of
+    // all of it (Mirror's Edge: rows 0-511, then 512-719). Rows 0-287 of a 256-wide k_8_8_8_8 surface resolved to D,
+    // then again to D plus 288 rows (288 KB each: not read back); written back from D, guest memory holds both bands
+    // (the second kept apart, D's image held only the first and rows 288-575 stayed as they were). A format and an
+    // address no earlier resolve of these tests has: an image of theirs over D would take the band instead.
+    {
+      constexpr uint32_t kWide = 256, kBand = 288;
+      const uint32_t rect = kVertices + 0x800, band = 0xC0000, band_bytes = kWide * kBand * 4;
+      const float rv[3][2] = {{0, 0}, {float(kWide), 0}, {float(kWide), float(kBand)}};
+      for (uint32_t i = 0; i < 3; ++i) {
+        SetBig(rect + 8 * i, Bits(rv[i][0]));
+        SetBig(rect + 8 * i + 4, Bits(rv[i][1]));
+      }
+      std::memset(g_memory + band, 0xCD, 2 * band_bytes);
+      const float values[4] = {0.0f, 1.0f, 0.0f, 1.0f};
+      CHECK(renderer.ClearColor({0, kWide, 0, 0}, values));
+      s.Put({Type0(0x2000, 2), kWide, 0u << 16 | 0});  // RB_SURFACE_INFO pitch 256, RB_COLOR_INFO k_8_8_8_8
+      s.Put({Type0(0x2080, 3), 0, 0, 512u << 16 | kWide});
+      s.Put({Type0(0x200E, 2), 0, 512u << 16 | kWide});
+      s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});  // vf0: the copy rectangle
+      for (uint32_t base : {band, band + band_bytes}) {
+        s.Put({Type0(0x2318, 4), 0u, base, kWide | (2 * kBand) << 16, 6u << 7});  // k_8_8_8_8, no swap
+        s.Reg(0x2208, 6);
+        s.DrawAuto(8, 3);
+        s.Reg(0x2208, 4);
+      }
+      s.Run();
+      CHECK(renderer.WriteBackForTools(band));
+      renderer.Flush();
+      renderer.WaitIdle();
+      uint32_t wrong = 0;
+      for (uint32_t y = 0; y < 2 * kBand; y += 7) {
+        for (uint32_t x = 0; x < kWide; x += 13) {
+          uint32_t texel;
+          std::memcpy(&texel, g_memory + band + vk::TiledOffset2D(int32_t(x), int32_t(y), kWide, 2), 4);
+          wrong += texel != Rgba(0, 255, 0, 255);
+        }
+      }
+      std::printf("gfx_render_tests: screen bands: the band below joins the image above, %u texels wrong of both\n", wrong);
+      CHECK(wrong == 0);
+      SetBig(rect + 8 * 1, Bits(float(kSize)));  // the copy rectangle as the scenarios after expect it
+      SetBig(rect + 8 * 2, Bits(float(kSize)));
+      SetBig(rect + 8 * 2 + 4, Bits(float(kSize)));
+    }
     // Drawn into a k_8_8_8_8_GAMMA target, resolved with the target's format set to k_8_8_8_8: the same EDRAM
     // bytes. Call of Duty: Black Ops resolves its scene this way; read from an empty surface before, it was black.
     {
@@ -1475,10 +1600,12 @@ int main(int argc, char** argv) {
               stats.translations, stats.pipelines, stats.render_targets);
   // Render targets: colour 0, depth, colour 1, the 16_16_16_16_FLOAT target, the float24 depth surface and the nine
   // render target formats, of which the two AS_ ones share their base format's surface (12, not 14), as k_8_8_8_8
-  // shares k_8_8_8_8_GAMMA's; and the three fresh targets read back as zeros (15).
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 15 && stats.texture_uploads == 6 && stats.resolves == 10);
-  // (The resolved texture is read from the resolve on the GPU, not uploaded: 6 uploads, not 7. Ten resolves: the three
-  // of the scenarios before, the chain's six and the 40-row one.)
+  // shares k_8_8_8_8_GAMMA's; the three fresh targets read back as zeros (15); the 256-wide half-float one (16);
+  // and the 256-wide k_8_8_8_8 one of the screen bands (17).
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 17 && stats.texture_uploads == 6 && stats.resolves == 83);
+  // (The resolved texture is read from the resolve on the GPU, not uploaded: 6 uploads, not 7. 83 resolves: the
+  // four of the scenarios before (one with an exponent bias on the GPU), the 70 with one, the two screen bands, the
+  // chain's six and the 40-row one.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.
   // The float24 conversions round-trip first.

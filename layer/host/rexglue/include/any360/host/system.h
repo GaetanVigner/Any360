@@ -63,6 +63,8 @@ struct SystemOptions {
   std::vector<std::string> runtime_calls;
   // Where any360::sys's handles start: apart from the runtime's (0xF8000000 up), so a handle names its owner.
   uint32_t handle_base = 0xF8100000;
+  // The id of any360::sys's first thread: apart from the runtime's own, which it numbers from 1 (Scheduler::SetFirstThreadId).
+  uint32_t first_thread_id = 0x1000;
   // The devices the runtime mounted (the title's files, its cache partition...), mounted the same on any360::sys.
   std::vector<SystemMount> mounts;
   // The runtime's user data folder: when set, any360::sys's XAM keeps the title's content packages (saves) and binary
