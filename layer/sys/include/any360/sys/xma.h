@@ -50,6 +50,10 @@ class XmaFrameDecoder {
   static void Convert(const float* const* planes, bool stereo, uint8_t* out);
   static void ConvertReference(const float* const* planes, bool stereo, uint8_t* out);
 
+  // The SIMD extensions FFmpeg's DSP code uses on this processor (av_get_cpu_flags: 0 when FFmpeg was built without
+  // its x86 assembly, or with ANY360_XMA_NO_SIMD=1, which forces its C versions for a same-build comparison).
+  static int SimdFlags();
+
  private:
   AVPacket* packet_ = nullptr;
   const AVCodec* codec_ = nullptr;

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <limits>
@@ -34,6 +35,11 @@ void SetWord(Guest g, uint32_t context, uint32_t index, uint32_t value) { g.Stor
 int main() {
   const Guest g{any360::test::GuestMemory::Get().base()};
   CHECK(XmaDecoder::Available());
+#if ANY360_FFMPEG_X86ASM
+  // FFmpeg built with its x86 assembly: its DSP code sees the processor's SIMD (unless switched off on purpose).
+  if (!std::getenv("ANY360_XMA_NO_SIMD")) CHECK(XmaFrameDecoder::SimdFlags() != 0);
+#endif
+  std::printf("xma_tests: FFmpeg SIMD flags 0x%X\n", unsigned(XmaFrameDecoder::SimdFlags()));
 
   XmaDecoder decoder;
   const uint32_t context = 0xA0010000, output = 0x00020000, input0 = 0x00030000, input1 = 0x00040000;

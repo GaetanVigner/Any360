@@ -20,6 +20,7 @@
 
 extern "C" {
 #include "libavcodec/avcodec.h"
+#include "libavutil/cpu.h"
 #include "libavutil/error.h"
 }
 
@@ -228,8 +229,9 @@ class Capture {
   uint64_t frames_ = 0, limit_ = 100000;
 };
 
-// ANY360_XMA_STATS=<file>: where the decoders' time goes, written at exit (kicks, kicks that decoded nothing,
-// frames decoded, nanoseconds in the kicks and in the frame decoder). ANY360_XMA_VERIFY=1 also converts each frame
+// ANY360_XMA_STATS=<file>: where the decoders' time goes, a line appended every 20000 kicks and at exit (kicks, kicks
+// that decoded nothing, frames decoded, nanoseconds in the kicks and in the frame decoder, so far: launches compare at
+// equal kick counts). ANY360_XMA_VERIFY=1 also converts each frame
 // with the scalar statement and counts the bytes that differ; ANY360_XMA_SCALAR=1 converts with the scalar statement
 // only (the conversion's before, in the same build). Diagnostics: off, they cost a load and a branch.
 struct Stats {
@@ -251,18 +253,20 @@ struct Stats {
     scalar = s && *s == '1';
   }
   ~Stats() { Write(); }
-  // Rewritten every 20000 kicks too (a title stopped from outside never runs its destructors).
+  // Appended every 20000 kicks too (a title stopped from outside never runs its destructors).
   void Write() {
     if (!on) return;
     std::lock_guard guard(write_mutex);
-    if (std::FILE* f = std::fopen(path.c_str(), "w")) {
+    if (std::FILE* f = std::fopen(path.c_str(), "a")) {
       const double n = double(std::max<uint64_t>(1, frames.load()));
       std::fprintf(f, "kicks %llu, decoding nothing %llu; frames %llu; ns in kicks %llu (%.0f a frame), in the frame "
-                      "decoder %llu (%.0f a frame); conversion %s; verified %llu frames, %llu bytes different\n",
+                      "decoder %llu (%.0f a frame); conversion %s; verified %llu frames, %llu bytes different; FFmpeg "
+                      "SIMD flags 0x%X\n",
                    (unsigned long long)kicks.load(), (unsigned long long)empty_kicks.load(),
                    (unsigned long long)frames.load(), (unsigned long long)kick_ns.load(), double(kick_ns.load()) / n,
                    (unsigned long long)decode_ns.load(), double(decode_ns.load()) / n, scalar ? "scalar" : "vector",
-                   (unsigned long long)verified.load(), (unsigned long long)mismatches.load());
+                   (unsigned long long)verified.load(), (unsigned long long)mismatches.load(),
+                   unsigned(XmaFrameDecoder::SimdFlags()));
       std::fclose(f);
     }
   }
@@ -304,7 +308,23 @@ void XmaFrameDecoder::Reset() {
   }
 }
 
+// ANY360_XMA_NO_SIMD=1: FFmpeg's C versions, whatever the processor (before any codec opens; diagnostics).
+static void ApplySimdSwitch() {
+  static const bool applied = [] {
+    const char* off = std::getenv("ANY360_XMA_NO_SIMD");
+    if (off && *off == '1') av_force_cpu_flags(0);
+    return true;
+  }();
+  (void)applied;
+}
+
+int XmaFrameDecoder::SimdFlags() {
+  ApplySimdSwitch();
+  return av_get_cpu_flags();
+}
+
 int XmaFrameDecoder::Prepare(uint32_t rate_id, bool stereo) {
+  ApplySimdSwitch();
   const int rate = kSampleRates[std::min<uint32_t>(rate_id, 3)];
   const int channels = stereo ? 2 : 1;
   if (context_ && context_->sample_rate == rate && context_->channels == channels) return 0;

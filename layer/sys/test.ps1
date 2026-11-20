@@ -6,17 +6,20 @@
   When the Vulkan validation layer is installed (the Vulkan SDK), the GPU tests run once more under it, on each GPU
   of -Gpus (a substring of the device name; '' is the one the tests choose), and any validation message fails the
   run: what one driver lets through another refuses (AMD's refused a descriptor pool NVIDIA's did not).
+  The XMA decoder's FFmpeg (layer/sys/third_party/ffmpeg) gets its x86 assembly with NASM: on the PATH, or -Nasm.
 .EXAMPLE
   .\layer\sys\test.ps1
   .\layer\sys\test.ps1 -ReferenceSdk F:\...\tools\rexglue\win-amd64 -Trials 200
   .\layer\sys\test.ps1 -Gpus NVIDIA,Radeon
+  .\layer\sys\test.ps1 -Nasm F:\...\nasm.exe
 #>
 param(
     [string]$ReferenceSdk,
     [int]$Trials = 64,
     [string]$BuildDir,
     [string[]]$Gpus = @(''),
-    [switch]$NoValidation
+    [switch]$NoValidation,
+    [string]$Nasm
 )
 $ErrorActionPreference = 'Stop'
 $Gpus = @($Gpus | ForEach-Object { $_ -split ',' })  # -File passes NVIDIA,Radeon as one string
@@ -47,7 +50,8 @@ try {
     $env:PATH = "$llvm;$(Split-Path $cmake);$(Split-Path $ninja);$env:PATH"
     & $cmake -S (Join-Path $Root 'layer\sys') -B $BuildDir -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo `
         "-DCMAKE_CXX_COMPILER:FILEPATH=$(Join-Path $llvm 'clang++.exe')" "-DCMAKE_LINKER:FILEPATH=$(Join-Path $llvm 'lld-link.exe')" `
-        "-DCMAKE_MAKE_PROGRAM:FILEPATH=$ninja" "-DANY360_REFERENCE_SDK=$ReferenceSdk" | Out-Host
+        "-DCMAKE_MAKE_PROGRAM:FILEPATH=$ninja" "-DANY360_REFERENCE_SDK=$ReferenceSdk" `
+        $(if ($Nasm) { "-DANY360_NASM:FILEPATH=$Nasm" }) | Out-Host
     if ($LASTEXITCODE) { throw "CMake configure failed ($LASTEXITCODE)" }
     & $cmake --build $BuildDir | Out-Host
     if ($LASTEXITCODE) { throw "Build failed ($LASTEXITCODE)" }
@@ -139,6 +143,11 @@ try {
     if ($LASTEXITCODE) { throw "host_system_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'host/rexglue/host_diagnostics_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "host_diagnostics_tests failed ($LASTEXITCODE)" }
+    $xma = Join-Path $BuildDir 'xma_tests.exe'  # built where FFmpeg is (Any360's own on x86-64)
+    if (Test-Path $xma) {
+        & $xma | Out-Host
+        if ($LASTEXITCODE) { throw "xma_tests failed ($LASTEXITCODE)" }
+    }
 } finally {
     foreach ($name in @([Environment]::GetEnvironmentVariables().Keys)) {
         if (-not $saved.Contains($name)) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }

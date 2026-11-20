@@ -2,7 +2,8 @@
 // conversion) on frames captured from a title (ANY360_XMA_CAPTURE, see xma.cpp; a capture holds a title's audio and
 // is never committed): nanoseconds a frame, the host heap's allocations a frame (the C runtime's malloc family as well
 // as operator new: FFmpeg allocates with av_malloc), and a hash of every sample decoded, so that a change to the
-// decoder is checked to give the same output bit for bit.
+// decoder is checked to give the same output bit for bit. The C runtime's allocations are counted on Windows only
+// (through the program's import table).
 // Run: xma_bench <capture> [repeats]
 #include <algorithm>
 #include <atomic>
@@ -18,16 +19,20 @@
 #include "any360/sys/alloc_meter.h"
 #include "any360/sys/xma.h"
 
+#ifdef _WIN32
 // After Any360's headers: its macros (min, max, Yield) would reach them.
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#endif
 
 namespace {
 
 // The C runtime's heap calls counted, by patching this program's own import table (FFmpeg is linked in statically,
-// so its malloc family goes through it).
+// so its malloc family goes through it). Windows only.
 std::atomic<uint64_t> g_crt_allocations{0}, g_crt_bytes{0};
+#ifdef _WIN32
+constexpr bool kCrtCounted = true;
 using MallocFn = void* (*)(size_t);
 using CallocFn = void* (*)(size_t, size_t);
 using ReallocFn = void* (*)(void*, size_t);
@@ -86,6 +91,10 @@ void PatchImports() {
     }
   }
 }
+#else
+constexpr bool kCrtCounted = false;
+void PatchImports() {}
+#endif
 
 struct Record {
   uint32_t context, rate_id, frame_bits, padding;
@@ -130,8 +139,9 @@ int main(int argc, char** argv) {
     if (!r.frame_bits) ++resets;
     else ++frames, stereo += r.stereo;
   }
-  std::printf("capture: %llu frames (%llu stereo), %llu resets, %zu contexts\n", (unsigned long long)frames,
-              (unsigned long long)stereo, (unsigned long long)resets, contexts.size());
+  std::printf("capture: %llu frames (%llu stereo), %llu resets, %zu contexts; FFmpeg SIMD flags 0x%X\n",
+              (unsigned long long)frames, (unsigned long long)stereo, (unsigned long long)resets, contexts.size(),
+              unsigned(any360::sys::XmaFrameDecoder::SimdFlags()));
   if (!frames) return 1;
   std::vector<uint8_t> frame(1 + 4096 + 8), out(2 * 1024 * 2);
   for (int rep = 0; rep < repeats; ++rep) {
@@ -160,10 +170,14 @@ int main(int argc, char** argv) {
     const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - t0).count();
     const any360::sys::AllocCounts new_spent = any360::sys::ThreadAllocations() - new_before;
     const uint64_t crt = g_crt_allocations.load() - crt_before, crt_bytes = g_crt_bytes.load() - crt_bytes_before;
-    std::printf("decode: %.0f ns a frame (%llu decoded, %llu dropped); host heap a frame: %.2f C runtime allocations "
-                "(%.0f B), %.2f operator new (%.0f B); output hash %016llX\n",
-                ns / double(frames), (unsigned long long)decoded, (unsigned long long)dropped,
-                double(crt) / double(frames), double(crt_bytes) / double(frames),
+    char crt_text[64] = "not counted here";
+    if (kCrtCounted) {
+      std::snprintf(crt_text, sizeof(crt_text), "%.2f (%.0f B)", double(crt) / double(frames),
+                    double(crt_bytes) / double(frames));
+    }
+    std::printf("decode: %.0f ns a frame (%llu decoded, %llu dropped); host heap a frame: C runtime allocations %s, "
+                "%.2f operator new (%.0f B); output hash %016llX\n",
+                ns / double(frames), (unsigned long long)decoded, (unsigned long long)dropped, crt_text,
                 double(new_spent.count) / double(frames), double(new_spent.bytes) / double(frames),
                 (unsigned long long)hash);
   }

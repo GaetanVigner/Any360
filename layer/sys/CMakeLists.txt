@@ -72,14 +72,23 @@ if(ANY360_REFERENCE_SDK)
     target_include_directories(any360_sys_ppc SYSTEM PUBLIC "${ANY360_REFERENCE_SDK}/include")
     target_compile_definitions(any360_sys_ppc PUBLIC SPDLOG_COMPILED_LIB SPDLOG_FMT_EXTERNAL $<$<BOOL:${WIN32}>:NOMINMAX WIN32_LEAN_AND_MEAN>)
 
-    # The XMA decoder (an XmaBackend, src/xma.cpp): FFmpeg's xmaframes decoder from the SDK's libraries, with the
-    # headers of the FFmpeg they were built from (the SDK's thirdparty/FFmpeg; FFmpeg is LGPL, linked as the SDK ships it).
+    # The XMA decoder (an XmaBackend, src/xma.cpp): FFmpeg's xmaframes decoder (FFmpeg is LGPL), from
+    #   - an SDK built in the title's tree (REXSDK_DIR): its FFmpeg targets;
+    #   - else, on x86-64, Any360's own build of the SDK's FFmpeg (third_party/ffmpeg, NOTICE.md): with NASM found,
+    #     FFmpeg's x86 assembly on the XMA path (the SDK's libraries have none);
+    #   - else the SDK's prebuilt libraries, with the headers of the FFmpeg they were built from.
+    option(ANY360_FFMPEG_VENDORED "Build the SDK's FFmpeg here (third_party/ffmpeg) for the XMA decoder" ON)
     find_path(ANY360_FFMPEG_INCLUDE libavcodec/avcodec.h HINTS "${ANY360_REFERENCE_SDK}/include"
               DOC "Headers of the FFmpeg the reference SDK's libavcodec was built from (with the xmaframes decoder)")
     if(TARGET libavcodec AND TARGET libavutil)
         # An SDK built in the title's tree (REXSDK_DIR): its FFmpeg targets bring their headers.
         add_library(any360_sys_xma STATIC src/xma.cpp)
         target_link_libraries(any360_sys_xma PUBLIC any360_sys libavcodec libavutil)
+        target_compile_options(any360_sys_xma PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
+    elseif(ANY360_FFMPEG_VENDORED AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64)$")
+        add_subdirectory(third_party/ffmpeg)
+        add_library(any360_sys_xma STATIC src/xma.cpp)
+        target_link_libraries(any360_sys_xma PUBLIC any360_sys any360_avcodec any360_avutil)
         target_compile_options(any360_sys_xma PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
     elseif(ANY360_FFMPEG_INCLUDE)
         add_library(any360_sys_xma STATIC src/xma.cpp)
@@ -95,18 +104,31 @@ if(ANY360_REFERENCE_SDK)
             target_link_libraries(any360_sys_xma PUBLIC "${ANY360_REFERENCE_SDK}/lib/liblibavcodec.a"
                                   "${ANY360_REFERENCE_SDK}/lib/liblibavutil.a")
         endif()
-        add_executable(xma_tests tests/xma_tests.cpp)
-        target_link_libraries(xma_tests PRIVATE any360_sys_xma)
-        target_compile_options(xma_tests PRIVATE -Wall -Wextra)
-        add_test(NAME xma_tests COMMAND xma_tests)
-        if(WIN32)
-            # Timings of the frame decoder on a capture from a title (not committed: xma_bench <capture>); it counts
-            # the C runtime's allocations through the program's import table.
-            add_executable(xma_bench tests/xma_bench.cpp)
-            target_link_libraries(xma_bench PRIVATE any360_sys_xma)
-            target_compile_options(xma_bench PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
-        endif()
     endif()
+    if(TARGET any360_sys_xma)
+        add_executable(xma_tests tests/xma_tests.cpp)
+        # Built with FFmpeg's x86 assembly: the test checks that FFmpeg detects the processor's SIMD (it is live).
+        if(TARGET any360_avcodec AND ANY360_NASM)
+            target_compile_definitions(xma_tests PRIVATE ANY360_FFMPEG_X86ASM=1)
+        endif()
+        target_link_libraries(xma_tests PRIVATE any360_sys_xma)
+        target_compile_options(xma_tests PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
+        add_test(NAME xma_tests COMMAND xma_tests)
+        # Timings of the frame decoder on a capture from a title (not committed: xma_bench <capture>); on Windows it
+        # also counts the C runtime's allocations through the program's import table.
+        add_executable(xma_bench tests/xma_bench.cpp)
+        target_link_libraries(xma_bench PRIVATE any360_sys_xma)
+        target_compile_options(xma_bench PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
+    endif()
+
+    # The audio group's output (host/rexglue's audio.cpp) links against a title's SDL: on in a title's build, off
+    # when this layer is built on its own (its tests), which has no SDL to link.
+    if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+        set(_any360_host_audio OFF)
+    else()
+        set(_any360_host_audio ON)
+    endif()
+    option(ANY360_HOST_AUDIO "Build the audio group's output (SDL) into the ReXGlue binding" ${_any360_host_audio})
 
     # The binding of a ReXGlue title to these layers (graphics first): built here to keep it compiling.
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../host/rexglue ${CMAKE_CURRENT_BINARY_DIR}/host/rexglue)

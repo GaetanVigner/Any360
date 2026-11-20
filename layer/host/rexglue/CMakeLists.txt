@@ -23,8 +23,9 @@ target_include_directories(any360_host_rexglue_settings PUBLIC include)
 target_link_libraries(any360_host_rexglue_settings PUBLIC any360_sys_ppc any360_xdk)
 target_compile_options(any360_host_rexglue_settings PRIVATE -Wall -Wextra)
 target_link_libraries(any360_host_rexglue PUBLIC any360_host_rexglue_settings)
-# The audio group's decoder and output (StartAudio), when the XMA decoder is built (FFmpeg's headers found).
-if(TARGET any360_sys_xma)
+# The audio group's decoder and output (StartAudio), when the XMA decoder is built and the build is a title's
+# (ANY360_HOST_AUDIO: its SDL output links against the title's SDL).
+if(TARGET any360_sys_xma AND ANY360_HOST_AUDIO)
     target_sources(any360_host_rexglue PRIVATE src/audio.cpp)
     target_link_libraries(any360_host_rexglue PUBLIC any360_sys_xma)
     target_compile_definitions(any360_host_rexglue PUBLIC ANY360_REXGLUE_AUDIO)
