@@ -251,6 +251,11 @@ class Xam {
   // X_ONLINE_E_LOGON_NOT_LOGGED_ON (0x80151802), E_INVALIDARG without a name, a value buffer or its size; through an
   // overlapped, that result as both result and extended error, the length ~0 (Xenia's immediate completion).
   uint32_t LiveHiveValue(Guest g, uint32_t name, uint32_t value, uint32_t size, uint32_t overlapped);
+  // XamQueryLiveHiveA (feature name, value out, its size, overlapped): no Live hive offline. Without an overlapped the
+  // extended error is the answer (X_ONLINE_E_LOGON_NOT_LOGGED_ON, or E_INVALIDARG without a name, a value or its
+  // size); with one, it completes with success and that extended error, and E_PENDING (0x8000000A) is returned, as
+  // Xenia.
+  uint32_t QueryLiveHiveA(Guest g, uint32_t name, uint32_t value, uint32_t size, uint32_t overlapped);
   // XamIptvGetServiceName: the guest address of the IPTV provider's name (0x78 bytes, 59 UTF-16 characters and a
   // terminator, laid out once in the kernel heap) written at `name_out`; 0, or E_OUTOFMEMORY when the heap has no
   // room. The name is the console's IPTV setting, which is empty here (IPTV is off, as XamIsIptvEnabled answers);

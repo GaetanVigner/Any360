@@ -25,6 +25,7 @@
 #include "any360/sys/alloc_meter.h"
 #include "any360/sys/crypt.h"
 #include "any360/sys/exports.h"
+#include "any360/sys/ldi.h"
 #include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
@@ -83,7 +84,10 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamSetCountry) X(XamSetDvrStorage)                                                                                 \
   X(XamNuiCameraElevationGetAngle) X(XamNuiCameraGetTiltControllerType) X(XamNuiCameraSetFlags)                        \
   X(XamNuiCameraTiltGetStatus) X(XamNuiCameraTiltSetCallback) X(XamNuiGetDepthCalibration) X(XamNuiIdentityAbort)      \
-  X(XamNuiIdentityEnrollForSignIn) X(XamNuiPlayerEngagementUpdate) X(XamNuiSkeletonGetBestSkeletonIndex)
+  X(XamNuiIdentityEnrollForSignIn) X(XamNuiPlayerEngagementUpdate) X(XamNuiSkeletonGetBestSkeletonIndex)               \
+  X(XamDoesOmniNeedConfiguration) X(XamFirstRunExperienceShouldRun) X(XamLogLocalizationEtx)                           \
+  X(XamLookupCommonStringByIndex) X(XamQueryLiveHiveA) X(XamXStudioRequest) X(ExReadModifyWriteXConfigSettingUlong)    \
+  X(ExSetXConfigSetting) X(LDIResetDecompression)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -334,6 +338,12 @@ int main(int argc, char** argv) {
   // for XamReadString.
   g_enumerator_internal = Native("XamContentCreateEnumeratorInternal");
   g_titles_played = Native("XamUserCreateTitlesPlayedEnumerator");
+  // A video flags value for ExSetXConfigSetting (the default), an LDI context on scratch memory for its reset.
+  constexpr uint32_t kConfigValue = 0x40047100, kResetIo = 0x40047000, kResetScratch = 0x40044000;
+  Store32(kConfigValue, 0x00040000);
+  Store32(kResetIo, 0x8000), Store32(kResetIo + 4, 0x8000);
+  any360::sys::Ldi().Create({g_base}, kResetIo, kResetIo + 4, 0, 0, kResetScratch, kResetIo + 8, kResetIo + 12, nullptr,
+                            nullptr);
   g_profile_enumerator = Native("XamProfileCreateEnumerator");
   g_profile_open[0] = __imp__XamProfileOpen, g_profile_open[1] = Native("XamProfileOpen");
   g_profile_close[0] = __imp__XamProfileClose, g_profile_close[1] = Native("XamProfileClose");
@@ -613,6 +623,17 @@ int main(int argc, char** argv) {
        0x80004005},
       {"XamNuiPlayerEngagementUpdate", __imp__XamNuiPlayerEngagementUpdate, Args({0, 0, kOut + 0x1A00}), 20000, nullptr, -1},
       {"XamNuiSkeletonGetBestSkeletonIndex", __imp__XamNuiSkeletonGetBestSkeletonIndex, Args({0}), 20000, nullptr, -1},
+      // The other calls: settings set to what they were, a context made on scratch memory for the reset.
+      {"ExSetXConfigSetting (video flags)", __imp__ExSetXConfigSetting, Args({3, 0x0A, kConfigValue, 4}), 20000, nullptr, 0},
+      {"ExReadModifyWriteXConfigSettingUlong (retail flags)", __imp__ExReadModifyWriteXConfigSettingUlong,
+       Args({3, 0x0C, 0xFFFFFFFF, 0x40}), 20000, nullptr, 0},
+      {"LDIResetDecompression", __imp__LDIResetDecompression, Args({kResetScratch}), 20000, nullptr, 0},
+      {"XamDoesOmniNeedConfiguration", __imp__XamDoesOmniNeedConfiguration, Args({}), 20000, nullptr, 0},
+      {"XamFirstRunExperienceShouldRun", __imp__XamFirstRunExperienceShouldRun, Args({}), 20000, nullptr, 0},
+      {"XamLogLocalizationEtx", __imp__XamLogLocalizationEtx, Args({0x80300034, 0}), 20000, nullptr, 0},
+      {"XamLookupCommonStringByIndex", __imp__XamLookupCommonStringByIndex, Args({3}), 20000, nullptr, 0},
+      {"XamQueryLiveHiveA", __imp__XamQueryLiveHiveA, Args({kIn, kOut + 0x1A00, 64, 0}), 20000, nullptr, 0x80151802},
+      {"XamXStudioRequest", __imp__XamXStudioRequest, Args({1, kOut + 0xDD0}), 20000, nullptr, 0x80004005},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "

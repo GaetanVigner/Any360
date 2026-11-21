@@ -404,6 +404,39 @@ void NuiAdapters() {
   CHECK(Call("XamNuiSkeletonGetBestSkeletonIndex", {0}) == ~0ull);
 }
 
+void MiscAdapters() {
+  const ConsoleSettings saved = Console();
+  // ExSetXConfigSetting: what ExGetXConfigSetting reads next (a word, a byte); a setting not kept or a size given
+  // smaller than the setting's: success all the same (Xenia); no buffer: STATUS_INVALID_PARAMETER_3.
+  G().Store32(kData, 0x00080000);
+  CHECK(Call("ExSetXConfigSetting", {3, 0x0A, kData, 4}) == 0);
+  CHECK(Call("ExGetXConfigSetting", {3, 0x0A, kOut, 4, kOut + 8}) == 0 && G().Load32(kOut) == 0x00080000 && G().Load16(kOut + 8) == 4);
+  G().Store8(kData, 0x24);
+  CHECK(Call("ExSetXConfigSetting", {3, 0x0E, kData, 1}) == 0 && Console().country == 0x24 && Call("XamGetCountry", {}) == 0x24);
+  G().Store32(kData, 5);
+  CHECK(Call("ExSetXConfigSetting", {3, 0x09, kData, 2}) == 0 && Console().language == 5);
+  CHECK(Call("ExSetXConfigSetting", {3, 0x30, kData, 4}) == 0 && Call("ExSetXConfigSetting", {9, 1, kData, 4}) == 0);
+  CHECK(Call("ExSetXConfigSetting", {3, 0x0A, 0, 4}) == 0xC00000F1);
+  // ExReadModifyWriteXConfigSettingUlong: (value & kept) | set.
+  CHECK(Call("ExReadModifyWriteXConfigSettingUlong", {3, 0x0C, 0xFFFFFFBF, 0x01000000}) == 0);
+  CHECK(Console().retail_flags == 0x01000000);
+  CHECK(Call("ExGetXConfigSetting", {3, 0x0C, kOut, 4, 0}) == 0 && G().Load32(kOut) == 0x01000000);
+  CHECK(Call("ExReadModifyWriteXConfigSettingUlong", {3, 0x19, 0xFFFFFFFE, 0x10}) == 0 && Console().pc_flags == 0x12);
+  CHECK(Call("ExReadModifyWriteXConfigSettingUlong", {3, 0x30, 0, 1}) == 0);
+  Console() = saved;
+  CHECK(Call("XamDoesOmniNeedConfiguration", {}) == 0 && Call("XamFirstRunExperienceShouldRun", {}) == 0);
+  CHECK(Call("XamLogLocalizationEtx", {0x80300034, 1}) == 0 && Call("XamLogLocalizationEtx", {0x80300035, 1}) == 0);
+  CHECK(Call("XamLogLocalizationEtx", {0x80300036, 1}) == 0x80004001);
+  CHECK(Call("XamLookupCommonStringByIndex", {3}) == 0);
+  // XamQueryLiveHiveA: the extended error without an overlapped; with one, success and that extended error, E_PENDING.
+  CHECK(Call("XamQueryLiveHiveA", {kData, kOut, 64, 0}) == 0x80151802 && Call("XamQueryLiveHiveA", {0, kOut, 64, 0}) == 0x80070057);
+  FreshOverlapped();
+  CHECK(Call("XamQueryLiveHiveA", {kData, kOut, 64, kOv}) == 0x8000000A && Completed(0, 0x80151802));
+  FreshOverlapped();
+  CHECK(Call("XamQueryLiveHiveA", {kData, kOut, 0, kOv}) == 0x8000000A && Completed(0, 0x80070057));
+  CHECK(Call("XamXStudioRequest", {1, kOut}) == 0x80004005);
+}
+
 void MediaAdapters() {
   for (const char* name : {"EnumerateMediaObjects", "EnumerateMediaObjects_", "EnumerateMediaObjects_0", "EnumerateMediaObjects_1"}) {
     CHECK(Call(name, {kData, 1, kOut}) == 0x80004001);
@@ -464,7 +497,14 @@ void EarlierBatchAdapters() {
   G().Store32(io + 16, 6);
   CHECK(Call("LDIDecompress", {scratch, chunk, sizeof stream, kOut, io + 16}) == 0);
   CHECK(G().Load32(io + 16) == 6 && std::memcmp(g_base + kOut, "LZXok!", 6) == 0);
+  // LDIResetDecompression: the decoder back at a stream's start, so the same first chunk decodes again.
+  CHECK(Call("LDIResetDecompression", {scratch}) == 0);
+  std::memset(g_base + kOut, 0, 8);
+  G().Store32(io + 16, 6);
+  CHECK(Call("LDIDecompress", {scratch, chunk, sizeof stream, kOut, io + 16}) == 0);
+  CHECK(G().Load32(io + 16) == 6 && std::memcmp(g_base + kOut, "LZXok!", 6) == 0);
   CHECK(Call("LDIDestroyDecompression", {scratch}) == 0 && Call("LDIDestroyDecompression", {scratch}) == 2);
+  CHECK(Call("LDIResetDecompression", {scratch}) == 2);  // destroyed
   // Ninth batch.
   CHECK(Call("XamContentCreateEnumeratorInternal", {0, 3, 1, 0, 0, 1, kOut + 4, kOut}) == 0x80070057 && G().Load32(kOut + 4) == 0);
   CHECK(Call("XamContentCreateEnumeratorInternal", {0, 1, 1, 0, 0, 4, kOut + 4, kOut}) == 0 && G().Load32(kOut + 4) == 4 * 0x134);
@@ -520,6 +560,7 @@ int main() {
   ContentAdapters();
   InfoAdapters();
   NuiAdapters();
+  MiscAdapters();
   EarlierBatchAdapters();
   Threads().SetDispatcher(nullptr, nullptr);
   std::filesystem::remove_all(root, error);

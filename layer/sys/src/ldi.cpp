@@ -494,6 +494,14 @@ uint32_t LdiContexts::Decompress(Guest g, uint32_t handle, uint32_t source, uint
   return kNoError;
 }
 
+uint32_t LdiContexts::ResetDecompression(Guest g, uint32_t handle) {
+  std::lock_guard lock(mutex_);
+  Context* context = Find(g, handle);
+  if (!context) return kBadParameters;
+  if (context->decoder) context->decoder->Reset();
+  return kNoError;
+}
+
 uint32_t LdiContexts::Destroy(Guest g, uint32_t handle, GuestCall call, void* user) {
   uint32_t free = 0, context_alloc = 0, window_alloc = 0;
   {

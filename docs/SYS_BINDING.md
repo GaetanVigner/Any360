@@ -513,6 +513,11 @@ Kinect calls (10): no Kinect, as Xenia answers without one: no tilt controller (
 E_DEVICE_NOT_CONNECTED, the tilt callback kept), no depth calibration stored, identity calls failing with the HUD
 off, the engagement update cleared, no skeleton (docs/perf/archive/2026-11-21-sys-step12-nui/).
 
+Other calls (9): the console settings a title can now set for the run (`ExSetXConfigSetting`,
+`ExReadModifyWriteXConfigSettingUlong`, read back by `ExGetXConfigSetting`), an LDI context reset to a stream's start,
+no wireless setup or first run, the two localization errors Xenia knows, no common string table, no Live hive
+(`XamQueryLiveHiveA`) and no xstudio (docs/perf/archive/2026-11-21-sys-step12-misc/).
+
 The rows under 1x (docs/perf/archive/2026-11-19-sys-step12-below-1x/): an object's close holds the object manager's
 lock once, and an object only one close hook keeps state for (`AllocatePlainObject`: XAM's enumerators, listeners and
 session handles) runs that hook alone and skips the timer and port tables and the free hooks at release. The suite

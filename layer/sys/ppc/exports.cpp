@@ -1116,6 +1116,28 @@ ANY360_SYS_EXPORT(LDICreateDecompression) {
 ANY360_SYS_EXPORT(LDIDecompress) {
   ctx.r3.u64 = Ldi().Decompress({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
 }
+ANY360_SYS_EXPORT(LDIResetDecompression) { ctx.r3.u64 = Ldi().ResetDecompression({base}, ctx.r3.u32); }
+// (category, setting, buffer, size)
+ANY360_SYS_EXPORT(ExSetXConfigSetting) {
+  ctx.r3.u64 = ExSetXConfigSetting({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+}
+// (category, setting, bits kept, bits set)
+ANY360_SYS_EXPORT(ExReadModifyWriteXConfigSettingUlong) {
+  ctx.r3.u64 = ExReadModifyWriteXConfigSettingUlong(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+}
+// Step 12, the other calls Xenia stubs too.
+ANY360_SYS_EXPORT(XamDoesOmniNeedConfiguration) { ctx.r3.u64 = 0; }     // no wireless network to set up
+ANY360_SYS_EXPORT(XamFirstRunExperienceShouldRun) { ctx.r3.u64 = 0; }  // the console's first run is done
+// (error code, value): the two localization errors Xenia knows are logged (success), any other E_NOTIMPL.
+ANY360_SYS_EXPORT(XamLogLocalizationEtx) {
+  ctx.r3.u64 = ctx.r3.u32 == 0x80300034 || ctx.r3.u32 == 0x80300035 ? 0 : 0x80004001;
+}
+ANY360_SYS_EXPORT(XamLookupCommonStringByIndex) { ctx.r3.u64 = 0; }  // no common string table: none found
+// (feature name, value out, its size, overlapped): no Live hive offline. Without an overlapped the extended error is
+// the answer (X_ONLINE_E_LOGON_NOT_LOGGED_ON, or E_INVALIDARG without a name, a value or its size); with one, it
+// completes with success and that extended error, and E_PENDING (0x8000000A) is returned, as Xenia.
+ANY360_SYS_EXPORT(XamQueryLiveHiveA) { ctx.r3.u64 = XamState().QueryLiveHiveA({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
+ANY360_SYS_EXPORT(XamXStudioRequest) { ctx.r3.u64 = 0x80004005; }  // E_FAIL: no xstudio.xex
 ANY360_SYS_EXPORT(LDIDestroyDecompression) {
   LdiCaller caller = LdiCallerOf(ctx, base);
   ctx.r3.u64 = Ldi().Destroy({base}, ctx.r3.u32, &LdiCall, &caller);
@@ -2137,6 +2159,15 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(LDICreateDecompression),
     ANY360_SYS_ENTRY(LDIDecompress),
     ANY360_SYS_ENTRY(LDIDestroyDecompression),
+    ANY360_SYS_ENTRY(XamDoesOmniNeedConfiguration),
+    ANY360_SYS_ENTRY(XamFirstRunExperienceShouldRun),
+    ANY360_SYS_ENTRY(XamLogLocalizationEtx),
+    ANY360_SYS_ENTRY(XamLookupCommonStringByIndex),
+    ANY360_SYS_ENTRY(XamQueryLiveHiveA),
+    ANY360_SYS_ENTRY(XamXStudioRequest),
+    ANY360_SYS_ENTRY(ExReadModifyWriteXConfigSettingUlong),
+    ANY360_SYS_ENTRY(ExSetXConfigSetting),
+    ANY360_SYS_ENTRY(LDIResetDecompression),
     ANY360_SYS_ENTRY(XamContentCreateEnumeratorInternal),
     ANY360_SYS_ENTRY(XamContentGetMetaDataInternal),
     ANY360_SYS_ENTRY(XamContentSetThumbnailInternal),

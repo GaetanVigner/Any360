@@ -516,6 +516,13 @@ uint32_t Xam::LiveHiveValue(Guest g, uint32_t name, uint32_t value, uint32_t siz
   return kErrorIoPending;
 }
 
+uint32_t Xam::QueryLiveHiveA(Guest g, uint32_t name, uint32_t value, uint32_t size, uint32_t overlapped) {
+  const uint32_t extended = !name || !value || !size ? 0x80070057u : 0x80151802u;
+  if (!overlapped) return extended;
+  CompleteEx(g, overlapped, kErrorSuccess, extended, 0);
+  return 0x8000000A;  // E_PENDING
+}
+
 uint32_t Xam::IptvServiceName(Guest g, uint32_t name_out) {
   constexpr uint32_t kNameBytes = 0x78;
   if (!iptv_name_) {

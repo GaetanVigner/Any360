@@ -91,6 +91,9 @@ class LdiContexts {
   // the window and the context freed through its freer (outside the lock). MDI_ERROR_BAD_PARAMETERS for an unknown
   // handle.
   uint32_t Destroy(Guest g, uint32_t handle, GuestCall call, void* user);
+  // LDIResetDecompression: the context's decoder back to the start of a stream (its window position, repeated
+  // offsets, trees and Intel E8 state), the window kept; MDI_ERROR_BAD_PARAMETERS for an unknown handle.
+  uint32_t ResetDecompression(Guest g, uint32_t handle);
 
   // Every context forgotten (a new title).
   void Reset();
