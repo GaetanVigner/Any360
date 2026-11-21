@@ -276,6 +276,9 @@ class Xam {
   // changes and no launch requests come from outside a title here, so neither is called).
   void ContentRegisterChangeCallback(uint32_t callback) { content_change_callback_ = callback; }
   uint32_t content_change_callback() const { return content_change_callback_; }
+  // XamNuiCameraTiltSetCallback: the title's tilt callback kept (no Kinect motor ever calls it).
+  void NuiCameraTiltSetCallback(uint32_t callback) { nui_tilt_callback_ = callback; }
+  uint32_t nui_tilt_callback() const { return nui_tilt_callback_; }
   void LoaderRegisterLaunchRequestCallback(uint32_t callback) { launch_request_callback_ = callback; }
   uint32_t launch_request_callback() const { return launch_request_callback_; }
   // XamReadString (title id, string id, user, buffer, size in/out, overlapped): the title's localized string, from its
@@ -532,7 +535,7 @@ class Xam {
   uint32_t language_fallback_at_[18] = {};
   uint32_t typeface_patch_at_[3] = {};  // the three font patch names in the kernel heap, laid out at first use
   uint32_t iptv_name_ = 0;  // the IPTV provider's name in the kernel heap, laid out at first use
-  uint32_t content_change_callback_ = 0, launch_request_callback_ = 0;
+  uint32_t content_change_callback_ = 0, launch_request_callback_ = 0, nui_tilt_callback_ = 0;
   // The packages of a type as enumerator items of `item_size` bytes starting with their XCONTENT_DATA, sorted by name.
   std::vector<std::vector<uint8_t>> ContentItems(uint32_t device_id, uint32_t content_type, uint32_t item_size) const;
 

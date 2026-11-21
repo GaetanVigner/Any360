@@ -347,9 +347,9 @@
  {
   "date": "2026-11-21",
   "system_calls": {
-   "native": 794,
+   "native": 804,
    "ported": 0,
-   "runnable": 798,
+   "runnable": 808,
    "total": 2914
   },
   "instructions": {

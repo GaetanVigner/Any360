@@ -378,6 +378,32 @@ void InfoAdapters() {
   CHECK(Call("XamIsNatalPlaybackEnabled", {1, 2}) == 0 && Call("XamIsNuiAutomationEnabled", {1, 2}) == 0);
 }
 
+void NuiAdapters() {
+  // No Kinect: no tilt controller, the motor's status and the angle fail with nothing written, the flags find no
+  // device; the tilt callback kept.
+  CHECK(Call("XamNuiCameraGetTiltControllerType", {}) == 0);
+  G().Store32(kOut, 0x50), G().Store32(kOut + 4, 0x58745373);  // a status buffer: its size and "XtSs"
+  CHECK(Call("XamNuiCameraTiltGetStatus", {kOut}) == 0x80004005 && Call("XamNuiCameraTiltGetStatus", {0}) == 0x80004005);
+  G().Store32(kOut + 0x60, 7), G().Store32(kOut + 0x64, 8);
+  CHECK(Call("XamNuiCameraElevationGetAngle", {kOut + 0x60, kOut + 0x64}) == 0x80004005);
+  CHECK(G().Load32(kOut + 0x60) == 7 && G().Load32(kOut + 0x64) == 8);
+  CHECK(Call("XamNuiCameraSetFlags", {1, 2}) == 0x8007048F);
+  CHECK(Call("XamNuiCameraTiltSetCallback", {0x82001000}) == 0 && XamState().nui_tilt_callback() == 0x82001000);
+  // The depth calibration cleared (0x30 bytes, no more), none stored.
+  std::memset(g_base + kOut, 0xAA, 0x40);
+  CHECK(Call("XamNuiGetDepthCalibration", {kOut}) == 0xD000000F);
+  for (uint32_t i = 0; i < 0x30; ++i) CHECK(g_base[kOut + i] == 0);
+  CHECK(g_base[kOut + 0x30] == 0xAA);
+  // Identity: the HUD is not enabled.
+  CHECK(Call("XamNuiIdentityAbort", {1}) == 0x80004005 && Call("XamNuiIdentityEnrollForSignIn", {1, 2, 3, 4}) == 0x80004005);
+  // The engagement update cleared (0x1C bytes, no more), r3 left as it was.
+  std::memset(g_base + kOut, 0xAA, 0x20);
+  CHECK(Call("XamNuiPlayerEngagementUpdate", {0x1234, 0, kOut}) == 0x1234);
+  for (uint32_t i = 0; i < 0x1C; ++i) CHECK(g_base[kOut + i] == 0);
+  CHECK(g_base[kOut + 0x1C] == 0xAA);
+  CHECK(Call("XamNuiSkeletonGetBestSkeletonIndex", {0}) == ~0ull);
+}
+
 void MediaAdapters() {
   for (const char* name : {"EnumerateMediaObjects", "EnumerateMediaObjects_", "EnumerateMediaObjects_0", "EnumerateMediaObjects_1"}) {
     CHECK(Call(name, {kData, 1, kOut}) == 0x80004001);
@@ -493,6 +519,7 @@ int main() {
   UserAdapters();
   ContentAdapters();
   InfoAdapters();
+  NuiAdapters();
   EarlierBatchAdapters();
   Threads().SetDispatcher(nullptr, nullptr);
   std::filesystem::remove_all(root, error);

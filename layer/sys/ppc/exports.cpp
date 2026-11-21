@@ -968,6 +968,29 @@ ANY360_SYS_EXPORT(XamNuiHudGetEngagedTrackingID) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(XamNuiHudGetInitializeFlags) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(XamNuiHudGetVersions) { XamState().NuiHudGetVersions({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XamNuiHudIsEnabled) { ctx.r3.u64 = 0; }
+// Step 12, the Kinect (NUI) calls Xenia stubs too: no Kinect, as Xenia answers without one (no tilt controller, the
+// HUD not enabled).
+ANY360_SYS_EXPORT(XamNuiCameraGetTiltControllerType) { ctx.r3.u64 = 0; }  // no tilt controller
+ANY360_SYS_EXPORT(XamNuiCameraTiltGetStatus) { ctx.r3.u64 = 0x80004005; }  // E_FAIL: no motor to report
+// (elevation angle out, moving out): the tilt status fails, so E_FAIL and nothing written.
+ANY360_SYS_EXPORT(XamNuiCameraElevationGetAngle) { ctx.r3.u64 = 0x80004005; }
+ANY360_SYS_EXPORT(XamNuiCameraSetFlags) { ctx.r3.u64 = 0x8007048F; }  // E_DEVICE_NOT_CONNECTED: no tilt controller
+ANY360_SYS_EXPORT(XamNuiCameraTiltSetCallback) {
+  XamState().NuiCameraTiltSetCallback(ctx.r3.u32);
+  ctx.r3.u64 = 0;
+}
+// (X_NUI_DEPTH_CALIBRATION out, 0x30 bytes): cleared, then STATUS_NO_SUCH_FILE with the NT facility bit: none stored.
+ANY360_SYS_EXPORT(XamNuiGetDepthCalibration) {
+  if (ctx.r3.u32) std::memset(base + ctx.r3.u32, 0, 0x30);
+  ctx.r3.u64 = 0xD000000F;
+}
+ANY360_SYS_EXPORT(XamNuiIdentityAbort) { ctx.r3.u64 = 0x80004005; }  // E_FAIL: the HUD is not enabled
+ANY360_SYS_EXPORT(XamNuiIdentityEnrollForSignIn) { ctx.r3.u64 = 0x80004005; }
+// (two words, X_NUI_PLAYER_ENGAGEMENT_UPDATE out, 0x1C bytes): cleared; nobody is engaged. No result.
+ANY360_SYS_EXPORT(XamNuiPlayerEngagementUpdate) {
+  if (ctx.r5.u32) std::memset(base + ctx.r5.u32, 0, 0x1C);
+}
+ANY360_SYS_EXPORT(XamNuiSkeletonGetBestSkeletonIndex) { ctx.r3.u64 = ~0ull; }  // no skeleton tracked (a 64-bit -1)
 ANY360_SYS_EXPORT(XamNuiHudSetEngagedTrackingID) { ctx.r3.u64 = XamState().NuiHudSetEngagedTrackingId(ctx.r3.u32); }
 ANY360_SYS_EXPORT(XamNuiIdentityGetSessionId) { ctx.r3.u64 = XamState().NuiIdentitySessionId(); }
 ANY360_SYS_EXPORT(XamNuiIsChatMicEnabled) { ctx.r3.u64 = 0; }
@@ -2044,6 +2067,16 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XamNuiHudGetInitializeFlags),
     ANY360_SYS_ENTRY(XamNuiHudGetVersions),
     ANY360_SYS_ENTRY(XamNuiHudIsEnabled),
+    ANY360_SYS_ENTRY(XamNuiCameraElevationGetAngle),
+    ANY360_SYS_ENTRY(XamNuiCameraGetTiltControllerType),
+    ANY360_SYS_ENTRY(XamNuiCameraSetFlags),
+    ANY360_SYS_ENTRY(XamNuiCameraTiltGetStatus),
+    ANY360_SYS_ENTRY(XamNuiCameraTiltSetCallback),
+    ANY360_SYS_ENTRY(XamNuiGetDepthCalibration),
+    ANY360_SYS_ENTRY(XamNuiIdentityAbort),
+    ANY360_SYS_ENTRY(XamNuiIdentityEnrollForSignIn),
+    ANY360_SYS_ENTRY(XamNuiPlayerEngagementUpdate),
+    ANY360_SYS_ENTRY(XamNuiSkeletonGetBestSkeletonIndex),
     ANY360_SYS_ENTRY(XamNuiHudSetEngagedTrackingID),
     ANY360_SYS_ENTRY(XamNuiIdentityGetSessionId),
     ANY360_SYS_ENTRY(XamNuiIsChatMicEnabled),

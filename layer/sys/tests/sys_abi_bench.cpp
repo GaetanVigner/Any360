@@ -80,7 +80,10 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamContentLaunchImageInternalEx) X(XamContentResolveInternal) X(XamReadTile) X(XamReadTileEx)                      \
   X(XamGetCountry) X(XamGetDvrStorage) X(XamGetLanguageTypefacePatch) X(XamGetLiveHiveValueA)                          \
   X(XamGetLiveHiveValueW) X(XamGetStagingMode) X(XamIsNatalPlaybackEnabled) X(XamIsNuiAutomationEnabled)               \
-  X(XamSetCountry) X(XamSetDvrStorage)
+  X(XamSetCountry) X(XamSetDvrStorage)                                                                                 \
+  X(XamNuiCameraElevationGetAngle) X(XamNuiCameraGetTiltControllerType) X(XamNuiCameraSetFlags)                        \
+  X(XamNuiCameraTiltGetStatus) X(XamNuiCameraTiltSetCallback) X(XamNuiGetDepthCalibration) X(XamNuiIdentityAbort)      \
+  X(XamNuiIdentityEnrollForSignIn) X(XamNuiPlayerEngagementUpdate) X(XamNuiSkeletonGetBestSkeletonIndex)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -597,6 +600,19 @@ int main(int argc, char** argv) {
       {"XamGetStagingMode", __imp__XamGetStagingMode, Args({}), 20000, nullptr, 0},
       {"XamIsNatalPlaybackEnabled", __imp__XamIsNatalPlaybackEnabled, Args({0, 0}), 20000, nullptr, 0},
       {"XamIsNuiAutomationEnabled", __imp__XamIsNuiAutomationEnabled, Args({0, 0}), 20000, nullptr, 0},
+      // The Kinect calls.
+      {"XamNuiCameraElevationGetAngle", __imp__XamNuiCameraElevationGetAngle, Args({kOut + 0xDD0, kOut + 0xDD4}), 20000,
+       nullptr, 0x80004005},
+      {"XamNuiCameraGetTiltControllerType", __imp__XamNuiCameraGetTiltControllerType, Args({}), 20000, nullptr, 0},
+      {"XamNuiCameraSetFlags", __imp__XamNuiCameraSetFlags, Args({1, 2}), 20000, nullptr, 0x8007048F},
+      {"XamNuiCameraTiltGetStatus", __imp__XamNuiCameraTiltGetStatus, Args({kOut + 0x1A00}), 20000, nullptr, 0x80004005},
+      {"XamNuiCameraTiltSetCallback", __imp__XamNuiCameraTiltSetCallback, Args({0}), 20000, nullptr, 0},
+      {"XamNuiGetDepthCalibration", __imp__XamNuiGetDepthCalibration, Args({kOut + 0x1A00}), 20000, nullptr, 0xD000000F},
+      {"XamNuiIdentityAbort", __imp__XamNuiIdentityAbort, Args({1}), 20000, nullptr, 0x80004005},
+      {"XamNuiIdentityEnrollForSignIn", __imp__XamNuiIdentityEnrollForSignIn, Args({1, 2, 3, 4}), 20000, nullptr,
+       0x80004005},
+      {"XamNuiPlayerEngagementUpdate", __imp__XamNuiPlayerEngagementUpdate, Args({0, 0, kOut + 0x1A00}), 20000, nullptr, -1},
+      {"XamNuiSkeletonGetBestSkeletonIndex", __imp__XamNuiSkeletonGetBestSkeletonIndex, Args({0}), 20000, nullptr, -1},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "

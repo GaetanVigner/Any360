@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 946" width="1000" height="946" font-family="sans-serif">
 <style>.blk:hover rect{opacity:.8}</style>
 <rect width="1000" height="946" fill="#0d1117"/>
-<text x="0" y="25" font-size="16" fill="#c9d1d9" font-weight="600">System calls native: 27.2% (794/2,914) <tspan font-size="12" font-weight="400" fill="#8b949e">· 27.4% run on the reference runtime · one square per export</tspan></text>
+<text x="0" y="25" font-size="16" fill="#c9d1d9" font-weight="600">System calls native: 27.6% (804/2,914) <tspan font-size="12" font-weight="400" fill="#8b949e">· 27.7% run on the reference runtime · one square per export</tspan></text>
 <rect x="0" y="34" width="1000" height="300" fill="#0d1117"/>
 <a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xam ui: 340 (9% native/ported; 32 native, 307 stub, 1 missing)</title>
 <rect x="0.00" y="34.00" width="9.71" height="9.58" fill="#2ea043"/>
@@ -2206,7 +2206,7 @@
 <rect x="659.2" y="263.9" width="73.4" height="70.1" fill="none" stroke="#0d1117" stroke-width="1.5"/>
 <text x="663.2" y="276.9" font-size="12" fill="#ffffff" stroke="#0d1117" stroke-width="3" paint-order="stroke">xam module</text>
 </g></a>
-<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xam nui: 50 (20% native/ported; 10 native, 40 stub)</title>
+<a href="https://gaetanvigner.github.io/Any360/progress.html#calls"><g class="blk"><title>xam nui: 50 (40% native/ported; 20 native, 30 stub)</title>
 <rect x="732.67" y="34.00" width="9.10" height="9.07" fill="#2ea043"/>
 <rect x="742.27" y="34.00" width="9.10" height="9.07" fill="#2ea043"/>
 <rect x="751.87" y="34.00" width="9.10" height="9.07" fill="#2ea043"/>
@@ -2217,16 +2217,16 @@
 <rect x="799.89" y="34.00" width="9.10" height="9.07" fill="#2ea043"/>
 <rect x="732.67" y="43.57" width="9.10" height="9.07" fill="#2ea043"/>
 <rect x="742.27" y="43.57" width="9.10" height="9.07" fill="#2ea043"/>
-<rect x="751.87" y="43.57" width="9.10" height="9.07" fill="#d29922"/>
-<rect x="761.48" y="43.57" width="9.10" height="9.07" fill="#d29922"/>
-<rect x="771.08" y="43.57" width="9.10" height="9.07" fill="#d29922"/>
-<rect x="780.68" y="43.57" width="9.10" height="9.07" fill="#d29922"/>
-<rect x="790.28" y="43.57" width="9.10" height="9.07" fill="#d29922"/>
-<rect x="799.89" y="43.57" width="9.10" height="9.07" fill="#d29922"/>
-<rect x="732.67" y="53.15" width="9.10" height="9.07" fill="#d29922"/>
-<rect x="742.27" y="53.15" width="9.10" height="9.07" fill="#d29922"/>
-<rect x="751.87" y="53.15" width="9.10" height="9.07" fill="#d29922"/>
-<rect x="761.48" y="53.15" width="9.10" height="9.07" fill="#d29922"/>
+<rect x="751.87" y="43.57" width="9.10" height="9.07" fill="#2ea043"/>
+<rect x="761.48" y="43.57" width="9.10" height="9.07" fill="#2ea043"/>
+<rect x="771.08" y="43.57" width="9.10" height="9.07" fill="#2ea043"/>
+<rect x="780.68" y="43.57" width="9.10" height="9.07" fill="#2ea043"/>
+<rect x="790.28" y="43.57" width="9.10" height="9.07" fill="#2ea043"/>
+<rect x="799.89" y="43.57" width="9.10" height="9.07" fill="#2ea043"/>
+<rect x="732.67" y="53.15" width="9.10" height="9.07" fill="#2ea043"/>
+<rect x="742.27" y="53.15" width="9.10" height="9.07" fill="#2ea043"/>
+<rect x="751.87" y="53.15" width="9.10" height="9.07" fill="#2ea043"/>
+<rect x="761.48" y="53.15" width="9.10" height="9.07" fill="#2ea043"/>
 <rect x="771.08" y="53.15" width="9.10" height="9.07" fill="#d29922"/>
 <rect x="780.68" y="53.15" width="9.10" height="9.07" fill="#d29922"/>
 <rect x="790.28" y="53.15" width="9.10" height="9.07" fill="#d29922"/>

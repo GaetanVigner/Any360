@@ -76,7 +76,7 @@ void Xam::Reset() {
   language_fallback_ = 0;
   iptv_name_ = 0;
   std::memset(typeface_patch_at_, 0, sizeof typeface_patch_at_);
-  content_change_callback_ = launch_request_callback_ = 0;
+  content_change_callback_ = launch_request_callback_ = nui_tilt_callback_ = 0;
   close_hook_ = Objects().AddCloseHook([](uint32_t object) { return XamState().OnClose(object); });
   system_module_ = 0;
   settings_.clear();
