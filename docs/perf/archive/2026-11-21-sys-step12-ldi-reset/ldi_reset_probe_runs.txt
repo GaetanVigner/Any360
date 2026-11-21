@@ -1,0 +1,42 @@
+﻿-- run 1 before (HEAD ldi.cpp)
+LzxDecoder::Reset (window 2^15)   9.1
+LzxDecoder::Reset (window 2^21)   9.0
+Ldi().ResetDecompression        16.2
+Ldi().ResetDecompression (bad)  8.4
+reset + decompress (verbatim)   5092.7
+reset + decompress (stored)     39.6
+-- run 1 after
+LzxDecoder::Reset (window 2^15)   1.7
+LzxDecoder::Reset (window 2^21)   1.7
+Ldi().ResetDecompression        15.1
+Ldi().ResetDecompression (bad)  8.8
+reset + decompress (verbatim)   5148.7
+reset + decompress (stored)     36.3
+-- run 2 before (HEAD ldi.cpp)
+LzxDecoder::Reset (window 2^15)   9.7
+LzxDecoder::Reset (window 2^21)   8.7
+Ldi().ResetDecompression        15.5
+Ldi().ResetDecompression (bad)  8.4
+reset + decompress (verbatim)   4889.7
+reset + decompress (stored)     38.2
+-- run 2 after
+LzxDecoder::Reset (window 2^15)   1.6
+LzxDecoder::Reset (window 2^21)   1.6
+Ldi().ResetDecompression        9.5
+Ldi().ResetDecompression (bad)  8.9
+reset + decompress (verbatim)   4918.4
+reset + decompress (stored)     32.5
+-- run 3 before (HEAD ldi.cpp)
+LzxDecoder::Reset (window 2^15)   9.3
+LzxDecoder::Reset (window 2^21)   8.7
+Ldi().ResetDecompression        15.7
+Ldi().ResetDecompression (bad)  9.0
+reset + decompress (verbatim)   4872.9
+reset + decompress (stored)     39.0
+-- run 3 after
+LzxDecoder::Reset (window 2^15)   1.6
+LzxDecoder::Reset (window 2^21)   1.6
+Ldi().ResetDecompression        9.4
+Ldi().ResetDecompression (bad)  8.7
+reset + decompress (verbatim)   4910.9
+reset + decompress (stored)     31.2

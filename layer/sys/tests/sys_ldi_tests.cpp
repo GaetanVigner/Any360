@@ -287,6 +287,20 @@ void CabTests() {
       CHECK(DecodeAll(decoder, chunks, out) && out == c.data);
     }
   }
+  // One decoder through windows of different sizes: a 2^21 stream (its trees' lengths written up to the largest main
+  // tree), then a 2^15 one, then the 2^21 one again, each right after the other's: Reset clears what the last stream
+  // wrote, whatever its window, and a stream of uncompressed blocks only (no tree read) leaves nothing to clear.
+  {
+    const Bytes big = Code(200000, 31), small = Text(100000, 32);
+    const std::vector<Chunk> big_chunks = CabChunks(big, 21), small_chunks = CabChunks(small, 15);
+    LzxDecoder decoder;
+    Bytes out;
+    CHECK(decoder.Init(21) && DecodeAll(decoder, big_chunks, out) && out == big);
+    CHECK(decoder.Init(15) && DecodeAll(decoder, small_chunks, out) && out == small);
+    CHECK(decoder.Init(21) && DecodeAll(decoder, big_chunks, out) && out == big);
+    decoder.Reset();
+    CHECK(DecodeAll(decoder, big_chunks, out) && out == big);
+  }
   // Matches from the window's far edge (offset window - 3) right after short-offset matches: a random lap of
   // window - 3 bytes, then the same lap again with, every few hundred bytes, a 9-12 byte span copied from 20-40 bytes
   // before it. The bytes ahead of the write position are the previous lap's, still referenced: a match copy must

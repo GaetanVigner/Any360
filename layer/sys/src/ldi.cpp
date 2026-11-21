@@ -172,8 +172,9 @@ void LzxDecoder::Reset() {
   header_read_ = intel_started_ = pad_pending_ = false;
   intel_filesize_ = intel_curpos_ = 0;
   // The trees' lengths start at 0: each block codes them as changes.
-  std::fill(main_->lengths.begin(), main_->lengths.end(), uint8_t(0));
-  std::fill(length_->lengths.begin(), length_->lengths.end(), uint8_t(0));
+  std::fill_n(main_->lengths.begin(), main_dirty_, uint8_t(0));
+  std::fill_n(length_->lengths.begin(), length_dirty_, uint8_t(0));
+  main_dirty_ = length_dirty_ = 0;
 }
 
 bool LzxDecoder::ReadLengths(Reader& in, uint8_t* lengths, uint32_t first, uint32_t last) {
@@ -220,6 +221,10 @@ bool LzxDecoder::ReadBlockHeader(Reader& in) {
       if (!aligned_->Build(false)) return false;
       [[fallthrough]];
     case kVerbatim:
+      // Every length a run may reach (up to kLengthSafety past the last), counted before reading: a corrupt block
+      // writes some too.
+      main_dirty_ = std::max(main_dirty_, main_symbols_ + kLengthSafety);
+      length_dirty_ = kSecondaryLengths + kLengthSafety;
       if (!ReadLengths(in, main_->lengths.data(), 0, kNumChars) ||
           !ReadLengths(in, main_->lengths.data(), kNumChars, main_symbols_) || !main_->Build(false)) {
         return false;

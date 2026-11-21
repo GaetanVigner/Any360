@@ -54,6 +54,9 @@ class LzxDecoder {
   uint32_t block_type_ = 0, block_length_ = 0, block_remaining_ = 0;
   bool header_read_ = false, intel_started_ = false, pad_pending_ = false;
   int32_t intel_filesize_ = 0, intel_curpos_ = 0;
+  // How far the main and length trees' code lengths were written since the last reset: Reset clears only that much
+  // (nothing for a stream of uncompressed blocks only, less for a small window).
+  uint32_t main_dirty_ = 0, length_dirty_ = 0;
   std::unique_ptr<Tree> main_, length_, aligned_, pretree_;
 };
 
