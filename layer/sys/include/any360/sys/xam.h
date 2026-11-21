@@ -100,6 +100,13 @@ class Xam {
   uint32_t SessionCreateHandle(Guest g, uint32_t handle_ptr);
   uint32_t SessionRefObjByHandle(Guest g, uint32_t handle, uint32_t object_ptr);
   uint32_t ShowSigninUI(uint32_t users, uint32_t flags);
+  // XamShowSigninUIEx (users, flags, overlapped): XamShowSigninUI's answer; through an overlapped, Xenia's immediate
+  // completion (the result as result and extended error, the length ~0 on failure) and ERROR_IO_PENDING.
+  uint32_t ShowSigninUIEx(Guest g, uint32_t users, uint32_t flags, uint32_t overlapped);
+  // XamShowMarketplaceUIEx (user, entry point, offer id, offer type, category, two words, title id): the marketplace
+  // needs Xbox Live, so the guide opens and closes at once (as XamShowMarketplaceUI); ERROR_INVALID_PARAMETER for a
+  // user past 3 or an entry point past the last (24), ERROR_NO_SUCH_USER for a user not signed in, as Xenia.
+  uint32_t ShowMarketplaceUIEx(uint32_t user, uint32_t entry_point);
   // XamUserGetGamerTag: the local profile's gamertag, truncated to `length` characters (16 at most) with a terminator;
   // E_INVALIDARG for a user past 3, no buffer or under 16 characters, the NO_SUCH_USER HRESULT for users 1 to 3.
   uint32_t UserGetGamerTag(Guest g, uint32_t user, uint32_t buffer, uint32_t length);

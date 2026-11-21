@@ -87,7 +87,9 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamNuiIdentityEnrollForSignIn) X(XamNuiPlayerEngagementUpdate) X(XamNuiSkeletonGetBestSkeletonIndex)               \
   X(XamDoesOmniNeedConfiguration) X(XamFirstRunExperienceShouldRun) X(XamLogLocalizationEtx)                           \
   X(XamLookupCommonStringByIndex) X(XamQueryLiveHiveA) X(XamXStudioRequest) X(ExReadModifyWriteXConfigSettingUlong)    \
-  X(ExSetXConfigSetting) X(LDIResetDecompression)
+  X(ExSetXConfigSetting) X(LDIResetDecompression)                                                                      \
+  X(XamShowGoldUpgradeUI) X(XamShowMarketplaceUIEx) X(XamShowNuiDeviceSelectorUI) X(XamShowNuiDirtyDiscErrorUI)        \
+  X(XamShowNuiGuideUI) X(XamShowNuiMessageBoxUI) X(XamShowNuiSigninUI) X(XamShowSigninUIEx)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -634,6 +636,17 @@ int main(int argc, char** argv) {
       {"XamLookupCommonStringByIndex", __imp__XamLookupCommonStringByIndex, Args({3}), 20000, nullptr, 0},
       {"XamQueryLiveHiveA", __imp__XamQueryLiveHiveA, Args({kIn, kOut + 0x1A00, 64, 0}), 20000, nullptr, 0x80151802},
       {"XamXStudioRequest", __imp__XamXStudioRequest, Args({1, kOut + 0xDD0}), 20000, nullptr, 0x80004005},
+      // The guide screens (no listener: the two notifications go nowhere).
+      {"XamShowGoldUpgradeUI", __imp__XamShowGoldUpgradeUI, Args({0, 0, 0}), 20000, nullptr, 0x65B},
+      {"XamShowMarketplaceUIEx", __imp__XamShowMarketplaceUIEx, Args({0, 1, 1, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0, 0}), 20000,
+       nullptr, 0},
+      {"XamShowNuiDeviceSelectorUI", __imp__XamShowNuiDeviceSelectorUI, Args({1, 0, 1, 0, 0, kOut + 0xDD0, 0}), 20000,
+       nullptr, 5},
+      {"XamShowNuiDirtyDiscErrorUI", __imp__XamShowNuiDirtyDiscErrorUI, Args({1}), 20000, nullptr, 5},
+      {"XamShowNuiGuideUI", __imp__XamShowNuiGuideUI, Args({1, 0}), 20000, nullptr, 5},
+      {"XamShowNuiMessageBoxUI", __imp__XamShowNuiMessageBoxUI, Args({1, 0, kIn, kIn, 1, kIn, 0, 0}), 20000, nullptr, 5},
+      {"XamShowNuiSigninUI", __imp__XamShowNuiSigninUI, Args({1, 0, 0}), 20000, nullptr, 5},
+      {"XamShowSigninUIEx", __imp__XamShowSigninUIEx, Args({1, 0, 0}), 20000, nullptr, 0},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "

@@ -518,6 +518,10 @@ Other calls (9): the console settings a title can now set for the run (`ExSetXCo
 no wireless setup or first run, the two localization errors Xenia knows, no common string table, no Live hive
 (`XamQueryLiveHiveA`) and no xstudio (docs/perf/archive/2026-11-21-sys-step12-misc/).
 
+Guide screens (8): the sign-in (`XamShowSigninUIEx`) and marketplace (`XamShowMarketplaceUIEx`) screens open and
+close the guide at once, as their plain forms; the Gold upgrade is refused; the Kinect forms find no Kinect HUD
+(ERROR_ACCESS_DENIED) (docs/perf/archive/2026-11-21-sys-step12-ui/).
+
 The rows under 1x (docs/perf/archive/2026-11-19-sys-step12-below-1x/): an object's close holds the object manager's
 lock once, and an object only one close hook keeps state for (`AllocatePlainObject`: XAM's enumerators, listeners and
 session handles) runs that hook alone and skips the timer and port tables and the free hooks at release. The suite

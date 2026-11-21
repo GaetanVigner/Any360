@@ -437,6 +437,46 @@ void MiscAdapters() {
   CHECK(Call("XamXStudioRequest", {1, kOut}) == 0x80004005);
 }
 
+void UiAdapters() {
+  // XamShowSigninUIEx: the profile already signed in, the guide opened and closed (XN_SYS_UI 1 then 0 to a listener);
+  // through an overlapped, completed and ERROR_IO_PENDING.
+  const uint32_t listener = uint32_t(Call("XamNotifyCreateListener", {1, 0}));  // XNOTIFY_SYSTEM
+  CHECK(listener != 0);
+  CHECK(Call("XamShowSigninUIEx", {1, 0, 0}) == 0);
+  auto next = [&](uint32_t& id, uint32_t& param) {
+    const bool got = Call("XNotifyGetNext", {listener, 0, kOut, kOut + 4}) != 0;
+    id = G().Load32(kOut), param = G().Load32(kOut + 4);
+    return got;
+  };
+  uint32_t id = 0, param = 0;
+  bool opened = false, closed = false;
+  while (next(id, param)) {
+    if (id == 9) (param ? opened : closed) = true;  // XN_SYS_UI
+  }
+  CHECK(opened && closed);
+  FreshOverlapped();
+  CHECK(Call("XamShowSigninUIEx", {1, 0, kOv}) == 997 && Completed(0, 0) && G().Load32(kOv + 4) == 0);
+  while (next(id, param)) {}
+  // XamShowMarketplaceUIEx: the guide opened and closed for user 0; refused for user 4 or entry point 25, no such user
+  // for users 1-3.
+  CHECK(Call("XamShowMarketplaceUIEx", {0, 1, 0x4D5308BC00000001ull, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0, 0}) == 0);
+  opened = closed = false;
+  while (next(id, param)) {
+    if (id == 9) (param ? opened : closed) = true;
+  }
+  CHECK(opened && closed);
+  CHECK(Call("XamShowMarketplaceUIEx", {4, 0, 0, 0, 0, 0, 0, 0}) == 87 && Call("XamShowMarketplaceUIEx", {0, 25, 0, 0, 0, 0, 0, 0}) == 87);
+  CHECK(Call("XamShowMarketplaceUIEx", {2, 0, 0, 0, 0, 0, 0, 0}) == 0x525);
+  CHECK(!next(id, param));  // the refused calls opened nothing
+  CHECK(Call("NtClose", {listener}) == 0);
+  CHECK(Call("XamShowGoldUpgradeUI", {0, 0, 0}) == 0x65B);
+  // The Kinect forms: no Kinect HUD, ERROR_ACCESS_DENIED.
+  for (const char* name : {"XamShowNuiDeviceSelectorUI", "XamShowNuiDirtyDiscErrorUI", "XamShowNuiGuideUI",
+                           "XamShowNuiMessageBoxUI", "XamShowNuiSigninUI"}) {
+    CHECK(Call(name, {1, 0, kData, kData, 1, kData, 0, 0}) == 5);
+  }
+}
+
 void MediaAdapters() {
   for (const char* name : {"EnumerateMediaObjects", "EnumerateMediaObjects_", "EnumerateMediaObjects_0", "EnumerateMediaObjects_1"}) {
     CHECK(Call(name, {kData, 1, kOut}) == 0x80004001);
@@ -561,6 +601,7 @@ int main() {
   InfoAdapters();
   NuiAdapters();
   MiscAdapters();
+  UiAdapters();
   EarlierBatchAdapters();
   Threads().SetDispatcher(nullptr, nullptr);
   std::filesystem::remove_all(root, error);

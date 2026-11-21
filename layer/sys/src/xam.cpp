@@ -856,6 +856,19 @@ uint32_t Xam::ShowSigninUI(uint32_t, uint32_t) {
   return kErrorSuccess;
 }
 
+uint32_t Xam::ShowSigninUIEx(Guest g, uint32_t users, uint32_t flags, uint32_t overlapped) {
+  const uint32_t result = ShowSigninUI(users, flags);
+  if (!overlapped) return result;
+  CompleteEx(g, overlapped, result, result, result ? 0xFFFFFFFF : 0);
+  return kErrorIoPending;
+}
+
+uint32_t Xam::ShowMarketplaceUIEx(uint32_t user, uint32_t entry_point) {
+  if (user >= 4 || entry_point >= 25) return kErrorInvalidParameter;
+  if (!UserGetSigninState(user)) return kErrorNoSuchUser;
+  return ShowLiveUI();
+}
+
 uint32_t Xam::ShowLiveUI() {
   Notify(kNotifySystemUi, 1);
   Notify(kNotifySystemUi, 0);

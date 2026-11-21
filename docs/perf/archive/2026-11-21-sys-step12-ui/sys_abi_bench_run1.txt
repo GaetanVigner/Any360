@@ -1,0 +1,212 @@
+sys_abi_bench: ns a call through the PowerPC ABI (fastest of 9 runs), hashes and ciphers on 256 bytes; original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by the allocation meter; speed = original / Any360 (> 1: Any360 faster)
+  call                                 |   original |     Any360    B/call  allocs |     speed
+  XeCryptMd5                           |       67.4 |      425.0       0.0    0.00 |      0.2x
+  XeCryptSha256                        |       66.0 |      147.6       0.0    0.00 |      0.4x
+  XeCryptMd5Init                       |       67.4 |        3.3       0.0    0.00 |     20.3x
+  XeCryptMd5Update                     |       66.5 |      338.4       0.0    0.00 |      0.2x
+  XeCryptMd5Final                      |       65.9 |       97.3       0.0    0.00 |      0.7x
+  XeCryptHmacMd5                       |       68.0 |      517.1       0.0    0.00 |      0.1x
+  XeCryptHmacShaInit                   |       66.5 |       11.9       0.0    0.00 |      5.6x
+  XeCryptHmacShaUpdate                 |       67.2 |      110.1       0.0    0.00 |      0.6x
+  XeCryptHmacShaFinal                  |       67.0 |       85.0       0.0    0.00 |      0.8x
+  XeCryptHmacShaVerify                 |       68.4 |      180.1       0.0    0.00 |      0.4x
+  XeCryptDesKey                        |       64.8 |       46.5       0.0    0.00 |      1.4x
+  XeCryptDesEcb                        |       68.0 |       66.2       0.0    0.00 |      1.0x
+  XeCryptDesCbc                        |       67.7 |     2110.6       0.0    0.00 |      0.0x
+  GetLastError                         |       68.5 |        2.9       0.0    0.00 |     24.0x
+  GetCurrentThreadId                   |       68.7 |        1.8       0.0    0.00 |     39.1x
+  GetTickCount                         |       67.5 |       17.4       0.0    0.00 |      3.9x
+  QueryPerformanceFrequency            |       67.6 |        2.8       0.0    0.00 |     23.9x
+  GetSystemTimeAsFileTime              |       70.0 |       19.7       0.0    0.00 |      3.6x
+  lstrlenW                             |       67.8 |        7.6       0.0    0.00 |      8.9x
+  GetModuleHandleA                     |       67.5 |       18.7       0.0    0.00 |      3.6x
+  XGetAudioFlags                       |       66.5 |        2.6       0.0    0.00 |     25.6x
+  XGetOverlappedExtendedError          |       66.9 |        3.0       0.0    0.00 |     22.1x
+  XamGetActiveDashAppInfo              |       70.9 |        3.2       0.0    0.00 |     21.8x
+  XamSetActiveDashAppInfo              |       67.6 |        3.5       0.0    0.00 |     19.5x
+  XamGetCachedTitleName                |       68.8 |       20.7       0.0    0.00 |      3.3x
+  XamGetDashBackstackData              |       68.2 |        3.0       0.0    0.00 |     22.7x
+  XamGetDashContext                    |       68.5 |        2.8       0.0    0.00 |     24.6x
+  XamGetLanguage                       |       66.1 |        4.4       0.0    0.00 |     15.0x
+  XamGetLanguageLocaleFallbackString   |       68.5 |        4.5       0.0    0.00 |     15.2x
+  XamGetLanguageTypeface               |       67.4 |       18.6       0.0    0.00 |      3.6x
+  XamGetOnlineCountryFeatures          |       68.2 |        6.3       0.0    0.00 |     10.8x
+  XamGetOnlineLanguageAndCountry       |       68.0 |        3.9       0.0    0.00 |     17.5x
+  XamIsChildAccountSignedIn            |       66.4 |        2.0       0.0    0.00 |     33.1x
+  XamIsCurrentTitleDash                |       66.8 |        3.0       0.0    0.00 |     22.2x
+  XamIsIptvEnabled                     |       67.7 |        2.0       0.0    0.00 |     34.0x
+  XamIsNuiUIActive                     |       67.4 |        2.0       0.0    0.00 |     33.9x
+  XamIsSystemExperienceTitleId         |       66.6 |        2.8       0.0    0.00 |     23.8x
+  XamIsSystemTitleId                   |       67.6 |        2.8       0.0    0.00 |     24.3x
+  XamIsXbox1TitleId                    |       65.8 |        2.8       0.0    0.00 |     23.5x
+  RtlGetLastError                      |       66.6 |        3.0       0.0    0.00 |     22.2x
+  RtlSetLastNTError                    |       67.5 |        6.5       0.0    0.00 |     10.4x
+  RtlRandom                            |       65.6 |        6.0       0.0    0.00 |     10.9x
+  RtlDowncaseUnicodeChar               |       67.5 |        3.0       0.0    0.00 |     22.6x
+  RtlGetStackLimits                    |       66.1 |        3.0       0.0    0.00 |     22.0x
+  RtlImageDirectoryEntryToData (file)  |       68.6 |        7.6       0.0    0.00 |      9.1x
+  KeQueryInterruptTime                 |       67.8 |       16.1       0.0    0.00 |      4.2x
+  KeSetPriorityThread                  |       69.4 |       10.7       0.0    0.00 |      6.5x
+  HalGetCurrentAVPack                  |       67.0 |        3.0       0.0    0.00 |     22.5x
+  XamGetLocaleDateFormat               |       66.8 |        2.6       0.0    0.00 |     25.5x
+  XamNuiHudGetEngagedTrackingID        |       66.6 |        2.0       0.0    0.00 |     33.3x
+  XamNuiHudGetInitializeFlags          |       67.7 |        2.0       0.0    0.00 |     34.0x
+  XamNuiHudGetVersions                 |       67.1 |        3.5       0.0    0.00 |     19.4x
+  XamNuiHudIsEnabled                   |       68.2 |        2.0       0.0    0.00 |     34.3x
+  XamNuiHudSetEngagedTrackingID        |       67.0 |        3.0       0.0    0.00 |     22.4x
+  XamNuiIdentityGetSessionId           |       66.5 |        3.7       0.0    0.00 |     18.0x
+  XamNuiIsChatMicEnabled               |       68.6 |        2.0       0.0    0.00 |     34.5x
+  XamNuiIsDeviceReady                  |       66.7 |        2.0       0.0    0.00 |     33.5x
+  XamSetDashContext                    |       66.7 |        4.2       0.0    0.00 |     16.0x
+  XamShowCreateProfileUI (no listener) |       68.3 |        4.7       0.0    0.00 |     14.5x
+  XamShowCreateProfileUIEx (no listener) |       67.3 |        5.0       0.0    0.00 |     13.5x
+  XamShowEditProfileUI (no listener)   |       68.9 |        5.2       0.0    0.00 |     13.3x
+  XamShowForcedNameChangeUI (no listener) |       65.3 |        5.2       0.0    0.00 |     12.6x
+  XamShowGamerCardUI (no listener)     |       67.7 |        5.0       0.0    0.00 |     13.6x
+  XamShowMultiplayerUpgradeUI          |       67.9 |        3.2       0.0    0.00 |     21.0x
+  XamShowNuiHardwareRequiredUI         |       69.4 |        3.0       0.0    0.00 |     23.1x
+  XamProfileCreateEnumerator (+ NtClose) |       67.4 |       60.1       0.0    0.00 |      1.1x
+  XamProfileEnumerate (at the end)     |       67.9 |       16.5       0.0    0.00 |      4.1x
+  XamProfileFindAccount                |       65.9 |       13.3       0.0    0.00 |      5.0x
+  XamProfileGetLiveLegalLocale         |       66.8 |       19.8       0.0    0.00 |      3.4x
+  XamProfileOpen (mounted again)       |       67.2 |       65.0       0.0    0.00 |      1.0x
+  XamUserGetCachedUserFlags            |       68.1 |        6.3       0.0    0.00 |     10.9x
+  XamUserGetIndexFromXUID              |       68.3 |        4.2       0.0    0.00 |     16.2x
+  XamUserGetOnlineLanguageFromXUID     |       67.8 |        2.8       0.0    0.00 |     24.2x
+  XamUserGetSubscriptionType           |       66.3 |        4.5       0.0    0.00 |     14.8x
+  XamUserGetUserFlags                  |       67.0 |        6.2       0.0    0.00 |     10.8x
+  XamUserGetUserFlagsFromXUID          |       67.9 |        5.4       0.0    0.00 |     12.6x
+  XamUserGetUserTenure                 |       67.7 |        3.8       0.0    0.00 |     17.9x
+  XamUserIsParentalControlled          |       66.3 |        2.0       0.0    0.00 |     33.3x
+  XamUserLogon                         |       67.0 |        3.9       0.0    0.00 |     17.4x
+  XamUserNuiGetUserIndexForSignin      |       66.9 |        4.0       0.0    0.00 |     16.8x
+  XamUserReadUserPreference            |       65.7 |        5.7       0.0    0.00 |     11.4x
+  XamUserWriteUserPreference           |       66.4 |        5.8       0.0    0.00 |     11.5x
+  XeCryptSha512Init                    |       66.2 |        4.5       0.0    0.00 |     14.6x
+  XeCryptSha512Update (256 B)          |       66.7 |      277.4       0.0    0.00 |      0.2x
+  XeCryptSha512Final                   |       67.4 |      153.2       0.0    0.00 |      0.4x
+  XeCryptBnQw_Copy (16 words)          |       68.2 |        4.5       0.0    0.00 |     15.2x
+  XeCryptBnQwNeModInv                  |       66.2 |        3.3       0.0    0.00 |     20.1x
+  XeCryptBnQwNeModMul (16 words)       |       67.5 |      391.6       0.0    0.00 |      0.2x
+  XeCryptBnQwBeSigFormat               |       66.7 |      876.1       0.0    0.00 |      0.1x
+  XeCryptBnDwLePkcs1Format (256 B)     |       67.5 |        8.9       0.0    0.00 |      7.6x
+  XeKeysGetConsoleType                 |       68.6 |        2.8       0.0    0.00 |     24.1x
+  XeKeysGetConsoleID                   |       69.4 |        3.0       0.0    0.00 |     22.9x
+  XeKeysGetKeyProperties               |       67.9 |        2.8       0.0    0.00 |     24.1x
+  XTLGetLanguageV2                     |       68.4 |        4.4       0.0    0.00 |     15.5x
+  XapipGetLocale                       |       67.8 |       13.5       0.0    0.00 |      5.0x
+  XapiFormatTimeOut                    |       70.2 |        2.9       0.0    0.00 |     24.4x
+  XamIptvGetServiceName                |       70.0 |        4.4       0.0    0.00 |     15.8x
+  XamAllocEx (physical 9 KB, + XamFree) |       68.0 |      148.4       0.0    0.00 |      0.5x
+  XamAllocEx (virtual 9 KB, + XamFree) |       67.6 |      104.6       0.0    0.00 |      0.6x
+  LDICreateDecompression + Destroy     |      139.1 |       33.8       0.8    0.00 |      4.1x
+  LDIDecompress (stream: 32 chunks, 1 MiB) |     2305.0 |  2841720.0       0.0    0.00 |      0.0x
+  XamContentCreateEnumeratorInternal (2, + NtClose) |      111.2 |   139105.0    3366.0   30.00 |      0.0x
+  XamContentGetMetaDataInternal        |      117.9 |    73035.9     944.0    9.00 |      0.0x
+  XamContentSetThumbnailInternal (4 B) |      121.2 |   233614.0     608.0    6.00 |      0.0x
+  XamContentRegisterChangeCallback     |      122.9 |        5.2       0.0    0.00 |     23.4x
+  XamLoaderRegisterLaunchRequestCallback |      120.5 |        4.8       0.0    0.00 |     25.3x
+  XamReadString                        |      113.3 |        8.6       0.0    0.00 |     13.2x
+  NetDll_WSAStartupEx                  |      115.9 |       13.8       0.0    0.00 |      8.4x
+  NetDll_XNetStartupEx                 |      115.9 |        9.9       0.0    0.00 |     11.7x
+  XamNetworkStorageUserHasPrivilege    |       69.0 |        2.8       0.0    0.00 |     24.6x
+  ObLookupAnyThreadByThreadId (unknown id) |       67.2 |       20.2       0.0    0.00 |      3.3x
+  ObCreateObject (unnamed, 0x40 B)     |      116.8 |       20.9       0.0    0.00 |      5.6x
+  ObCreateObject (named, 0x40 B)       |      113.1 |       34.7       0.0    0.00 |      3.3x
+  XexLoadImageFromMemory (not loaded)  |      114.7 |       39.7       0.0    0.00 |      2.9x
+  XamAvatarBeginEnumAssets             |      114.2 |        6.8       0.0    0.00 |     16.8x
+  XamAvatarEndEnumAssets               |      112.5 |        6.7       0.0    0.00 |     16.8x
+  XamAvatarEnumAssets                  |       92.0 |        2.3       0.0    0.00 |     39.7x
+  XamAvatarGenerateMipMaps             |      114.5 |        6.8       0.0    0.00 |     16.8x
+  XamAvatarGetAssetBinary              |       87.9 |        4.1       0.0    0.00 |     21.6x
+  XamAvatarGetAssetIcon                |      110.0 |        6.6       0.0    0.00 |     16.7x
+  XamAvatarGetAssets                   |      114.5 |        6.3       0.0    0.00 |     18.0x
+  XamAvatarGetAssetsResultSize         |      109.8 |        4.6       0.0    0.00 |     24.1x
+  XamAvatarGetInstalledAssetPackageDescription |      116.8 |       27.4       0.0    0.00 |      4.3x
+  XamAvatarGetInstrumentation          |       68.2 |        3.8       0.0    0.00 |     17.9x
+  XamAvatarSetManifest (in memory)     |       68.0 |       16.5       0.1    0.00 |      4.1x
+  XamAvatarGetManifestLocalUser        |       67.3 |       14.7       0.0    0.00 |      4.6x
+  XamAvatarGetManifestsByXuid          |       72.9 |        7.0       0.0    0.00 |     10.4x
+  XamAvatarGetMetadataRandom           |       97.5 |        7.1       0.0    0.00 |     13.8x
+  XamAvatarGetMetadataSignedOutProfile |      119.5 |        7.1       0.0    0.00 |     16.7x
+  XamAvatarGetMetadataSignedOutProfileCount |      114.9 |        6.8       0.0    0.00 |     16.8x
+  XamAvatarLoadAnimation               |       68.8 |        7.0       0.0    0.00 |      9.9x
+  XamAvatarManifestGetBodyType         |       72.9 |        2.3       0.0    0.00 |     31.4x
+  XamAvatarReinstallAwardedAsset       |      113.8 |        2.3       0.0    0.00 |     50.0x
+  XamAvatarSetCustomAsset              |      114.4 |        2.3       0.0    0.00 |     49.9x
+  XamAvatarSetMocks                    |      113.0 |        2.3       0.0    0.00 |     50.0x
+  XamAvatarWearNow                     |       69.8 |        3.6       0.0    0.00 |     19.2x
+  EnumerateMediaObjects                |       69.2 |        2.3       0.0    0.00 |     30.5x
+  EnumerateMediaObjects_               |      116.4 |        2.2       0.0    0.00 |     52.1x
+  EnumerateMediaObjects_0              |      116.6 |        2.3       0.0    0.00 |     50.8x
+  EnumerateMediaObjects_1              |      116.3 |        2.3       0.0    0.00 |     51.4x
+  XamMediaVerificationCreate           |      112.6 |        2.3       0.0    0.00 |     49.5x
+  XamMediaVerificationClose            |      110.0 |        2.3       0.0    0.00 |     47.9x
+  XamMediaVerificationInject           |      111.4 |        2.3       0.0    0.00 |     49.3x
+  XamMediaVerificationVerify (no callback) |      110.9 |        3.1       0.0    0.00 |     35.3x
+  XamMediaVerificationFailedBlocks     |       78.1 |        7.2       0.0    0.00 |     10.8x
+  XampWebInstrumentationSetProfileCounts |       75.5 |        1.8       0.0    0.00 |     41.6x
+  XampXAuthStartup                     |       67.7 |        5.7       0.0    0.00 |     11.9x
+  XampXAuthShutdown                    |       73.0 |        2.7       0.0    0.00 |     27.3x
+  XampXAuthGetTitleBuffer              |      116.8 |        1.8       0.0    0.00 |     63.3x
+  XamProfileClose (not mounted)        |       68.8 |       25.2       0.0    0.00 |      2.7x
+  XamProfileOpen + XamProfileClose (mounted, unmounted) |      222.4 |      863.2     440.0    6.00 |      0.3x
+  XamProfileCreate                     |      116.4 |        6.0       0.0    0.00 |     19.6x
+  XamProfileGetCreationStatus          |       67.7 |        7.0       0.0    0.00 |      9.7x
+  XamProfileLoadAccountInfo            |      108.5 |       11.7       0.0    0.00 |      9.3x
+  XamUserCreateTitlesPlayedEnumerator (+ NtClose) |       70.3 |       56.8       0.0    0.00 |      1.2x
+  XamUserIsGuest                       |       67.6 |        1.9       0.0    0.00 |     36.5x
+  XamUserIsUnsafeProgrammingAllowed    |      109.9 |        6.4       0.0    0.00 |     17.1x
+  XamUserLogonEx                       |       68.1 |        4.2       0.0    0.00 |     16.1x
+  XamUserNuiEnableBiometric            |       66.2 |        2.0       0.0    0.00 |     32.9x
+  XamUserNuiGetUserIndex               |       83.5 |        2.3       0.0    0.00 |     36.9x
+  XamUserNuiGetUserIndexForBind        |      117.4 |        2.0       0.0    0.00 |     58.2x
+  XamContentGetAttributesInternal      |      117.0 |    20926.5     304.0    3.00 |      0.0x
+  XamContentGetDeviceVolumePath        |      122.7 |       11.2       0.0    0.00 |     11.0x
+  XamContentGetLocalizedDeviceData (drive) |      122.2 |    17898.9       0.0    0.00 |      0.0x
+  XamContentGetLocalizedDeviceData (disc) |       68.0 |       27.7       0.0    0.00 |      2.5x
+  XamContentGetLocalizedString         |       69.8 |       22.4       0.0    0.00 |      3.1x
+  XamContentLaunchImageFromFileInternal |      115.7 |        2.3       0.0    0.00 |     50.4x
+  XamContentLaunchImageInternal        |      115.5 |        2.3       0.0    0.00 |     50.3x
+  XamContentLaunchImageInternalEx      |       71.7 |        2.0       0.0    0.00 |     35.3x
+  XamContentResolveInternal (mounted again) |       67.2 |       48.1       0.0    0.00 |      1.4x
+  XamReadTile                          |       68.8 |        4.6       0.0    0.00 |     14.8x
+  XamReadTileEx                        |       67.2 |        5.2       0.0    0.00 |     12.9x
+  XamGetCountry                        |       68.2 |        3.8       0.0    0.00 |     18.1x
+  XamSetCountry (the same)             |      115.2 |        3.8       0.0    0.00 |     30.0x
+  XamGetDvrStorage                     |      114.3 |        3.6       0.0    0.00 |     31.9x
+  XamSetDvrStorage                     |      113.6 |        2.3       0.0    0.00 |     50.3x
+  XamGetLanguageTypefacePatch          |      112.4 |        7.5       0.0    0.00 |     14.9x
+  XamGetLiveHiveValueA                 |      114.9 |        7.5       0.0    0.00 |     15.3x
+  XamGetLiveHiveValueW                 |      112.9 |        7.5       0.0    0.00 |     15.1x
+  XamGetStagingMode                    |       67.6 |        2.0       0.0    0.00 |     33.3x
+  XamIsNatalPlaybackEnabled            |       67.9 |        1.8       0.0    0.00 |     37.4x
+  XamIsNuiAutomationEnabled            |       88.6 |        2.3       0.0    0.00 |     38.7x
+  XamNuiCameraElevationGetAngle        |      113.6 |        2.3       0.0    0.00 |     49.1x
+  XamNuiCameraGetTiltControllerType    |      114.5 |        2.3       0.0    0.00 |     50.4x
+  XamNuiCameraSetFlags                 |      113.6 |        2.3       0.0    0.00 |     49.7x
+  XamNuiCameraTiltGetStatus            |       68.3 |        2.0       0.0    0.00 |     33.8x
+  XamNuiCameraTiltSetCallback          |       67.6 |        4.8       0.0    0.00 |     14.2x
+  XamNuiGetDepthCalibration            |       96.6 |        2.9       0.0    0.00 |     33.8x
+  XamNuiIdentityAbort                  |      117.0 |        2.3       0.0    0.00 |     51.4x
+  XamNuiIdentityEnrollForSignIn        |      111.0 |        2.3       0.0    0.00 |     48.2x
+  XamNuiPlayerEngagementUpdate         |      111.1 |        2.8       0.0    0.00 |     40.3x
+  XamNuiSkeletonGetBestSkeletonIndex   |       73.8 |        2.3       0.0    0.00 |     31.7x
+  ExSetXConfigSetting (video flags)    |      112.8 |        5.6       0.0    0.00 |     20.1x
+  ExReadModifyWriteXConfigSettingUlong (retail flags) |      114.9 |        4.8       0.0    0.00 |     23.8x
+  LDIResetDecompression                |      113.5 |       20.2       0.0    0.00 |      5.6x
+  XamDoesOmniNeedConfiguration         |       92.6 |        2.3       0.0    0.00 |     40.7x
+  XamFirstRunExperienceShouldRun       |      113.0 |        2.3       0.0    0.00 |     49.2x
+  XamLogLocalizationEtx                |      111.7 |        2.6       0.0    0.00 |     43.2x
+  XamLookupCommonStringByIndex         |       92.8 |        2.3       0.0    0.00 |     40.2x
+  XamQueryLiveHiveA                    |       69.4 |        4.3       0.0    0.00 |     16.2x
+  XamXStudioRequest                    |      105.1 |        2.1       0.0    0.00 |     48.9x
+  XamShowGoldUpgradeUI                 |      112.4 |        2.3       0.0    0.00 |     48.8x
+  XamShowMarketplaceUIEx               |      114.7 |        8.5       0.0    0.00 |     13.5x
+  XamShowNuiDeviceSelectorUI           |       82.9 |        2.2       0.0    0.00 |     37.3x
+  XamShowNuiDirtyDiscErrorUI           |      111.7 |        2.3       0.0    0.00 |     49.4x
+  XamShowNuiGuideUI                    |      110.3 |        2.3       0.0    0.00 |     47.8x
+  XamShowNuiMessageBoxUI               |      115.2 |        2.3       0.0    0.00 |     50.5x
+  XamShowNuiSigninUI                   |      112.5 |        2.2       0.0    0.00 |     52.0x
+  XamShowSigninUIEx                    |      112.9 |        8.9       0.0    0.00 |     12.7x
+sys_abi_bench: Any360 allocated per call 2.85 B in 0.0271 allocations over 35820180 timed calls

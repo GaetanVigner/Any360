@@ -566,6 +566,17 @@ ANY360_SYS_EXPORT(XamReadTileToTexture) {
 ANY360_SYS_EXPORT(XamShowFriendsUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
 ANY360_SYS_EXPORT(XamShowGamerCardUIForXUID) { ctx.r3.u64 = XamState().ShowLiveUI(); }
 ANY360_SYS_EXPORT(XamShowMarketplaceUI) { ctx.r3.u64 = XamState().ShowLiveUI(); }
+// Step 12, the guide screens Xenia stubs too.
+ANY360_SYS_EXPORT(XamShowMarketplaceUIEx) { ctx.r3.u64 = XamState().ShowMarketplaceUIEx(ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(XamShowSigninUIEx) { ctx.r3.u64 = XamState().ShowSigninUIEx({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+ANY360_SYS_EXPORT(XamShowGoldUpgradeUI) { ctx.r3.u64 = kErrorFunctionFailed; }  // no Gold membership to buy offline
+// The Kinect forms of the guide screens: Xenia checks the Kinect HUD first, which is not there without a Kinect:
+// ERROR_ACCESS_DENIED, nothing shown.
+ANY360_SYS_EXPORT(XamShowNuiDeviceSelectorUI) { ctx.r3.u64 = 5; }
+ANY360_SYS_EXPORT(XamShowNuiDirtyDiscErrorUI) { ctx.r3.u64 = 5; }
+ANY360_SYS_EXPORT(XamShowNuiGuideUI) { ctx.r3.u64 = 5; }
+ANY360_SYS_EXPORT(XamShowNuiMessageBoxUI) { ctx.r3.u64 = 5; }
+ANY360_SYS_EXPORT(XamShowNuiSigninUI) { ctx.r3.u64 = 5; }
 ANY360_SYS_EXPORT(IoDismountVolumeByFileHandle) { ctx.r3.u64 = 0; }
 // The console's key pair is not there to sign with: signatures pass, as the reference answers.
 ANY360_SYS_EXPORT(XeKeysConsolePrivateKeySign) { ctx.r3.u64 = 0; }
@@ -1776,6 +1787,14 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XamShowFriendsUI),
     ANY360_SYS_ENTRY(XamShowGamerCardUIForXUID),
     ANY360_SYS_ENTRY(XamShowMarketplaceUI),
+    ANY360_SYS_ENTRY(XamShowGoldUpgradeUI),
+    ANY360_SYS_ENTRY(XamShowMarketplaceUIEx),
+    ANY360_SYS_ENTRY(XamShowNuiDeviceSelectorUI),
+    ANY360_SYS_ENTRY(XamShowNuiDirtyDiscErrorUI),
+    ANY360_SYS_ENTRY(XamShowNuiGuideUI),
+    ANY360_SYS_ENTRY(XamShowNuiMessageBoxUI),
+    ANY360_SYS_ENTRY(XamShowNuiSigninUI),
+    ANY360_SYS_ENTRY(XamShowSigninUIEx),
     ANY360_SYS_ENTRY(IoDismountVolumeByFileHandle),
     ANY360_SYS_ENTRY(XeKeysConsolePrivateKeySign),
     ANY360_SYS_ENTRY(XeKeysConsoleSignatureVerification),
