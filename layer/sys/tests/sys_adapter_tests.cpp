@@ -477,6 +477,30 @@ void UiAdapters() {
   }
 }
 
+void ModuleAdapters() {
+  // XexLoadExecutable: XexLoadImage's answers (the title's module, the system's, nothing else).
+  const uint32_t saved_handle = XamState().title().module_handle;
+  XamState().title().module_handle = 0x80001234;
+  std::memcpy(g_base + kData, "game:\\default.xex", 18);
+  CHECK(Call("XexLoadExecutable", {kData, 0, 0, kOut}) == 0 && G().Load32(kOut) == 0x80001234);
+  std::memcpy(g_base + kData, "xam.xex", 8);
+  CHECK(Call("XexLoadExecutable", {kData, 0, 0, kOut}) == Call("XexLoadImage", {kData, 0, 0, kOut + 4}));
+  CHECK(G().Load32(kOut) == G().Load32(kOut + 4) && G().Load32(kOut) != 0);
+  std::memcpy(g_base + kData, "other.xex", 10);
+  CHECK(Call("XexLoadExecutable", {kData, 0, 0, kOut}) == 0xC000000F && G().Load32(kOut) == 0);
+  XamState().title().module_handle = saved_handle;
+  // XamLoaderGetMediaInfo(Ex): a game disc, the title's id, the third word 0; r3 untouched (no result).
+  const uint32_t saved_title = XamState().title().title_id;
+  XamState().title().title_id = 0x4D5307E6;
+  std::memset(g_base + kOut, 0xAA, 12);
+  CHECK(Call("XamLoaderGetMediaInfo", {kOut, kOut + 4}) == kOut);
+  CHECK(G().Load32(kOut) == 1 && G().Load32(kOut + 4) == 0x4D5307E6 && G().Load32(kOut + 8) == 0xAAAAAAAA);
+  CHECK(Call("XamLoaderGetMediaInfoEx", {kOut, kOut + 4, kOut + 8}) == kOut && G().Load32(kOut + 8) == 0);
+  Call("XamLoaderGetMediaInfoEx", {0, 0, 0});
+  XamState().title().title_id = saved_title;
+  CHECK(Call("XamUpdateGetBaseSystemVersion", {}) == 1888 && Call("XamUpdateGetCurrentSystemVersion", {}) == 0xFFFF);
+}
+
 void MediaAdapters() {
   for (const char* name : {"EnumerateMediaObjects", "EnumerateMediaObjects_", "EnumerateMediaObjects_0", "EnumerateMediaObjects_1"}) {
     CHECK(Call(name, {kData, 1, kOut}) == 0x80004001);
@@ -602,6 +626,7 @@ int main() {
   NuiAdapters();
   MiscAdapters();
   UiAdapters();
+  ModuleAdapters();
   EarlierBatchAdapters();
   Threads().SetDispatcher(nullptr, nullptr);
   std::filesystem::remove_all(root, error);

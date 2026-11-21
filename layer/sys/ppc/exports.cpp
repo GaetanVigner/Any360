@@ -591,6 +591,23 @@ ANY360_SYS_EXPORT(NtDeviceIoControlFile) {
   ctx.r3.u64 = Files().DeviceIoControl({base}, ctx.r7.u32, ctx.r8.u32, StackArgument(ctx, base, 8), StackArgument(ctx, base, 9));
 }
 ANY360_SYS_EXPORT(XexLoadImage) { ctx.r3.u64 = XamState().LoadImage({base}, ctx.r3.u32, ctx.r6.u32); }
+// Step 12, the module calls Xenia stubs too.
+// (name, flags, minimum version, handle out): XexLoadImage's answer (Xenia's is XexLoadImage too).
+ANY360_SYS_EXPORT(XexLoadExecutable) { ctx.r3.u64 = XamState().LoadImage({base}, ctx.r3.u32, ctx.r6.u32); }
+// (media type out, title id out[, a word out]): the title runs from an Xbox 360 game disc (1); its title id (Xenia
+// gives 0, having none to give), the third word 0. No result.
+static void LoaderGetMediaInfo(uint8_t* base, uint32_t media_type, uint32_t title_id, uint32_t extra) {
+  Guest g{base};
+  if (media_type) g.Store32(media_type, 1);  // X_DVD_DISC_STATE XBOX_360_GAME_DISC
+  if (title_id) g.Store32(title_id, XamState().title().title_id);
+  if (extra) g.Store32(extra, 0);
+}
+ANY360_SYS_EXPORT(XamLoaderGetMediaInfo) { LoaderGetMediaInfo(base, ctx.r3.u32, ctx.r4.u32, 0); }
+ANY360_SYS_EXPORT(XamLoaderGetMediaInfoEx) { LoaderGetMediaInfo(base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+// The system's versions as build numbers: the first retail kernel's (1888, as Xenia), and as current the build the
+// layer reports in XboxKrnlVersion (0xFFFF, newer than any title asks for).
+ANY360_SYS_EXPORT(XamUpdateGetBaseSystemVersion) { ctx.r3.u64 = 1888; }
+ANY360_SYS_EXPORT(XamUpdateGetCurrentSystemVersion) { ctx.r3.u64 = 0xFFFF; }
 ANY360_SYS_EXPORT(XexUnloadImage) { ctx.r3.u64 = XamState().UnloadImage(ctx.r3.u32); }
 // Another executable from a content package (a demo, an offer): no image is loaded besides the title's.
 ANY360_SYS_EXPORT(XamContentLaunchImage) { ctx.r3.u64 = kErrorFileNotFound; }
@@ -1802,6 +1819,11 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(KeRestoreFloatingPointState),
     ANY360_SYS_ENTRY(NtDeviceIoControlFile),
     ANY360_SYS_ENTRY(XexLoadImage),
+    ANY360_SYS_ENTRY(XamLoaderGetMediaInfo),
+    ANY360_SYS_ENTRY(XamLoaderGetMediaInfoEx),
+    ANY360_SYS_ENTRY(XamUpdateGetBaseSystemVersion),
+    ANY360_SYS_ENTRY(XamUpdateGetCurrentSystemVersion),
+    ANY360_SYS_ENTRY(XexLoadExecutable),
     ANY360_SYS_ENTRY(XexUnloadImage),
     ANY360_SYS_ENTRY(XamContentLaunchImage),
     ANY360_SYS_ENTRY(XamContentGetAttributesInternal),

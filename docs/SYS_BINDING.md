@@ -522,6 +522,10 @@ Guide screens (8): the sign-in (`XamShowSigninUIEx`) and marketplace (`XamShowMa
 close the guide at once, as their plain forms; the Gold upgrade is refused; the Kinect forms find no Kinect HUD
 (ERROR_ACCESS_DENIED) (docs/perf/archive/2026-11-21-sys-step12-ui/).
 
+Module and loader calls (5): `XexLoadExecutable` answers as `XexLoadImage`, the media info says a game disc with the
+title's id, and the system versions are the first retail kernel's (base) and the layer's reported build (current)
+(docs/perf/archive/2026-11-21-sys-step12-module/).
+
 The rows under 1x (docs/perf/archive/2026-11-19-sys-step12-below-1x/): an object's close holds the object manager's
 lock once, and an object only one close hook keeps state for (`AllocatePlainObject`: XAM's enumerators, listeners and
 session handles) runs that hook alone and skips the timer and port tables and the free hooks at release. The suite

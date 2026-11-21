@@ -89,7 +89,9 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamLookupCommonStringByIndex) X(XamQueryLiveHiveA) X(XamXStudioRequest) X(ExReadModifyWriteXConfigSettingUlong)    \
   X(ExSetXConfigSetting) X(LDIResetDecompression)                                                                      \
   X(XamShowGoldUpgradeUI) X(XamShowMarketplaceUIEx) X(XamShowNuiDeviceSelectorUI) X(XamShowNuiDirtyDiscErrorUI)        \
-  X(XamShowNuiGuideUI) X(XamShowNuiMessageBoxUI) X(XamShowNuiSigninUI) X(XamShowSigninUIEx)
+  X(XamShowNuiGuideUI) X(XamShowNuiMessageBoxUI) X(XamShowNuiSigninUI) X(XamShowSigninUIEx)                            \
+  X(XamLoaderGetMediaInfo) X(XamLoaderGetMediaInfoEx) X(XamUpdateGetBaseSystemVersion)                                 \
+  X(XamUpdateGetCurrentSystemVersion) X(XexLoadExecutable)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -647,6 +649,14 @@ int main(int argc, char** argv) {
       {"XamShowNuiMessageBoxUI", __imp__XamShowNuiMessageBoxUI, Args({1, 0, kIn, kIn, 1, kIn, 0, 0}), 20000, nullptr, 5},
       {"XamShowNuiSigninUI", __imp__XamShowNuiSigninUI, Args({1, 0, 0}), 20000, nullptr, 5},
       {"XamShowSigninUIEx", __imp__XamShowSigninUIEx, Args({1, 0, 0}), 20000, nullptr, 0},
+      // The module calls.
+      {"XamLoaderGetMediaInfo", __imp__XamLoaderGetMediaInfo, Args({kOut + 0xDD0, kOut + 0xDD4}), 20000, nullptr, -1},
+      {"XamLoaderGetMediaInfoEx", __imp__XamLoaderGetMediaInfoEx, Args({kOut + 0xDD0, kOut + 0xDD4, kOut + 0xDD8}), 20000,
+       nullptr, -1},
+      {"XamUpdateGetBaseSystemVersion", __imp__XamUpdateGetBaseSystemVersion, Args({}), 20000, nullptr, 1888},
+      {"XamUpdateGetCurrentSystemVersion", __imp__XamUpdateGetCurrentSystemVersion, Args({}), 20000, nullptr, 0xFFFF},
+      {"XexLoadExecutable (not loaded)", __imp__XexLoadExecutable, Args({kObjectName + 0x40, 0, 0, kOut + 0xDC4}), 20000,
+       nullptr, 0xC000000F},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "
