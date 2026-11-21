@@ -859,6 +859,93 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: cull pixels cw+back %u, cw+front %u, ccw+back %u, both %u\n", cw_cull_back,
                 cw_cull_front, ccw_cull_back, both);
     CHECK(cw_cull_back == 0 && cw_cull_front > 1900 && ccw_cull_back > 1900 && both == 0);
+    // A rectangle list is not a polygon (the reference's draw_util): never culled, whatever its winding.
+    for (const uint32_t mode_cntl : {1u << 1, 1u << 0, 3u, 1u << 2 | 3u}) {
+      Pixels p = scenario("rectangle list culling", nullptr, [&] {
+        s.Reg(kPaSuScModeCntl, mode_cntl);
+        s.Vertices(0);
+        s.Color(255, 255, 255, 255);
+        s.DrawAuto(8, 3);
+      });
+      std::printf("gfx_render_tests: rectangle list with cull mode %u: %u of %u pixels\n", mode_cntl, p.Count(white),
+                  kSize * kSize);
+      CHECK(p.Count(white) == kSize * kSize);
+    }
+  }
+  // Depth over the EDRAM of a colour surface: the colour surface reads the depth words (depth << 8 | stencil, 24-bit
+  // unorm for D24S8, float24 for D24FS8), as the EDRAM holds them; a colour write after the depth keeps the colour.
+  {
+    const float red[4] = {1, 0, 0, 1};
+    auto words = [&](const vk::SurfaceKey& key) {
+      std::vector<uint8_t> bytes;
+      std::vector<uint32_t> w(kSize * kSize, 0);
+      CHECK(renderer.ReadBack(key, kSize, kSize, bytes));
+      if (bytes.size() == w.size() * 4) std::memcpy(w.data(), bytes.data(), bytes.size());
+      return w;
+    };
+    auto all = [](const std::vector<uint32_t>& w, uint32_t value) {
+      return std::all_of(w.begin(), w.end(), [&](uint32_t v) { return v == value; });
+    };
+    const uint32_t copies = renderer.stats().edram_depth_to_colour;
+    CHECK(renderer.ClearDepthStencil({768, kSize, 0, 1}, 1.0f, 0x5A));
+    const std::vector<uint32_t> unorm = words({768, kSize, 0, 0});
+    std::printf("gfx_render_tests: D24S8 1.0 / 5A under k_8_8_8_8: %08X\n", unorm[0]);
+    CHECK(all(unorm, 0xFFFFFF5Au));
+    // 0.25 in float24: exponent 13 (bias 15), mantissa 0.
+    CHECK(renderer.ClearDepthStencil({776, kSize, 1, 1}, 0.25f, 0x33));
+    const std::vector<uint32_t> float24 = words({776, kSize, 0, 0});
+    std::printf("gfx_render_tests: D24FS8 0.25 / 33 under k_8_8_8_8: %08X\n", float24[0]);
+    CHECK(all(float24, 0xD0000033u));
+    CHECK(renderer.stats().edram_depth_to_colour > copies);
+    // Colour written after the depth: its own.
+    CHECK(renderer.ClearDepthStencil({784, kSize, 0, 1}, 1.0f, 0x5A));
+    CHECK(renderer.ClearColor({784, kSize, 0, 0}, red));
+    CHECK(all(words({784, kSize, 0, 0}), Rgba(255, 0, 0, 255)));
+  }
+  // A draw without clipping under Direct3D 9's 8192 scissor (a screen-space rectangle) writes the rows its vertices
+  // reach, not the whole surface: a depth rectangle over the first tile row (pixel rows 0-15 at pitch 64) turns those
+  // rows of a colour surface at the same base into depth words and leaves a colour surface a tile row lower as it was.
+  {
+    const float red[4] = {1, 0, 0, 1};
+    const float rect[3][4] = {{0, 0, 0.5f, 1}, {float(kSize), 0, 0.5f, 1}, {0, 16, 0.5f, 1}};
+    for (uint32_t i = 0; i < 3; ++i) {
+      for (uint32_t c = 0; c < 4; ++c) SetBig(kVertices + 0xA00 + 16 * i + 4 * c, Bits(rect[i][c]));
+    }
+    const vk::SurfaceKey near_colour{1024, kSize, 0, 0}, far_colour{1024 + 1, kSize, 0, 0};
+    const uint32_t estimated = renderer.stats().extents_estimated;
+    scenario("unclipped rectangle extent", nullptr, [&] {
+      s.Run();  // the scenario's clears in first
+      CHECK(renderer.ClearColor(near_colour, red));
+      CHECK(renderer.ClearColor(far_colour, red));
+      s.Reg(0x2204, 1u << 16);  // PA_CL_CLIP_CNTL: clip_disable
+      s.Reg(0x2206, 3u << 8);   // PA_CL_VTE_CNTL: window coordinates as they are
+      s.Put({Type0(0x200E, 2), 0, 8192u << 16 | 8192u});
+      s.Put({Type0(0x2080, 3), 0, 0, 8192u << 16 | 8192u});
+      s.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 7u << 4);  // z_enable, z_write, ALWAYS
+      s.Reg(kRbColorMask, 0);
+      s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, (kVertices + 0xA00) | 3, 2u | 12u << 2});
+      s.DrawAuto(8, 3);
+    });
+    std::vector<uint8_t> bytes;
+    std::vector<uint32_t> near_words(kSize * kSize, 0), far_words(kSize * kSize, 0);
+    CHECK(renderer.ReadBack(near_colour, kSize, kSize, bytes) && bytes.size() == near_words.size() * 4);
+    if (bytes.size() == near_words.size() * 4) std::memcpy(near_words.data(), bytes.data(), bytes.size());
+    CHECK(renderer.ReadBack(far_colour, kSize, kSize, bytes) && bytes.size() == far_words.size() * 4);
+    if (bytes.size() == far_words.size() * 4) std::memcpy(far_words.data(), bytes.data(), bytes.size());
+    const uint32_t red_word = Rgba(255, 0, 0, 255);
+    uint32_t near_depth = 0, near_red = 0, far_red = 0;
+    for (uint32_t y = 0; y < kSize; ++y) {
+      for (uint32_t x = 0; x < kSize; ++x) {
+        near_depth += y < 16 && near_words[y * kSize + x] != red_word;
+        near_red += y >= 16 && near_words[y * kSize + x] == red_word;
+        far_red += far_words[y * kSize + x] == red_word;
+      }
+    }
+    std::printf("gfx_render_tests: unclipped rectangle: %u extents estimated, colour at its base: %u depth words over "
+                "its first 16 rows, %u red below; a tile row down: %u red\n",
+                renderer.stats().extents_estimated - estimated, near_depth, near_red, far_red);
+    CHECK(renderer.stats().extents_estimated > estimated);
+    CHECK(near_depth == 16 * kSize && near_red == (kSize - 16) * kSize && far_red == kSize * kSize);
   }
   // Scissor: the window scissor (16, 16)-(48, 48).
   {
@@ -1601,8 +1688,9 @@ int main(int argc, char** argv) {
   // Render targets: colour 0, depth, colour 1, the 16_16_16_16_FLOAT target, the float24 depth surface and the nine
   // render target formats, of which the two AS_ ones share their base format's surface (12, not 14), as k_8_8_8_8
   // shares k_8_8_8_8_GAMMA's; the three fresh targets read back as zeros (15); the 256-wide half-float one (16);
-  // and the 256-wide k_8_8_8_8 one of the screen bands (17).
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 17 && stats.texture_uploads == 6 && stats.resolves == 83);
+  // and the 256-wide k_8_8_8_8 one of the screen bands (17); the depth-under-colour checks' three depth and three
+  // colour surfaces and the unclipped rectangle's two colour surfaces (25).
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 25 && stats.texture_uploads == 6 && stats.resolves == 83);
   // (The resolved texture is read from the resolve on the GPU, not uploaded: 6 uploads, not 7. 83 resolves: the
   // four of the scenarios before (one with an exponent bias on the GPU), the 70 with one, the two screen bands, the
   // chain's six and the 40-row one.)

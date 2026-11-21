@@ -156,21 +156,32 @@ class TracingRenderer : public Renderer {
                   (unsigned long long)(draw.vertex_shader ? draw.vertex_shader->hash : 0),
                   (unsigned long long)(draw.pixel_shader ? draw.pixel_shader->hash : 0));
     }
+    if (pick_x_ >= 0 && (regs[0x2208] & 7) == 5 && (regs[0x2002] & 0xFFF)) {
+      // Depth-only draws at a depth base other than 0: what they write into the EDRAM other surfaces may alias.
+      std::printf("    depth draw %u: surface %08X depth %08X depthcontrol %08X stencilref %08X stencilref_bf %08X "
+                  "colour mask %08X, vs %016llX ps %016llX, prim %u, %u indices, viewport z scale %g offset %g\n",
+                  draws_, regs[0x2000], regs[0x2002], regs[0x2200], regs[0x210D], regs[0x210C], regs[0x2104],
+                  draw.vertex_shader ? (unsigned long long)draw.vertex_shader->hash : 0ull,
+                  draw.pixel_shader ? (unsigned long long)draw.pixel_shader->hash : 0ull, draw.primitive_type,
+                  draw.index_count, std::bit_cast<float>(regs[0x2113]), std::bit_cast<float>(regs[0x2114]));
+    }
     if (pick_x_ >= 0 && (regs[0x2208] & 7) == 4 && (regs[0x2104] & 0xF)) {
       const uint32_t pitch = regs[0x2000] & 0x3FFF;
       const vk::SurfaceKey key{regs[0x2001] & 0xFFF, pitch, (regs[0x2001] >> 16) & 0xF, 0};
       std::vector<uint8_t> bytes;
       if (pitch > uint32_t(pick_x_) && r_.ReadBack(key, uint32_t(pick_x_) + 1, uint32_t(pick_y_) + 1, bytes) &&
           bytes.size() >= size_t(pick_x_ + 1) * (pick_y_ + 1) * 4) {
-        uint32_t value;
-        std::memcpy(&value, bytes.data() + (size_t(pick_y_) * (pick_x_ + 1) + pick_x_) * 4, 4);
+        // A texel of 4 or 8 bytes (the 64-bit targets: half floats, k_16_16_16_16), as the host holds the target.
+        const size_t texel = bytes.size() / (size_t(pick_x_ + 1) * (pick_y_ + 1));
+        uint64_t value = 0;
+        std::memcpy(&value, bytes.data() + (size_t(pick_y_) * (pick_x_ + 1) + pick_x_) * texel, std::min<size_t>(texel, 8));
         const uint64_t key64 = uint64_t(key.base) << 32 | key.format;
         if (picked_[key64] != value || !picked_seen_.count(key64)) {
           picked_seen_.insert(key64);
           const uint32_t* vf = regs + 0x4800;  // vertex fetch constant 0 (fetch slot 0, its first two dwords)
-          std::printf("    pick draw %u: target %03X format %u pixel %08X -> %08X; vs %016llX ps %016llX, prim %u, %u indices, "
+          std::printf("    pick draw %u: target %03X format %u pixel %016llX -> %016llX; vs %016llX ps %016llX, prim %u, %u indices, "
                       "vfetch0 %08X %08X, blend %08X, depth %08X\n",
-                      draws_, key.base, key.format, picked_[key64], value,
+                      draws_, key.base, key.format, (unsigned long long)picked_[key64], (unsigned long long)value,
                       draw.vertex_shader ? (unsigned long long)draw.vertex_shader->hash : 0ull,
                       draw.pixel_shader ? (unsigned long long)draw.pixel_shader->hash : 0ull, draw.primitive_type,
                       draw.index_count, vf[0], vf[1], regs[0x2201], regs[0x2200]);
@@ -305,7 +316,9 @@ class TracingRenderer : public Renderer {
       std::printf("    written to %s\n", name.c_str());
     } else if (!dump_.empty() && (format == 26 || format == 32) && width && height) {
       // A 64-bit resolve (k_16_16_16_16, k_16_16_16_16_FLOAT): the destination's texels as the title reads them
-      // (tiled, as stored), raw, to compare replays (--msaa, --scale) byte for byte.
+      // (tiled, as stored), raw, to compare replays (--msaa, --scale) byte for byte. A resolve kept on the GPU (an
+      // exponent bias applied there) in guest memory first, as the 32-bit ones are.
+      r_.WriteBackForTools(regs[0x2319]);
       const uint32_t base = regs[0x2319] & 0x1FFFFFFF;
       uint32_t span = 0;
       for (uint32_t y = 0; y < height; ++y) {
@@ -378,7 +391,7 @@ class TracingRenderer : public Renderer {
   std::set<uint32_t> textures_dumped_;
   std::set<uint64_t> disassembled_;
   uint32_t draws_ = 0;
-  std::map<uint64_t, uint32_t> picked_;
+  std::map<uint64_t, uint64_t> picked_;
   std::set<uint64_t> picked_seen_;
   bool run_ = false;
   std::array<uint32_t, 8> key_{};
@@ -753,10 +766,10 @@ int main(int argc, char** argv) {
   }
   std::printf("gfx_replay: %s: %u draws, %u skipped, %u failed; %u resolves, %u shaders, %u pipelines, %u render targets, "
               "%u texture uploads; %.1f ms creating pipelines; %u sample resolves (%.1f Mpixels), %u surfaces back to "
-              "one sample\n",
+              "one sample; %u EDRAM alias copies (%u depth into colour); %u draw extents from their vertices (%.3f ms)\n",
               device.properties().deviceName, r.draws, r.skipped, r.failed, r.resolves, r.translations, r.pipelines,
               r.render_targets, r.texture_uploads, r.ns_pipelines / 1e6, r.sample_resolves, r.sample_resolve_pixels / 1e6,
-              r.samples_dropped);
+              r.samples_dropped, r.edram_alias_copies, r.edram_depth_to_colour, r.extents_estimated, r.ns_extents / 1e6);
   // Textures over a resolve kept on the GPU that could not copy from it, and why (they read guest memory instead).
   if (renderer.texture_cache()) {
     for (const auto& [why, count] : renderer.texture_cache()->source_misses()) {

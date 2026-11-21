@@ -80,6 +80,9 @@ struct RendererStats {
   uint32_t samples_dropped = 0;        // surfaces back to one sample (drawn without colour and depth together)
   uint32_t samples_given_back = 0;     // and given their samples again (drawn with them together, then cleared)
   uint32_t edram_alias_copies = 0;     // copies between surfaces over the same EDRAM (SyncAliases)
+  uint32_t edram_depth_to_colour = 0;
+  uint32_t extents_estimated = 0;  // draws without clipping whose rows came from their vertices (EstimateVertexMaxY)
+  uint64_t ns_extents = 0;         // time running their vertex shaders on the CPU for it  // of them, depth words into a colour surface (SyncDepthIntoColour)
   uint32_t pipeline_waits = 0;  // draws not drawn while their pipeline compiles (SetAsyncPipelines)
   uint32_t pipelines_warmed = 0;  // pipelines queued from the recipes of earlier runs (WarmUpPipelines)
   uint32_t render_targets = 0;
@@ -224,6 +227,8 @@ class VulkanRenderer : public gfx::Renderer {
     EdramGroup* group = nullptr;
     uint32_t row0 = 0;
     std::vector<uint64_t> have;
+    // A colour surface: a depth surface wrote over its EDRAM since it last looked (SyncDepthIntoColour).
+    bool depth_over = false;
     Image& target() { return ms.image ? ms : image; }  // what draws render into
     VkImageLayout& target_layout() { return ms.image ? ms_layout : layout; }
   };
@@ -416,9 +421,11 @@ class VulkanRenderer : public gfx::Renderer {
   // Before a surface is read or drawn: what the surfaces over the same EDRAM wrote since it last did, copied into it
   // at their rows (their samples first resolved and dropped, its own too). True when something was copied.
   // Rows within [skip_top, skip_bottom) (host rows) are left: the caller overwrites them whole.
-  bool SyncAliases(Surface& surface, int32_t skip_top = 0, int32_t skip_bottom = 0);
+  // `need_bottom`: the host rows the caller uses (depth under the rows below it is converted later, when needed).
+  bool SyncAliases(Surface& surface, int32_t skip_top = 0, int32_t skip_bottom = 0, int32_t need_bottom = INT32_MAX);
   // Whether a surface over shared EDRAM has rows another one wrote since it last held them.
   bool AliasesNewer(const Surface* surface) const {
+    if (surface && surface->depth_over) return true;
     if (!surface || !surface->group || surface->group->members < 2) return false;
     const EdramGroup& g = *surface->group;
     for (size_t i = 0; i < surface->have.size(); ++i) {
@@ -432,7 +439,7 @@ class VulkanRenderer : public gfx::Renderer {
   uint64_t edram_version_ = 0;
   void GrowDrawn(Surface* surface, int32_t left, int32_t top, int32_t right, int32_t bottom) {
     if (!surface) return;
-    if (surface->group && surface->group->members > 1) MarkWritten(surface, top, bottom);
+    if (surface->group) MarkWritten(surface, top, bottom);
     int32_t* w = surface->written;
     w[0] = std::min(w[0], left), w[1] = std::min(w[1], top), w[2] = std::max(w[2], right), w[3] = std::max(w[3], bottom);
     if (!surface->ms.image) return;
@@ -678,6 +685,19 @@ class VulkanRenderer : public gfx::Renderer {
   bool ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0, uint32_t width, uint32_t height, uint32_t sample_x,
                          uint32_t sample_y, uint32_t sample, uint32_t dest_base, uint32_t dest_pitch, uint32_t dest_endian);
   bool DepthPass();
+  // EDRAM a depth surface wrote last, under a colour surface of the same pitch whose host texels are the EDRAM word
+  // (k_8_8_8_8, k_2_10_10_10): the depth words (depth << 8 | stencil, as the console lays them out) copied into it.
+  // Titles clear a colour buffer by drawing depth over its EDRAM (Mirror's Edge's light buffer): without it the
+  // colour surface kept the frame before, and the lighting added it to characters (seen through, half transparent).
+  bool SyncDepthIntoColour(Surface& s, int32_t need_bottom, int32_t skip_top, int32_t skip_bottom);
+  bool CopyDepthWords(Surface& depth, Surface& colour, uint32_t depth_row, uint32_t colour_row, uint32_t rows);
+  bool DepthWordPass();
+  VkDescriptorSetLayout depth_word_layout_ = VK_NULL_HANDLE;
+  VkPipelineLayout depth_word_pipeline_layout_ = VK_NULL_HANDLE;
+  VkPipeline depth_word_pipeline_ = VK_NULL_HANDLE;
+  VkDescriptorPool depth_word_pool_ = VK_NULL_HANDLE;
+  VkDescriptorSet depth_word_set_ = VK_NULL_HANDLE;
+  Buffer depth_word_buffer_;  // the depth and stencil copies and the words, grown as needed
   VkDescriptorSetLayout depth_layout_ = VK_NULL_HANDLE;
   VkPipelineLayout depth_pipeline_layout_ = VK_NULL_HANDLE;
   VkPipeline depth_pipeline_ = VK_NULL_HANDLE;

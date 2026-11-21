@@ -64,7 +64,15 @@ constexpr inline fourcc_t make_fourcc(const std::string_view fourcc) {
   return make_fourcc(fourcc[0], fourcc[1], fourcc[2], fourcc[3]);
 }
 
-// Guest memory is not part of the translator; declared so headers naming it still parse.
-class Memory;
+// any360: guest memory as the shader interpreter (interpreter.cpp) reads it: the base of the guest's physical
+// memory only (vertex fetches read their dwords from there).
+class Memory {
+ public:
+  explicit Memory(const uint8_t* physical) : physical_(physical) {}
+  const uint8_t* physical_membase() const { return physical_; }
+
+ private:
+  const uint8_t* physical_;
+};
 
 }  // namespace rex::memory

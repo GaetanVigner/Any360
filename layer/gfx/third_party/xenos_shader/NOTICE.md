@@ -21,6 +21,9 @@ Each vendored file also keeps its original header.
 - `include/rex/graphics/pipeline/shader/shader.h`, `translator.h`, `spirv.h`, `spirv_builder.h`
 - `src/core/string_buffer.cpp`
 - `src/graphics/format/ucode.cpp`
+- `include/rex/graphics/pipeline/shader/interpreter.h`, `src/graphics/pipeline/shader/interpreter.cpp` (the
+  microcode interpreter any360::gfx runs a vertex shader on the CPU with, to know how far down a draw without
+  clipping reaches: `layer/gfx/src/vulkan/draw_extent.cpp`)
 - `src/graphics/pipeline/shader/shader.cpp`, `translator.cpp`, `translator_disasm.cpp`, `spirv.cpp`,
   `spirv_builder.cpp`, `spirv_translator_alu.cpp`, `spirv_translator_fetch.cpp`,
   `spirv_translator_memexport.cpp`, `spirv_translator_rb.cpp`
@@ -68,7 +71,10 @@ Each vendored file also keeps its original header.
 Stand-ins for SDK infrastructure the translator sources include, holding only what they use:
 
 - `rex/memory.h`: `memory::Reinterpret`, `copy_and_swap` (portable loop), `fourcc_t` / `make_fourcc`
-  (from `rex/memory/utils.h`), forward declaration of `memory::Memory`.
+  (from `rex/memory/utils.h`); `memory::Memory` reduced to `physical_membase()` over a base the caller gives (the
+  interpreter's vertex fetches read guest memory there).
+- `rex/graphics/register_file.h`: `RegisterFile` as a view over a register array the caller keeps (any360::gfx's)
+  with the SDK's accessors (`operator[]`, `Get`, `GetVertexFetch`), for the interpreter.
 - `rex/string.h`: standard headers only (nothing of it is used).
 - `rex/filesystem.h`: `filesystem::OpenFile`.
 - `rex/logging.h`: `REXGPU_ERROR` prints to stderr; the other `REXGPU_*` levels are no-ops.

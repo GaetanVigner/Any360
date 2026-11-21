@@ -1,5 +1,6 @@
 #include "any360/gfx/vulkan/renderer.h"
 #include "any360/gfx/vulkan/write_back.h"
+#include "any360/gfx/vulkan/draw_extent.h"
 
 #include <algorithm>
 #include <cmath>
@@ -275,6 +276,11 @@ VulkanRenderer::~VulkanRenderer() {
   if (depth_pipeline_) f.vkDestroyPipeline(d, depth_pipeline_, nullptr);
   if (depth_pipeline_layout_) f.vkDestroyPipelineLayout(d, depth_pipeline_layout_, nullptr);
   if (depth_layout_) f.vkDestroyDescriptorSetLayout(d, depth_layout_, nullptr);
+  if (depth_word_pipeline_) f.vkDestroyPipeline(d, depth_word_pipeline_, nullptr);
+  if (depth_word_pipeline_layout_) f.vkDestroyPipelineLayout(d, depth_word_pipeline_layout_, nullptr);
+  if (depth_word_layout_) f.vkDestroyDescriptorSetLayout(d, depth_word_layout_, nullptr);
+  if (depth_word_pool_) f.vkDestroyDescriptorPool(d, depth_word_pool_, nullptr);
+  DestroyBuffer(device_, depth_word_buffer_);
   if (scale_pipeline_) f.vkDestroyPipeline(d, scale_pipeline_, nullptr);
   if (scale_pipeline_layout_) f.vkDestroyPipelineLayout(d, scale_pipeline_layout_, nullptr);
   if (scale_layout_) f.vkDestroyDescriptorSetLayout(d, scale_layout_, nullptr);
@@ -502,7 +508,7 @@ bool VulkanRenderer::Initialize() {
   depth_format_ = VK_FORMAT_D32_SFLOAT_S8_UINT;
   VkFormatProperties props;
   f.vkGetPhysicalDeviceFormatProperties(device_.physical(), VK_FORMAT_D24_UNORM_S8_UINT, &props);
-  if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) depth_format_ = VK_FORMAT_D24_UNORM_S8_UINT;
+  if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) depth_format_ = VK_FORMAT_D24_UNORM_S8_UINT;
   // Host MSAA: the most samples up to the asked count that colour, depth and stencil targets all have.
   {
     const VkPhysicalDeviceLimits& limits = device_.properties().limits;
@@ -657,6 +663,8 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& requested)
   if (slot) return slot->image.image ? slot.get() : nullptr;
   slot = std::make_unique<Surface>();
   slot->key = key;
+  // A colour surface made over EDRAM that depth was written to holds the depth words (SyncDepthIntoColour).
+  slot->depth_over = !key.depth;
   const VkFormat format = key.depth ? depth_format_ : ColorTargetFormat(key.format);
   if (format == VK_FORMAT_UNDEFINED || key.pitch == 0 || key.base >= 2048) return nullptr;
   // The rows the surface can span from its base to the end of EDRAM (2048 tiles of 80x16 samples at 32 bpp).
@@ -760,10 +768,20 @@ void VulkanRenderer::MarkWritten(Surface* s, int32_t top, int32_t bottom) {
     g.writer[row] = s;
     s->have[size_t(i)] = g.version[row];
   }
+  if (s->key.depth && first < last) {
+    // The colour surfaces of this pitch over these tile rows read the depth words from now on (SyncDepthIntoColour).
+    const uint32_t tiles_per_row = (s->key.pitch + 79) / 80;
+    for (auto& [key, other] : surfaces_) {
+      if (!other || key.depth || key.pitch != s->key.pitch || key.base % tiles_per_row != s->key.base % tiles_per_row) continue;
+      const int64_t from = int64_t(s->row0) + first - other->row0, to = int64_t(s->row0) + last - other->row0;
+      if (to > 0 && from < int64_t(other->have.size())) other->depth_over = true;
+    }
+  }
 }
 
-bool VulkanRenderer::SyncAliases(Surface& s, int32_t skip_top, int32_t skip_bottom) {
-  if (!AliasesNewer(&s)) return false;
+bool VulkanRenderer::SyncAliases(Surface& s, int32_t skip_top, int32_t skip_bottom, int32_t need_bottom) {
+  const bool from_depth = s.depth_over && SyncDepthIntoColour(s, need_bottom, skip_top, skip_bottom);
+  if (!AliasesNewer(&s)) return from_depth;
   EdramGroup& g = *s.group;
   const Functions& f = device_.fn();
   const VkImageAspectFlags aspect =
@@ -814,7 +832,168 @@ bool VulkanRenderer::SyncAliases(Surface& s, int32_t skip_top, int32_t skip_bott
     i = end;
   }
   if (copied) target_memo_.valid = false;
+  return copied || from_depth;
+}
+
+bool VulkanRenderer::SyncDepthIntoColour(Surface& s, int32_t need_bottom, int32_t skip_top, int32_t skip_bottom) {
+  s.depth_over = false;
+  if (s.key.depth || !s.group) return false;
+  // Host texels whose bytes are the EDRAM word: k_8_8_8_8 (R in the low byte) and k_2_10_10_10 (R in the low bits).
+  if (s.image.format != VK_FORMAT_R8G8B8A8_UNORM && s.image.format != VK_FORMAT_A2B10G10R10_UNORM_PACK32) return false;
+  const uint32_t tiles_per_row = (s.key.pitch + 79) / 80;
+  EdramGroup& own = *s.group;
+  // The depth surfaces over this EDRAM: same pitch, bases a whole number of tile rows from this one's. Of different
+  // formats (D24S8, D24FS8) they are in different groups, so the newest writer of a row is found across them.
+  // The colour surfaces of other formats over it are in groups of their own: a row one of them wrote after the depth
+  // holds colour, not depth words.
+  std::vector<Surface*> depths;
+  std::vector<const EdramGroup*> colours;
+  for (auto& [key, other] : surfaces_) {
+    if (!other || !other->group || key.pitch != s.key.pitch || key.base % tiles_per_row != s.key.base % tiles_per_row) continue;
+    if (key.depth) {
+      if (other->image.image) depths.push_back(other.get());
+    } else if (other->group != &own && std::find(colours.begin(), colours.end(), other->group) == colours.end()) {
+      colours.push_back(other->group);
+    }
+  }
+  if (depths.empty()) return false;
+  // Each row's newest depth writer, when it wrote after anything a colour surface did there.
+  auto newest = [&](size_t i) -> Surface* {
+    const size_t row = s.row0 + i;
+    Surface* best = nullptr;
+    uint64_t best_version = std::max<uint64_t>(s.have[i], own.version[row]);
+    for (const EdramGroup* group : colours) {
+      if (row < group->version.size()) best_version = std::max(best_version, group->version[row]);
+    }
+    for (Surface* depth : depths) {
+      const EdramGroup& dg = *depth->group;
+      if (row < dg.version.size() && dg.writer[row] == depth && dg.version[row] > best_version && row >= depth->row0 &&
+          row - depth->row0 < depth->have.size()) {
+        best = depth;
+        best_version = dg.version[row];
+      }
+    }
+    return best;
+  };
+  // Only the rows the caller is about to use (a draw's scissor, a resolve's rectangle): a surface spans to the end of
+  // EDRAM, and depth under its unused rows is converted when something reaches them (Call of Duty's targets sit over
+  // its depth there, a conversion every draw otherwise).
+  const int32_t row_height = 16 * int32_t(scale_);
+  const size_t needed = std::min(s.have.size(), size_t((int64_t(std::max(need_bottom, 0)) + row_height - 1) / row_height));
+  for (size_t i = needed; i < s.have.size() && !s.depth_over; ++i) s.depth_over = newest(i) != nullptr;
+  // Rows the caller overwrites whole are not needed either (they are its own once it has drawn).
+  auto overwritten = [&](size_t i) {
+    return int32_t(i) * row_height >= skip_top && int32_t(i + 1) * row_height <= skip_bottom;
+  };
+  bool copied = false;
+  for (size_t i = 0; i < needed;) {
+    Surface* depth = overwritten(i) ? nullptr : newest(i);
+    if (!depth) {
+      ++i;
+      continue;
+    }
+    size_t end = i + 1;
+    while (end < needed && !overwritten(end) && newest(end) == depth) ++end;
+    const uint32_t depth_row = uint32_t(s.row0 + i - depth->row0);
+    if (!CopyDepthWords(*depth, s, depth_row, uint32_t(i), uint32_t(end - i))) break;
+    copied = true;
+    // This surface holds the row's newest content now: other colour surfaces over it copy from here.
+    for (size_t j = i; j < end; ++j) {
+      own.version[s.row0 + j] = ++edram_version_;
+      own.writer[s.row0 + j] = &s;
+      s.have[j] = own.version[s.row0 + j];
+    }
+    i = end;
+  }
+  if (copied) target_memo_.valid = false;
   return copied;
+}
+
+bool VulkanRenderer::CopyDepthWords(Surface& depth, Surface& colour, uint32_t depth_row, uint32_t colour_row,
+                                    uint32_t rows) {
+  if (!DepthWordPass()) return false;
+  const Functions& f = device_.fn();
+  const int32_t row_height = 16 * int32_t(scale_);
+  const int32_t depth_top = int32_t(depth_row) * row_height, colour_top = int32_t(colour_row) * row_height;
+  const int32_t height = std::min({int32_t(rows) * row_height, int32_t(colour.image.height) - colour_top,
+                                   int32_t(depth.image.height) - depth_top});
+  const uint32_t width = std::min(colour.image.width, depth.image.width);
+  if (height <= 0 || !width) return false;
+  const VkDeviceSize texels = VkDeviceSize(width) * uint32_t(height);
+  const VkDeviceSize depth_bytes = texels * 4, stencil_bytes = (texels + 15) & ~VkDeviceSize(15);
+  const VkDeviceSize total = depth_bytes * 2 + stencil_bytes;
+  if (depth_word_buffer_.size < total) {
+    // Grown (rarely): the batches that use the old one run first.
+    Flush();
+    WaitIdle();
+    DestroyBuffer(device_, depth_word_buffer_);
+    if (!CreateBuffer(device_, std::max<VkDeviceSize>(total, 4u << 20),
+                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                      false, depth_word_buffer_)) {
+      depth_word_buffer_ = {};
+      return Fail("depth word buffer");
+    }
+    const VkDescriptorBufferInfo info{depth_word_buffer_.buffer, 0, VK_WHOLE_SIZE};
+    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    write.dstSet = depth_word_set_;
+    write.dstBinding = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write.pBufferInfo = &info;
+    f.vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
+  }
+  DropSamples(colour);  // its samples resolved first (nothing lost), as SyncAliases does
+  EndRendering();
+  const VkCommandBuffer cb = Record();
+  // The depth surface's samples into its single-sample image (sample zero), then its depth and stencil copied out.
+  ResolveSamples(cb, depth, 0, depth_top, int32_t(width), depth_top + height);
+  const VkImageAspectFlags depth_aspects = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+  Transition(cb, depth.image, depth.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, depth_aspects);
+  auto barrier = [&](VkPipelineStageFlags2 src, VkAccessFlags2 src_access, VkPipelineStageFlags2 dst, VkAccessFlags2 dst_access) {
+    VkMemoryBarrier2 b{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    b.srcStageMask = src, b.srcAccessMask = src_access, b.dstStageMask = dst, b.dstAccessMask = dst_access;
+    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependency.memoryBarrierCount = 1;
+    dependency.pMemoryBarriers = &b;
+    f.vkCmdPipelineBarrier2(cb, &dependency);
+  };
+  // After whatever read or wrote the buffer before (an earlier copy of this batch).
+  barrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+          VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+  VkBufferImageCopy regions[2]{};
+  regions[0].imageSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 0, 1};
+  regions[0].imageOffset = {0, depth_top, 0};
+  regions[0].imageExtent = {width, uint32_t(height), 1};
+  regions[1] = regions[0];
+  regions[1].bufferOffset = depth_bytes;
+  regions[1].imageSubresource.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
+  f.vkCmdCopyImageToBuffer(cb, depth.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, depth_word_buffer_.buffer, 2, regions);
+  barrier(VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+          VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+  // Mode: the host's D24 unorm as it is (0) or to float24 (3); a host float to unorm24 (1) or to float24 (2).
+  const bool host_unorm = depth.image.format == VK_FORMAT_D24_UNORM_S8_UINT, float24 = depth.key.format == 1;
+  const uint32_t push[5] = {uint32_t(texels), host_unorm ? (float24 ? 3u : 0u) : (float24 ? 2u : 1u), 0u,
+                            uint32_t(depth_bytes / 4), uint32_t((depth_bytes + stencil_bytes) / 4)};
+  f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, depth_word_pipeline_);
+  f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, depth_word_pipeline_layout_, 0, 1, &depth_word_set_, 0, nullptr);
+  f.vkCmdPushConstants(cb, depth_word_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), push);
+  f.vkCmdDispatch(cb, uint32_t((texels + 63) / 64), 1, 1);
+  barrier(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+          VK_ACCESS_2_TRANSFER_READ_BIT);
+  // The words as the colour surface's texels (its bytes are the EDRAM word).
+  Transition(cb, colour.image, colour.layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+  VkBufferImageCopy words{};
+  words.bufferOffset = depth_bytes + stencil_bytes;
+  words.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+  words.imageOffset = {0, colour_top, 0};
+  words.imageExtent = {width, uint32_t(height), 1};
+  f.vkCmdCopyBufferToImage(cb, depth_word_buffer_.buffer, colour.image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &words);
+  int32_t* w = colour.written;
+  w[0] = std::min(w[0], 0), w[1] = std::min(w[1], colour_top), w[2] = std::max(w[2], int32_t(width));
+  w[3] = std::max(w[3], colour_top + height);
+  ++stats_.edram_alias_copies;
+  ++stats_.edram_depth_to_colour;
+  return true;
 }
 
 bool VulkanRenderer::SampleBitsViews(Surface& s) {
@@ -1012,7 +1191,8 @@ bool VulkanRenderer::ClearColor(const SurfaceKey& key, const float rgba[4]) {
   Flush();     // what was drawn before comes first
   WaitIdle();  // and the submitter thread is done with the queue the one-time submit below uses
   if (!s || key.depth) return false;
-  if (s->group && s->group->members > 1) MarkWritten(s, 0, int32_t(s->image.height));
+  if (s->group) MarkWritten(s, 0, int32_t(s->image.height));
+  s->depth_over = false;
   const Functions& f = device_.fn();
   return device_.Submit([&](VkCommandBuffer cb) {
     Transition(cb, s->image, s->layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -1033,7 +1213,7 @@ bool VulkanRenderer::ClearDepthStencil(const SurfaceKey& key, float depth, uint3
   Flush();     // what was drawn before comes first
   WaitIdle();  // and the submitter thread is done with the queue the one-time submit below uses
   if (!s || !key.depth) return false;
-  if (s->group && s->group->members > 1) MarkWritten(s, 0, int32_t(s->image.height));
+  if (s->group) MarkWritten(s, 0, int32_t(s->image.height));
   const Functions& f = device_.fn();
   return device_.Submit([&](VkCommandBuffer cb) {
     const VkImageAspectFlags aspects = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
@@ -1056,7 +1236,7 @@ bool VulkanRenderer::ReadBack(const SurfaceKey& key, uint32_t width, uint32_t he
   Flush();  // what was drawn before comes first
   WaitIdle();  // and guest memory has what the batches write into it
   if (!s || key.depth || width > s->image.width || height > s->image.height) return false;
-  if (SyncAliases(*s)) {  // what was drawn over the same EDRAM at another base, in it before it is read
+  if (SyncAliases(*s, 0, 0, int32_t(height))) {  // what was drawn over the same EDRAM at another base, in it before it is read
     Flush();
     WaitIdle();
   }
@@ -1654,7 +1834,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     Fail("immediate indices past the packet");
     return;
   }
-  const bool polygonal = IsPolygonal(topology) && !point_list;
+  // Rectangle lists are not polygons (the reference's draw_util): never culled, always front-facing. Culled as the
+  // triangles they are drawn as, a clockwise one vanished (Mirror's Edge's depth restore before its light volumes).
+  const bool polygonal = IsPolygonal(topology) && !point_list && !rectangle_list;
   // Primitive reset (PA_SU_SC_MODE_CNTL multi_prim_ib_ena, VGT_MULTI_PRIM_IB_RESET_INDX): strips of DMA indices are
   // cut at the reset index, as the reference does (16-bit indices only when the reset index fits in 16 bits).
   const uint32_t reset_index = regs[kVgtMultiPrimIbResetIndx];
@@ -1901,6 +2083,31 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t window_offset = regs[kPaScWindowOffset];
   const int32_t offset_x = int32_t(window_offset << 17) >> 17, offset_y = int32_t(window_offset << 1) >> 17;
   for (uint32_t i = 0; i < 4; ++i) color_infos[i] = regs[kRbColorInfo[i]];
+  // A draw without clipping under the scissor Direct3D 9 sets for its screen-space rectangles (8192 both ways, the
+  // window offset in) reaches only as low as its vertices, run on the CPU as the reference does
+  // (EstimateVertexMaxY): the rows it writes in EDRAM (MarkWritten) and the rows its targets need first
+  // (SyncAliases) stop there; a single rectangle also gives the area it surely covers (`cover`).
+  bool extent_known = false;
+  int32_t extent_bottom = INT32_MAX;
+  DrawCover cover;
+  if ((regs[kPaClClipCntl] >> 16) & 1) {
+    const uint32_t window_br = regs[kPaScWindowScissorBr], screen_br = regs[kPaScScreenScissorBr];
+    const bool offset = !(regs[kPaScWindowScissorTl] >> 31);
+    const int32_t scissor_right = std::min(int32_t(window_br & 0x3FFF) + (offset ? offset_x : 0), int32_t(screen_br & 0x7FFF));
+    const int32_t scissor_bottom =
+        std::min(int32_t((window_br >> 16) & 0x3FFF) + (offset ? offset_y : 0), int32_t((screen_br >> 16) & 0x7FFF));
+    uint32_t max_y = 0;
+    if (scissor_right >= 8192 && scissor_bottom >= 8192) {
+      Timer extent_timer(stats_.ns_extents);
+      extent_known = EstimateVertexMaxY(regs, physical_, *vs->shader, draw, max_y, &cover);
+    }
+    if (extent_known) {
+      extent_bottom = int32_t(std::min<uint32_t>(max_y, 16384)) * sample_y;
+      ++stats_.extents_estimated;
+    } else {
+      cover.valid = false;
+    }
+  }
   bool memo_ok = target_memo_.valid && std::memcmp(target_memo_.key, target_key, sizeof(target_key)) == 0;
   if (memo_ok) {
     for (uint32_t i = 0; i < 4 && memo_ok; ++i) memo_ok = !AliasesNewer(static_cast<Surface*>(target_memo_.colors[i]));
@@ -1951,10 +2158,22 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     ++stats_.skipped;  // nothing bound: no target this draw could change
     return;
   }
-  // What the surfaces over the same EDRAM wrote since, in the targets before the draw tests or blends against them.
-  for (Surface* t : {colors[0], colors[1], colors[2], colors[3], depth_surface}) {
-    if (t) SyncAliases(*t);
+  // What the surfaces over the same EDRAM wrote since, in the targets before the draw tests or blends against them:
+  // the rows down to the scissor's bottom (the depth under the rows below is converted when a draw reaches them).
+  // A colour target a single rectangle overwrites whole (its rows across the full pitch, all channels written, no
+  // blending, no alpha test: a Direct3D 9 clear) does not need those rows first.
+  const int32_t scissor_rows = std::min(
+      extent_bottom,
+      std::min(int32_t((regs[kPaScWindowScissorBr] >> 16) & 0x3FFF) + (regs[kPaScWindowScissorTl] >> 31 ? 0 : offset_y),
+               int32_t((regs[kPaScScreenScissorBr] >> 16) & 0x7FFF)) * sample_y);
+  const bool covers_rows = cover.valid && cover.left <= 0 && cover.right >= int32_t(surface_info & 0x3FFF) && !alpha_tested;
+  for (uint32_t i = 0; i < 4; ++i) {
+    if (!colors[i]) continue;
+    const bool overwritten = covers_rows && ((color_mask_register >> (4 * i)) & 0xF) == 0xF &&
+                             (regs[kRbBlendControl[i]] & 0x1FFF1FFF) == kNoBlending;
+    SyncAliases(*colors[i], overwritten ? cover.top * sample_y : 0, overwritten ? cover.bottom * sample_y : 0, scissor_rows);
   }
+  if (depth_surface) SyncAliases(*depth_surface, 0, 0, scissor_rows);
   // Host MSAA where it smooths edges. A depth target drawn without colour targets through a whole frame (a shadow
   // map; a depth pre-pass is drawn with them in the same frame) goes back to one sample at the swap, as do the
   // multisampled targets of a pass that mixes both kinds (their samples resolved first: nothing lost).
@@ -2369,8 +2588,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         colors[0] ? uint64_t(colors[0]->target().view) : 0, colors[1] ? uint64_t(colors[1]->target().view) : 0,
         colors[2] ? uint64_t(colors[2]->target().view) : 0, colors[3] ? uint64_t(colors[3]->target().view) : 0,
         depth_surface ? uint64_t(depth_surface->target().view) : 0, width, height};
-    for (uint32_t i = 0; i < 4; ++i) GrowDrawn(colors[i], left, top, right, bottom);
-    GrowDrawn(depth_surface, left, top, right, bottom);
+    // The rows the draw writes in EDRAM, for the surfaces over it (MarkWritten): its scissor's, or as low as its
+    // vertices reach when that is known (extent_bottom).
+    const int32_t mark_bottom = extent_known ? std::min(bottom, extent_bottom) : bottom;
+    for (uint32_t i = 0; i < 4; ++i) GrowDrawn(colors[i], left, top, right, mark_bottom);
+    GrowDrawn(depth_surface, left, top, right, mark_bottom);
     bool layouts_ready = true;
     for (uint32_t i = 0; i < 4; ++i) layouts_ready &= !colors[i] || colors[i]->target_layout() == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     layouts_ready &= !depth_surface || depth_surface->target_layout() == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -4078,7 +4300,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     Fail("resolve source surface");
     return;
   }
-  SyncAliases(*surface);  // what was drawn over the same EDRAM at another base
+  SyncAliases(*surface, 0, 0, y1 * int32_t(sample_y * scale_));  // what was drawn over the same EDRAM at another base
   // Host pixels a guest pixel (samples, each scale x scale pixels).
   const uint32_t host_x = sample_x * scale_, host_y = sample_y * scale_;
   if (x0 >= int32_t(surface->image.width / host_x) || y0 >= int32_t(surface->image.height / host_y)) {
@@ -5055,6 +5277,59 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
 std::vector<uint32_t> BuildGammaShader();  // gamma_shader.cpp
 std::vector<uint32_t> BuildDepthCopyShader();  // depth_shader.cpp
 std::vector<uint32_t> BuildScaleShader();      // scale_shader.cpp
+std::vector<uint32_t> BuildDepthWordShader();  // depth_word_shader.cpp
+
+bool VulkanRenderer::DepthWordPass() {
+  if (depth_word_pipeline_) return true;
+  const Functions& f = device_.fn();
+  const VkDevice d = device_.device();
+  const VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+  VkDescriptorSetLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+  layout_info.bindingCount = 1;
+  layout_info.pBindings = &binding;
+  if (f.vkCreateDescriptorSetLayout(d, &layout_info, nullptr, &depth_word_layout_) != VK_SUCCESS) return Fail("depth word set layout");
+  const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 20};
+  VkPipelineLayoutCreateInfo pipeline_layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  pipeline_layout_info.setLayoutCount = 1;
+  pipeline_layout_info.pSetLayouts = &depth_word_layout_;
+  pipeline_layout_info.pushConstantRangeCount = 1;
+  pipeline_layout_info.pPushConstantRanges = &push;
+  if (f.vkCreatePipelineLayout(d, &pipeline_layout_info, nullptr, &depth_word_pipeline_layout_) != VK_SUCCESS) {
+    return Fail("depth word pipeline layout");
+  }
+  const std::vector<uint32_t> code = BuildDepthWordShader();
+  VkShaderModuleCreateInfo module_info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+  module_info.codeSize = code.size() * 4;
+  module_info.pCode = code.data();
+  VkShaderModule module = VK_NULL_HANDLE;
+  if (f.vkCreateShaderModule(d, &module_info, nullptr, &module) != VK_SUCCESS) return Fail("depth word shader");
+  VkComputePipelineCreateInfo pipeline_info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+  pipeline_info.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+  pipeline_info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+  pipeline_info.stage.module = module;
+  pipeline_info.stage.pName = "main";
+  pipeline_info.layout = depth_word_pipeline_layout_;
+  VkPipeline pipeline = VK_NULL_HANDLE;
+  const VkResult created = f.vkCreateComputePipelines(d, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline);
+  f.vkDestroyShaderModule(d, module, nullptr);
+  if (created != VK_SUCCESS) return Fail("depth word pipeline");
+  // One set for the one buffer (written again when the buffer grows, the batches before it done).
+  const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1};
+  VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+  pool_info.maxSets = 1;
+  pool_info.poolSizeCount = 1;
+  pool_info.pPoolSizes = &size;
+  VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+  alloc.descriptorSetCount = 1;
+  alloc.pSetLayouts = &depth_word_layout_;
+  if (f.vkCreateDescriptorPool(d, &pool_info, nullptr, &depth_word_pool_) != VK_SUCCESS ||
+      (alloc.descriptorPool = depth_word_pool_, f.vkAllocateDescriptorSets(d, &alloc, &depth_word_set_)) != VK_SUCCESS) {
+    f.vkDestroyPipeline(d, pipeline, nullptr);
+    return Fail("depth word set");
+  }
+  depth_word_pipeline_ = pipeline;
+  return true;
+}
 
 bool VulkanRenderer::ScalePass() {
   if (scale_pipeline_) return true;
