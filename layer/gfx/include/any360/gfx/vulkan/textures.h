@@ -229,6 +229,7 @@ class TextureCache {
   std::map<std::array<uint32_t, 5>, UploadStats> upload_log_;
   uint64_t epoch_ = 1;
   std::function<void(uint32_t, uint32_t)> watch_;
+  uint64_t trimmed_generation_ = uint64_t(1) << 62;  // generations of trimmed sources (apart from the renderer's)
   // Views already checked, by fetch constant, view type and signedness: valid until the next frame or the next change
   // of guest memory or GPU sources (version_), so most draws skip parsing, placing and hashing.
   uint64_t version_ = 1;

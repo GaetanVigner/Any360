@@ -4210,6 +4210,7 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
     const uint64_t end = uint64_t(dest_base) + uint64_t(pitch) * ((ry1 + 31) & ~31u) * element;
     guest_watch_(dest_base, uint32_t(std::min<uint64_t>(end, mirror_bytes_)));
   }
+  TrimResolvesBelow(dest_base);
   if (textures_) {
     textures_->SetGpuSource({r.image.image, r.image.format, dest_base, pitch, dest_endian, r.image.width, r.image.height,
                              ++resolve_generation_, false, scale_});
@@ -5447,6 +5448,25 @@ bool VulkanRenderer::DepthPass() {
   return true;
 }
 
+void VulkanRenderer::TrimResolvesBelow(uint32_t dest_base) {
+  // A resolve landing inside the memory an earlier one (at a lower address) still has to write back: that one keeps
+  // only its rows above it, else its write-back would put its older rows over this one's (a frame resolved in bands
+  // after a resolve of the whole height to the first band's address).
+  for (auto& [base, r] : resolved_) {
+    if (base >= dest_base || !r.stale || !r.pitch || !r.height) continue;
+    const uint64_t element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+    const uint64_t row_bytes = uint64_t(r.pitch) * element;
+    if (uint64_t(dest_base) >= base + row_bytes * ((uint64_t(r.y) + r.height + 31) & ~uint64_t(31))) continue;
+    const uint32_t kept = uint32_t((uint64_t(dest_base) - base) / row_bytes) & ~31u;
+    if (kept <= r.y) {
+      r.stale = false;
+      r.width = r.height = 0;
+    } else {
+      r.height = std::min(r.height, kept - r.y);
+    }
+  }
+}
+
 bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0, uint32_t width, uint32_t height,
                                        uint32_t sample_x, uint32_t sample_y, uint32_t sample, uint32_t dest_base,
                                        uint32_t dest_pitch, uint32_t dest_endian) {
@@ -5529,6 +5549,7 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
     const uint64_t end = uint64_t(dest_base) + uint64_t(pitch) * ((uint32_t(y0) + height + 31) & ~31u) * 4;
     guest_watch_(dest_base, uint32_t(std::min<uint64_t>(end, mirror_bytes_)));
   }
+  TrimResolvesBelow(dest_base);
   if (textures_) {
     textures_->SetGpuSource({r.image.image, VK_FORMAT_R32_SFLOAT, dest_base, pitch, dest_endian, r.image.width,
                              r.image.height, ++resolve_generation_, true, s});

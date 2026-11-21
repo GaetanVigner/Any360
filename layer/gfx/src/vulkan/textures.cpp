@@ -864,6 +864,9 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   // A resolve's destination left on the GPU, read as it is: copied from there (no memory read, no hash).
   // Each slice of a 2D or stacked texture (one level) that a resolve wrote there: all of them, or none.
   std::vector<const GpuSource*> sources;
+  // Banded: one slice made of resolves one under the other (a title resolving a frame drawn in tiles band by band to
+  // consecutive memory, Mirror's Edge's depth in two predicated tiles), the guest row each band starts at.
+  std::vector<uint32_t> band_rows;
   uint64_t source_generation = 0;
   if (t.tiled && t.dimension == 1 && first_level == 0 && last_level == 0 &&
       (info->convert == TextureFormatInfo::kNone || info->convert == TextureFormatInfo::kDepthUnorm24 ||
@@ -871,8 +874,9 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     const bool depth_texture = info->convert == TextureFormatInfo::kDepthUnorm24 ||
                                info->convert == TextureFormatInfo::kDepthFloat24;
     const uint32_t slice_stride = Place(t, *info, 0).slice_stride;
-    for (uint32_t slice = 0; slice < t.depth; ++slice) {
-      const auto it = gpu_sources_.find((t.base & 0x1FFFFFFF) + slice * slice_stride);
+    // A source at `address` holding this texture's bytes in its layout (and its rows down to `rows`).
+    auto usable = [&](uint32_t address, uint32_t rows) -> const GpuSource* {
+      const auto it = gpu_sources_.find(address);
       const bool same_bytes =
           it != gpu_sources_.end() &&
           (it->second.format == info->format ||
@@ -883,12 +887,42 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       if (!same_bytes || it->second.depth != depth_texture || it->second.pitch != t.pitch ||
           it->second.endian != t.endian || (!sources.empty() && it->second.scale != sources[0]->scale) ||
           t.width * it->second.scale > it->second.width ||
-          t.height * it->second.scale > ((it->second.height / it->second.scale + 31) & ~31u) * it->second.scale) {
+          rows * it->second.scale > ((it->second.height / it->second.scale + 31) & ~31u) * it->second.scale) {
+        return nullptr;
+      }
+      return &it->second;
+    };
+    for (uint32_t slice = 0; slice < t.depth; ++slice) {
+      const GpuSource* s = usable((t.base & 0x1FFFFFFF) + slice * slice_stride, t.height);
+      if (!s) {
         sources.clear();
         break;
       }
-      sources.push_back(&it->second);
-      source_generation = source_generation * 0x9E3779B97F4A7C15ull + it->second.generation;
+      sources.push_back(s);
+      source_generation = source_generation * 0x9E3779B97F4A7C15ull + s->generation;
+    }
+    // One slice over resolves one under the other: each band's rows a whole number of 32-row tiles (where the tiled
+    // layout's rows are consecutive in memory) but the last.
+    if (sources.empty() && t.depth == 1 && info->block_size == 1) {
+      const uint64_t row_bytes = uint64_t((t.pitch + 31) & ~31u) * info->block_bytes;
+      uint32_t row = 0;
+      while (row < t.height) {
+        const uint64_t address = uint64_t(t.base & 0x1FFFFFFF) + row * row_bytes;
+        const auto it = gpu_sources_.find(uint32_t(address));
+        if (address > 0x1FFFFFFF || it == gpu_sources_.end()) break;
+        const uint32_t rows = it->second.height / it->second.scale;
+        const GpuSource* s = rows ? usable(uint32_t(address), std::min(rows, t.height - row)) : nullptr;
+        if (!s || (rows % 32 && row + rows < t.height)) break;
+        sources.push_back(s);
+        band_rows.push_back(row);
+        source_generation = source_generation * 0x9E3779B97F4A7C15ull + s->generation;
+        row += rows;
+      }
+      if (row < t.height || sources.size() < 2) {
+        sources.clear();
+        band_rows.clear();
+        source_generation = 0;
+      }
     }
   }
   const bool source = !sources.empty();
@@ -992,8 +1026,12 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
       if (source_for_copy_) {
         for (const GpuSource* s : sources) source_for_copy_(*s);
       }
-      uint32_t copy_height = t.height * scale;  // the rows every slice's source holds
-      for (const GpuSource* s : sources) copy_height = std::min(copy_height, s->height);
+      uint32_t copy_height = t.height * scale;  // the rows every slice's source holds (banded: the bands do)
+      if (band_rows.empty()) {
+        for (const GpuSource* s : sources) copy_height = std::min(copy_height, s->height);
+      } else {
+        copy_height = std::min(copy_height, band_rows.back() * scale + sources.back()->height);
+      }
       auto copy = [&](VkCommandBuffer cb) {
         VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
@@ -1026,8 +1064,14 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
         for (uint32_t slice = 0; slice < uint32_t(sources.size()); ++slice) {
           VkImageCopy region{};
           region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-          region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, slice, 1};
+          region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, band_rows.empty() ? slice : 0, 1};
           region.extent = {t.width * scale, copy_height, 1};
+          if (!band_rows.empty()) {
+            // Band `slice`: its source's rows from the top, at its rows of the texture.
+            const uint32_t top = band_rows[slice] * scale;
+            region.dstOffset = {0, int32_t(top), 0};
+            region.extent.height = std::min(sources[slice]->height, t.height * scale - top);
+          }
           f.vkCmdCopyImage(cb, sources[slice]->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         }
@@ -1206,6 +1250,26 @@ bool TextureCache::CompressedOver(uint32_t begin, uint32_t end, uint32_t& base, 
 }
 
 void TextureCache::SetGpuSource(const GpuSource& source) {
+  // A source below which this one lands keeps only its rows above it: memory past them is this resolve's now (a
+  // title resolving a frame in bands, after a resolve of the whole height to the first band's address: that one's
+  // image still held the lower rows, sampled instead of the new band's).
+  for (auto it = gpu_sources_.begin(); it != gpu_sources_.end() && it->first < source.base;) {
+    GpuSource& older = it->second;
+    const uint64_t texel = older.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+    const uint64_t row_bytes = uint64_t((older.pitch + 31) & ~31u) * texel;
+    const uint64_t rows = older.height / older.scale;
+    if (row_bytes && source.base < older.base + rows * row_bytes) {
+      const uint32_t kept = uint32_t((source.base - older.base) / row_bytes) & ~31u;
+      if (!kept) {
+        it = gpu_sources_.erase(it);
+        continue;
+      }
+      older.height = kept * older.scale;
+      older.generation = ++trimmed_generation_;
+      ++version_;
+    }
+    ++it;
+  }
   gpu_sources_[source.base] = source;
   // The rows it covers, at most 8 bytes a texel (the format is the texture's to say).
   const uint64_t end = uint64_t(source.base) + uint64_t(source.pitch) * ((source.height + 31) & ~31u) * 8;

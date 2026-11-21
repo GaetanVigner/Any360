@@ -1803,6 +1803,57 @@ int main(int argc, char** argv) {
     }
     std::printf("gfx_render_tests: depth texture (k_24_8): %u of %u pixels not 0.5\n", half_wrong, kSize * kSize);
     CHECK(half_wrong == 0);
+    // A frame resolved in bands after a resolve of its whole height: the 64 rows above went to `resolved` (0.5);
+    // now 32 rows at depth 0.25 to `resolved` and 32 rows at 0.75 to the 32 rows below it (Mirror's Edge's depth in
+    // two predicated tiles). The 64-row texture over both reads each band from its own resolve: the older image's
+    // lower rows are memory the second band has overwritten.
+    {
+      const float rv[3][2] = {{0, 0}, {float(kSize), 0}, {float(kSize), 32}};
+      for (uint32_t i = 0; i < 3; ++i) {
+        SetBig(rect + 8 * i, Bits(rv[i][0]));
+        SetBig(rect + 8 * i + 4, Bits(rv[i][1]));
+      }
+      scenario("depth resolved in bands", nullptr, [&] {
+        s.Shader(0, t::BuildFetchPositionShader());
+        s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+        s.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 7u << 4);  // z_enable, z_write, ALWAYS
+        for (const auto& [set, dest] : {std::pair<uint32_t, uint32_t>{2, resolved}, {1, resolved + 32 * kSize * 4}}) {
+          s.Vertices(set);  // 0.25, then 0.75
+          s.Color(255, 255, 255, 255);
+          s.DrawAuto(kTriangleStrip, 4);
+          s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});
+          s.Put({Type0(0x2318, 4), 4u, dest, 64u | 32u << 16, 2u | 22u << 7});  // depth, k_24_8, 8-in-32
+          s.Reg(0x2208, 6);
+          s.DrawAuto(8, 3);
+          s.Reg(0x2208, 4);
+        }
+      });
+      CHECK(renderer.ClearColor(target, zero));
+      const uint32_t copies = renderer.texture_cache() ? renderer.texture_cache()->gpu_copies() : 0;
+      scenario("depth texture over bands", nullptr, [&] {
+        s.Shader(0, t::BuildTexturedVertexShader());
+        s.Shader(1, t::BuildTexturedPixelShader(1));
+        s.Reg(0x2001, 7u << 16 | 1536);
+        s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+        s.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 2u << 22 | 1u << 31,
+               22u | 2u << 6 | resolved, 63u | 63u << 13, 0x688u << 1, 0, 1u << 9});
+        s.DrawAuto(kTriangleStrip, 4);
+      });
+      bytes.clear();
+      CHECK(renderer.ReadBack(target, kSize, kSize, bytes));
+      uint32_t band_wrong = bytes.size() == kSize * kSize * 8 ? 0 : kSize * kSize;
+      for (size_t i = 0; i + 8 <= bytes.size(); i += 8) {
+        uint16_t h;
+        std::memcpy(&h, bytes.data() + i, 2);
+        const uint32_t y = uint32_t(i / 8) / kSize;
+        band_wrong += std::abs(int32_t(h) - int32_t(y < 32 ? 0x3400 : 0x3A00)) > 1;  // 0.25 above, 0.75 below
+      }
+      const uint32_t copied = renderer.texture_cache() ? renderer.texture_cache()->gpu_copies() - copies : 0;
+      std::printf("gfx_render_tests: depth texture over two bands: %u of %u pixels wrong, %u copies from the resolves\n",
+                  band_wrong, kSize * kSize, copied);
+      CHECK(band_wrong == 0 && copied > 0);
+      SetBig(rect + 8 * 2 + 4, Bits(float(kSize)));  // the copy rectangle as the scenarios after expect it
+    }
     s.Shader(0, t::BuildFetchPositionShader());
   }
   // MSAA resolves: the lower-left triangle drawn at 1x over the 64x64 samples, then resolved as a 4x surface of

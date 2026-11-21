@@ -690,6 +690,7 @@ class VulkanRenderer : public gfx::Renderer {
   // Titles clear a colour buffer by drawing depth over its EDRAM (Mirror's Edge's light buffer): without it the
   // colour surface kept the frame before, and the lighting added it to characters (seen through, half transparent).
   bool SyncDepthIntoColour(Surface& s, int32_t need_bottom, int32_t skip_top, int32_t skip_bottom);
+  void TrimResolvesBelow(uint32_t dest_base);
   bool CopyDepthWords(Surface& depth, Surface& colour, uint32_t depth_row, uint32_t colour_row, uint32_t rows);
   bool DepthWordPass();
   VkDescriptorSetLayout depth_word_layout_ = VK_NULL_HANDLE;
