@@ -416,6 +416,14 @@ ANY360_SYS_EXPORT(XMsgStartIORequestEx) { ctx.r3.u64 = XamState().MsgStartIORequ
 ANY360_SYS_EXPORT(XMsgInProcessCall) { ctx.r3.u64 = XamState().MsgInProcessCall(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
 ANY360_SYS_EXPORT(XMsgCancelIORequest) { ctx.r3.u64 = XamState().MsgCancelIORequest({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XamNotifyCreateListener) { ctx.r3.u64 = XamState().NotifyCreateListener({base}, ctx.r3.u64, ctx.r4.u32); }
+// Step 12, the notification calls Xenia stubs too.
+// (notification, data): sent to every listener whose areas take it.
+ANY360_SYS_EXPORT(XNotifyBroadcast) {
+  XamState().Notify(ctx.r3.u32, ctx.r4.u32);
+  ctx.r3.u64 = 0;
+}
+// (type, user, areas, text, context): a toast the guide would show; there is no guide to show it on: success.
+ANY360_SYS_EXPORT(XNotifyQueueUI) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(XNotifyGetNext) { ctx.r3.u64 = XamState().NotifyGetNext({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32); }
 ANY360_SYS_EXPORT(XamUserGetSigninState) { ctx.r3.u64 = XamState().UserGetSigninState(ctx.r3.u32); }
 ANY360_SYS_EXPORT(XamUserGetXUID) { ctx.r3.u64 = XamState().UserGetXUID({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
@@ -452,6 +460,32 @@ ANY360_SYS_EXPORT(XamContentCreateEnumerator) {
 }
 ANY360_SYS_EXPORT(XamContentGetDeviceState) { ctx.r3.u64 = XamState().ContentGetDeviceState({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XamInputGetCapabilities) { ctx.r3.u64 = XamState().InputGetCapabilities({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+// Step 12, the input calls Xenia stubs too: the non-controller devices' raw reports (a portal of power, devices 5
+// and 6). As Xenia: the device and the buffer checked (0x20 bytes at most), then no such device plugged in.
+static uint32_t NonControllerRaw(Guest g, uint32_t device, uint32_t buffer, uint32_t length_ptr, uint32_t state_ptr) {
+  if (device != 5 && device != 6) return 0x57;  // ERROR_INVALID_PARAMETER
+  if (!state_ptr || !length_ptr || !buffer) return 0x57;
+  const uint32_t length = g.Load32(length_ptr);
+  if (!length || length > 0x20) return 0x57;
+  return 0x48F;  // ERROR_DEVICE_NOT_CONNECTED
+}
+static uint32_t NonControllerSetRaw(uint32_t device, uint32_t buffer, uint32_t length) {
+  if (device != 5 && device != 6) return 0x57;
+  if (!buffer || !length || length > 0x20) return 0x57;
+  return 0x48F;
+}
+// (device, buffer, length in/out, state out)
+ANY360_SYS_EXPORT(XamInputNonControllerGetRawEx) {
+  ctx.r3.u64 = NonControllerRaw({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+}
+// (state out, length in/out, buffer): device 5.
+ANY360_SYS_EXPORT(XamInputNonControllerGetRaw) {
+  ctx.r3.u64 = NonControllerRaw({base}, 5, ctx.r5.u32, ctx.r4.u32, ctx.r3.u32);
+}
+// (device, buffer, length)
+ANY360_SYS_EXPORT(XamInputNonControllerSetRawEx) { ctx.r3.u64 = NonControllerSetRaw(ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
+// (length, buffer): device 5.
+ANY360_SYS_EXPORT(XamInputNonControllerSetRaw) { ctx.r3.u64 = NonControllerSetRaw(5, ctx.r4.u32, ctx.r3.u32); }
 ANY360_SYS_EXPORT(XamInputGetState) { ctx.r3.u64 = XamState().InputGetState({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XamInputSetState) { ctx.r3.u64 = XamState().InputSetState({base}, ctx.r3.u32, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XamInputGetKeystrokeEx) {
@@ -640,6 +674,19 @@ ANY360_SYS_EXPORT(XamReadTileEx) {
 
 // Batch 16: the rest of Test Drive Unlimited's (sys_object_tests).
 ANY360_SYS_EXPORT(NetDll_XNetCleanup) { ctx.r3.u64 = 0; }
+// Step 12, the network calls Xenia stubs too. XHTTP: started (1, last error 0), but no session opens (0, last error
+// ERROR_NOT_SUPPORTED), as Xenia.
+ANY360_SYS_EXPORT(NetDll_XHttpStartup) {
+  SetWin32LastError({base}, ThreadOf(ctx, base), 0);
+  ctx.r3.u64 = 1;
+}
+ANY360_SYS_EXPORT(NetDll_XHttpOpen) {
+  SetWin32LastError({base}, ThreadOf(ctx, base), 50);  // ERROR_NOT_SUPPORTED
+  ctx.r3.u64 = 0;
+}
+ANY360_SYS_EXPORT(XamNetworkStorageHasUserEnabledStorage) {
+  ctx.r3.u64 = XamState().NetworkStorageHasUserEnabledStorage(ctx.r3.u32);
+}
 ANY360_SYS_EXPORT(NetDll_XNetTsAddrToInAddr) { ctx.r3.u64 = 10050; }    // WSAENETDOWN: no title server
 ANY360_SYS_EXPORT(NetDll_XNetUnregisterInAddr) { ctx.r3.u64 = 10022; }  // WSAEINVAL: nothing is registered offline
 ANY360_SYS_EXPORT(XamLoaderGetDvdTrayState) {
@@ -1719,6 +1766,15 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XMsgCancelIORequest),
     ANY360_SYS_ENTRY(XamNotifyCreateListener),
     ANY360_SYS_ENTRY(XNotifyGetNext),
+    ANY360_SYS_ENTRY(XamInputNonControllerGetRaw),
+    ANY360_SYS_ENTRY(XamInputNonControllerGetRawEx),
+    ANY360_SYS_ENTRY(XamInputNonControllerSetRaw),
+    ANY360_SYS_ENTRY(XamInputNonControllerSetRawEx),
+    ANY360_SYS_ENTRY(NetDll_XHttpOpen),
+    ANY360_SYS_ENTRY(NetDll_XHttpStartup),
+    ANY360_SYS_ENTRY(XamNetworkStorageHasUserEnabledStorage),
+    ANY360_SYS_ENTRY(XNotifyBroadcast),
+    ANY360_SYS_ENTRY(XNotifyQueueUI),
     ANY360_SYS_ENTRY(XamUserGetSigninState),
     ANY360_SYS_ENTRY(XamUserGetXUID),
     ANY360_SYS_ENTRY(XamUserGetName),

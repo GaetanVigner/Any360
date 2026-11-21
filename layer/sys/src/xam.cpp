@@ -399,6 +399,12 @@ uint32_t Xam::UserIsUnsafeProgrammingAllowed(Guest g, uint32_t user, uint32_t re
   return kErrorSuccess;
 }
 
+uint32_t Xam::NetworkStorageHasUserEnabledStorage(uint32_t user) const {
+  if (user >= 4 || !UserGetSigninState(user)) return 0;
+  if (user_preferences_ & 0x20) return 1;
+  return NetworkStorageUserHasPrivilege(user) ? 1 : 0;
+}
+
 uint32_t Xam::UserNuiGetUserIndexForSignin(Guest g, uint32_t index_ptr) const {
   if (!index_ptr) return 0x80070057;
   g.Store32(index_ptr, 0);

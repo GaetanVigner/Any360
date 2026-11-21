@@ -91,7 +91,10 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamShowGoldUpgradeUI) X(XamShowMarketplaceUIEx) X(XamShowNuiDeviceSelectorUI) X(XamShowNuiDirtyDiscErrorUI)        \
   X(XamShowNuiGuideUI) X(XamShowNuiMessageBoxUI) X(XamShowNuiSigninUI) X(XamShowSigninUIEx)                            \
   X(XamLoaderGetMediaInfo) X(XamLoaderGetMediaInfoEx) X(XamUpdateGetBaseSystemVersion)                                 \
-  X(XamUpdateGetCurrentSystemVersion) X(XexLoadExecutable)
+  X(XamUpdateGetCurrentSystemVersion) X(XexLoadExecutable)                                                             \
+  X(XamInputNonControllerGetRaw) X(XamInputNonControllerGetRawEx) X(XamInputNonControllerSetRaw)                       \
+  X(XamInputNonControllerSetRawEx) X(NetDll_XHttpOpen) X(NetDll_XHttpStartup)                                          \
+  X(XamNetworkStorageHasUserEnabledStorage) X(XNotifyBroadcast) X(XNotifyQueueUI)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -342,6 +345,8 @@ int main(int argc, char** argv) {
   // for XamReadString.
   g_enumerator_internal = Native("XamContentCreateEnumeratorInternal");
   g_titles_played = Native("XamUserCreateTitlesPlayedEnumerator");
+  constexpr uint32_t kRawLength = 0x40047200;  // a raw report's length for the non-controller rows
+  Store32(kRawLength, 0x20);
   // A video flags value for ExSetXConfigSetting (the default), an LDI context on scratch memory for its reset.
   constexpr uint32_t kConfigValue = 0x40047100, kResetIo = 0x40047000, kResetScratch = 0x40044000;
   Store32(kConfigValue, 0x00040000);
@@ -657,6 +662,20 @@ int main(int argc, char** argv) {
       {"XamUpdateGetCurrentSystemVersion", __imp__XamUpdateGetCurrentSystemVersion, Args({}), 20000, nullptr, 0xFFFF},
       {"XexLoadExecutable (not loaded)", __imp__XexLoadExecutable, Args({kObjectName + 0x40, 0, 0, kOut + 0xDC4}), 20000,
        nullptr, 0xC000000F},
+      // The input, network and notification calls (the raw length 0x20 at kRawLength).
+      {"XamInputNonControllerGetRaw", __imp__XamInputNonControllerGetRaw, Args({kOut + 0xDD0, kRawLength, kOut + 0x1A00}),
+       20000, nullptr, 0x48F},
+      {"XamInputNonControllerGetRawEx", __imp__XamInputNonControllerGetRawEx,
+       Args({5, kOut + 0x1A00, kRawLength, kOut + 0xDD0}), 20000, nullptr, 0x48F},
+      {"XamInputNonControllerSetRaw", __imp__XamInputNonControllerSetRaw, Args({0x20, kIn}), 20000, nullptr, 0x48F},
+      {"XamInputNonControllerSetRawEx", __imp__XamInputNonControllerSetRawEx, Args({5, kIn, 0x20}), 20000, nullptr, 0x48F},
+      {"NetDll_XHttpStartup", __imp__NetDll_XHttpStartup, Args({1, 0, 0}), 20000, nullptr, 1},
+      {"NetDll_XHttpOpen", __imp__NetDll_XHttpOpen, Args({1, kIn, 0, 0, 0, 0}), 20000, nullptr, 0},
+      // The XamUserWriteUserPreference row above set user 0's network storage preference (0x20): on.
+      {"XamNetworkStorageHasUserEnabledStorage (preference on)", __imp__XamNetworkStorageHasUserEnabledStorage, Args({0}),
+       20000, nullptr, 1},
+      {"XNotifyBroadcast (no listener)", __imp__XNotifyBroadcast, Args({0x11, 7}), 20000, nullptr, 0},
+      {"XNotifyQueueUI", __imp__XNotifyQueueUI, Args({0, 0, 0, kIn, 0}), 20000, nullptr, 0},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "

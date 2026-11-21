@@ -526,6 +526,10 @@ Module and loader calls (5): `XexLoadExecutable` answers as `XexLoadImage`, the 
 title's id, and the system versions are the first retail kernel's (base) and the layer's reported build (current)
 (docs/perf/archive/2026-11-21-sys-step12-module/).
 
+Input, network and notification calls (9): no non-controller device plugged in (the raw calls' checks, then
+ERROR_DEVICE_NOT_CONNECTED), XHTTP started but no session, network storage on by the user's preference, broadcasts
+sent to the listeners, toasts accepted (docs/perf/archive/2026-11-21-sys-step12-input-net-notify/).
+
 The rows under 1x (docs/perf/archive/2026-11-19-sys-step12-below-1x/): an object's close holds the object manager's
 lock once, and an object only one close hook keeps state for (`AllocatePlainObject`: XAM's enumerators, listeners and
 session handles) runs that hook alone and skips the timer and port tables and the free hooks at release. The suite

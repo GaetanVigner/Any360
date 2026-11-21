@@ -302,6 +302,10 @@ class Xam {
   // storage privilege (0xD1). Xenia grants it only to a profile signed in to Xbox Live; the local profile is offline,
   // so 0 for every user.
   uint32_t NetworkStorageUserHasPrivilege(uint32_t) const { return 0; }
+  // XamNetworkStorageHasUserEnabledStorage (user index): 1 when the user is signed in and its network storage
+  // preference (XPROFILE_USER_PREFERENCES bit 0x20, as XamUserWriteUserPreference sets it) is on; otherwise the
+  // privilege decides, which no user holds offline: 0. As Xenia.
+  uint32_t NetworkStorageHasUserEnabledStorage(uint32_t user) const;
   // The title id of the XEX header's execution info (0 without a header).
   uint32_t TitleId(Guest g) const;
   // Tasks: the callback runs on a new thread with the message as its context.

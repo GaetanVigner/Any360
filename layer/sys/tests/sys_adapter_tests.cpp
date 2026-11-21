@@ -20,6 +20,7 @@
 #include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
+#include "any360/sys/win32.h"
 #include "any360/sys/xam.h"
 #include "guest_memory.h"
 
@@ -501,6 +502,42 @@ void ModuleAdapters() {
   CHECK(Call("XamUpdateGetBaseSystemVersion", {}) == 1888 && Call("XamUpdateGetCurrentSystemVersion", {}) == 0xFFFF);
 }
 
+void InputNetNotifyAdapters() {
+  // The non-controller devices: the checks, then no device (ERROR_DEVICE_NOT_CONNECTED); nothing written.
+  G().Store32(kOut, 0x20), G().Store16(kOut + 4, 0x1234);
+  CHECK(Call("XamInputNonControllerGetRawEx", {5, kBuf, kOut, kOut + 4}) == 0x48F);
+  CHECK(Call("XamInputNonControllerGetRawEx", {6, kBuf, kOut, kOut + 4}) == 0x48F);
+  CHECK(G().Load32(kOut) == 0x20 && G().Load16(kOut + 4) == 0x1234);
+  CHECK(Call("XamInputNonControllerGetRawEx", {4, kBuf, kOut, kOut + 4}) == 0x57);
+  CHECK(Call("XamInputNonControllerGetRawEx", {5, 0, kOut, kOut + 4}) == 0x57);
+  CHECK(Call("XamInputNonControllerGetRawEx", {5, kBuf, kOut, 0}) == 0x57);
+  G().Store32(kOut, 0x21);
+  CHECK(Call("XamInputNonControllerGetRawEx", {5, kBuf, kOut, kOut + 4}) == 0x57);
+  G().Store32(kOut, 0);
+  CHECK(Call("XamInputNonControllerGetRawEx", {5, kBuf, kOut, kOut + 4}) == 0x57);
+  G().Store32(kOut, 8);
+  CHECK(Call("XamInputNonControllerGetRaw", {kOut + 4, kOut, kBuf}) == 0x48F && Call("XamInputNonControllerGetRaw", {0, kOut, kBuf}) == 0x57);
+  CHECK(Call("XamInputNonControllerSetRawEx", {6, kBuf, 0x20}) == 0x48F && Call("XamInputNonControllerSetRawEx", {6, kBuf, 0x21}) == 0x57);
+  CHECK(Call("XamInputNonControllerSetRawEx", {7, kBuf, 8}) == 0x57 && Call("XamInputNonControllerSetRawEx", {5, 0, 8}) == 0x57);
+  CHECK(Call("XamInputNonControllerSetRaw", {8, kBuf}) == 0x48F && Call("XamInputNonControllerSetRaw", {0, kBuf}) == 0x57);
+  // XHTTP: started, no session; the calling thread's last error set each time.
+  SetWin32LastError(G(), kKThread, 99);
+  CHECK(Call("NetDll_XHttpStartup", {1, 0, 0}) == 1 && Win32LastError(G(), kKThread) == 0);
+  CHECK(Call("NetDll_XHttpOpen", {1, kData, 0, 0, 0, 0}) == 0 && Win32LastError(G(), kKThread) == 50);
+  // Network storage: off unless the user's preference says on (user 0 only).
+  CHECK(Call("XamNetworkStorageHasUserEnabledStorage", {0}) == 0 && Call("XamNetworkStorageHasUserEnabledStorage", {4}) == 0);
+  CHECK(Call("XamUserWriteUserPreference", {0, 0x20, 0x20, 0}) == 0);
+  CHECK(Call("XamNetworkStorageHasUserEnabledStorage", {0}) == 1 && Call("XamNetworkStorageHasUserEnabledStorage", {1}) == 0);
+  // XNotifyBroadcast: to a listener whose areas take it (XNOTIFY_SYSTEM, area 0); XNotifyQueueUI: success.
+  const uint32_t listener = uint32_t(Call("XamNotifyCreateListener", {1, 0}));
+  while (Call("XNotifyGetNext", {listener, 0, kOut, kOut + 4}) != 0) {}
+  CHECK(Call("XNotifyBroadcast", {0x00000011, 7}) == 0);
+  CHECK(Call("XNotifyGetNext", {listener, 0, kOut, kOut + 4}) != 0 && G().Load32(kOut) == 0x11 && G().Load32(kOut + 4) == 7);
+  CHECK(Call("XNotifyBroadcast", {0x02000001, 7}) == 0 && Call("XNotifyGetNext", {listener, 0, kOut, kOut + 4}) == 0);  // another area
+  CHECK(Call("NtClose", {listener}) == 0);
+  CHECK(Call("XNotifyQueueUI", {0, 0, 0, kData, 0}) == 0);
+}
+
 void MediaAdapters() {
   for (const char* name : {"EnumerateMediaObjects", "EnumerateMediaObjects_", "EnumerateMediaObjects_0", "EnumerateMediaObjects_1"}) {
     CHECK(Call(name, {kData, 1, kOut}) == 0x80004001);
@@ -627,6 +664,7 @@ int main() {
   MiscAdapters();
   UiAdapters();
   ModuleAdapters();
+  InputNetNotifyAdapters();
   EarlierBatchAdapters();
   Threads().SetDispatcher(nullptr, nullptr);
   std::filesystem::remove_all(root, error);

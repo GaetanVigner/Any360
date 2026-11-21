@@ -1946,7 +1946,7 @@
 "kind":"function",
 "group":"net",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -1970,7 +1970,7 @@
 "kind":"function",
 "group":"net",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -6178,7 +6178,7 @@
 "kind":"function",
 "group":"notify",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -6202,7 +6202,7 @@
 "kind":"function",
 "group":"notify",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -12782,7 +12782,7 @@
 "kind":"function",
 "group":"input",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -12794,7 +12794,7 @@
 "kind":"function",
 "group":"input",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -14402,7 +14402,7 @@
 "kind":"function",
 "group":"input",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -14414,7 +14414,7 @@
 "kind":"function",
 "group":"input",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -16322,7 +16322,7 @@
 "kind":"function",
 "group":"net",
 "reference":"stub",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
