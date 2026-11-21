@@ -504,6 +504,11 @@ launched (`XamContentLaunchImage*Internal*`, as `XamContentLaunchImage`) (docs/p
 A package resolved again (no folder to make, no root name) is answered from the guest bytes and an in-place check of
 its mount, with no host path built (docs/perf/archive/2026-11-21-sys-step12-resolve/).
 
+Information calls (10): the console's country read and set for the run (`XamGetCountry`, `XamSetCountry`), no DVR
+storage, the font patch Xenia names for a language (laid out once in the kernel heap), no Live hive to read
+(`XamGetLiveHiveValueA/W`: not signed in), a retail console (staging mode 0) and no Kinect playback or automation
+(docs/perf/archive/2026-11-21-sys-step12-info/).
+
 The rows under 1x (docs/perf/archive/2026-11-19-sys-step12-below-1x/): an object's close holds the object manager's
 lock once, and an object only one close hook keeps state for (`AllocatePlainObject`: XAM's enumerators, listeners and
 session handles) runs that hook alone and skips the timer and port tables and the free hooks at release. The suite

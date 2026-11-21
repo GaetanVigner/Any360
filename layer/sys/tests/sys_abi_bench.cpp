@@ -77,7 +77,10 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamUserNuiEnableBiometric) X(XamUserNuiGetUserIndex) X(XamUserNuiGetUserIndexForBind)                              \
   X(XamContentGetAttributesInternal) X(XamContentGetDeviceVolumePath) X(XamContentGetLocalizedDeviceData)              \
   X(XamContentGetLocalizedString) X(XamContentLaunchImageFromFileInternal) X(XamContentLaunchImageInternal)            \
-  X(XamContentLaunchImageInternalEx) X(XamContentResolveInternal) X(XamReadTile) X(XamReadTileEx)
+  X(XamContentLaunchImageInternalEx) X(XamContentResolveInternal) X(XamReadTile) X(XamReadTileEx)                      \
+  X(XamGetCountry) X(XamGetDvrStorage) X(XamGetLanguageTypefacePatch) X(XamGetLiveHiveValueA)                          \
+  X(XamGetLiveHiveValueW) X(XamGetStagingMode) X(XamIsNatalPlaybackEnabled) X(XamIsNuiAutomationEnabled)               \
+  X(XamSetCountry) X(XamSetDvrStorage)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -581,6 +584,19 @@ int main(int argc, char** argv) {
        Args({kContentData, kOut + 0x1A00, 0x100, 0, 0, 0}), 2000, nullptr, 0},
       {"XamReadTile", __imp__XamReadTile, Args({1, 0, 7, 0, kIn, kOut + 0xDD0, 0}), 20000, nullptr, 2},
       {"XamReadTileEx", __imp__XamReadTileEx, Args({1, 0, 7, 0, 0, 0, kIn, kOut + 0xDD0}, {0}), 20000, nullptr, 2},
+      // The information calls.
+      {"XamGetCountry", __imp__XamGetCountry, Args({}), 20000, nullptr, -1},
+      {"XamSetCountry (the same)", __imp__XamSetCountry, Args({103}), 20000, nullptr, 0},
+      {"XamGetDvrStorage", __imp__XamGetDvrStorage, Args({kOut + 0xDD0, kOut + 0xDD4, kOut + 0xDD8}), 20000, nullptr, 0},
+      {"XamSetDvrStorage", __imp__XamSetDvrStorage, Args({0x100000, 0}), 20000, nullptr, 0},
+      {"XamGetLanguageTypefacePatch", __imp__XamGetLanguageTypefacePatch, Args({1}), 20000, nullptr, -1},
+      {"XamGetLiveHiveValueA", __imp__XamGetLiveHiveValueA, Args({kIn, kOut + 0x1A00, 64, 0, 0}), 20000, nullptr,
+       0x80151802},
+      {"XamGetLiveHiveValueW", __imp__XamGetLiveHiveValueW, Args({kIn, kOut + 0x1A00, 64, 0, 0}), 20000, nullptr,
+       0x80151802},
+      {"XamGetStagingMode", __imp__XamGetStagingMode, Args({}), 20000, nullptr, 0},
+      {"XamIsNatalPlaybackEnabled", __imp__XamIsNatalPlaybackEnabled, Args({0, 0}), 20000, nullptr, 0},
+      {"XamIsNuiAutomationEnabled", __imp__XamIsNuiAutomationEnabled, Args({0, 0}), 20000, nullptr, 0},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "

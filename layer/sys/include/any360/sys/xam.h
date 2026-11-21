@@ -243,6 +243,14 @@ class Xam {
   // XamGetLanguageLocaleFallbackString: the guest address of the language's fallback locale name (info.h:
   // LanguageLocaleFallback), the 18 laid out once in the kernel heap; 0 for a language past Simplified Chinese.
   uint32_t LanguageLocaleFallbackString(Guest g, uint32_t language);
+  // XamGetLanguageTypefacePatch: the guest address of the font patch a language would use, as Xenia gives it (big-
+  // endian UTF-16 "file://media:/Xenon<SC|C|JK>Latin.xttp2": Simplified Chinese (17), Traditional Chinese (8), any
+  // other), the three laid out once in the kernel heap; 0 when the heap is full.
+  uint32_t LanguageTypefacePatch(Guest g, uint32_t language);
+  // XamGetLiveHiveValueA / W (feature name, value out, its size, flag, overlapped): no Xbox Live to sign in to:
+  // X_ONLINE_E_LOGON_NOT_LOGGED_ON (0x80151802), E_INVALIDARG without a name, a value buffer or its size; through an
+  // overlapped, that result as both result and extended error, the length ~0 (Xenia's immediate completion).
+  uint32_t LiveHiveValue(Guest g, uint32_t name, uint32_t value, uint32_t size, uint32_t overlapped);
   // XamIptvGetServiceName: the guest address of the IPTV provider's name (0x78 bytes, 59 UTF-16 characters and a
   // terminator, laid out once in the kernel heap) written at `name_out`; 0, or E_OUTOFMEMORY when the heap has no
   // room. The name is the console's IPTV setting, which is empty here (IPTV is off, as XamIsIptvEnabled answers);
@@ -522,6 +530,7 @@ class Xam {
   std::filesystem::path profile_dir_, profile_dir_root_;
   uint32_t language_fallback_ = 0;  // the 18 fallback locale names in the kernel heap, laid out at first use
   uint32_t language_fallback_at_[18] = {};
+  uint32_t typeface_patch_at_[3] = {};  // the three font patch names in the kernel heap, laid out at first use
   uint32_t iptv_name_ = 0;  // the IPTV provider's name in the kernel heap, laid out at first use
   uint32_t content_change_callback_ = 0, launch_request_callback_ = 0;
   // The packages of a type as enumerator items of `item_size` bytes starting with their XCONTENT_DATA, sorted by name.

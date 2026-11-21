@@ -75,6 +75,7 @@ void Xam::Reset() {
   profile_dir_.clear(), profile_dir_root_.clear();
   language_fallback_ = 0;
   iptv_name_ = 0;
+  std::memset(typeface_patch_at_, 0, sizeof typeface_patch_at_);
   content_change_callback_ = launch_request_callback_ = 0;
   close_hook_ = Objects().AddCloseHook([](uint32_t object) { return XamState().OnClose(object); });
   system_module_ = 0;
@@ -486,6 +487,33 @@ uint32_t Xam::LanguageLocaleFallbackString(Guest g, uint32_t language) {
     language_fallback_ = at;
   }
   return language_fallback_at_[language];
+}
+
+uint32_t Xam::LanguageTypefacePatch(Guest g, uint32_t language) {
+  static constexpr const char16_t* kPatches[3] = {u"file://media:/XenonSCLatin.xttp2", u"file://media:/XenonCLatin.xttp2",
+                                                  u"file://media:/XenonJKLatin.xttp2"};
+  if (!typeface_patch_at_[0]) {
+    uint32_t bytes = 0;
+    for (const char16_t* patch : kPatches) bytes += 2 * uint32_t(std::char_traits<char16_t>::length(patch) + 1);
+    uint32_t next = Objects().AllocateObject(bytes);
+    if (!next) return 0;
+    for (uint32_t i = 0; i < 3; ++i) {
+      typeface_patch_at_[i] = next;
+      const char16_t* name = kPatches[i];
+      do {
+        g.Store16(next, uint16_t(*name));
+        next += 2;
+      } while (*name++);
+    }
+  }
+  return typeface_patch_at_[language == 17 ? 0 : language == 8 ? 1 : 2];
+}
+
+uint32_t Xam::LiveHiveValue(Guest g, uint32_t name, uint32_t value, uint32_t size, uint32_t overlapped) {
+  const uint32_t result = !name || !value || !size ? 0x80070057u : 0x80151802u;
+  if (!overlapped) return result;
+  CompleteEx(g, overlapped, result, result, 0xFFFFFFFF);
+  return kErrorIoPending;
 }
 
 uint32_t Xam::IptvServiceName(Guest g, uint32_t name_out) {

@@ -1392,6 +1392,31 @@ ANY360_SYS_EXPORT(XeCryptBnQwNeRsaPubCrypt) { ctx.r3.u64 = XeCryptBnQwNeRsaPubCr
 
 // Batch 30: the last of XAM's (sys_io_tests against the reference, sys_object_tests).
 ANY360_SYS_EXPORT(XamGetOnlineSchema) { ctx.r3.u64 = XamState().GetOnlineSchema({base}); }
+// Step 12, the information calls Xenia stubs too.
+ANY360_SYS_EXPORT(XamGetCountry) { ctx.r3.u64 = Console().country; }  // the console's (as ExGetXConfigSetting gives it)
+// (country): the console's country for the run (ExGetXConfigSetting and the locale calls read it).
+ANY360_SYS_EXPORT(XamSetCountry) {
+  Console().country = uint8_t(ctx.r3.u32);
+  ctx.r3.u64 = 0;
+}
+// (DVR storage out, used out, the drive's unused space out): no DVR storage set aside (0, 0; the third untouched, as
+// Xenia).
+ANY360_SYS_EXPORT(XamGetDvrStorage) {
+  if (ctx.r3.u32) Guest{base}.Store32(ctx.r3.u32, 0);
+  if (ctx.r4.u32) Guest{base}.Store32(ctx.r4.u32, 0);
+  ctx.r3.u64 = 0;
+}
+ANY360_SYS_EXPORT(XamSetDvrStorage) { ctx.r3.u64 = 0; }  // (size, overlapped): accepted, nothing set aside
+ANY360_SYS_EXPORT(XamGetLanguageTypefacePatch) { ctx.r3.u64 = XamState().LanguageTypefacePatch({base}, ctx.r3.u32); }
+ANY360_SYS_EXPORT(XamGetLiveHiveValueA) {
+  ctx.r3.u64 = XamState().LiveHiveValue({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(XamGetLiveHiveValueW) {
+  ctx.r3.u64 = XamState().LiveHiveValue({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(XamGetStagingMode) { ctx.r3.u64 = 0; }          // a retail console, not a staging one
+ANY360_SYS_EXPORT(XamIsNatalPlaybackEnabled) { ctx.r3.u64 = 0; }  // no Kinect recording played back
+ANY360_SYS_EXPORT(XamIsNuiAutomationEnabled) { ctx.r3.u64 = 0; }  // no Kinect automation
 ANY360_SYS_EXPORT(XamQueryLiveHiveW) { ctx.r3.u64 = 0xC00000EF; }  // STATUS_INVALID_PARAMETER_1: no Live hive offline
 ANY360_SYS_EXPORT(XamSwapDisc) { ctx.r3.u64 = 0; }                 // the one disc stays in, as the reference answers
 ANY360_SYS_EXPORT(XAudioEnableDucker) { ctx.r3.u64 = 0; }          // no voice chat to duck under
@@ -1823,6 +1848,16 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(NtFreeEncryptedMemory),
     ANY360_SYS_ENTRY(XamGetOnlineSchema),
     ANY360_SYS_ENTRY(XamQueryLiveHiveW),
+    ANY360_SYS_ENTRY(XamGetCountry),
+    ANY360_SYS_ENTRY(XamGetDvrStorage),
+    ANY360_SYS_ENTRY(XamGetLanguageTypefacePatch),
+    ANY360_SYS_ENTRY(XamGetLiveHiveValueA),
+    ANY360_SYS_ENTRY(XamGetLiveHiveValueW),
+    ANY360_SYS_ENTRY(XamGetStagingMode),
+    ANY360_SYS_ENTRY(XamIsNatalPlaybackEnabled),
+    ANY360_SYS_ENTRY(XamIsNuiAutomationEnabled),
+    ANY360_SYS_ENTRY(XamSetCountry),
+    ANY360_SYS_ENTRY(XamSetDvrStorage),
     ANY360_SYS_ENTRY(XamSwapDisc),
     ANY360_SYS_ENTRY(XAudioEnableDucker),
     ANY360_SYS_ENTRY(XCustomRegisterDynamicActions),

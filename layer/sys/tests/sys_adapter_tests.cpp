@@ -340,6 +340,44 @@ void ContentAdapters() {
   CHECK(Call("XamContentLaunchImageInternalEx", {kData + 0x200, kData, 0}) == 2);
 }
 
+void InfoAdapters() {
+  // The country: the console's, set for the run (ExGetXConfigSetting reads the same value).
+  const uint8_t country = Console().country;
+  CHECK(Call("XamGetCountry", {}) == country);
+  CHECK(Call("XamSetCountry", {0x22}) == 0 && Call("XamGetCountry", {}) == 0x22 && Console().country == 0x22);
+  Console().country = country;
+  // DVR storage: none; the third out untouched.
+  G().Store32(kOut, 5), G().Store32(kOut + 4, 6), G().Store32(kOut + 8, 7);
+  CHECK(Call("XamGetDvrStorage", {kOut, kOut + 4, kOut + 8}) == 0);
+  CHECK(G().Load32(kOut) == 0 && G().Load32(kOut + 4) == 0 && G().Load32(kOut + 8) == 7);
+  CHECK(Call("XamSetDvrStorage", {0x100000, 0}) == 0);
+  // The font patch names: big-endian UTF-16, laid out once.
+  auto patch = [&](uint32_t language, const char16_t* expected) {
+    const uint32_t at = uint32_t(Call("XamGetLanguageTypefacePatch", {language}));
+    bool same = at != 0;
+    for (uint32_t i = 0; same; ++i) {
+      same = G().Load16(at + 2 * i) == uint16_t(expected[i]);
+      if (!expected[i]) break;
+    }
+    return same ? at : 0u;
+  };
+  const uint32_t jk = patch(1, u"file://media:/XenonJKLatin.xttp2");
+  CHECK(jk != 0 && patch(9, u"file://media:/XenonJKLatin.xttp2") == jk);
+  CHECK(patch(17, u"file://media:/XenonSCLatin.xttp2") != 0 && patch(8, u"file://media:/XenonCLatin.xttp2") != 0);
+  // The Live hive: not signed in; E_INVALIDARG without a name, a value or its size; through an overlapped, the
+  // result as the extended error too, the length ~0.
+  for (const char* name : {"XamGetLiveHiveValueA", "XamGetLiveHiveValueW"}) {
+    CHECK(Call(name, {kData, kOut, 64, 0, 0}) == 0x80151802);
+    CHECK(Call(name, {0, kOut, 64, 0, 0}) == 0x80070057 && Call(name, {kData, 0, 64, 0, 0}) == 0x80070057);
+    CHECK(Call(name, {kData, kOut, 0, 0, 0}) == 0x80070057);
+    FreshOverlapped();
+    CHECK(Call(name, {kData, kOut, 64, 0xFFFFFFFF, kOv}) == 997);
+    CHECK(G().Load32(kOv) == 0x80151802 && G().Load32(kOv + 4) == 0xFFFFFFFF && G().Load32(kOv + 0x18) == 0x80151802);
+  }
+  CHECK(Call("XamGetStagingMode", {}) == 0);
+  CHECK(Call("XamIsNatalPlaybackEnabled", {1, 2}) == 0 && Call("XamIsNuiAutomationEnabled", {1, 2}) == 0);
+}
+
 void MediaAdapters() {
   for (const char* name : {"EnumerateMediaObjects", "EnumerateMediaObjects_", "EnumerateMediaObjects_0", "EnumerateMediaObjects_1"}) {
     CHECK(Call(name, {kData, 1, kOut}) == 0x80004001);
@@ -454,6 +492,7 @@ int main() {
   MediaAdapters();
   UserAdapters();
   ContentAdapters();
+  InfoAdapters();
   EarlierBatchAdapters();
   Threads().SetDispatcher(nullptr, nullptr);
   std::filesystem::remove_all(root, error);
