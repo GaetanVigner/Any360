@@ -355,6 +355,14 @@ console's own calls, with nothing for a title to call or hook (`any360/sys/input
 - `sys_object_tests` plays a burst of changes in one frame (RB, X, Y, RB released and pressed again, a double tap on
   X) through the steps, and the sticks staying live while buttons wait.
 
+## Mirror's Edge in the database (2026-11-21)
+
+The sixth title (its own checkout, MirrorsEdgeRewrite; not published yet) boots on the full binding there. Its
+imports are now in the database (titles/mirrorsedge/pipeline.json, docs/coverage/mirrorsedge.json and its
+inventory, 53,832 functions): 275 calls, every one native; two only it imports (`InterlockedFlushSList`,
+`InterlockedPopEntrySList`), native already. The known titles now import 381 distinct calls, and none of the ones
+Any360 leaves to the reference (docs/SYS_STUBS.md, which now says so).
+
 ## Call of Duty: Black Ops on the full binding (2026-11-11)
 
 The fifth title, the first ported on Any360 from its first day (GaetanVigner/CoDBoRewrite), runs with all eight

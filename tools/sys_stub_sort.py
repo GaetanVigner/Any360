@@ -75,6 +75,9 @@ def main():
     args.out_json.write_text(f'{{"xenia":"{commit}","exports":[\n{lines}\n]}}\n', encoding='utf-8')
 
     counts = Counter(r['bucket'] for r in sorted_rows)
+    # The known titles (those whose imports are in the database) and how many of the sorted calls they import.
+    known = sorted({t for r in rows for t in r.get('titles', [])})
+    imported = sum(1 for r in stubs if r.get('titles'))
     by_group = defaultdict(Counter)
     for r in sorted_rows:
         by_group[r['group']][r['bucket']] += 1
@@ -87,6 +90,9 @@ def main():
           f'**{counts["retail-stub"]} answered as a stub** (Xenia stubs them too or marks them doubtful), '
           f'**{counts["debug-only"]} debug only** (xbdm, absent on a retail console), '
           f'**{counts["never-seen"]} never seen** (no title Xenia runs is known to call them).', '',
+          f'The {len(known)} known titles ({", ".join(known)}) import {imported} of these {len(sorted_rows)}: every '
+          'call they import is answered natively.' if not imported else
+          f'The {len(known)} known titles ({", ".join(known)}) import {imported} of these {len(sorted_rows)}.', '',
           '| Group | ' + ' | '.join(BUCKETS) + ' |', '|---|' + '---:|' * len(BUCKETS)]
     for group in sorted(by_group, key=lambda g: -sum(by_group[g].values())):
         md.append(f'| {group} | ' + ' | '.join(str(by_group[group][b] or '') for b in BUCKETS) + ' |')

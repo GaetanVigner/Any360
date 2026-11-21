@@ -37,6 +37,22 @@
    "mvp_sites": 1504,
    "mvp_sites_native": 1504
   },
+  "mirrorsedge": {
+   "imports": 275,
+   "imports_native": 275,
+   "mvp_total": 252,
+   "mvp_native": 252,
+   "mnemonics": 338,
+   "instructions": 3276176,
+   "sdk": "0.8.0",
+   "unnamed_library_functions": 0,
+   "source": "",
+   "description": "",
+   "sites": 1673,
+   "sites_native": 1673,
+   "mvp_sites": 1642,
+   "mvp_sites_native": 1642
+  },
   "simpsons": {
    "imports": 317,
    "imports_native": 317,
@@ -80,7 +96,7 @@
  },
  "system_calls": {
   "total": 2914,
-  "used": 379,
+  "used": 381,
   "any360": {
    "native": 842,
    "todo": 2072
@@ -99,7 +115,7 @@
  },
  "instructions": {
   "total": 1842,
-  "used": 347,
+  "used": 353,
   "any360": {
    "todo": 1842
   },
@@ -125,6 +141,7 @@
     "XAPI (Win32 layer over the kernel and XAM)": 194,
     "kernel import thunks": 2
    },
+   "mirrorsedge": {},
    "simpsons": {
     "XDK D3D command writers": 342,
     "CRT (string / memory)": 64,

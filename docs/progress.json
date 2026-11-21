@@ -6,7 +6,7 @@
  },
  "system_calls": {
   "total": 2914,
-  "used_by_titles": 379,
+  "used_by_titles": 381,
   "native": 842,
   "ported": 0,
   "runnable": 846,
@@ -25,7 +25,7 @@
  },
  "instructions": {
   "total": 1842,
-  "used_by_titles": 347,
+  "used_by_titles": 353,
   "native": 0,
   "reference": 497,
   "by_family": {
@@ -74,6 +74,7 @@
     "XAPI (Win32 layer over the kernel and XAM)": 194,
     "kernel import thunks": 2
    },
+   "mirrorsedge": {},
    "simpsons": {
     "XDK D3D command writers": 342,
     "CRT (string / memory)": 64,
@@ -157,6 +158,22 @@
    "sites_native": 1534,
    "mvp_sites": 1504,
    "mvp_sites_native": 1504
+  },
+  "mirrorsedge": {
+   "imports": 275,
+   "imports_native": 275,
+   "mvp_total": 252,
+   "mvp_native": 252,
+   "mnemonics": 338,
+   "instructions": 3276176,
+   "sdk": "0.8.0",
+   "unnamed_library_functions": 0,
+   "source": "",
+   "description": "",
+   "sites": 1673,
+   "sites_native": 1673,
+   "mvp_sites": 1642,
+   "mvp_sites_native": 1642
   },
   "simpsons": {
    "imports": 317,

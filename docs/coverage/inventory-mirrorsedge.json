@@ -1,0 +1,134 @@
+{
+ "name": "mirrorsedge",
+ "date": "2026-11-21",
+ "functions": 53832,
+ "instructions": 3276176,
+ "native": 0,
+ "verified": 0,
+ "library": 0,
+ "modules": {
+  "code 82Bxxxxx": {
+   "kind": "game",
+   "functions": 2764,
+   "instructions": 268405,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 82Cxxxxx": {
+   "kind": "game",
+   "functions": 2525,
+   "instructions": 262367,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 82Dxxxxx": {
+   "kind": "game",
+   "functions": 1987,
+   "instructions": 261125,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 824xxxxx": {
+   "kind": "game",
+   "functions": 3452,
+   "instructions": 260875,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 82Axxxxx": {
+   "kind": "game",
+   "functions": 3019,
+   "instructions": 260181,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 825xxxxx": {
+   "kind": "game",
+   "functions": 3842,
+   "instructions": 259962,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 826xxxxx": {
+   "kind": "game",
+   "functions": 4122,
+   "instructions": 259913,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 823xxxxx": {
+   "kind": "game",
+   "functions": 4236,
+   "instructions": 259859,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 827xxxxx": {
+   "kind": "game",
+   "functions": 3203,
+   "instructions": 259368,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 828xxxxx": {
+   "kind": "game",
+   "functions": 6085,
+   "instructions": 258402,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 829xxxxx": {
+   "kind": "game",
+   "functions": 9030,
+   "instructions": 257772,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 822xxxxx": {
+   "kind": "game",
+   "functions": 3816,
+   "instructions": 210738,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "code 82Exxxxx": {
+   "kind": "game",
+   "functions": 5751,
+   "instructions": 197209,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  }
+ },
+ "translated": [],
+ "translated_by_file": {},
+ "imports": {
+  "total": 275,
+  "by_state": {
+   "implemented": 239,
+   "stub": 36
+  },
+  "by_library": {
+   "xam": {
+    "implemented": 92,
+    "stub": 26
+   },
+   "xboxkrnl": {
+    "implemented": 147,
+    "stub": 10
+   }
+  }
+ }
+}
