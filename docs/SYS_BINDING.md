@@ -501,6 +501,8 @@ data named by the device's type, `XamContentGetLocalizedString` a package's disp
 console's language; `XamContentResolveInternal` mounts a package's folder (made when asked) and gives its device path
 or a root name linked to it; the profile has no tiles (`XamReadTile*`: ERROR_FILE_NOT_FOUND), and no other image is
 launched (`XamContentLaunchImage*Internal*`, as `XamContentLaunchImage`) (docs/perf/archive/2026-11-21-sys-step12-content-stubs/).
+A package resolved again (no folder to make, no root name) is answered from the guest bytes and an in-place check of
+its mount, with no host path built (docs/perf/archive/2026-11-21-sys-step12-resolve/).
 
 The rows under 1x (docs/perf/archive/2026-11-19-sys-step12-below-1x/): an object's close holds the object manager's
 lock once, and an object only one close hook keeps state for (`AllocatePlainObject`: XAM's enumerators, listeners and

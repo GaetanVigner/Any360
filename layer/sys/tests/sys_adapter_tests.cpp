@@ -279,6 +279,33 @@ void ContentAdapters() {
   CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 0, kData + 0x180, 0}) == 0xB7);
   CHECK(!std::strcmp(reinterpret_cast<const char*>(g_base + kOut), "RROOT:"));
   Files().Unlink("RROOT:");
+  // Asked again (the package mounted): the same path from the fast path, truncated the same way, through an
+  // overlapped too; a name with ':' cleaned as ContentPath cleans it.
+  std::memset(g_base + kOut, 0xAA, 0x100);
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 0, 0, 0}) == 0);
+  CHECK(!std::strcmp(reinterpret_cast<const char*>(g_base + kOut), "\\Device\\Content\\00000001\\rpkg"));
+  std::memset(g_base + kOut, 0xAA, 0x100);
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 8, 0, 0, 0}) == 0 && !std::memcmp(g_base + kOut, "\\Device\0", 8));
+  FreshOverlapped();
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 0, 0, kOv}) == 997 && Completed(0, 0));
+  ContentData(kData + 0x600, "a:b");
+  CHECK(Call("XamContentResolveInternal", {kData + 0x600, kOut, 0x100, 1, 0, 0}) == 0);
+  CHECK(Call("XamContentResolveInternal", {kData + 0x600, kOut, 0x100, 0, 0, 0}) == 0);
+  CHECK(!std::strcmp(reinterpret_cast<const char*>(g_base + kOut), "\\Device\\Content\\00000001\\a_b"));
+  CHECK(std::filesystem::is_directory(XamState().title().content_root / "00000001" / "a_b"));
+  // The content root moved: the mount on the old folder is not taken as resolved; the package mounted again on the
+  // new root's folder (made when asked), its files found there.
+  const std::filesystem::path old_root = XamState().title().content_root;
+  XamState().title().content_root = old_root.parent_path() / "content2";
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 1, 0, 0}) == 0);
+  CHECK(Files().Resolve("\\Device\\Content\\00000001\\rpkg\\file.bin") ==
+        XamState().title().content_root / "00000001" / "rpkg" / "file.bin");
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 0, 0, 0}) == 0);
+  CHECK(Files().Resolve("\\Device\\Content\\00000001\\rpkg\\file.bin") ==
+        XamState().title().content_root / "00000001" / "rpkg" / "file.bin");
+  XamState().title().content_root = old_root;
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 0, 0, 0}) == 0);
+  CHECK(Files().Resolve("\\Device\\Content\\00000001\\rpkg\\file.bin") == old_root / "00000001" / "rpkg" / "file.bin");
   ContentData(kData + 0x400, "dpkg", 2);
   CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 0, 0, 0}) == 0);
   char disc[160];

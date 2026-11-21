@@ -221,6 +221,40 @@ bool FileSystem::HasLink(const std::string& link) const {
   return links_.count(name) != 0;
 }
 
+bool FileSystem::IsMountedOn(std::string_view device, const std::filesystem::path& root, std::string_view type,
+                             std::string_view name) const {
+  using Char = std::filesystem::path::value_type;
+  constexpr Char kSeparator = std::filesystem::path::preferred_separator;
+  std::shared_lock lock(mounts_mutex_);
+  for (const MountRef& m : mounts_) {
+    if (m->device.size() != device.size()) continue;
+    size_t i = 0;
+    while (i < device.size() && m->device[i] == char(device[i] >= 'A' && device[i] <= 'Z' ? device[i] + 32 : device[i])) ++i;
+    if (i != device.size()) continue;
+    if (m->read_only || m->null) return false;
+    // The host folder as root / type / name would give it: the root, a separator unless it ends with one, the type,
+    // a separator, the name.
+    const auto& host = m->host.native();
+    const auto& base = root.native();
+    if (base.empty() || host.compare(0, base.size(), base) != 0) return false;
+    size_t at = base.size();
+    if (base.back() != Char('\\') && base.back() != Char('/')) {
+      if (at >= host.size() || host[at] != kSeparator) return false;
+      ++at;
+    }
+    auto part = [&](std::string_view text) {
+      if (host.size() - at < text.size()) return false;
+      for (const char c : text) {
+        if (host[at++] != Char(static_cast<unsigned char>(c))) return false;
+      }
+      return true;
+    };
+    if (!part(type) || at >= host.size() || host[at++] != kSeparator || !part(name)) return false;
+    return at == host.size();
+  }
+  return false;
+}
+
 void FileSystem::Unmount(const std::string& device) {
   std::unique_lock lock(mounts_mutex_);
   std::erase_if(mounts_, [&](const MountRef& m) { return EqualsLower(m->device, device); });

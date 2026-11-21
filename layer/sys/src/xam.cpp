@@ -1258,6 +1258,38 @@ uint32_t Xam::ContentResolveInternal(Guest g, uint32_t content_data, uint32_t pa
   if (!content_data) return Finish(g, overlapped, kErrorInvalidParameter);
   const uint32_t device = g.Load32(content_data);
   if ((device != 1 && device != 2) || (root_name && device != 1)) return Finish(g, overlapped, kErrorInvalidParameter);
+  // A package already resolved (mounted on its folder under the current content root), asked again with no folder to
+  // make and no root name: its device path written from the guest bytes, no host path built (ContentPath's file name
+  // rules: at most 42 characters, '/', '\\' and ':' as '_', a name of only dots and spaces refused).
+  if (device == 1 && !create_directory && !root_name && !title_.content_root.empty()) {
+    static constexpr char kPrefix[] = "\\Device\\Content\\", kHex[] = "0123456789ABCDEF";
+    char text[sizeof kPrefix + 8 + 1 + 42];
+    std::memcpy(text, kPrefix, sizeof kPrefix - 1);
+    uint32_t n = sizeof kPrefix - 1;
+    const uint32_t type = g.Load32(content_data + 4);
+    for (int shift = 28; shift >= 0; shift -= 4) text[n++] = kHex[(type >> shift) & 15];
+    text[n++] = '\\';
+    const uint32_t name_at = n;
+    bool ascii = true, only_dots = true;
+    for (uint32_t i = 0; i < 42; ++i) {
+      char ch = char(g.Load8(content_data + kContentFileNameOffset + i));
+      if (!ch) break;
+      if (ch == '/' || ch == '\\' || ch == ':') ch = '_';
+      ascii &= static_cast<unsigned char>(ch) < 0x80;
+      only_dots &= ch == '.' || ch == ' ';
+      text[n++] = ch;
+    }
+    if (only_dots) return Finish(g, overlapped, kErrorInvalidParameter);
+    const std::string_view resolved(text, n);
+    if (ascii && Files().IsMountedOn(resolved, title_.content_root, resolved.substr(name_at - 9, 8), resolved.substr(name_at))) {
+      if (path && size) {
+        const uint32_t length = std::min<uint32_t>(n, size - 1);
+        std::memcpy(g.host(path), text, length);
+        g.Store8(path + length, 0);
+      }
+      return Finish(g, overlapped, kErrorSuccess);
+    }
+  }
   uint32_t result = kErrorSuccess;
   std::string resolved;
   if (device == 1) {
