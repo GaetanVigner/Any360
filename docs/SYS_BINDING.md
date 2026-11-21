@@ -495,6 +495,13 @@ out), the titles-played
 enumerator is empty (Xenia lists only titles with achievements, and the profile has none), no guest, unsafe
 programming allowed, `XamUserLogonEx` succeeds, and no Kinect user (docs/perf/archive/2026-11-19-sys-step12-user/).
 
+Content calls (10): `XamContentGetAttributesInternal` gives a package folder's times (one question to the host),
+`XamContentGetDeviceVolumePath` the drive's "hdd0\", `XamContentGetLocalizedDeviceData` `XamContentGetDeviceData`'s
+data named by the device's type, `XamContentGetLocalizedString` a package's display name and description in the
+console's language; `XamContentResolveInternal` mounts a package's folder (made when asked) and gives its device path
+or a root name linked to it; the profile has no tiles (`XamReadTile*`: ERROR_FILE_NOT_FOUND), and no other image is
+launched (`XamContentLaunchImage*Internal*`, as `XamContentLaunchImage`) (docs/perf/archive/2026-11-21-sys-step12-content-stubs/).
+
 The rows under 1x (docs/perf/archive/2026-11-19-sys-step12-below-1x/): an object's close holds the object manager's
 lock once, and an object only one close hook keeps state for (`AllocatePlainObject`: XAM's enumerators, listeners and
 session handles) runs that hook alone and skips the timer and port tables and the free hooks at release. The suite

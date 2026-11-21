@@ -316,6 +316,37 @@ class Xam {
   uint32_t ContentCreateDeviceEnumerator(Guest g, uint32_t per_call, uint32_t size_ptr, uint32_t handle_out);
   uint32_t ContentGetDeviceName(Guest g, uint32_t device_id, uint32_t buffer, uint32_t capacity);
 
+  // The content calls Xenia stubs too (its xam_content.cc, xam_content_device.cc, xam_user.cc). The internal forms
+  // take an XCONTENT_DATA_INTERNAL, whose start is an XCONTENT_DATA (device, type, display name, file name at 0x108).
+  // XamContentGetAttributesInternal (content data, X_FILE_ATTRIBUTE_DATA out, overlapped): the package folder's
+  // attributes (0, as Xenia), creation, last access and last write times, size 0 (a folder); ERROR_FUNCTION_FAILED,
+  // the overlapped untouched, when the package does not exist.
+  uint32_t ContentGetAttributesInternal(Guest g, uint32_t content_data, uint32_t attributes, uint32_t overlapped);
+  // XamContentGetDeviceVolumePath (device, path out, size, append backslash): the hard drive's volume, "hdd0\"
+  // (truncated to the size, terminated); ERROR_FUNCTION_FAILED for another device.
+  uint32_t ContentGetDeviceVolumePath(Guest g, uint32_t device_id, uint32_t path, uint32_t size);
+  // XamContentGetLocalizedDeviceData (device, X_CONTENT_DEVICE_DATA out): XamContentGetDeviceData's, named by the
+  // device's type ("Hard Drive", "Optical Drive"); ERROR_DEVICE_NOT_CONNECTED for another device.
+  uint32_t ContentGetLocalizedDeviceData(Guest g, uint32_t device_id, uint32_t data);
+  // XamContentGetLocalizedString (XCONTENT_METADATA, name out, its size, description out, its size): the display name
+  // and description in the console's language (languages 10-12 only in metadata of version 2 or later, else empty;
+  // past 12 English), truncated to each size in characters and terminated; ERROR_INVALID_PARAMETER without metadata.
+  uint32_t ContentGetLocalizedString(Guest g, uint32_t metadata, uint32_t name, uint32_t name_size, uint32_t description,
+                                     uint32_t description_size) const;
+  // XamContentResolveInternal (content data, path out, size, create directory, root name, overlapped): the device
+  // path of a package on the hard drive ("\Device\Content\<type>\<file name>", mounted on its folder, which is made
+  // when asked), or through a root name ("<name>:", linked to it; ERROR_ALREADY_EXISTS, the path still given, when the
+  // name is taken); on the disc Xenia's "D:\content\<XUID for saved games>\<title id>\<type>\<file name>" (no
+  // package is there). Truncated to the size and terminated. ERROR_INVALID_PARAMETER for another device, a root name
+  // off the hard drive or a package name that names no folder.
+  uint32_t ContentResolveInternal(Guest g, uint32_t content_data, uint32_t path, uint32_t size, uint32_t create_directory,
+                                  uint32_t root_name, uint32_t overlapped);
+  // XamReadTile / XamReadTileEx (tile type, title id, item id, user, buffer, size in/out, overlapped): the profile has
+  // no tiles (gamer pictures, achievement images), so the size 0 and ERROR_FILE_NOT_FOUND, or
+  // ERROR_INSUFFICIENT_BUFFER without a buffer (the extended error its HRESULT). ERROR_INVALID_PARAMETER when neither
+  // the user index nor the item id (as a XUID) names the local profile, or without a size.
+  uint32_t ReadTile(Guest g, uint32_t user, uint64_t item_id, uint32_t buffer, uint32_t size_ptr, uint32_t overlapped);
+
   // Controllers, each read through an InputQueue (input.h): no change is lost however fast or slow the title polls.
   // The state's packet number moves on when the presented state changes (and at the first read); keystrokes are the
   // console's: made from the sampled transitions (buttons, triggers past 30, sticks past half way in eight

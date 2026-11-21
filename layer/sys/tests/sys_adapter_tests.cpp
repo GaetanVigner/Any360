@@ -13,6 +13,7 @@
 #include <initializer_list>
 #include <string>
 
+#include "any360/sys/config.h"
 #include "any360/sys/exports.h"
 #include "any360/sys/files.h"
 #include "any360/sys/ldi.h"
@@ -193,6 +194,125 @@ void UserAdapters() {
   CHECK(Call("XamUserNuiGetUserIndexForBind", {kOut}) == 0x80004005 && Call("XamUserNuiGetUserIndexForBind", {0}) == 0x80070057);
 }
 
+// An XCONTENT_DATA_INTERNAL at `at` naming the saved game `name` on `device`.
+void ContentData(uint32_t at, const char* name, uint32_t device = 1) {
+  std::memset(g_base + at, 0, 0x148);
+  G().Store32(at, device), G().Store32(at + 4, 1);
+  std::memcpy(g_base + at + 0x108, name, std::strlen(name));
+}
+
+void ContentAdapters() {
+  // A package made as a title makes it (its folder and header), closed again.
+  ContentData(kData + 0x200, "cpkg");
+  std::memcpy(g_base + kData + 0x180, "CPKG", 5);
+  CHECK(Call("XamContentCreate", {0, kData + 0x180, kData + 0x200, 4, 0, 0, 0}) == 0 && Call("XamContentClose", {kData + 0x180, 0}) == 0);
+
+  // XamContentGetAttributesInternal: attributes 0, the folder's three times (FILETIMEs of this century: 2015-2070),
+  // size 0; 36 bytes and no more. A missing package: ERROR_FUNCTION_FAILED, the overlapped untouched.
+  std::memset(g_base + kOut, 0xAA, 0x30);
+  CHECK(Call("XamContentGetAttributesInternal", {kData + 0x200, kOut, 0}) == 0);
+  CHECK(G().Load32(kOut) == 0 && G().Load32(kOut + 28) == 0 && G().Load32(kOut + 32) == 0 && g_base[kOut + 36] == 0xAA);
+  for (uint32_t i = 0; i < 3; ++i) {
+    const uint32_t high = G().Load32(kOut + 8 + 8 * i);
+    CHECK(high > 0x01D00000 && high < 0x02200000);
+  }
+  FreshOverlapped();
+  CHECK(Call("XamContentGetAttributesInternal", {kData + 0x200, kOut, kOv}) == 997 && Completed(0, 0));
+  ContentData(kData + 0x400, "missing");
+  FreshOverlapped();
+  CHECK(Call("XamContentGetAttributesInternal", {kData + 0x400, kOut, kOv}) == 0x65B && G().Load32(kOv) == 0xEEEEEEEE);
+
+  // XamContentGetDeviceVolumePath: "hdd0\", truncated to the size and terminated; another device fails.
+  std::memset(g_base + kOut, 0xAA, 16);
+  CHECK(Call("XamContentGetDeviceVolumePath", {1, kOut, 16, 1}) == 0 && !std::memcmp(g_base + kOut, "hdd0\\\0", 6));
+  std::memset(g_base + kOut, 0xAA, 16);
+  CHECK(Call("XamContentGetDeviceVolumePath", {1, kOut, 3, 0}) == 0 && !std::memcmp(g_base + kOut, "hd\0", 3) && g_base[kOut + 3] == 0xAA);
+  CHECK(Call("XamContentGetDeviceVolumePath", {2, kOut, 16, 0}) == 0x65B);
+
+  // XamContentGetLocalizedDeviceData: XamContentGetDeviceData's bytes, the disc named "Optical Drive".
+  CHECK(Call("XamContentGetDeviceData", {1, kOut}) == 0 && Call("XamContentGetLocalizedDeviceData", {1, kOut + 0x100}) == 0);
+  CHECK(!std::memcmp(g_base + kOut, g_base + kOut + 0x100, 0x50));
+  CHECK(Call("XamContentGetLocalizedDeviceData", {2, kOut + 0x100}) == 0 && G().Load32(kOut + 0x100) == 2);
+  for (uint32_t i = 0; i < 14; ++i) CHECK(G().Load16(kOut + 0x100 + 24 + 2 * i) == uint16_t(u"Optical Drive"[i]));
+  CHECK(Call("XamContentGetLocalizedDeviceData", {3, kOut + 0x100}) == 1167);  // ERROR_DEVICE_NOT_CONNECTED
+
+  // XamContentGetLocalizedString: the console language's display name and description, truncated and terminated.
+  const uint32_t metadata = kBuf;  // 0x93D6 bytes
+  std::memset(g_base + metadata, 0, 0x93D6);
+  G().Store32(metadata + 4, 2);
+  const uint32_t saved_language = Console().language;
+  auto put = [&](uint32_t at, const char16_t* text) {
+    for (uint32_t i = 0; text[i]; ++i) G().Store16(at + 2 * i, uint16_t(text[i]));
+  };
+  Console().language = 3;  // German: the third slot
+  put(metadata + 0xCD + 2 * 0x100, u"Spielstand");
+  put(metadata + 0x9CD + 2 * 0x100, u"Beschreibung");
+  std::memset(g_base + kOut, 0xAA, 0x100);
+  CHECK(Call("XamContentGetLocalizedString", {metadata, kOut, 6, kOut + 0x80, 64}) == 0);
+  for (uint32_t i = 0; i < 5; ++i) CHECK(G().Load16(kOut + 2 * i) == uint16_t(u"Spiel"[i]));
+  CHECK(G().Load16(kOut + 10) == 0 && G().Load16(kOut + 12) == 0xAAAA);
+  for (uint32_t i = 0; i < 13; ++i) CHECK(G().Load16(kOut + 0x80 + 2 * i) == uint16_t(u"Beschreibung"[i]));
+  // Language 10 (Polish) sits in the version 2 slots; with version 1 it is empty.
+  Console().language = 10;
+  put(metadata + 0x50D6, u"Zapis");
+  CHECK(Call("XamContentGetLocalizedString", {metadata, kOut, 64, 0, 0}) == 0 && G().Load16(kOut) == 'Z' && G().Load16(kOut + 10) == 0);
+  G().Store32(metadata + 4, 1);
+  CHECK(Call("XamContentGetLocalizedString", {metadata, kOut, 64, 0, 0}) == 0 && G().Load16(kOut) == 0);
+  Console().language = saved_language;
+  CHECK(Call("XamContentGetLocalizedString", {0, kOut, 64, 0, 0}) == 87);
+
+  // XamContentResolveInternal: the package's device path, mounted on its folder (made when asked); through a root
+  // name, the name (taken: ERROR_ALREADY_EXISTS, the path still given); the disc's path as Xenia gives it.
+  ContentData(kData + 0x400, "rpkg");
+  std::memset(g_base + kOut, 0xAA, 0x100);
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 1, 0, 0}) == 0);
+  CHECK(!std::strcmp(reinterpret_cast<const char*>(g_base + kOut), "\\Device\\Content\\00000001\\rpkg"));
+  CHECK(std::filesystem::is_directory(XamState().title().content_root / "00000001" / "rpkg"));
+  CHECK(!Files().Resolve("\\Device\\Content\\00000001\\rpkg\\file.bin").empty());
+  std::memset(g_base + kOut, 0xAA, 0x100);
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 8, 0, 0, 0}) == 0 && !std::memcmp(g_base + kOut, "\\Device\0", 8));
+  std::memcpy(g_base + kData + 0x180, "RROOT", 6);
+  FreshOverlapped();
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 0, kData + 0x180, kOv}) == 997 && Completed(0, 0));
+  CHECK(!std::strcmp(reinterpret_cast<const char*>(g_base + kOut), "RROOT:") && Files().HasLink("RROOT:"));
+  CHECK(!Files().Resolve("RROOT:\\file.bin").empty());
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 0, kData + 0x180, 0}) == 0xB7);
+  CHECK(!std::strcmp(reinterpret_cast<const char*>(g_base + kOut), "RROOT:"));
+  Files().Unlink("RROOT:");
+  ContentData(kData + 0x400, "dpkg", 2);
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 0, 0, 0}) == 0);
+  char disc[160];
+  std::snprintf(disc, sizeof disc, "D:\\content\\%016llX\\%08X\\00000001\\dpkg",
+                static_cast<unsigned long long>(XamState().title().xuid), XamState().title().title_id);
+  CHECK(!std::strcmp(reinterpret_cast<const char*>(g_base + kOut), disc));
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 0, kData + 0x180, 0}) == 87);  // a root off the drive
+  ContentData(kData + 0x400, "xpkg", 3);
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 0, 0, 0}) == 87);
+  ContentData(kData + 0x400, "..");
+  CHECK(Call("XamContentResolveInternal", {kData + 0x400, kOut, 0x100, 1, 0, 0}) == 87);  // names no folder of its own
+
+  // XamReadTile / XamReadTileEx: no tiles in the profile.
+  const uint64_t xuid = XamState().title().xuid;
+  G().Store32(kOut, 0x1000);
+  CHECK(Call("XamReadTile", {1, 0, 7, 0, kBuf, kOut, 0}) == 2 && G().Load32(kOut) == 0);
+  CHECK(Call("XamReadTile", {1, 0, 7, 0, 0, kOut, 0}) == 122);
+  CHECK(Call("XamReadTile", {1, 0, xuid, 2, kBuf, kOut, 0}) == 2);  // the item id names the profile
+  CHECK(Call("XamReadTile", {1, 0, 7, 2, kBuf, kOut, 0}) == 87 && Call("XamReadTile", {1, 0, 7, 0, kBuf, 0, 0}) == 87);
+  FreshOverlapped();
+  CHECK(Call("XamReadTile", {1, 0, 7, 0, kBuf, kOut, kOv}) == 997 && Completed(2, 0x80070002));
+  // XamReadTileEx: the overlapped is its ninth argument, on the caller's stack.
+  FreshOverlapped();
+  G().Store32(kStack + kStackSize - 0x1000 + 0x54, kOv);
+  CHECK(Call("XamReadTileEx", {1, 0, 7, 0, 0, 0, 0, kOut}) == 997 && Completed(122, 0x8007007A));
+  G().Store32(kStack + kStackSize - 0x1000 + 0x54, 0);
+  CHECK(Call("XamReadTileEx", {1, 0, 7, 0, 0, 0, kBuf, kOut}) == 2);
+
+  // The launch calls: no image besides the title's.
+  CHECK(Call("XamContentLaunchImageFromFileInternal", {kData, kData}) == 2);
+  CHECK(Call("XamContentLaunchImageInternal", {kData + 0x200, kData}) == 2);
+  CHECK(Call("XamContentLaunchImageInternalEx", {kData + 0x200, kData, 0}) == 2);
+}
+
 void MediaAdapters() {
   for (const char* name : {"EnumerateMediaObjects", "EnumerateMediaObjects_", "EnumerateMediaObjects_0", "EnumerateMediaObjects_1"}) {
     CHECK(Call(name, {kData, 1, kOut}) == 0x80004001);
@@ -306,6 +426,7 @@ int main() {
   AvatarAdapters();
   MediaAdapters();
   UserAdapters();
+  ContentAdapters();
   EarlierBatchAdapters();
   Threads().SetDispatcher(nullptr, nullptr);
   std::filesystem::remove_all(root, error);

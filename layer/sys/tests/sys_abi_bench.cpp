@@ -74,7 +74,10 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XampXAuthGetTitleBuffer) X(XampXAuthShutdown) X(XampXAuthStartup)                                                  \
   X(XamProfileClose) X(XamProfileCreate) X(XamProfileGetCreationStatus) X(XamProfileLoadAccountInfo)                   \
   X(XamUserCreateTitlesPlayedEnumerator) X(XamUserIsGuest) X(XamUserIsUnsafeProgrammingAllowed) X(XamUserLogonEx)      \
-  X(XamUserNuiEnableBiometric) X(XamUserNuiGetUserIndex) X(XamUserNuiGetUserIndexForBind)
+  X(XamUserNuiEnableBiometric) X(XamUserNuiGetUserIndex) X(XamUserNuiGetUserIndexForBind)                              \
+  X(XamContentGetAttributesInternal) X(XamContentGetDeviceVolumePath) X(XamContentGetLocalizedDeviceData)              \
+  X(XamContentGetLocalizedString) X(XamContentLaunchImageFromFileInternal) X(XamContentLaunchImageInternal)            \
+  X(XamContentLaunchImageInternalEx) X(XamContentResolveInternal) X(XamReadTile) X(XamReadTileEx)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -558,6 +561,26 @@ int main(int argc, char** argv) {
       {"XamUserNuiGetUserIndex", __imp__XamUserNuiGetUserIndex, Args({0, kOut + 0xDD0}), 20000, nullptr, 0x80070525},
       {"XamUserNuiGetUserIndexForBind", __imp__XamUserNuiGetUserIndexForBind, Args({kOut + 0xDD0}), 20000, nullptr,
        0x80004005},
+      // The content calls (the ninth batch's package and metadata).
+      {"XamContentGetAttributesInternal", __imp__XamContentGetAttributesInternal, Args({kContentData, kOut + 0x1A00, 0}), 2000,
+       nullptr, 0},
+      {"XamContentGetDeviceVolumePath", __imp__XamContentGetDeviceVolumePath, Args({1, kOut + 0x1A00, 16, 1}), 20000, nullptr,
+       0},
+      {"XamContentGetLocalizedDeviceData (drive)", __imp__XamContentGetLocalizedDeviceData, Args({1, kOut + 0x1A00}), 2000,
+       nullptr, 0},
+      {"XamContentGetLocalizedDeviceData (disc)", __imp__XamContentGetLocalizedDeviceData, Args({2, kOut + 0x1A00}), 20000,
+       nullptr, 0},
+      {"XamContentGetLocalizedString", __imp__XamContentGetLocalizedString,
+       Args({kMetadata, kOut + 0x1A00, 64, kOut + 0x1B00, 64}), 20000, nullptr, 0},
+      {"XamContentLaunchImageFromFileInternal", __imp__XamContentLaunchImageFromFileInternal, Args({kIn, kIn}), 20000,
+       nullptr, 2},
+      {"XamContentLaunchImageInternal", __imp__XamContentLaunchImageInternal, Args({kContentData, kIn}), 20000, nullptr, 2},
+      {"XamContentLaunchImageInternalEx", __imp__XamContentLaunchImageInternalEx, Args({kContentData, kIn, 0}), 20000,
+       nullptr, 2},
+      {"XamContentResolveInternal (mounted again)", __imp__XamContentResolveInternal,
+       Args({kContentData, kOut + 0x1A00, 0x100, 0, 0, 0}), 2000, nullptr, 0},
+      {"XamReadTile", __imp__XamReadTile, Args({1, 0, 7, 0, kIn, kOut + 0xDD0, 0}), 20000, nullptr, 2},
+      {"XamReadTileEx", __imp__XamReadTileEx, Args({1, 0, 7, 0, 0, 0, kIn, kOut + 0xDD0}, {0}), 20000, nullptr, 2},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "

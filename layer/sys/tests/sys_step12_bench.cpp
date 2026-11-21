@@ -49,6 +49,8 @@
 #undef CreateEvent  // windows.h's macros would rename the object manager's and the file system's methods
 #undef CreateFile
 #include "lzx_cab.h"
+#else
+#include <sys/stat.h>
 #endif
 
 using namespace any360::sys;
@@ -698,6 +700,25 @@ int main(int argc, char** argv) {
       if (packages == 2) {
         PrintRow("XamContentSetThumbnailInternal", 4, Time(1000, [&] { ok &= XamState().ContentSetThumbnail(g, data, out, 4, 0) == 0; }),
                  Measure{});
+        // The content calls Xenia stubs too, beside the host's own call for the same answer: the package folder's
+        // attributes (GetFileAttributesEx on Windows, stat elsewhere), the drive's space.
+        const fs::path package = content / "00000001" / "slot00";
+        PrintRow("XamContentGetAttributesInternal (host: attributes)", 0,
+                 Time(5000, [&] { ok &= XamState().ContentGetAttributesInternal(g, data, out + 0x40, 0) == 0; }),
+                 Time(5000, [&] {
+#if defined(_WIN32)
+                   WIN32_FILE_ATTRIBUTE_DATA a;
+                   g_sink = g_sink + uint32_t(GetFileAttributesExW(package.c_str(), GetFileExInfoStandard, &a));
+#else
+                   struct stat a;
+                   g_sink = g_sink + uint32_t(stat(package.c_str(), &a));
+#endif
+                 }, false));
+        PrintRow("XamContentGetLocalizedDeviceData (host: space)", 0,
+                 Time(5000, [&] { ok &= XamState().ContentGetLocalizedDeviceData(g, 1, out + 0x80) == 0; }),
+                 Time(5000, [&] { g_sink = g_sink + uint32_t(fs::space(content.root_path(), ec).available); }, false));
+        PrintRow("XamContentResolveInternal (mounted again)", 0,
+                 Time(5000, [&] { ok &= XamState().ContentResolveInternal(g, data, out + 0x100, 0x100, 0, 0, 0) == 0; }), Measure{});
         PrintRow("two folder dates (a cache's check)", 2, Time(5000, [&] {
                    g_sink = g_sink + uint32_t(fs::last_write_time(content / "00000001", ec).time_since_epoch().count());
                    g_sink = g_sink + uint32_t(fs::last_write_time(content / "Headers" / "00000001", ec).time_since_epoch().count());

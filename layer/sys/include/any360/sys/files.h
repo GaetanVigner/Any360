@@ -53,6 +53,7 @@ class FileSystem {
   // A symbolic link from a DOS name ("game:", "\??\D:") to a device path.
   void Link(std::string link, std::string target);
   void Unmount(const std::string& device);
+  bool HasLink(const std::string& link) const;  // whether a DOS name ("<name>:") is linked
   void Unlink(const std::string& link);
 
   // ObCreateSymbolicLink / ObDeleteSymbolicLink: ANSI_STRING pointers.

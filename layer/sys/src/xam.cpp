@@ -17,6 +17,10 @@
 
 namespace any360::sys {
 
+// host_times.cpp: a path's times, size and kind in one question to the host.
+bool HostFileStat(const std::filesystem::path& path, uint64_t& creation, uint64_t& access, uint64_t& write, uint64_t& size,
+                  bool& directory);
+
 uint32_t RtlNtStatusToDosError(uint32_t status);  // config.h
 
 namespace {
@@ -1184,6 +1188,121 @@ uint32_t Xam::ContentResolve(Guest g, uint32_t content_data, uint32_t buffer, ui
   Files().Mount(device, path, false);
   std::memcpy(g.host(buffer), device.c_str(), device.size() + 1);
   return kErrorSuccess;
+}
+
+uint32_t Xam::ContentGetAttributesInternal(Guest g, uint32_t content_data, uint32_t attributes, uint32_t overlapped) {
+  if (!content_data || !attributes || title_.content_root.empty()) return kErrorFunctionFailed;
+  const std::filesystem::path path = ContentPath(g, content_data);
+  uint64_t creation = 0, access = 0, write = 0, size = 0;
+  bool directory = false;
+  if (path.empty() || !HostFileStat(path, creation, access, write, size, directory) || !directory) return kErrorFunctionFailed;
+  // X_FILE_ATTRIBUTE_DATA: attributes, three FILETIMEs (low word, then high word, as the file calls store them), size.
+  g.Store32(attributes, 0);
+  const uint64_t times[3] = {creation, access, write};
+  for (uint32_t i = 0; i < 3; ++i) {
+    g.Store32(attributes + 4 + 8 * i, uint32_t(times[i]));
+    g.Store32(attributes + 8 + 8 * i, uint32_t(times[i] >> 32));
+  }
+  g.Store32(attributes + 28, 0);
+  g.Store32(attributes + 32, 0);
+  return Finish(g, overlapped, kErrorSuccess);
+}
+
+uint32_t Xam::ContentGetDeviceVolumePath(Guest g, uint32_t device_id, uint32_t path, uint32_t size) {
+  if (device_id != 1) return kErrorFunctionFailed;
+  static constexpr char kVolume[] = "hdd0\\";
+  if (!size) return kErrorSuccess;
+  const uint32_t length = std::min<uint32_t>(sizeof kVolume - 1, size - 1);
+  std::memcpy(g.host(path), kVolume, length);
+  g.Store8(path + length, 0);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ContentGetLocalizedDeviceData(Guest g, uint32_t device_id, uint32_t data) {
+  const uint32_t result = ContentGetDeviceData(g, device_id, data);
+  if (result || device_id != 2) return result;
+  static constexpr char16_t kName[] = u"Optical Drive";
+  for (uint32_t i = 0; i < sizeof kName / 2; ++i) g.Store16(data + 24 + 2 * i, uint16_t(kName[i]));
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ContentGetLocalizedString(Guest g, uint32_t metadata, uint32_t name, uint32_t name_size, uint32_t description,
+                                        uint32_t description_size) const {
+  if (!metadata) return kErrorInvalidParameter;
+  // XCONTENT_METADATA: version 0x04; display names 0xCD and descriptions 0x9CD (9 languages x 128 characters), the
+  // display names and descriptions of languages 10-12 at 0x50D6 and 0x90D6 (version 2).
+  const uint32_t language = Console().language, version = g.Load32(metadata + 4);
+  auto slot = [&](uint32_t lang_id, uint32_t v1, uint32_t v2) -> uint32_t {
+    if (lang_id >= 12) lang_id = 0;  // English
+    if (lang_id < 9) return metadata + v1 + lang_id * 0x100;
+    return version >= 2 ? metadata + v2 + (lang_id - 9) * 0x100 : 0;
+  };
+  // A string of the slot (big-endian UTF-16, up to 128 characters), truncated to `size` characters and terminated.
+  auto copy = [&](uint32_t from, uint32_t to, uint32_t size) {
+    if (!to || !size) return;
+    uint32_t n = 0;
+    while (from && n < 128 && n + 1 < size && g.Load16(from + 2 * n)) {
+      g.Store16(to + 2 * n, g.Load16(from + 2 * n));
+      ++n;
+    }
+    g.Store16(to + 2 * n, 0);
+  };
+  // Xenia reads the display name of language 0 (none) from slot 1, its description from the English slot.
+  copy(slot(language ? language - 1 : 1, 0xCD, 0x50D6), name, name_size);
+  copy(slot(language - 1, 0x9CD, 0x90D6), description, description_size);
+  return kErrorSuccess;
+}
+
+uint32_t Xam::ContentResolveInternal(Guest g, uint32_t content_data, uint32_t path, uint32_t size, uint32_t create_directory,
+                                     uint32_t root_name, uint32_t overlapped) {
+  if (!content_data) return Finish(g, overlapped, kErrorInvalidParameter);
+  const uint32_t device = g.Load32(content_data);
+  if ((device != 1 && device != 2) || (root_name && device != 1)) return Finish(g, overlapped, kErrorInvalidParameter);
+  uint32_t result = kErrorSuccess;
+  std::string resolved;
+  if (device == 1) {
+    const std::filesystem::path folder = ContentPath(g, content_data);
+    if (folder.empty() || title_.content_root.empty()) return Finish(g, overlapped, kErrorInvalidParameter);
+    if (create_directory) {
+      std::error_code error;
+      std::filesystem::create_directories(folder, error);
+    }
+    resolved = "\\Device\\Content\\" + folder.parent_path().filename().string() + "\\" + folder.filename().string();
+    Files().Mount(resolved, folder, false);
+    if (root_name) {
+      const std::string root = GuestString(g, root_name, 64) + ":";
+      if (Files().HasLink(root)) {
+        result = kErrorAlreadyExists;
+      } else {
+        Files().Link(root, resolved);
+      }
+      resolved = root;
+    }
+  } else {
+    // The disc: the path Xenia gives (the saved game's owner, the running title).
+    char text[160];
+    const uint32_t type = g.Load32(content_data + 4);
+    std::snprintf(text, sizeof text, "D:\\content\\%016llX\\%08X\\%08X\\%s",
+                  static_cast<unsigned long long>(type == 1 ? title_.xuid : 0), title_.title_id, type,
+                  GuestString(g, content_data + kContentFileNameOffset, 42).c_str());
+    resolved = text;
+  }
+  if (path && size) {
+    const uint32_t length = std::min<uint32_t>(uint32_t(resolved.size()), size - 1);
+    std::memcpy(g.host(path), resolved.data(), length);
+    g.Store8(path + length, 0);
+  }
+  return Finish(g, overlapped, result);
+}
+
+uint32_t Xam::ReadTile(Guest g, uint32_t user, uint64_t item_id, uint32_t buffer, uint32_t size_ptr, uint32_t overlapped) {
+  if ((user >= 4 || !UserGetSigninState(user)) && item_id != title_.xuid) return kErrorInvalidParameter;
+  if (!size_ptr) return kErrorInvalidParameter;
+  g.Store32(size_ptr, 0);
+  const uint32_t result = buffer ? kErrorFileNotFound : kErrorInsufficientBuffer;
+  if (!overlapped) return result;
+  CompleteEx(g, overlapped, result, 0x80070000u | result, 0);
+  return kErrorIoPending;
 }
 
 uint32_t Xam::ContentCreateDeviceEnumerator(Guest g, uint32_t per_call, uint32_t size_ptr, uint32_t handle_out) {

@@ -186,6 +186,17 @@ void FileSystem::AddMount(std::string device, const std::filesystem::path& host,
   // A device mounted again (a title opening the same content or profile twice) is replaced, not listed twice; the
   // files open on the entry it replaces keep that one. The name lowered in place and moved into the entry (no copy).
   for (char& c : device) c = char(c >= 'A' && c <= 'Z' ? c + 32 : c);
+  {
+    // The same device on the same folder with the same rights (a package resolved or opened again): the entry kept
+    // as it is, nothing made.
+    std::shared_lock lock(mounts_mutex_);
+    for (const MountRef& m : mounts_) {
+      if (m->device == device) {
+        if (m->host == host && m->read_only == read_only && m->null == null) return;
+        break;
+      }
+    }
+  }
   auto entry = std::make_shared<const Mounted>(Mounted{std::move(device), host, read_only, null});
   const std::string& name = entry->device;
   std::unique_lock lock(mounts_mutex_);
@@ -201,6 +212,13 @@ void FileSystem::Link(std::string link, std::string target) {
   if (link.rfind("\\??\\", 0) == 0) link.erase(0, 4);
   std::unique_lock lock(links_mutex_);
   links_.insert_or_assign(std::move(link), std::move(target));
+}
+
+bool FileSystem::HasLink(const std::string& link) const {
+  std::string name = Lower(link);
+  if (name.rfind("\\??\\", 0) == 0) name.erase(0, 4);
+  std::shared_lock lock(links_mutex_);
+  return links_.count(name) != 0;
 }
 
 void FileSystem::Unmount(const std::string& device) {

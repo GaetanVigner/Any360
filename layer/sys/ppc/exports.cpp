@@ -583,6 +583,32 @@ ANY360_SYS_EXPORT(XexLoadImage) { ctx.r3.u64 = XamState().LoadImage({base}, ctx.
 ANY360_SYS_EXPORT(XexUnloadImage) { ctx.r3.u64 = XamState().UnloadImage(ctx.r3.u32); }
 // Another executable from a content package (a demo, an offer): no image is loaded besides the title's.
 ANY360_SYS_EXPORT(XamContentLaunchImage) { ctx.r3.u64 = kErrorFileNotFound; }
+// The internal forms (an image path or an XCONTENT_DATA_INTERNAL): the same answer.
+ANY360_SYS_EXPORT(XamContentLaunchImageFromFileInternal) { ctx.r3.u64 = kErrorFileNotFound; }
+ANY360_SYS_EXPORT(XamContentLaunchImageInternal) { ctx.r3.u64 = kErrorFileNotFound; }
+ANY360_SYS_EXPORT(XamContentLaunchImageInternalEx) { ctx.r3.u64 = kErrorFileNotFound; }
+// Step 12, the content calls Xenia stubs too.
+ANY360_SYS_EXPORT(XamContentGetAttributesInternal) {
+  ctx.r3.u64 = XamState().ContentGetAttributesInternal({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);
+}
+ANY360_SYS_EXPORT(XamContentGetDeviceVolumePath) {
+  ctx.r3.u64 = XamState().ContentGetDeviceVolumePath({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);
+}
+ANY360_SYS_EXPORT(XamContentGetLocalizedDeviceData) {
+  ctx.r3.u64 = XamState().ContentGetLocalizedDeviceData({base}, ctx.r3.u32, ctx.r4.u32);
+}
+ANY360_SYS_EXPORT(XamContentGetLocalizedString) {
+  ctx.r3.u64 = XamState().ContentGetLocalizedString({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32);
+}
+ANY360_SYS_EXPORT(XamContentResolveInternal) {
+  ctx.r3.u64 = XamState().ContentResolveInternal({base}, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, ctx.r8.u32);
+}
+// (tile type, title id, item id, user, buffer, size, overlapped)
+ANY360_SYS_EXPORT(XamReadTile) { ctx.r3.u64 = XamState().ReadTile({base}, ctx.r6.u32, ctx.r5.u64, ctx.r7.u32, ctx.r8.u32, ctx.r9.u32); }
+// (tile type, title id, item id, user, two unknown words, buffer, size, overlapped: the ninth argument, on the stack)
+ANY360_SYS_EXPORT(XamReadTileEx) {
+  ctx.r3.u64 = XamState().ReadTile({base}, ctx.r6.u32, ctx.r5.u64, ctx.r9.u32, ctx.r10.u32, StackArgument(ctx, base, 8));
+}
 
 // Batch 16: the rest of Test Drive Unlimited's (sys_object_tests).
 ANY360_SYS_EXPORT(NetDll_XNetCleanup) { ctx.r3.u64 = 0; }
@@ -1689,6 +1715,16 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XexLoadImage),
     ANY360_SYS_ENTRY(XexUnloadImage),
     ANY360_SYS_ENTRY(XamContentLaunchImage),
+    ANY360_SYS_ENTRY(XamContentGetAttributesInternal),
+    ANY360_SYS_ENTRY(XamContentGetDeviceVolumePath),
+    ANY360_SYS_ENTRY(XamContentGetLocalizedDeviceData),
+    ANY360_SYS_ENTRY(XamContentGetLocalizedString),
+    ANY360_SYS_ENTRY(XamContentLaunchImageFromFileInternal),
+    ANY360_SYS_ENTRY(XamContentLaunchImageInternal),
+    ANY360_SYS_ENTRY(XamContentLaunchImageInternalEx),
+    ANY360_SYS_ENTRY(XamContentResolveInternal),
+    ANY360_SYS_ENTRY(XamReadTile),
+    ANY360_SYS_ENTRY(XamReadTileEx),
     ANY360_SYS_ENTRY(NetDll_XNetCleanup),
     ANY360_SYS_ENTRY(NetDll_XNetTsAddrToInAddr),
     ANY360_SYS_ENTRY(NetDll_XNetUnregisterInAddr),
