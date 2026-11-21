@@ -76,6 +76,9 @@ void Xam::Reset() {
   language_fallback_ = 0;
   iptv_name_ = 0;
   std::memset(typeface_patch_at_, 0, sizeof typeface_patch_at_);
+  smc_tray_ = 2;
+  smc_cpu_fan_ = smc_gpu_fan_ = 100;
+  smc_power_led_ = 0x0100, smc_leds_ = 0x8001;
   content_change_callback_ = launch_request_callback_ = nui_tilt_callback_ = 0;
   close_hook_ = Objects().AddCloseHook([](uint32_t object) { return XamState().OnClose(object); });
   system_module_ = 0;
@@ -527,6 +530,38 @@ uint32_t Xam::QueryLiveHiveA(Guest g, uint32_t name, uint32_t value, uint32_t si
   if (!overlapped) return extended;
   CompleteEx(g, overlapped, kErrorSuccess, extended, 0);
   return 0x8000000A;  // E_PENDING
+}
+
+void Xam::SmcSetTray(uint8_t state) {
+  smc_tray_ = state;
+  Notify(0x8000000D, state);  // XN_SYS_TRAYSTATECHANGED
+}
+
+void Xam::SmcMessage(Guest g, uint32_t message, uint32_t response) {
+  if (!message) return;
+  const uint8_t command = g.Load8(message), data = g.Load8(message + 1);
+  auto answer = [&](std::initializer_list<uint8_t> bytes) {
+    if (!response) return;
+    g.Store8(response, command);
+    uint32_t at = response + 1;
+    for (const uint8_t b : bytes) g.Store8(at++, b);
+  };
+  switch (command) {
+    case 0x07:  // QUERY_TEMP_SENSOR: 69.6, 69.9, 69.6, 69.9 C as Xenia stores them (t * 256: its low byte first)
+      answer({0x99, 0x45, 0xE6, 0x45, 0x99, 0x45, 0xE6, 0x45});
+      break;
+    case 0x0A: answer({smc_tray_}); break;              // QUERY_TRAY
+    case 0x0F: answer({0x5B}); break;                   // QUERY_AV_PACK: VGA (XGetAVPack 6)
+    case 0x12: answer({65, 2, 1}); break;               // QUERY_SMC_VERSION
+    case 0x16: case 0x95: answer({0x0F}); break;        // QUERY_IR_ADDRESS, SET_IR_ADDRESS: the Xbox 360 remote
+    case 0x17: answer({0}); break;                      // QUERY_TILT_SENSOR: vertical
+    case 0x89: smc_cpu_fan_ = uint8_t(data - 0x80); break;  // SET_FAN_SPEED_CPU
+    case 0x94: smc_gpu_fan_ = uint8_t(data - 0x80); break;  // SET_FAN_SPEED_GPU
+    case 0x8B: SmcSetTray(uint8_t((data & 0xF) % 5)); break;  // SET_DVD_TRAY
+    case 0x8C: smc_power_led_ = uint16_t(data << 8 | g.Load8(message + 2)); break;  // SET_POWER_LED
+    case 0x99: smc_leds_ = uint16_t(data << 8 | g.Load8(message + 2)); break;       // SET_LEDS
+    default: break;
+  }
 }
 
 uint32_t Xam::IptvServiceName(Guest g, uint32_t name_out) {

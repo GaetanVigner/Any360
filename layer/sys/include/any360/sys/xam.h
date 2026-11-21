@@ -475,6 +475,21 @@ class Xam {
   // A device object for a title's own driver: 0x24 bytes and a page of extension at +0x18.
   uint32_t CreateDevice(Guest g, uint32_t device_out);
 
+  // The system management controller (HalSendSMCMessage, HalOpenCloseODDTray), as Xenia's model answers. A message
+  // and its response are 16 bytes: the command, then its data. Queries answered (the response's command byte and its
+  // fields written, the rest left): temperatures (0x07: CPU, GPU, EDRAM 69.6 C, motherboard 69.9 C, each as Xenia's two
+  // bytes), the tray (0x0A), the AV pack (0x0F: VGA, 0x5B, the layer's XGetAVPack), the SMC version (0x12: 65, 2, 1),
+  // the IR address (0x16: 0x0F), the tilt (0x17: vertical, 0); set the tray (0x8B, (data & 15) % 5), the CPU and GPU
+  // fan speeds (0x89, 0x94), the IR address (0x95, answered with the current one, as Xenia), the power LED (0x8C),
+  // the LEDs (0x99). Any other command: nothing. The tray starts closed (a title runs from its disc; Xenia starts it
+  // open); a change notifies XN_SYS_TRAYSTATECHANGED (0x8000000D) with the new state.
+  void SmcMessage(Guest g, uint32_t message, uint32_t response);
+  void SmcSetTray(uint8_t state);
+  uint8_t smc_tray() const { return smc_tray_; }
+  uint32_t smc_fan_speed(bool gpu) const { return gpu ? smc_gpu_fan_ : smc_cpu_fan_; }
+  uint16_t smc_power_led() const { return smc_power_led_; }
+  uint16_t smc_leds() const { return smc_leds_; }
+
   // Stops.
   void Stop(const char* reason, uint32_t code);
   uint32_t RaiseException(Guest g, uint32_t record);
@@ -550,6 +565,11 @@ class Xam {
   uint32_t language_fallback_ = 0;  // the 18 fallback locale names in the kernel heap, laid out at first use
   uint32_t language_fallback_at_[18] = {};
   uint32_t typeface_patch_at_[3] = {};  // the three font patch names in the kernel heap, laid out at first use
+  // The SMC's state: the tray (X_DVD_TRAY_STATE: 0 open, 2 closed), the fan speeds (percent), the power LED and the
+  // LEDs (state << 8 | the byte after it).
+  uint8_t smc_tray_ = 2;
+  uint32_t smc_cpu_fan_ = 100, smc_gpu_fan_ = 100;
+  uint16_t smc_power_led_ = 0x0100, smc_leds_ = 0x8001;
   uint32_t iptv_name_ = 0;  // the IPTV provider's name in the kernel heap, laid out at first use
   uint32_t content_change_callback_ = 0, launch_request_callback_ = 0, nui_tilt_callback_ = 0;
   // The packages of a type as enumerator items of `item_size` bytes starting with their XCONTENT_DATA, sorted by name.

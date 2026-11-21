@@ -94,7 +94,9 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamUpdateGetCurrentSystemVersion) X(XexLoadExecutable)                                                             \
   X(XamInputNonControllerGetRaw) X(XamInputNonControllerGetRawEx) X(XamInputNonControllerSetRaw)                       \
   X(XamInputNonControllerSetRawEx) X(NetDll_XHttpOpen) X(NetDll_XHttpStartup)                                          \
-  X(XamNetworkStorageHasUserEnabledStorage) X(XNotifyBroadcast) X(XNotifyQueueUI)
+  X(XamNetworkStorageHasUserEnabledStorage) X(XNotifyBroadcast) X(XNotifyQueueUI)                                      \
+  X(XAutomationpUnbindController) X(XamVoiceGetMicArrayStatus) X(MicDeviceRequest) X(HalOpenCloseODDTray)              \
+  X(HalSendSMCMessage) X(NtCancelIoFile) X(RtlRip)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -347,6 +349,10 @@ int main(int argc, char** argv) {
   g_titles_played = Native("XamUserCreateTitlesPlayedEnumerator");
   constexpr uint32_t kRawLength = 0x40047200;  // a raw report's length for the non-controller rows
   Store32(kRawLength, 0x20);
+  constexpr uint32_t kMicDevice = 0x40047300, kSmcMessage = 0x40047400;  // an X_MIC_DEVICE (a status request), SMC
+  std::memset(g_base + kMicDevice, 0, 0x40);
+  std::memset(g_base + kSmcMessage, 0, 0x20);
+  g_base[kSmcMessage] = 0x07;
   // A video flags value for ExSetXConfigSetting (the default), an LDI context on scratch memory for its reset.
   constexpr uint32_t kConfigValue = 0x40047100, kResetIo = 0x40047000, kResetScratch = 0x40044000;
   Store32(kConfigValue, 0x00040000);
@@ -676,6 +682,16 @@ int main(int argc, char** argv) {
        20000, nullptr, 1},
       {"XNotifyBroadcast (no listener)", __imp__XNotifyBroadcast, Args({0x11, 7}), 20000, nullptr, 0},
       {"XNotifyQueueUI", __imp__XNotifyQueueUI, Args({0, 0, 0, kIn, 0}), 20000, nullptr, 0},
+      // The last calls: an SMC temperature query, a microphone status request (no completion), the tray closed
+      // again (its notification to no listener), RtlRip with no debug sink.
+      {"XAutomationpUnbindController", __imp__XAutomationpUnbindController, Args({0}), 20000, nullptr, 1},
+      {"XamVoiceGetMicArrayStatus", __imp__XamVoiceGetMicArrayStatus, Args({}), 20000, nullptr, 0},
+      {"MicDeviceRequest (status)", __imp__MicDeviceRequest, Args({kMicDevice}), 20000, nullptr, 0},
+      {"HalSendSMCMessage (temperatures)", __imp__HalSendSMCMessage, Args({kSmcMessage, kSmcMessage + 0x10}), 20000,
+       nullptr, -1},
+      {"HalOpenCloseODDTray (close)", __imp__HalOpenCloseODDTray, Args({0}), 20000, nullptr, -1},
+      {"NtCancelIoFile (not a file)", __imp__NtCancelIoFile, Args({0x12345678}), 20000, nullptr, 0xC0000008},
+      {"RtlRip", __imp__RtlRip, Args({kIn, kIn}), 20000, nullptr, -1},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "

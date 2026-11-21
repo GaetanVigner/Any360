@@ -530,6 +530,12 @@ Input, network and notification calls (9): no non-controller device plugged in (
 ERROR_DEVICE_NOT_CONNECTED), XHTTP started but no session, network storage on by the user's preference, broadcasts
 sent to the listeners, toasts accepted (docs/perf/archive/2026-11-21-sys-step12-input-net-notify/).
 
+The last calls (7): an SMC model behind `HalSendSMCMessage` (temperatures, tray, AV pack, version, IR, tilt; the
+tray, fans and LEDs kept; the tray starts closed), the tray opened and closed by `HalOpenCloseODDTray` with its
+notification, no microphone (`MicDeviceRequest`, its completion routine called with STATUS_UNSUCCESSFUL), nothing to
+cancel (`NtCancelIoFile`), `RtlRip` to the debug sink. With them none of the 114 calls the reference and Xenia both
+stub is left (docs/perf/archive/2026-11-21-sys-step12-last/).
+
 The rows under 1x (docs/perf/archive/2026-11-19-sys-step12-below-1x/): an object's close holds the object manager's
 lock once, and an object only one close hook keeps state for (`AllocatePlainObject`: XAM's enumerators, listeners and
 session handles) runs that hook alone and skips the timer and port tables and the free hooks at release. The suite

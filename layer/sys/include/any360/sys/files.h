@@ -54,6 +54,9 @@ class FileSystem {
   void Link(std::string link, std::string target);
   void Unmount(const std::string& device);
   bool HasLink(const std::string& link) const;  // whether a DOS name ("<name>:") is linked
+  // NtCancelIoFile: a file's transfers all complete before their call returns, so there is nothing to cancel:
+  // STATUS_SUCCESS for an open file's handle, STATUS_INVALID_HANDLE otherwise.
+  uint32_t CancelIo(uint32_t handle);
   // Whether `device` (any case) is mounted, writable, on the folder `root` / `type` / `name` (ASCII parts), compared
   // in place: no host path is built.
   bool IsMountedOn(std::string_view device, const std::filesystem::path& root, std::string_view type,

@@ -10,12 +10,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <initializer_list>
 #include <string>
 
 #include "any360/sys/config.h"
 #include "any360/sys/exports.h"
 #include "any360/sys/files.h"
+#include "any360/sys/format.h"
 #include "any360/sys/ldi.h"
 #include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
@@ -538,6 +540,117 @@ void InputNetNotifyAdapters() {
   CHECK(Call("XNotifyQueueUI", {0, 0, 0, kData, 0}) == 0);
 }
 
+std::string g_debug_text;
+void DebugSink(const char* text, size_t size) { g_debug_text.assign(text, size); }
+uint32_t g_mic_device = 0, g_mic_status = 0;
+uint64_t MicCompletion(uint32_t, uint32_t, uint32_t, const uint64_t* args, uint32_t count, void*) {
+  g_mic_device = count > 0 ? uint32_t(args[0]) : 0;
+  g_mic_status = count > 1 ? uint32_t(args[1]) : 0;
+  return 0;
+}
+
+void LastAdapters() {
+  CHECK(Call("XAutomationpUnbindController", {3}) == 1 && Call("XAutomationpUnbindController", {4}) == 0);
+  CHECK(Call("XamVoiceGetMicArrayStatus", {}) == 0);
+  // MicDeviceRequest: no microphone. The state set to not connected; a status request succeeds; capabilities are
+  // filled and, like any other request, call the completion routine (the device, STATUS_UNSUCCESSFUL) and pend.
+  const uint32_t mic = kBuf;
+  std::memset(g_base + mic, 0, 0x40);
+  G().Store16(mic, 0), G().Store16(mic + 2, 0), G().Store32(mic + 4, 7);
+  CHECK(Call("MicDeviceRequest", {mic}) == 0 && G().Load32(mic + 4) == 0);
+  CHECK(Call("MicDeviceRequest", {0}) == 0xC000000D);
+  G().Store16(mic + 2, 5);
+  CHECK(Call("MicDeviceRequest", {mic}) == 0xC000000D);
+  G().Store16(mic + 2, 0), G().Store16(mic, 0x0C);
+  CHECK(Call("MicDeviceRequest", {mic}) == 0xC0000010);
+  Threads().SetDispatcher(&MicCompletion, nullptr);
+  G().Store16(mic, 9), G().Store32(mic + 0x10, 0x82001000);
+  g_mic_device = g_mic_status = 0;
+  CHECK(Call("MicDeviceRequest", {mic}) == 0x103);
+  CHECK(G().Load32(mic + 0x18) == 0x100 && G().Load16(mic + 0x1C) == 1 && g_base[mic + 0x28] == 0);
+  CHECK(g_mic_device == mic && g_mic_status == 0xC0000001);
+  G().Store16(mic, 1), G().Store32(mic + 0x10, 0);
+  g_mic_device = 0;
+  CHECK(Call("MicDeviceRequest", {mic}) == 0x103 && g_mic_device == 0);  // no completion routine: none called
+  Threads().SetDispatcher(nullptr, nullptr);
+  // The SMC: the queries' answers (command byte and fields, the rest left), the tray through HalOpenCloseODDTray and
+  // SET_DVD_TRAY with its notification, the fans and LEDs kept, an unknown command answered nothing.
+  const uint32_t message = kData + 0x700, response = kData + 0x720;
+  auto smc = [&](std::initializer_list<uint8_t> bytes) {
+    std::memset(g_base + message, 0, 16);
+    std::memset(g_base + response, 0xAA, 16);
+    uint32_t at = message;
+    for (const uint8_t b : bytes) g_base[at++] = b;
+    Call("HalSendSMCMessage", {message, response});
+  };
+  auto answered = [&](std::initializer_list<uint8_t> bytes) {
+    uint32_t at = response;
+    for (const uint8_t b : bytes) {
+      if (g_base[at++] != b) return false;
+    }
+    return g_base[at] == 0xAA;
+  };
+  smc({0x07});
+  CHECK(answered({0x07, 0x99, 0x45, 0xE6, 0x45, 0x99, 0x45, 0xE6, 0x45}));
+  smc({0x0A});
+  CHECK(answered({0x0A, 2}));  // closed: the title's disc is in
+  smc({0x0F});
+  CHECK(answered({0x0F, 0x5B}));
+  smc({0x12});
+  CHECK(answered({0x12, 65, 2, 1}));
+  smc({0x16});
+  CHECK(answered({0x16, 0x0F}));
+  smc({0x17});
+  CHECK(answered({0x17, 0}));
+  smc({0x95, 0x01});
+  CHECK(answered({0x95, 0x0F}));  // the IR address answered, not changed (as Xenia)
+  smc({0x42});
+  CHECK(answered({}) && g_base[response] == 0xAA);
+  Call("HalSendSMCMessage", {0, response});  // no message: nothing
+  const uint32_t listener = uint32_t(Call("XamNotifyCreateListener", {1, 0}));
+  while (Call("XNotifyGetNext", {listener, 0, kOut, kOut + 4}) != 0) {}
+  Call("HalOpenCloseODDTray", {1});
+  CHECK(XamState().smc_tray() == 0);
+  CHECK(Call("XNotifyGetNext", {listener, 0, kOut, kOut + 4}) != 0 && G().Load32(kOut) == 0x8000000D && G().Load32(kOut + 4) == 0);
+  smc({0x0A});
+  CHECK(answered({0x0A, 0}));
+  smc({0x8B, 0x17});  // SET_DVD_TRAY: (0x17 & 15) % 5 = 2, closed
+  CHECK(XamState().smc_tray() == 2);
+  CHECK(Call("XNotifyGetNext", {listener, 0, kOut, kOut + 4}) != 0 && G().Load32(kOut + 4) == 2);
+  Call("HalOpenCloseODDTray", {0});
+  CHECK(XamState().smc_tray() == 2);
+  CHECK(Call("NtClose", {listener}) == 0);
+  smc({0x89, 0x80 + 60});
+  smc({0x94, 0x80 + 45});
+  CHECK(XamState().smc_fan_speed(false) == 60 && XamState().smc_fan_speed(true) == 45);
+  smc({0x8C, 0x10, 1});
+  smc({0x99, 0x08, 0x0F});
+  CHECK(XamState().smc_power_led() == 0x1001 && XamState().smc_leds() == 0x080F);
+  // NtCancelIoFile: success for an open file, STATUS_INVALID_HANDLE for another handle.
+  const std::filesystem::path folder = XamState().title().content_root.parent_path() / "cancel";
+  std::filesystem::create_directories(folder);
+  { std::ofstream(folder / "a.bin", std::ios::binary) << "data"; }
+  Files().Mount("\\Device\\CancelTest", folder, false);
+  std::memcpy(g_base + kData + 0x300, "\\Device\\CancelTest\\a.bin", 25);
+  G().Store16(kData + 0x340, 24), G().Store16(kData + 0x342, 25), G().Store32(kData + 0x344, kData + 0x300);
+  G().Store32(kData + 0x350, 0), G().Store32(kData + 0x354, kData + 0x340), G().Store32(kData + 0x358, 0);
+  // NtOpenFile (handle out, access, attributes, I/O status, options)
+  CHECK(Call("NtOpenFile", {kOut, 0x80000000, kData + 0x350, kOut + 8, 0}) == 0);
+  const uint32_t file = G().Load32(kOut);
+  CHECK(Call("NtCancelIoFile", {file}) == 0);
+  CHECK(Call("NtClose", {file}) == 0 && Call("NtCancelIoFile", {file}) == 0xC0000008);
+  Files().Unmount("\\Device\\CancelTest");
+  // RtlRip: the two messages to the debug sink; the title goes on.
+  SetDebugPrintSink(&DebugSink);
+  std::memcpy(g_base + kData + 0x380, "assert", 7);
+  std::memcpy(g_base + kData + 0x390, "x > 0", 6);
+  Call("RtlRip", {kData + 0x380, kData + 0x390});
+  CHECK(g_debug_text == "RtlRip: assert x > 0");
+  Call("RtlRip", {0, kData + 0x390});
+  CHECK(g_debug_text == "RtlRip: x > 0");
+  SetDebugPrintSink(nullptr);
+}
+
 void MediaAdapters() {
   for (const char* name : {"EnumerateMediaObjects", "EnumerateMediaObjects_", "EnumerateMediaObjects_0", "EnumerateMediaObjects_1"}) {
     CHECK(Call(name, {kData, 1, kOut}) == 0x80004001);
@@ -665,6 +778,7 @@ int main() {
   UiAdapters();
   ModuleAdapters();
   InputNetNotifyAdapters();
+  LastAdapters();
   EarlierBatchAdapters();
   Threads().SetDispatcher(nullptr, nullptr);
   std::filesystem::remove_all(root, error);

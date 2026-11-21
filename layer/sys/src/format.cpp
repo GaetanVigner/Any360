@@ -410,4 +410,15 @@ void DebugOutput(Guest g, uint32_t string, bool wide) {
   g_debug_sink(text.data(), text.size());
 }
 
+void RtlRip(Guest g, uint32_t message, uint32_t detail) {
+  if (!g_debug_sink) return;
+  std::string text = "RtlRip:";
+  for (const uint32_t at : {message, detail}) {
+    if (!at) continue;
+    text += ' ';
+    text += reinterpret_cast<const char*>(g.host(at));
+  }
+  g_debug_sink(text.data(), text.size());
+}
+
 }  // namespace any360::sys

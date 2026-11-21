@@ -578,6 +578,49 @@ ANY360_SYS_EXPORT(XamTaskCloseHandle) {
 ANY360_SYS_EXPORT(XamTaskShouldExit) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(XamVoiceCreate) { ctx.r3.u64 = XamState().VoiceCreate({base}, ctx.r5.u32); }
 ANY360_SYS_EXPORT(XamVoiceClose) { ctx.r3.u64 = 0; }
+// Step 12, the last calls Xenia stubs too.
+ANY360_SYS_EXPORT(XamVoiceGetMicArrayStatus) { ctx.r3.u64 = 0; }  // no Kinect microphone array
+// (user): an automation controller unbound for users 0-3 (1), none past them (0).
+ANY360_SYS_EXPORT(XAutomationpUnbindController) { ctx.r3.u64 = ctx.r3.u32 < 4 ? 1 : 0; }
+// (X_MIC_DEVICE: request type 0x00, user 0x02, state 0x04, completion routine 0x10, capabilities from 0x18): no
+// microphone, as Xenia without one. STATUS_INVALID_PARAMETER without a device or for a user past 4,
+// STATUS_INVALID_DEVICE_REQUEST for a request past 0x0B; the state set to not connected; a status request succeeds;
+// the others (capabilities: features 0x100, format 1, colour 0) call the completion routine, when given, with the
+// device and STATUS_UNSUCCESSFUL on the calling thread and answer STATUS_PENDING.
+ANY360_SYS_EXPORT(MicDeviceRequest) {
+  Guest g{base};
+  const uint32_t device = ctx.r3.u32;
+  if (!device || g.Load16(device + 2) > 4) {
+    ctx.r3.u64 = 0xC000000D;
+    return;
+  }
+  const uint16_t request = g.Load16(device);
+  if (request > 0x0B) {
+    ctx.r3.u64 = 0xC0000010;
+    return;
+  }
+  g.Store32(device + 4, 0);  // MicNotConnected
+  if (request == 0) {
+    ctx.r3.u64 = 0;
+    return;
+  }
+  if (request == 9) {
+    g.Store32(device + 0x18, 0x100);
+    g.Store16(device + 0x1C, 1);
+    g.Store8(device + 0x28, 0);
+  }
+  if (const uint32_t completion = g.Load32(device + 0x10)) {
+    Threads().Dispatch(completion, {ThreadOf(ctx, base), ctx.r13.u32, (ctx.r1.u32 - 0x400) & ~0xFu}, {device, 0xC0000001});
+  }
+  ctx.r3.u64 = 0x103;  // STATUS_PENDING
+}
+// (open): the tray opened or closed (XN_SYS_TRAYSTATECHANGED to the listeners). No result.
+ANY360_SYS_EXPORT(HalOpenCloseODDTray) { XamState().SmcSetTray(ctx.r3.u32 ? 0 : 2); }
+// (message, response): the SMC's answer. No result.
+ANY360_SYS_EXPORT(HalSendSMCMessage) { XamState().SmcMessage({base}, ctx.r3.u32, ctx.r4.u32); }
+ANY360_SYS_EXPORT(NtCancelIoFile) { ctx.r3.u64 = Files().CancelIo(ctx.r3.u32); }
+// (message, detail): to the debug sink; no result.
+ANY360_SYS_EXPORT(RtlRip) { RtlRip({base}, ctx.r3.u32, ctx.r4.u32); }
 ANY360_SYS_EXPORT(XamVoiceHeadsetPresent) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(XamVoiceSubmitPacket) { ctx.r3.u64 = 0; }
 ANY360_SYS_EXPORT(XamUserAreUsersFriends) {
@@ -1848,6 +1891,13 @@ const Export kExports[] = {
     ANY360_SYS_ENTRY(XamTaskShouldExit),
     ANY360_SYS_ENTRY(XamVoiceCreate),
     ANY360_SYS_ENTRY(XamVoiceClose),
+    ANY360_SYS_ENTRY(XAutomationpUnbindController),
+    ANY360_SYS_ENTRY(XamVoiceGetMicArrayStatus),
+    ANY360_SYS_ENTRY(MicDeviceRequest),
+    ANY360_SYS_ENTRY(HalOpenCloseODDTray),
+    ANY360_SYS_ENTRY(HalSendSMCMessage),
+    ANY360_SYS_ENTRY(NtCancelIoFile),
+    ANY360_SYS_ENTRY(RtlRip),
     ANY360_SYS_ENTRY(XamVoiceHeadsetPresent),
     ANY360_SYS_ENTRY(XamVoiceSubmitPacket),
     ANY360_SYS_ENTRY(XamUserAreUsersFriends),

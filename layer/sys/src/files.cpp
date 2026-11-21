@@ -214,6 +214,8 @@ void FileSystem::Link(std::string link, std::string target) {
   links_.insert_or_assign(std::move(link), std::move(target));
 }
 
+uint32_t FileSystem::CancelIo(uint32_t handle) { return Find(handle) ? kStatusSuccess : kStatusInvalidHandle; }
+
 bool FileSystem::HasLink(const std::string& link) const {
   std::string name = Lower(link);
   if (name.rfind("\\??\\", 0) == 0) name.erase(0, 4);

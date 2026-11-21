@@ -57,5 +57,8 @@ void SetDebugPrintSink(void (*sink)(const char* text, size_t length));
 // OutputDebugStringA / W, RtlOutputDebugString, RtlDebugTrace: the guest string (wide characters past ASCII as '?')
 // handed to the debug sink as it is.
 void DebugOutput(Guest g, uint32_t string, bool wide);
+// RtlRip (message, detail): a title's assertion, "RtlRip: <message> <detail>" handed to the debug sink; the title
+// goes on, as Xenia lets it.
+void RtlRip(Guest g, uint32_t message, uint32_t detail);
 
 }  // namespace any360::sys
