@@ -3240,6 +3240,98 @@ int main(int argc, char** argv) {
     std::filesystem::remove(cache + ".recipes", error);
   }
 
+  // Host MSAA samples pooled. A depth target drawn alone through a frame (a shadow map) goes back to one sample at the
+  // swap; the next frame a colour target drawn with it (a pass mixing one-sample and multisampled targets) goes back
+  // to one sample too. Their dropped multisampled images, once the batches that used them have run, are taken by the
+  // next targets of the same size and format that need samples, instead of new ones (a title doing this every frame
+  // created and freed 160 MB a frame at 1440p with 4 samples). The new targets draw the same as with fresh samples.
+  {
+    vk::VulkanRenderer ms(device, g_memory, kMemory);
+    ms.SetMsaa(4);
+    CHECK(ms.Initialize());
+    const uint32_t red = Rgba(255, 0, 0, 255);
+    const vk::SurfaceKey x_key{256, kSize, 0, 0}, y_key{512, kSize, 0, 0}, e_key{1536, kSize, 0, 1};
+    auto frame = [&](const std::function<void(Scene&)>& packets) {
+      CommandProcessor c(g_memory);
+      c.SetRenderer(&ms);
+      c.InitializeRingBuffer({}, kRing, 12);
+      Scene w{c};
+      w.Defaults();
+      w.Shader(0, t::BuildFetchPositionShader());
+      w.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+      w.Vertices(0);
+      packets(w);
+      w.Put({Type3(pm4::XE_SWAP, 4), 0x53574150, 0, kSize, kSize});
+      w.Run();
+    };
+    auto reds = [&](const vk::SurfaceKey& key) {
+      std::vector<uint8_t> bytes;
+      CHECK(ms.ReadBack(key, kSize, kSize, bytes));  // after the GPU has run everything before
+      uint32_t n = 0;
+      for (size_t i = 0; i + 4 <= bytes.size(); i += 4) {
+        uint32_t v;
+        std::memcpy(&v, bytes.data() + i, 4);
+        n += v == red;
+      }
+      return n;
+    };
+    auto red_quad = [&](Scene& w) {
+      w.Reg(kRbDepthControl, 1u << 1 | 1u << 4);  // z_enable, LESS, no write
+      w.Color(255, 0, 0, 255);
+      w.DrawAuto(kTriangleStrip, 4);
+    };
+    // Frame 0: the depth target (tile 1024) drawn alone: back to one sample at the swap.
+    CHECK(ms.ClearDepthStencil(depth, 1.0f, 0));
+    frame([&](Scene& w) {
+      w.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 7u << 4);  // z_enable, z_write, ALWAYS
+      w.Reg(kRbColorMask, 0);
+      w.DrawAuto(kTriangleStrip, 4);
+      w.Reg(kRbColorMask, 0xF);
+    });
+    const uint32_t dropped_alone = ms.stats().samples_dropped;
+    // Frame 1: colour target X (tile 256, new: multisampled) with that one-sample depth: X back to one sample.
+    CHECK(ms.ClearColor(x_key, black));
+    CHECK(ms.ClearDepthStencil(depth, 1.0f, 0));
+    frame([&](Scene& w) {
+      w.Reg(0x2001, 256);
+      red_quad(w);
+    });
+    const uint32_t x_reds = reds(x_key), dropped = ms.stats().samples_dropped;
+    // Frame 2: new colour target Y (tile 512) and depth target E (tile 1536), the sizes and formats of X and of the
+    // first depth target: their samples from the pool.
+    const uint32_t reused_before = ms.stats().samples_reused;
+    CHECK(ms.ClearColor(y_key, black));
+    CHECK(ms.ClearDepthStencil(e_key, 1.0f, 0));
+    frame([&](Scene& w) {
+      w.Put({Type0(0x2001, 2), 512, 1536});  // RB_COLOR_INFO, RB_DEPTH_INFO
+      red_quad(w);
+    });
+    const uint32_t reused = ms.stats().samples_reused - reused_before;
+    std::vector<uint8_t> y_bytes, z_bytes;
+    CHECK(ms.ReadBack(y_key, kSize, kSize, y_bytes));
+    // Frame 3: the same with targets Z (tile 768) and F (tile 1792), the pool now empty: fresh samples, drawn the same.
+    const vk::SurfaceKey z_key{768, kSize, 0, 0}, f_key{1792, kSize, 0, 1};
+    CHECK(ms.ClearColor(z_key, black));
+    CHECK(ms.ClearDepthStencil(f_key, 1.0f, 0));
+    frame([&](Scene& w) {
+      w.Put({Type0(0x2001, 2), 768, 1792});
+      red_quad(w);
+    });
+    CHECK(ms.ReadBack(z_key, kSize, kSize, z_bytes));
+    const uint32_t fresh_reused = ms.stats().samples_reused - reused_before - reused;
+    uint32_t different = 0;
+    for (size_t i = 0; i < y_bytes.size() && i < z_bytes.size(); ++i) different += y_bytes[i] != z_bytes[i];
+    std::printf("gfx_render_tests: host MSAA samples pooled: %u dropped (%u at the swap), %u taken from the pool by new "
+                "targets; red %u pixels at one sample; with pooled samples %u of %zu bytes differ from fresh ones\n",
+                dropped, dropped_alone, reused, x_reds, different, z_bytes.size());
+    // The swaps present nothing (the frame's front buffer address holds no texture): the only failures allowed.
+    uint32_t other_failures = 0;
+    for (const auto& [why, n] : ms.failures()) other_failures += why.starts_with("swap:") ? 0 : n;
+    CHECK(dropped_alone == 1 && dropped == 2 && reused == 2 && fresh_reused == 0);
+    CHECK(x_reds == kSize * kSize && !y_bytes.empty() && y_bytes.size() == z_bytes.size() && different == 0 &&
+          other_failures == 0);
+  }
+
   // Vertex fetches past the guest's 512 MB of physical memory: indices 0x200000 and up with a 64-dword stride put
   // the vertex addresses 512 MB above the quad's, and the fetch takes them modulo 512 MB as the console's 29-bit
   // physical addresses do (Vulkan leaves a read past the buffer undefined: an NVIDIA GPU reset in Call of Duty:

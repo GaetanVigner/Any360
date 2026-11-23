@@ -827,6 +827,18 @@ unchanged. `gfx_render_tests` "k_16_16_16_16 resolves on the GPU" compares every
 2x MSAA and biases -6, 0, +1 (0 of 73728 differ on NVIDIA and Radeon). Archived in
 `docs/perf/archive/2026-11-23-fixed16-resolves-gpu/`.
 
+### Host MSAA samples pooled (2026-11-23)
+
+A surface that goes back to one sample (`DropSamples`: drawn in a pass mixing one-sample and multisampled targets, or
+a depth target drawn alone through a frame) and gets its samples again when a resolve clears it whole
+(`GiveSamplesBack`) created and freed its multisampled image each time: in Mirror's Edge at 1440p with 4 samples a
+160 MB RGBA16F image a frame. The dropped image (with its integer view) now goes into a pool once its batch has run
+(`FinishBatch`); `CreateSamples` takes one of the same size, format and sample count first, and an image unused for
+2 s is freed at a swap (`FreeSpareSamples`). `ANY360_NO_SAMPLE_POOL=1` switches it off. `gfx_render_tests` "host MSAA
+samples pooled" checks the reuse and that pooled samples draw the same bytes as fresh ones. `gfx_replay` takes
+`ANY360_LOG_ALLOCATIONS=1` like a title (every buffer and image created, with its caller). Archived in
+`docs/perf/archive/2026-11-23-msaa-sample-pool/`.
+
 ### The frame counter, for every title (2026-11-23)
 
 `--any360_fps_overlay=true` draws Any360's frame counter over the top-left corner of the picture, whatever the title:

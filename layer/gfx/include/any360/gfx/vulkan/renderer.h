@@ -79,6 +79,7 @@ struct RendererStats {
   uint64_t sample_resolve_pixels = 0;  // and the host pixels they covered
   uint32_t samples_dropped = 0;        // surfaces back to one sample (drawn without colour and depth together)
   uint32_t samples_given_back = 0;     // and given their samples again (drawn with them together, then cleared)
+  uint32_t samples_reused = 0;         // of those, samples taken from the pool of dropped ones (no image created)
   uint32_t edram_alias_copies = 0;     // copies between surfaces over the same EDRAM (SyncAliases)
   uint32_t edram_depth_to_colour = 0;
   uint32_t extents_estimated = 0;  // draws without clipping whose rows came from their vertices (EstimateVertexMaxY)
@@ -416,7 +417,8 @@ class VulkanRenderer : public gfx::Renderer {
   void ResolveSamples(VkCommandBuffer cb, Surface& surface, int32_t x0, int32_t y0, int32_t x1, int32_t y1,
                       bool one_sample = false);
   bool SampleBitsViews(Surface& surface);
-  // A surface back to one sample: its samples resolved, its multisampled image freed (nothing of it lost).
+  // A surface back to one sample: its samples resolved, its multisampled image pooled once the batch has run (nothing
+  // of it lost; the next surface of its size and format needing samples takes it, else freed after 2 s).
   void DropSamples(Surface& surface);
   // A surface's multisampled image (not yet drawn into).
   bool CreateSamples(Surface& surface);
@@ -591,6 +593,15 @@ class VulkanRenderer : public gfx::Renderer {
   // waits for them in order, then does what was to follow each (guest memory writes of resolves, the command
   // processor's fences and interrupts) and frees what it used (staging buffers, retired images).
   static constexpr uint32_t kGpuMarks = 1024;  // time stamps a batch
+  // A surface's samples dropped (DropSamples): kept once the batch that last drew them has run, for the next surface of
+  // the same size and format that needs samples (a title that draws a target with and without its pair every frame
+  // would otherwise create and free a multisampled image a frame, 160 MB at 1440p with 4 samples).
+  struct SpareSamples {
+    Image ms;
+    VkImageView bits = VK_NULL_HANDLE;  // its integer view, when it had one
+    VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
+    std::chrono::steady_clock::time_point since{};  // in the pool since
+  };
   struct Batch {
     VkCommandBuffer cb = VK_NULL_HANDLE;
     std::atomic<uint32_t> marks{0};          // GpuMark time stamps written (recording and submitting threads)
@@ -611,6 +622,7 @@ class VulkanRenderer : public gfx::Renderer {
     VkDescriptorPool draw_pool = VK_NULL_HANDLE, depth_pool = VK_NULL_HANDLE;
     std::vector<Buffer> staging;
     std::vector<Image> retired;
+    std::vector<SpareSamples> spare_samples;  // dropped samples, pooled once it has run
     std::vector<VkImageView> retired_views;  // of textures dropped from the cache
     // Occlusion queries ended in it: their counts written into guest memory once it has run.
     struct Query {
@@ -679,6 +691,11 @@ class VulkanRenderer : public gfx::Renderer {
   void WaitBatch(uint32_t index);
   void Complete();  // the completion thread
   std::mutex done_mutex_;
+  // Dropped samples of finished batches (FinishBatch, the completion thread), taken by CreateSamples; freed after 2 s
+  // unused (FreeSpareSamples at each frame's end) or all at the end.
+  std::mutex sample_pool_mutex_;
+  std::vector<SpareSamples> sample_pool_;
+  void FreeSpareSamples(bool all);
   std::condition_variable done_cv_, work_cv_;
   std::deque<uint32_t> in_flight_;
   bool stopping_ = false;

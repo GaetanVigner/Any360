@@ -745,6 +745,10 @@ int main(int argc, char** argv) {
     if (renderer.texture_cache()) renderer.texture_cache()->SetMemoryWatch([](uint32_t, uint32_t) {});
     if (std::getenv("ANY360_NO_TRACK") == nullptr) renderer.SetMemoryWatch([](uint32_t, uint32_t) {});
   }
+  // ANY360_LOG_ALLOCATIONS=1: every GPU buffer and image created, with its caller (as in a title).
+  if (const char* allocations = std::getenv("ANY360_LOG_ALLOCATIONS"); allocations && *allocations == '1') {
+    vk::SetAllocationLog([](const std::string& line) { std::printf("gfx_replay: %s\n", line.c_str()); });
+  }
   for (int pass = 0; pass < repeat && ok; ++pass) {
     if (pass == repeat - 1) {
       before = renderer.stats();
@@ -863,10 +867,11 @@ int main(int argc, char** argv) {
   }
   std::printf("gfx_replay: %s: %u draws, %u skipped, %u failed; %u resolves, %u shaders, %u pipelines, %u render targets, "
               "%u texture uploads; %.1f ms creating pipelines; %u sample resolves (%.1f Mpixels), %u surfaces back to "
-              "one sample; %u EDRAM alias copies (%u depth into colour); %u draw extents from their vertices (%.3f ms)\n",
+              "one sample (%u given samples again, %u of them from the pool); %u EDRAM alias copies (%u depth into colour); "
+              "%u draw extents from their vertices (%.3f ms)\n",
               device.properties().deviceName, r.draws, r.skipped, r.failed, r.resolves, r.translations, r.pipelines,
               r.render_targets, r.texture_uploads, r.ns_pipelines / 1e6, r.sample_resolves, r.sample_resolve_pixels / 1e6,
-              r.samples_dropped, r.edram_alias_copies, r.edram_depth_to_colour, r.extents_estimated, r.ns_extents / 1e6);
+              r.samples_dropped, r.samples_given_back, r.samples_reused, r.edram_alias_copies, r.edram_depth_to_colour, r.extents_estimated, r.ns_extents / 1e6);
   if (features) tracing.PrintFeatures();
   // Textures over a resolve kept on the GPU that could not copy from it, and why (they read guest memory instead).
   if (renderer.texture_cache()) {

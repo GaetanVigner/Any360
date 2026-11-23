@@ -262,6 +262,11 @@ VulkanRenderer::~VulkanRenderer() {
     b.retired_views.clear();
     for (Buffer& staging : b.staging) DestroyBuffer(device_, staging);
     b.staging.clear();
+    {
+      std::lock_guard lock(sample_pool_mutex_);
+      sample_pool_.insert(sample_pool_.end(), b.spare_samples.begin(), b.spare_samples.end());
+    }
+    b.spare_samples.clear();
     for (PendingWriteBack& w : b.write_backs) DestroyBuffer(device_, w.buffer);
     b.write_backs.clear();
     if (b.fence) f.vkDestroyFence(d, b.fence, nullptr);
@@ -275,6 +280,7 @@ VulkanRenderer::~VulkanRenderer() {
     DestroyBuffer(device_, b.indices);
     DestroyBuffer(device_, b.guest_staging);
   }
+  FreeSpareSamples(true);
   for (Buffer& b : free_readbacks_) DestroyBuffer(device_, b);
   free_readbacks_.clear();
   if (gamma_pipeline_) f.vkDestroyPipeline(d, gamma_pipeline_, nullptr);
@@ -1114,6 +1120,28 @@ bool VulkanRenderer::CreateSamples(Surface& s) {
   const VkImageAspectFlags aspect =
       s.key.depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
   const VkFormat alias = s.key.depth ? VK_FORMAT_UNDEFINED : BitsFormat(s.image.format);
+  // ANY360_NO_SAMPLE_POOL=1: every surface's samples created anew (the A/B of the pool).
+  static const bool pooled = std::getenv("ANY360_NO_SAMPLE_POOL") == nullptr;
+  if (pooled) {
+    // Samples another surface of the same size and format dropped, once their batch has run: the same usage and
+    // alias (both follow from the format), so the image is the one CreateImage2D would make.
+    std::lock_guard lock(sample_pool_mutex_);
+    for (size_t i = 0; i < sample_pool_.size(); ++i) {
+      SpareSamples& spare = sample_pool_[i];
+      if (spare.samples != samples_ || spare.ms.format != s.image.format || spare.ms.width != s.image.width ||
+          spare.ms.height != s.image.height) {
+        continue;
+      }
+      s.ms = spare.ms;
+      s.ms_bits = spare.bits;
+      sample_pool_[i] = sample_pool_.back();
+      sample_pool_.pop_back();
+      ++stats_.samples_reused;
+      s.ms_layout = VK_IMAGE_LAYOUT_UNDEFINED;  // its content is not this surface's: discarded at its first use
+      s.drawn[0] = s.drawn[1] = INT32_MAX, s.drawn[2] = s.drawn[3] = INT32_MIN;
+      return true;
+    }
+  }
   if (!CreateImage2D(device_, s.image.width, s.image.height, s.image.format, usage, aspect, s.ms, samples_, alias)) {
     DestroyImage(device_, s.ms);
     return false;
@@ -1132,17 +1160,31 @@ void VulkanRenderer::GiveSamplesBack(Surface* s, const int32_t area[4]) {
   ++stats_.samples_given_back;
 }
 
+void VulkanRenderer::FreeSpareSamples(bool all) {
+  // Only samples of finished batches are in the pool: nothing on the GPU uses them, freed at once.
+  const auto oldest = std::chrono::steady_clock::now() - std::chrono::seconds(2);
+  std::lock_guard lock(sample_pool_mutex_);
+  for (size_t i = 0; i < sample_pool_.size();) {
+    SpareSamples& spare = sample_pool_[i];
+    if (!all && spare.since > oldest) {
+      ++i;
+      continue;
+    }
+    if (spare.bits) device_.fn().vkDestroyImageView(device_.device(), spare.bits, nullptr);
+    DestroyImage(device_, spare.ms);
+    sample_pool_[i] = sample_pool_.back();
+    sample_pool_.pop_back();
+  }
+}
+
 void VulkanRenderer::DropSamples(Surface& s) {
   if (!s.ms.image) return;
   EndRendering();
   ResolveSamples(Record(), s, INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX);
-  batch().retired.push_back(s.ms);  // the batch may still draw into it: freed after it has run
-  if (s.ms_bits) {
-    Image view_only;
-    view_only.view = s.ms_bits;  // its integer view, freed with it
-    batch().retired.push_back(view_only);
-    s.ms_bits = VK_NULL_HANDLE;
-  }
+  // The batch may still draw into it: pooled after it has run (with its integer view), for the next surface of its
+  // size and format; freed if none takes it.
+  batch().spare_samples.push_back({s.ms, s.ms_bits, samples_, {}});
+  s.ms_bits = VK_NULL_HANDLE;
   s.ms = Image{};
   s.ms_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   target_memo_.valid = false;  // its pipeline had the samples
@@ -4001,6 +4043,15 @@ void VulkanRenderer::FinishBatch(Batch& b) {
   b.retired.clear();
   for (VkImageView view : b.retired_views) device_.fn().vkDestroyImageView(device_.device(), view, nullptr);
   b.retired_views.clear();
+  if (!b.spare_samples.empty()) {
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard lock(sample_pool_mutex_);
+    for (SpareSamples& spare : b.spare_samples) {
+      spare.since = now;
+      sample_pool_.push_back(spare);
+    }
+    b.spare_samples.clear();
+  }
   std::vector<std::function<void()>>& actions = finished_actions_;  // reused: no allocation per batch
   {
     std::lock_guard lock(done_mutex_);
@@ -5267,6 +5318,7 @@ void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint3
       if (s->unpaired_this_frame && !s->paired && s->ms.image) DropSamples(*s);
       s->unpaired_this_frame = s->paired = false;
     }
+    FreeSpareSamples(false);
   }
   CheckAuditedWrites();
   if (textures_) textures_->NewFrame();  // the CPU may have written any texture since
