@@ -8,6 +8,7 @@
 #include "any360/sys/activity.h"
 #include "any360/host/hitch_tracer.h"
 #include "any360/host/profiler.h"
+#include "any360/host/hotkeys.h"
 #include "any360/host/settings.h"
 
 #include "any360/gfx/png.h"
@@ -71,6 +72,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #endif
+#include <rex/ui/keybinds.h>
 #include <rex/ui/window.h>
 #include <rex/ui/windowed_app_context.h>
 
@@ -416,6 +418,9 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   // <path>.burst appears, the next frames it names (900 if it is empty) at half size, as raw PPM files in
   // <path>_burst, written by a thread of their own (what flickers for a frame or two is caught that way).
   void Screenshot() {
+    if (screenshot_key_.exchange(false, std::memory_order_relaxed)) {  // the screenshot key (hotkeys.h)
+      WriteScreenshot(NextNumberedPath("screenshots", "any360_", ".png").string());
+    }
     if (screenshot_path_.empty()) return;
     if (burst_left_) BurstFrame();
     if (++screenshot_poll_ % 15) return;
@@ -437,14 +442,21 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     const std::filesystem::path trigger = screenshot_path_ + ".go";
     if (!std::filesystem::exists(trigger, error)) return;
     std::filesystem::remove(trigger, error);
+    WriteScreenshot(screenshot_path_);
+  }
+
+  // The frame as rendered to `path` (PNG), with the frame counter as the window shows it when Any360's switch (the
+  // flag or its key) shows it: the presenter draws it on the swapchain image, not on this frame; a title's own
+  // show_fps leaves its screenshots as they were.
+  void WriteScreenshot(const std::string& path) {
     std::vector<uint32_t> pixels;
     bool ok = ReadFrame(pixels) && pixels.size() == size_t(frame().width) * frame().height;
-    // The frame counter as the window shows it (the presenter draws it on the swapchain image, not on this frame), when
-    // --any360_fps_overlay asks for it: a title's own show_fps leaves its screenshots as they were.
-    if (ok && composite_fps_) gfx::CompositeOverlayRgba(overlay_text_, pixels.data(), frame().width, frame().height);
-    ok = ok && gfx::WritePng(screenshot_path_, frame().width, frame().height, pixels.data());
+    if (ok && composite_fps_.load(std::memory_order_relaxed) && show_fps_.load(std::memory_order_relaxed)) {
+      gfx::CompositeOverlayRgba(overlay_text_, pixels.data(), frame().width, frame().height);
+    }
+    ok = ok && gfx::WritePng(path, frame().width, frame().height, pixels.data());
     if (log_) {
-      log_(ok ? "Any360: screenshot written to " + screenshot_path_ + " (" + std::to_string(frame().width) + "x" +
+      log_(ok ? "Any360: screenshot written to " + path + " (" + std::to_string(frame().width) + "x" +
                     std::to_string(frame().height) + ")"
               : "Any360: no screenshot (the frame could not be read back)");
     }
@@ -581,7 +593,11 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     }
     last_frame_ = now;
     last_marks_ = marks;
-    if (show_fps_) Overlay(now, frames_ > 1 ? std::chrono::duration<float, std::milli>(now - previous).count() : -1.0f);
+    if (show_fps_.load(std::memory_order_relaxed)) {
+      Overlay(now, frames_ > 1 ? std::chrono::duration<float, std::milli>(now - previous).count() : -1.0f);
+    } else if (overlay_frames_) {
+      HideOverlay();  // hidden by its key
+    }
     if (!log_) return;
     if (frames_ == 1) {
       since_ = now;
@@ -879,6 +895,14 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     overlay_worst_ = 0;
   }
 
+  // The counter hidden (its key): nothing drawn, its window and text started again when it is shown.
+  void HideOverlay() {
+    presenter_.SetOverlay("");
+    overlay_text_.clear();
+    overlay_window_.Clear();
+    overlay_frames_ = 0;
+  }
+
   std::function<void(const std::string&)> log_;
   double stats_seconds_;
  public:
@@ -897,8 +921,9 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   std::deque<BurstImage> burst_queue_;
   bool burst_stop_ = false;
   std::thread burst_writer_;
-  bool show_fps_ = false;
-  bool composite_fps_ = false;  // --any360_fps_overlay: the counter in screenshots too
+  // The frame counter shown (the title's show_fps, --any360_fps_overlay, its key on the UI thread); Any360's switch
+  // (the flag or the key), which puts it in screenshots too; the screenshot key pressed.
+  std::atomic<bool> show_fps_{false}, composite_fps_{false}, screenshot_key_{false};
   std::unique_ptr<diagnostics::HitchTracer> hitch_;  // any360_hitch_trace_ms
   void StartHitchTracer(int threshold_ms, const std::string& folder) {
     hitch_ = std::make_unique<diagnostics::HitchTracer>(double(threshold_ms), folder, 5, log_);
@@ -1045,10 +1070,35 @@ struct Binding {
   uint32_t capture_kicks = 0;
   std::mutex capture_mutex;  // the writer, set on the command processor's thread
   bool capture_requested = false;
+  std::atomic<bool> capture_key{false};  // the capture key pressed (hotkeys.h): no trigger file needed
   std::unique_ptr<gfx::capture::Writer> writer;
   std::chrono::steady_clock::time_point next_trigger_check{};
   std::function<void(const std::string&)> log;
 };
+
+// Any360's keys (hotkeys.h), with the runtime's key binds: their callbacks run on the UI thread and only set flags the
+// renderer's and the title's threads pick up, except the profiler, which runs on a thread of its own.
+void RegisterHotkeys(Binding& b) {
+  PresentingRenderer* r = b.renderer.get();
+  const auto log = b.log;
+  rex::ui::RegisterBind(kFrameCounterKey.bind, kFrameCounterKey.default_key, kFrameCounterKey.description, [r, log] {
+    const bool show = !r->show_fps_.load();
+    r->composite_fps_ = show;
+    r->show_fps_ = show;
+    if (log) log(show ? "Any360: frame counter shown (its key)" : "Any360: frame counter hidden (its key)");
+  });
+  rex::ui::RegisterBind(kScreenshotKey.bind, kScreenshotKey.default_key, kScreenshotKey.description,
+                        [r] { r->screenshot_key_ = true; });
+  rex::ui::RegisterBind(kProfileKey.bind, kProfileKey.default_key, kProfileKey.description, [log] {
+    static std::unique_ptr<diagnostics::Profiler> profiler;  // a new press starts again (the last one stopped)
+    const int seconds = ProfileSeconds() > 0 ? ProfileSeconds() : 10;
+    profiler.reset();
+    profiler = std::make_unique<diagnostics::Profiler>(0.0, double(seconds), HitchTraceFolder(), log);
+    if (log) log("Any360: profiling every thread for " + std::to_string(seconds) + " s (its key)");
+  });
+  rex::ui::RegisterBind(kGpuCaptureKey.bind, kGpuCaptureKey.default_key, kGpuCaptureKey.description,
+                        [&b] { b.capture_key = true; });
+}
 
 std::atomic<bool> g_bound{false};
 std::atomic<double> g_vblank_hz{60.0};  // the rate StartGraphics chose (SetVblankHz(0) goes back to it)
@@ -1074,7 +1124,7 @@ uint32_t ReadGpuRegister(void*, void*, uint32_t address) { return sys::Graphics(
 // while the command processor is idle, or closes one whose kicks the command processor has run (it lets go of the
 // writer itself: a title may never leave it idle at a kick).
 void CaptureAtKick(Binding& b) {
-  if (b.capture_path.empty()) return;
+  if (b.capture_path.empty() && !b.capture_key.load(std::memory_order_relaxed)) return;
   {
     std::lock_guard lock(b.capture_mutex);
     if (b.writer) {
@@ -1088,16 +1138,22 @@ void CaptureAtKick(Binding& b) {
     }
     if (b.capture_requested) return;
   }
-  const auto now = std::chrono::steady_clock::now();
-  if (now < b.next_trigger_check) return;
-  b.next_trigger_check = now + std::chrono::milliseconds(500);
-  const std::string trigger = b.capture_path + ".go";
-  if (std::FILE* f = std::fopen(trigger.c_str(), "rb")) {
-    std::fclose(f);
+  if (b.capture_key.exchange(false, std::memory_order_relaxed)) {
+    // The key: to any360_gpu_capture when it is set, else to the next captures/any360_<n>.a360cap.
+    if (b.capture_path.empty()) b.capture_path = NextNumberedPath("captures", "any360_", ".a360cap").string();
   } else {
-    return;
+    if (b.capture_path.empty()) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (now < b.next_trigger_check) return;
+    b.next_trigger_check = now + std::chrono::milliseconds(500);
+    const std::string trigger = b.capture_path + ".go";
+    if (std::FILE* f = std::fopen(trigger.c_str(), "rb")) {
+      std::fclose(f);
+    } else {
+      return;
+    }
+    std::remove(trigger.c_str());
   }
-  std::remove(trigger.c_str());
   {
     std::lock_guard lock(b.capture_mutex);
     b.capture_requested = true;
@@ -1226,8 +1282,8 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->renderer->SetScreenshotPath(options.screenshot_path);
   // The frame counter: the title's own setting (GraphicsOptions::show_fps) or --any360_fps_overlay, for every title.
   binding->renderer->composite_fps_ = FpsOverlay();
-  binding->renderer->show_fps_ = options.show_fps || binding->renderer->composite_fps_;
-  if (binding->renderer->show_fps_ && options.log) options.log("Any360: frame counter drawn over the picture");
+  binding->renderer->show_fps_ = options.show_fps || binding->renderer->composite_fps_.load();
+  if (binding->renderer->show_fps_.load() && options.log) options.log("Any360: frame counter drawn over the picture");
   if (const int hitch_ms = HitchTraceMs(); hitch_ms > 0) {
     binding->renderer->StartHitchTracer(hitch_ms, HitchTraceFolder());
   }
@@ -1328,11 +1384,13 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   g_vblank_hz = vblank_hz;
   g_binding = binding.release();
   g_bound = true;
+  RegisterHotkeys(*g_binding);
   return true;
 }
 
 void StopGraphics() {
   if (!g_binding) return;
+  for (const Hotkey& key : kHotkeys) rex::ui::UnregisterBind(key.bind);
   sys::Graphics().StopVblank();
   g_binding->interrupts.Stop();
   g_binding->sampler.reset();  // its samples written

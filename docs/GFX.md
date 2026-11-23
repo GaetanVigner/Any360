@@ -839,3 +839,20 @@ Tests: `gfx_overlay_tests` (in `test.ps1`, and under the validation layer on eac
 first version, the text, every glyph against hand-drawn and scaled references, clipping, the screenshot composite,
 and the presenter's copy on the GPU read back pixel for pixel. Its `--bench` gives the cost a frame on and off
 (see [docs/perf/README.md](perf/README.md)). The Any360Launcher's Video options have a toggle that passes the flag.
+
+### Any360's keys (2026-11-23)
+
+Any360 binds four keys in every title on the binding (`layer/host/rexglue/include/any360/host/hotkeys.h`), through the
+runtime's key binds: each is a setting (`bind_any360_*`) the player can move to another key, and the title never sees
+a bound key. The runtime keeps F3, F4, F7 and Backtick (its overlays); a title keeps the others.
+
+| Key | Setting | What it does |
+|---|---|---|
+| F2 | `bind_any360_fps_overlay` | shows or hides the frame counter (`--any360_fps_overlay` sets it at the start) |
+| F5 | `bind_any360_screenshot` | the frame as rendered (with the counter when shown) to `screenshots/any360_<n>.png` |
+| F6 | `bind_any360_profile` | samples every thread for `any360_profile_seconds` (10 when 0): `profile.txt`, `profile.csv` in the logs |
+| F8 | `bind_any360_gpu_capture` | records the GPU's next `any360_gpu_capture_kicks` kicks for `gfx_replay`, to `any360_gpu_capture` or `captures/any360_<n>.a360cap` (the title's data: it stays on the machine) |
+
+They replace the titles' own keys for the same work (Crackdown's F2 corner counter, F6 thread profile and F8 HLE
+capture). The trigger files (`<path>.go`) still work for scripted runs. Tests: `host_hotkeys_tests` (one key each,
+none of the runtime's, the numbered files).
