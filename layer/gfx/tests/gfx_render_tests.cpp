@@ -1634,6 +1634,29 @@ int main(int argc, char** argv) {
       std::printf("gfx_render_tests: resolve chain: 5 steps and a swapped one at one address, %u pixels wrong, %u sampled in place, %u copies\n",
                   chain_wrong, direct, copies);
       CHECK(chain_wrong == 0 && direct >= 6 && copies == 0);
+      // A texture never sampled before: its slot is in the cache, still empty, while the renderer's read before its
+      // memory is hashed runs (it applies CPU writes, which asks the cache which textures span a superseded resolve).
+      // The cache's walks over its textures skip that slot: Mirror's Edge crashed there at 1440p. The renderer's
+      // callback wrapped with those walks, then put back.
+      {
+        vk::TextureCache& cache = *renderer.texture_cache();
+        const std::function<void(uint32_t, uint32_t)> original = cache.BeforeMemoryRead();
+        uint32_t walks = 0, found = 0;
+        cache.SetBeforeMemoryRead([&](uint32_t begin, uint32_t end) {
+          if (original) original(begin, end);
+          uint32_t base = 0, format = 0;
+          uint64_t age = 0;
+          found += !cache.CachedOver(0xFFFFFFF0u, 0xFFFFFFFFu);  // no texture there: every entry walked
+          cache.CompressedOver(0, 0xFFFFFFFFu, base, format, age);
+          ++walks;
+        });
+        std::memset(g_memory + 0x170000, 0x40, 32 * 32 * 4);
+        const Pixels fresh = scenario("new texture while the cache is walked", nullptr, [&] { textured(0x170000, 32); });
+        cache.SetBeforeMemoryRead(original);
+        std::printf("gfx_render_tests: new texture while the cache is walked: %u walks, %u of %u pixels\n", walks,
+                    fresh.Count(Rgba(0x40, 0x40, 0x40, 0x40)), kSize * kSize);
+        CHECK(walks >= 1 && found >= walks && fresh.Count(Rgba(0x40, 0x40, 0x40, 0x40)) == kSize * kSize);
+      }
       // A texture taller than the resolve, within its last 32-row tile (64 rows over 40 resolved, at an address of its
       // own): copied, the rows below the resolve zeros.
       const uint32_t short_rect = kVertices + 0xB00, short_base = 0x140000;
@@ -1760,9 +1783,9 @@ int main(int argc, char** argv) {
   // and the 256-wide k_8_8_8_8 one of the screen bands (17); the depth-under-colour checks' three depth and three
   // colour surfaces and the unclipped rectangle's two colour surfaces (25); the depth pre-pass check's shorter
   // colour target (26).
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 6 && stats.resolves == 83);
-  // (The resolved texture is read from the resolve on the GPU, not uploaded: 6 uploads, not 7. 83 resolves: the
-  // four of the scenarios before (one with an exponent bias on the GPU), the 70 with one, the two screen bands, the
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 7 && stats.resolves == 83);
+  // (The resolved texture is read from the resolve on the GPU, not uploaded; the one read while the cache is walked
+  // is: 7 uploads. 83 resolves: the four of the scenarios before (one with an exponent bias on the GPU), the 70 with one, the two screen bands, the
   // chain's six and the 40-row one.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.

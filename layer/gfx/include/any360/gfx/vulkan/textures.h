@@ -187,6 +187,7 @@ class TextureCache {
   // Called before a texture's memory [begin, end) is read on the CPU: the renderer writes there what a resolve left
   // on the GPU only, when the texture does not read it as it is (another layout, stacked slices...).
   void SetBeforeMemoryRead(std::function<void(uint32_t, uint32_t)> callback) { before_read_ = std::move(callback); }
+  const std::function<void(uint32_t, uint32_t)>& BeforeMemoryRead() const { return before_read_; }
   void DropGpuSources(uint32_t begin, uint32_t end);
   bool CachedOver(uint64_t begin, uint64_t end) const;
   // For diagnostics: the cached compressed texture (DXT, DXN, CTX1, 5:6:5) over [begin, end) used last: its base,

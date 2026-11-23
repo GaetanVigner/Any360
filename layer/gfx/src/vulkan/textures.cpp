@@ -788,6 +788,10 @@ VkImageView TextureCache::Empty(ViewType type, std::string& error) {
 void TextureCache::Evict(uint64_t frames, std::vector<Image>& images, std::vector<VkImageView>& views) {
   bool any = false;
   for (auto it = textures_.begin(); it != textures_.end();) {
+    if (!it->second) {  // a texture being created: nothing to evict yet
+      ++it;
+      continue;
+    }
     Texture& t = *it->second;
     if (epoch_ - t.used <= frames) {
       ++it;
@@ -1256,7 +1260,7 @@ VkSampler TextureCache::Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t 
 // (a resolve every few draws otherwise sent every texture of the frame through the slow path again).
 bool TextureCache::CachedOver(uint64_t begin, uint64_t end) const {
   for (const auto& [key, t] : textures_) {
-    if (t->begin < end && begin < t->end) return true;
+    if (t && t->begin < end && begin < t->end) return true;  // (a texture being created has no entry yet)
   }
   return false;
 }
@@ -1267,7 +1271,7 @@ bool TextureCache::CompressedOver(uint32_t begin, uint32_t end, uint32_t& base, 
   for (const auto& [key, t] : textures_) {
     const uint32_t f = key[1] & 0x3F;
     const bool compressed = f == 4 || (f >= 18 && f <= 20) || f == 49 || (f >= 51 && f <= 53) || (f >= 58 && f <= 60);
-    if (compressed && t->begin < end && begin < t->end && (!found || epoch_ - t->used < age)) {
+    if (compressed && t && t->begin < end && begin < t->end && (!found || epoch_ - t->used < age)) {
       base = key[1] & 0xFFFFF000, format = f, age = epoch_ - t->used;
       found = true;
     }
