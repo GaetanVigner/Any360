@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstring>
 
+#include "any360/gfx/frame_counter.h"
+
 namespace any360::gfx::vk {
 
 namespace {
@@ -22,90 +24,45 @@ void Barrier(const Functions& f, VkCommandBuffer cb, VkImage image, VkImageLayou
   dependency.pImageMemoryBarriers = &barrier;
   f.vkCmdPipelineBarrier2(cb, &dependency);
 }
-// The overlay's font: 5 x 7 glyphs, a row a byte (bit 4 the leftmost pixel).
-struct Glyph {
-  char c;
-  uint8_t rows[7];
-};
-constexpr Glyph kFont[] = {
-    {'0', {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}}, {'1', {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}},
-    {'2', {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}}, {'3', {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E}},
-    {'4', {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}}, {'5', {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E}},
-    {'6', {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}}, {'7', {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}},
-    {'8', {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}}, {'9', {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}},
-    {'.', {0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C}}, {':', {0x00, 0x0C, 0x0C, 0x00, 0x0C, 0x0C, 0x00}},
-    {'(', {0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02}}, {')', {0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08}},
-    {'/', {0x01, 0x01, 0x02, 0x04, 0x08, 0x10, 0x10}}, {'%', {0x18, 0x19, 0x02, 0x04, 0x08, 0x13, 0x03}},
-    {'-', {0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00}}, {'+', {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00}},
-    {'C', {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E}}, {'F', {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10}},
-    {'G', {0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F}}, {'P', {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10}},
-    {'R', {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11}}, {'S', {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E}},
-    {'U', {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}}, {'a', {0x00, 0x00, 0x0E, 0x01, 0x0F, 0x11, 0x0F}},
-    {'d', {0x01, 0x01, 0x0D, 0x13, 0x11, 0x11, 0x0F}}, {'e', {0x00, 0x00, 0x0E, 0x11, 0x1F, 0x10, 0x0E}},
-    {'i', {0x04, 0x00, 0x0C, 0x04, 0x04, 0x04, 0x0E}}, {'l', {0x0C, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E}},
-    {'m', {0x00, 0x00, 0x1A, 0x15, 0x15, 0x11, 0x11}}, {'s', {0x00, 0x00, 0x0E, 0x10, 0x0E, 0x01, 0x1E}},
-    {'w', {0x00, 0x00, 0x11, 0x11, 0x15, 0x15, 0x0A}}, {'x', {0x00, 0x00, 0x11, 0x0A, 0x04, 0x0A, 0x11}},
-};
 }  // namespace
 
 void Presenter::SetOverlay(const std::string& text) {
   if (text == overlay_text_) return;
   overlay_text_ = text;
-  overlay_dirty_ = true;
+  ++overlay_version_;
 }
 
 void Presenter::DrawOverlay(VkCommandBuffer cb, VkImage target, uint32_t slot) {
   if (overlay_text_.empty()) return;
-  const Functions& f = device_.fn();
-  // Glyph cells of 6 x 9 font pixels (a pixel apart, a pixel of border), each font pixel `scale` swapchain pixels.
-  const uint32_t scale = std::clamp(extent_.height / 360, 1u, 4u);
-  const uint32_t width = std::min(uint32_t(overlay_text_.size() * 6 + 2) * scale, extent_.width);
-  const uint32_t height = std::min(9 * scale, extent_.height);
+  const uint32_t scale = OverlayScale(extent_.height);
+  const OverlaySize size = MeasureOverlay(overlay_text_, scale);
+  const uint32_t width = std::min(size.width, extent_.width), height = std::min(size.height, extent_.height);
   if (!width || !height) return;
-  if (overlay_dirty_ || scale != overlay_scale_ || width != overlay_width_ || height != overlay_height_) {
-    // The other frames in flight may still copy from the buffer: they finish before it is written (rarely, the text
-    // changes about once a second). This frame's own fence was reset already and is not waited.
-    VkFence others[kFrames];
-    uint32_t count = 0;
-    for (uint32_t i = 0; i < kFrames; ++i) {
-      if (i != slot) others[count++] = fences_[i];
+  // A buffer a frame slot: this slot's last present has finished (its fence was waited), so its buffer is rewritten
+  // without waiting for the other frames in flight, which may still copy from theirs.
+  OverlaySlot& o = overlay_[slot];
+  if (o.version != overlay_version_ || o.width != width || o.height != height) {
+    if (o.buffer.size < VkDeviceSize(width) * height * 4) {
+      DestroyBuffer(device_, o.buffer);
+      if (!CreateBuffer(device_, VkDeviceSize(width) * height * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, o.buffer)) return;
     }
-    f.vkWaitForFences(device_.device(), count, others, VK_TRUE, UINT64_MAX);
-    if (overlay_.size < VkDeviceSize(width) * height * 4) {
-      DestroyBuffer(device_, overlay_);
-      if (!CreateBuffer(device_, VkDeviceSize(width) * height * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, overlay_)) return;
-    }
-    // Yellow on a dark grey band, in the swapchain's byte order.
     const bool bgra = format_ == VK_FORMAT_B8G8R8A8_UNORM || format_ == VK_FORMAT_B8G8R8A8_SRGB;
-    const uint32_t ink = bgra ? 0xFFFFFF40u : 0xFF40FFFFu, paper = 0xFF202020u;
-    uint32_t* px = static_cast<uint32_t*>(overlay_.mapped);
-    std::fill(px, px + size_t(width) * height, paper);
-    for (size_t i = 0; i < overlay_text_.size(); ++i) {
-      const Glyph* glyph = nullptr;
-      for (const Glyph& g : kFont) {
-        if (g.c == overlay_text_[i]) glyph = &g;
-      }
-      if (!glyph) continue;
-      for (uint32_t row = 0; row < 7; ++row) {
-        for (uint32_t col = 0; col < 5; ++col) {
-          if (!(glyph->rows[row] >> (4 - col) & 1)) continue;
-          const uint32_t x0 = uint32_t(1 + i * 6 + col) * scale, y0 = (1 + row) * scale;
-          for (uint32_t y = y0; y < y0 + scale && y < height; ++y) {
-            for (uint32_t x = x0; x < x0 + scale && x < width; ++x) px[size_t(y) * width + x] = ink;
-          }
-        }
-      }
-    }
-    overlay_width_ = width, overlay_height_ = height, overlay_scale_ = scale;
-    overlay_dirty_ = false;
+    RasterizeOverlay(overlay_text_, scale, OverlayInk(bgra), kOverlayPaper, static_cast<uint32_t*>(o.buffer.mapped),
+                     width, height);
+    o.version = overlay_version_, o.width = width, o.height = height;
   }
-  // After the frame's blit onto the same image.
+  RecordOverlayCopy(device_.fn(), cb, o.buffer.buffer, target, width, height);
+}
+
+void RecordOverlayCopy(const Functions& f, VkCommandBuffer cb, VkBuffer band, VkImage target, uint32_t width,
+                       uint32_t height) {
+  // After the frame's blit onto the same image (two transfer writes to one image).
   Barrier(f, cb, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
   VkBufferImageCopy copy{};
   copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
   copy.imageOffset = {0, 0, 0};
   copy.imageExtent = {width, height, 1};
-  f.vkCmdCopyBufferToImage(cb, overlay_.buffer, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+  f.vkCmdCopyBufferToImage(cb, band, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
 }
 
 Presenter::~Presenter() {
@@ -124,7 +81,7 @@ Presenter::~Presenter() {
   if (pool_) f.vkDestroyCommandPool(d, pool_, nullptr);
   DestroyImage(device_, frame_);
   DestroyBuffer(device_, staging_);
-  DestroyBuffer(device_, overlay_);
+  for (OverlaySlot& o : overlay_) DestroyBuffer(device_, o.buffer);
 }
 
 void Presenter::DestroySwapchain() {
@@ -216,6 +173,7 @@ bool Presenter::Resize(uint32_t width, uint32_t height) {
   DestroySwapchain();
   swapchain_ = next;
   format_ = chosen.format;
+  ++overlay_version_;  // the overlay rasterized again, in this swapchain's byte order
   mode_ = info.presentMode;
   f.vkGetSwapchainImagesKHR(d, swapchain_, &count, nullptr);
   images_.resize(count);

@@ -20,6 +20,10 @@ REXCVAR_DEFINE_STRING(any360_sys_groups, "", "Kernel",
 REXCVAR_DEFINE_INT32(any360_hitch_trace_ms, 0, "GPU",
                      "Any360: a frame of play longer than this many milliseconds has every thread's stack sampled until "
                      "it ends, and hitch_<n>.txt says what each thread did meanwhile (any360/host/hitch_tracer.h); 0: off");
+REXCVAR_DEFINE_BOOL(any360_fps_overlay, false, "GPU",
+                    "Any360: a frame counter drawn by Any360 over the title's picture, top left (frames per second, frame "
+                    "time and its slowest, median and 10% / 1% lows, GPU time a frame, command processor idle share); "
+                    "every title on any360::gfx, nothing done when off");
 REXCVAR_DEFINE_STRING(any360_hitch_trace_folder, "logs", "GPU", "Any360: the folder the hitch tracer's reports go to");
 REXCVAR_DEFINE_INT32(any360_profile_seconds, 0, "GPU",
                      "Any360: samples where every thread spends its processor time for this many seconds and writes "
@@ -222,6 +226,7 @@ void MountFolderIfStarted(const std::string& guest_folder, const std::filesystem
 }  // namespace any360::host::rexglue
 
 namespace any360::host::rexglue {
+bool FpsOverlay() { return REXCVAR_GET(any360_fps_overlay); }
 int HitchTraceMs() { return REXCVAR_GET(any360_hitch_trace_ms); }
 std::string HitchTraceFolder() { return REXCVAR_GET(any360_hitch_trace_folder); }
 int ProfileSeconds() { return REXCVAR_GET(any360_profile_seconds); }

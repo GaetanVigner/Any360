@@ -20,6 +20,11 @@ inline VkPresentModeKHR ChoosePresentMode(VkPresentModeKHR wanted, const std::ve
   return VK_PRESENT_MODE_FIFO_KHR;
 }
 
+// The overlay's draw, recorded after the frame's blit: a `width` x `height` band of pixels (rows `width` apart, in the
+// target's format) copied from `band` onto the top-left corner of `target`, which is in TRANSFER_DST layout.
+void RecordOverlayCopy(const Functions& f, VkCommandBuffer cb, VkBuffer band, VkImage target, uint32_t width,
+                       uint32_t height);
+
 class Presenter {
  public:
   explicit Presenter(Device& device) : device_(device) {}
@@ -36,9 +41,10 @@ class Presenter {
   bool Present(const BlitFn& blit, uint32_t width, uint32_t height);
 
   uint64_t presented() const { return presented_; }
-  // A line of text drawn over the top-left corner of every frame presented (a frame rate counter), in a small built-in
-  // font (digits, a few letters and signs; others are blank). Empty: none. Cheap: rasterized when it changes, copied
-  // onto the swapchain image (a few kilobytes) each frame.
+  // Text drawn over the top-left corner of every frame presented (the frame counter, --any360_fps_overlay), a line
+  // per newline, in the small built-in font of gfx/frame_counter.h (characters it lacks are blank). Empty: none, and
+  // nothing recorded. Rasterized into a frame slot's own buffer when it changes (no wait on the other frames in
+  // flight), copied onto the swapchain image each frame.
   void SetOverlay(const std::string& text);
   // The present mode: FIFO (vertical sync) unless another is asked for and the surface has it. FIFO is the one mode
   // every driver must have, and the one that shows: on NVIDIA's Windows driver (2026-11, RTX 5070 Ti, 32.0.16.1088)
@@ -79,9 +85,14 @@ class Presenter {
   Image frame_;
   Buffer staging_;
   std::string overlay_text_;
-  Buffer overlay_;  // the overlay's pixels, in the swapchain's format
-  uint32_t overlay_width_ = 0, overlay_height_ = 0, overlay_scale_ = 0;
-  bool overlay_dirty_ = false;
+  uint64_t overlay_version_ = 0;  // bumped by each new text
+  // The overlay's pixels for each frame slot, in the swapchain's format, and the text version and size they hold.
+  struct OverlaySlot {
+    Buffer buffer;
+    uint64_t version = ~0ull;
+    uint32_t width = 0, height = 0;
+  };
+  OverlaySlot overlay_[kFrames];
   void DrawOverlay(VkCommandBuffer cb, VkImage target, uint32_t slot);  // slot: the frame being recorded
   uint64_t presented_ = 0;
   std::string error_;

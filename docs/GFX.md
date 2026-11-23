@@ -811,3 +811,29 @@ one address, sampled as 864x864) takes the resolve's rows from the GPU and keeps
 holds them. Occlusion queries can be answered with a fixed count instead of counted (`SetOcclusionCounts(false)`,
 `GraphicsOptions::occlusion_counts`): Mirror's Edge's culling makes small models flicker with real counts, a cause not
 found yet; Crackdown keeps real counts for its light flares. Archived in `docs/perf/archive/2026-11-23-one-viewport/`.
+
+### The frame counter, for every title (2026-11-23)
+
+`--any360_fps_overlay=true` draws Any360's frame counter over the top-left corner of the picture, whatever the title:
+the setting is Any360's own (`layer/host/rexglue/src/settings.cpp`, read by the binding with `FpsOverlay()`), so no
+port defines or reads it. A title's own `GraphicsOptions::show_fps` (the `any360_gpu_show_fps` some ports define) still
+switches it on as before; either one is enough. Three lines, refreshed twice a second:
+
+    60 FPS 16.7 ms (max 18.3)                         the last half second: frame rate, mean and slowest frame
+    median 16.7 ms, 10% low 58, 1% low 52 FPS         the last 512 frames (gfx::FrameTimeWindow)
+    GPU 2.9 ms CP idle 64%                            the batches' GPU time a frame, the command processor idle
+
+The figures come from the same code as the report's "frame times: median ..., 10% low ..., 1% low ..." line
+(`gfx::SummarizeFrameTimes`, `layer/gfx/include/any360/gfx/frame_counter.h`, the binding's first version kept as the
+tests' reference). The text is rasterized in the 5 x 7 font of `frame_counter.h` (one font pixel per 540 lines of the
+window, 1 to 4: 1 at 720p, 2 at 1080p and 1440p) into a buffer of each of the presenter's three frame slots when it changes, so a new text never waits
+for the other frames in flight (the first version waited on their fences twice a second); each frame the band is
+copied onto the swapchain image after the frame's blit (`vk::RecordOverlayCopy`). Off, nothing runs: the binding does
+not call its counter and the presenter records nothing for an empty text.
+
+`--any360_gpu_screenshot` reads the renderer's frame, not the swapchain image: with the counter on, the screenshot has
+it composited the same way at the frame's own scale (`gfx::CompositeOverlayRgba`), so a screenshot shows what the window
+showed. Tests: `gfx_overlay_tests` (in `test.ps1`, and under the validation layer on each GPU): the statistics against
+the first version, the text, every glyph against hand-drawn and scaled references, clipping, the screenshot composite,
+and the presenter's copy on the GPU read back pixel for pixel. Its `--bench` gives the cost a frame on and off
+(see [docs/perf/README.md](perf/README.md)). The Any360Launcher's Video options have a toggle that passes the flag.

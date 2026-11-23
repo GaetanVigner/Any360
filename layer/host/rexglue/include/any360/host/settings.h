@@ -43,6 +43,9 @@ void StopSystemFromSettings();
 // (any360_hitch_trace_ms, 0: off) and the folder its reports go to (any360_hitch_trace_folder).
 int HitchTraceMs();
 std::string HitchTraceFolder();
+// The frame counter Any360 draws over every title's picture (any360_fps_overlay, gfx/frame_counter.h), on top of a
+// title's own GraphicsOptions::show_fps.
+bool FpsOverlay();
 // The function profiler's settings (any360/host/profiler.h): how long it samples (any360_profile_seconds, 0: off)
 // and how long after the graphics start it begins (any360_profile_after); its reports go to the hitch tracer's folder.
 int ProfileSeconds();

@@ -49,6 +49,7 @@
 #include <vector>
 
 #include "any360/gfx/command_processor.h"
+#include "any360/gfx/frame_counter.h"
 #include "any360/gfx/vulkan/presenter.h"
 #include "any360/gfx/vulkan/renderer.h"
 #include "any360/sys/graphics.h"
@@ -437,8 +438,10 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     if (!std::filesystem::exists(trigger, error)) return;
     std::filesystem::remove(trigger, error);
     std::vector<uint32_t> pixels;
-    const bool ok = ReadFrame(pixels) && pixels.size() == size_t(frame().width) * frame().height &&
-                    gfx::WritePng(screenshot_path_, frame().width, frame().height, pixels.data());
+    bool ok = ReadFrame(pixels) && pixels.size() == size_t(frame().width) * frame().height;
+    // The frame counter as the window shows it (the presenter draws it on the swapchain image, not on this frame).
+    if (ok && show_fps_) gfx::CompositeOverlayRgba(overlay_text_, pixels.data(), frame().width, frame().height);
+    ok = ok && gfx::WritePng(screenshot_path_, frame().width, frame().height, pixels.data());
     if (log_) {
       log_(ok ? "Any360: screenshot written to " + screenshot_path_ + " (" + std::to_string(frame().width) + "x" +
                     std::to_string(frame().height) + ")"
@@ -502,16 +505,12 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   // The period's frame times (taken: the next period starts empty): the median, and the 10% and 1% lows (the frame
   // rates of the 90th and 99th percentile frame times: the stutter the averages hide).
   std::string TakeFrameTimes() {
-    std::vector<float>& v = intervals_;
     char text[160] = "frame times: none";
-    if (!v.empty()) {
-      std::sort(v.begin(), v.end());
-      const auto at = [&](double q) { return double(v[size_t(q * double(v.size() - 1) + 0.5)]); };
-      const double median = at(0.5), p90 = at(0.9), p99 = at(0.99);
+    if (const gfx::FrameTimeSummary f = gfx::SummarizeFrameTimes(intervals_); f.frames) {
       std::snprintf(text, sizeof(text), "frame times: median %.2f ms (%.1f FPS), 10%% low %.1f FPS, 1%% low %.1f FPS",
-                    median, 1e3 / median, 1e3 / p90, 1e3 / p99);
+                    f.median_ms, 1e3 / f.median_ms, 1e3 / f.p90_ms, 1e3 / f.p99_ms);
     }
-    v.clear();
+    intervals_.clear();
     return text;
   }
 
@@ -562,6 +561,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     const auto now = std::chrono::steady_clock::now();
     // The period's slowest frames (the averages hide drops).
     const FrameMarks marks = log_ ? Marks() : FrameMarks{};
+    const auto previous = last_frame_;
     if (frames_ > 1) {
       const double interval = std::chrono::duration<double, std::milli>(now - last_frame_).count();
       if (log_ && interval > worst_ms_) {
@@ -580,7 +580,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     }
     last_frame_ = now;
     last_marks_ = marks;
-    if (show_fps_) Overlay(now);
+    if (show_fps_) Overlay(now, frames_ > 1 ? std::chrono::duration<float, std::milli>(now - previous).count() : -1.0f);
     if (!log_) return;
     if (frames_ == 1) {
       since_ = now;
@@ -845,9 +845,12 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     worst_ms_ = 0, slow_frames_ = very_slow_frames_ = 0, worst_cost_ = {};
   }
 
-  // The counter's text, every half second: frames per second, average / slowest frame (ms), the GPU's time per frame
-  // (the batches' timestamps) and the command processor's idle share.
-  void Overlay(std::chrono::steady_clock::time_point now) {
+  // The frame counter (--any360_fps_overlay, gfx/frame_counter.h), its text made every half second: frames per
+  // second, the average and slowest frame time (ms) of that half second; the median and the 10% / 1% lows of the last
+  // FrameTimeWindow::kWindow frames; the GPU's time per frame (the batches' timestamps) and the command processor's
+  // idle share. `interval`: this frame's time (ms), < 0 for the first.
+  void Overlay(std::chrono::steady_clock::time_point now, float interval) {
+    if (interval >= 0) overlay_window_.Add(interval);
     if (!overlay_frames_++) {
       overlay_since_ = now;
       overlay_stats_ = stats();
@@ -855,20 +858,19 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
       overlay_worst_ = 0;
       return;
     }
-    if (overlay_frames_ > 2) {
-      overlay_worst_ = std::max(overlay_worst_, std::chrono::duration<double, std::milli>(now - overlay_last_).count());
-    }
-    overlay_last_ = now;
+    overlay_worst_ = std::max(overlay_worst_, double(interval));
     const double seconds = std::chrono::duration<double>(now - overlay_since_).count();
     if (seconds < 0.5) return;
     const double n = double(overlay_frames_ - 1);
     const gfx::vk::RendererStats& s = stats();
     const uint64_t busy = cp_ ? cp_->ns_busy() : 0;
-    char text[128];
-    std::snprintf(text, sizeof(text), "%.0f FPS %.1f ms (max %.1f) GPU %.1f ms CP idle %.0f%%", n / seconds,
-                  1e3 * seconds / n, overlay_worst_, (s.ns_gpu - overlay_stats_.ns_gpu) / 1e6 / n,
-                  cp_ ? 100.0 * std::max(0.0, 1.0 - double(busy - overlay_busy_) / 1e9 / seconds) : 0.0);
-    presenter_.SetOverlay(text);
+    gfx::OverlayFigures figures;
+    figures.fps = n / seconds, figures.frame_ms = 1e3 * seconds / n, figures.max_ms = overlay_worst_;
+    figures.window = overlay_window_.Summary();
+    figures.gpu_ms = double(s.ns_gpu - overlay_stats_.ns_gpu) / 1e6 / n;
+    if (cp_) figures.cp_idle_pct = 100.0 * std::max(0.0, 1.0 - double(busy - overlay_busy_) / 1e9 / seconds);
+    overlay_text_ = gfx::FormatOverlay(figures);
+    presenter_.SetOverlay(overlay_text_);
     overlay_frames_ = 1;
     overlay_since_ = now;
     overlay_stats_ = s;
@@ -902,8 +904,10 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
  private:
   uint64_t overlay_frames_ = 0, overlay_busy_ = 0;
   double overlay_worst_ = 0;
-  std::chrono::steady_clock::time_point overlay_since_, overlay_last_;
+  std::chrono::steady_clock::time_point overlay_since_;
   gfx::vk::RendererStats overlay_stats_;
+  gfx::FrameTimeWindow overlay_window_;
+  std::string overlay_text_;  // the counter's text, for screenshots
  public:
   gfx::CommandProcessor* cp_ = nullptr;  // for the report: where the command processor's time goes
  private:
@@ -1218,7 +1222,9 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
                                                           options.log, options.stats_seconds, options.resolution_scale);
   binding->renderer->SetPipelineCache(options.pipeline_cache_path);
   binding->renderer->SetScreenshotPath(options.screenshot_path);
-  binding->renderer->show_fps_ = options.show_fps;
+  // The frame counter: the title's own setting (GraphicsOptions::show_fps) or --any360_fps_overlay, for every title.
+  binding->renderer->show_fps_ = options.show_fps || FpsOverlay();
+  if (binding->renderer->show_fps_ && options.log) options.log("Any360: frame counter drawn over the picture");
   if (const int hitch_ms = HitchTraceMs(); hitch_ms > 0) {
     binding->renderer->StartHitchTracer(hitch_ms, HitchTraceFolder());
   }

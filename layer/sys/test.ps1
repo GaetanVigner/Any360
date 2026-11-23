@@ -94,6 +94,8 @@ try {
     if ($LASTEXITCODE) { throw "gfx_vulkan_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_render_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "gfx_render_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'gfx/gfx_overlay_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "gfx_overlay_tests failed ($LASTEXITCODE)" }
     # The forms of the Xenos multiply rule the driver does not get (Features::zero_multiply_by_comparisons,
     # dot_product_rule_on_zero_or_nan): all give the same results; the ALU cases check them on this machine's GPU.
     foreach ($forms in @('min', '0'), @('min', '1'), @('compare', '0'), @('compare', '1')) {
@@ -119,7 +121,7 @@ try {
         $env:VK_INSTANCE_LAYERS = 'VK_LAYER_KHRONOS_validation'
         try {
             foreach ($gpu in $Gpus) {
-                foreach ($test in 'gfx_vulkan_tests', 'gfx_render_tests', 'gfx_resource_tests') {
+                foreach ($test in 'gfx_vulkan_tests', 'gfx_render_tests', 'gfx_resource_tests', 'gfx_overlay_tests') {
                     $test_args = @(); if ($gpu) { $test_args += $gpu }
                     $out = & (Join-Path $BuildDir "gfx/$test.exe") @test_args 2>&1 | ForEach-Object { "$_" }
                     if ($LASTEXITCODE) { $out | Out-Host; throw "$test failed under validation on '$gpu' ($LASTEXITCODE)" }

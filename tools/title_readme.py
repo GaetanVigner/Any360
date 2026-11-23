@@ -102,6 +102,10 @@ def main():
         f'[the rule native functions follow]({ANY360}/blob/main/docs/NATIVE_FUNCTIONS.md).', '')
 
     add('## Running it on Any360', '', *cfg['run'], '')
+    add("`--any360_fps_overlay=true` draws Any360's frame counter over the top-left corner of the picture (frames per "
+        'second, frame time and the slowest of the last half second, median and 10% / 1% lows of the last 512 frames, '
+        'GPU time a frame): the same for every game on `any360::gfx`, off by default and free when off. The '
+        "Any360Launcher's Video options switch it on.", '')
     add('## Building', '', *cfg['build'], '')
     if cfg.get('fork'):
         add('## This fork', '', *cfg['fork'], '')
