@@ -86,6 +86,12 @@ namespace any360::host::rexglue {
 namespace {
 
 constexpr uint32_t kPhysicalBytes = 0x20000000;  // 512 MB
+
+// The title's user data folder (--user_data_root), where the keys write; empty in tool mode.
+std::filesystem::path UserDataRoot() {
+  rex::Runtime* runtime = rex::Runtime::instance();
+  return runtime ? runtime->user_data_root() : std::filesystem::path();
+}
 constexpr uint32_t kGpuMmio = 0x7FC80000;
 
 // What a byte swap costs over a plain copy on this machine, in ns a byte: vectorized (indices, register runs) and one
@@ -419,7 +425,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   // <path>_burst, written by a thread of their own (what flickers for a frame or two is caught that way).
   void Screenshot() {
     if (screenshot_key_.exchange(false, std::memory_order_relaxed)) {  // the screenshot key (hotkeys.h)
-      WriteScreenshot(NextNumberedPath("screenshots", "any360_", ".png").string());
+      WriteScreenshot(NextNumberedPath(TitleDataFolder(UserDataRoot(), "screenshots"), "any360_", ".png").string());
     }
     if (screenshot_path_.empty()) return;
     if (burst_left_) BurstFrame();
@@ -1139,8 +1145,10 @@ void CaptureAtKick(Binding& b) {
     if (b.capture_requested) return;
   }
   if (b.capture_key.exchange(false, std::memory_order_relaxed)) {
-    // The key: to any360_gpu_capture when it is set, else to the next captures/any360_<n>.a360cap.
-    if (b.capture_path.empty()) b.capture_path = NextNumberedPath("captures", "any360_", ".a360cap").string();
+    // The key: to any360_gpu_capture when it is set, else to the next <user data>/captures/any360_<n>.a360cap.
+    if (b.capture_path.empty()) {
+      b.capture_path = NextNumberedPath(TitleDataFolder(UserDataRoot(), "captures"), "any360_", ".a360cap").string();
+    }
   } else {
     if (b.capture_path.empty()) return;
     const auto now = std::chrono::steady_clock::now();

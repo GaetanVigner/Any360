@@ -49,6 +49,15 @@ int main() {
   CHECK(NextNumberedPath(folder / "shots", "any360_", ".a360cap") == folder / "shots" / "any360_1.a360cap");
   std::filesystem::remove_all(folder, error);
 
+  // Where the keys write: under the title's user data, the name alone without one (tool mode).
+  const std::filesystem::path user_data = std::filesystem::temp_directory_path() / "any360_user_data";
+  CHECK(TitleDataFolder(user_data, "screenshots") == user_data / "screenshots");
+  CHECK(TitleDataFolder(user_data, "captures") == user_data / "captures");
+  CHECK(TitleDataFolder({}, "screenshots") == std::filesystem::path("screenshots"));
+  CHECK(NextNumberedPath(TitleDataFolder(folder, "screenshots"), "any360_", ".png") ==
+        folder / "screenshots" / "any360_1.png");
+  std::filesystem::remove_all(folder, error);
+
   std::printf("host_hotkeys_tests: %d checks, %d failing checks\n", g_checks, g_failures);
   return g_failures ? 1 : 0;
 }

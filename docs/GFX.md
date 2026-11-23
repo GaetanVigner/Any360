@@ -864,10 +864,15 @@ a bound key. The runtime keeps F3, F4, F7 and Backtick (its overlays); a title k
 | Key | Setting | What it does |
 |---|---|---|
 | F2 | `bind_any360_fps_overlay` | shows or hides the frame counter (`--any360_fps_overlay` sets it at the start) |
-| F5 | `bind_any360_screenshot` | the frame as rendered (with the counter when shown) to `screenshots/any360_<n>.png` |
+| F5 | `bind_any360_screenshot` | the frame as rendered (with the counter when shown) to `<user data>/screenshots/any360_<n>.png` |
 | F6 | `bind_any360_profile` | samples every thread for `any360_profile_seconds` (10 when 0): `profile.txt`, `profile.csv` in the logs |
-| F8 | `bind_any360_gpu_capture` | records the GPU's next `any360_gpu_capture_kicks` kicks for `gfx_replay`, to `any360_gpu_capture` or `captures/any360_<n>.a360cap` (the title's data: it stays on the machine) |
+| F8 | `bind_any360_gpu_capture` | records the GPU's next `any360_gpu_capture_kicks` kicks for `gfx_replay`, to `any360_gpu_capture` or `<user data>/captures/any360_<n>.a360cap` (the title's data: it stays on the machine) |
 
 They replace the titles' own keys for the same work (Crackdown's F2 corner counter, F6 thread profile and F8 HLE
-capture). The trigger files (`<path>.go`) still work for scripted runs. Tests: `host_hotkeys_tests` (one key each,
+capture). The trigger files (`<path>.go`) still work for scripted runs. `<user data>` is the title's user data folder (`--user_data_root`,
+the runtime's `user_data_root()`; ReXGlue's default is `Documents/<executable name>`): writable on every system and
+known to the launcher, whose Screenshots module shows `<user data>/screenshots` on the game's page. Not the working
+directory, which depends on how the title was started and is read-only where a title is installed (Program Files,
+`/usr`). Without user data (tool mode) the folders are relative to the working directory, as before
+(`TitleDataFolder`, hotkeys.h). Tests: `host_hotkeys_tests` (one key each,
 none of the runtime's, the numbered files).
