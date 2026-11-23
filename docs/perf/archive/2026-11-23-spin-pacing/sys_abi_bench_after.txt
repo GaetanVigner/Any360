@@ -1,0 +1,12 @@
+  KeDelayExecutionThread (0)           |        0.0 |      190.1       0.0    0.00 |      0.0x
+  KeDelayExecutionThread (0, alertable) |        0.0 |      193.4       0.0    0.00 |      0.0x
+  host: std::this_thread::yield alone 180.3 ns a call (fastest of 9 runs)
+  KeDelayExecutionThread (0), spin pacing on: 221.9 ns a call, 0.0 B and 0.00 allocations
+  KeDelayExecutionThread (0)           |        0.0 |      189.8       0.0    0.00 |      0.0x
+  KeDelayExecutionThread (0, alertable) |        0.0 |      190.1       0.0    0.00 |      0.0x
+  host: std::this_thread::yield alone 182.3 ns a call (fastest of 9 runs)
+  KeDelayExecutionThread (0), spin pacing on: 222.0 ns a call, 0.0 B and 0.00 allocations
+  KeDelayExecutionThread (0)           |        0.0 |      195.1       0.0    0.00 |      0.0x
+  KeDelayExecutionThread (0, alertable) |        0.0 |      194.4       0.0    0.00 |      0.0x
+  host: std::this_thread::yield alone 181.8 ns a call (fastest of 9 runs)
+  KeDelayExecutionThread (0), spin pacing on: 227.7 ns a call, 0.0 B and 0.00 allocations

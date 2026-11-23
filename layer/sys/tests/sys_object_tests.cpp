@@ -20,6 +20,7 @@
 #include "any360/sys/input.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
+#include "any360/sys/spin_pacer.h"
 #include "any360/sys/threading.h"
 #include "any360/sys/video.h"
 #include "any360/sys/config.h"
@@ -497,6 +498,36 @@ void SchedulerTests() {
   CHECK(Threads().NtResumeThread(gm, hs, out + 8) == 0 && gm.Load32(out + 8) == 1);
   CHECK(Objects().WaitForHandle(gm, hs, kMainThread, &second) == 0 && gm.Load32(ev + 4) == 1);
   CHECK(Threads().NtResumeThread(gm, kHandleBase + 0x700, out + 8) == kStatusInvalidHandle);
+  // A thread spinning on zero delays (Sleep(0): the delay's fast path, no lock while its suspend count is 0) stops at
+  // its next delay once suspended, and goes on once resumed.
+  {
+    std::atomic<bool> stop{false};
+    std::atomic<uint32_t> spins{0};
+    g_code[0x1A00] = [&](uint32_t pcr, uint64_t, uint64_t) {
+      while (!stop) {
+        Threads().Delay(gm, pcr, 0);
+        ++spins;
+      }
+      return 0;
+    };
+    CHECK(Threads().CreateThread(gm, out, 0, 0, 0, 0x1A00, 0, 0) == 0);
+    const uint32_t spinner = gm.Load32(out);
+    const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (spins < 100 && std::chrono::steady_clock::now() < give_up) std::this_thread::yield();
+    CHECK(Threads().NtSuspendThread(gm, spinner, out + 8) == 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));  // its delay under way when suspended returns
+    const uint32_t held = spins;
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    const uint32_t still = spins;
+    CHECK(Threads().NtResumeThread(gm, spinner, out + 8) == 0);
+    while (spins < still + 100 && std::chrono::steady_clock::now() < give_up) std::this_thread::yield();
+    const uint32_t resumed = spins;
+    stop = true;
+    CHECK(Objects().WaitForHandle(gm, spinner, kMainThread, &second) == 0 && Objects().Close(spinner) == 0);
+    std::printf("sys_object_tests: zero delays: %u spins while suspended (30 ms), %u after the resume\n", still - held,
+                resumed - still);
+    CHECK(held >= 100 && still - held <= 1 && resumed >= still + 100);
+  }
   // Thread ids from a first id the host sets, apart from its runtime's own threads (numbered from 1): two threads
   // with one id took each other for themselves (Mirror's Edge's render thread had its main thread's id).
   {
@@ -635,6 +666,17 @@ void StackTests() {
   CHECK(Threads().CreateThread(gm, out, 0x6000, 0, 0, 0x5100, 0, 0) == 0);
   CHECK(Objects().WaitForHandle(gm, gm.Load32(out), kMainThread, &second) == 0);
   CHECK(count("24 KB (asked)") == 1);
+  // A thread that only ever calls zero delays (Sleep(0)) is still watched: the monitor looks at its first and every
+  // 64th zero delay.
+  g_code_args[0x5200] = [&](uint32_t pcr, uint32_t, std::vector<uint64_t>) {
+    const uint32_t kt = gm.Load32(pcr + 0x100);
+    gm.Store32(gm.Load32(kt + 0x5C) - 0x5800, 1);  // past 3/4 of its 24 KB
+    for (int i = 0; i < 64; ++i) Threads().Delay(gm, pcr, 0);
+    return 0;
+  };
+  CHECK(Threads().CreateThread(gm, out, 0x6000, 0, 0, 0x5200, 0, 0) == 0);
+  CHECK(Objects().WaitForHandle(gm, gm.Load32(out), kMainThread, &second) == 0);
+  CHECK(count("used 22 of its 24 KB stack") == 1);
   {
     GuestContext a{}, b{};
     CHECK(Threads().CreateContext(gm, 0x4000, a) == 0 && Threads().CreateContext(gm, 0x4000, b) == 0);
@@ -653,6 +695,132 @@ void StackTests() {
 // Ended threads go back to the kernel heap with their PCR, TLS block and stack once no handle keeps them; XAM's objects
 // forget their state and are freed with their last handle.
 // Read/write locks across threads: readers wait for a writer and come in together, a writer waits for the readers.
+// SpinPacer on a simulated clock (no real sleep): a title's frame limiter loops `while (now < deadline) Sleep(0)`
+// and does its frame's work between waits; each zero delay yields (1 us) or sleeps what the pacer says plus the host's
+// overshoot (0-300 us, now and then more). What matters: the limiter never leaves its wait later than it would with
+// yields alone (one yield past its deadline), and most of the wait is slept instead of spun.
+void SpinPacerTests() {
+  using namespace std::chrono;
+  using Pacer = SpinPacer;
+  struct Run {
+    uint32_t frames = 0, late = 0;      // frames whose wait ended more than one yield past the deadline
+    nanoseconds worst_late{0};
+    double waited_ns = 0, slept_ns = 0;  // over the frames counted
+  };
+  const nanoseconds yield_cost = microseconds(1);
+  uint32_t seed = 1;
+  auto random = [&](uint32_t below) { return seed = seed * 1664525u + 1013904223u, (seed >> 8) % below; };
+  // One limiter: `frames` frames of `work` then a wait to `period` after the last deadline; `overshoot` the host's
+  // extra time a sleep takes; frames from `count_from` counted.
+  auto limiter = [&](Pacer& pacer, Pacer::Clock::time_point& t, Pacer::Clock::time_point& deadline, uint32_t frames,
+                     nanoseconds period, const std::function<nanoseconds(uint32_t)>& work,
+                     const std::function<nanoseconds()>& overshoot, uint32_t count_from, Run& run) {
+    for (uint32_t f = 0; f < frames; ++f) {
+      t += work(f);
+      deadline += period;
+      const auto wait_start = t;
+      double slept = 0;
+      while (t < deadline) {
+        const nanoseconds d = pacer.Delay(t);
+        const auto before = t;
+        t += d > nanoseconds::zero() ? d + overshoot() : yield_cost;
+        if (d > nanoseconds::zero()) slept += double((t - before).count());
+        pacer.Returned(t);
+      }
+      if (f < count_from) continue;
+      ++run.frames;
+      // Late by the pacer: past the deadline or, when the work itself ran past it, past the wait's start.
+      const nanoseconds late = t - std::max(deadline, wait_start);
+      if (late > yield_cost) ++run.late, run.worst_late = std::max(run.worst_late, late);
+      run.waited_ns += double((t - wait_start).count());
+      run.slept_ns += slept;
+    }
+  };
+  const auto start = Pacer::Clock::time_point{} + seconds(10);
+  // 62 FPS (16.13 ms), 11 ms +- 1 ms of work: the cadence is learnt within ~10 frames, then most of each ~5 ms wait
+  // is slept, never past the deadline.
+  {
+    Pacer pacer;
+    auto t = start, deadline = start;
+    Run run;
+    limiter(pacer, t, deadline, 300, microseconds(16129), [&](uint32_t) { return microseconds(10000 + random(2000)); },
+            [&] { return microseconds(random(300)); }, 20, run);
+    const double slept = run.slept_ns / run.waited_ns;
+    std::printf("sys_object_tests: spin pacer at 62 FPS: %u of %u frames late (worst %.3f ms), %.0f%% of the wait "
+                "slept, margin %.2f ms, %llu sleeps, %llu unsafe ends\n",
+                run.late, run.frames, run.worst_late.count() / 1e6, 100 * slept, pacer.margin().count() / 1e6,
+                (unsigned long long)pacer.stats().sleeps, (unsigned long long)pacer.stats().unsafe_ends);
+    CHECK(run.late == 0 && slept > 0.75 && pacer.predicting());
+  }
+  // Now and then a sleep overshoots by 3 ms (a busy host): the frame it lands in may be late, the margin grows, and
+  // the frames after are not late with the usual overshoot.
+  {
+    Pacer pacer;
+    auto t = start, deadline = start;
+    Run run;
+    uint32_t spikes = 0;
+    limiter(pacer, t, deadline, 400, microseconds(16129), [&](uint32_t) { return microseconds(10000 + random(2000)); },
+            [&] {
+              if (random(200) == 0) return ++spikes, microseconds(3000);
+              return microseconds(random(300));
+            },
+            20, run);
+    std::printf("sys_object_tests: spin pacer with 3 ms overshoots: %u spikes, %u of %u frames late (worst %.3f ms), "
+                "%.0f%% slept, margin %.2f ms\n",
+                spikes, run.late, run.frames, run.worst_late.count() / 1e6, 100 * run.slept_ns / run.waited_ns,
+                pacer.margin().count() / 1e6);
+    CHECK(spikes > 0 && run.late <= spikes && run.worst_late <= microseconds(3000) && pacer.stats().unsafe_ends <= spikes &&
+          run.slept_ns / run.waited_ns > 0.5);
+  }
+  // A job system's yields: bursts of zero delays at random times (no cadence): never a sleep.
+  {
+    Pacer pacer;
+    auto t = start;
+    for (int burst = 0; burst < 2000; ++burst) {
+      t += microseconds(300 + random(5000));
+      for (uint32_t i = 0, n = 1 + random(50); i < n; ++i) {
+        CHECK(pacer.Delay(t) == nanoseconds::zero());
+        t += yield_cost;
+        pacer.Returned(t);
+      }
+    }
+    std::printf("sys_object_tests: spin pacer on a job system's yields: %llu sleeps over %llu zero delays\n",
+                (unsigned long long)pacer.stats().sleeps, (unsigned long long)pacer.stats().calls);
+    CHECK(pacer.stats().sleeps == 0);
+  }
+  // The title goes from 30 to 62 FPS (a menu to the game): the first wait of the new cadence was predicted a whole
+  // 33 ms period after the last one; at most that frame is late, and the new cadence is learnt and slept again.
+  {
+    Pacer pacer;
+    auto t = start, deadline = start;
+    Run before, switched, after;
+    limiter(pacer, t, deadline, 100, microseconds(33333), [&](uint32_t) { return microseconds(10000 + random(2000)); },
+            [&] { return microseconds(random(300)); }, 20, before);
+    limiter(pacer, t, deadline, 30, microseconds(16129), [&](uint32_t) { return microseconds(10000 + random(2000)); },
+            [&] { return microseconds(random(300)); }, 0, switched);
+    limiter(pacer, t, deadline, 100, microseconds(16129), [&](uint32_t) { return microseconds(10000 + random(2000)); },
+            [&] { return microseconds(random(300)); }, 0, after);
+    std::printf("sys_object_tests: spin pacer from 30 to 62 FPS: %u late before, %u of the 30 frames after the switch "
+                "(worst %.2f ms), %u late later with %.0f%% slept\n",
+                before.late, switched.late, switched.worst_late.count() / 1e6, after.late,
+                100 * after.slept_ns / after.waited_ns);
+    CHECK(before.late == 0 && switched.late <= 1 && after.late == 0 && after.slept_ns / after.waited_ns > 0.75);
+  }
+  // Heavy frames (work past the period: no wait at all) break the cadence: no sleep is predicted from it, and none
+  // is late; the cadence comes back with the waits.
+  {
+    Pacer pacer;
+    auto t = start, deadline = start;
+    Run run;
+    limiter(pacer, t, deadline, 300, microseconds(16129),
+            [&](uint32_t f) { return microseconds((f / 20) % 2 ? 15000 + random(4000) : 10000 + random(2000)); },
+            [&] { return microseconds(random(300)); }, 20, run);
+    std::printf("sys_object_tests: spin pacer with heavy stretches: %u of %u frames late, %.0f%% slept\n", run.late,
+                run.frames, 100 * run.slept_ns / std::max(1.0, run.waited_ns));
+    CHECK(run.late == 0);
+  }
+}
+
 void RwLockTests() {
   Fresh();
   const uint32_t lock = kScratch + 0x800, pcr1 = kScratch + 0x1000, pcr2 = kScratch + 0x1400;
@@ -2483,6 +2651,12 @@ void SimpsonsTests() {
   CHECK(delivered.size() == 2 && delivered[0] == std::vector<uint64_t>({1, 2, 3}) && apc_stack == 0x7EC00);
   const int64_t short_wait = -20000;  // 2 ms
   CHECK(Threads().Delay(gm, pcr, short_wait, true) == 0);
+  // A zero alertable delay (SleepEx(0, TRUE)) yields and returns with none queued (the look without a lock), and
+  // ends at once with one queued.
+  CHECK(Threads().Delay(gm, pcr, 0, true) == 0 && Threads().DeliverApcs(gm, pcr, 0x7F000) == 0);
+  CHECK(Threads().QueueApc(gm, thread_handle, 0, 0x82000000, 7, 8, 9) == 0 && Threads().Delay(gm, pcr, 0, true) == kStatusUserApc);
+  CHECK(Threads().DeliverApcs(gm, pcr, 0x7F000) == 1 && delivered.back() == std::vector<uint64_t>({7, 8, 9}) &&
+        Threads().PendingApcs(kthread) == 0);
   CHECK(Objects().WaitForHandle(gm, sync, kthread, &short_wait, true) == kStatusTimeout);
   // An APC queued by another thread ends an alertable delay already under way.
   std::thread queuer([&] {
@@ -4394,6 +4568,7 @@ int main() {
   MemoryTests();
   SchedulerTests();
   StackTests();
+  SpinPacerTests();
   ReclaimTests();
   RwLockTests();
   Timers();

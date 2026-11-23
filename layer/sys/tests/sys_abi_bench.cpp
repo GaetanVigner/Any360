@@ -8,7 +8,8 @@
 // in pairs or streams are timed as such on both sides (XamAllocEx with the XamFree that returns its pages on Any360's
 // side; LDI's Create and Destroy, and a whole LZX stream: Create, every chunk, Destroy).
 //
-//   sys_abi_bench [repeats]   (results kept in docs/perf/archive/<date>-<step>/)
+//   sys_abi_bench [repeats] [rows]   (rows: only those whose name holds this text; results kept in
+//                                     docs/perf/archive/<date>-<step>/)
 #include <rex/ppc.h>
 
 #include <algorithm>
@@ -20,6 +21,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "any360/sys/alloc_meter.h"
@@ -96,7 +98,7 @@ using Function = void (*)(PPCContext& ctx, uint8_t* base);
   X(XamInputNonControllerSetRawEx) X(NetDll_XHttpOpen) X(NetDll_XHttpStartup)                                          \
   X(XamNetworkStorageHasUserEnabledStorage) X(XNotifyBroadcast) X(XNotifyQueueUI)                                      \
   X(XAutomationpUnbindController) X(XamVoiceGetMicArrayStatus) X(MicDeviceRequest) X(HalOpenCloseODDTray)              \
-  X(HalSendSMCMessage) X(NtCancelIoFile) X(RtlRip)
+  X(HalSendSMCMessage) X(NtCancelIoFile) X(RtlRip) X(KeDelayExecutionThread)
 STEP12_CALLS(REFERENCE)
 
 namespace {
@@ -109,9 +111,11 @@ constexpr uint32_t kPcr = 0x40000000, kThread = 0x40001000, kIn = 0x40010000, kO
                    kKey = 0x40031000, kFeed = 0x40031100, kText = 0x40032000, kStack = 0x40100000, kStackSize = 0x10000,
                    kHeap = 0x41000000, kImage = 0x40300000;
 constexpr uint32_t kBytes = 256;  // the buffer size of the hashes and ciphers
+constexpr uint32_t kDelayZero = kOut + 0x1F00;  // a zero 64-bit interval for KeDelayExecutionThread
 
 uint8_t* g_base = nullptr;
 uint32_t g_repeats = 9;
+const char* g_only = nullptr;  // the rows whose name holds this text alone (second argument)
 uint64_t g_calls = 0, g_bytes = 0, g_count = 0;
 
 void Store32(uint32_t at, uint32_t v) {
@@ -271,6 +275,7 @@ Arguments Args(std::initializer_list<uint64_t> regs, std::initializer_list<uint6
 
 int main(int argc, char** argv) {
   if (argc > 1) g_repeats = std::max(1, std::atoi(argv[1]));
+  if (argc > 2) g_only = argv[2];
   g_base = any360::test::GuestMemory::Get().base();
   // Touch every page used, then fill the inputs.
   std::memset(g_base + kPcr, 0, 0x2000);
@@ -298,6 +303,8 @@ int main(int argc, char** argv) {
   le(optional + 0x80 + 12, 0x1000, 4), le(optional + 0x80 + 16, 0x1000, 4);
   le(optional + 0x80 + 52, 0x3000, 4), le(optional + 0x80 + 56, 0x800, 4);
   Store32(kOut + 0x200, 12345);
+  // The zero interval of the delay rows (kIn's area is zeroed above); the stack monitor as a title has it (every 2 s).
+  any360::sys::Threads().SetStackLog([](const std::string&) {}, std::chrono::seconds(2), false);
   // The profile rows: an enumerator already at its end, a mount name, the local profile's XUID.
   any360::sys::XamState().title().content_root = std::filesystem::temp_directory_path() / "any360-abi-bench";
   any360::sys::XamState().ProfileCreateEnumerator({g_base}, kOut + 0x300);
@@ -692,6 +699,12 @@ int main(int argc, char** argv) {
       {"HalOpenCloseODDTray (close)", __imp__HalOpenCloseODDTray, Args({0}), 20000, nullptr, -1},
       {"NtCancelIoFile (not a file)", __imp__NtCancelIoFile, Args({0x12345678}), 20000, nullptr, 0xC0000008},
       {"RtlRip", __imp__RtlRip, Args({kIn, kIn}), 20000, nullptr, -1},
+      // A zero delay: Sleep(0) / SleepEx(0, ...), what a title's spin loops call (a frame limiter waiting for its
+      // time, a job system yielding): the host thread yields at once. The stack monitor on, as in a title. The
+      // reference's KeDelayExecutionThread needs a thread of its own runtime (it faults on the bench's): no original
+      // here; the host's yield alone is printed after the table (the floor of any Sleep(0)).
+      {"KeDelayExecutionThread (0)", nullptr, Args({1, 0, kDelayZero}), 20000, nullptr, 0},
+      {"KeDelayExecutionThread (0, alertable)", nullptr, Args({1, 1, kDelayZero}), 20000, nullptr, 0},
   };
   std::printf("sys_abi_bench: ns a call through the PowerPC ABI (fastest of %u runs), hashes and ciphers on %u bytes; "
               "original = the reference runtime's __imp__ (it stubs these: returns at once); its heap is not seen by "
@@ -699,6 +712,7 @@ int main(int argc, char** argv) {
               g_repeats, kBytes);
   std::printf("  %-36s | %10s | %10s %9s %7s | %9s\n", "call", "original", "Any360", "B/call", "allocs", "speed");
   for (const Row& row : rows) {
+    if (g_only && !std::strstr(row.name, g_only)) continue;
     // The 9th and 10th arguments on the stack, as the ABI passes them.
     Store32(stack_args + 4, uint32_t(row.args.stack[0]));
     Store32(stack_args + 12, uint32_t(row.args.stack[1]));
@@ -707,7 +721,7 @@ int main(int argc, char** argv) {
     const bool stream = row.native == LdiNative && std::strstr(row.name, "stream");
     if (stream && !stream_chunks) continue;
     g_chunks = stream ? stream_chunks : 0;
-    const Measure original = Time(row.reference, row.args, n, false);
+    const Measure original = row.reference ? Time(row.reference, row.args, n, false) : Measure{};
     const std::string name(row.name, std::strcspn(row.name, " "));
     const Measure ours = Time(row.native ? row.native : Native(name.c_str()), row.args, n, true);
     std::printf("  %-36s | %10.1f | %10.1f %9.1f %7.2f | %8.1fx\n", row.name, original.ns, ours.ns, ours.bytes,
@@ -725,6 +739,22 @@ int main(int argc, char** argv) {
         std::printf("    !! %s returned 0x%X, not 0x%X\n", row.name, ctx.r3.u32, uint32_t(row.expect));
       }
     }
+  }
+  if (!g_only || std::strstr("KeDelayExecutionThread", g_only)) {
+    double best = 1e30;
+    for (uint32_t r = 0; r < g_repeats; ++r) {
+      const auto start = std::chrono::steady_clock::now();
+      for (uint32_t i = 0; i < 20000; ++i) std::this_thread::yield();
+      best = std::min(best, std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count() / 20000);
+    }
+    std::printf("  host: std::this_thread::yield alone %.1f ns a call (fastest of %u runs)\n", best, g_repeats);
+    // With spin pacing on: back-to-back zero delays are one streak with no cadence, so each still yields (plus the
+    // pacer's two clock reads).
+    any360::sys::Threads().SetSpinPacing(true);
+    const Measure paced = Time(Native("KeDelayExecutionThread"), Args({1, 0, kDelayZero}), 20000, true);
+    any360::sys::Threads().SetSpinPacing(false);
+    std::printf("  KeDelayExecutionThread (0), spin pacing on: %.1f ns a call, %.1f B and %.2f allocations\n", paced.ns,
+                paced.bytes, paced.allocations);
   }
   std::printf("sys_abi_bench: Any360 allocated per call %.2f B in %.4f allocations over %llu timed calls\n",
               g_calls ? double(g_bytes) / double(g_calls) : 0.0, g_calls ? double(g_count) / double(g_calls) : 0.0,

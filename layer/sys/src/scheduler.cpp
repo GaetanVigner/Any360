@@ -13,6 +13,7 @@
 
 #include "any360/sys/ldi.h"
 #include "any360/sys/objects.h"
+#include "any360/sys/spin_pacer.h"
 #include "any360/sys/threading.h"
 #include "any360/sys/variables.h"
 
@@ -124,6 +125,7 @@ void Scheduler::Shutdown() {
   Ldi().Reset();         // the LZX contexts are keyed by guest addresses
   std::lock_guard lock(apc_mutex_);
   apcs_.clear();
+  apc_count_.store(0, std::memory_order_release);
 }
 
 Scheduler::Thread* Scheduler::Find(uint32_t kthread) const {
@@ -152,11 +154,13 @@ void Scheduler::QueueApcTo(uint32_t kthread, uint32_t routine, uint32_t context,
   {
     std::lock_guard lock(apc_mutex_);
     apcs_.push_back({kthread, routine, context, arg1, arg2});
+    apc_count_.store(apcs_.size(), std::memory_order_release);
   }
   Objects().AlertThread(kthread);  // its wait, if it sleeps in one, looks now
 }
 
 size_t Scheduler::PendingApcs(uint32_t kthread) const {
+  if (apc_count_.load(std::memory_order_acquire) == 0) return 0;  // none queued for any thread: no lock
   std::lock_guard lock(apc_mutex_);
   size_t n = 0;
   for (const Apc& apc : apcs_) n += apc.kthread == kthread && apc.user;
@@ -295,6 +299,7 @@ uint32_t Scheduler::KeInsertQueueApc(Guest g, uint32_t apc, uint32_t arg1, uint3
   g.Store32(apc + kApcArg2, arg2);
   g.Store8(apc + kApcEnqueued, 1);
   apcs_.push_back({kthread, 0, 0, 0, 0, apc, g.Load8(apc + kApcMode) != 0});
+  apc_count_.store(apcs_.size(), std::memory_order_release);
   return 1;
 }
 
@@ -303,6 +308,7 @@ uint32_t Scheduler::KeRemoveQueueApc(Guest g, uint32_t apc) {
   const auto it = std::find_if(apcs_.begin(), apcs_.end(), [&](const Apc& a) { return a.kapc == apc; });
   if (it == apcs_.end()) return 0;
   apcs_.erase(it);
+  apc_count_.store(apcs_.size(), std::memory_order_release);
   g.Store8(apc + kApcEnqueued, 0);
   return 1;
 }
@@ -317,6 +323,9 @@ size_t Scheduler::DeliverApcs(Guest g, uint32_t pcr, uint32_t stack_pointer, boo
   auto rank = [&](const Apc& a) { return a.user ? 2 : a.kapc && g.Load32(a.kapc + kApcNormalRoutine) ? 1 : 0; };
   size_t delivered = 0;
   for (;;) {
+    // None queued for any thread (every wait and delay looks): no lock. One queued after this look is delivered at
+    // the thread's next wait, as one queued just after the lock would be.
+    if (apc_count_.load(std::memory_order_acquire) == 0) return delivered;
     Apc apc;
     {
       std::lock_guard lock(apc_mutex_);
@@ -328,6 +337,7 @@ size_t Scheduler::DeliverApcs(Guest g, uint32_t pcr, uint32_t stack_pointer, boo
       if (best == apcs_.end()) return delivered;
       apc = *best;
       apcs_.erase(best);
+      apc_count_.store(apcs_.size(), std::memory_order_release);
       if (apc.kapc) g.Store8(apc.kapc + kApcEnqueued, 0);
     }
     if (apc.kapc) {
@@ -516,6 +526,7 @@ bool Scheduler::OnFree(uint32_t kthread) {
   {
     std::lock_guard lock(apc_mutex_);
     std::erase_if(apcs_, [&](const Apc& apc) { return apc.kthread == kthread; });
+    apc_count_.store(apcs_.size(), std::memory_order_release);
   }
   if (!thread) return true;
   // Freed from its own last instruction (Run's dereference) or from another thread once it has ended.
@@ -534,10 +545,69 @@ uint32_t Scheduler::TerminateThread(Guest g, uint32_t pcr, uint32_t exit_code) {
   return exit_code;  // not a thread of the scheduler: nothing to unwind
 }
 
+void Scheduler::SetSpinPacing(bool on, std::function<void(const std::string&)> log) {
+  spin_log_ = std::move(log);
+  spin_pacing_.store(on, std::memory_order_relaxed);
+}
+
+void Scheduler::ZeroDelay() {
+  if (!spin_pacing_.load(std::memory_order_relaxed)) {
+    std::this_thread::yield();
+    return;
+  }
+  struct Local {
+    SpinPacer pacer;
+    SpinPacer::Stats added{};  // what this thread has added to the totals so far
+    int64_t next_flush_ms = 0;
+    bool no_timer = false;
+  };
+  static thread_local Local local;
+  if (local.no_timer) {
+    std::this_thread::yield();
+    return;
+  }
+  const std::chrono::nanoseconds sleep = local.pacer.Delay(SpinPacer::Clock::now());
+  if (sleep > std::chrono::nanoseconds::zero()) {
+    if (!PreciseSleep(sleep)) local.no_timer = true;  // this thread yields from now on
+  } else {
+    std::this_thread::yield();
+  }
+  const auto back = SpinPacer::Clock::now();
+  local.pacer.Returned(back);
+  // This thread's counts into the totals once a second; the totals reported every 10 s by whichever thread passes.
+  const int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(back.time_since_epoch()).count();
+  if (ms < local.next_flush_ms) return;
+  local.next_flush_ms = ms + 1000;
+  const SpinPacer::Stats& s = local.pacer.stats();
+  spin_calls_.fetch_add(s.calls - local.added.calls, std::memory_order_relaxed);
+  spin_sleeps_.fetch_add(s.sleeps - local.added.sleeps, std::memory_order_relaxed);
+  spin_slept_ns_.fetch_add(s.slept_ns - local.added.slept_ns, std::memory_order_relaxed);
+  spin_unsafe_.fetch_add(s.unsafe_ends - local.added.unsafe_ends, std::memory_order_relaxed);
+  local.added = s;
+  int64_t next = next_spin_report_.load(std::memory_order_relaxed);
+  if (ms < next || !next_spin_report_.compare_exchange_strong(next, ms + 10000)) return;
+  if (next == 0 || !spin_log_) return;  // the first pass: the report starts in 10 s
+  const uint64_t calls = spin_calls_.exchange(0), sleeps = spin_sleeps_.exchange(0);
+  const uint64_t slept = spin_slept_ns_.exchange(0), unsafe = spin_unsafe_.exchange(0);
+  char line[200];
+  std::snprintf(line, sizeof line,
+                "spin pacing in 10 s: %llu zero delays, %llu slept (%.1f ms in all), %llu waits ended at a sleep's return",
+                (unsigned long long)calls, (unsigned long long)sleeps, slept / 1e6, (unsigned long long)unsafe);
+  spin_log_(line);
+}
+
 uint32_t Scheduler::Delay(Guest g, uint32_t pcr, int64_t interval, bool alertable) {
-  ReportStacks(g);
+  // A zero delay (Sleep(0)) is what a title's spin loops call, thousands of times a frame: it takes no lock and reads
+  // no clock unless it has to. The stack monitor (which reads the clock) looks at every delay that sleeps and at every
+  // 64th zero delay of a thread (counted per thread: no shared counter for spinning threads to fight over).
+  static thread_local uint32_t zero_delays = 0;
+  if (interval != 0 || (zero_delays++ & 63) == 0) ReportStacks(g);
   const uint32_t kthread = g.Load32(pcr + kPrcbCurrentThread);
-  if (Thread* t = Find(kthread)) PauseWhileSuspended(g, t);
+  // Suspended by another thread: waits for its resume. Its count is read first (no lock and no search when it is 0,
+  // where PauseWhileSuspended returns at once).
+  if (kthread && g.Load8(kthread + kSuspendCount) != 0) {
+    if (Thread* t = Find(kthread)) PauseWhileSuspended(g, t);
+  }
   std::chrono::nanoseconds duration{0};
   if (interval < 0) {
     duration = std::chrono::nanoseconds(-interval * 100);
@@ -547,7 +617,12 @@ uint32_t Scheduler::Delay(Guest g, uint32_t pcr, int64_t interval, bool alertabl
   }
   if (alertable && PendingApcs(kthread)) return kStatusUserApc;
   if (duration.count() == 0) {
-    std::this_thread::yield();
+    // Alertable ones yield (a sleep would hold back an APC queued meanwhile); the others may be paced.
+    if (alertable) {
+      std::this_thread::yield();
+    } else {
+      ZeroDelay();
+    }
   } else if (!alertable) {
     std::this_thread::sleep_for(duration);
   } else {

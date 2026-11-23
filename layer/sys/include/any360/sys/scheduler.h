@@ -99,6 +99,12 @@ class Scheduler {
   // alertable delay ends early with STATUS_USER_APC once a user APC is queued on the thread (not delivered here).
   uint32_t Delay(Guest g, uint32_t pcr, int64_t interval, bool alertable = false);
   uint32_t Yield(Guest g, uint32_t pcr);
+  // Spin pacing (spin_pacer.h): a thread's non-alertable zero delays that wait at a steady cadence (a frame limiter's
+  // Sleep(0) loop) sleep until shortly before the predicted end of the wait instead of yielding all through it. Off:
+  // every zero delay yields. The log gets, every 10 s while any thread paces, the zero delays, sleeps, time slept and
+  // waits that ended at a sleep's return (when the margin grew).
+  void SetSpinPacing(bool on, std::function<void(const std::string&)> log = nullptr);
+  bool spin_pacing() const { return spin_pacing_.load(std::memory_order_relaxed); }
 
   // KeSetCurrentStackPointers: the thread's stack allocation base, base and limit, and the PCR's stack base and end,
   // replaced (a title switching stacks); the caller sets r1.
@@ -178,6 +184,12 @@ class Scheduler {
   std::chrono::milliseconds stack_interval_{0};
   bool log_creation_ = false;
   std::atomic<int64_t> next_stack_report_{0};  // steady-clock milliseconds
+  std::atomic<bool> spin_pacing_{false};
+  std::function<void(const std::string&)> spin_log_;
+  // Totals over every thread since the last report (each thread adds its own once a second).
+  std::atomic<uint64_t> spin_calls_{0}, spin_sleeps_{0}, spin_slept_ns_{0}, spin_unsafe_{0};
+  std::atomic<int64_t> next_spin_report_{0};  // steady-clock milliseconds
+  void ZeroDelay();
   uint32_t first_thread_id_ = 1, next_thread_id_ = 1;
   uint8_t next_cpu_ = 0;  // the hardware thread a new thread without a processor mask gets (round-robin)
   struct Apc {
@@ -187,6 +199,7 @@ class Scheduler {
   };
   mutable std::mutex apc_mutex_;
   std::vector<Apc> apcs_;
+  std::atomic<size_t> apc_count_{0};  // apcs_.size(), set under apc_mutex_: a wait with none queued takes no lock
   struct Blocks {
     uint32_t pcr, tls, stack;
   };

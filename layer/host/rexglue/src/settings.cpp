@@ -57,6 +57,10 @@ REXCVAR_DEFINE_INT32(any360_sys_default_stack_kb, 0, "Kernel",
 REXCVAR_DEFINE_BOOL(any360_sys_log_threads, false, "Kernel",
                     "Any360 threads group: each thread the title creates (start address, stack) in the log. Threads "
                     "that use more than 3/4 of their stack or run past its end are logged either way");
+REXCVAR_DEFINE_BOOL(any360_sys_spin_pacing, true, "Kernel",
+                    "Any360 threads group: a thread whose Sleep(0) loop waits at a steady cadence (a frame limiter) "
+                    "sleeps until shortly before its wait's predicted end instead of spinning a processor all through "
+                    "it (any360/sys/spin_pacer.h); off: every Sleep(0) yields");
 REXCVAR_DEFINE_BOOL(any360_sys_log_files, false, "Kernel",
                     "Any360: every file the title opens and closes and every read that gives fewer bytes than asked, by "
                     "guest path, in the log");
@@ -175,6 +179,8 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
     }
     if (group == SysGroup::kThreads) {
       any360::sys::Threads().SetDefaultStackSize(uint32_t(std::max(0, REXCVAR_GET(any360_sys_default_stack_kb))) * 1024);
+      any360::sys::Threads().SetSpinPacing(REXCVAR_GET(any360_sys_spin_pacing),
+                                           [](const std::string& line) { REXLOG_INFO("Any360 system: {}", line); });
       any360::sys::Threads().SetStackLog([](const std::string& line) { REXLOG_WARN("Any360 system: {}", line); },
                                          std::chrono::seconds(2), REXCVAR_GET(any360_sys_log_threads));
       REXLOG_INFO("Any360 system: threads created with no stack size get {} KB",

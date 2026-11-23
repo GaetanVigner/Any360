@@ -180,6 +180,14 @@ What the game found that the tests could not:
   used in the menus, old against new: Crackdown 0.37 -> 0.30 (0.39 -> 0.32 in another pair of runs), Test Drive
   Unlimited 1.58 -> 1.35 (not the same screen in both), The Simpsons Game 0.97 -> 0.98 (1.18 -> 1.06 in another
   pair): a real gain in Crackdown, inside what two runs differ by in The Simpsons Game. Frame rates the same.
+- Zero delays (Sleep(0), a title's spin loops, millions a second) take no lock and read no clock unless they must:
+  the suspension looked up only when the thread's suspend count is set, the APC queue's lock only when an APC is
+  queued, the stack monitor at every 64th (214-223 -> 190-198 ns a call against a host yield's 174-198 ns). A frame
+  limiter's Sleep(0) loop is paced (`any360/sys/spin_pacer.h`, `--any360_sys_spin_pacing`, on by default): once its
+  waits end at a steady cadence it sleeps on a high-resolution timer until a margin before the predicted end, then
+  yields; threads without a cadence and alertable zero delays only yield. Mirror's Edge at its 62 FPS cap, 12
+  alternating launches: 1.60 -> 1.525 cores, frame times and lows the same (2026-11-23,
+  `docs/perf/archive/2026-11-23-spin-pacing/`).
 - Waking every wait on each signal (one condition for all) cost 17-22% of the frame rate: a dozen of the title's
   threads woke and queued on the lock for each event. A wait now sleeps on its thread's own condition, listed under
   the objects it waits on, and a signal wakes only those. Same city route, files only against files and objects:
