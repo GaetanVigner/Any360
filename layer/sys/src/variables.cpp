@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "any360/sys/objects.h"
+#include "any360/sys/threading.h"
 #include "any360/sys/xam.h"
 
 #if defined(_WIN32)
@@ -129,6 +130,43 @@ uint32_t KernelVariables::Create(Guest g, const std::string& name) {
       g.Store16(at + 4, 0xFFFF);
       g.Store8(at + 6, 0x80);
     }
+    return at;
+  }
+  if (name == "XboxKrnlBaseVersion") {
+    // The first retail kernel's version, 2.0.1888.0 (major, minor, build, QFE), as Xenia gives it.
+    const uint32_t at = block(8);
+    if (at) {
+      g.Store16(at, 2);
+      g.Store16(at + 4, 1888);
+    }
+    return at;
+  }
+  // Three kernel events (KEVENT, 0x10 bytes): the USB boot enumeration done (a notification event, set), a driver load
+  // asked for and a STFS device error (synchronization events, not set), as Xenia's kernel leaves them.
+  if (name == "UsbdBootEnumerationDoneEvent" || name == "UsbdDriverLoadRequiredEvent" || name == "StfsDeviceErrorEvent") {
+    const uint32_t at = block(0x10);
+    if (!at) return 0;
+    const bool boot = name == "UsbdBootEnumerationDoneEvent";
+    Objects().InitializeEvent(g, at, boot ? kNotificationEvent : kSynchronizationEvent, boot ? 1 : 0);
+    return at;
+  }
+  // The video variables, as the reference and Xenia give them: the global D3D device pointer (a zeroed 40-byte block
+  // the title fills or replaces), no XAM device, the GPU clock (Xenos: 500 MHz), and the HSIO calibration lock (an
+  // RTL_CRITICAL_SECTION, its spin count 10000).
+  if (name == "VdGlobalDevice") {
+    const uint32_t at = block(4), device = block(40);
+    if (at && device) g.Store32(at, device);
+    return at;
+  }
+  if (name == "VdGlobalXamDevice") return block(4);
+  if (name == "VdGpuClockInMHz") {
+    const uint32_t at = block(4);
+    if (at) g.Store32(at, 500);
+    return at;
+  }
+  if (name == "VdHSIOCalibrationLock") {
+    const uint32_t at = block(0x1C);
+    if (at) RtlInitializeCriticalSectionAndSpinCount(g, at, 10000);
     return at;
   }
   if (name == "ExConsoleGameRegion") {

@@ -30856,7 +30856,7 @@
 "kind":"variable",
 "group":"info",
 "reference":"missing",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -32266,7 +32266,7 @@
 "kind":"variable",
 "group":"video",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -32278,7 +32278,7 @@
 "kind":"variable",
 "group":"video",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -32290,7 +32290,7 @@
 "kind":"variable",
 "group":"video",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -32302,7 +32302,7 @@
 "kind":"variable",
 "group":"video",
 "reference":"implemented",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -36067,7 +36067,7 @@
 "kind":"variable",
 "group":"usb",
 "reference":"missing",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -36079,7 +36079,7 @@
 "kind":"variable",
 "group":"io",
 "reference":"missing",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false
@@ -36331,7 +36331,7 @@
 "kind":"variable",
 "group":"usb",
 "reference":"missing",
-"any360":"todo",
+"any360":"native",
 "titles":[],
 "sites":{},
 "gfx_audio":false

@@ -1,5 +1,5 @@
 {
- "date": "2026-11-21",
+ "date": "2026-11-23",
  "reference": {
   "sdk": "ReXGlue",
   "version": "0.8.0"
@@ -7,14 +7,13 @@
  "system_calls": {
   "total": 2914,
   "used_by_titles": 381,
-  "native": 842,
+  "native": 850,
   "ported": 0,
-  "runnable": 846,
+  "runnable": 850,
   "by_state": {
-   "native": 842,
+   "native": 850,
    "stub": 2054,
-   "missing": 14,
-   "reference": 4
+   "missing": 10
   },
   "by_library": {
    "crt": 2,

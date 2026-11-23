@@ -1017,6 +1017,28 @@ void VariableTests() {
   CHECK(std::string(reinterpret_cast<const char*>(g.host(line))) == "\"default.xex\"");
   CHECK(std::string(reinterpret_cast<const char*>(g.host(image))) == "\\Device\\Cdrom0\\default.xex");
   CHECK(g.Load32(Variables().Address(g, "KeDebugMonitorData")) == 0 && Variables().Address(g, "NotAVariable") == 0);
+  // The first retail kernel's version: 2.0.1888.0.
+  const uint32_t base_version = Variables().Address(g, "XboxKrnlBaseVersion");
+  CHECK(base_version && g.Load16(base_version) == 2 && g.Load16(base_version + 2) == 0 && g.Load16(base_version + 4) == 1888 &&
+        g.Load16(base_version + 6) == 0);
+  // The kernel's events: the USB enumeration done (notification, set), the other two (synchronization, not set); a
+  // wait on the set one returns at once, on the others it times out.
+  const uint32_t usb_done = Variables().Address(g, "UsbdBootEnumerationDoneEvent");
+  const uint32_t usb_load = Variables().Address(g, "UsbdDriverLoadRequiredEvent"), stfs = Variables().Address(g, "StfsDeviceErrorEvent");
+  CHECK(usb_done && usb_load && stfs && usb_done != usb_load && usb_load != stfs);
+  CHECK(g.Load8(usb_done) == kNotificationEvent && g.Load32(usb_done + 4) == 1);
+  CHECK(g.Load8(usb_load) == kSynchronizationEvent && g.Load32(usb_load + 4) == 0);
+  CHECK(g.Load8(stfs) == kSynchronizationEvent && g.Load32(stfs + 4) == 0);
+  const int64_t no_wait = 0;
+  CHECK(Objects().WaitForObject(g, usb_done, kMainThread, &no_wait) == 0);
+  CHECK(Objects().WaitForObject(g, stfs, kMainThread, &no_wait) == kStatusTimeout);
+  // The video variables: a device pointer to a zeroed block, no XAM device, 500 MHz, an initialized critical section.
+  const uint32_t device = Variables().Address(g, "VdGlobalDevice");
+  CHECK(device && g.Load32(device) != 0 && g.Load32(g.Load32(device)) == 0);
+  CHECK(g.Load32(Variables().Address(g, "VdGlobalXamDevice")) == 0 && g.Load32(Variables().Address(g, "VdGpuClockInMHz")) == 500);
+  const uint32_t hsio = Variables().Address(g, "VdHSIOCalibrationLock");
+  // RTL_CRITICAL_SECTION: a synchronization event's header, the spin count in 256s (10000 -> 40), free (lock count -1).
+  CHECK(hsio && g.Load8(hsio) == 1 && g.Load8(hsio + 1) == 40 && g.Load32(hsio + 4) == 0);
   // The time stamp bundle keeps time on its own.
   const uint32_t bundle = Variables().Address(g, "KeTimeStampBundle");
   const uint32_t ticks = g.Load32(bundle + 16);

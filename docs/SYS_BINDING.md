@@ -544,6 +544,15 @@ notification, no microphone (`MicDeviceRequest`, its completion routine called w
 cancel (`NtCancelIoFile`), `RtlRip` to the debug sink. With them none of the 114 calls the reference and Xenia both
 stub is left (docs/perf/archive/2026-11-21-sys-step12-last/).
 
+Exported variables (8 more, 27 of the 37 now): `XboxKrnlBaseVersion` (2.0.1888.0, the first retail kernel's), the
+kernel's three events (`UsbdBootEnumerationDoneEvent` set, `UsbdDriverLoadRequiredEvent` and `StfsDeviceErrorEvent`
+not), and the video ones the reference has too (`VdGlobalDevice` pointing at a zeroed block the title fills,
+`VdGlobalXamDevice` 0, `VdGpuClockInMHz` 500, `VdHSIOCalibrationLock` an initialized critical section), as Xenia gives
+them; checked in `sys_object_tests` (`VariableTests`). The other 10 (`KiBugCheckData`, `Nls844UnicodeCaseTable`,
+`HalFsbInterruptCount`, `HalFsbResetCount`, `VdHSIOTrainCount`, `VdHSIOTrainingStatus`, `RgcBindInfo`,
+`XboxKrnlVersion4Digit`, `g_XuiAutomation`, `XamSwapDiscPatchAddress`) are in neither the reference nor Xenia and no
+known title imports them: with no source for their contents, they are left out rather than guessed.
+
 The rows under 1x (docs/perf/archive/2026-11-19-sys-step12-below-1x/): an object's close holds the object manager's
 lock once, and an object only one close hook keeps state for (`AllocatePlainObject`: XAM's enumerators, listeners and
 session handles) runs that hook alone and skips the timer and port tables and the free hooks at release. The suite
