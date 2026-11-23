@@ -1,4 +1,4 @@
-﻿# 2026-11-23: input bindings, layer 1 (docs/GLYPHS.md, phase 1a)
+# 2026-11-23: input bindings, layer 1 (docs/GLYPHS.md, phase 1a)
 
 The launcher's bindings file (`--any360_input_bindings`, JSON, `any360/sys/json.h` and `input_bindings.h`) and
 `InputMapper`, applied to every controller's sample in `Xam::Sample` before the input queue: physical controls by
@@ -21,4 +21,4 @@ axis, stick direction as a button with hysteresis, inversion, base profiles and 
 left to phase 1b, the inverse for the glyph query) and `sys_object_tests` (A/B swapped through `XamInputGetState`,
 the identity again once cleared).
 
-Not done yet: the in-game check (a swap felt in a menu of two titles), phase 1b (keyboard and per-device profiles).
+In game (Mirror's Edge, `--any360_input_bindings` with A and B swapped): the log reads the file ("1 profiles, the controller's 2 targets") and the Autosave box's "A OK" is confirmed with the B button; the prompt still shows the title's own A glyph (glyphs come with GlyphFor and the title's adapter). Not done yet: a second title, phase 1b (keyboard and per-device profiles).
