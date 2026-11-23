@@ -18,6 +18,7 @@
 
 #include "guest.h"
 #include "input.h"
+#include "input_bindings.h"
 
 namespace any360::sys {
 
@@ -390,6 +391,13 @@ class Xam {
     input_script_ = std::move(script);
     input_script_start_ = std::chrono::steady_clock::now();
   }
+  // The launcher's bindings (input_bindings.h), layer 1: every controller's samples mapped with the "gamepad" profile
+  // before the queue sees them (the input script's presses are the title's buttons, added after). An empty
+  // InputBindings is the identity.
+  void SetInputBindings(const InputBindings& bindings) {
+    std::lock_guard lock(pads_mutex_);
+    for (Pad& p : pads_) p.mapper = InputMapper(bindings, "gamepad");
+  }
   uint32_t InputGetCapabilities(Guest g, uint32_t user, uint32_t flags, uint32_t caps);
   uint32_t InputGetState(Guest g, uint32_t user, uint32_t flags, uint32_t state);
   uint32_t InputSetState(Guest g, uint32_t user, uint32_t vibration);
@@ -593,6 +601,7 @@ class Xam {
     GamepadState last{};
     uint32_t packet = 0;
     InputQueue input;
+    InputMapper mapper;
   };
   std::array<Pad, 4> pads_{};
   std::mutex pads_mutex_;

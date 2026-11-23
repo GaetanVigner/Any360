@@ -60,6 +60,8 @@ try {
     $env:ANY360_VERIFY_OBJECT_HINTS = '1'
     & (Join-Path $BuildDir 'sys_object_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "sys_object_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'sys_input_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "sys_input_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_ldi_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "sys_ldi_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_adapter_tests.exe') | Out-Host

@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <fstream>
+#include <iterator>
 #include <sstream>
 
 #include "any360/sys/files.h"
@@ -69,6 +71,9 @@ REXCVAR_DEFINE_INT32(any360_sys_wait_first_look_ms, 16, "Kernel",
 REXCVAR_DEFINE_STRING(any360_input_script, "", "Kernel",
                       "Any360: button presses played on the first controller, for tests without a player: "
                       "\"20:start,24:a/500,30:a+x\" (seconds:buttons[/ms held], from the start)");
+REXCVAR_DEFINE_STRING(any360_input_bindings, "", "Kernel",
+                      "Any360 input group: the bindings file Any360Launcher writes (docs/GLYPHS.md, section 2); its "
+                      "\"gamepad\" profile maps every controller before the title reads it. Empty: no remapping");
 REXCVAR_DEFINE_INT32(any360_input_step_us, 16683, "Kernel",
                      "Any360 input group: polls step through the queued changes at most this often (one console frame), so "
                      "each stays visible for a frame; 0: every poll steps");
@@ -193,6 +198,21 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
         if (!error.empty()) REXLOG_WARN("Any360 system: input script entries not understood: {}", error);
         REXLOG_INFO("Any360 system: input script of {} presses on the first controller", script.presses().size());
         any360::sys::XamState().SetInputScript(std::move(script));
+      }
+      if (const std::string path = REXCVAR_GET(any360_input_bindings); !path.empty()) {
+        std::ifstream in(path, std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (!in && text.empty()) {
+          REXLOG_WARN("Any360 system: no input bindings file at {}", path);
+        } else {
+          std::vector<std::string> problems;
+          const any360::sys::InputBindings bindings = any360::sys::InputBindings::Parse(text, &problems);
+          for (const std::string& p : problems) REXLOG_WARN("Any360 system: input bindings: {}", p);
+          any360::sys::XamState().SetInputBindings(bindings);
+          const any360::sys::BindingProfile* pad = bindings.Find("gamepad");
+          REXLOG_INFO("Any360 system: input bindings from {}: {} profiles, the controller's {} targets", path,
+                      bindings.profiles().size(), pad ? pad->bindings.size() : 0);
+        }
       }
       if (REXCVAR_GET(any360_input_sample_us) > 0) {
         any360::sys::XamState().StartInputSampling(std::chrono::microseconds(REXCVAR_GET(any360_input_sample_us)));

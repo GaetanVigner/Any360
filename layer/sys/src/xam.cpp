@@ -1474,6 +1474,7 @@ bool Xam::Connected(uint32_t user) const {
 void Xam::Sample(uint32_t user, std::chrono::steady_clock::time_point at) {
   GamepadState pad;
   if (host_.controller_state) host_.controller_state(user, pad);
+  pad = pads_[user].mapper.Map(pad);
   // The input script's presses join the first controller's samples: its state and its keystrokes both see them.
   if (user == 0 && !input_script_.empty()) pad.buttons |= input_script_.ButtonsAt(at - input_script_start_);
   pads_[user].input.Sample(pad, at);

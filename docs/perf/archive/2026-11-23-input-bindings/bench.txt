@@ -1,0 +1,30 @@
+sys_input_tests: (expected) gamepad.xbox:q: unknown Xbox control
+sys_input_tests: (expected) gamepad.jump: a target is xbox:<control> or action:<name>
+sys_input_tests: (expected) gamepad.xbox:x: unknown control "nowhere"
+sys_input_tests: (expected) gamepad.xbox:x: a source is a control name or an object with "control"
+sys_input_tests: (expected) gamepad.xbox:x: a source is a control name or an object with "control"
+sys_input_tests: (expected) gamepad.base: a profile's base is a profile name
+sys_input_tests: (expected) bad: a profile is an object
+sys_input_tests: Map, no bindings: 5.56 ns a sample, 0.000 allocations and 0.0 bytes a sample (0)
+sys_input_tests: Map, 8 targets bound: 39.64 ns a sample, 0.000 allocations and 0.0 bytes a sample (0)
+sys_input_tests: 0 failing checks
+sys_input_tests: (expected) gamepad.xbox:q: unknown Xbox control
+sys_input_tests: (expected) gamepad.jump: a target is xbox:<control> or action:<name>
+sys_input_tests: (expected) gamepad.xbox:x: unknown control "nowhere"
+sys_input_tests: (expected) gamepad.xbox:x: a source is a control name or an object with "control"
+sys_input_tests: (expected) gamepad.xbox:x: a source is a control name or an object with "control"
+sys_input_tests: (expected) gamepad.base: a profile's base is a profile name
+sys_input_tests: (expected) bad: a profile is an object
+sys_input_tests: Map, no bindings: 5.62 ns a sample, 0.000 allocations and 0.0 bytes a sample (0)
+sys_input_tests: Map, 8 targets bound: 38.53 ns a sample, 0.000 allocations and 0.0 bytes a sample (0)
+sys_input_tests: 0 failing checks
+sys_input_tests: (expected) gamepad.xbox:q: unknown Xbox control
+sys_input_tests: (expected) gamepad.jump: a target is xbox:<control> or action:<name>
+sys_input_tests: (expected) gamepad.xbox:x: unknown control "nowhere"
+sys_input_tests: (expected) gamepad.xbox:x: a source is a control name or an object with "control"
+sys_input_tests: (expected) gamepad.xbox:x: a source is a control name or an object with "control"
+sys_input_tests: (expected) gamepad.base: a profile's base is a profile name
+sys_input_tests: (expected) bad: a profile is an object
+sys_input_tests: Map, no bindings: 5.54 ns a sample, 0.000 allocations and 0.0 bytes a sample (0)
+sys_input_tests: Map, 8 targets bound: 39.78 ns a sample, 0.000 allocations and 0.0 bytes a sample (0)
+sys_input_tests: 0 failing checks

@@ -1743,6 +1743,20 @@ void XamTests() {
   XamState().Stop("bug check", 0xDEAD);
   CHECK(g_stop_code == 0xDEAD);
   // The offline network.
+  // The launcher's bindings reach the title below XamInputGetState: A and B swapped, the south button held reads B;
+  // the identity again once cleared.
+  XamState().SetInputBindings(InputBindings::Parse(R"({"version":1,"profiles":{"gamepad":{"xbox:a":["east"],"xbox:b":["south"]}}})"));
+  XamState().host().controller_state = [](uint32_t, GamepadState& s) {
+    s.buttons = 0x1000;  // the south button
+    return true;
+  };
+  std::this_thread::sleep_for(std::chrono::milliseconds(40));
+  CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load16(buf + 4) == 0x2000);
+  XamState().SetInputBindings(InputBindings{});
+  std::this_thread::sleep_for(std::chrono::milliseconds(40));
+  CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load16(buf + 4) == 0x1000);
+  while (XamState().InputGetKeystroke(g, 0, 0, buf) == 0) {
+  }
   CHECK(XamState().WsaStartup(g, 0x0202, buf) == 0 && g.Load16(buf) == 0x0202);
   CHECK(XamState().NetStartup() == 0);
   CHECK(XamState().Socket() == 0xFFFFFFFF && XamState().WsaGetLastError() == 10050);
