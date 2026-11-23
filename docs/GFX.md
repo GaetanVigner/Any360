@@ -831,9 +831,11 @@ for the other frames in flight (the first version waited on their fences twice a
 copied onto the swapchain image after the frame's blit (`vk::RecordOverlayCopy`). Off, nothing runs: the binding does
 not call its counter and the presenter records nothing for an empty text.
 
-`--any360_gpu_screenshot` reads the renderer's frame, not the swapchain image: with the counter on, the screenshot has
-it composited the same way at the frame's own scale (`gfx::CompositeOverlayRgba`), so a screenshot shows what the window
-showed. Tests: `gfx_overlay_tests` (in `test.ps1`, and under the validation layer on each GPU): the statistics against
-the first version, the text, every glyph against hand-drawn and scaled references, clipping, the screenshot composite,
+`--any360_gpu_screenshot` reads the renderer's frame, not the swapchain image: with `--any360_fps_overlay` on (a title's
+own `show_fps` leaves its screenshots as they were), the screenshot has the counter composited the same way at the
+frame's own scale (`gfx::CompositeOverlayRgba`), so a screenshot shows what the window showed.
+
+Tests: `gfx_overlay_tests` (in `test.ps1`, and under the validation layer on each GPU): the statistics against the
+first version, the text, every glyph against hand-drawn and scaled references, clipping, the screenshot composite,
 and the presenter's copy on the GPU read back pixel for pixel. Its `--bench` gives the cost a frame on and off
 (see [docs/perf/README.md](perf/README.md)). The Any360Launcher's Video options have a toggle that passes the flag.

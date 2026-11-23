@@ -439,8 +439,9 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     std::filesystem::remove(trigger, error);
     std::vector<uint32_t> pixels;
     bool ok = ReadFrame(pixels) && pixels.size() == size_t(frame().width) * frame().height;
-    // The frame counter as the window shows it (the presenter draws it on the swapchain image, not on this frame).
-    if (ok && show_fps_) gfx::CompositeOverlayRgba(overlay_text_, pixels.data(), frame().width, frame().height);
+    // The frame counter as the window shows it (the presenter draws it on the swapchain image, not on this frame), when
+    // --any360_fps_overlay asks for it: a title's own show_fps leaves its screenshots as they were.
+    if (ok && composite_fps_) gfx::CompositeOverlayRgba(overlay_text_, pixels.data(), frame().width, frame().height);
     ok = ok && gfx::WritePng(screenshot_path_, frame().width, frame().height, pixels.data());
     if (log_) {
       log_(ok ? "Any360: screenshot written to " + screenshot_path_ + " (" + std::to_string(frame().width) + "x" +
@@ -897,6 +898,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   bool burst_stop_ = false;
   std::thread burst_writer_;
   bool show_fps_ = false;
+  bool composite_fps_ = false;  // --any360_fps_overlay: the counter in screenshots too
   std::unique_ptr<diagnostics::HitchTracer> hitch_;  // any360_hitch_trace_ms
   void StartHitchTracer(int threshold_ms, const std::string& folder) {
     hitch_ = std::make_unique<diagnostics::HitchTracer>(double(threshold_ms), folder, 5, log_);
@@ -1223,7 +1225,8 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->renderer->SetPipelineCache(options.pipeline_cache_path);
   binding->renderer->SetScreenshotPath(options.screenshot_path);
   // The frame counter: the title's own setting (GraphicsOptions::show_fps) or --any360_fps_overlay, for every title.
-  binding->renderer->show_fps_ = options.show_fps || FpsOverlay();
+  binding->renderer->composite_fps_ = FpsOverlay();
+  binding->renderer->show_fps_ = options.show_fps || binding->renderer->composite_fps_;
   if (binding->renderer->show_fps_ && options.log) options.log("Any360: frame counter drawn over the picture");
   if (const int hitch_ms = HitchTraceMs(); hitch_ms > 0) {
     binding->renderer->StartHitchTracer(hitch_ms, HitchTraceFolder());

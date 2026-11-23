@@ -88,8 +88,10 @@ struct GraphicsOptions {
   // A file to write samples of every thread to (the title's included: by thread, module offsets of the executable,
   // while the diagnostics are off: what it costs without them), for llvm-symbolizer. Empty: no sampling.
   std::string profile_path;
-  // A frame rate counter over the top-left corner of the frames: frames per second, the average and the slowest
-  // frame time (ms), the GPU's time per frame and the command processor's idle share, twice a second.
+  // The frame counter over the top-left corner of the frames (gfx/frame_counter.h): frames per second, the average and
+  // slowest frame time, the median and 10% / 1% lows, the GPU's time per frame and the command processor's idle share,
+  // twice a second. --any360_fps_overlay (Any360's own setting) switches it on for every title as well, and then
+  // composites it into screenshots too.
   bool show_fps = false;
   // Where the binding reports, every `stats_seconds`: frames per second and the renderer's cost per frame, the
   // draws it could not draw by reason. None: nothing reported.
@@ -102,7 +104,8 @@ struct GraphicsOptions {
   uint32_t capture_kicks = 60;
   // Screenshots: when a file named `screenshot_path` + ".go" appears, the next presented frame is written to
   // `screenshot_path` as a PNG (the trigger file is removed; a second one writes it again). The frame as the
-  // renderer holds it, before the window's scaling. Empty: none.
+  // renderer holds it, before the window's scaling (with the frame counter of --any360_fps_overlay composited).
+  // Empty: none.
   std::string screenshot_path;
 };
 // GraphicsOptions has capture_path and capture_kicks.

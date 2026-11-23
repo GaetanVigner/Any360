@@ -1,0 +1,11 @@
+gfx_overlay_tests: the frame counter's cost a frame
+  CPU at 60 FPS, 1080p: on    528.18 ns a frame,  0.033 allocations and      3.2 bytes a frame
+  CPU at 60 FPS, 1080p: off     0.60 ns a frame,  0.000 allocations and      0.0 bytes a frame
+  private memory: 0.00 MB more with the counter's buffers allocated (window 4104 bytes, 3 bands 348000 bytes)
+  CPU at 240 FPS, 1440p: on    179.82 ns a frame,  0.008 allocations and      0.8 bytes a frame
+  CPU at 240 FPS, 1440p: off     0.59 ns a frame,  0.000 allocations and      0.0 bytes a frame
+  private memory: 0.00 MB more with the counter's buffers allocated (window 4104 bytes, 3 bands 348000 bytes)
+gfx_overlay_tests: AMD Radeon(TM) Graphics
+  GPU, 1920x1080 window (band 496x50, 97 KB): on 7.46 us a frame (240 copies), off 0.04 us (nothing recorded)
+  GPU, 2560x1440 window (band 496x50, 97 KB): on 7.39 us a frame (240 copies), off 0.04 us (nothing recorded)
+gfx_overlay_tests: 1061 checks, 0 failing checks
