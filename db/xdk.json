@@ -315,9 +315,10 @@
   "titles": {
    "crackdown": "0x826BBEE0",
    "simpsons": "0x82452018",
-   "tdu": "0x826737B8"
+   "tdu": "0x826737B8",
+   "mirrorsedge": "0x827FF5D0"
   },
-  "note": "the step every wait of the D3D runtime for the GPU loops on (eight db16cyc, the device's stop flag, the ring's read pointer, the hang check after about five seconds); named after what it does. Call of Duty: Black Ops has it at 0x824B3F38. Any360: xdk::D3dGpuWait (sleeps on the GPU's progress count after the step's own code), bound in Test Drive Unlimited and The Simpsons Game; Crackdown's port keeps its own hook (blocks on the words the GPU writes)"
+  "note": "the step every wait of the D3D runtime for the GPU loops on (eight db16cyc, the device's stop flag, the ring's read pointer, the hang check after about five seconds); named after what it does. Call of Duty: Black Ops has it at 0x824B3F38. Any360: xdk::D3dGpuWait (sleeps on the GPU's progress count after the step's own code), bound in Test Drive Unlimited, The Simpsons Game, Call of Duty: Black Ops and Mirror's Edge; Crackdown's port keeps its own hook (blocks on the words the GPU writes)"
  },
  {
   "name": "D3D dirty constants",
