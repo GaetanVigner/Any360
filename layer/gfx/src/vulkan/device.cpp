@@ -221,6 +221,8 @@ bool Device::Create(const DeviceOptions& options) {
   enabled.features.fillModeNonSolid = supported.features.fillModeNonSolid;  // wireframe (line polygon mode)
   fill_mode_non_solid_ = supported.features.fillModeNonSolid;
   occlusion_query_precise_ = supported.features.occlusionQueryPrecise;
+  enabled.features.shaderStorageImageExtendedFormats = supported.features.shaderStorageImageExtendedFormats;
+  storage_image_extended_formats_ = supported.features.shaderStorageImageExtendedFormats;
   enabled.features.fullDrawIndexUint32 = supported.features.fullDrawIndexUint32;
   enabled.features.independentBlend = supported.features.independentBlend;
   enabled.features.depthClamp = supported.features.depthClamp;

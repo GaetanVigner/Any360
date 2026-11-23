@@ -1,0 +1,6 @@
+before 1: renderer ms: draws 37.0 (setup 25.8 with textures 23.5 and their hashing 20.5, targets 1.1, constants 1.9 with indices 0.0, record 8.0), submit 20.4, resolves 40.8, swaps 0.0; 4.68 us a draw
+after 1: renderer ms: draws 35.4 (setup 24.7 with textures 22.3 and their hashing 20.5, targets 1.2, constants 1.8 with indices 0.0, record 7.6), submit 15.7, resolves 3.4, swaps 0.0; 4.49 us a draw
+before 2: renderer ms: draws 37.9 (setup 26.5 with textures 24.2 and their hashing 21.1, targets 1.2, constants 1.9 with indices 0.0, record 8.1), submit 18.9, resolves 41.2, swaps 0.0; 4.80 us a draw
+after 2: renderer ms: draws 35.2 (setup 24.5 with textures 22.4 and their hashing 20.6, targets 1.1, constants 1.8 with indices 0.0, record 7.7), submit 13.7, resolves 3.7, swaps 0.0; 4.46 us a draw
+before 3: renderer ms: draws 36.5 (setup 25.5 with textures 23.3 and their hashing 20.2, targets 1.1, constants 1.9 with indices 0.0, record 7.9), submit 18.5, resolves 40.4, swaps 0.0; 4.62 us a draw
+after 3: renderer ms: draws 34.5 (setup 24.1 with textures 21.9 and their hashing 20.1, targets 1.0, constants 1.8 with indices 0.0, record 7.5), submit 13.4, resolves 3.8, swaps 0.0; 4.38 us a draw

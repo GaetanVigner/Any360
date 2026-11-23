@@ -812,6 +812,21 @@ holds them. Occlusion queries can be answered with a fixed count instead of coun
 `GraphicsOptions::occlusion_counts`): Mirror's Edge's culling makes small models flicker with real counts, a cause not
 found yet; Crackdown keeps real counts for its light flares. Archived in `docs/perf/archive/2026-11-23-one-viewport/`.
 
+### k_16_16_16_16 resolves on the GPU (2026-11-23)
+
+A k_16_16_16_16 colour target (EDRAM format 5, held as R16G16B16A16_SNORM at a 32nd of its -32...32 range) resolved
+to a k_16_16_16_16 texture (format 26) went through the CPU: read back, converted texel by texel (`lround`), written
+to guest memory, uploaded again. Unreal Engine 3's exposure and bloom chain does this several times a frame, and in
+Mirror's Edge at 1440p with host MSAA 4x it was about 20 ms a frame of the renderer's thread. When the device can
+store R16G16B16A16_UNORM images (`shaderStorageImageExtendedFormats`), the resolve is now a compute pass
+(`fixed16_shader.cpp`, `VulkanRenderer::Fixed16Pass`) writing a GPU source like the other GPU resolves: each texel is
+the average of its pixel's samples (summed as 16-bit integers, rounded half away from zero), times 32 and 2^bias,
+clamped, rounded to 16-bit unorm, every product NoContraction in the CPU path's order, so the words are the same; at
+a host scale above 1 every host pixel is kept instead of the top-left one. Without the feature the CPU path is
+unchanged. `gfx_render_tests` "k_16_16_16_16 resolves on the GPU" compares every word with the CPU path's at 1x and
+2x MSAA and biases -6, 0, +1 (0 of 73728 differ on NVIDIA and Radeon). Archived in
+`docs/perf/archive/2026-11-23-fixed16-resolves-gpu/`.
+
 ### The frame counter, for every title (2026-11-23)
 
 `--any360_fps_overlay=true` draws Any360's frame counter over the top-left corner of the picture, whatever the title:

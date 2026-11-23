@@ -21,6 +21,13 @@
 
 namespace any360::gfx::vk {
 
+namespace {
+// Bytes a texel of a resolve image: the four-component 16-bit formats 8, the others 4.
+uint32_t ResolveElementBytes(VkFormat format) {
+  return format == VK_FORMAT_R16G16B16A16_SFLOAT || format == VK_FORMAT_R16G16B16A16_UNORM ? 8 : 4;
+}
+}  // namespace
+
 namespace rg = rex::graphics;
 using rg::SpirvShaderTranslator;
 
@@ -282,6 +289,8 @@ VulkanRenderer::~VulkanRenderer() {
   if (depth_word_pool_) f.vkDestroyDescriptorPool(d, depth_word_pool_, nullptr);
   DestroyBuffer(device_, depth_word_buffer_);
   if (scale_pipeline_) f.vkDestroyPipeline(d, scale_pipeline_, nullptr);
+  if (fixed16_pipeline_) f.vkDestroyPipeline(d, fixed16_pipeline_, nullptr);
+  if (fixed16_pipeline_layout_) f.vkDestroyPipelineLayout(d, fixed16_pipeline_layout_, nullptr);
   if (scale_pipeline_layout_) f.vkDestroyPipelineLayout(d, scale_pipeline_layout_, nullptr);
   if (scale_layout_) f.vkDestroyDescriptorSetLayout(d, scale_layout_, nullptr);
   if (gamma_layout_) f.vkDestroyDescriptorSetLayout(d, gamma_layout_, nullptr);
@@ -375,7 +384,7 @@ bool VulkanRenderer::Initialize() {
     ApplyCpuWrites();  // a resolve the title has since written over is not written back
     for (auto& [base, r] : resolved_) {
       if (!r.stale && !r.pending) continue;
-      const uint32_t element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+      const uint32_t element = ResolveElementBytes(r.image.format);
       const uint64_t bytes = uint64_t(r.pitch) * ((r.y + r.height + 31) & ~31u) * element;
       if (base < end && begin < base + bytes) {
         // Late: the texture reads what memory holds, this resolve of a frame or so before, while its new write lands
@@ -514,6 +523,12 @@ bool VulkanRenderer::Initialize() {
     const VkPhysicalDeviceLimits& limits = device_.properties().limits;
     const uint32_t most = std::min({limits.maxViewportDimensions[0], limits.maxViewportDimensions[1], 16384u});
     viewport_extent_ = most ? 1u << (31 - std::countl_zero(most)) : 4096u;
+  }
+  {
+    VkFormatProperties unorm16{};
+    f.vkGetPhysicalDeviceFormatProperties(device_.physical(), VK_FORMAT_R16G16B16A16_UNORM, &unorm16);
+    fixed16_storage_ = (unorm16.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) &&
+                       device_.storage_image_extended_formats();
   }
   // Host MSAA: the most samples up to the asked count that colour, depth and stencil targets all have.
   {
@@ -4130,7 +4145,10 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
     r.layout = VK_IMAGE_LAYOUT_UNDEFINED;
   }
   // Half-float images can take an exponent bias in place (ScaleOnGpu: a storage image).
-  const VkImageUsageFlags storage = format == VK_FORMAT_R16G16B16A16_SFLOAT ? VK_IMAGE_USAGE_STORAGE_BIT : 0;
+  // So can k_16_16_16_16 ones, written by the conversion (Fixed16Pass).
+  const bool fixed16 = format == VK_FORMAT_R16G16B16A16_UNORM;
+  const VkImageUsageFlags storage =
+      format == VK_FORMAT_R16G16B16A16_SFLOAT || fixed16 ? VK_IMAGE_USAGE_STORAGE_BIT : 0;
   if (!EnsureResolveImage(r, format, pitch * scale_, rows * scale_,
                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
                               storage)) {
@@ -4140,8 +4158,8 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   // An exponent bias takes a set from the batch's depth pool: a full pool is reset by a flush, before this resolve
   // records anything (a flush in the middle left the rest recorded into a command buffer already submitted: Mirror's
   // Edge's renderer hung a few frames in, its HDR resolves no longer each flushing on the CPU path).
-  if (bias) {
-    if (!ScalePass()) return false;
+  if (bias || fixed16) {
+    if (!(fixed16 ? Fixed16Pass() : ScalePass())) return false;
     if (depth_sets_ >= kDepthSets) Flush();
   }
   // After the draws in the batch: the surface's samples over the rectangle into the destination's texels, one sample
@@ -4156,6 +4174,46 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
                  (x0 + int32_t(width)) * int32_t(sample_x) * s, (y0 + int32_t(height)) * int32_t(sample_y) * s,
                  /*one_sample=*/sample_x * sample_y == 1);
   GpuMark(batch(), cb, kGpuResolves);
+  if (fixed16) {
+    // The samples averaged and converted in a compute pass (the CPU path's words), the bias with them.
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    alloc.descriptorPool = batch().depth_pool;
+    alloc.descriptorSetCount = 1;
+    alloc.pSetLayouts = &depth_layout_;
+    if (f.vkAllocateDescriptorSets(device_.device(), &alloc, &set) != VK_SUCCESS) return Fail("fixed16 resolve set");
+    ++depth_sets_;
+    const VkDescriptorImageInfo infos[2] = {{VK_NULL_HANDLE, surface.image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                            {VK_NULL_HANDLE, r.image.view, VK_IMAGE_LAYOUT_GENERAL}};
+    VkWriteDescriptorSet writes[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
+    for (uint32_t i = 0; i < 2; ++i) {
+      writes[i].dstSet = set;
+      writes[i].dstBinding = i;
+      writes[i].descriptorCount = 1;
+      writes[i].descriptorType = i ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      writes[i].pImageInfo = &infos[i];
+    }
+    f.vkUpdateDescriptorSets(device_.device(), 2, writes, 0, nullptr);
+    Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, fixed16_pipeline_);
+    f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, fixed16_pipeline_layout_, 0, 1, &set, 0, nullptr);
+    struct {
+      int32_t source[2], dest[2];
+      uint32_t size[2];
+      int32_t pixel[2], scale, samples;
+      float bias;
+    } push{{x0 * int32_t(sample_x) * s, y0 * int32_t(sample_y) * s},
+           {dx0 * s, dy0 * s},
+           {width * uint32_t(s), height * uint32_t(s)},
+           {int32_t(sample_x) * s, int32_t(sample_y) * s},
+           s,
+           int32_t(sample_x * sample_y),
+           std::ldexp(1.0f, bias)};
+    f.vkCmdPushConstants(cb, fixed16_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
+    f.vkCmdDispatch(cb, (width * uint32_t(s) + 7) / 8, (height * uint32_t(s) + 7) / 8, 1);
+    ++stats_.resolves_fixed16_on_gpu;
+  } else {
   Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
   VkImageBlit region{};
@@ -4167,6 +4225,7 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   f.vkCmdBlitImage(cb, surface.image.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, r.image.image,
                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region,
                    sample_x * sample_y > 1 ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
+  }
   if (fill_half_pixel && s > 1 && width > 1 && height > 1) {
     // D3D's pixel centres (PA_SU_VTX_CNTL pix_center 0) move the geometry half a guest pixel: scaled, the first host
     // rows and columns of a quad drawn on whole pixels are not covered (a guest pixel's centre is, its first host
@@ -4200,7 +4259,7 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
       f.vkCmdCopyImage(cb, r.image.image, VK_IMAGE_LAYOUT_GENERAL, r.image.image, VK_IMAGE_LAYOUT_GENERAL, 1, &column);
     }
   }
-  if (bias && !ScaleOnGpu(cb, r.image, r.layout, dx0 * s, dy0 * s, width * uint32_t(s), height * uint32_t(s), bias)) {
+  if (bias && !fixed16 && !ScaleOnGpu(cb, r.image, r.layout, dx0 * s, dy0 * s, width * uint32_t(s), height * uint32_t(s), bias)) {
     return false;
   }
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -4218,7 +4277,7 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   r.scale = scale_;
   // Watched: a CPU write into the destination from now on supersedes it (CpuWrote).
   if (guest_watch_) {
-    const uint32_t element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+    const uint32_t element = ResolveElementBytes(r.image.format);
     const uint64_t end = uint64_t(dest_base) + uint64_t(pitch) * ((ry1 + 31) & ~31u) * element;
     guest_watch_(dest_base, uint32_t(std::min<uint64_t>(end, mirror_bytes_)));
   }
@@ -4365,6 +4424,11 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       gpu_format = host_format;  // k_32_FLOAT from a k_32_FLOAT target (Test Drive Unlimited)
     } else if (!dest_swap && dest_format == 25 && host_format == VK_FORMAT_R16G16_SNORM) {
       gpu_format = host_format;  // k_16_16 from a k_16_16 target, the same 16-bit words (Test Drive Unlimited)
+    } else if (!dest_swap && dest_format == 26 && host_format == VK_FORMAT_R16G16B16A16_SNORM && fixed16_storage_) {
+      // k_16_16_16_16 from a k_16_16_16_16 target: converted on the GPU as the CPU path does (Fixed16OnGpu), its
+      // exponent bias with it. Mirror's Edge's exposure and bloom chain, read back on the CPU, took about 20 ms a frame
+      // of the renderer's thread at 1440p.
+      gpu_format = VK_FORMAT_R16G16B16A16_UNORM;
     } else if (dest_format == 7 &&
                (host_format == VK_FORMAT_A8B8G8R8_UNORM_PACK32 || host_format == VK_FORMAT_A2B10G10R10_UNORM_PACK32)) {
       // k_2_10_10_10 (a 10-bit front buffer: The Simpsons Game) from a k_2_10_10_10 target, its red/blue swap kept
@@ -4374,7 +4438,9 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     // An exponent bias on the GPU for half floats only (each component times 2^bias, ScaleOnGpu); any other format
     // with a bias goes through the CPU path. Mirror's Edge resolves its HDR scene (k_2_10_10_10_FLOAT targets to
     // k_16_16_16_16_FLOAT, bias -3) every frame: read back on the CPU it ran at 5 frames a second.
-    if (dest_bias && gpu_format != VK_FORMAT_R16G16B16A16_SFLOAT) gpu_format = VK_FORMAT_UNDEFINED;
+    if (dest_bias && gpu_format != VK_FORMAT_R16G16B16A16_SFLOAT && gpu_format != VK_FORMAT_R16G16B16A16_UNORM) {
+      gpu_format = VK_FORMAT_UNDEFINED;
+    }
   }
   // A depth resolve: one sample a pixel, the depth value for the depth texture formats, on the GPU too.
   const bool depth_on_gpu = is_depth && (dest_format == 6 || dest_format == 22 || dest_format == 23 || dest_format == 36);
@@ -4397,7 +4463,7 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     // screen's base, the second half's at the base plus x 640's tiled offset; apart, a texture of the whole screen
     // would read the first half only.
     const uint32_t aligned_pitch = (dest_pitch + 31) & ~31u;
-    const uint32_t texel_log2 = gpu_format == VK_FORMAT_R16G16B16A16_SFLOAT ? 3 : 2;
+    const uint32_t texel_log2 = ResolveElementBytes(gpu_format) == 8 ? 3 : 2;
     int32_t dest_dx = 0, dest_dy = 0;
     for (auto it = resolved_.lower_bound(dest_base); it != resolved_.begin();) {
       --it;
@@ -4454,9 +4520,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
   // its other rows written by the CPU, reads guest memory: The Simpsons Game's 64x8 palette rows in a 64x64 texture).
   const bool cpu_has_format = is_depth || (dest_format == 6 && host_format == VK_FORMAT_R8G8B8A8_UNORM) ||
                               (dest_format == 32 && host_format == VK_FORMAT_R16G16B16A16_SFLOAT) ||
-                              (dest_format == 7 && gpu_format != VK_FORMAT_UNDEFINED);
+                              (dest_format == 7 && gpu_format != VK_FORMAT_UNDEFINED) ||
+                              (dest_format == 26 && gpu_format == VK_FORMAT_R16G16B16A16_UNORM);
   const bool read_back =
-      !on_gpu || (cpu_has_format && (uint64_t(width) * height * (dest_format == 32 ? 8 : 4) <= kReadBackMaxBytes ||
+      !on_gpu || (cpu_has_format && (uint64_t(width) * height * (dest_format == 32 || dest_format == 26 ? 8 : 4) <= kReadBackMaxBytes ||
                                      (front_buffers_.count(dest_base) && !front_on_gpu_.count(dest_base))));
   if (read_back && on_gpu) {
     // Its write into guest memory recorded in the batch, done when the batch has run (no wait here).
@@ -4834,7 +4901,7 @@ void VulkanRenderer::ApplyCpuWrites() {
   }
   for (auto& [base, r] : resolved_) {
     if (!r.stale) continue;
-    const uint32_t element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+    const uint32_t element = ResolveElementBytes(r.image.format);
     const uint64_t end = uint64_t(base) + uint64_t(r.pitch) * ((r.y + r.height + 31) & ~31u) * element;
     for (const auto& [b, e] : writes) {
       if (b >= end || base >= e) continue;
@@ -5026,7 +5093,7 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
   w.base = base, w.x = r.x, w.y = r.y, w.width = r.width, w.height = r.height, w.pitch = r.pitch, w.endian = r.endian;
   w.depth = r.image.format == VK_FORMAT_R32_SFLOAT;
   w.float24 = r.float24;
-  w.element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+  w.element = ResolveElementBytes(r.image.format);
   w.signature = r.Signature();
   if (!r.width || !AcquireReadback(VkDeviceSize(r.width) * r.height * w.element, w.buffer)) {
     return false;
@@ -5415,6 +5482,40 @@ bool VulkanRenderer::ScaleOnGpu(VkCommandBuffer cb, Image& image, VkImageLayout&
   return true;
 }
 
+std::vector<uint32_t> BuildFixed16ResolveShader();  // fixed16_shader.cpp
+
+bool VulkanRenderer::Fixed16Pass() {
+  if (fixed16_pipeline_) return true;
+  if (!DepthPass()) return false;  // its set layout and per-batch pools
+  const Functions& f = device_.fn();
+  const VkDevice d = device_.device();
+  const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 44};
+  VkPipelineLayoutCreateInfo pipeline_layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  pipeline_layout_info.setLayoutCount = 1;
+  pipeline_layout_info.pSetLayouts = &depth_layout_;
+  pipeline_layout_info.pushConstantRangeCount = 1;
+  pipeline_layout_info.pPushConstantRanges = &push;
+  if (f.vkCreatePipelineLayout(d, &pipeline_layout_info, nullptr, &fixed16_pipeline_layout_) != VK_SUCCESS) {
+    return Fail("fixed16 resolve pipeline layout");
+  }
+  const std::vector<uint32_t> code = BuildFixed16ResolveShader();
+  VkShaderModuleCreateInfo module_info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+  module_info.codeSize = code.size() * 4;
+  module_info.pCode = code.data();
+  VkShaderModule module = VK_NULL_HANDLE;
+  if (f.vkCreateShaderModule(d, &module_info, nullptr, &module) != VK_SUCCESS) return Fail("fixed16 resolve shader");
+  VkComputePipelineCreateInfo pipeline_info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+  pipeline_info.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+  pipeline_info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+  pipeline_info.stage.module = module;
+  pipeline_info.stage.pName = "main";
+  pipeline_info.layout = fixed16_pipeline_layout_;
+  const VkResult created = f.vkCreateComputePipelines(d, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &fixed16_pipeline_);
+  f.vkDestroyShaderModule(d, module, nullptr);
+  if (created != VK_SUCCESS) return Fail("fixed16 resolve pipeline");
+  return true;
+}
+
 bool VulkanRenderer::DepthPass() {
   if (depth_pipeline_) return true;
   const Functions& f = device_.fn();
@@ -5466,7 +5567,7 @@ void VulkanRenderer::TrimResolvesBelow(uint32_t dest_base) {
   // after a resolve of the whole height to the first band's address).
   for (auto& [base, r] : resolved_) {
     if (base >= dest_base || !r.stale || !r.pitch || !r.height) continue;
-    const uint64_t element = r.image.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
+    const uint64_t element = ResolveElementBytes(r.image.format);
     const uint64_t row_bytes = uint64_t(r.pitch) * element;
     if (uint64_t(dest_base) >= base + row_bytes * ((uint64_t(r.y) + r.height + 31) & ~uint64_t(31))) continue;
     const uint32_t kept = uint32_t((uint64_t(dest_base) - base) / row_bytes) & ~31u;

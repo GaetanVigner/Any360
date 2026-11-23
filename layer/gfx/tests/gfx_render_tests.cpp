@@ -705,6 +705,85 @@ int main(int argc, char** argv) {
       std::printf("gfx_render_tests: k_16_16_16_16 resolve, bias -4: %u wrong words\n", wrong);
       CHECK(wrong == 0);
     }
+    // The same resolve on the GPU (Fixed16OnGpu) against the CPU path's words, bit for bit: a k_16_16_16_16 target
+    // holding each pixel's position (parameter generation: 0.5 to 63.5, the range's top clamped), at 1x and at 2x
+    // MSAA (the samples averaged), with exponent biases of -6, 0 and +1; the expected words computed from the
+    // target's own 16-bit words as the CPU path computes them (sum of the samples rounded, times 32 and 2^bias,
+    // clamped, rounded).
+    {
+      const uint32_t rect = kVertices + 0x800, dest = 0x180000;
+      uint32_t wrong = 0, words = 0;
+      const uint32_t fixed16_before = renderer.stats().resolves_fixed16_on_gpu;
+      for (const uint32_t msaa : {0u, 1u}) {
+        for (const int32_t bias : {-6, 0, 1}) {
+          const uint32_t w = kSize, h = msaa ? kSize / 2 : kSize, sample_y = msaa ? 2 : 1;
+          const float rv[3][2] = {{0, 0}, {float(w), 0}, {float(w), float(h)}};
+          for (uint32_t i = 0; i < 3; ++i) {
+            SetBig(rect + 8 * i, Bits(rv[i][0]));
+            SetBig(rect + 8 * i + 4, Bits(rv[i][1]));
+          }
+          std::memset(g_memory + dest, 0xCD, size_t(w) * h * 8);
+          const vk::SurfaceKey target{1536, kSize, 5, 0};
+          const float zero[4] = {};
+          CHECK(renderer.ClearColor(target, zero));
+          scenario("k_16_16_16_16 resolve on the GPU", nullptr, [&] {
+            s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, true}));
+            s.Reg(0x2000, w | msaa << 16);  // RB_SURFACE_INFO: the pitch in pixels, the MSAA mode
+            s.Reg(0x2001, 5u << 16 | 1536);  // RB_COLOR_INFO: k_16_16_16_16 at tile 1536
+            s.Reg(0x2302, 1);
+            s.Put({Type0(0x210F, 6), Bits(w / 2.0f), Bits(w / 2.0f), Bits(-float(h) / 2.0f), Bits(h / 2.0f), Bits(1), Bits(0)});
+            s.Put({Type0(0x200E, 2), 0, h << 16 | w});
+            s.Put({Type0(0x2080, 3), 0, 0, h << 16 | w});
+            s.Reg(0x2180, 1u << 18);  // SQ_PROGRAM_CNTL: param_gen
+            s.Reg(0x2181, 0);
+            s.Vertices(0);
+            s.DrawAuto(kTriangleStrip, 4);
+            s.Reg(0x2180, 0);
+            s.Reg(0x2302, 0);
+            s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});  // vf0: the copy rectangle
+            // Control (colour 0; at 2x samples 0 and 1 averaged), base, pitch | height, info: endian 8-in-16,
+            // k_16_16_16_16, the bias.
+            s.Put({Type0(0x2318, 4), (msaa ? 4u : 0u) << 4, dest, w | h << 16, 1u | 26u << 7 | (uint32_t(bias) & 0x3F) << 16});
+            s.Reg(0x2208, 6);
+            s.DrawAuto(8, 3);
+            s.Reg(0x2208, 4);
+            s.Reg(0x2000, kSize);
+          });
+          std::vector<uint8_t> samples;
+          CHECK(renderer.ReadBack(target, w, h * sample_y, samples));
+          if (samples.size() != size_t(w) * h * sample_y * 8) {
+            ++wrong;
+            continue;
+          }
+          const float scale = std::ldexp(1.0f, bias);
+          for (uint32_t y = 0; y < h; ++y) {
+            for (uint32_t x = 0; x < w; ++x) {
+              const uint8_t* texel = g_memory + dest + vk::TiledOffset2D(int32_t(x), int32_t(y), w, 3);
+              for (uint32_t c = 0; c < 4; ++c) {
+                int32_t sum = 0;
+                for (uint32_t k = 0; k < sample_y; ++k) {
+                  int16_t word;
+                  std::memcpy(&word, samples.data() + ((size_t(y) * sample_y + k) * w + x) * 8 + 2 * c, 2);
+                  sum += word;
+                }
+                const int16_t word = int16_t(std::lround(float(sum) / float(sample_y)));
+                const float value = float(word) * (32.0f / 32767.0f) * scale;
+                const uint16_t expect = uint16_t(std::lround(std::clamp(value, 0.0f, 1.0f) * 65535.0f));
+                const uint16_t got = uint16_t(uint16_t(texel[2 * c]) << 8 | texel[2 * c + 1]);
+                wrong += got != expect;
+                ++words;
+              }
+            }
+          }
+        }
+      }
+      s.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+      SetBig(rect + 8 * 2 + 4, Bits(float(kSize)));  // the copy rectangle back to the whole target for the checks below
+      const uint32_t on_gpu = renderer.stats().resolves_fixed16_on_gpu - fixed16_before;
+      std::printf("gfx_render_tests: k_16_16_16_16 resolves on the GPU (1x and 2x MSAA, bias -6, 0, 1): %u of %u words "
+                  "differ from the CPU path's, %u on the GPU\n", wrong, words, on_gpu);
+      CHECK(wrong == 0 && words == 3 * (kSize * kSize + kSize * kSize / 2) * 4 && on_gpu == 6);
+    }
     // A k_16_16_16_16_FLOAT target resolved to a k_16_16_16_16_FLOAT texture with an exponent bias of -3, on the GPU
     // (ScaleOnGpu): every component times 1/8, as the CPU path writes it (half floats, 8-in-16). Small, it is read
     // back into guest memory once the batch has run.
@@ -1783,10 +1862,10 @@ int main(int argc, char** argv) {
   // and the 256-wide k_8_8_8_8 one of the screen bands (17); the depth-under-colour checks' three depth and three
   // colour surfaces and the unclipped rectangle's two colour surfaces (25); the depth pre-pass check's shorter
   // colour target (26).
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 7 && stats.resolves == 83);
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 7 && stats.resolves == 89);
   // (The resolved texture is read from the resolve on the GPU, not uploaded; the one read while the cache is walked
-  // is: 7 uploads. 83 resolves: the four of the scenarios before (one with an exponent bias on the GPU), the 70 with one, the two screen bands, the
-  // chain's six and the 40-row one.)
+  // is: 7 uploads. 89 resolves: the four of the scenarios before (one with an exponent bias on the GPU), the six
+  // k_16_16_16_16 ones on the GPU, the 70 with one, the two screen bands, the chain's six and the 40-row one.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.
   // The float24 conversions round-trip first.

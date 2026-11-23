@@ -64,6 +64,7 @@ add_test(NAME gfx_shader_tests COMMAND gfx_shader_tests)
 add_library(any360_gfx_vulkan STATIC src/vulkan/device.cpp src/vulkan/renderer.cpp src/vulkan/textures.cpp
             src/vulkan/presenter.cpp src/vulkan/gamma_shader.cpp src/vulkan/depth_shader.cpp src/vulkan/depth_word_shader.cpp src/vulkan/draw_extent.cpp
             src/vulkan/scale_shader.cpp
+            src/vulkan/fixed16_shader.cpp
             src/vulkan/write_back.cpp)
 target_link_libraries(any360_gfx_vulkan PUBLIC any360_gfx any360_xenos_shader)
 target_include_directories(any360_gfx_vulkan PUBLIC include ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vulkan-headers/include)

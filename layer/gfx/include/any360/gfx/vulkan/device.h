@@ -62,6 +62,7 @@ class Device {
   uint32_t queue_family() const { return queue_family_; }
   const VkPhysicalDeviceProperties& properties() const { return properties_; }
   bool occlusion_query_precise() const { return occlusion_query_precise_; }  // exact sample counts
+  bool storage_image_extended_formats() const { return storage_image_extended_formats_; }  // rgba16 storage images
   bool fill_mode_non_solid() const { return fill_mode_non_solid_; }  // line and point polygon modes (wireframe)
   // After VK_ERROR_DEVICE_LOST: what the driver says faulted (VK_EXT_device_fault), or why it cannot say.
   std::string DescribeFault() const;
@@ -130,6 +131,7 @@ class Device {
   VkDeviceSize host_pointer_alignment_ = 0;
   uint32_t queue_family_ = 0;
   bool occlusion_query_precise_ = false;
+  bool storage_image_extended_formats_ = false;
   bool fill_mode_non_solid_ = false;
   bool device_fault_ = false;
   PFN_vkGetDeviceFaultInfoEXT get_fault_ = nullptr;

@@ -92,6 +92,7 @@ struct RendererStats {
   uint32_t resolves = 0;
   uint32_t resolves_on_gpu = 0, resolves_read_back = 0, resolves_depth = 0;  // kinds of resolves among them
   uint32_t resolves_biased_on_gpu = 0;  // GPU resolves with an exponent bias (ScaleOnGpu)
+  uint32_t resolves_fixed16_on_gpu = 0;  // k_16_16_16_16 resolves converted on the GPU (Fixed16OnGpu)
   uint32_t resolves_superseded = 0;  // resolves kept on the GPU the CPU wrote over before they were written back
   uint32_t resolve_write_backs = 0;  // GPU resolves written into guest memory later (read by a texture otherwise)
   // Their pixels written into guest memory (WriteBackTiled), and with ANY360_WRITE_BACK_BENCH the first version on
@@ -715,6 +716,12 @@ class VulkanRenderer : public gfx::Renderer {
   VkDescriptorSetLayout scale_layout_ = VK_NULL_HANDLE;
   VkPipelineLayout scale_pipeline_layout_ = VK_NULL_HANDLE;
   VkPipeline scale_pipeline_ = VK_NULL_HANDLE;
+  // k_16_16_16_16 targets resolved to k_16_16_16_16 textures on the GPU (fixed16_shader.cpp): the depth copy's set
+  // layout (a sampled image, a storage image), when the device stores R16G16B16A16_UNORM in storage images.
+  bool Fixed16Pass();
+  bool fixed16_storage_ = false;
+  VkPipelineLayout fixed16_pipeline_layout_ = VK_NULL_HANDLE;
+  VkPipeline fixed16_pipeline_ = VK_NULL_HANDLE;
   static constexpr uint32_t kDepthSets = 64;
   uint32_t depth_sets_ = 0;
   std::map<uint32_t, Resolved> resolved_;
