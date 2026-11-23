@@ -1,0 +1,11 @@
+gfx_replay --gpu NVIDIA --bench, cores 0-7 (start /affinity 0xFF), NVIDIA GeForce RTX 5070 Ti, 2026-11-23
+before = tree of 2026-11-21 20:25; after = this change
+
+npc_rb.a360cap before :: GPU 5.019 ms a frame running batches, 0.282 copying 5.17 MB | other 0.095 draws 1.722 resolves 0.294 depth resolves 0.059 texture copies 2.612 write-backs 0.178 | 307.307 ms a frame CPU replay
+npc_rb.a360cap after  :: GPU 4.903 ms a frame running batches, 0.283 copying 5.17 MB | other 0.156 draws 1.785 resolves 0.310 depth resolves 0.057 texture copies 2.494 write-backs 0.046 | 283.610 ms a frame CPU replay
+npc_rb.a360cap before :: GPU 5.007 ms a frame running batches, 0.283 copying 5.17 MB | other 0.096 draws 1.711 resolves 0.295 depth resolves 0.058 texture copies 2.611 write-backs 0.177 | 290.083 ms a frame CPU replay
+npc_rb.a360cap after  :: GPU 4.820 ms a frame running batches, 0.282 copying 5.17 MB | other 0.153 draws 1.723 resolves 0.297 depth resolves 0.056 texture copies 2.491 write-backs 0.046 | 275.875 ms a frame CPU replay
+ref_spawn3.a360cap before :: GPU 5.358 ms a frame running batches, 0.736 copying 17.54 MB | other 0.227 draws 1.832 resolves 0.051 depth resolves 0.145 texture copies 2.535 write-backs 0.436 | 368.106 ms a frame CPU replay
+ref_spawn3.a360cap after  :: GPU 5.769 ms a frame running batches, 0.735 copying 17.54 MB | other 0.307 draws 1.905 resolves 0.052 depth resolves 0.206 texture copies 2.732 write-backs 0.435 | 386.021 ms a frame CPU replay
+ref_spawn3.a360cap before :: GPU 5.357 ms a frame running batches, 0.735 copying 17.54 MB | other 0.224 draws 1.828 resolves 0.051 depth resolves 0.147 texture copies 2.542 write-backs 0.436 | 413.981 ms a frame CPU replay
+ref_spawn3.a360cap after  :: GPU 5.535 ms a frame running batches, 0.738 copying 17.54 MB | other 0.309 draws 1.840 resolves 0.052 depth resolves 0.211 texture copies 2.555 write-backs 0.436 | 374.940 ms a frame CPU replay

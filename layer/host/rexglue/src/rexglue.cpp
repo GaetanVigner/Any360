@@ -1229,6 +1229,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   }
   binding->renderer->SetAsyncPipelines(options.async_pipelines);
   binding->renderer->SetMsaa(options.msaa_samples);
+  binding->renderer->SetOcclusionCounts(options.occlusion_counts);
   if (!binding->renderer->Initialize() || !binding->renderer->Resize()) {
     error = "renderer: " + binding->renderer->last_error();
     binding->renderer.reset();

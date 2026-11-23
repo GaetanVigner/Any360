@@ -509,6 +509,12 @@ bool VulkanRenderer::Initialize() {
   VkFormatProperties props;
   f.vkGetPhysicalDeviceFormatProperties(device_.physical(), VK_FORMAT_D24_UNORM_S8_UINT, &props);
   if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) depth_format_ = VK_FORMAT_D24_UNORM_S8_UINT;
+  // The host viewport's size (Draw): the largest power of two the device's viewports take, at most 16384.
+  {
+    const VkPhysicalDeviceLimits& limits = device_.properties().limits;
+    const uint32_t most = std::min({limits.maxViewportDimensions[0], limits.maxViewportDimensions[1], 16384u});
+    viewport_extent_ = most ? 1u << (31 - std::countl_zero(most)) : 4096u;
+  }
   // Host MSAA: the most samples up to the asked count that colour, depth and stencil targets all have.
   {
     const VkPhysicalDeviceLimits& limits = device_.properties().limits;
@@ -2320,7 +2326,13 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   if (topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST || topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) {
     system->flags |= SpirvShaderTranslator::kSysFlag_PrimitiveLine;
   }
-  const float size[2] = {float(width), float(height)};
+  // The host viewport the guest's window coordinates are mapped through: one size for every draw, a power of two,
+  // not the bound targets' (which differ between passes over the same geometry: a depth-only pass on a depth surface
+  // of 2048 rows, its colour pass with a 1024-row colour target too). Window y -> y * 2 / size - 1 -> back rounds by
+  // the size, so the two passes' depths differed in their last bits: Mirror's Edge's and Call of Duty's colour passes
+  // over their depth pre-pass (GEQUAL) failed in flickering horizontal stripes on large flat surfaces.
+  const float size[2] = {width <= viewport_extent_ ? float(viewport_extent_) : float(width),
+                         height <= viewport_extent_ ? float(viewport_extent_) : float(height)};
   // Points: PA_SU_POINT_SIZE (half width and height) and PA_SU_POINT_MINMAX (the radius a vertex shader's size is
   // clamped to), both 12.4 fixed point, as diameters in guest pixels; and how a guest pixel diameter becomes a
   // radius in host normalized device coordinates (a guest pixel is `sample` host pixels).

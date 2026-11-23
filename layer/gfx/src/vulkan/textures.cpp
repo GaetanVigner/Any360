@@ -867,6 +867,11 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   // Banded: one slice made of resolves one under the other (a title resolving a frame drawn in tiles band by band to
   // consecutive memory, Mirror's Edge's depth in two predicated tiles), the guest row each band starts at.
   std::vector<uint32_t> band_rows;
+  // Partial: one slice whose source holds fewer rows than the texture (the last resolve there covered less of it:
+  // Mirror's Edge resolves shadow maps of 64 to 864 rows to one address and samples an 864x864 texture over it).
+  // Memory below those rows holds what earlier resolves left there; the texture keeps its own rows below, which
+  // hold the same (no read of guest memory, which a live title may be writing back meanwhile).
+  bool partial = false;
   uint64_t source_generation = 0;
   if (t.tiled && t.dimension == 1 && first_level == 0 && last_level == 0 &&
       (info->convert == TextureFormatInfo::kNone || info->convert == TextureFormatInfo::kDepthUnorm24 ||
@@ -922,6 +927,24 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
         sources.clear();
         band_rows.clear();
         source_generation = 0;
+      }
+    }
+    if (sources.empty() && t.depth == 1) {
+      const uint32_t address = t.base & 0x1FFFFFFF;
+      const auto it = gpu_sources_.find(address);
+      const uint32_t rows = it == gpu_sources_.end() ? 0 : it->second.height / it->second.scale;
+      if (rows && rows < t.height) {
+        // Only over a texture that already holds its rows below (read from memory or copied before): a new one would
+        // have nothing there to keep, and is read from memory instead.
+        const GpuSource* s = usable(address, rows);
+        const auto kept = s ? textures_.find({fetch[0] & 0xFFC00003, fetch[1], fetch[2], fetch[5] & 0xFFFFFE00,
+                                              (fetch[4] & 0x3FC) | (s->scale > 1 ? 1u : 0u)})
+                            : textures_.end();
+        if (kept != textures_.end() && kept->second && (kept->second->gpu_generation || kept->second->content_hash)) {
+          sources.push_back(s);
+          source_generation = s->generation;
+          partial = true;
+        }
       }
     }
   }
@@ -986,6 +1009,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     ns_hash_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - hash_start).count());
   }
   const Functions& f = device_.fn();
+  const bool had_content = slot && (slot->gpu_generation || slot->content_hash);
   if (!slot) {
     const auto create_start = std::chrono::steady_clock::now();
     slot = std::make_unique<Texture>();
@@ -1037,7 +1061,9 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
         barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT;
         barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        // A partial source over a texture that held content: its rows below kept (no discard, no clear).
+        const bool keep_below = partial && had_content;
+        barrier.oldLayout = keep_below ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
         barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image = image.image;
@@ -1046,7 +1072,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
         dependency.imageMemoryBarrierCount = 1;
         dependency.pImageMemoryBarriers = &barrier;
         f.vkCmdPipelineBarrier2(cb, &dependency);
-        if (copy_height < t.height * scale) {
+        if (copy_height < t.height * scale && !keep_below) {
           // Rows below the source (within its last tile): zeros, then the copy over the rest.
           const VkClearColorValue zero{};
           f.vkCmdClearColorImage(cb, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &barrier.subresourceRange);

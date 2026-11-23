@@ -31,6 +31,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cstdarg>
 #include <map>
 #include <set>
 #include <string>
@@ -142,6 +143,7 @@ class TracingRenderer : public Renderer {
         }
       }
     }
+    if (features_) Fingerprint(draw);
     const vk::RendererStats before = r_.stats();
     r_.Draw(draw);
     ++draws_;
@@ -262,7 +264,99 @@ class TracingRenderer : public Renderer {
       ++drawn_;
     }
   }
+  // --features: the GPU features a capture's draws and resolves use, counted (one line each, at the end).
+  bool features_ = false;
+  std::map<std::string, uint32_t> feature_counts_;
+  std::map<uint64_t, std::unique_ptr<rex::graphics::SpirvShader>> parsed_;
+  void Feature(const char* fmt, ...) {
+    char text[160];
+    va_list args;
+    va_start(args, fmt);
+    std::vsnprintf(text, sizeof(text), fmt, args);
+    va_end(args);
+    ++feature_counts_[text];
+  }
+  rex::graphics::SpirvShader* Parsed(const Shader* shader) {
+    if (!shader || shader->microcode.empty()) return nullptr;
+    auto& slot = parsed_[shader->hash ^ (uint64_t(shader->type) << 63)];
+    if (!slot) {
+      slot = std::make_unique<rex::graphics::SpirvShader>(
+          shader->type ? rex::graphics::xenos::ShaderType::kPixel : rex::graphics::xenos::ShaderType::kVertex, shader->hash,
+          shader->microcode.data(), shader->microcode.size(), std::endian::native);
+      rex::string::StringBuffer text;
+      slot->AnalyzeUcode(text);
+    }
+    return slot.get();
+  }
+  void Fingerprint(const DrawCall& draw) {
+    const uint32_t* regs = draw.registers;
+    const uint32_t mode = regs[0x2208] & 7, msaa = (regs[0x2000] >> 16) & 3, dc = regs[0x2200];
+    {
+      // The geometry: the vertex shader's first vertex fetch constant and the indices, to pair a depth-only draw with
+      // the colour draw over the same vertices.
+      uint32_t vbase = 0;
+      if (rex::graphics::SpirvShader* vp = Parsed(draw.vertex_shader); vp && !vp->vertex_bindings().empty()) {
+        vbase = regs[0x4800 + 2 * vp->vertex_bindings()[0].fetch_constant] & 0x1FFFFFFC;
+      }
+      std::printf("geom: draw %u mode %u vs %016llX ps %016llX vbase %08X ibase %08X count %u depthcontrol %08X surface %08X\n", draws_,
+                  mode, draw.vertex_shader ? (unsigned long long)draw.vertex_shader->hash : 0ull,
+                  draw.pixel_shader ? (unsigned long long)draw.pixel_shader->hash : 0ull, vbase, draw.index_base,
+                  draw.index_count, dc, regs[0x2000]);
+    }
+    Feature("draw mode %u msaa %u prim %u source %u", mode, msaa, draw.primitive_type, uint32_t(draw.source));
+    if (dc & 3) Feature("depth format %u func %u write %u", (regs[0x2002] >> 16) & 1, (dc >> 4) & 7, (dc >> 2) & 1);
+    if (dc & 1) Feature("stencil func %u ops %u/%u/%u backface %u", (dc >> 8) & 7, (dc >> 11) & 7, (dc >> 14) & 7, (dc >> 17) & 7, (dc >> 7) & 1);
+    if (regs[0x2081] >> 31) Feature("window offset disable on scissor");
+    if (regs[0x2080]) Feature("window offset nonzero");
+    if ((regs[0x2204] >> 16) & 1) Feature("clip disabled");
+    if (regs[0x2204] & 0x3F) Feature("user clip planes");
+    Feature("vte %03X", regs[0x2206] & 0x73F);
+    const uint32_t sc = regs[0x2205];
+    if (sc & 3) Feature("cull %u face %u", sc & 3, (sc >> 2) & 1);
+    if ((sc >> 11) & 7) Feature("poly offset enables %u", (sc >> 11) & 7);
+    if ((sc >> 3) & 3) Feature("poly mode %u", (sc >> 3) & 3);
+    if ((sc >> 21) & 1) Feature("primitive reset");
+    const uint32_t cc = regs[0x2202];
+    if ((cc >> 3) & 1) Feature("alpha test func %u", cc & 7);
+    if ((cc >> 4) & 1) Feature("alpha to coverage");
+    if (mode == 4) {
+      static const uint32_t kInfo[4] = {0x2001, 0x2003, 0x2004, 0x2005};
+      for (uint32_t i = 0; i < 4; ++i) {
+        if (!((regs[0x2104] >> (4 * i)) & 0xF)) continue;
+        Feature("colour target %u format %u mask %X blend %08X", i, (regs[kInfo[i]] >> 16) & 0xF, (regs[0x2104] >> (4 * i)) & 0xF,
+                regs[i ? 0x2209 + i - 1 : 0x2201]);
+        if ((regs[kInfo[i]] >> 20) & 0x3F) Feature("colour exp bias %d", int32_t(regs[kInfo[i]] << 6) >> 26);
+      }
+    }
+    for (const Shader* sh : {draw.vertex_shader, draw.pixel_shader}) {
+      rex::graphics::SpirvShader* p = Parsed(sh);
+      if (!p) continue;
+      const char* stage = sh->type ? "ps" : "vs";
+      if (p->writes_depth()) Feature("%s writes depth", stage);
+      if (p->kills_pixels()) Feature("%s kills", stage);
+      if (p->memexport_eM_written()) Feature("%s memexport", stage);
+      if (p->uses_texture_fetch_instruction_results()) {
+        for (const auto& b : p->texture_bindings()) {
+          const uint32_t* d = regs + 0x4800 + 6 * b.fetch_constant;
+          Feature("%s texture format %u dim %u tiled %u signs %X exp %d packed %u", stage, d[1] & 0x3F, (d[5] >> 9) & 3, d[0] >> 31,
+                  (d[0] >> 2) & 0xFF, int32_t(d[3] << 13) >> 26, (d[4] >> 0) & 1);
+        }
+      }
+      for (const auto& vb : p->vertex_bindings()) {
+        for (const auto& a : vb.attributes) Feature("vertex format %u", uint32_t(a.fetch_instr.attributes.data_format));
+      }
+    }
+  }
+  void PrintFeatures() const {
+    for (const auto& [text, count] : feature_counts_) std::printf("feature: %s x%u\n", text.c_str(), count);
+  }
   void Copy(const uint32_t* regs) override {
+    if (features_) {
+      const uint32_t info = regs[0x231B];
+      Feature("resolve source %u msaa %u dest format %u endian %u exp bias %d clear %u", regs[0x2318] & 7, (regs[0x2000] >> 16) & 3,
+              (info >> 7) & 0x3F, info & 7, int32_t(info << 10) >> 26, (regs[0x2318] >> 8) & 3);
+      if ((regs[0x2318] & 7) < 4) Feature("resolve colour format %u", (regs[0x2001 + ((regs[0x2318] & 7) ? 1 + (regs[0x2318] & 7) : 0)] >> 16) & 0xF);
+    }
     EndRun();
     const uint32_t failed = r_.stats().failed;
     r_.Copy(regs);
@@ -415,6 +509,7 @@ int main(int argc, char** argv) {
 #endif
   std::string path, out, swaps;
   bool trace = false;
+  bool features = false;  // --features: the GPU features the capture uses, counted
   int repeat = 1;  // --repeat N: the capture replayed N times, the timings of the last (warm caches, as in a game)
   std::string dump, dump_textures;
   uint32_t watch = 0;
@@ -452,6 +547,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[i], "--watch") && i + 1 < argc) watch = uint32_t(std::strtoul(argv[++i], nullptr, 16)) & 0x1FFFF000;
     else if (!std::strcmp(argv[i], "--pick") && i + 1 < argc) std::sscanf(argv[++i], "%d,%d", &pick_x, &pick_y);
     else if (!std::strcmp(argv[i], "--dump-textures") && i + 1 < argc) dump_textures = argv[++i];
+    else if (!std::strcmp(argv[i], "--features")) features = trace = true;
     else path = argv[i];
   }
   if (path.empty()) {
@@ -482,6 +578,7 @@ int main(int argc, char** argv) {
   CommandProcessor cp(physical);
   TracingRenderer tracing(renderer, physical, dump, watch, pick_x, pick_y);
   tracing.dump_textures_ = dump_textures;
+  tracing.features_ = features;
   Renderer* target = trace ? static_cast<Renderer*>(&tracing) : &renderer;
   std::unique_ptr<AsyncRenderer> async_renderer;
   if (async) async_renderer = std::make_unique<AsyncRenderer>(cp, *target);
@@ -770,6 +867,7 @@ int main(int argc, char** argv) {
               device.properties().deviceName, r.draws, r.skipped, r.failed, r.resolves, r.translations, r.pipelines,
               r.render_targets, r.texture_uploads, r.ns_pipelines / 1e6, r.sample_resolves, r.sample_resolve_pixels / 1e6,
               r.samples_dropped, r.edram_alias_copies, r.edram_depth_to_colour, r.extents_estimated, r.ns_extents / 1e6);
+  if (features) tracing.PrintFeatures();
   // Textures over a resolve kept on the GPU that could not copy from it, and why (they read guest memory instead).
   if (renderer.texture_cache()) {
     for (const auto& [why, count] : renderer.texture_cache()->source_misses()) {

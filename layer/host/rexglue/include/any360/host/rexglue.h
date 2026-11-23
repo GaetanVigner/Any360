@@ -46,6 +46,10 @@ struct GraphicsOptions {
   uint32_t resolution_scale = 1;
   // Host MSAA: samples a host pixel (1, 2, 4, 8), apart from the resolution scale (supersampling).
   uint32_t msaa_samples = 1;
+  // Occlusion queries counted on the GPU (true), or answered with a fixed count, every object visible, as the
+  // runtime's own GPU does (false): for a title whose culling flickers with real counts (Mirror's Edge's small
+  // models, until the cause is found).
+  bool occlusion_counts = true;
   // A file the pipelines are kept in across runs (the driver's compiled code: a stall of tens of milliseconds each
   // the first time). Empty: none kept.
   std::string pipeline_cache_path;

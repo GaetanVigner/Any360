@@ -349,6 +349,49 @@ int main(int argc, char** argv) {
     CHECK(p.Count(back) == 0 && p.At(4, 59) == front && p.At(59, 4) == mid);
     CHECK(p.Count(front) + p.Count(mid) == kSize * kSize && p.Count(front) > 1900);
   }
+  // A depth pre-pass, then a colour pass over the same geometry with an EQUAL depth test (Unreal Engine 3's, Call of
+  // Duty's): the colour pass binds a colour target of fewer rows than the depth surface, so the bound targets differ
+  // between the passes; their depths must still be the same bit for bit. A slanted quad over the whole target, then
+  // many slanted triangles over it whose corners sit on the rasterizer's subpixel rounding points (any difference in
+  // the window coordinates moves them); every pixel passes the second pass.
+  {
+    constexpr uint32_t kTriangles = 400, kCount = 6 + 3 * kTriangles, kBase = kVertices + 0xC00;
+    uint32_t seed = 12345;
+    const auto next = [&seed] { return seed = seed * 1664525u + 1013904223u, float(seed >> 8) / float(1u << 24); };
+    const auto put = [&](uint32_t i, float x, float y, float z) {
+      const float v[4] = {x, y, z, 1};
+      for (uint32_t c = 0; c < 4; ++c) SetBig(kBase + 16 * i + 4 * c, Bits(v[c]));
+    };
+    const float quad[6][3] = {{-1, -1, 0.9123457f}, {1, -1, 0.9876543f}, {-1, 1, 0.9314159f},
+                              {1, -1, 0.9876543f}, {1, 1, 0.9707107f}, {-1, 1, 0.9314159f}};
+    for (uint32_t i = 0; i < 6; ++i) put(i, quad[i][0], quad[i][1], quad[i][2]);
+    for (uint32_t i = 6; i < kCount; ++i) {
+      // Window coordinates (half the target per NDC unit) within 1/8192 pixel of a mid-point between two subpixel steps.
+      const auto near_tie = [&] { return std::floor(next() * kSize * 256) / 256 + 1.0f / 512 + (next() - 0.5f) / 4096; };
+      const float wx = near_tie(), wy = near_tie();
+      put(i, wx / (kSize / 2) - 1, wy / (kSize / 2) - 1, 0.1f + 0.7f * next());
+    }
+    const vk::SurfaceKey short_target{1800, kSize, 0, 0};  // 248 tile rows to the end of EDRAM: fewer rows than the depth
+    CHECK(renderer.ClearColor(short_target, black));
+    scenario("depth pre-pass then EQUAL", nullptr, [&] {
+      s.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, kBase | 3, 2u | (4 * kCount) << 2});
+      s.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 7u << 4);  // the pre-pass: z_enable, z_write, ALWAYS
+      s.Reg(kRbColorMask, 0);                               // depth only: no colour target bound
+      s.DrawAuto(kTriangleList, kCount);
+      s.Reg(0x2001, 0u << 16 | 1800);                       // the colour pass: the shorter target
+      s.Reg(kRbColorMask, 0xF);
+      s.Reg(kRbDepthControl, 1u << 1 | 2u << 4);            // z_enable, no write, EQUAL
+      s.Color(255, 255, 255, 255);
+      s.DrawAuto(kTriangleList, kCount);
+    });
+    const Pixels p = read(short_target);
+    const uint32_t white = Rgba(255, 255, 255, 255);
+    std::printf("gfx_render_tests: depth pre-pass then EQUAL with a shorter colour target: %u of %u pixels pass\n",
+                p.Count(white), kSize * kSize);
+    CHECK(p.Count(white) == kSize * kSize);
+    const float zero[4] = {0, 0, 0, 0};  // its EDRAM rows back to zeros: the fresh targets below share them
+    CHECK(renderer.ClearColor(short_target, zero));
+  }
   // Primitive types the host draws otherwise: a triangle fan and a polygon over the four corners in order around
   // the target, a quad strip over them in strip order, each covering it all; a line list, strip and loop over the
   // corners of a square inset to +-0.7, each one more edge than the one before (about 45 pixels an edge).
@@ -1183,6 +1226,32 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: occlusion queries: %u and %u samples passed\n", counts[0], counts[1]);
     CHECK(counts[0] == kSize * kSize && counts[1] == 0);
   }
+  // Occlusion counts switched off (SetOcclusionCounts(false)): the renderer no longer counts, and the command
+  // processor answers the query at once with its fixed count (every object visible), the draw that passes nothing too.
+  {
+    renderer.SetOcclusionCounts(false);
+    const uint32_t begin = 0x1F0000, end = 0x1F0040;
+    std::memset(g_memory + begin, 0, 0x80);
+    for (uint32_t word = 8; word < 24; word += 4) SetBig(end + word, 0xFFFFFEED);
+    scenario("occlusion query, fixed count", nullptr, [&] {
+      s.Reg(0x2325, begin);
+      s.Put({Type3(pm4::EVENT_WRITE_ZPD, 1), 0x15});
+      s.Reg(0x210E, Bits(0.5f)), s.Reg(0x2202, 4u | 1u << 3);
+      s.Vertices(0);
+      s.Color(90, 40, 200, 64);
+      s.DrawAuto(kTriangleStrip, 4);
+      s.Reg(0x2202, 0);
+      s.Reg(0x2325, end);
+      s.Put({Type3(pm4::EVENT_WRITE_ZPD, 1), 0x15});
+    });
+    renderer.WaitIdle();
+    uint32_t total = 0, zpass = 0;
+    std::memcpy(&total, g_memory + end, 4), std::memcpy(&zpass, g_memory + end + 16, 4);  // Total_A, ZPass_A
+    std::printf("gfx_render_tests: occlusion counts off: Total %u, ZPass %u (counts %s)\n", total, zpass,
+                renderer.CountsSamples() ? "on" : "off");
+    CHECK(!renderer.CountsSamples() && total == 1000 && zpass == 1000);
+    renderer.SetOcclusionCounts(true);
+  }
   // User clip plane 0 (PA_CL_CLIP_CNTL ucp_ena_0, PA_CL_UCP_0 = x >= 0 in clip space): the right half is kept.
   {
     const uint32_t color = Rgba(240, 120, 0, 255);
@@ -1689,8 +1758,9 @@ int main(int argc, char** argv) {
   // render target formats, of which the two AS_ ones share their base format's surface (12, not 14), as k_8_8_8_8
   // shares k_8_8_8_8_GAMMA's; the three fresh targets read back as zeros (15); the 256-wide half-float one (16);
   // and the 256-wide k_8_8_8_8 one of the screen bands (17); the depth-under-colour checks' three depth and three
-  // colour surfaces and the unclipped rectangle's two colour surfaces (25).
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 25 && stats.texture_uploads == 6 && stats.resolves == 83);
+  // colour surfaces and the unclipped rectangle's two colour surfaces (25); the depth pre-pass check's shorter
+  // colour target (26).
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 6 && stats.resolves == 83);
   // (The resolved texture is read from the resolve on the GPU, not uploaded: 6 uploads, not 7. 83 resolves: the
   // four of the scenarios before (one with an exponent bias on the GPU), the 70 with one, the two screen bands, the
   // chain's six and the 40-row one.)

@@ -1,0 +1,39 @@
+{
+ "_comment": "The texts of Mirror's Edge's README that are its own (tools/title_readme.py has the common ones).",
+ "readme": "F:/Mirrorsedge/MirrorsEdgeRewrite/README.md",
+ "game": "Mirror's Edge (Xbox 360, 2008)",
+ "screens": [],
+ "pitch": "It starts from a recompilation of the game's executable with ReXGlue v0.10.0, built directly on Any360 from its first day: the sixth title the toolkit runs, and the first on Unreal Engine 3, whose depth pre-pass, predicated tiling and shadow maps fixed renderer bugs every title shares.",
+ "own_copy": "You need your own copy of the game (the USA disc, title 45410850); the recompiled C++ is generated on your machine from your disc's `default.xex`.",
+ "state": {
+  "recompiled": "`default.xex` fully translated (the functions reached only through pointers are declared in [config/](config/))",
+  "library": "not started: the C runtime and XDK functions Any360 already has for the other titles are to be found in this executable and checked in game before they are bound",
+  "game": "not started (the count is in the table above)"
+ },
+ "run": [
+  "Both bindings are on by default:",
+  "",
+  "```",
+  "mirrorsedge.exe",
+  "```",
+  "",
+  "`--any360_gpu=false` draws the game through ReXGlue's GPU instead of `any360::gfx`; `--any360_sys_groups=none` puts the Xbox system calls back on ReXGlue's kernel. `--any360_gpu_occlusion_counts=true` counts the occlusion queries on the GPU (off for now: small models flicker with it)."
+ ],
+ "build": [
+  "Windows, Visual Studio 2022 with the C++ and Clang tools, an install of the ReXGlue SDK v0.10.0 (`-Sdk`, the folder with `bin\\rexglue.exe`, `include\\` and `lib\\`), an [Any360](https://github.com/GaetanVigner/Any360) checkout (`-Any360`) and FFmpeg's headers for the XMA decoder (`-FFmpeg`).",
+  "",
+  "1. Extract your disc into `game\\` (for example with [extract-xiso](https://github.com/XboxDev/extract-xiso)), or make `game\\` a junction to it, so that `game\\default.xex` exists.",
+  "2. `powershell -File codegen.ps1 -Sdk <sdk>` generates the C++ into `generated\\default\\`.",
+  "3. `powershell -File build.ps1 -Sdk <sdk> -Any360 <any360> -FFmpeg <headers>` builds `out\\build\\mirrorsedge.exe`.",
+  "4. Run `out\\build\\mirrorsedge.exe`. It finds `game\\` next to itself or in the repository; logs are written to `out\\build\\logs\\`.",
+  "",
+  "Code reached only through vtables or data pointers is invisible to the codegen: [tools/find-missing-functions.py](tools/find-missing-functions.py) scans the decrypted image (`out\\image\\default_image.bin`) for such targets and writes them to [config/discovered-functions.toml](config/discovered-functions.toml); the ones only a run of the game reveals are in [config/overrides.toml](config/overrides.toml)."
+ ],
+ "credits": [
+  "Mirror's Edge by DICE, published by Electronic Arts (2008).",
+  "[ReXGlue SDK](https://github.com/rexglue/rexglue-sdk), the recompiler and runtime (BSD 3-Clause)."
+ ],
+ "legal": [
+  "An unofficial fan project, not affiliated with or endorsed by Electronic Arts or DICE. It is not a replacement for the game: you still need to own a copy, and nothing of the game is in this repository."
+ ]
+}

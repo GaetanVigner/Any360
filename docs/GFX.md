@@ -795,3 +795,19 @@ folds the rule into one instruction); `ANY360_DOT_RULE=0|1` forces it.
 Tests: `gfx_shader_tests` (a dp4: the zero-or-NaN test of the plain sum with the feature, none without),
 `gfx_render_tests` (the dp4 cases: plain sums, and 0 * inf terms through the rule's branch), which `test.ps1` runs
 with each combination of the two rule features.
+
+### One viewport for every draw, partial resolve sources (2026-11-23)
+
+Mirror's Edge showed flickering dotted lines over large slanted surfaces, and Call of Duty: Black Ops dotted
+artifacts: Unreal Engine 3 and Call of Duty draw a depth pre-pass, then colour passes with an EQUAL / GEQUAL depth
+test. The host viewport the guest's window coordinates went through was the bound targets' size: the pre-pass (a
+2048-row depth target alone) and the colour pass (a 1024-row colour target bound too) rounded the same vertices
+differently, a vertex now and then crossed a subpixel step, and the depths differed in their last bits. The viewport
+is now one size for every draw, the largest power of two the device takes (at most 16384). `gfx_render_tests`
+"depth pre-pass then EQUAL with a shorter colour target" passed 2085 of 4096 pixels the old way, 4096 now.
+
+A texture larger than the last resolve at its address (Mirror's Edge's shadow maps, resolved at 64 to 864 rows to
+one address, sampled as 864x864) takes the resolve's rows from the GPU and keeps its own rows below, when it already
+holds them. Occlusion queries can be answered with a fixed count instead of counted (`SetOcclusionCounts(false)`,
+`GraphicsOptions::occlusion_counts`): Mirror's Edge's culling makes small models flicker with real counts, a cause not
+found yet; Crackdown keeps real counts for its light flares. Archived in `docs/perf/archive/2026-11-23-one-viewport/`.

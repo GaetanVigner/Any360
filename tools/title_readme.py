@@ -20,7 +20,8 @@ ANY360 = 'https://github.com/GaetanVigner/Any360'
 TITLES = [('crackdown', 'Crackdown', 'GaetanVigner/CrackdownRewrite'),
           ('simpsons', 'The Simpsons Game', 'GaetanVigner/TheSimpsonsGameRewrite'),
           ('tdu', 'Test Drive Unlimited', 'GaetanVigner/TDURewrite'),
-          ('codbo', 'Call of Duty: Black Ops', 'GaetanVigner/CoDBoRewrite')]
+          ('codbo', 'Call of Duty: Black Ops', 'GaetanVigner/CoDBoRewrite'),
+          ('mirrorsedge', "Mirror's Edge", 'GaetanVigner/MirrorsEdgeRewrite')]
 
 
 def load(path):

@@ -26,6 +26,11 @@ Started on 2026-11-11: [Call of Duty: Black Ops](https://github.com/GaetanVigner
 running its first minute and a half on `any360::sys` and `any360::gfx` alone, with the network it needed (its local
 server's sockets, kept on the machine).
 
+Started on 2026-11-19: [Mirror's Edge](https://github.com/GaetanVigner/MirrorsEdgeRewrite), the sixth title and the first on
+Unreal Engine 3, playable through its first level on `any360::sys` and `any360::gfx` alone. Its depth pre-pass,
+predicated tiling and shadow maps fixed renderer bugs every title shares (depth read as colour, textures over resolves
+in bands, one viewport for every draw).
+
 **No game data, no game binaries.** Any360 holds the toolkit, the system layer, the renderer and reports made of counts,
 hashes, addresses and public API names. A title's reconstructed source lives in that title's own repository. Bring
 your own copy of the game.

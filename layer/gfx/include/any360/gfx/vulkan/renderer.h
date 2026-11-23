@@ -253,7 +253,10 @@ class VulkanRenderer : public gfx::Renderer {
   void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* registers) override;
   void Invalidate(uint32_t base, uint32_t size) override;
   void GammaRamp(const uint32_t* table, const uint32_t* pwl) override;
-  bool CountsSamples() const override { return query_pool_ != VK_NULL_HANDLE; }
+  bool CountsSamples() const override { return query_pool_ != VK_NULL_HANDLE && occlusion_counts_; }
+  // Occlusion queries counted on the GPU (the default), or answered at once with a fixed count by the command
+  // processor, as the runtime's own GPU does (every object visible). Before the first query.
+  void SetOcclusionCounts(bool counted) { occlusion_counts_ = counted; }
   void OcclusionQuery(bool end, uint32_t address) override;
 
   // The last presented frame: RGBA8 pixels (R in the low byte), row after row; `number` counts swaps.
@@ -403,6 +406,7 @@ class VulkanRenderer : public gfx::Renderer {
   uint32_t mirror_bytes_;
   uint32_t scale_ = 1;  // resolution scale
   uint32_t msaa_ = 1;   // host MSAA asked for
+  bool occlusion_counts_ = true;  // SetOcclusionCounts
   VkSampleCountFlagBits samples_ = VK_SAMPLE_COUNT_1_BIT;  // host MSAA the device has
   // The samples drawn into a surface's multisampled image since its last resolve, within the host pixels x0-x1,
   // y0-y1 (what is about to be read), into its image (outside a pass).
@@ -437,6 +441,7 @@ class VulkanRenderer : public gfx::Renderer {
   void MarkWritten(Surface* surface, int32_t top, int32_t bottom);
   std::map<std::array<uint32_t, 4>, std::unique_ptr<EdramGroup>> edram_groups_;
   uint64_t edram_version_ = 0;
+  uint32_t viewport_extent_ = 4096;  // the host viewport's size for every draw (a power of two: Draw)
   void GrowDrawn(Surface* surface, int32_t left, int32_t top, int32_t right, int32_t bottom) {
     if (!surface) return;
     if (surface->group) MarkWritten(surface, top, bottom);

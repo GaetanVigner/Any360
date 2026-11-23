@@ -1,0 +1,40 @@
+{
+ "_comment": "Where tools/title_progress.py finds Mirror's Edge and what cannot be read from its sources. Paths are this machine's checkouts; nothing of the title is in this repository.",
+ "name": "Mirror's Edge",
+ "github": "GaetanVigner/MirrorsEdgeRewrite",
+ "readme": "F:/Mirrorsedge/MirrorsEdgeRewrite/README.md",
+ "out": "F:/Mirrorsedge/MirrorsEdgeRewrite/docs/progress",
+ "generated": "F:/Mirrorsedge/MirrorsEdgeRewrite/generated/default",
+ "port_src": [
+  "F:/Mirrorsedge/MirrorsEdgeRewrite/src"
+ ],
+ "sys": {
+  "groups": [
+   "stateless",
+   "files",
+   "objects",
+   "threads",
+   "memory",
+   "xam",
+   "input",
+   "audio"
+  ],
+  "default": true,
+  "where": "all eight groups, by default (`--any360_sys_groups=none` for ReXGlue's kernel): the 272 system calls the title imports are all native"
+ },
+ "gfx": {
+  "bound": true,
+  "default": true,
+  "where": "by default (`--any360_gpu=false` for ReXGlue's GPU); the first level is playable through `any360::gfx`: its depth pre-pass, predicated tiling, shadow maps and HDR lighting drawn right",
+  "todo": [
+   "Occlusion queries are answered with a fixed count (`--any360_gpu_occlusion_counts=false`, every object visible, as ReXGlue does): with real counts the game's culling makes small models (air conditioners, vents) flicker; the cause is not found yet.",
+   "Frame rate: the game's 30 FPS is not reached everywhere yet."
+  ]
+ },
+ "next": [
+  "Find why real occlusion counts make the game's culling flicker, then count them on the GPU again.",
+  "Play past the first level on the default binding: saves, sound, the gamepad.",
+  "Find the XDK and C runtime functions Any360 already has in this executable and bind them after a check in game."
+ ],
+ "open": []
+}
