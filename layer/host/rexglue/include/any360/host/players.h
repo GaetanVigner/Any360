@@ -34,5 +34,7 @@ sys::Glyph PlayerGlyph(uint32_t user, sys::XboxControl control);
 uint32_t PlayerGlyphGeneration();
 // The bindings the glyphs follow (the same file as the input's).
 void SetPlayerBindings(const sys::InputBindings& bindings);
+// The player the keyboard and mouse join (0 for the first; --any360_keyboard_player).
+void SetKeyboardPlayer(uint32_t user);
 
 }  // namespace any360::host::rexglue

@@ -226,8 +226,14 @@ document) and passes it with `--any360_input_bindings=<path>` through the manife
 - A held input survives the switch: a button held on the pad stays held while the keyboard takes over, and its
   release, on the pad, is mapped with the pad's profile (the mapper keeps per-device state, never re-maps a held input
   with another profile).
-- The keyboard/mouse profile replaces the runtime's `keybind_*` cvars when the file gives one; until then the runtime's
-  driver keeps working (generic first, nothing removed before its replacement is checked in game).
+- The keyboard/mouse profile replaces the runtime's `keybind_*` cvars when the file gives one. Built 2026-11-24 as a
+  first step (`any360/host/keyboard_binds.h`, `host_keyboard_tests`): at start the host hands the `keyboard_mouse`
+  profile to the runtime's own keyboard driver as its settings (`keybind_<control>`, stick directions from each
+  source's sign, `mnk_mouse` and `mnk_sensitivity` for `mouse:x` / `mouse:y` on the right stick); a control the profile
+  does not name keeps the runtime's keys, and what the runtime cannot read (the wheel) is logged. Mapping keys in
+  Any360 itself (no runtime settings, no lost presses) stays phase 1b. `--any360_keyboard_player=<1-4>` sets the
+  player the keyboard and mouse join (`PlayerSlots::set_keyboard_user`) and turns the runtime's driver on
+  (`mnk_mode`); `0` turns it off; `-1` (default) leaves the runtime's setting.
 - **Positions, not labels** (C2, decided). A binding names where the button is, and the default is by position on
   every pad: the south button is the title's A whatever is printed on it. On a Switch controller the south button is
   labelled "B", so it does the title's A and the prompt for A shows that controller's "B" glyph; the east button

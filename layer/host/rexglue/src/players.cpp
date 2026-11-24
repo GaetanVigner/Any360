@@ -221,6 +221,11 @@ uint32_t PlayerGlyphGeneration() {
   return g_glyphs.Generation(Clock::now());
 }
 
+void SetKeyboardPlayer(uint32_t user) {
+  std::lock_guard lock(g_players);
+  g_slots.set_keyboard_user(user);
+}
+
 void SetPlayerBindings(const sys::InputBindings& bindings) {
   std::lock_guard lock(g_players);
   g_glyphs.SetBindings(bindings);

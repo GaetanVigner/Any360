@@ -1,5 +1,6 @@
 #include "any360/host/settings.h"
 #include "any360/host/players.h"
+#include "any360/host/keyboard_binds.h"
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
@@ -99,6 +100,9 @@ REXCVAR_DEFINE_BOOL(any360_input_players, true, "Kernel",
 REXCVAR_DEFINE_STRING(any360_input_bindings, "", "Kernel",
                       "Any360 input group: the bindings file Any360Launcher writes (docs/GLYPHS.md, section 2); its "
                       "\"gamepad\" profile maps every controller before the title reads it. Empty: no remapping");
+REXCVAR_DEFINE_INT32(any360_keyboard_player, -1, "Kernel",
+                     "Any360 input group: the player the keyboard and mouse play (1 to 4; 0: no keyboard player, the "
+                     "runtime's keyboard driver off); -1: the runtime's own setting (mnk_mode), on the first player");
 REXCVAR_DEFINE_INT32(any360_input_step_us, 16683, "Kernel",
                      "Any360 input group: polls step through the queued changes at most this often (one console frame), so "
                      "each stays visible for a frame; 0: every poll steps");
@@ -265,10 +269,31 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
           for (const std::string& p : problems) REXLOG_WARN("Any360 system: input bindings: {}", p);
           any360::sys::XamState().SetInputBindings(bindings);
           SetPlayerBindings(bindings);
+          // The keyboard and mouse player's layout, through the runtime's own keyboard driver (keyboard_binds.h).
+          std::vector<std::string> key_problems;
+          const std::vector<RuntimeSetting> keys = RuntimeKeybinds(bindings, &key_problems);
+          for (const std::string& p : key_problems) REXLOG_WARN("Any360 system: keyboard bindings: {}", p);
+          size_t applied = 0;
+          for (const RuntimeSetting& s : keys) {
+            if (rex::cvar::SetFlagByName(s.name, s.value)) {
+              ++applied;
+            } else {
+              REXLOG_WARN("Any360 system: keyboard bindings: the runtime has no setting {}", s.name);
+            }
+          }
+          if (!keys.empty()) REXLOG_INFO("Any360 system: keyboard and mouse layout: {} runtime settings", applied);
           const any360::sys::BindingProfile* pad = bindings.Find("gamepad");
           REXLOG_INFO("Any360 system: input bindings from {}: {} profiles, the controller's {} targets", path,
                       bindings.profiles().size(), pad ? pad->bindings.size() : 0);
         }
+      }
+      if (const int player = REXCVAR_GET(any360_keyboard_player); player >= 0) {
+        const bool on = player >= 1 && player <= 4;
+        if (!rex::cvar::SetFlagByName("mnk_mode", on ? "true" : "false")) {
+          REXLOG_WARN("Any360 system: the runtime has no keyboard driver setting (mnk_mode)");
+        }
+        if (on) SetKeyboardPlayer(uint32_t(player - 1));
+        REXLOG_INFO("Any360 system: keyboard and mouse {}", on ? "on player " + std::to_string(player) : std::string("off"));
       }
       if (REXCVAR_GET(any360_input_sample_us) > 0) {
         any360::sys::XamState().StartInputSampling(std::chrono::microseconds(REXCVAR_GET(any360_input_sample_us)));
