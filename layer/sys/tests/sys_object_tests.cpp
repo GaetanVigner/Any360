@@ -819,6 +819,107 @@ void SpinPacerTests() {
                 run.frames, 100 * run.slept_ns / std::max(1.0, run.waited_ns));
     CHECK(run.late == 0);
   }
+  // Windows' high-resolution timer sleeps in 0.5 ms steps (sys_abi_bench: 50-200 us asked take ~513 us, 500 us
+  // ~1004 us, 1 ms ~1517 us), now and then a step more.
+  auto windows_sleep = [&](nanoseconds asked) {
+    const int64_t step = 500000, steps = (asked.count() + 13000 + step - 1) / step;
+    return nanoseconds(steps * step + 13000 + (random(100) == 0 ? step : 0)) - asked;  // the overshoot
+  };
+  // The frame limiter with the idle back-off on and Windows' sleeps: its cadence is still learnt (its waits are
+  // roughly periodic from the start, so the back-off leaves them to yield), and no frame is late after.
+  {
+    Pacer pacer(true);
+    auto t = start, deadline = start;
+    Run run;
+    Pacer::Duration asked{};
+    limiter(pacer, t, deadline, 300, microseconds(16129), [&](uint32_t) { return microseconds(10000 + random(2000)); },
+            [&] { return windows_sleep(pacer.margin()); }, 40, run);
+    std::printf("sys_object_tests: spin pacer, back-off on, Windows sleeps: %u of %u frames late, %.0f%% of the wait "
+                "slept, margin %.2f ms, %llu back-off slices\n",
+                run.late, run.frames, 100 * run.slept_ns / run.waited_ns, pacer.margin().count() / 1e6,
+                (unsigned long long)pacer.stats().idle_sleeps);
+    (void)asked;
+    CHECK(run.late == 0 && pacer.predicting() && run.slept_ns / run.waited_ns > 0.5 && !pacer.backing_off());
+  }
+  // A render thread waiting for each frame's commands: they come once a frame (16.13 ms), up to 1 ms early or late
+  // (the game thread's work varies), after ~11 ms of waiting. Its ends stray more than kJitter: not predicted, and
+  // roughly periodic: no back-off either. It yields, and sees every frame's work at once (sleeping such waits to a
+  // margin plus their spread cost Mirror's Edge's 1% low 56 -> 34 FPS).
+  {
+    Pacer pacer(true);
+    auto t = start;
+    auto frame = start;
+    double idle_ns = 0, slept_ns = 0;
+    uint32_t late = 0, frames = 0;
+    nanoseconds worst{0};
+    for (int f = 0; f < 600; ++f) {
+      frame += microseconds(16129);
+      const auto posted = frame + microseconds(int(random(2000)) - 1000);
+      const auto idle_start = t;
+      double slept = 0;
+      while (t < posted) {
+        const nanoseconds d = pacer.Delay(t);
+        const auto before = t;
+        t += d > nanoseconds::zero() ? d + windows_sleep(d) : yield_cost;
+        if (d > nanoseconds::zero()) slept += double((t - before).count());
+        pacer.Returned(t);
+      }
+      if (f >= 40) {
+        ++frames;
+        idle_ns += double((t - idle_start).count());
+        slept_ns += slept;
+        if (t - posted > yield_cost) ++late, worst = std::max(worst, nanoseconds(t - posted));
+      }
+      t += microseconds(4000 + random(1000));  // the frame's rendering
+    }
+    std::printf("sys_object_tests: spin pacer on a render thread's waits (16.13 ms +- 1 ms): %.0f%% of the idle time "
+                "slept, %u of %u frames' work seen late (worst %.3f ms)\n",
+                100 * slept_ns / idle_ns, late, frames, worst.count() / 1e6);
+    CHECK(late == 0 && !pacer.predicting() && !pacer.backing_off());
+  }
+  // A thread polling memory for work with no cadence (a render thread waiting for its commands): work is posted
+  // after random gaps (most under 2 ms, some 2-8 ms, a few 20-150 ms of idleness). With the back-off it sleeps most
+  // of its long waits in slices and sees the work at most a slice late (Windows' sleeps: ~1 ms); waits under 2 ms
+  // still yield (seen at once). Without it, it only yields.
+  for (const bool backoff : {false, true}) {
+    Pacer pacer(backoff);
+    auto t = start;
+    double idle_ns = 0, slept_ns = 0;
+    nanoseconds worst_short{0}, worst{0};
+    uint32_t jobs = 0;
+    for (int job = 0; job < 4000; ++job) {
+      const uint32_t kind = random(100);
+      const nanoseconds gap = kind < 70 ? microseconds(100 + random(1400))
+                              : kind < 95 ? microseconds(2000 + random(6000))
+                                          : milliseconds(20 + random(130));
+      const auto posted = t + gap;
+      const auto idle_start = t;
+      while (t < posted) {
+        const nanoseconds d = pacer.Delay(t);
+        const auto before = t;
+        t += d > nanoseconds::zero() ? d + windows_sleep(d) : yield_cost;
+        if (d > nanoseconds::zero()) slept_ns += double((t - before).count());
+        pacer.Returned(t);
+      }
+      const nanoseconds late = t - posted;
+      if (job >= 100) {
+        ++jobs;
+        idle_ns += double((t - idle_start).count());
+        worst = std::max(worst, late);
+        if (gap < milliseconds(2)) worst_short = std::max(worst_short, late);
+      }
+      t += microseconds(200);  // the work
+    }
+    std::printf("sys_object_tests: idle back-off %s: %u jobs, %.0f%% of the idle time slept, work seen at worst %.3f "
+                "ms late (%.3f ms after waits under 2 ms), %llu slices over %llu zero delays\n",
+                backoff ? "on" : "off", jobs, 100 * slept_ns / idle_ns, worst.count() / 1e6, worst_short.count() / 1e6,
+                (unsigned long long)pacer.stats().idle_sleeps, (unsigned long long)pacer.stats().calls);
+    if (backoff) {
+      CHECK(pacer.backing_off() && slept_ns / idle_ns > 0.7 && worst <= microseconds(1600) && worst_short <= yield_cost);
+    } else {
+      CHECK(pacer.stats().idle_sleeps == 0 && slept_ns == 0 && worst <= yield_cost);
+    }
+  }
 }
 
 void RwLockTests() {

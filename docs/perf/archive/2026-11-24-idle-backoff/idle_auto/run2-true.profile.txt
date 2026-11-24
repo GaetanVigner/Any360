@@ -1,0 +1,274 @@
+Profile: 20.0 s sampled every 2 ms, 67018 samples, 31034 ms of processor time caught running (1.55 cores), 17516 ms of it under title functions; threads caught waiting in the kernel for 182443 ms more (not counted); 4159498 cycles a ms
+
+Title functions by their own time (with the host code they call), then with what they call:
+  rank  address    own ms  own %  self ms   total ms  symbol
+     1  82A01840   2249.1   7.25    446.9     2249.1  __imp__sub_82A01840
+     2  829F9470   1772.3   5.71   1763.0     1772.3  __imp__sub_829F9470
+     3  8276C930   1490.5   4.80   1473.3     1496.0  __imp__sub_8276C930
+     4  8278B508   1358.6   4.38   1358.6     1781.9  __imp__sub_8278B508
+     5  82826620   1044.9   3.37   1018.2     1540.6  __imp__sub_82826620
+     6  82371DD0    523.5   1.69    431.3     1061.5  __imp__sub_82371DD0
+     7  8272E2F0    272.5   0.88    269.5      713.8  __imp__sub_8272E2F0
+     8  8244B6F0    232.0   0.75    206.9      232.0  __imp__sub_8244B6F0
+     9  82703910    230.4   0.74    192.5      654.1  __imp__sub_82703910
+    10  82805728    221.6   0.71    115.1      776.7  __imp__sub_82805728
+    11  82817158    206.9   0.67    186.2      273.3  __imp__sub_82817158
+    12  82815D78    199.1   0.64    169.1      199.1  __imp__sub_82815D78
+    13  829E37C0    196.3   0.63    196.3      196.3  __imp__sub_829E37C0
+    14  823734B0    166.7   0.54    129.8      329.6  __imp__sub_823734B0
+    15  822B7AA8    160.2   0.52    160.2      160.2  __imp__sub_822B7AA8
+    16  82573C88    144.3   0.46    144.3      144.3  __imp__sub_82573C88
+    17  82371F78    144.1   0.46    144.1    10833.2  __imp__sub_82371F78
+    18  82732AF8    142.3   0.46    138.8     1270.8  __imp__sub_82732AF8
+    19  8282C598    140.5   0.45      0.0      140.5  __imp__sub_8282C598
+    20  82816110    124.5   0.40    102.3      130.1  __imp__sub_82816110
+    21  828127E0    109.2   0.35     94.7      109.2  __imp__sub_828127E0
+    22  82824D10     98.1   0.32     98.1       98.1  __imp__sub_82824D10
+    23  82399FA8     95.1   0.31     77.1      131.2  __imp__sub_82399FA8
+    24  8284B4B0     89.2   0.29     89.2      938.6  __imp__sub_8284B4B0
+    25  8276CFC8     86.0   0.28     86.0       86.0  __imp__sub_8276CFC8
+    26  824B9918     81.8   0.26     78.8      281.6  __imp__sub_824B9918
+    27  82806000     79.6   0.26     79.6       79.6  __imp__sub_82806000
+    28  828A5E30     77.3   0.25     77.3       77.3  __imp__sub_828A5E30
+    29  827829A0     71.6   0.23     71.6       71.6  __imp__sub_827829A0
+    30  826BA7A8     70.6   0.23     70.6       70.6  __imp__sub_826BA7A8
+    31  823841A8     68.2   0.22     68.2       68.2  __imp__sub_823841A8
+    32  82732768     67.0   0.22     67.0      582.3  __imp__sub_82732768
+    33  82828608     65.8   0.21     62.8       65.8  __imp__sub_82828608
+    34  828286D0     64.0   0.21     57.0       64.0  __imp__sub_828286D0
+    35  82827E68     62.2   0.20     62.2       62.2  __imp__sub_82827E68
+    36  82732268     61.4   0.20     61.4      250.7  __imp__sub_82732268
+    37  826D5870     59.8   0.19     59.8       69.4  __imp__sub_826D5870
+    38  8238B640     58.5   0.19     58.5       58.5  __imp__sub_8238B640
+    39  823CC0A8     58.3   0.19     50.1       58.3  __imp__sub_823CC0A8
+    40  82373418     57.7   0.19     54.6      127.3  __imp__sub_82373418
+    41  82828978     55.5   0.18     55.5       55.5  __imp__sub_82828978
+    42  82828EA8     54.1   0.17     54.1       54.1  __imp__sub_82828EA8
+    43  824A5210     53.2   0.17     53.2       53.2  __imp__sub_824A5210
+    44  82804E18     52.2   0.17     35.7      207.8  __imp__sub_82804E18
+    45  82815FB8     49.8   0.16     47.3       49.8  __imp__sub_82815FB8
+    46  82828D30     48.3   0.16     45.5       48.3  __imp__sub_82828D30
+    47  829FB4E8     47.7   0.15      2.5       47.7  __imp__sub_829FB4E8
+    48  8280D270     47.3   0.15     38.3       47.3  __imp__sub_8280D270
+    49  82816ED0     46.7   0.15     25.8       49.7  __imp__sub_82816ED0
+    50  82828A40     45.4   0.15     45.4       45.4  __imp__sub_82828A40
+    51  82843760     44.1   0.14     44.1       44.1  __imp__sub_82843760
+    52  82828BB8     43.9   0.14     41.3       43.9  __imp__sub_82828BB8
+    53  82806838     43.2   0.14     41.0       43.2  __imp__sub_82806838
+    54  82374228     42.3   0.14     28.7      835.6  __imp__sub_82374228
+    55  82424C38     42.3   0.14     42.3       48.3  __imp__sub_82424C38
+    56  828284B8     42.2   0.14     42.2       42.2  __imp__sub_828284B8
+    57  828159E0     42.0   0.14     29.4       42.0  __imp__sub_828159E0
+    58  82802790     41.6   0.13     41.6       41.6  __imp__sub_82802790
+    59  82395EF0     40.6   0.13     40.6       40.6  __imp__sub_82395EF0
+    60  8249B6E8     40.5   0.13     40.5       83.5  __imp__sub_8249B6E8
+    61  82800E48     40.5   0.13     40.5       40.5  __imp__sub_82800E48
+    62  82703E28     39.3   0.13     36.3       65.5  __imp__sub_82703E28
+    63  827AC7A8     37.3   0.12     28.7      228.3  __imp__sub_827AC7A8
+    64  82731580     36.9   0.12     31.8      103.4  __imp__sub_82731580
+    65  82735C60     35.3   0.11     35.3       35.3  __imp__sub_82735C60
+    66  825D7A78     35.1   0.11     35.1       45.6  __imp__sub_825D7A78
+    67  829E55B0     34.2   0.11     34.2       34.2  __imp__sub_829E55B0
+    68  82800F10     33.7   0.11     33.7       33.7  __imp__sub_82800F10
+    69  82424CC0     33.4   0.11     33.4       33.4  __imp__sub_82424CC0
+    70  8272B4C0     33.3   0.11     27.8      143.8  __imp__sub_8272B4C0
+    71  827DB608     33.1   0.11     33.1      653.7  __imp__sub_827DB608
+    72  8239D558     31.7   0.10     28.6      170.2  __imp__sub_8239D558
+    73  827F4258     31.5   0.10     19.4      107.5  __imp__sub_827F4258
+    74  82801D98     31.0   0.10     20.1       31.0  __imp__sub_82801D98
+    75  8281B310     29.7   0.10     26.5       29.7  __imp__sub_8281B310
+    76  82806490     29.5   0.10     26.5       29.5  __imp__sub_82806490
+    77  824987D0     29.4   0.09     29.4       29.4  __imp__sub_824987D0
+    78  82700698     27.9   0.09     27.9       27.9  __imp__sub_82700698
+    79  822B6598     27.9   0.09     24.8      132.7  __imp__sub_822B6598
+    80  82499FF8     27.5   0.09     27.5       55.8  __imp__sub_82499FF8
+    81  827DC4E0     27.5   0.09     24.4      750.8  __imp__sub_827DC4E0
+    82  8280CD98     27.4   0.09     21.1       27.4  __imp__sub_8280CD98
+    83  82756198     27.3   0.09     27.3      127.5  __imp__sub_82756198
+    84  827B1B00     26.6   0.09     26.6       32.2  __imp__sub_827B1B00
+    85  823735C8     26.3   0.08     12.3      102.9  __imp__sub_823735C8
+    86  827AC590     26.3   0.08     26.3       26.3  __imp__sub_827AC590
+    87  826D58F8     26.1   0.08     19.7       26.1  __imp__sub_826D58F8
+    88  825FF9F8     26.0   0.08     26.0      100.2  __imp__sub_825FF9F8
+    89  82756280     25.7   0.08     17.2      861.3  __imp__sub_82756280
+    90  826840C0     25.7   0.08     25.7       25.7  __imp__sub_826840C0
+    91  8272B550     25.6   0.08     16.7       40.4  __imp__sub_8272B550
+    92  82734B18     25.2   0.08     20.1      170.9  __imp__sub_82734B18
+    93  823736F0     25.0   0.08     17.0       42.2  __imp__sub_823736F0
+    94  82402490     23.8   0.08     18.7       38.5  __imp__sub_82402490
+    95  8237EA60     23.6   0.08     23.6       23.6  __imp__sub_8237EA60
+    96  824BE8F0     22.9   0.07     22.9      166.9  __imp__sub_824BE8F0
+    97  8247BA10     22.7   0.07     22.7       22.7  __imp__sub_8247BA10
+    98  82801BF0     22.7   0.07     19.6       22.7  __imp__sub_82801BF0
+    99  827AC3E0     22.2   0.07      8.1       28.3  __imp__sub_827AC3E0
+   100  8284BA00     21.8   0.07      8.6      114.4  __imp__sub_8284BA00
+   101  8257A428     21.5   0.07     21.5      124.3  __imp__sub_8257A428
+   102  82384460     21.5   0.07     13.9       29.5  __imp__sub_82384460
+   103  8282AB18     21.5   0.07     15.4     3538.6  __imp__sub_8282AB18
+   104  8272B390     21.4   0.07     21.4       95.3  __imp__sub_8272B390
+   105  826BACB8     21.1   0.07     21.1       21.1  __imp__sub_826BACB8
+   106  827D8700     20.8   0.07     14.8       20.8  __imp__sub_827D8700
+   107  825FF450     20.7   0.07     20.7       20.7  __imp__sub_825FF450
+   108  827AE000     20.7   0.07     20.7       20.7  __imp__sub_827AE000
+   109  824D32E8     20.4   0.07     17.3       20.4  __imp__sub_824D32E8
+   110  8278F9F8     20.0   0.06     20.0       20.0  __imp__sub_8278F9F8
+   111  827353E8     19.9   0.06     19.9      409.3  __imp__sub_827353E8
+   112  824417D0     19.5   0.06     19.5     1542.5  __imp__sub_824417D0
+   113  82700B08     19.5   0.06     19.5       19.5  __imp__sub_82700B08
+   114  82425C80     19.4   0.06     19.4      243.5  __imp__sub_82425C80
+   115  82418310     19.3   0.06     17.1      297.1  __imp__sub_82418310
+   116  824409C0     19.2   0.06     19.2      508.9  __imp__sub_824409C0
+   117  828015C0     18.9   0.06     18.9       18.9  __imp__sub_828015C0
+   118  827AAFE0     18.7   0.06     18.7      366.8  __imp__sub_827AAFE0
+   119  822B6A70     18.6   0.06     18.6      665.9  __imp__sub_822B6A70
+   120  827323A0     18.0   0.06     15.0       84.5  __imp__sub_827323A0
+   121  8243CF70     17.8   0.06     17.8      331.1  __imp__sub_8243CF70
+   122  827D6BA8     17.7   0.06     14.7       58.3  __imp__sub_827D6BA8
+   123  825D7C80     17.7   0.06     14.7       45.2  __imp__sub_825D7C80
+   124  82824990     17.5   0.06     14.5      115.6  __imp__sub_82824990
+   125  82734680     17.4   0.06     11.4      212.9  __imp__sub_82734680
+   126  828060E0     17.2   0.06     17.2       17.2  __imp__sub_828060E0
+   127  827AB4B0     17.2   0.06     14.6      338.6  __imp__sub_827AB4B0
+   128  82600C38     17.1   0.05     17.1       17.1  __imp__sub_82600C38
+   129  82373C68     17.0   0.05     17.0       79.1  __imp__sub_82373C68
+   130  825DFBF8     16.8   0.05     16.8       53.9  __imp__sub_825DFBF8
+   131  8248DB00     16.7   0.05     14.2       16.7  __imp__sub_8248DB00
+   132  828157E8     16.7   0.05     16.7       16.7  __imp__sub_828157E8
+   133  828028A8     16.7   0.05     13.7       16.7  __imp__sub_828028A8
+   134  82381C10     16.6   0.05     13.6       67.9  __imp__sub_82381C10
+   135  82383768     16.4   0.05     13.4      119.8  __imp__sub_82383768
+   136  82418840     16.4   0.05     16.4      315.4  __imp__sub_82418840
+   137  8252ADB0     16.2   0.05     16.2       16.2  __imp__sub_8252ADB0
+   138  82426A90     15.6   0.05     15.6      168.3  __imp__sub_82426A90
+   139  826003B8     15.5   0.05     12.5       56.1  __imp__sub_826003B8
+   140  826002D8     15.1   0.05     15.1       23.6  __imp__sub_826002D8
+   141  826BAEE0     15.1   0.05     12.0       59.5  __imp__sub_826BAEE0
+   142  828000E0     15.0   0.05     12.5       22.8  __imp__sub_828000E0
+   143  8235D480     14.7   0.05     11.9       23.2  __imp__sub_8235D480
+   144  827AC4F0     14.6   0.05      6.0       36.7  __imp__sub_827AC4F0
+   145  8284BAB0     14.5   0.05      5.5       20.5  __imp__sub_8284BAB0
+   146  822CA858     14.5   0.05     14.5       14.5  __imp__sub_822CA858
+   147  825FEBF8     14.4   0.05     11.4       17.4  __imp__sub_825FEBF8
+   148  82828F50     14.2   0.05     14.2       14.2  __imp__sub_82828F50
+   149  827E08F8     14.2   0.05      8.1      748.7  __imp__sub_827E08F8
+   150  823731D0     14.2   0.05     14.2       19.7  __imp__sub_823731D0
+
+Host code title functions call (bindings' handlers, natives, kernel exports), and its top caller:
+     1    1802.2 ms  under 82A01840  _imp__KeDelayExecutionThread
+     2     148.0 ms  under 8282C598  any360::sys::AudioKernel::XmaWriteRegister
+     3     120.8 ms  under 82805728  __imp____restgprlr_26
+     4      75.5 ms  under 82703910  __imp____restgprlr_28
+     5      74.7 ms  under 82815D78  __imp____savegprlr_26
+     6      63.1 ms  under 82826620  fma
+     7      60.8 ms  under 82371DD0  __imp____savegprlr_23
+     8      57.1 ms  under 823734B0  __imp____restgprlr_29
+     9      55.7 ms  under 82805728  __imp____restgprlr_21
+    10      48.6 ms  under 82371DD0  __imp____restgprlr_23
+    11      45.2 ms  under 829FB4E8  _imp__NtAllocateVirtualMemory
+    12      42.4 ms  under 82805728  __imp____restgprlr_14
+    13      37.4 ms  under 823734B0  __imp____savegprlr_28
+    14      34.6 ms  under 82805728  __imp____restgprlr_20
+    15      33.7 ms  under 828127E0  __imp____savegprlr_20
+    16      33.3 ms  under 82801D98  __imp____savegprlr_29
+    17      28.7 ms  under 827AC4F0  __imp____restgprlr_25
+    18      27.7 ms  under 82816110  __imp____savegprlr_21
+    19      26.6 ms  under 8284BA00  _imp__RtlTryEnterCriticalSection
+    20      24.0 ms  under 82816ED0  __imp____savegprlr_24
+    21      23.1 ms  under 827AD248  __imp____restgprlr_27
+    22      19.7 ms  under 827AC7A8  __imp____restgprlr_22
+    23      16.7 ms  under 82817158  __imp____savegprlr_14
+    24      15.6 ms  under 8281B310  __imp____savegprlr_27
+    25      12.6 ms  under 82817158  __imp____restgprlr_24
+    26      11.9 ms  under 8280CD98  __imp____savegprlr_25
+    27      11.7 ms  under 8244B6F0  __imp____savefpr_28
+    28       9.3 ms  under 829F9470  rex::chrono::Clock::QueryGuestTickCount
+    29       8.6 ms  under 827AC7A8  __imp____savegprlr_22
+    30       8.6 ms  under 829F9678  _imp__XamInputSetState
+    31       8.1 ms  under 8282DD30  _imp__KeAcquireSpinLockAtRaisedIrql
+    32       8.1 ms  under 82374228  __imp____restgprlr_17
+    33       7.5 ms  under 82754240  _imp__XamInputGetState
+    34       7.0 ms  under 8282A580  _imp__KeWaitForMultipleObjects
+    35       6.1 ms  under 82826620  __imp____restfpr_14
+    36       6.1 ms  under 8244B7C8  __imp____restfpr_25
+    37       6.0 ms  under 82814688  _imp__KfAcquireSpinLock
+    38       5.8 ms  under 8244B6F0  __imp____restfpr_28
+    39       5.5 ms  under 824B7808  __imp____savefpr_26
+    40       5.5 ms  under 826FEC78  __imp____restfpr_16
+    41       5.5 ms  under 82829F18  _imp__KeWaitForSingleObject
+    42       5.3 ms  under 8249E278  __imp____savegprlr_16
+    43       5.2 ms  under 823CC0A8  __imp____restfpr_21
+    44       3.5 ms  under 828286D0  __imp____restfpr_27
+    45       3.1 ms  under 82A01958  _imp__NtWaitForSingleObjectEx
+    46       3.0 ms  under 82804E18  __imp____savegprlr_15
+    47       3.0 ms  under 8252CC00  __imp____savegprlr_17
+    48       2.5 ms  under 827D2538  __imp____savefpr_14
+    49       2.5 ms  under 82380280  _imp__RtlEnterCriticalSection
+    50       2.5 ms  under 829D0988  _imp__XamUserGetSigninState
+    51       2.5 ms  under 82445248  __imp____savefpr_27
+    52       2.5 ms  under 82813450  any360::host::rexglue::`anonymous namespace'::WriteGpuRegister
+    53       2.5 ms  under 82405258  __imp____restgprlr_16
+    54       2.5 ms  under 827745C8  __imp____restgprlr_19
+    55       2.5 ms  under 8282DD30  rex::thread::global_critical_region::mutex
+    56       2.2 ms  under 8284BA00  _imp__RtlLeaveCriticalSection
+
+Host functions by the time they were the innermost frame (the kernel's left out):
+     1    2046.6 ms   6.59 %  vkGetInstanceProcAddr
+     2    1936.6 ms   6.24 %  RtlQueryPerformanceCounter
+     3    1342.6 ms   4.33 %  __imp__sub_8278B508
+     4    1294.6 ms   4.17 %  __imp__sub_8276C930
+     5    1092.3 ms   3.52 %  any360::gfx::vk::VulkanRenderer::Draw
+     6    1091.9 ms   3.52 %  rex::ppc::HostToGuestFunction<&rex::kernel::crt::SwitchToFiber_entry>
+     7     975.1 ms   3.14 %  __imp__sub_82826620
+     8     933.8 ms   3.01 %  Ordinal101
+     9     912.7 ms   2.94 %  any360::gfx::CommandProcessor::ExecutePacket
+    10     559.3 ms   1.80 %  memmove
+    11     524.2 ms   1.69 %  any360::gfx::vk::VulkanRenderer::MarkWritten
+    12     446.9 ms   1.44 %  __imp__sub_82A01840
+    13     446.0 ms   1.44 %  rex::chrono::Clock::QueryGuestTickCount
+    14     431.3 ms   1.39 %  __imp__sub_82371DD0
+    15     390.2 ms   1.26 %  any360::gfx::vk::VulkanRenderer::RecordJob
+    16     377.7 ms   1.22 %  _NLG_Return2
+    17     363.3 ms   1.17 %  fma
+    18     344.0 ms   1.11 %  RtlSleepConditionVariableSRW
+    19     294.6 ms   0.95 %  RtlSizeHeap
+    20     266.5 ms   0.86 %  __imp__sub_8272E2F0
+    21     234.1 ms   0.75 %  `anonymous namespace'::_Mismatching::_Mismatch_impl<unsigned int>
+    22     232.5 ms   0.75 %  RtlDelayExecution
+    23     211.9 ms   0.68 %  Ordinal100
+    24     206.7 ms   0.67 %  any360::gfx::vk::TextureCache::MemoryChanged
+    25     193.3 ms   0.62 %  __imp__sub_829E37C0
+    26     192.7 ms   0.62 %  __imp__sub_8244B6F0
+    27     192.5 ms   0.62 %  __imp__sub_82703910
+    28     186.2 ms   0.60 %  __imp__sub_82817158
+    29     183.1 ms   0.59 %  RtlEnterCriticalSection
+    30     181.9 ms   0.59 %  any360::sys::Scheduler::ZeroDelay
+    31     174.8 ms   0.56 %  any360::gfx::vk::VulkanRenderer::Draw::<lambda_0>::operator()
+    32     166.0 ms   0.54 %  __imp__sub_82815D78
+    33     161.3 ms   0.52 %  DeviceIoControl
+    34     160.2 ms   0.52 %  __imp__sub_822B7AA8
+    35     155.7 ms   0.50 %  any360::gfx::AsyncRenderer::SendRegisters
+    36     152.7 ms   0.49 %  any360::gfx::vk::VulkanRenderer::MakeTextureSets
+    37     152.0 ms   0.49 %  any360::gfx::vk::`anonymous namespace'::Place
+    38     144.3 ms   0.46 %  __imp__sub_82573C88
+    39     144.1 ms   0.46 %  __imp__sub_82371F78
+    40     138.8 ms   0.45 %  __imp__sub_82732AF8
+    41     131.2 ms   0.42 %  rex::memory::PhysicalHeap::EnableAccessCallbacks
+    42     129.9 ms   0.42 %  DrvPresentBuffers
+    43     129.8 ms   0.42 %  __imp__sub_823734B0
+    44     120.8 ms   0.39 %  __imp____restgprlr_26
+    45     115.1 ms   0.37 %  __imp__sub_82805728
+    46     114.6 ms   0.37 %  strncpy
+    47     114.4 ms   0.37 %  std::_Hash<std::_Umap_traits<std::pair<unsigned int,unsigned long long>,std::unique_ptr<any360::gfx::vk::VulkanRenderer::TranslatedShader,std::default_delete<any360::gfx::vk::VulkanRenderer::TranslatedShader> >,std::_Uhash_compare<std::pair<unsigned int,unsigned long long>,any360::gfx::vk::VulkanRenderer::ShaderKeyHash,std::equal_to<std::pair<unsigned int,unsigned long long> > >,std::allocator<std::pair<const std::pair<unsigned int,unsigned long long>,std::unique_ptr<any360::gfx::vk::VulkanRenderer::Transl
+    48     109.1 ms   0.35 %  any360::gfx::CommandProcessor::ExecuteType3
+    49     103.0 ms   0.33 %  any360::sys::Scheduler::Delay
+    50     102.3 ms   0.33 %  __imp__sub_82816110
+    51     102.2 ms   0.33 %  RtlFreeHeap
+    52      98.1 ms   0.32 %  __imp__sub_82824D10
+    53      97.0 ms   0.31 %  std::_Hash<std::_Umap_traits<unsigned long long,std::unique_ptr<any360::gfx::Shader,std::default_delete<any360::gfx::Shader> >,std::_Uhash_compare<unsigned long long,any360::gfx::WordHash,std::equal_to<unsigned long long> >,std::allocator<std::pair<const unsigned long long,std::unique_ptr<any360::gfx::Shader,std::default_delete<any360::gfx::Shader> > > >,0> >::_Try_emplace<unsigned long long>
+    54      96.8 ms   0.31 %  vk_icdNegotiateLoaderICDInterfaceVersion
+    55      96.0 ms   0.31 %  rex::chrono::Clock::host_tick_count_platform
+    56      94.7 ms   0.31 %  __imp__sub_828127E0
+    57      94.5 ms   0.30 %  __imp__sub_829F9470
+    58      92.0 ms   0.30 %  std::_Partition_by_pivot_unchecked<std::pair<unsigned int,unsigned int> *,std::less<void> >
+    59      89.2 ms   0.29 %  __imp__sub_8284B4B0
+    60      84.6 ms   0.27 %  any360::sys::Threads

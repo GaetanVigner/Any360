@@ -31,6 +31,7 @@
 #include "any360/sys/memory.h"
 #include "any360/sys/objects.h"
 #include "any360/sys/scheduler.h"
+#include "any360/sys/spin_pacer.h"
 #include "any360/sys/xam.h"
 #include "guest_memory.h"
 #if defined(_WIN32)
@@ -748,6 +749,18 @@ int main(int argc, char** argv) {
       best = std::min(best, std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count() / 20000);
     }
     std::printf("  host: std::this_thread::yield alone %.1f ns a call (fastest of %u runs)\n", best, g_repeats);
+    // The precise sleep the pacer uses: how long a sleep asked for 50 us to 1 ms takes (median and slowest of 200).
+    for (const int us : {50, 100, 200, 500, 1000}) {
+      std::vector<double> took;
+      for (int i = 0; i < 200; ++i) {
+        const auto start = std::chrono::steady_clock::now();
+        any360::sys::PreciseSleep(std::chrono::microseconds(us));
+        took.push_back(std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count());
+      }
+      std::sort(took.begin(), took.end());
+      std::printf("  host: PreciseSleep(%d us) took %.0f us median, %.0f us at the 99th percentile, %.0f us at most\n", us,
+                  took[100], took[198], took[199]);
+    }
     // With spin pacing on: back-to-back zero delays are one streak with no cadence, so each still yields (plus the
     // pacer's two clock reads).
     any360::sys::Threads().SetSpinPacing(true);

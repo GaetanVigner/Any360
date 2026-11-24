@@ -187,7 +187,11 @@ What the game found that the tests could not:
   waits end at a steady cadence it sleeps on a high-resolution timer until a margin before the predicted end, then
   yields; threads without a cadence and alertable zero delays only yield. Mirror's Edge at its 62 FPS cap, 12
   alternating launches: 1.60 -> 1.525 cores, frame times and lows the same (2026-11-23,
-  `docs/perf/archive/2026-11-23-spin-pacing/`).
+  `docs/perf/archive/2026-11-23-spin-pacing/`). The log names each thread that spends more than a tenth of a second
+  in zero delays (start address, calls, longest run): in Mirror's Edge, Unreal Engine 3's render thread polling its
+  command queue (74% of a processor). `--any360_sys_idle_backoff` (off by default) sleeps such waits without cadence
+  in 0.5-1 ms slices once they pass 2 ms; a wider prediction of roughly periodic waits was rejected for its 1% low
+  (2026-11-24, `docs/perf/archive/2026-11-24-idle-backoff/`).
 - Waking every wait on each signal (one condition for all) cost 17-22% of the frame rate: a dozen of the title's
   threads woke and queued on the lock for each event. A wait now sleeps on its thread's own condition, listed under
   the objects it waits on, and a signal wakes only those. Same city route, files only against files and objects:

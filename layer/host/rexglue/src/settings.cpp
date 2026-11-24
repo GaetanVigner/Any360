@@ -61,6 +61,11 @@ REXCVAR_DEFINE_BOOL(any360_sys_spin_pacing, true, "Kernel",
                     "Any360 threads group: a thread whose Sleep(0) loop waits at a steady cadence (a frame limiter) "
                     "sleeps until shortly before its wait's predicted end instead of spinning a processor all through "
                     "it (any360/sys/spin_pacer.h); off: every Sleep(0) yields");
+REXCVAR_DEFINE_BOOL(any360_sys_idle_backoff, false, "Kernel",
+                    "Any360 threads group, with any360_sys_spin_pacing: a thread whose Sleep(0) waits have no cadence "
+                    "(polling memory for work, as a render thread waits for its commands) sleeps in slices once a wait "
+                    "has gone on for 2 ms (1/8 of what it has waited, 100-500 us asked: 0.5-1 ms with Windows' timer) "
+                    "instead of yielding; the work is seen at most a slice later");
 REXCVAR_DEFINE_BOOL(any360_sys_log_files, false, "Kernel",
                     "Any360: every file the title opens and closes and every read that gives fewer bytes than asked, by "
                     "guest path, in the log");
@@ -179,6 +184,7 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
     }
     if (group == SysGroup::kThreads) {
       any360::sys::Threads().SetDefaultStackSize(uint32_t(std::max(0, REXCVAR_GET(any360_sys_default_stack_kb))) * 1024);
+      any360::sys::Threads().SetIdleBackoff(REXCVAR_GET(any360_sys_idle_backoff));
       any360::sys::Threads().SetSpinPacing(REXCVAR_GET(any360_sys_spin_pacing),
                                            [](const std::string& line) { REXLOG_INFO("Any360 system: {}", line); });
       any360::sys::Threads().SetStackLog([](const std::string& line) { REXLOG_WARN("Any360 system: {}", line); },

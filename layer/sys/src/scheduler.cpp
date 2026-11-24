@@ -550,7 +550,7 @@ void Scheduler::SetSpinPacing(bool on, std::function<void(const std::string&)> l
   spin_pacing_.store(on, std::memory_order_relaxed);
 }
 
-void Scheduler::ZeroDelay() {
+void Scheduler::ZeroDelay(Guest g, uint32_t kthread) {
   if (!spin_pacing_.load(std::memory_order_relaxed)) {
     std::this_thread::yield();
     return;
@@ -560,39 +560,69 @@ void Scheduler::ZeroDelay() {
     SpinPacer::Stats added{};  // what this thread has added to the totals so far
     int64_t next_flush_ms = 0;
     bool no_timer = false;
+    // Diagnostics, a second at a time: time inside zero delays, calls, the longest run of them.
+    uint64_t inside_ns = 0, calls = 0;
+    SpinPacer::Clock::time_point streak_start{}, last_back{};
+    SpinPacer::Duration longest{0};
   };
   static thread_local Local local;
+  const auto start = SpinPacer::Clock::now();
+  if (start - local.last_back > SpinPacer::kStreakGap) local.streak_start = start;
   if (local.no_timer) {
     std::this_thread::yield();
-    return;
-  }
-  const std::chrono::nanoseconds sleep = local.pacer.Delay(SpinPacer::Clock::now());
-  if (sleep > std::chrono::nanoseconds::zero()) {
-    if (!PreciseSleep(sleep)) local.no_timer = true;  // this thread yields from now on
   } else {
-    std::this_thread::yield();
+    local.pacer.set_idle_backoff(idle_backoff_.load(std::memory_order_relaxed));
+    const std::chrono::nanoseconds sleep = local.pacer.Delay(start);
+    if (sleep > std::chrono::nanoseconds::zero()) {
+      if (!PreciseSleep(sleep)) local.no_timer = true;  // this thread yields from now on
+    } else {
+      std::this_thread::yield();
+    }
   }
   const auto back = SpinPacer::Clock::now();
-  local.pacer.Returned(back);
+  if (!local.no_timer) local.pacer.Returned(back);
+  local.inside_ns += uint64_t((back - start).count());
+  ++local.calls;
+  local.longest = std::max(local.longest, SpinPacer::Duration(back - local.streak_start));
+  local.last_back = back;
   // This thread's counts into the totals once a second; the totals reported every 10 s by whichever thread passes.
   const int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(back.time_since_epoch()).count();
   if (ms < local.next_flush_ms) return;
+  // A thread that spent more than a tenth of the last second inside zero delays is named in the log (which thread
+  // spins, and how: its share of a processor, its calls, its longest run of zero delays).
+  if (spin_log_ && local.next_flush_ms != 0 && local.inside_ns > 100'000'000) {
+    uint32_t start_address = 0;
+    if (const Thread* t = Find(kthread)) start_address = t->start;
+    char line[200];
+    std::snprintf(line, sizeof line,
+                  "zero delays: thread %u (start %08X) spent %.0f%% of a second in them, %llu calls, longest run %.1f ms",
+                  kthread ? g.Load32(kthread + kThreadId) : 0, start_address, local.inside_ns / 1e7,
+                  (unsigned long long)local.calls, local.longest.count() / 1e6);
+    spin_log_(line);
+  }
+  local.inside_ns = local.calls = 0;
+  local.longest = SpinPacer::Duration{0};
   local.next_flush_ms = ms + 1000;
   const SpinPacer::Stats& s = local.pacer.stats();
   spin_calls_.fetch_add(s.calls - local.added.calls, std::memory_order_relaxed);
   spin_sleeps_.fetch_add(s.sleeps - local.added.sleeps, std::memory_order_relaxed);
   spin_slept_ns_.fetch_add(s.slept_ns - local.added.slept_ns, std::memory_order_relaxed);
   spin_unsafe_.fetch_add(s.unsafe_ends - local.added.unsafe_ends, std::memory_order_relaxed);
+  spin_idle_sleeps_.fetch_add(s.idle_sleeps - local.added.idle_sleeps, std::memory_order_relaxed);
+  spin_idle_ns_.fetch_add(s.idle_slept_ns - local.added.idle_slept_ns, std::memory_order_relaxed);
   local.added = s;
   int64_t next = next_spin_report_.load(std::memory_order_relaxed);
   if (ms < next || !next_spin_report_.compare_exchange_strong(next, ms + 10000)) return;
   if (next == 0 || !spin_log_) return;  // the first pass: the report starts in 10 s
   const uint64_t calls = spin_calls_.exchange(0), sleeps = spin_sleeps_.exchange(0);
   const uint64_t slept = spin_slept_ns_.exchange(0), unsafe = spin_unsafe_.exchange(0);
-  char line[200];
+  const uint64_t idle = spin_idle_sleeps_.exchange(0), idle_ns = spin_idle_ns_.exchange(0);
+  char line[300];
   std::snprintf(line, sizeof line,
-                "spin pacing in 10 s: %llu zero delays, %llu slept (%.1f ms in all), %llu waits ended at a sleep's return",
-                (unsigned long long)calls, (unsigned long long)sleeps, slept / 1e6, (unsigned long long)unsafe);
+                "spin pacing in 10 s: %llu zero delays, %llu slept (%.1f ms in all), %llu waits ended at a sleep's return; "
+                "idle back-off: %llu slices (%.1f ms)",
+                (unsigned long long)calls, (unsigned long long)sleeps, slept / 1e6, (unsigned long long)unsafe,
+                (unsigned long long)idle, idle_ns / 1e6);
   spin_log_(line);
 }
 
@@ -621,7 +651,7 @@ uint32_t Scheduler::Delay(Guest g, uint32_t pcr, int64_t interval, bool alertabl
     if (alertable) {
       std::this_thread::yield();
     } else {
-      ZeroDelay();
+      ZeroDelay(g, kthread);
     }
   } else if (!alertable) {
     std::this_thread::sleep_for(duration);

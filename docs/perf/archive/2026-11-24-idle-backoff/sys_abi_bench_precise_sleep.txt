@@ -1,0 +1,9 @@
+﻿  KeDelayExecutionThread (0)           |        0.0 |      182.5       0.0    0.00 |      0.0x
+  KeDelayExecutionThread (0, alertable) |        0.0 |      181.5       0.0    0.00 |      0.0x
+  host: std::this_thread::yield alone 180.8 ns a call (fastest of 3 runs)
+  host: PreciseSleep(50 us) took 506 us median, 556 us at the 99th percentile, 557 us at most
+  host: PreciseSleep(100 us) took 506 us median, 564 us at the 99th percentile, 1004 us at most
+  host: PreciseSleep(200 us) took 506 us median, 980 us at the 99th percentile, 1022 us at most
+  host: PreciseSleep(500 us) took 1003 us median, 1454 us at the 99th percentile, 1472 us at most
+  host: PreciseSleep(1000 us) took 1510 us median, 1552 us at the 99th percentile, 1559 us at most
+  KeDelayExecutionThread (0), spin pacing on: 213.7 ns a call, 0.0 B and 0.00 allocations
