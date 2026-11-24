@@ -97,6 +97,27 @@ device events (SDL 3 event watch / GameInput readings / polled fallback)
 - **The input script stays logical.** `InputScript` presses are guest buttons ("a" is the title's A): they join after
   the mapper, as today after the controller state.
 
+### Several players (split screen)
+
+A title reads up to four users (`XamInputGetState`'s user index), as four pads on the console. Any360 decides which
+device is which user (`any360/sys/input_players.h`, `PlayerSlots`, built 2026-11-24), not the runtime's driver, so
+that players never swap places mid-game:
+
+- A pad takes the lowest slot neither occupied nor reserved; none left, the oldest reservation.
+- A pad unplugged keeps its slot reserved for its identity (SDL's GUID and serial number, or its path): the others
+  stay where they are, and the same pad plugged back takes its slot again. A new pad does not take a reserved slot
+  while a free one is left.
+- Pads beyond four wait in order and take a slot as soon as one frees.
+- The keyboard and mouse join one player (the first by default, a launcher setting later) without a slot of their own.
+- Everything after the slot is per user: the merge of a user's devices after the mapper (each device with its own
+  profile), the user's queue, and the user's glyphs (`GlyphQuery::user(n)`: player 2's DualSense shows its own glyphs
+  while player 1 types on the keyboard).
+
+Tests (`sys_input_tests`): two pads and the keyboard; player 1's pad unplugged and back while player 2 stays user 1;
+a new pad not taking a reserved slot; a fifth pad waiting then placed; the oldest reservation taken when all are;
+each player's glyphs following their own devices. Not wired yet: the host still takes the runtime's user indices
+(`HostControllerState(user)`); the host step gives each SDL pad's identity to `PlayerSlots` and reads by slot.
+
 Unit tests (`sys_input_tests`, new): a press and release with 0.2 ms between them reach the title as two steps; a burst
 of 10 changes inside one pump arrives in order, one console frame each, double taps kept; events from two devices
 interleave by timestamp; the polled fallback gives exactly today's results on today's `sys_object_tests` scenarios;

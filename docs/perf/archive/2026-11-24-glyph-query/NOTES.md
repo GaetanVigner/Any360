@@ -12,6 +12,8 @@ control name through the bindings (`ResolveProfile`, shared with layer 1's mappe
 | `ActiveDevice::Input` + `Shown` (two devices alternating) | 2.73 | 0 | 0 |
 | `FamilyOf` | 2.09 | 0 | 0 |
 | `IsRealInput` | 1.69 | 0 | 0 |
+| `PlayerSlots::ConnectPad` + `Disconnected` (a pad unplugged and back) | 7.67 | 0 | 0 |
+| `PlayerSlots::UserOf` | 1.65 | 0 | 0 |
 | `InputMapper::Map` (unchanged, for reference: identity / 8 targets) | 5.54 / 33.82 | 0 | 0 |
 
 No original to time: a title draws its prompts from its own data and has no such call (an adapter will redirect its

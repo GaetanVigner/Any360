@@ -12,6 +12,7 @@
 #include "any360/sys/alloc_meter.h"
 #include "any360/sys/input_bindings.h"
 #include "any360/sys/input_glyphs.h"
+#include "any360/sys/input_players.h"
 #include "any360/sys/json.h"
 
 using namespace any360::sys;
@@ -304,6 +305,67 @@ void GlyphTests() {
   CHECK(spent.count == 0 && spent.bytes == 0 && total > 0);
 }
 
+// Several players: the user slots, and each player's glyphs following their own pad.
+void PlayerTests() {
+  constexpr uint32_t kNone = PlayerSlots::kNone;
+  PlayerSlots p;
+  CHECK(!p.Connected(0) && p.UserOf(1) == kNone);
+  // Split screen: two pads, players 1 and 2 (users 0 and 1); the keyboard joins player 1 without a slot.
+  CHECK(p.ConnectPad(10, 0xA) == 0 && p.ConnectPad(11, 0xB) == 1 && p.ConnectKeyboard(50) == 0);
+  CHECK(p.ConnectPad(10, 0xA) == 0);  // connected twice: the same slot
+  CHECK(p.Connected(0) && p.Connected(1) && !p.Connected(2) && p.UserOf(50) == 0 && p.PadIn(1) == 11);
+  // Player 1's pad unplugged: player 2 stays user 1, slot 0 waits for its pad; the keyboard keeps player 1 connected.
+  CHECK(p.Disconnected(10) == kNone);
+  CHECK(p.UserOf(11) == 1 && p.PadIn(0) == kNone && p.Connected(0));
+  // Another pad plugged meanwhile does not take player 1's place; the first pad back takes it again (a new
+  // connection, same identity).
+  CHECK(p.ConnectPad(12, 0xC) == 2);
+  CHECK(p.ConnectPad(13, 0xA) == 0 && p.UserOf(11) == 1);
+  // Four pads in; a fifth waits, then takes the slot a pad leaves.
+  CHECK(p.ConnectPad(14, 0xD) == 3 && p.ConnectPad(15, 0xE) == kNone && p.UserOf(15) == kNone);
+  CHECK(p.Disconnected(12) == 15 && p.UserOf(15) == 2);
+  // All reservations taken by others: a new pad takes the oldest one.
+  PlayerSlots q;
+  for (uint32_t d = 0; d < 4; ++d) CHECK(q.ConnectPad(d, 100 + d) == d);
+  q.Disconnected(2);
+  q.Disconnected(0);
+  CHECK(q.ConnectPad(9, 999) == 2 && q.ConnectPad(8, 998) == 0);
+  // A waiting pad unplugged leaves the queue; an unknown device changes nothing.
+  CHECK(q.ConnectPad(7, 997) == kNone && q.Disconnected(7) == kNone && q.Disconnected(1234) == kNone);
+  q.Disconnected(1);
+  CHECK(q.PadIn(1) == kNone && q.ConnectPad(1, 101) == 1);
+  // The keyboard's player can be set.
+  PlayerSlots k;
+  k.set_keyboard_user(1);
+  CHECK(k.ConnectKeyboard(50) == 1 && k.Connected(1) && !k.Connected(0));
+  CHECK(k.Disconnected(50) == kNone && !k.Connected(1));
+
+  // Each player's glyphs follow their own devices: player 2 on a DualSense, player 1 on an Xbox pad and the keyboard.
+  using F = ControllerFamily;
+  const auto t0 = std::chrono::steady_clock::time_point{};
+  GlyphQuery glyphs(InputBindings::Parse(R"({"version":1,"profiles":{"keyboard_mouse":{"xbox:a":["key:space"]}}})"));
+  PlayerSlots slots;
+  struct Device {
+    uint32_t id;
+    uint64_t identity;
+    F family;
+  };
+  for (const Device& d : {Device{20, 0x1, F::kXboxOne}, Device{21, 0x2, F::kPs5}}) {
+    const uint32_t user = slots.ConnectPad(d.id, d.identity);
+    glyphs.user(user).Connected(d.id, d.family);
+  }
+  glyphs.user(slots.ConnectKeyboard(60)).Connected(60, F::kKeyboardMouse);
+  CHECK(glyphs.For(0, XboxControl::kA, t0).set == "xbox_one" && glyphs.For(1, XboxControl::kA, t0).set == "ps5");
+  // Player 1 types: only player 1's prompts turn to keys.
+  glyphs.user(slots.UserOf(60)).Input(60, t0);
+  const auto later = t0 + std::chrono::milliseconds(300);
+  CHECK(glyphs.For(0, XboxControl::kA, later).control == "key:space" && glyphs.For(1, XboxControl::kA, later).control == "south");
+  CHECK(glyphs.For(1, XboxControl::kA, later).family == F::kPs5);
+  // Player 2 presses: player 1's prompts stay on the keyboard.
+  glyphs.user(slots.UserOf(21)).Input(21, later);
+  CHECK(glyphs.For(0, XboxControl::kA, later + std::chrono::milliseconds(300)).family == F::kKeyboardMouse);
+}
+
 // Every glyph name the query can answer is in the family's committed glyph set (assets/glyphs/<set>.json).
 void GlyphSetTests() {
   for (size_t f = 0; f < size_t(ControllerFamily::kCount); ++f) {
@@ -385,6 +447,13 @@ void Bench() {
     return size_t(FamilyOf(PadDescription{PadType(i % 11), uint16_t(i & 1 ? 0x28DE : 0x045E), uint16_t(0x1100 + (i & 0x1FF)),
                                           FaceLabel(i % 9)}));
   });
+  PlayerSlots slots;
+  for (uint32_t d = 0; d < 3; ++d) slots.ConnectPad(d, 100 + d);
+  measure("PlayerSlots::ConnectPad + Disconnected (a pad unplugged and back)", [&](int) {
+    slots.Disconnected(1);
+    return size_t(slots.ConnectPad(1, 101));
+  });
+  measure("PlayerSlots::UserOf", [&](int i) { return size_t(slots.UserOf(uint32_t(i & 3))); });
   GamepadState a = Pad(), c = Pad();
   measure("IsRealInput", [&](int i) {
     c.thumb_lx = int16_t(i * 7), c.left_trigger = uint8_t(i);
@@ -399,6 +468,7 @@ int main(int argc, char** argv) {
   BindingsTests();
   GlyphTests();
   GlyphSetTests();
+  PlayerTests();
   if (argc > 1 && std::strcmp(argv[1], "--bench") == 0) Bench();
   std::printf("sys_input_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;
