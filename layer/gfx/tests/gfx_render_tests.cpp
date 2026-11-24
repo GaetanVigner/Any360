@@ -1768,7 +1768,20 @@ int main(int argc, char** argv) {
         CHECK(frames_late < 200);
         // A patch changed over the shown page, drawn once (its image composing), then removed: once the composition
         // is done, one more draw and nothing stays queued (the renderer goes back to its remembered views).
-        patch.regions[0].pixels.assign(32 * 32, Rgba(0, 0, 255, 255));
+        // Another patch over the same memory (a glyph family change: no write to the page): shown too, a frame or two
+        // later, though the memory is not hashed again.
+        const uint32_t blue = Rgba(0, 0, 255, 255);
+        patch.regions[0].pixels.assign(32 * 32, blue);
+        TexturePatches::Global().Set(patch);
+        Pixels changed;
+        uint32_t frames_changed = 0;
+        do {
+          changed = scenario("patch changed over the same memory", nullptr, [&] { textured(base, 32); });
+        } while (changed.Count(blue) != 32 * 32 && ++frames_changed < 200);
+        std::printf("gfx_render_tests: patch changed over the same memory: %u blue, shown %u frames later\n",
+                    changed.Count(blue), frames_changed);
+        CHECK(changed.Count(blue) == 32 * 32);
+        patch.regions[0].pixels.assign(32 * 32, Rgba(0, 255, 0, 255));
         TexturePatches::Global().Set(patch);
         scenario("patch changed, drawn once", nullptr, [&] { textured(base, 32); });
         TexturePatches::Global().Remove(base);
@@ -1915,9 +1928,9 @@ int main(int argc, char** argv) {
   // and the 256-wide k_8_8_8_8 one of the screen bands (17); the depth-under-colour checks' three depth and three
   // colour surfaces and the unclipped rectangle's two colour surfaces (25); the depth pre-pass check's shorter
   // colour target (26).
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 11 && stats.resolves == 89);
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 12 && stats.resolves == 89);
   // (The resolved texture is read from the resolve on the GPU, not uploaded; the one read while the cache is walked
-  // is, and the patched texture's four (patched, removed, patched over new content, removed over it): 11 uploads. 89 resolves: the four of the scenarios before (one with an exponent bias on the GPU), the six
+  // is, and the patched texture's five (patched, removed, patched over new content, another patch over it, removed over it): 12 uploads. 89 resolves: the four of the scenarios before (one with an exponent bias on the GPU), the six
   // k_16_16_16_16 ones on the GPU, the 70 with one, the two screen bands, the chain's six and the 40-row one.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.

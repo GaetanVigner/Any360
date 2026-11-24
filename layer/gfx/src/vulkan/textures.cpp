@@ -801,6 +801,7 @@ void TextureCache::Evict(uint64_t frames, std::vector<Image>& images, std::vecto
     for (auto& [swizzle, view] : t.views) views.push_back(view);
     images.push_back(t.image);
     patch_jobs_.erase(it->first);  // a patched image still being composed for it: dropped
+    patch_memory_hashes_.erase(it->first);
     it = textures_.erase(it);
     any = true;
   }
@@ -1254,14 +1255,16 @@ VkImageView TextureCache::PatchedView(const uint32_t fetch[6], const TextureFetc
   const Placement p = Place(t, info, 0);
   if (!p.address || uint64_t(p.address) + p.slice_stride > mirror_bytes_) return error = "texture outside the mirrored memory", VK_NULL_HANDLE;
   const uint32_t span_begin = p.address, span_end = p.address + p.slice_stride;
-  // The guest's base level and the patch's version: either changing makes a new host image.
-  uint64_t hash = slot ? slot->content_hash : 0;
+  // The guest's base level and the patch's version: either changing makes a new host image. The memory is hashed again
+  // only when it may have changed; the patch's version counts at every view (a new patch over the same memory).
+  uint64_t& memory_hash = patch_memory_hashes_[key];
   const bool stale = !slot || (watch_ ? slot->validated == 0 : slot->validated != epoch_);
   if (stale) {
     if (before_read_) before_read_(span_begin, span_end);
     if (watch_) watch_(span_begin, span_end);
-    hash = HashMemory(physical_ + span_begin, p.slice_stride) * 0x100000001B3ull ^ (patch.version + 1);
+    memory_hash = HashMemory(physical_ + span_begin, p.slice_stride);
   }
+  const uint64_t hash = memory_hash * 0x100000001B3ull ^ (patch.version + 1);
   const Functions& f = device_.fn();
   const uint32_t s = patch.scale, width = t.width * s, height = t.height * s;
   uint32_t levels = 1;
@@ -1303,7 +1306,6 @@ VkImageView TextureCache::PatchedView(const uint32_t fetch[6], const TextureFetc
   // draws never wait for it: until it is ready, the previous image stays (and the views are not remembered, so the
   // next draws ask again). Only a page never shown before waits for its first image.
   std::shared_ptr<PatchJob>& job = patch_jobs_[key];
-  if (job && !stale && job->hash != slot->content_hash) hash = job->hash;  // still coming: what it will show
   if (slot->content_hash != hash && (!job || job->hash != hash)) {
     const auto decode_start = std::chrono::steady_clock::now();
     auto next = std::make_shared<PatchJob>();

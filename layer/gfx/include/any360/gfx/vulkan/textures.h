@@ -248,6 +248,8 @@ class TextureCache {
     std::vector<VkBufferImageCopy> regions;
   };
   std::map<std::array<uint32_t, 5>, std::shared_ptr<PatchJob>> patch_jobs_;
+  // A patched texture's guest memory hash (its slot's content hash also holds the patch's version).
+  std::map<std::array<uint32_t, 5>, uint64_t> patch_memory_hashes_;
   // Set by a job when its image is ready (shared: a job outlives the cache if it must).
   std::shared_ptr<std::atomic<bool>> patch_job_done_ = std::make_shared<std::atomic<bool>>(false);
   uint64_t ns_hash_ = 0, ns_load_ = 0;
