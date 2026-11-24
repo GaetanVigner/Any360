@@ -115,8 +115,17 @@ that players never swap places mid-game:
 
 Tests (`sys_input_tests`): two pads and the keyboard; player 1's pad unplugged and back while player 2 stays user 1;
 a new pad not taking a reserved slot; a fifth pad waiting then placed; the oldest reservation taken when all are;
-each player's glyphs following their own devices. Not wired yet: the host still takes the runtime's user indices
-(`HostControllerState(user)`); the host step gives each SDL pad's identity to `PlayerSlots` and reads by slot.
+each player's glyphs following their own devices.
+
+On the host (`layer/host/rexglue`, `players.h`, 2026-11-24): Any360's `DeviceAssignment` is installed on the
+runtime's `InputSystem` at the first controller read (`--any360_input_players=false` keeps the runtime's), so the
+runtime asks `PlayerSlots` which devices feed which user and merges each user's own devices. A pad's identity is its
+SDL GUID (and its rank among pads sharing it); its family comes from the GUID's vendor and product and its name
+(`DescribePad`, a table of known pads, no SDL call: the title links its own SDL, not the one that opened the pads).
+After each read the host tells the user's pad from the keyboard sharing it (the pad read alone through the same
+assignment) and reports real input to the user's glyph query; `Xam` asks each user's family and maps them with its
+profile. `host_players_tests` runs it on the runtime's own `InputSystem` with a fake driver: split screen, unplug and
+back, the keyboard joining player 1, families and prompts per player.
 
 Unit tests (`sys_input_tests`, new): a press and release with 0.2 ms between them reach the title as two steps; a burst
 of 10 changes inside one pump arrives in order, one console frame each, double taps kept; events from two devices
@@ -210,9 +219,10 @@ document) and passes it with `--any360_input_bindings=<path>` through the manife
   after the mapper, as today's merge does.
 - **A player's own layout (split screen).** A profile `player<n>` (`player1` to `player4`, its `base` usually
   `gamepad`) is the pad layout of user n-1 (the slot of "Several players", section 1): the launcher writes one when a
-  player's layout differs from the shared one. Built 2026-11-24 for the controller samples (`Xam::SetInputBindings`:
-  user n-1 takes `player<n>` when the file has it, else `gamepad`); the glyph query's `user(n)` should resolve the same
-  profile once the host wires it, so a player's prompts show their own layout.
+  player's layout differs from the shared one. Built 2026-11-24: `ProfileFor(bindings, user, family)` gives user n-1
+  `player<n>` when the file has it, else its pad family's profile (`playstation`...), then `gamepad`; the keyboard
+  keeps `keyboard_mouse`. The controller samples (`Xam`) and the glyph query (`GlyphQuery::user(n)`) both take it, so
+  a player's prompts show their own layout.
 - A held input survives the switch: a button held on the pad stays held while the keyboard takes over, and its
   release, on the pad, is mapped with the pad's profile (the mapper keeps per-device state, never re-maps a held input
   with another profile).
@@ -284,11 +294,11 @@ uint32_t GlyphGeneration();
 ```
 
 Built (2026-11-24) as `any360/sys/input_glyphs.h`: `FamilyOf(PadDescription)`, `IsRealInput`, `ActiveDevice` per
-user and `GlyphQuery` (an instance, not yet owned by the runtime: the host still has to describe its pads, report
-inputs and draw from the sets). An answer is `{family, set, control}`: the glyph set's name and the control's name in
-it (`east`, `key:space`), 2.6 ns and no allocation. The profile chain (`ResolveProfile`: the family's profile, its
-bases, then `gamepad`) is the one the input side must use when it maps per device; today every pad is mapped with
-`gamepad`, which the chain gives when the file has no family profile.
+user and `GlyphQuery`; the host owns one (`PlayerGlyph(user, control)`, players.h) fed by its devices and inputs.
+An answer is `{family, set, control}`: the glyph set's name and the control's name in it (`east`, `key:space`), 2.6 ns
+and no allocation. The profile chain (`ResolveProfile`: the family's profile, its bases, then `gamepad`) is shared by
+the mapper and the query: each user is mapped with its pad's family profile (`Xam`, `XamHost::controller_family`), so
+a glyph always shows what the input does. Still to come: drawing from the sets (the title adapters, section 4).
 
 When several physical controls are bound, the first one of the active device's class wins (a keyboard player sees the
 key, not the pad button). The glyph images live in a **glyph set**: one atlas per family (PNG, several sizes, plus a

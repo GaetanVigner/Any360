@@ -1,5 +1,6 @@
 // any360::host::rexglue, the system calls: see the header.
 #include "any360/host/system.h"
+#include "any360/host/players.h"
 
 #include <rex/ppc.h>
 #include <rex/runtime.h>
@@ -363,17 +364,30 @@ rex::input::InputSystem* HostInput() {
 // (Test Drive Unlimited drives the rumble from another thread than the one reading the pads: two refreshes at once
 // crashed inside the runtime).
 std::mutex g_host_input;
+// Any360 decides which device is which player (players.h), installed on the runtime's input system at the first read
+// (it may not exist yet when the system starts); off: the runtime's own assignment.
+bool g_player_slots = true;
+std::function<void(const std::string&)> g_player_log;
+void InstallPlayersOnce(rex::input::InputSystem* input) {
+  if (g_player_slots && input && !PlayersInstalled()) InstallPlayers(input, g_player_log);
+}
 bool HostControllerConnected(uint32_t user) {
   rex::input::X_INPUT_STATE state{};
   rex::input::InputSystem* input = HostInput();
   std::lock_guard lock(g_host_input);
+  InstallPlayersOnce(input);
   return input && input->GetState(user, &state) == 0;
 }
+any360::sys::ControllerFamily HostControllerFamily(uint32_t user) { return PlayerFamily(user); }
 bool HostControllerState(uint32_t user, any360::sys::GamepadState& pad) {
   rex::input::X_INPUT_STATE state{};
   rex::input::InputSystem* input = HostInput();
   std::lock_guard lock(g_host_input);
-  if (!input || input->GetState(user, &state) != 0) return false;
+  InstallPlayersOnce(input);
+  if (!input || input->GetState(user, &state) != 0) {
+    ObservePlayer(input, user, any360::sys::GamepadState{});
+    return false;
+  }
   pad.buttons = state.gamepad.buttons;
   pad.left_trigger = state.gamepad.left_trigger;
   pad.right_trigger = state.gamepad.right_trigger;
@@ -381,6 +395,7 @@ bool HostControllerState(uint32_t user, any360::sys::GamepadState& pad) {
   pad.thumb_ly = state.gamepad.thumb_ly;
   pad.thumb_rx = state.gamepad.thumb_rx;
   pad.thumb_ry = state.gamepad.thumb_ry;
+  ObservePlayer(input, user, pad);
   return true;
 }
 void HostVibrate(uint32_t user, uint16_t left, uint16_t right) {
@@ -402,6 +417,10 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
   }
   g_base = kernel->memory()->virtual_membase();
   g_log = options.log;
+  g_player_slots = options.player_slots;
+  g_player_log = [log = options.log](const std::string& line) {
+    if (log) log("input: " + line);
+  };
   g_trace = options.trace_calls;
   g_trace_every = options.trace_every_call;
   uint32_t traced = 0;
@@ -470,6 +489,7 @@ bool StartSystem(const SystemOptions& options, std::string& error) {
     any360::sys::XamHost& host = any360::sys::XamState().host();
     host.controller_connected = &HostControllerConnected;
     host.controller_state = &HostControllerState;
+    host.controller_family = &HostControllerFamily;
     host.vibrate = &HostVibrate;
     if (auto* profile = kernel->user_profile()) {
       title.xuid = profile->xuid();

@@ -89,7 +89,8 @@ PadControl OwnPlace(XboxControl c);
 class InputMapper {
  public:
   InputMapper() = default;  // the identity
-  InputMapper(const InputBindings& bindings, std::string_view profile);
+  // `profile` with its bases, then `fallback` with its own (ResolveProfile).
+  InputMapper(const InputBindings& bindings, std::string_view profile, std::string_view fallback = {});
 
   bool identity() const { return identity_; }
   GamepadState Map(const GamepadState& physical);

@@ -1474,6 +1474,15 @@ bool Xam::Connected(uint32_t user) const {
 void Xam::Sample(uint32_t user, std::chrono::steady_clock::time_point at) {
   GamepadState pad;
   if (host_.controller_state) host_.controller_state(user, pad);
+  // The player's pad family, asked after its state (the host learns of a new pad while reading it): a change rebuilds
+  // the mapper with that family's profile.
+  if (host_.controller_family) {
+    const ControllerFamily family = host_.controller_family(user);
+    if (family != pads_[user].family) {
+      pads_[user].family = family;
+      pads_[user].mapper = MapperFor(user, family);
+    }
+  }
   pad = pads_[user].mapper.Map(pad);
   // A replay takes the first controller's place once it starts (the controller left out).
   if (user == 0 && replaying_ && at >= replay_start_) pad = replay_.StateAt(at - replay_start_);

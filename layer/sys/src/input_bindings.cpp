@@ -212,8 +212,8 @@ std::array<const Binding*, size_t(XboxControl::kCount)> ResolveProfile(const Inp
   return chosen;
 }
 
-InputMapper::InputMapper(const InputBindings& bindings, std::string_view profile) {
-  const auto chosen = ResolveProfile(bindings, profile);
+InputMapper::InputMapper(const InputBindings& bindings, std::string_view profile, std::string_view fallback) {
+  const auto chosen = ResolveProfile(bindings, profile, fallback);
   for (size_t t = 0; t < chosen.size(); ++t) {
     if (!chosen[t]) continue;
     Target& target = targets_[t];

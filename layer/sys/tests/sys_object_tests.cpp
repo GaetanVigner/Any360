@@ -1971,6 +1971,30 @@ void XamTests() {
   std::this_thread::sleep_for(std::chrono::milliseconds(450));
   CHECK(XamState().InputGetKeystroke(g, 0, 0, buf) == 0 && g.Load16(buf) == 0x5820 && g.Load16(buf + 4) == 5);  // repeat
   CHECK(XamState().InputGetKeystroke(g, 1, 0, buf) == kErrorDeviceNotConnected);
+  // Each player's bindings follow the family of their pad: "playstation" swaps A and B, the gamepad profile does not
+  // exist (identity), so a DualSense's south button gives B while an Xbox pad's gives A; unknown is the gamepad's.
+  {
+    static ControllerFamily family = ControllerFamily::kPs5;
+    XamState().host().controller_family = [](uint32_t) { return family; };
+    XamState().host().controller_state = [](uint32_t, GamepadState& s) {
+      s.buttons = 0x1000;  // the south button
+      return true;
+    };
+    XamState().SetInputBindings(InputBindings::Parse(
+        R"({"version":1,"profiles":{"playstation":{"xbox:a":["east"],"xbox:b":["south"]}}})"));
+    CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load16(buf + 4) == 0x2000);
+    family = ControllerFamily::kXboxOne;
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load16(buf + 4) == 0x1000);
+    family = ControllerFamily::kCount;
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load16(buf + 4) == 0x1000);
+    family = ControllerFamily::kPs3;
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load16(buf + 4) == 0x2000);
+    XamState().SetInputBindings(InputBindings{});
+    XamState().host().controller_family = nullptr;
+  }
   // The title module from a synthetic XEX header: inline, pointer and offset fields; privileges; the execution id.
   const uint32_t xex = kScratch + 0xE00;
   std::memset(g.host(xex), 0, 0x100);

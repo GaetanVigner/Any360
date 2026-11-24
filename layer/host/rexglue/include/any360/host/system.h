@@ -72,6 +72,9 @@ struct SystemOptions {
   // <root>/<title id>/profile/<profile name>/<setting id>), so either side reads what the other wrote, and answers as
   // the runtime's signed-in profile (its XUID, its name).
   std::string user_data_root;
+  // Any360 decides which input device is which player (players.h: stable split-screen slots, each pad's family for
+  // its bindings and glyphs); false: the runtime's own assignment.
+  bool player_slots = true;
 };
 
 // Prepares any360::sys inside the running runtime: the guest memory, the kernel heap, the dispatcher its scheduler

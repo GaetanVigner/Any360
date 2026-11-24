@@ -32,6 +32,11 @@ std::string_view GlyphSet(ControllerFamily f);
 // The bindings profile a family's events are mapped with, before the `base` chain: "playstation", "switch",
 // "steam_deck", "keyboard_mouse", "gamepad" for the others.
 std::string_view ProfileName(ControllerFamily f);
+// The profile a user's events are mapped with, and their glyphs resolved by, before "gamepad": "player<user+1>" when
+// the file has it (a player's own layout in split screen), else the family's (ProfileName; "gamepad" when the family
+// is unknown, kCount). The keyboard's is "keyboard_mouse" whatever the user. The input (Xam) and the glyph query both
+// take it from here, so a glyph shows what the input does.
+std::string ProfileFor(const InputBindings& bindings, uint32_t user, ControllerFamily f);
 
 // A pad as the host sees it. `type` follows SDL 3's SDL_GamepadType, `south_label` SDL_GetGamepadButtonLabel of the
 // south button; the host converts, any360::sys never includes SDL.
@@ -44,6 +49,13 @@ struct PadDescription {
   uint16_t vendor = 0, product = 0;
   FaceLabel south_label = FaceLabel::kUnknown;
 };
+// A pad described from what an input driver keeps of it, with no SDL call: its SDL GUID as text (32 hex digits: the
+// vendor and product of a USB or Bluetooth pad, as SDL_GetJoystickGUIDInfo reads them) and its name. The type comes
+// from a table of known vendors and products (Microsoft, Sony, Nintendo), else from words of the name ("DualSense",
+// "PS4", "Xbox 360", "Pro Controller"...); the label stays unknown. Used where the SDL that opened the pads is not the
+// caller's (a title's runtime keeps its own).
+PadDescription DescribePad(std::string_view sdl_guid, std::string_view name);
+
 // Valve's Steam Deck and Steam Controller by vendor and product first (SDL types them as Xbox pads), then the type,
 // then, for a pad SDL does not know, the south button's label (cross: PlayStation 4; B: Nintendo layout; A: Xbox
 // One); otherwise generic.
@@ -118,7 +130,8 @@ class GlyphQuery {
   uint32_t Generation(Clock::time_point at);
 
  private:
-  std::array<std::array<std::string, size_t(XboxControl::kCount)>, size_t(ControllerFamily::kCount)> names_;
+  // Per user (a player's own profile), per family, per control.
+  std::array<std::array<std::array<std::string, size_t(XboxControl::kCount)>, size_t(ControllerFamily::kCount)>, kUsers> names_;
   std::array<ActiveDevice, kUsers> users_{};
   uint32_t bindings_generation_ = 0;
 };

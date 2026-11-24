@@ -19,6 +19,7 @@
 #include "guest.h"
 #include "input.h"
 #include "input_bindings.h"
+#include "input_glyphs.h"
 
 namespace any360::sys {
 
@@ -35,6 +36,9 @@ struct XamHost {
   bool (*controller_connected)(uint32_t user) = nullptr;  // default: controller 0 only
   bool (*controller_state)(uint32_t user, GamepadState& state) = nullptr;
   void (*vibrate)(uint32_t user, uint16_t left, uint16_t right) = nullptr;
+  // The family of the pad a user plays on (kCount when unknown): the user's bindings profile follows it. Default:
+  // unknown, every user on the "gamepad" profile.
+  ControllerFamily (*controller_family)(uint32_t user) = nullptr;
   // A bug check, an uncaught guest exception, a title terminate or a return to firmware: the default exits the process.
   void (*stop)(const char* reason, uint32_t code) = nullptr;
   // Resolves XexGetProcedureAddress for a system module ("xam.xex", "xboxkrnl.exe") by ordinal; 0 when unknown.
@@ -413,15 +417,14 @@ class Xam {
     return recording_.events().size();
   }
   // The launcher's bindings (input_bindings.h), layer 1: every controller's samples mapped before the queue sees them
-  // (the input script's presses are the title's buttons, added after), user n's with the profile "player<n+1>" when
-  // the file has one (a player's own layout in split screen, its `base` the shared one), else "gamepad". An empty
-  // InputBindings is the identity.
+  // (the input script's presses are the title's buttons, added after), user n's with ProfileFor(user, its pad's
+  // family): the profile "player<n+1>" when the file has one (a player's own layout in split screen, its `base` the
+  // shared one), else the family's (ProfileName), then "gamepad". The mapper follows the host's controller_family as
+  // the player changes pads. An empty InputBindings is the identity.
   void SetInputBindings(const InputBindings& bindings) {
     std::lock_guard lock(pads_mutex_);
-    for (size_t user = 0; user < pads_.size(); ++user) {
-      const std::string player = "player" + std::to_string(user + 1);
-      pads_[user].mapper = InputMapper(bindings, bindings.Find(player) ? std::string_view(player) : "gamepad");
-    }
+    bindings_ = bindings;
+    for (uint32_t user = 0; user < pads_.size(); ++user) pads_[user].mapper = MapperFor(user, pads_[user].family);
   }
   uint32_t InputGetCapabilities(Guest g, uint32_t user, uint32_t flags, uint32_t caps);
   uint32_t InputGetState(Guest g, uint32_t user, uint32_t flags, uint32_t state);
@@ -627,7 +630,12 @@ class Xam {
     uint32_t packet = 0;
     InputQueue input;
     InputMapper mapper;
+    ControllerFamily family = ControllerFamily::kCount;  // unknown
   };
+  InputMapper MapperFor(uint32_t user, ControllerFamily family) const {
+    return InputMapper(bindings_, ProfileFor(bindings_, user, family), "gamepad");
+  }
+  InputBindings bindings_;
   std::array<Pad, 4> pads_{};
   std::mutex pads_mutex_;
   std::chrono::steady_clock::duration input_step_ = InputQueue::kConsoleFrame;

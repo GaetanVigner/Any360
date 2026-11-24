@@ -1,4 +1,5 @@
 #include "any360/host/settings.h"
+#include "any360/host/players.h"
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
@@ -92,6 +93,9 @@ REXCVAR_DEFINE_DOUBLE(any360_input_record_from, 0.0, "Kernel",
                       "Any360: the seconds after the start a recording or a replay begins (the input script's clock)");
 REXCVAR_DEFINE_DOUBLE(any360_input_record_seconds, 0.0, "Kernel",
                       "Any360: how long a recording lasts (a neutral state closes it); 0: until the title ends");
+REXCVAR_DEFINE_BOOL(any360_input_players, true, "Kernel",
+                   "Any360 input group: Any360 decides which device is which player (stable split-screen slots, each "
+                   "pad's family for its bindings profile and glyphs); false: the runtime's own assignment");
 REXCVAR_DEFINE_STRING(any360_input_bindings, "", "Kernel",
                       "Any360 input group: the bindings file Any360Launcher writes (docs/GLYPHS.md, section 2); its "
                       "\"gamepad\" profile maps every controller before the title reads it. Empty: no remapping");
@@ -149,6 +153,7 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
   if (groups.empty()) return false;
   SystemOptions options;
   options.trace_calls = REXCVAR_GET(any360_sys_trace);
+  options.player_slots = REXCVAR_GET(any360_input_players);
   options.trace_every_call = REXCVAR_GET(any360_sys_trace_all);
   options.log = [](const std::string& line) { REXLOG_INFO("Any360 system: {}", line); };
   for (const std::string& name : SplitList(REXCVAR_GET(any360_sys_trace_groups))) {
@@ -259,6 +264,7 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
           const any360::sys::InputBindings bindings = any360::sys::InputBindings::Parse(text, &problems);
           for (const std::string& p : problems) REXLOG_WARN("Any360 system: input bindings: {}", p);
           any360::sys::XamState().SetInputBindings(bindings);
+          SetPlayerBindings(bindings);
           const any360::sys::BindingProfile* pad = bindings.Find("gamepad");
           REXLOG_INFO("Any360 system: input bindings from {}: {} profiles, the controller's {} targets", path,
                       bindings.profiles().size(), pad ? pad->bindings.size() : 0);

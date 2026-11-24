@@ -42,6 +42,86 @@ std::string_view ProfileName(ControllerFamily f) {
   }
 }
 
+std::string ProfileFor(const InputBindings& bindings, uint32_t user, ControllerFamily f) {
+  if (f == ControllerFamily::kKeyboardMouse) return "keyboard_mouse";
+  std::string player = "player" + std::to_string(user + 1);
+  if (bindings.Find(player)) return player;
+  return std::string(f < ControllerFamily::kCount ? ProfileName(f) : "gamepad");
+}
+
+namespace {
+
+int HexDigit(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+bool Contains(std::string_view text, std::string_view word) {
+  if (word.size() > text.size()) return false;
+  for (size_t i = 0; i + word.size() <= text.size(); ++i) {
+    size_t j = 0;
+    while (j < word.size()) {
+      char a = text[i + j], b = word[j];
+      if (a >= 'A' && a <= 'Z') a = char(a - 'A' + 'a');
+      if (b >= 'A' && b <= 'Z') b = char(b - 'A' + 'a');
+      if (a != b) break;
+      ++j;
+    }
+    if (j == word.size()) return true;
+  }
+  return false;
+}
+
+struct KnownPad {
+  uint16_t vendor, product;
+  PadType type;
+};
+constexpr uint16_t kMicrosoft = 0x045E, kSony = 0x054C, kNintendo = 0x057E;
+constexpr KnownPad kKnownPads[] = {
+    {kMicrosoft, 0x028E, PadType::kXbox360}, {kMicrosoft, 0x028F, PadType::kXbox360},
+    {kMicrosoft, 0x02A1, PadType::kXbox360}, {kMicrosoft, 0x0719, PadType::kXbox360},
+    {kSony, 0x0268, PadType::kPs3},
+    {kSony, 0x05C4, PadType::kPs4},          {kSony, 0x09CC, PadType::kPs4},          {kSony, 0x0BA0, PadType::kPs4},
+    {kSony, 0x0CE6, PadType::kPs5},          {kSony, 0x0DF2, PadType::kPs5},
+    {kNintendo, 0x2009, PadType::kSwitchPro}, {kNintendo, 0x2006, PadType::kJoyConLeft},
+    {kNintendo, 0x2007, PadType::kJoyConRight}, {kNintendo, 0x200E, PadType::kJoyConPair},
+};
+
+}  // namespace
+
+PadDescription DescribePad(std::string_view sdl_guid, std::string_view name) {
+  PadDescription d;
+  // 16 bytes: bus (2), CRC (2), vendor (2, little-endian), 0 (2), product (2), 0 (2), version (2), driver (2). The
+  // vendor and product are there only when the zero words are (SDL's own test).
+  uint8_t b[16] = {};
+  bool hex = sdl_guid.size() >= 32;
+  for (size_t i = 0; hex && i < 16; ++i) {
+    const int hi = HexDigit(sdl_guid[2 * i]), lo = HexDigit(sdl_guid[2 * i + 1]);
+    hex = hi >= 0 && lo >= 0;
+    b[i] = uint8_t(hi << 4 | lo);
+  }
+  if (hex && b[6] == 0 && b[7] == 0 && b[10] == 0 && b[11] == 0) {
+    d.vendor = uint16_t(b[4] | b[5] << 8);
+    d.product = uint16_t(b[8] | b[9] << 8);
+  }
+  for (const KnownPad& k : kKnownPads)
+    if (k.vendor == d.vendor && k.product == d.product) d.type = k.type;
+  if (d.type == PadType::kUnknown) {
+    if (Contains(name, "PS5") || Contains(name, "DualSense")) d.type = PadType::kPs5;
+    else if (Contains(name, "PS4") || Contains(name, "DualShock 4")) d.type = PadType::kPs4;
+    else if (Contains(name, "PS3") || Contains(name, "DualShock 3")) d.type = PadType::kPs3;
+    else if (Contains(name, "Joy-Con")) d.type = PadType::kJoyConPair;
+    else if (Contains(name, "Pro Controller") || Contains(name, "Switch")) d.type = PadType::kSwitchPro;
+    else if (Contains(name, "Xbox 360")) d.type = PadType::kXbox360;
+    else if (Contains(name, "Xbox") || d.vendor == kMicrosoft) d.type = PadType::kXboxOne;
+    else if (d.vendor == kSony) d.type = PadType::kPs4;
+    else if (d.vendor == kNintendo) d.type = PadType::kSwitchPro;
+  }
+  return d;
+}
+
 ControllerFamily FamilyOf(const PadDescription& pad) {
   if (pad.vendor == kValve) {
     if (pad.product == kSteamDeck) return ControllerFamily::kSteamDeck;
@@ -143,11 +223,12 @@ ControllerFamily ActiveDevice::Shown(Clock::time_point at) {
 }
 
 void GlyphQuery::SetBindings(const InputBindings& bindings) {
+  for (uint32_t u = 0; u < kUsers; ++u)
   for (size_t f = 0; f < size_t(ControllerFamily::kCount); ++f) {
     const bool keyboard = ControllerFamily(f) == ControllerFamily::kKeyboardMouse;
-    const auto chosen = ResolveProfile(bindings, ProfileName(ControllerFamily(f)), keyboard ? "" : "gamepad");
+    const auto chosen = ResolveProfile(bindings, ProfileFor(bindings, u, ControllerFamily(f)), keyboard ? "" : "gamepad");
     for (size_t t = 0; t < size_t(XboxControl::kCount); ++t) {
-      std::string& name = names_[f][t];
+      std::string& name = names_[u][f][t];
       name.clear();
       if (!chosen[t]) {
         // Unnamed: its own control on a pad, nothing on the keyboard.
@@ -170,7 +251,7 @@ Glyph GlyphQuery::For(uint32_t user_index, XboxControl control, Clock::time_poin
   Glyph g;
   g.family = f;
   g.set = GlyphSet(f);
-  if (control < XboxControl::kCount) g.control = names_[size_t(f)][size_t(control)];
+  if (control < XboxControl::kCount) g.control = names_[user_index < kUsers ? user_index : 0][size_t(f)][size_t(control)];
   return g;
 }
 

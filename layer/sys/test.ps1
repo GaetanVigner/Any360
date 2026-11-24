@@ -143,6 +143,8 @@ try {
     if ($LASTEXITCODE) { throw "sys_runtime_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'host/rexglue/host_rexglue_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "host_rexglue_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'host/rexglue/host_players_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "host_players_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'host/rexglue/host_system_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "host_system_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'host/rexglue/host_diagnostics_tests.exe') | Out-Host

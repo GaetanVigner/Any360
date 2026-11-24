@@ -207,6 +207,23 @@ void GlyphTests() {
   CHECK(family(PadType::kUnknown, 0, 0, FaceLabel::kCross) == F::kPs4 && family(PadType::kStandard, 0, 0, FaceLabel::kB) == F::kSwitch);
   CHECK(family(PadType::kStandard, 0, 0, FaceLabel::kA) == F::kXboxOne && family(PadType::kStandard) == F::kGeneric);
 
+  // Pads described from their SDL GUID and name, without SDL: USB GUIDs of known pads, a Bluetooth one, names alone.
+  auto described = [](const char* guid, const char* name) { return FamilyOf(DescribePad(guid, name)); };
+  const PadDescription deck = DescribePad("03000000de2800000512000000000000", "Steam Deck");
+  CHECK(deck.vendor == 0x28DE && deck.product == 0x1205 && FamilyOf(deck) == F::kSteamDeck);
+  CHECK(described("030000005e0400008e02000000000000", "Controller") == F::kXbox360);
+  CHECK(described("030000005e040000120b000000000000", "Xbox Series X Controller") == F::kXboxOne);
+  CHECK(described("030000004c0500006802000000000000", "PS3 Controller") == F::kPs3);
+  CHECK(described("030000004c050000cc09000000000000", "PS4 Controller") == F::kPs4);
+  CHECK(described("050000004c050000e60c000000000000", "DualSense Wireless Controller") == F::kPs5);  // Bluetooth
+  CHECK(described("030000007e0500000920000000000000", "Nintendo Switch Pro Controller") == F::kSwitch);
+  CHECK(described("03000000de2800004211000000000000", "Steam Controller") == F::kSteamController);
+  CHECK(described("", "PS5 Controller") == F::kPs5 && described("", "Joy-Con (L/R)") == F::kSwitch);
+  CHECK(described("", "Xbox 360 Controller") == F::kXbox360 && described("not hex at all, not hex at all!!", "Gamepad") == F::kGeneric);
+  CHECK(described("03000000ffff00001234000000000000", "Unknown Gamepad") == F::kGeneric);
+  // A GUID whose zero words are not zero carries no vendor (a name or a hash, not a USB id).
+  CHECK(DescribePad("030000004c05abcdcc09000000000000", "").vendor == 0);
+
   // Real input against noise.
   GamepadState rest = Pad(), s = Pad();
   s.thumb_lx = 3000;
@@ -291,6 +308,23 @@ void GlyphTests() {
   q.user(2).Connected(11, F::kKeyboardMouse);
   CHECK(q.For(2, XboxControl::kA, t0).control == "key:space" && q.For(2, XboxControl::kLeftY, t0).control == "key:w");
   CHECK(q.For(2, XboxControl::kRightX, t0).control == "mouse:x" && q.For(2, XboxControl::kB, t0).control.empty());
+  // A player's own layout ("player<n>") wins over their pad family's, for the input and the glyphs alike.
+  const InputBindings players = InputBindings::Parse(R"({"version":1,"profiles":{
+    "gamepad":{"xbox:a":["east"],"xbox:b":["south"]},
+    "playstation":{"base":"gamepad","xbox:y":["west"]},
+    "player2":{"base":"gamepad","xbox:a":["north"]}}})");
+  CHECK(ProfileFor(players, 0, F::kPs5) == "playstation" && ProfileFor(players, 1, F::kPs5) == "player2");
+  CHECK(ProfileFor(players, 1, F::kKeyboardMouse) == "keyboard_mouse" && ProfileFor(players, 2, F::kCount) == "gamepad");
+  CHECK(ProfileFor(players, 0, F::kXboxOne) == "gamepad" && ProfileFor(InputBindings{}, 3, F::kSwitch) == "switch");
+  GlyphQuery pq(players);
+  pq.user(0).Connected(1, F::kPs5);
+  pq.user(1).Connected(2, F::kPs5);
+  CHECK(pq.For(0, XboxControl::kA, t0).control == "east" && pq.For(0, XboxControl::kY, t0).control == "west");
+  CHECK(pq.For(1, XboxControl::kA, t0).control == "north" && pq.For(1, XboxControl::kB, t0).control == "south");
+  CHECK(pq.For(1, XboxControl::kY, t0).control == "north");  // player 2's layout does not take the family's Y
+  InputMapper p1(players, ProfileFor(players, 0, F::kPs5), "gamepad"), p2(players, ProfileFor(players, 1, F::kPs5), "gamepad");
+  CHECK(p1.Bound(XboxControl::kA) == std::vector<PadControl>{PadControl::kEast} &&
+        p2.Bound(XboxControl::kA) == std::vector<PadControl>{PadControl::kNorth});
   // New bindings: the answers follow at once, the generation moves.
   const uint32_t g1 = q.Generation(t0 + ms(300));
   q.SetBindings(InputBindings{});
