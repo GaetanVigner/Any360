@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- Touchpad (press). Original art (Any360 glyph pack); generic shapes, no platform logo. -->
+<path d="M24 26H104Q120 26 120 42V86Q120 102 104 102H24Q8 102 8 86V42Q8 26 24 26Z" fill="#30343A" stroke="#080808" stroke-width="10" stroke-linejoin="round" paint-order="stroke"/>
+<path d="M24 26H104Q120 26 120 42V86Q120 102 104 102H24Q8 102 8 86V42Q8 26 24 26Z" fill="none" stroke="#767D87" stroke-width="3"/>
+<path d="M22 38H106Q110 38 110 42V86Q110 90 106 90H22Q18 90 18 86V42Q18 38 22 38Z" fill="#3A3F46"/>
+<circle cx="64" cy="64" r="12" fill="none" stroke="#F5F6F7" stroke-width="5"/>
+<circle cx="64" cy="64" r="4.5" fill="#F5F6F7"/>
+</svg>

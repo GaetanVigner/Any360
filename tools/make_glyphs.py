@@ -57,7 +57,11 @@ def families():
     order = pads + sorted(EXTRA)
     out, used = {}, set()
     for family, spec in index["families"].items():
-        controls = dict(index[spec["use"]]) if spec.get("use") else {}
+        controls = {}
+        for block in spec.get("use", ()):
+            if block not in index["shared"]:
+                sys.exit(f"{family}: unknown shared block {block}")
+            controls.update(index["shared"][block])
         controls.update(spec["controls"])
         absent = set(spec.get("absent", ()))
         unknown = sorted(set(controls) - set(order))
@@ -160,19 +164,22 @@ def straight_alpha(pixels):
     return pixels
 
 
-def preview(sheets, grey=0x80, gap=16):
-    """Every family's 128 px atlas side by side over grey."""
-    width = sum(w for w, _, _ in sheets) + gap * (len(sheets) - 1)
-    height = max(h for _, h, _ in sheets)
+def preview(sheets, rows=3, grey=0x80, gap=16):
+    """The first rows of every family's 128 px atlas (faces, shoulders, triggers, clicks, start/back, home,
+    touchpad: what differs between families), one family under the other over grey."""
+    cell = SIZES[0]
+    width = max(w for w, _, _ in sheets)
+    band = rows * cell
+    height = len(sheets) * band + gap * (len(sheets) - 1)
     out = bytearray([grey] * (width * height * 3))
-    left = 0
+    top = 0
     for w, h, px in sheets:
-        for y in range(h):
+        for y in range(min(h, band)):
             for x in range(w):
                 r, g, b, a = px[(y * w + x) * 4:(y * w + x) * 4 + 4]
-                o = (y * width + left + x) * 3
+                o = ((top + y) * width + x) * 3
                 out[o:o + 3] = bytes((c * a + grey * (255 - a) + 127) // 255 for c in (r, g, b))
-        left += w + gap
+        top += band + gap
     return encode_png(width, height, out, 3)
 
 
@@ -181,6 +188,11 @@ def main():
     parser.add_argument("--browser", help="Edge or Chrome executable")
     browser = find_browser(parser.parse_args().browser)
     sets = families()
+    # Outputs of a family that no longer exists (renamed or removed).
+    for stale in GLYPHS.glob("*.json"):
+        if stale.name != "families.json" and stale.stem not in sets:
+            for path in [stale] + [GLYPHS / f"{stale.stem}_{cell}.png" for cell in SIZES]:
+                path.unlink(missing_ok=True)
     previews = []
     with tempfile.TemporaryDirectory() as work:
         for family, entries in sets.items():

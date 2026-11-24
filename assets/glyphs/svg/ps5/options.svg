@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- Options (start): three lines. Original art (Any360 glyph pack); generic shapes, no platform logo. -->
+<circle cx="64" cy="64" r="61" fill="#080808"/>
+<circle cx="64" cy="64" r="55" fill="#30343A"/>
+<circle cx="64" cy="64" r="53.5" fill="none" stroke="#767D87" stroke-width="3"/>
+<g fill="#F5F6F7"><rect x="40" y="43" width="48" height="8" rx="4"/><rect x="40" y="60" width="48" height="8" rx="4"/><rect x="40" y="77" width="48" height="8" rx="4"/></g>
+</svg>

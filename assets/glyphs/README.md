@@ -7,9 +7,9 @@ of every family is a globe.
 
 | File | What it is |
 | --- | --- |
-| `svg/common/*.svg` | Shared by the families: sticks (and their 8 directions), D-pad (and its 8 directions), home. |
-| `svg/<family>/*.svg` | What differs per family: face buttons, shoulders, triggers, start/back, stick clicks. |
-| `families.json` | The index the generator reads: each family's SVG per control, `absent` controls. |
+| `svg/common/*.svg` | Shared by every family: sticks (and their 8 directions), D-pad (and its 8 directions), home, ▶/◀. |
+| `svg/<group>/*.svg` | Art shared by a group (`xbox`, `playstation`) or one family's own (`ps3`, `ps4`, `ps5`, `switch`, `steam`). |
+| `families.json` | The index the generator reads: shared blocks, and each family's blocks (`use`), own SVGs and `absent` controls. |
 | `<family>_128.png`, `<family>_64.png` | The atlases: 8-bit RGBA, straight alpha, fully transparent pixels black. |
 | `<family>.json` | Each control's cell (`column`, `row`, the same at every size) and the atlases' sizes. |
 | `preview.png` | Every family's 128 px atlas over grey, for humans. |
@@ -18,9 +18,20 @@ Control names are the `PadControl` names of `layer/sys/src/input_bindings.cpp` (
 ...), plus prompt-only names: `dpad`, and `dpad_`/`left_`/`right_` with `up_left`, `up_right`, `down_left`,
 `down_right`.
 
-Families: `xbox` (A/B/X/Y, LB/RB/LT/RT, menu/view), `ps3` (cross/circle/square/triangle, L1/R1/L2/R2, L3/R3,
-START/SELECT). Next: PS4/PS5 (Create/Options, touchpad), Switch, Steam Deck, keyboard and mouse (the Crackdown pack's
-keycaps).
+Faces are by position, as the bindings are: on a Switch pad `south` is the button printed B.
+
+| Family | Faces | Shoulders / triggers / clicks | start / back | Extra |
+| --- | --- | --- | --- | --- |
+| `xbox360` | A B X Y | LB RB / LT RT / L R | ▶ / ◀ | |
+| `xbox_one` (One, Series) | A B X Y | LB RB / LT RT / L R | menu / view | |
+| `ps3` | cross circle square triangle | L1 R1 / L2 R2 / L3 R3 | START ▶ / SELECT ▬ | |
+| `ps4` | as PS3 | as PS3 | OPTIONS / SHARE | touchpad |
+| `ps5` | as PS3 | as PS3 | options ≡ / create | touchpad |
+| `switch` (Pro, Joy-Con pair) | B A Y X (south east west north) | L R / ZL ZR / L R | + / − | |
+| `steam_controller` | A B X Y | LB RB / LT RT / L R | ▶ / ◀ | right trackpad as the right stick |
+
+Shared art: `common` (sticks, D-pad, home, ▶/◀), `xbox` (faces, shoulders, triggers, menu/view), `playstation` (faces,
+L1-R3, touchpad). Next: Steam Deck, keyboard and mouse (the Crackdown pack's keycaps).
 
 ## Regenerating
 

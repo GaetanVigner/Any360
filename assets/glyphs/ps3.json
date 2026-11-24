@@ -19,52 +19,52 @@
  },
  "controls": {
   "south": {
-   "svg": "ps3/cross.svg",
+   "svg": "playstation/cross.svg",
    "column": 0,
    "row": 0
   },
   "east": {
-   "svg": "ps3/circle.svg",
+   "svg": "playstation/circle.svg",
    "column": 1,
    "row": 0
   },
   "west": {
-   "svg": "ps3/square.svg",
+   "svg": "playstation/square.svg",
    "column": 2,
    "row": 0
   },
   "north": {
-   "svg": "ps3/triangle.svg",
+   "svg": "playstation/triangle.svg",
    "column": 3,
    "row": 0
   },
   "left_shoulder": {
-   "svg": "ps3/l1.svg",
+   "svg": "playstation/l1.svg",
    "column": 4,
    "row": 0
   },
   "right_shoulder": {
-   "svg": "ps3/r1.svg",
+   "svg": "playstation/r1.svg",
    "column": 5,
    "row": 0
   },
   "left_trigger": {
-   "svg": "ps3/l2.svg",
+   "svg": "playstation/l2.svg",
    "column": 6,
    "row": 0
   },
   "right_trigger": {
-   "svg": "ps3/r2.svg",
+   "svg": "playstation/r2.svg",
    "column": 7,
    "row": 0
   },
   "left_stick": {
-   "svg": "ps3/l3.svg",
+   "svg": "playstation/l3.svg",
    "column": 0,
    "row": 1
   },
   "right_stick": {
-   "svg": "ps3/r3.svg",
+   "svg": "playstation/r3.svg",
    "column": 1,
    "row": 1
   },

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- OPTIONS (start). Original art (Any360 glyph pack); generic shapes, no platform logo. -->
+<path d="M36 30H92Q123 30 123 64Q123 98 92 98H36Q5 98 5 64Q5 30 36 30Z" fill="#30343A" stroke="#080808" stroke-width="10" stroke-linejoin="round" paint-order="stroke"/>
+<path d="M36 30H92Q123 30 123 64Q123 98 92 98H36Q5 98 5 64Q5 30 36 30Z" fill="none" stroke="#767D87" stroke-width="3"/>
+<text x="64" y="73" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="24" fill="#F5F6F7">OPTIONS</text>
+</svg>

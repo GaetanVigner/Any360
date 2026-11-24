@@ -1,17 +1,17 @@
 {
- "family": "xbox",
+ "family": "ps4",
  "generated_by": "tools/make_glyphs.py from assets/glyphs/families.json",
  "alpha": "straight",
  "columns": 8,
  "atlases": {
   "128": {
-   "file": "xbox_128.png",
+   "file": "ps4_128.png",
    "width": 1024,
    "height": 768,
    "cell": 128
   },
   "64": {
-   "file": "xbox_64.png",
+   "file": "ps4_64.png",
    "width": 512,
    "height": 384,
    "cell": 64
@@ -19,52 +19,52 @@
  },
  "controls": {
   "south": {
-   "svg": "xbox/a.svg",
+   "svg": "playstation/cross.svg",
    "column": 0,
    "row": 0
   },
   "east": {
-   "svg": "xbox/b.svg",
+   "svg": "playstation/circle.svg",
    "column": 1,
    "row": 0
   },
   "west": {
-   "svg": "xbox/x.svg",
+   "svg": "playstation/square.svg",
    "column": 2,
    "row": 0
   },
   "north": {
-   "svg": "xbox/y.svg",
+   "svg": "playstation/triangle.svg",
    "column": 3,
    "row": 0
   },
   "left_shoulder": {
-   "svg": "xbox/lb.svg",
+   "svg": "playstation/l1.svg",
    "column": 4,
    "row": 0
   },
   "right_shoulder": {
-   "svg": "xbox/rb.svg",
+   "svg": "playstation/r1.svg",
    "column": 5,
    "row": 0
   },
   "left_trigger": {
-   "svg": "xbox/lt.svg",
+   "svg": "playstation/l2.svg",
    "column": 6,
    "row": 0
   },
   "right_trigger": {
-   "svg": "xbox/rt.svg",
+   "svg": "playstation/r2.svg",
    "column": 7,
    "row": 0
   },
   "left_stick": {
-   "svg": "common/stick-l.svg",
+   "svg": "playstation/l3.svg",
    "column": 0,
    "row": 1
   },
   "right_stick": {
-   "svg": "common/stick-r.svg",
+   "svg": "playstation/r3.svg",
    "column": 1,
    "row": 1
   },
@@ -89,12 +89,12 @@
    "row": 1
   },
   "start": {
-   "svg": "xbox/menu.svg",
+   "svg": "ps4/options.svg",
    "column": 6,
    "row": 1
   },
   "back": {
-   "svg": "xbox/view.svg",
+   "svg": "ps4/share.svg",
    "column": 7,
    "row": 1
   },
@@ -103,129 +103,134 @@
    "column": 0,
    "row": 2
   },
+  "touchpad": {
+   "svg": "playstation/touchpad.svg",
+   "column": 1,
+   "row": 2
+  },
   "left_x": {
    "svg": "common/stick-l.svg",
-   "column": 1,
+   "column": 2,
    "row": 2
   },
   "left_y": {
    "svg": "common/stick-l.svg",
-   "column": 2,
+   "column": 3,
    "row": 2
   },
   "right_x": {
    "svg": "common/stick-r.svg",
-   "column": 3,
+   "column": 4,
    "row": 2
   },
   "right_y": {
    "svg": "common/stick-r.svg",
-   "column": 4,
+   "column": 5,
    "row": 2
   },
   "left_x+": {
    "svg": "common/stick-l-r.svg",
-   "column": 5,
+   "column": 6,
    "row": 2
   },
   "left_x-": {
    "svg": "common/stick-l-l.svg",
-   "column": 6,
+   "column": 7,
    "row": 2
   },
   "left_y+": {
    "svg": "common/stick-l-u.svg",
-   "column": 7,
-   "row": 2
+   "column": 0,
+   "row": 3
   },
   "left_y-": {
    "svg": "common/stick-l-d.svg",
-   "column": 0,
+   "column": 1,
    "row": 3
   },
   "right_x+": {
    "svg": "common/stick-r-r.svg",
-   "column": 1,
+   "column": 2,
    "row": 3
   },
   "right_x-": {
    "svg": "common/stick-r-l.svg",
-   "column": 2,
+   "column": 3,
    "row": 3
   },
   "right_y+": {
    "svg": "common/stick-r-u.svg",
-   "column": 3,
+   "column": 4,
    "row": 3
   },
   "right_y-": {
    "svg": "common/stick-r-d.svg",
-   "column": 4,
+   "column": 5,
    "row": 3
   },
   "dpad": {
    "svg": "common/dpad.svg",
-   "column": 5,
+   "column": 6,
    "row": 3
   },
   "dpad_down_left": {
    "svg": "common/dpad-dl.svg",
-   "column": 6,
+   "column": 7,
    "row": 3
   },
   "dpad_down_right": {
    "svg": "common/dpad-dr.svg",
-   "column": 7,
-   "row": 3
+   "column": 0,
+   "row": 4
   },
   "dpad_up_left": {
    "svg": "common/dpad-ul.svg",
-   "column": 0,
+   "column": 1,
    "row": 4
   },
   "dpad_up_right": {
    "svg": "common/dpad-ur.svg",
-   "column": 1,
+   "column": 2,
    "row": 4
   },
   "left_down_left": {
    "svg": "common/stick-l-dl.svg",
-   "column": 2,
+   "column": 3,
    "row": 4
   },
   "left_down_right": {
    "svg": "common/stick-l-dr.svg",
-   "column": 3,
+   "column": 4,
    "row": 4
   },
   "left_up_left": {
    "svg": "common/stick-l-ul.svg",
-   "column": 4,
+   "column": 5,
    "row": 4
   },
   "left_up_right": {
    "svg": "common/stick-l-ur.svg",
-   "column": 5,
+   "column": 6,
    "row": 4
   },
   "right_down_left": {
    "svg": "common/stick-r-dl.svg",
-   "column": 6,
+   "column": 7,
    "row": 4
   },
   "right_down_right": {
    "svg": "common/stick-r-dr.svg",
-   "column": 7,
-   "row": 4
+   "column": 0,
+   "row": 5
   },
   "right_up_left": {
    "svg": "common/stick-r-ul.svg",
-   "column": 0,
+   "column": 1,
    "row": 5
   },
   "right_up_right": {
    "svg": "common/stick-r-ur.svg",
-   "column": 1,
+   "column": 2,
    "row": 5
   }
  }
