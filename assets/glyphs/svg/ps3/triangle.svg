@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- North face button: triangle. Original art (Any360 glyph pack); generic shapes, no platform logo. -->
+<circle cx="64" cy="64" r="61" fill="#080808"/>
+<circle cx="64" cy="64" r="55" fill="#30343A"/>
+<circle cx="64" cy="64" r="53.5" fill="none" stroke="#767D87" stroke-width="3"/>
+<path d="M64 36L90 81H38Z" stroke="#43D3A8" fill="none" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

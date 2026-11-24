@@ -261,7 +261,8 @@ key, not the pad button). The glyph images live in a **glyph set**: one atlas pe
 JSON index of rectangles per control), loaded by the host; `any360::sys` only answers ids, the host and the renderer
 own the pixels. The same sets ship to the launcher, so the launcher and the game draw the same glyph for the same
 control. The artwork: Any360's own pack (from Crackdown's), or the platform's glyphs where the title runs on a
-platform that has them (Steam), see C3.
+platform that has them (Steam), see C3. The sets live in `assets/glyphs` (`families.json`, SVG sources, atlases
+rendered by `tools/make_glyphs.py`, keyed by `PadControl` names): `xbox` and `ps3` so far.
 
 Unit tests: family from (type, vendor, product, label) on a table of known pads; active device with drift, jitter and
 a two-device hand-over; `GlyphFor` over swap, multi-bind, hot-plug, unplug, and the pad -> keyboard -> DualSense sequence (glyphs follow

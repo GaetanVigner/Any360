@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- South face button: cross. Original art (Any360 glyph pack); generic shapes, no platform logo. -->
+<circle cx="64" cy="64" r="61" fill="#080808"/>
+<circle cx="64" cy="64" r="55" fill="#30343A"/>
+<circle cx="64" cy="64" r="53.5" fill="none" stroke="#767D87" stroke-width="3"/>
+<path d="M43 43L85 85M85 43L43 85" stroke="#7FB6EA" fill="none" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

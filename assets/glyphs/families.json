@@ -1,0 +1,73 @@
+{
+  "comment": "Glyph sets (docs/GLYPHS.md section 3): per family, the SVG of each physical control, named as PadControl in layer/sys/src/input_bindings.cpp (kPadNames), plus prompt-only names (diagonals, whole D-pad). `common` is shared by every family that lists it in `use`; a family's own entries win. `absent` lists the controls a family's pad does not have. Edit, then run tools/make_glyphs.py.",
+  "common": {
+    "left_stick": "common/stick-l.svg",
+    "right_stick": "common/stick-r.svg",
+    "left_x": "common/stick-l.svg",
+    "left_y": "common/stick-l.svg",
+    "right_x": "common/stick-r.svg",
+    "right_y": "common/stick-r.svg",
+    "left_x+": "common/stick-l-r.svg",
+    "left_x-": "common/stick-l-l.svg",
+    "left_y+": "common/stick-l-u.svg",
+    "left_y-": "common/stick-l-d.svg",
+    "right_x+": "common/stick-r-r.svg",
+    "right_x-": "common/stick-r-l.svg",
+    "right_y+": "common/stick-r-u.svg",
+    "right_y-": "common/stick-r-d.svg",
+    "left_up_left": "common/stick-l-ul.svg",
+    "left_up_right": "common/stick-l-ur.svg",
+    "left_down_left": "common/stick-l-dl.svg",
+    "left_down_right": "common/stick-l-dr.svg",
+    "right_up_left": "common/stick-r-ul.svg",
+    "right_up_right": "common/stick-r-ur.svg",
+    "right_down_left": "common/stick-r-dl.svg",
+    "right_down_right": "common/stick-r-dr.svg",
+    "dpad": "common/dpad.svg",
+    "dpad_up": "common/dpad-u.svg",
+    "dpad_down": "common/dpad-d.svg",
+    "dpad_left": "common/dpad-l.svg",
+    "dpad_right": "common/dpad-r.svg",
+    "dpad_up_left": "common/dpad-ul.svg",
+    "dpad_up_right": "common/dpad-ur.svg",
+    "dpad_down_left": "common/dpad-dl.svg",
+    "dpad_down_right": "common/dpad-dr.svg",
+    "guide": "common/guide.svg"
+  },
+  "families": {
+    "xbox": {
+      "use": "common",
+      "absent": ["touchpad"],
+      "controls": {
+        "south": "xbox/a.svg",
+        "east": "xbox/b.svg",
+        "west": "xbox/x.svg",
+        "north": "xbox/y.svg",
+        "left_shoulder": "xbox/lb.svg",
+        "right_shoulder": "xbox/rb.svg",
+        "left_trigger": "xbox/lt.svg",
+        "right_trigger": "xbox/rt.svg",
+        "start": "xbox/menu.svg",
+        "back": "xbox/view.svg"
+      }
+    },
+    "ps3": {
+      "use": "common",
+      "absent": ["touchpad"],
+      "controls": {
+        "south": "ps3/cross.svg",
+        "east": "ps3/circle.svg",
+        "west": "ps3/square.svg",
+        "north": "ps3/triangle.svg",
+        "left_shoulder": "ps3/l1.svg",
+        "right_shoulder": "ps3/r1.svg",
+        "left_trigger": "ps3/l2.svg",
+        "right_trigger": "ps3/r2.svg",
+        "left_stick": "ps3/l3.svg",
+        "right_stick": "ps3/r3.svg",
+        "start": "ps3/start.svg",
+        "back": "ps3/select.svg"
+      }
+    }
+  }
+}
