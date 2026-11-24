@@ -2021,6 +2021,16 @@ void XamTests() {
   };
   std::this_thread::sleep_for(std::chrono::milliseconds(40));
   CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load16(buf + 4) == 0x2000);
+  // A player's own layout (split screen): with two pads, user 1 takes "player2" (X on the south button, its base for
+  // the rest), user 0 keeps the shared swap.
+  XamState().host().controller_connected = [](uint32_t user) { return user < 2; };
+  XamState().SetInputBindings(InputBindings::Parse(R"({"version":1,"profiles":{
+    "gamepad":{"xbox:a":["east"],"xbox:b":["south"]},
+    "player2":{"base":"gamepad","xbox:x":["south"],"xbox:b":["west"]}}})"));
+  std::this_thread::sleep_for(std::chrono::milliseconds(40));
+  CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load16(buf + 4) == 0x2000);
+  CHECK(XamState().InputGetState(g, 1, 0, buf) == 0 && g.Load16(buf + 4) == 0x4000);
+  XamState().host().controller_connected = nullptr;
   XamState().SetInputBindings(InputBindings{});
   std::this_thread::sleep_for(std::chrono::milliseconds(40));
   CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load16(buf + 4) == 0x1000);

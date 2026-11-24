@@ -208,6 +208,11 @@ document) and passes it with `--any360_input_bindings=<path>` through the manife
   nothing from the player: the next event of the new device is mapped with that device's profile, and the glyphs
   follow (section 3). Two devices used at once (a pad and the mouse) are each mapped with their own profile and merged
   after the mapper, as today's merge does.
+- **A player's own layout (split screen).** A profile `player<n>` (`player1` to `player4`, its `base` usually
+  `gamepad`) is the pad layout of user n-1 (the slot of "Several players", section 1): the launcher writes one when a
+  player's layout differs from the shared one. Built 2026-11-24 for the controller samples (`Xam::SetInputBindings`:
+  user n-1 takes `player<n>` when the file has it, else `gamepad`); the glyph query's `user(n)` should resolve the same
+  profile once the host wires it, so a player's prompts show their own layout.
 - A held input survives the switch: a button held on the pad stays held while the keyboard takes over, and its
   release, on the pad, is mapped with the pad's profile (the mapper keeps per-device state, never re-maps a held input
   with another profile).

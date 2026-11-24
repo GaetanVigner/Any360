@@ -412,12 +412,16 @@ class Xam {
     std::lock_guard lock(pads_mutex_);
     return recording_.events().size();
   }
-  // The launcher's bindings (input_bindings.h), layer 1: every controller's samples mapped with the "gamepad" profile
-  // before the queue sees them (the input script's presses are the title's buttons, added after). An empty
+  // The launcher's bindings (input_bindings.h), layer 1: every controller's samples mapped before the queue sees them
+  // (the input script's presses are the title's buttons, added after), user n's with the profile "player<n+1>" when
+  // the file has one (a player's own layout in split screen, its `base` the shared one), else "gamepad". An empty
   // InputBindings is the identity.
   void SetInputBindings(const InputBindings& bindings) {
     std::lock_guard lock(pads_mutex_);
-    for (Pad& p : pads_) p.mapper = InputMapper(bindings, "gamepad");
+    for (size_t user = 0; user < pads_.size(); ++user) {
+      const std::string player = "player" + std::to_string(user + 1);
+      pads_[user].mapper = InputMapper(bindings, bindings.Find(player) ? std::string_view(player) : "gamepad");
+    }
   }
   uint32_t InputGetCapabilities(Guest g, uint32_t user, uint32_t flags, uint32_t caps);
   uint32_t InputGetState(Guest g, uint32_t user, uint32_t flags, uint32_t state);
