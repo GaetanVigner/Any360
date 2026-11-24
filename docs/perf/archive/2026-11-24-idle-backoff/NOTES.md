@@ -59,3 +59,20 @@ the frame's commands seen a frame late). Removed; the test keeps that pattern yi
 `--any360_input_script=18:start/200,22:a/200,26:a/200,30:a/200,34:a/200,38:a/200` takes Mirror's Edge minimized into
 its first level in ~40 s, standing (2930 draws a frame); 80 s a run, the profile at 50-70 s. Standing is
 reproducible but not play: its render thread waits differently.
+
+## Played-route A/B: on by default (2026-11-24, later)
+
+With recorded runs (docs/perf/archive/2026-11-24-input-recording/): the owner's route 2 (menus by the level
+selection, then ~70 s of safe play) played back minimized, 12 alternating launches, spin pacing on in all, the profile
+on 60 s of play (40-100 s). Every run's draws a frame followed the recording's to within ~2% but one (run 2 with the
+back-off, off the route from ~50 s: left out; with it the result is the same). [ab_route2_backoff_valid.txt](ab_route2_backoff_valid.txt)
+([all runs](ab_route2_backoff_all.txt), profiles and logs in [route2/](route2/)):
+
+| | Back-off off (6) | Back-off on (5) | Rank test |
+|---|---|---|---|
+| Process CPU | 1.52-1.67 cores, median 1.575 | 1.33-1.46, median 1.37 | p = 0.004 |
+| FPS / median frame | 61.95 / 16.12 ms | 61.95 / 16.12 ms | p = 0.69 / 0.96 |
+| 10% low / 1% low | 58.65 / 52.5 FPS | 58.75 / 53.1 FPS | p = 0.63 / 0.83 |
+| Time under KeDelayExecutionThread (60 s) | 7.6-8.4 s | 3.8-4.9 s | |
+
+0.2 of a processor less, the lows the same: `--any360_sys_idle_backoff` is on by default.

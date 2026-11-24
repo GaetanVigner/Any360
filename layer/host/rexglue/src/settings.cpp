@@ -61,7 +61,7 @@ REXCVAR_DEFINE_BOOL(any360_sys_spin_pacing, true, "Kernel",
                     "Any360 threads group: a thread whose Sleep(0) loop waits at a steady cadence (a frame limiter) "
                     "sleeps until shortly before its wait's predicted end instead of spinning a processor all through "
                     "it (any360/sys/spin_pacer.h); off: every Sleep(0) yields");
-REXCVAR_DEFINE_BOOL(any360_sys_idle_backoff, false, "Kernel",
+REXCVAR_DEFINE_BOOL(any360_sys_idle_backoff, true, "Kernel",
                     "Any360 threads group, with any360_sys_spin_pacing: a thread whose Sleep(0) waits have no cadence "
                     "(polling memory for work, as a render thread waits for its commands) sleeps in slices once a wait "
                     "has gone on for 2 ms (1/8 of what it has waited, 100-500 us asked: 0.5-1 ms with Windows' timer) "

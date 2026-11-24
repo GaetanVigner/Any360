@@ -10,3 +10,9 @@ chosen from the level selection, not the campaign's continue) and into the level
 recorded run's at 157.7 s ([record_vs_replay_157s.jpg](record_vs_replay_157s.jpg)): the same place on the same
 rooftop, the same tutorial prompt; the camera ~4% of the width apart (a slightly different heading after 2.5 minutes
 of menus, loading and play).
+
+A first route (137 s, with jumps) fell off now and then on replay (one of two runs fell ~70 s in: Mirror's Edge's
+physics follows each frame's time, the replay the clock). A second, safe route (route 2: ~70 s of play) followed the
+recording in every replay checked: three replays' draws a frame within ~2% of the recording's at every 10 s report, the
+frames at 111 s the same place and view ([route2_record_vs_replays_111s.jpg](route2_record_vs_replays_111s.jpg)); 11 of
+12 A/B launches after. Record short, safe routes.

@@ -189,7 +189,7 @@ What the game found that the tests could not:
   alternating launches: 1.60 -> 1.525 cores, frame times and lows the same (2026-11-23,
   `docs/perf/archive/2026-11-23-spin-pacing/`). The log names each thread that spends more than a tenth of a second
   in zero delays (start address, calls, longest run): in Mirror's Edge, Unreal Engine 3's render thread polling its
-  command queue (74% of a processor). `--any360_sys_idle_backoff` (off by default) sleeps such waits without cadence
+  command queue (74% of a processor). `--any360_sys_idle_backoff` (on by default since a played-route A/B: 1.575 -> 1.37 cores, lows the same) sleeps such waits without cadence
   in 0.5-1 ms slices once they pass 2 ms; a wider prediction of roughly periodic waits was rejected for its 1% low
   (2026-11-24, `docs/perf/archive/2026-11-24-idle-backoff/`).
 - Waking every wait on each signal (one condition for all) cost 17-22% of the frame rate: a dozen of the title's
