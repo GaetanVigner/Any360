@@ -79,6 +79,14 @@ int main() {
     "shared":{"xbox:y":["key:p"]}, "keyboard_mouse":{"base":"shared","xbox:a":["key:space"]}}})"));
   CHECK(Value(keys_only, "mnk_mouse") == "false" && Value(keys_only, "keybind_y") == "P");
 
+  // With no file, the driver gets Any360's layout (WithDefaultKeyboard), every control.
+  const auto any360_layout = RuntimeKeybinds(InputBindings{}.WithDefaultKeyboard());
+  CHECK(Value(any360_layout, "keybind_a") == "Space" && Value(any360_layout, "keybind_b") == "Control");
+  CHECK(Value(any360_layout, "keybind_left_trigger") == "RMB" && Value(any360_layout, "keybind_right_trigger") == "LMB");
+  CHECK(Value(any360_layout, "keybind_start") == "Escape" && Value(any360_layout, "keybind_back") == "Tab");
+  CHECK(Value(any360_layout, "keybind_dpad_up") == "1" && Value(any360_layout, "keybind_dpad_left") == "4");
+  CHECK(Value(any360_layout, "keybind_lstick_up") == "W" && Value(any360_layout, "keybind_lstick_left") == "A");
+  CHECK(Value(any360_layout, "mnk_mouse") == "true");
   std::printf("host_keyboard_tests: %d checks, %d failing checks\n", g_checks, g_failures);
   return g_failures ? 1 : 0;
 }

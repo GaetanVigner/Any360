@@ -152,7 +152,8 @@ void MipTests() {
 void FitTests() {
   CHECK(WholeStick("left_x+") == "left_x" && WholeStick("left_stick") == "left_x" && WholeStick("right_y") == "right_x" &&
         WholeStick("dpad_up") == "dpad");
-  CHECK(WholeStick("south") == "south" && WholeStick("key:space") == "key:space");
+  CHECK(WholeStick("south") == "south" && WholeStick("key:space") == "key:space" && WholeStick("key:wasd") == "key:wasd");
+  CHECK(WholeStick("mouse:x") == "mouse:move" && WholeStick("mouse:y") == "mouse:move");
   // Same size: the cell's texels exactly (opaque ones; transparent ones as transparent black).
   sys::RgbaImage src = Random(32, 16, 3);
   for (uint32_t& p : src.pixels) p |= 0xFF000000u;

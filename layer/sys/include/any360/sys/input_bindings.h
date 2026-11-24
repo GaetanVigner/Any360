@@ -68,10 +68,26 @@ class InputBindings {
   static InputBindings Parse(std::string_view text, std::vector<std::string>* problems = nullptr);
   const BindingProfile* Find(std::string_view profile) const;
   const std::vector<BindingProfile>& profiles() const { return profiles_; }
+  // These bindings over Any360's own keyboard and mouse layout (kDefaultKeyboard, profile "any360_keyboard"): the
+  // file's keyboard_mouse profile, or a new one, ends its base chain on it, so a control the file does not name keeps
+  // Any360's key. The keyboard's input and its glyphs both take their keys from the result.
+  InputBindings WithDefaultKeyboard() const;
 
  private:
   std::vector<BindingProfile> profiles_;
 };
+
+// Any360's keyboard and mouse layout, one key a control (decided 2026-11-25): A Space, B Ctrl, X E, Y R, LB Q, RB F,
+// LT right click, RT left click, L3 Shift, R3 C, Start Escape, Back Tab, the d-pad 1 2 3 4 (up, right, down, left),
+// the left stick W A S D, the right stick the mouse. A bindings document (the file's format).
+inline constexpr std::string_view kDefaultKeyboard = R"({"version": 1, "profiles": {"any360_keyboard": {
+  "xbox:a": ["key:space"], "xbox:b": ["key:control"], "xbox:x": ["key:e"], "xbox:y": ["key:r"],
+  "xbox:lb": ["key:q"], "xbox:rb": ["key:f"], "xbox:lt": ["mouse:right"], "xbox:rt": ["mouse:left"],
+  "xbox:ls": ["key:shift"], "xbox:rs": ["key:c"], "xbox:start": ["key:escape"], "xbox:back": ["key:tab"],
+  "xbox:up": ["key:1"], "xbox:right": ["key:2"], "xbox:down": ["key:3"], "xbox:left": ["key:4"],
+  "xbox:left_x": ["key:d", {"control": "key:a", "value": -1}],
+  "xbox:left_y": ["key:w", {"control": "key:s", "value": -1}],
+  "xbox:right_x": ["mouse:x"], "xbox:right_y": ["mouse:y"]}}})";
 
 // The binding each target takes in `profile`: the profile, then its `base` chain, then `fallback` and its chain when
 // not already in it (a loop, or more than 8 levels of a chain, stops it); the most specific profile naming a target

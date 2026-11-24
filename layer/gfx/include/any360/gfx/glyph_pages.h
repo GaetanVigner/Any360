@@ -38,7 +38,7 @@ struct GlyphPage {
 };
 
 // The whole stick a control is on, as the sets draw it: "left_x+", "left_y", "left_stick" -> "left_x" (the stick with no
-// click mark; "left_stick" is the click, L3 on a PlayStation pad); "right_..." -> "right_x"; "dpad_..." -> "dpad";
+// click mark; "left_stick" is the click, L3 on a PlayStation pad); "right_..." -> "right_x"; "dpad_..." -> "dpad"; "mouse:x", "mouse:y" -> "mouse:move";
 // others unchanged.
 std::string_view WholeStick(std::string_view control);
 

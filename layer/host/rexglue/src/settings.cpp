@@ -258,34 +258,43 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
           REXLOG_WARN("Any360 system: input recording {} cannot be written", path);
         }
       }
-      if (const std::string path = REXCVAR_GET(any360_input_bindings); !path.empty()) {
+      // The bindings: the launcher's file if any, over Any360's own keyboard and mouse layout (kDefaultKeyboard), so
+      // the keyboard plays and shows its glyphs with Any360's keys where the file names none.
+      any360::sys::InputBindings file;
+      const std::string path = REXCVAR_GET(any360_input_bindings);
+      if (!path.empty()) {
         std::ifstream in(path, std::ios::binary);
         const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         if (!in && text.empty()) {
           REXLOG_WARN("Any360 system: no input bindings file at {}", path);
         } else {
           std::vector<std::string> problems;
-          const any360::sys::InputBindings bindings = any360::sys::InputBindings::Parse(text, &problems);
+          file = any360::sys::InputBindings::Parse(text, &problems);
           for (const std::string& p : problems) REXLOG_WARN("Any360 system: input bindings: {}", p);
-          any360::sys::XamState().SetInputBindings(bindings);
-          SetPlayerBindings(bindings);
-          // The keyboard and mouse player's layout, through the runtime's own keyboard driver (keyboard_binds.h).
-          std::vector<std::string> key_problems;
-          const std::vector<RuntimeSetting> keys = RuntimeKeybinds(bindings, &key_problems);
-          for (const std::string& p : key_problems) REXLOG_WARN("Any360 system: keyboard bindings: {}", p);
-          size_t applied = 0;
-          for (const RuntimeSetting& s : keys) {
-            if (rex::cvar::SetFlagByName(s.name, s.value)) {
-              ++applied;
-            } else {
-              REXLOG_WARN("Any360 system: keyboard bindings: the runtime has no setting {}", s.name);
-            }
-          }
-          if (!keys.empty()) REXLOG_INFO("Any360 system: keyboard and mouse layout: {} runtime settings", applied);
-          const any360::sys::BindingProfile* pad = bindings.Find("gamepad");
+          const any360::sys::BindingProfile* pad = file.Find("gamepad");
           REXLOG_INFO("Any360 system: input bindings from {}: {} profiles, the controller's {} targets", path,
-                      bindings.profiles().size(), pad ? pad->bindings.size() : 0);
+                      file.profiles().size(), pad ? pad->bindings.size() : 0);
         }
+      }
+      {
+        const any360::sys::InputBindings bindings = file.WithDefaultKeyboard();
+        any360::sys::XamState().SetInputBindings(bindings);
+        SetPlayerBindings(bindings);
+        // The keyboard and mouse player's layout, through the runtime's keyboard driver until Any360 reads the keys
+        // itself (keyboard_binds.h): every control named, so the driver follows Any360's layout alone.
+        std::vector<std::string> key_problems;
+        const std::vector<RuntimeSetting> keys = RuntimeKeybinds(bindings, &key_problems);
+        for (const std::string& p : key_problems) REXLOG_WARN("Any360 system: keyboard bindings: {}", p);
+        size_t applied = 0;
+        for (const RuntimeSetting& s : keys) {
+          if (rex::cvar::SetFlagByName(s.name, s.value)) {
+            ++applied;
+          } else {
+            REXLOG_WARN("Any360 system: keyboard bindings: the runtime has no setting {}", s.name);
+          }
+        }
+        REXLOG_INFO("Any360 system: keyboard and mouse layout: {} settings{}", applied,
+                    file.Find("keyboard_mouse") ? " (the file's over Any360's)" : " (Any360's)");
       }
       if (const int player = REXCVAR_GET(any360_keyboard_player); player >= 0) {
         const bool on = player >= 1 && player <= 4;

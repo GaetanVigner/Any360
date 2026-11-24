@@ -242,6 +242,23 @@ void GlyphQuery::SetBindings(const InputBindings& bindings) {
         if (!name.empty()) break;
       }
     }
+    if (!keyboard) continue;
+    // A stick on W A S D or on the arrows: one glyph for its two axes. A key's direction: its value's sign, reversed
+    // by `invert`.
+    for (const auto [x, y] : {std::pair{XboxControl::kLeftX, XboxControl::kLeftY}, std::pair{XboxControl::kRightX, XboxControl::kRightY}}) {
+      std::string right, left, up, down;
+      auto read = [](const Binding* b, std::string& plus, std::string& minus) {
+        if (!b) return;
+        for (const BindingSource& s : b->sources)
+          if (s.kind == BindingSource::Kind::kKey) ((s.value < 0) == s.invert ? plus : minus) = s.name;
+      };
+      read(chosen[size_t(x)], right, left);
+      read(chosen[size_t(y)], up, down);
+      const char* both = nullptr;
+      if (up == "w" && left == "a" && down == "s" && right == "d") both = "key:wasd";
+      if (up == "up" && left == "left" && down == "down" && right == "right") both = "key:arrows";
+      if (both) names_[u][f][size_t(x)] = names_[u][f][size_t(y)] = both;
+    }
   }
   ++bindings_generation_;
 }

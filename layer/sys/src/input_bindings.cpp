@@ -190,6 +190,30 @@ const BindingProfile* InputBindings::Find(std::string_view profile) const {
   return nullptr;
 }
 
+InputBindings InputBindings::WithDefaultKeyboard() const {
+  static const InputBindings defaults = Parse(kDefaultKeyboard);
+  InputBindings out = *this;
+  if (out.Find("any360_keyboard")) return out;  // already layered
+  out.profiles_.push_back(defaults.profiles_.front());
+  BindingProfile* p = nullptr;
+  for (BindingProfile& q : out.profiles_)
+    if (q.name == "keyboard_mouse") p = &q;
+  if (!p) {
+    out.profiles_.push_back({"keyboard_mouse", "any360_keyboard", {}});
+    return out;
+  }
+  // The end of its base chain (a profile with no base, or one naming a profile the file does not have) gets Any360's.
+  for (int depth = 0; depth < 8 && !p->base.empty(); ++depth) {
+    BindingProfile* next = nullptr;
+    for (BindingProfile& q : out.profiles_)
+      if (q.name == p->base) next = &q;
+    if (!next || next == p) break;
+    p = next;
+  }
+  if (p->base.empty() || !out.Find(p->base)) p->base = "any360_keyboard";
+  return out;
+}
+
 PadControl OwnPlace(XboxControl c) { return kOwnPlace[size_t(c)]; }
 
 std::array<const Binding*, size_t(XboxControl::kCount)> ResolveProfile(const InputBindings& bindings,

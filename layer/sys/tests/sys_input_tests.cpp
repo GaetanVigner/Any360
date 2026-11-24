@@ -431,6 +431,38 @@ void GlyphSetTests() {
   }
 }
 
+// Any360's keyboard layout under the file's (WithDefaultKeyboard), and the keyboard's glyphs from it.
+void DefaultKeyboardTests() {
+  using F = ControllerFamily;
+  const auto now = GlyphQuery::Clock::now();
+  // No file: Any360's layout, every control named; the left stick one W A S D glyph, the right stick the mouse.
+  const InputBindings none = InputBindings{}.WithDefaultKeyboard();
+  const auto keys = ResolveProfile(none, "keyboard_mouse");
+  uint32_t named = 0;
+  for (const Binding* b : keys) named += b != nullptr;
+  CHECK(named == uint32_t(XboxControl::kCount));
+  GlyphQuery q(none);
+  q.user(0).Connected(1, F::kKeyboardMouse);
+  CHECK(q.For(0, XboxControl::kA, now).control == "key:space" && q.For(0, XboxControl::kB, now).control == "key:control");
+  CHECK(q.For(0, XboxControl::kLt, now).control == "mouse:right" && q.For(0, XboxControl::kStart, now).control == "key:escape");
+  CHECK(q.For(0, XboxControl::kLeftX, now).control == "key:wasd" && q.For(0, XboxControl::kLeftY, now).control == "key:wasd");
+  CHECK(q.For(0, XboxControl::kRightX, now).control == "mouse:x" && q.For(0, XboxControl::kUp, now).control == "key:1");
+  // A pad is not touched.
+  q.user(1).Connected(2, F::kXboxOne);
+  CHECK(q.For(1, XboxControl::kA, now).control == "south");
+  // The file's keyboard profile wins where it names a control, through its own base chain; Any360's below it.
+  const InputBindings file = InputBindings::Parse(R"({"version":1,"profiles":{
+    "shared":{"xbox:y":["key:p"]},"keyboard_mouse":{"base":"shared","xbox:a":["key:enter"],
+    "xbox:left_x":["key:right",{"control":"key:left","value":-1}],"xbox:left_y":["key:up",{"control":"key:down","value":-1}]}}})");
+  const InputBindings layered = file.WithDefaultKeyboard();
+  CHECK(layered.Find("shared")->base == "any360_keyboard" && layered.Find("keyboard_mouse")->base == "shared");
+  CHECK(layered.WithDefaultKeyboard().profiles().size() == layered.profiles().size());  // once
+  GlyphQuery r(layered);
+  r.user(0).Connected(1, F::kKeyboardMouse);
+  CHECK(r.For(0, XboxControl::kA, now).control == "key:enter" && r.For(0, XboxControl::kY, now).control == "key:p");
+  CHECK(r.For(0, XboxControl::kB, now).control == "key:control");
+  CHECK(r.For(0, XboxControl::kLeftX, now).control == "key:arrows");
+}
 void Bench() {
   const InputBindings b = InputBindings::Parse(R"({"version":1,"profiles":{"gamepad":{
     "xbox:a":["east"],"xbox:b":["south"],"xbox:x":["north"],"xbox:y":["west"],"xbox:lb":["left_trigger"],
@@ -503,6 +535,7 @@ int main(int argc, char** argv) {
   GlyphTests();
   GlyphSetTests();
   PlayerTests();
+  DefaultKeyboardTests();
   if (argc > 1 && std::strcmp(argv[1], "--bench") == 0) Bench();
   std::printf("sys_input_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;

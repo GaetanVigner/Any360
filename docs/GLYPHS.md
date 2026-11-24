@@ -229,8 +229,13 @@ document) and passes it with `--any360_input_bindings=<path>` through the manife
 - The keyboard/mouse profile replaces the runtime's `keybind_*` cvars when the file gives one. Built 2026-11-24 as a
   first step (`any360/host/keyboard_binds.h`, `host_keyboard_tests`): at start the host hands the `keyboard_mouse`
   profile to the runtime's own keyboard driver as its settings (`keybind_<control>`, stick directions from each
-  source's sign, `mnk_mouse` and `mnk_sensitivity` for `mouse:x` / `mouse:y` on the right stick); a control the profile
-  does not name keeps the runtime's keys, and what the runtime cannot read (the wheel) is logged. Mapping keys in
+  source's sign, `mnk_mouse` and `mnk_sensitivity` for `mouse:x` / `mouse:y` on the right stick); what the runtime
+  cannot read (the wheel) is logged. **Any360's own layout** (2026-11-25, `kDefaultKeyboard` in input_bindings.h, one
+  key a control): A Space, B Ctrl, X E, Y R, LB Q, RB F, LT right click, RT left click, L3 Shift, R3 C, Start Escape,
+  Back Tab, d-pad 1 2 3 4 (up, right, down, left), left stick W A S D, right stick the mouse. The file's
+  `keyboard_mouse` profile (or a new one) ends its base chain on it (`WithDefaultKeyboard`), so every control is named
+  by Any360 and the runtime's own defaults are never used; the keyboard's input and glyphs take the same keys (a stick
+  on W A S D or the arrows shows one glyph). Mapping keys in
   Any360 itself (no runtime settings, no lost presses) stays phase 1b. `--any360_keyboard_player=<1-4>` sets the
   player the keyboard and mouse join (`PlayerSlots::set_keyboard_user`) and turns the runtime's driver on
   (`mnk_mode`); `0` turns it off; `-1` (default) leaves the runtime's setting.

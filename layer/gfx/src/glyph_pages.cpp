@@ -14,6 +14,7 @@ std::string_view WholeStick(std::string_view control) {
   if (control.starts_with("left_")) return "left_x";
   if (control.starts_with("right_")) return "right_x";
   if (control.starts_with("dpad")) return "dpad";
+  if (control == "mouse:x" || control == "mouse:y") return "mouse:move";  // mouse look: the mouse moved
   return control;
 }
 
