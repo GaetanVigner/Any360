@@ -190,17 +190,30 @@ const BindingProfile* InputBindings::Find(std::string_view profile) const {
   return nullptr;
 }
 
-InputMapper::InputMapper(const InputBindings& bindings, std::string_view profile) {
-  // The chain from the profile to its last base (a loop or more than 8 levels stops it), applied base first.
+PadControl OwnPlace(XboxControl c) { return kOwnPlace[size_t(c)]; }
+
+std::array<const Binding*, size_t(XboxControl::kCount)> ResolveProfile(const InputBindings& bindings,
+                                                                       std::string_view profile,
+                                                                       std::string_view fallback) {
+  // The chain from the profile to its last base, then the fallback's, most specific first.
   std::vector<const BindingProfile*> chain;
-  for (const BindingProfile* p = bindings.Find(profile); p && chain.size() < 8; p = p->base.empty() ? nullptr : bindings.Find(p->base)) {
-    if (std::find(chain.begin(), chain.end(), p) != chain.end()) break;
-    chain.push_back(p);
+  for (std::string_view start : {profile, fallback}) {
+    if (start.empty()) continue;
+    size_t levels = 0;
+    for (const BindingProfile* p = bindings.Find(start); p && levels < 8; p = p->base.empty() ? nullptr : bindings.Find(p->base), ++levels) {
+      if (std::find(chain.begin(), chain.end(), p) != chain.end()) break;
+      chain.push_back(p);
+    }
   }
   std::array<const Binding*, size_t(XboxControl::kCount)> chosen{};
   for (auto p = chain.rbegin(); p != chain.rend(); ++p)
     for (const Binding& b : (*p)->bindings)
       if (b.xbox) chosen[size_t(*b.xbox)] = &b;
+  return chosen;
+}
+
+InputMapper::InputMapper(const InputBindings& bindings, std::string_view profile) {
+  const auto chosen = ResolveProfile(bindings, profile);
   for (size_t t = 0; t < chosen.size(); ++t) {
     if (!chosen[t]) continue;
     Target& target = targets_[t];

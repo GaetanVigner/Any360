@@ -4,11 +4,14 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
 #include "any360/sys/alloc_meter.h"
 #include "any360/sys/input_bindings.h"
+#include "any360/sys/input_glyphs.h"
 #include "any360/sys/json.h"
 
 using namespace any360::sys;
@@ -179,6 +182,159 @@ void BindingsTests() {
   CHECK(keys.Map(Pad(kA)).buttons == 0);
 }
 
+// The glyph query (docs/GLYPHS.md, section 3).
+void GlyphTests() {
+  using F = ControllerFamily;
+  using Clock = std::chrono::steady_clock;
+  // Names, sets and profiles.
+  CHECK(Name(F::kXboxOne) == "xbox_one" && Name(F::kSteamDeck) == "steam_deck" && Name(F::kKeyboardMouse) == "keyboard_mouse");
+  CHECK(GlyphSet(F::kGeneric) == "xbox_one" && GlyphSet(F::kPs3) == "ps3");
+  CHECK(ProfileName(F::kPs4) == "playstation" && ProfileName(F::kSwitch) == "switch" && ProfileName(F::kXbox360) == "gamepad" &&
+        ProfileName(F::kSteamController) == "gamepad" && ProfileName(F::kKeyboardMouse) == "keyboard_mouse");
+
+  // Families from the host's description of a pad.
+  auto family = [](PadType type, uint16_t vendor = 0, uint16_t product = 0, FaceLabel label = FaceLabel::kUnknown) {
+    return FamilyOf(PadDescription{type, vendor, product, label});
+  };
+  CHECK(family(PadType::kXboxOne, 0x28DE, 0x1205) == F::kSteamDeck);        // SDL types the Deck as an Xbox pad
+  CHECK(family(PadType::kXbox360, 0x28DE, 0x1142) == F::kSteamController);
+  CHECK(family(PadType::kXbox360, 0x28DE, 0x1102) == F::kSteamController);
+  CHECK(family(PadType::kXboxOne, 0x28DE, 0x11FF) == F::kXboxOne);           // Steam's virtual pad: its type decides
+  CHECK(family(PadType::kXbox360, 0x045E, 0x028E) == F::kXbox360 && family(PadType::kXboxOne, 0x045E, 0x0B12) == F::kXboxOne);
+  CHECK(family(PadType::kPs3) == F::kPs3 && family(PadType::kPs4) == F::kPs4 && family(PadType::kPs5) == F::kPs5);
+  CHECK(family(PadType::kSwitchPro) == F::kSwitch && family(PadType::kJoyConPair) == F::kSwitch && family(PadType::kJoyConLeft) == F::kSwitch);
+  CHECK(family(PadType::kUnknown, 0, 0, FaceLabel::kCross) == F::kPs4 && family(PadType::kStandard, 0, 0, FaceLabel::kB) == F::kSwitch);
+  CHECK(family(PadType::kStandard, 0, 0, FaceLabel::kA) == F::kXboxOne && family(PadType::kStandard) == F::kGeneric);
+
+  // Real input against noise.
+  GamepadState rest = Pad(), s = Pad();
+  s.thumb_lx = 3000;
+  CHECK(!IsRealInput(rest, s));                         // drift
+  s.thumb_lx = 0x4001;
+  CHECK(IsRealInput(rest, s));                          // past half range
+  GamepadState s2 = s;
+  s2.thumb_lx = 0x4100;
+  CHECK(!IsRealInput(s, s2));                           // still past it
+  s2.thumb_lx = -0x4001;
+  CHECK(IsRealInput(s, s2));                            // the other side
+  s = Pad(), s.left_trigger = 25;
+  CHECK(!IsRealInput(rest, s));
+  s.left_trigger = 31;
+  constexpr uint16_t kButtonA = 0x1000;
+  CHECK(IsRealInput(rest, s) && IsRealInput(rest, Pad(kButtonA)) && !IsRealInput(Pad(kButtonA), Pad(kButtonA)));
+
+  // The active device.
+  const Clock::time_point t0{};
+  constexpr auto ms = [](int n) { return std::chrono::milliseconds(n); };
+  ActiveDevice user;
+  CHECK(user.Shown(t0) == F::kXbox360 && user.generation() == 0);  // the title's own before any device
+  user.Connected(1, F::kPs5);
+  CHECK(user.Shown(t0) == F::kPs5 && user.generation() == 1);      // the first device shows at once
+  user.Connected(2, F::kKeyboardMouse);
+  CHECK(user.Shown(t0) == F::kPs5);                                // connecting is not using
+  user.Input(2, t0 + ms(1000));
+  CHECK(user.Shown(t0 + ms(1100)) == F::kPs5 && user.Shown(t0 + ms(1249)) == F::kPs5);
+  CHECK(user.Shown(t0 + ms(1250)) == F::kKeyboardMouse && user.generation() == 2);
+  // Both hands: pad, keyboard, pad within the debounce never flicker; the pad shows 250 ms after its last take-over.
+  user.Input(1, t0 + ms(2000));
+  user.Input(2, t0 + ms(2100));
+  user.Input(1, t0 + ms(2200));
+  CHECK(user.Shown(t0 + ms(2300)) == F::kKeyboardMouse && user.Shown(t0 + ms(2449)) == F::kKeyboardMouse);
+  CHECK(user.Shown(t0 + ms(2450)) == F::kPs5 && user.generation() == 3);
+  // A pad plugged mid-run shows from its first input (after the debounce), not from its plugging.
+  user.Connected(3, F::kSwitch);
+  CHECK(user.Shown(t0 + ms(3000)) == F::kPs5);
+  user.Input(3, t0 + ms(3000));
+  CHECK(user.Shown(t0 + ms(3250)) == F::kSwitch);
+  // Unplugged: at once to the last other device used (the DualSense, used after the keyboard), then the keyboard.
+  user.Disconnected(3);
+  CHECK(user.Shown(t0 + ms(3260)) == F::kPs5);
+  user.Disconnected(1);
+  CHECK(user.Shown(t0 + ms(3270)) == F::kKeyboardMouse);
+  user.Disconnected(2);
+  CHECK(user.Shown(t0 + ms(3280)) == F::kKeyboardMouse);           // none left: the last family stays
+  user.Input(2, t0 + ms(3300));                                    // an unknown device's input is ignored
+  CHECK(user.Shown(t0 + ms(4000)) == F::kKeyboardMouse);
+
+  // The query.
+  const InputBindings b = InputBindings::Parse(R"({"version":1,"profiles":{
+    "gamepad":{"xbox:a":["east"],"xbox:b":["south"],"xbox:up":["dpad_up","left_y+"],"xbox:rt":["key:e"]},
+    "playstation":{"base":"gamepad","xbox:back":["touchpad","back"]},
+    "keyboard_mouse":{"xbox:a":["key:space","south"],"xbox:left_y":["key:w",{"control":"key:s","value":-1}],
+                      "xbox:right_x":[{"control":"mouse:x","sensitivity":1.0}]}}})");
+  GlyphQuery q(b);
+  const uint32_t g0 = q.Generation(t0);
+  // Before any device: the title's own Xbox 360 glyphs, through the gamepad profile.
+  Glyph g = q.For(0, XboxControl::kA, t0);
+  CHECK(g.family == F::kXbox360 && g.set == "xbox360" && g.control == "east");
+  q.user(0).Connected(7, F::kPs4);
+  CHECK(q.Generation(t0) != g0);
+  g = q.For(0, XboxControl::kA, t0);
+  CHECK(g.family == F::kPs4 && g.set == "ps4" && g.control == "east");      // A swapped with B, through the base
+  CHECK(q.For(0, XboxControl::kBack, t0).control == "touchpad");            // the PS4 has one
+  CHECK(q.For(0, XboxControl::kY, t0).control == "north");                  // unnamed: its own place
+  CHECK(q.For(0, XboxControl::kUp, t0).control == "dpad_up");               // the first of two sources
+  CHECK(q.For(0, XboxControl::kRt, t0).control.empty());                    // only a key bound: nothing on a pad
+  CHECK(q.For(0, XboxControl::kLeftX, t0).control == "left_x");
+  q.user(0).Connected(8, F::kPs3);
+  q.user(0).Input(8, t0);
+  CHECK(q.For(0, XboxControl::kBack, t0 + ms(250)).control == "back");      // no touchpad on a PS3: the next source
+  // A family whose profile the file lacks falls back to the gamepad's.
+  q.user(1).Connected(9, F::kSwitch);
+  g = q.For(1, XboxControl::kA, t0);
+  CHECK(g.set == "switch" && g.control == "east");
+  q.user(1).Connected(10, F::kGeneric);
+  q.user(1).Input(10, t0);
+  CHECK(q.For(1, XboxControl::kB, t0 + ms(250)).set == "xbox_one");
+  // The keyboard: its first key or mouse control; nothing when the profile names none.
+  q.user(2).Connected(11, F::kKeyboardMouse);
+  CHECK(q.For(2, XboxControl::kA, t0).control == "key:space" && q.For(2, XboxControl::kLeftY, t0).control == "key:w");
+  CHECK(q.For(2, XboxControl::kRightX, t0).control == "mouse:x" && q.For(2, XboxControl::kB, t0).control.empty());
+  // New bindings: the answers follow at once, the generation moves.
+  const uint32_t g1 = q.Generation(t0 + ms(300));
+  q.SetBindings(InputBindings{});
+  CHECK(q.Generation(t0 + ms(300)) != g1 && q.For(0, XboxControl::kA, t0 + ms(300)).control == "south");
+  CHECK(q.For(2, XboxControl::kA, t0).control.empty());
+  // An answer allocates nothing.
+  q.SetBindings(b);
+  const AllocCounts before = ThreadAllocations();
+  size_t total = 0;
+  for (int i = 0; i < 1000; ++i) total += q.For(uint32_t(i & 3), XboxControl(i % int(XboxControl::kCount)), t0 + ms(i)).control.size();
+  const AllocCounts spent = ThreadAllocations() - before;
+  CHECK(spent.count == 0 && spent.bytes == 0 && total > 0);
+}
+
+// Every glyph name the query can answer is in the family's committed glyph set (assets/glyphs/<set>.json).
+void GlyphSetTests() {
+  for (size_t f = 0; f < size_t(ControllerFamily::kCount); ++f) {
+    const auto family = ControllerFamily(f);
+    const std::string path = std::string(ANY360_GLYPHS_DIR) + "/" + std::string(GlyphSet(family)) + ".json";
+    std::ifstream file(path, std::ios::binary);
+    CHECK(file.good());
+    if (!file) continue;
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    json::Value v;
+    CHECK(json::Parse(text, v) && v.Find("controls"));
+    const json::Value* controls = v.Find("controls");
+    if (!controls) continue;
+    auto has = [&](std::string_view name) {
+      if (controls->Find(std::string(name))) return true;
+      std::printf("sys_input_tests: %s has no glyph %.*s\n", path.c_str(), int(name.size()), name.data());
+      return false;
+    };
+    if (family == ControllerFamily::kKeyboardMouse) {
+      for (const char* name : {"key:space", "key:w", "key:page_up", "key:numpad_enter", "key:equals", "mouse:left",
+                               "mouse:x", "mouse:wheel_up", "key:wasd"})
+        CHECK(has(name));
+      continue;
+    }
+    // Every pad control (the touchpad on the families that have one), as the query names them.
+    const bool touchpad = family == ControllerFamily::kPs4 || family == ControllerFamily::kPs5;
+    for (size_t c = 0; c < size_t(PadControl::kCount); ++c)
+      if (PadControl(c) != PadControl::kTouchpad || touchpad) CHECK(has(Name(PadControl(c))));
+  }
+}
+
 void Bench() {
   const InputBindings b = InputBindings::Parse(R"({"version":1,"profiles":{"gamepad":{
     "xbox:a":["east"],"xbox:b":["south"],"xbox:x":["north"],"xbox:y":["west"],"xbox:lb":["left_trigger"],
@@ -201,6 +357,39 @@ void Bench() {
                 m == &identity ? "no bindings" : "8 targets bound", ns, double(spent.count) / kCalls,
                 double(spent.bytes) / kCalls, sink & 1);
   }
+
+  // The glyph query: an answer, a reported input, a family from a description, a real-input test.
+  GlyphQuery q(b);
+  q.user(0).Connected(1, ControllerFamily::kPs5);
+  q.user(0).Connected(2, ControllerFamily::kKeyboardMouse);
+  const auto t0 = std::chrono::steady_clock::time_point{};
+  auto measure = [&](const char* what, auto&& call) {
+    size_t sink = 0;
+    const AllocCounts before = ThreadAllocations();
+    const auto start = std::chrono::steady_clock::now();
+    for (int i = 0; i < kCalls; ++i) sink += call(i);
+    const double ns = std::chrono::duration<double, std::nano>(std::chrono::steady_clock::now() - start).count() / kCalls;
+    const AllocCounts spent = ThreadAllocations() - before;
+    std::printf("sys_input_tests: %s: %.2f ns a call, %.3f allocations and %.1f bytes a call (%zu)\n", what, ns,
+                double(spent.count) / kCalls, double(spent.bytes) / kCalls, sink & 1);
+  };
+  measure("GlyphQuery::For", [&](int i) {
+    return q.For(0, XboxControl(i % int(XboxControl::kCount)), t0 + std::chrono::microseconds(i)).control.size();
+  });
+  measure("ActiveDevice::Input + Shown, two devices alternating", [&](int i) {
+    const auto at = t0 + std::chrono::microseconds(i);
+    q.user(0).Input(1 + uint32_t((i >> 10) & 1), at);
+    return size_t(q.user(0).Shown(at));
+  });
+  measure("FamilyOf", [&](int i) {
+    return size_t(FamilyOf(PadDescription{PadType(i % 11), uint16_t(i & 1 ? 0x28DE : 0x045E), uint16_t(0x1100 + (i & 0x1FF)),
+                                          FaceLabel(i % 9)}));
+  });
+  GamepadState a = Pad(), c = Pad();
+  measure("IsRealInput", [&](int i) {
+    c.thumb_lx = int16_t(i * 7), c.left_trigger = uint8_t(i);
+    return size_t(IsRealInput(a, c));
+  });
 }
 
 }  // namespace
@@ -208,6 +397,8 @@ void Bench() {
 int main(int argc, char** argv) {
   JsonTests();
   BindingsTests();
+  GlyphTests();
+  GlyphSetTests();
   if (argc > 1 && std::strcmp(argv[1], "--bench") == 0) Bench();
   std::printf("sys_input_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;

@@ -257,6 +257,13 @@ uint32_t GlyphGeneration();
 }
 ```
 
+Built (2026-11-24) as `any360/sys/input_glyphs.h`: `FamilyOf(PadDescription)`, `IsRealInput`, `ActiveDevice` per
+user and `GlyphQuery` (an instance, not yet owned by the runtime: the host still has to describe its pads, report
+inputs and draw from the sets). An answer is `{family, set, control}`: the glyph set's name and the control's name in
+it (`east`, `key:space`), 2.6 ns and no allocation. The profile chain (`ResolveProfile`: the family's profile, its
+bases, then `gamepad`) is the one the input side must use when it maps per device; today every pad is mapped with
+`gamepad`, which the chain gives when the file has no family profile.
+
 When several physical controls are bound, the first one of the active device's class wins (a keyboard player sees the
 key, not the pad button). The glyph images live in a **glyph set**: one atlas per family (PNG, several sizes, plus a
 JSON index of rectangles per control), loaded by the host; `any360::sys` only answers ids, the host and the renderer

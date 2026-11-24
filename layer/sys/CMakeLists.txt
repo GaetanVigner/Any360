@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(any360_sys STATIC src/rtl.cpp src/info.cpp src/config.cpp src/error_tables.cpp src/video.cpp src/net.cpp
-            src/threading.cpp src/format.cpp src/objects.cpp src/scheduler.cpp src/precise_sleep.cpp src/memory.cpp src/files.cpp src/host_times.cpp src/xam.cpp src/win32.cpp src/input.cpp src/input_bindings.cpp src/json.cpp src/crypt.cpp src/crypt_blocks.cpp src/crypt_host.cpp src/ldi.cpp
+            src/threading.cpp src/format.cpp src/objects.cpp src/scheduler.cpp src/precise_sleep.cpp src/memory.cpp src/files.cpp src/host_times.cpp src/xam.cpp src/win32.cpp src/input.cpp src/input_bindings.cpp src/input_glyphs.cpp src/json.cpp src/crypt.cpp src/crypt_blocks.cpp src/crypt_host.cpp src/ldi.cpp
             src/graphics.cpp src/audio.cpp src/variables.cpp src/host_sockets.cpp)
 target_include_directories(any360_sys PUBLIC include)
 if(WIN32)
@@ -38,6 +38,7 @@ add_test(NAME sys_object_tests COMMAND sys_object_tests)
 add_executable(sys_input_tests tests/sys_input_tests.cpp)
 target_link_libraries(sys_input_tests PRIVATE any360_sys)
 target_compile_options(sys_input_tests PRIVATE -Wall -Wextra)
+target_compile_definitions(sys_input_tests PRIVATE ANY360_GLYPHS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/glyphs")
 add_test(NAME sys_input_tests COMMAND sys_input_tests)
 # Not a test: step 12's calls timed, with host memory a call, beside what the host offers (Windows' CNG, wcslen);
 # results kept in docs/perf/archive/ (sys_step12_bench [repeats]).

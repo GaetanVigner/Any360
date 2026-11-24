@@ -73,6 +73,16 @@ class InputBindings {
   std::vector<BindingProfile> profiles_;
 };
 
+// The binding each target takes in `profile`: the profile, then its `base` chain, then `fallback` and its chain when
+// not already in it (a loop, or more than 8 levels of a chain, stops it); the most specific profile naming a target
+// wins. A target no profile names is null (it keeps its own control). The mapper and the glyph query resolve the same
+// way, so a glyph always shows what the input does.
+std::array<const Binding*, size_t(XboxControl::kCount)> ResolveProfile(const InputBindings& bindings,
+                                                                       std::string_view profile,
+                                                                       std::string_view fallback = {});
+// The pad control in an Xbox control's place (the identity binding).
+PadControl OwnPlace(XboxControl c);
+
 // Layer 1 for one controller: the physical state the host reports (a pad by position, as SDL 3 lays it out: south is
 // the Xbox A's place) -> the state the title sees. A profile's `base` chain is resolved when the mapper is made; a
 // sample costs a pass over the named targets, no allocation.

@@ -1,0 +1,14 @@
+﻿sys_input_tests: (expected) gamepad.xbox:q: unknown Xbox control
+sys_input_tests: (expected) gamepad.jump: a target is xbox:<control> or action:<name>
+sys_input_tests: (expected) gamepad.xbox:x: unknown control "nowhere"
+sys_input_tests: (expected) gamepad.xbox:x: a source is a control name or an object with "control"
+sys_input_tests: (expected) gamepad.xbox:x: a source is a control name or an object with "control"
+sys_input_tests: (expected) gamepad.base: a profile's base is a profile name
+sys_input_tests: (expected) bad: a profile is an object
+sys_input_tests: Map, no bindings: 5.54 ns a sample, 0.000 allocations and 0.0 bytes a sample (0)
+sys_input_tests: Map, 8 targets bound: 33.82 ns a sample, 0.000 allocations and 0.0 bytes a sample (0)
+sys_input_tests: GlyphQuery::For: 2.59 ns a call, 0.000 allocations and 0.0 bytes a call (0)
+sys_input_tests: ActiveDevice::Input + Shown, two devices alternating: 2.73 ns a call, 0.000 allocations and 0.0 bytes a call (0)
+sys_input_tests: FamilyOf: 2.09 ns a call, 0.000 allocations and 0.0 bytes a call (0)
+sys_input_tests: IsRealInput: 1.69 ns a call, 0.000 allocations and 0.0 bytes a call (0)
+sys_input_tests: 0 failing checks
