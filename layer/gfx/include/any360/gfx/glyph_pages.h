@@ -37,7 +37,9 @@ struct GlyphPage {
   std::vector<GlyphCell> cells;
 };
 
-// "left_x+", "left_y" -> "left_stick"; "right_..." -> "right_stick"; "dpad_..." -> "dpad"; others unchanged.
+// The whole stick a control is on, as the sets draw it: "left_x+", "left_y", "left_stick" -> "left_x" (the stick with no
+// click mark; "left_stick" is the click, L3 on a PlayStation pad); "right_..." -> "right_x"; "dpad_..." -> "dpad";
+// others unchanged.
 std::string_view WholeStick(std::string_view control);
 
 // Draws the art of `src`'s square cell (x, y, size) fitted in the rectangle (x, y, width, height) of `dst`, centred,

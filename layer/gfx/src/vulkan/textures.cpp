@@ -800,6 +800,7 @@ void TextureCache::Evict(uint64_t frames, std::vector<Image>& images, std::vecto
     }
     for (auto& [swizzle, view] : t.views) views.push_back(view);
     images.push_back(t.image);
+    patch_jobs_.erase(it->first);  // a patched image still being composed for it: dropped
     it = textures_.erase(it);
     any = true;
   }
@@ -817,6 +818,11 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   if (const uint64_t g = patches_->generation(); g != patches_seen_) {
     // Patches set or removed: views remembered by fetch constant are checked again.
     patches_seen_ = g;
+    fast_.clear();
+    ++version_;
+  }
+  if (patch_job_done_->load(std::memory_order_acquire) && patch_job_done_->exchange(false)) {
+    // A patched image composed: the views remembered show the one before it; asked again, they upload it.
     fast_.clear();
     ++version_;
   }
@@ -1307,7 +1313,7 @@ VkImageView TextureCache::PatchedView(const uint32_t fetch[6], const TextureFetc
     if (!DecodeRGBA8(fetch, 0, guest.width, guest.height, guest.pixels, error)) return VK_NULL_HANDLE;
     ns_load_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - decode_start).count());
     // Detached: a job replaced before it is done finishes alone (its result dropped), nothing waits for it.
-    std::thread([next, guest = std::move(guest), patch = TexturePatch(patch), levels]() {
+    std::thread([next, signal = patch_job_done_, guest = std::move(guest), patch = TexturePatch(patch), levels]() {
       sys::RgbaImage composed;
       ComposePatched(guest, patch, composed);
       std::vector<sys::RgbaImage> mips;
@@ -1326,8 +1332,8 @@ VkImageView TextureCache::PatchedView(const uint32_t fetch[6], const TextureFetc
         next->blocks.insert(next->blocks.end(), bytes_of, bytes_of + img.pixels.size() * 4);
       }
       next->promise.set_value();
+      signal->store(true, std::memory_order_release);
     }).detach();
-    if (!job) patch_jobs_unapplied_.fetch_add(1, std::memory_order_release);
     job = std::move(next);
     fast_.clear();  // views of this texture remembered: asked again until the image is there
     ++version_;
@@ -1384,7 +1390,6 @@ VkImageView TextureCache::PatchedView(const uint32_t fetch[6], const TextureFetc
     ++uploads_;
     ++patched_uploads_;
     job.reset();
-    patch_jobs_unapplied_.fetch_sub(1, std::memory_order_release);
   }
   // The view: the guest swizzle over the format's own, as for any texture (the decoded texels are in the format's
   // component order).
@@ -1409,9 +1414,11 @@ VkImageView TextureCache::PatchedView(const uint32_t fetch[6], const TextureFetc
   }
   if (!pending) {
     if (fast_.size() > 65536) fast_.clear();
-    fast_[fast_key] = {view, epoch_, version_, s > 1, &slot->used};
+    fast_[fast_key] = {view, epoch_, version_, false, &slot->used};
   }
-  last_view_scaled_ = s > 1;
+  // Not flagged resolution-scaled: the shaders see the guest's size (normalized coordinates sample the larger image
+  // the same), whatever the renderer's scale and the patch's.
+  last_view_scaled_ = false;
   slot->used = epoch_;
   last_used_ = &slot->used;
   return view;

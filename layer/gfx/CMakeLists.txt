@@ -19,6 +19,11 @@ target_link_libraries(gfx_patch_tests PRIVATE any360_gfx)
 target_compile_options(gfx_patch_tests PRIVATE -Wall -Wextra)
 target_compile_definitions(gfx_patch_tests PRIVATE ANY360_GLYPHS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/glyphs")
 add_test(NAME gfx_patch_tests COMMAND gfx_patch_tests)
+# A sheet of a glyph page for every family (reviewing an adapter's cells and the sets' art; not a test).
+add_executable(gfx_glyph_sheet tests/gfx_glyph_sheet.cpp)
+target_link_libraries(gfx_glyph_sheet PRIVATE any360_gfx)
+target_compile_options(gfx_glyph_sheet PRIVATE -Wall -Wextra)
+target_compile_definitions(gfx_glyph_sheet PRIVATE ANY360_GLYPHS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/glyphs")
 
 # The frame counter (--any360_fps_overlay): its statistics, text and bitmap against reference models; --bench times
 # what it costs a frame, on and off.

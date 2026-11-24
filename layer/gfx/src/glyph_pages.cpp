@@ -10,8 +10,9 @@
 namespace any360::gfx {
 
 std::string_view WholeStick(std::string_view control) {
-  if (control.starts_with("left_")) return "left_stick";
-  if (control.starts_with("right_")) return "right_stick";
+  // The axis's glyph is the stick itself, with no click mark (a "left_stick" is the click: L3 on a PlayStation pad).
+  if (control.starts_with("left_")) return "left_x";
+  if (control.starts_with("right_")) return "right_x";
   if (control.starts_with("dpad")) return "dpad";
   return control;
 }

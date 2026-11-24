@@ -137,9 +137,9 @@ class TextureCache {
   uint64_t epoch() const { return epoch_; }
   uint64_t version() const { return version_; }
   bool changes_queued() const {
-    // Patches set or removed, or a patched image still being composed, too.
+    // Patches set or removed, or a patched image just composed (once: the draws ask again and pick it up), too.
     return any_changed_.load(std::memory_order_acquire) || patches_->generation() != patches_seen_ ||
-           patch_jobs_unapplied_.load(std::memory_order_acquire) != 0;
+           patch_job_done_->load(std::memory_order_acquire);
   }
   // A host that can watch guest memory for CPU writes (the reference runtime's physical memory access callbacks):
   // `watch(begin, end)` arms a one-shot watch, and the host reports writes with QueueMemoryChanged. Watched textures
@@ -248,7 +248,8 @@ class TextureCache {
     std::vector<VkBufferImageCopy> regions;
   };
   std::map<std::array<uint32_t, 5>, std::shared_ptr<PatchJob>> patch_jobs_;
-  std::atomic<int> patch_jobs_unapplied_{0};
+  // Set by a job when its image is ready (shared: a job outlives the cache if it must).
+  std::shared_ptr<std::atomic<bool>> patch_job_done_ = std::make_shared<std::atomic<bool>>(false);
   uint64_t ns_hash_ = 0, ns_load_ = 0;
   uint32_t images_created_ = 0, staging_created_ = 0;
   uint64_t ns_create_ = 0, staging_created_bytes_ = 0, ns_staging_ = 0;

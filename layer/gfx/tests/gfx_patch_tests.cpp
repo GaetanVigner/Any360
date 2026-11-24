@@ -7,11 +7,15 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <random>
+#include <string>
 
 #include "any360/gfx/glyph_pages.h"
 #include "any360/gfx/texture_patches.h"
 #include "any360/sys/alloc_meter.h"
+#include "any360/sys/json.h"
 
 using namespace any360;
 using namespace any360::gfx;
@@ -146,7 +150,8 @@ void MipTests() {
 }
 
 void FitTests() {
-  CHECK(WholeStick("left_x+") == "left_stick" && WholeStick("right_y") == "right_stick" && WholeStick("dpad_up") == "dpad");
+  CHECK(WholeStick("left_x+") == "left_x" && WholeStick("left_stick") == "left_x" && WholeStick("right_y") == "right_x" &&
+        WholeStick("dpad_up") == "dpad");
   CHECK(WholeStick("south") == "south" && WholeStick("key:space") == "key:space");
   // Same size: the cell's texels exactly (opaque ones; transparent ones as transparent black).
   sys::RgbaImage src = Random(32, 16, 3);
@@ -186,6 +191,33 @@ void FitTests() {
 }
 
 #ifdef ANY360_GLYPHS_DIR
+// Every name the glyph query can answer for a pad family has art in that family's set: each physical control of
+// its pad (the touchpad on the PlayStation 4 and 5 only), the axis halves, and what WholeStick turns them into.
+void CoverageTests() {
+  for (const char* family : {"xbox360", "xbox_one", "ps3", "ps4", "ps5", "switch", "steam_controller", "steam_deck"}) {
+    std::ifstream f(std::string(ANY360_GLYPHS_DIR) + "/" + family + ".json", std::ios::binary);
+    const std::string text{std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+    sys::json::Value v;
+    CHECK(sys::json::Parse(text, v));
+    const sys::json::Value* controls = v.Find("controls");
+    CHECK(controls != nullptr);
+    if (!controls) continue;
+    const bool touchpad = std::strcmp(family, "ps4") == 0 || std::strcmp(family, "ps5") == 0;
+    uint32_t missing = 0;
+    for (uint32_t c = 0; c < uint32_t(sys::PadControl::kCount); ++c) {
+      if (sys::PadControl(c) == sys::PadControl::kTouchpad && !touchpad) continue;
+      const std::string_view name = sys::Name(sys::PadControl(c));
+      for (const std::string_view n : {name, WholeStick(name)}) {
+        if (!controls->Find(n)) {
+          std::printf("  %s: no art for %.*s\n", family, int(n.size()), n.data());
+          ++missing;
+        }
+      }
+    }
+    CHECK(missing == 0);
+  }
+}
+
 void PagesTests() {
   GlyphPages pages(ANY360_GLYPHS_DIR, 4);
   TexturePatches patches;
@@ -275,6 +307,7 @@ int main(int argc, char** argv) {
   MipTests();
   FitTests();
 #ifdef ANY360_GLYPHS_DIR
+  CoverageTests();
   PagesTests();
 #endif
   if (argc > 1 && std::strcmp(argv[1], "--bench") == 0) Bench();

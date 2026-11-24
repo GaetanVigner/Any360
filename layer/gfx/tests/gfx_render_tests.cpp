@@ -1766,6 +1766,19 @@ int main(int argc, char** argv) {
         repatched = scenario("patched over new content", nullptr, [&] { textured(base, 32); });
         std::printf("gfx_render_tests: patched texture over new content: shown %u frames later\n", frames_late);
         CHECK(frames_late < 200);
+        // A patch changed over the shown page, drawn once (its image composing), then removed: once the composition
+        // is done, one more draw and nothing stays queued (the renderer goes back to its remembered views).
+        patch.regions[0].pixels.assign(32 * 32, Rgba(0, 0, 255, 255));
+        TexturePatches::Global().Set(patch);
+        scenario("patch changed, drawn once", nullptr, [&] { textured(base, 32); });
+        TexturePatches::Global().Remove(base);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));  // the composition finishes meanwhile
+        scenario("patch removed while composing", nullptr, [&] { textured(base, 32); });
+        const Pixels after_job = scenario("patch removed while composing", nullptr, [&] { textured(base, 32); });
+        std::printf("gfx_render_tests: patch removed while composing: %s queued after, %u light grey\n",
+                    renderer.texture_cache()->changes_queued() ? "changes" : "nothing",
+                    after_job.Count(Rgba(0x80, 0x80, 0x80, 0x80)));
+        CHECK(!renderer.texture_cache()->changes_queued() && after_job.Count(Rgba(0x80, 0x80, 0x80, 0x80)) == kSize * kSize);
         TexturePatches::Global().Remove(base);
         std::printf("gfx_render_tests: patched texture: %u red, %u grey of %u; %u uploads for two draws; removed: %u grey; "
                     "over new content: %u red, %u light grey\n",
@@ -1902,9 +1915,9 @@ int main(int argc, char** argv) {
   // and the 256-wide k_8_8_8_8 one of the screen bands (17); the depth-under-colour checks' three depth and three
   // colour surfaces and the unclipped rectangle's two colour surfaces (25); the depth pre-pass check's shorter
   // colour target (26).
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 10 && stats.resolves == 89);
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 11 && stats.resolves == 89);
   // (The resolved texture is read from the resolve on the GPU, not uploaded; the one read while the cache is walked
-  // is, and the patched texture's three (patched, removed, patched over new content): 10 uploads. 89 resolves: the four of the scenarios before (one with an exponent bias on the GPU), the six
+  // is, and the patched texture's four (patched, removed, patched over new content, removed over it): 11 uploads. 89 resolves: the four of the scenarios before (one with an exponent bias on the GPU), the six
   // k_16_16_16_16 ones on the GPU, the 70 with one, the two screen bands, the chain's six and the 40-row one.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.
