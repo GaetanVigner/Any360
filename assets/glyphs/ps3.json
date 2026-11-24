@@ -39,32 +39,32 @@
    "row": 0
   },
   "left_shoulder": {
-   "svg": "playstation/l1.svg",
+   "svg": "numbered/l1.svg",
    "column": 4,
    "row": 0
   },
   "right_shoulder": {
-   "svg": "playstation/r1.svg",
+   "svg": "numbered/r1.svg",
    "column": 5,
    "row": 0
   },
   "left_trigger": {
-   "svg": "playstation/l2.svg",
+   "svg": "numbered/l2.svg",
    "column": 6,
    "row": 0
   },
   "right_trigger": {
-   "svg": "playstation/r2.svg",
+   "svg": "numbered/r2.svg",
    "column": 7,
    "row": 0
   },
   "left_stick": {
-   "svg": "playstation/l3.svg",
+   "svg": "numbered/l3.svg",
    "column": 0,
    "row": 1
   },
   "right_stick": {
-   "svg": "playstation/r3.svg",
+   "svg": "numbered/r3.svg",
    "column": 1,
    "row": 1
   },

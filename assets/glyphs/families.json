@@ -1,5 +1,5 @@
 {
-  "comment": "Glyph sets (docs/GLYPHS.md section 3): per family, the SVG of each physical control, named as PadControl in layer/sys/src/input_bindings.cpp (kPadNames), plus prompt-only names (diagonals, whole D-pad). A family takes the `shared` blocks it lists in `use`, in order, then its own `controls` (later entries win). `absent` lists the controls its pad does not have. Faces are by position: on a Switch pad `south` is the button printed B. Edit, then run tools/make_glyphs.py.",
+  "comment": "Glyph sets (docs/GLYPHS.md section 3). Pad families (`kind` pad, the default): the SVG of each physical control, named as PadControl in layer/sys/src/input_bindings.cpp (kPadNames), plus prompt-only names (diagonals, whole D-pad); faces are by position (on a Switch pad `south` is the button printed B). The keyboard family (`kind` keyboard): names exactly as the bindings file writes a source, `key:<name>` and `mouse:<name>` (the list is KEYBOARD_NAMES in tools/make_glyphs.py). A family takes the `shared` blocks it lists in `use`, in order, then its own `controls` (later entries win); `absent` lists the controls its device does not have. Edit, then run tools/make_glyphs.py.",
   "shared": {
     "common": {
       "left_stick": "common/stick-l.svg",
@@ -49,13 +49,7 @@
       "south": "playstation/cross.svg",
       "east": "playstation/circle.svg",
       "west": "playstation/square.svg",
-      "north": "playstation/triangle.svg",
-      "left_shoulder": "playstation/l1.svg",
-      "right_shoulder": "playstation/r1.svg",
-      "left_trigger": "playstation/l2.svg",
-      "right_trigger": "playstation/r2.svg",
-      "left_stick": "playstation/l3.svg",
-      "right_stick": "playstation/r3.svg"
+      "north": "playstation/triangle.svg"
     },
     "right_trackpad": {
       "right_stick": "steam/pad-r.svg",
@@ -69,40 +63,93 @@
       "right_up_right": "steam/pad-r-ur.svg",
       "right_down_left": "steam/pad-r-dl.svg",
       "right_down_right": "steam/pad-r-dr.svg"
+    },
+    "numbered": {
+      "left_shoulder": "numbered/l1.svg",
+      "right_shoulder": "numbered/r1.svg",
+      "left_trigger": "numbered/l2.svg",
+      "right_trigger": "numbered/r2.svg",
+      "left_stick": "numbered/l3.svg",
+      "right_stick": "numbered/r3.svg"
     }
   },
   "families": {
     "xbox360": {
-      "use": ["common", "xbox"],
-      "absent": ["touchpad"],
-      "controls": {"start": "common/start-arrow.svg", "back": "common/back-arrow.svg"}
+      "use": [
+        "common",
+        "xbox"
+      ],
+      "absent": [
+        "touchpad"
+      ],
+      "controls": {
+        "start": "common/start-arrow.svg",
+        "back": "common/back-arrow.svg"
+      }
     },
     "xbox_one": {
-      "use": ["common", "xbox"],
-      "absent": ["touchpad"],
-      "controls": {"start": "xbox/menu.svg", "back": "xbox/view.svg"}
+      "use": [
+        "common",
+        "xbox"
+      ],
+      "absent": [
+        "touchpad"
+      ],
+      "controls": {
+        "start": "xbox/menu.svg",
+        "back": "xbox/view.svg"
+      }
     },
     "ps3": {
-      "use": ["common", "playstation"],
-      "absent": ["touchpad"],
-      "controls": {"start": "ps3/start.svg", "back": "ps3/select.svg"}
+      "use": [
+        "common",
+        "playstation",
+        "numbered"
+      ],
+      "absent": [
+        "touchpad"
+      ],
+      "controls": {
+        "start": "ps3/start.svg",
+        "back": "ps3/select.svg"
+      }
     },
     "ps4": {
-      "use": ["common", "playstation"],
-      "controls": {"start": "ps4/options.svg", "back": "ps4/share.svg", "touchpad": "playstation/touchpad.svg"}
+      "use": [
+        "common",
+        "playstation",
+        "numbered"
+      ],
+      "controls": {
+        "start": "ps4/options.svg",
+        "back": "ps4/share.svg",
+        "touchpad": "playstation/touchpad.svg"
+      }
     },
     "ps5": {
-      "use": ["common", "playstation"],
-      "controls": {"start": "ps5/options.svg", "back": "ps5/create.svg", "touchpad": "playstation/touchpad.svg"}
+      "use": [
+        "common",
+        "playstation",
+        "numbered"
+      ],
+      "controls": {
+        "start": "ps5/options.svg",
+        "back": "ps5/create.svg",
+        "touchpad": "playstation/touchpad.svg"
+      }
     },
     "switch": {
-      "use": ["common"],
-      "absent": ["touchpad"],
+      "use": [
+        "common"
+      ],
+      "absent": [
+        "touchpad"
+      ],
       "controls": {
-        "south": "switch/b.svg",
-        "east": "switch/a.svg",
-        "west": "switch/y.svg",
-        "north": "switch/x.svg",
+        "south": "letters/b.svg",
+        "east": "letters/a.svg",
+        "west": "letters/y.svg",
+        "north": "letters/x.svg",
         "left_shoulder": "switch/l.svg",
         "right_shoulder": "switch/r.svg",
         "left_trigger": "switch/zl.svg",
@@ -112,9 +159,148 @@
       }
     },
     "steam_controller": {
-      "use": ["common", "xbox", "right_trackpad"],
-      "absent": ["touchpad"],
-      "controls": {"start": "common/start-arrow.svg", "back": "common/back-arrow.svg"}
+      "use": [
+        "common",
+        "xbox",
+        "right_trackpad"
+      ],
+      "absent": [
+        "touchpad"
+      ],
+      "controls": {
+        "start": "common/start-arrow.svg",
+        "back": "common/back-arrow.svg"
+      }
+    },
+    "steam_deck": {
+      "use": [
+        "common",
+        "numbered"
+      ],
+      "absent": [
+        "touchpad"
+      ],
+      "controls": {
+        "south": "letters/a.svg",
+        "east": "letters/b.svg",
+        "west": "letters/x.svg",
+        "north": "letters/y.svg",
+        "start": "xbox/menu.svg",
+        "back": "xbox/view.svg"
+      }
+    },
+    "keyboard_mouse": {
+      "kind": "keyboard",
+      "controls": {
+        "key:0": "keyboard/0.svg",
+        "key:1": "keyboard/1.svg",
+        "key:2": "keyboard/2.svg",
+        "key:3": "keyboard/3.svg",
+        "key:4": "keyboard/4.svg",
+        "key:5": "keyboard/5.svg",
+        "key:6": "keyboard/6.svg",
+        "key:7": "keyboard/7.svg",
+        "key:8": "keyboard/8.svg",
+        "key:9": "keyboard/9.svg",
+        "key:a": "keyboard/a.svg",
+        "key:alt": "keyboard/alt.svg",
+        "key:arrows": "keyboard/arrows.svg",
+        "key:b": "keyboard/b.svg",
+        "key:backslash": "keyboard/backslash.svg",
+        "key:backspace": "keyboard/backspace.svg",
+        "key:backtick": "keyboard/backtick.svg",
+        "key:c": "keyboard/c.svg",
+        "key:caps_lock": "keyboard/caps_lock.svg",
+        "key:comma": "keyboard/comma.svg",
+        "key:control": "keyboard/control.svg",
+        "key:d": "keyboard/d.svg",
+        "key:delete": "keyboard/delete.svg",
+        "key:down": "keyboard/down.svg",
+        "key:e": "keyboard/e.svg",
+        "key:end": "keyboard/end.svg",
+        "key:enter": "keyboard/enter.svg",
+        "key:equals": "keyboard/equals.svg",
+        "key:escape": "keyboard/escape.svg",
+        "key:f": "keyboard/f.svg",
+        "key:f1": "keyboard/f1.svg",
+        "key:f10": "keyboard/f10.svg",
+        "key:f11": "keyboard/f11.svg",
+        "key:f12": "keyboard/f12.svg",
+        "key:f2": "keyboard/f2.svg",
+        "key:f3": "keyboard/f3.svg",
+        "key:f4": "keyboard/f4.svg",
+        "key:f5": "keyboard/f5.svg",
+        "key:f6": "keyboard/f6.svg",
+        "key:f7": "keyboard/f7.svg",
+        "key:f8": "keyboard/f8.svg",
+        "key:f9": "keyboard/f9.svg",
+        "key:g": "keyboard/g.svg",
+        "key:h": "keyboard/h.svg",
+        "key:home": "keyboard/home.svg",
+        "key:i": "keyboard/i.svg",
+        "key:insert": "keyboard/insert.svg",
+        "key:j": "keyboard/j.svg",
+        "key:k": "keyboard/k.svg",
+        "key:l": "keyboard/l.svg",
+        "key:left": "keyboard/left.svg",
+        "key:left_bracket": "keyboard/left_bracket.svg",
+        "key:m": "keyboard/m.svg",
+        "key:minus": "keyboard/minus.svg",
+        "key:n": "keyboard/n.svg",
+        "key:num_lock": "keyboard/num_lock.svg",
+        "key:numpad_0": "keyboard/numpad_0.svg",
+        "key:numpad_1": "keyboard/numpad_1.svg",
+        "key:numpad_2": "keyboard/numpad_2.svg",
+        "key:numpad_3": "keyboard/numpad_3.svg",
+        "key:numpad_4": "keyboard/numpad_4.svg",
+        "key:numpad_5": "keyboard/numpad_5.svg",
+        "key:numpad_6": "keyboard/numpad_6.svg",
+        "key:numpad_7": "keyboard/numpad_7.svg",
+        "key:numpad_8": "keyboard/numpad_8.svg",
+        "key:numpad_9": "keyboard/numpad_9.svg",
+        "key:numpad_divide": "keyboard/numpad_divide.svg",
+        "key:numpad_enter": "keyboard/numpad_enter.svg",
+        "key:numpad_minus": "keyboard/numpad_minus.svg",
+        "key:numpad_multiply": "keyboard/numpad_multiply.svg",
+        "key:numpad_plus": "keyboard/numpad_plus.svg",
+        "key:o": "keyboard/o.svg",
+        "key:p": "keyboard/p.svg",
+        "key:page_down": "keyboard/page_down.svg",
+        "key:page_up": "keyboard/page_up.svg",
+        "key:pause": "keyboard/pause.svg",
+        "key:period": "keyboard/period.svg",
+        "key:print_screen": "keyboard/print_screen.svg",
+        "key:q": "keyboard/q.svg",
+        "key:quote": "keyboard/quote.svg",
+        "key:r": "keyboard/r.svg",
+        "key:right": "keyboard/right.svg",
+        "key:right_bracket": "keyboard/right_bracket.svg",
+        "key:s": "keyboard/s.svg",
+        "key:scroll_lock": "keyboard/scroll_lock.svg",
+        "key:semicolon": "keyboard/semicolon.svg",
+        "key:shift": "keyboard/shift.svg",
+        "key:slash": "keyboard/slash.svg",
+        "key:space": "keyboard/space.svg",
+        "key:t": "keyboard/t.svg",
+        "key:tab": "keyboard/tab.svg",
+        "key:u": "keyboard/u.svg",
+        "key:up": "keyboard/up.svg",
+        "key:v": "keyboard/v.svg",
+        "key:w": "keyboard/w.svg",
+        "key:wasd": "keyboard/wasd.svg",
+        "key:x": "keyboard/x.svg",
+        "key:y": "keyboard/y.svg",
+        "key:z": "keyboard/z.svg",
+        "mouse:left": "keyboard/mouse_left.svg",
+        "mouse:right": "keyboard/mouse_right.svg",
+        "mouse:middle": "keyboard/mouse_middle.svg",
+        "mouse:wheel": "keyboard/mouse_middle.svg",
+        "mouse:wheel_up": "keyboard/mouse_wheel_up.svg",
+        "mouse:wheel_down": "keyboard/mouse_wheel_down.svg",
+        "mouse:x": "keyboard/mouse_move.svg",
+        "mouse:y": "keyboard/mouse_move.svg",
+        "mouse:move": "keyboard/mouse_move.svg"
+      }
     }
   }
 }

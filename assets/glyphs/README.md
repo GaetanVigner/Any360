@@ -29,9 +29,17 @@ Faces are by position, as the bindings are: on a Switch pad `south` is the butto
 | `ps5` | as PS3 | as PS3 | options ≡ / create | touchpad |
 | `switch` (Pro, Joy-Con pair) | B A Y X (south east west north) | L R / ZL ZR / L R | + / − | |
 | `steam_controller` | A B X Y | LB RB / LT RT / L R | ▶ / ◀ | right trackpad as the right stick |
+| `steam_deck` | A B X Y (white) | L1 R1 / L2 R2 / L3 R3 | menu / view | |
+| `keyboard_mouse` | the Crackdown pack's keycaps and mouse glyphs | | | `key:wasd`, `key:arrows`, `mouse:move` |
 
-Shared art: `common` (sticks, D-pad, home, ▶/◀), `xbox` (faces, shoulders, triggers, menu/view), `playstation` (faces,
-L1-R3, touchpad). Next: Steam Deck, keyboard and mouse (the Crackdown pack's keycaps).
+Shared art: `common` (sticks, D-pad, home, ▶/◀), `xbox` (coloured A/B/X/Y, LB-RT, menu/view), `letters` (white
+A/B/X/Y: Switch, Deck), `numbered` (L1-R3: PlayStation, Deck), `playstation` (shapes, touchpad).
+
+The keyboard family is named as the bindings file writes a source: `key:<name>` (`a`-`z`, `0`-`9`, `f1`-`f12`,
+`backtick minus equals comma period semicolon slash backslash left_bracket right_bracket quote escape enter space tab
+backspace delete insert home end page_up page_down left right up down shift control alt caps_lock`, `numpad_0`-`9`,
+`numpad_enter numpad_plus numpad_minus numpad_multiply numpad_divide print_screen pause num_lock scroll_lock`) and
+`mouse:<left right middle wheel wheel_up wheel_down x y>`; the list is `KEYBOARD_NAMES` in `tools/make_glyphs.py`.
 
 ## Regenerating
 

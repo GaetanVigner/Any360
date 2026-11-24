@@ -171,7 +171,8 @@ document) and passes it with `--any360_input_bindings=<path>` through the manife
 - **Sources** (the lists): physical controls by position: `south east west north left_shoulder right_shoulder
   left_trigger right_trigger left_stick right_stick dpad_up dpad_down dpad_left dpad_right start back guide
   touchpad left_x left_y right_x right_y`, a stick direction `left_x+ left_x- ...` (an axis as a button past half its
-  range), keys `key:<name>` and mouse `mouse:<button|x|y|wheel>`. A source is a string or an object with `control`
+  range), keys `key:<name>` and mouse `mouse:<button|x|y|wheel>` (the names are the keyboard glyph set's,
+  `KEYBOARD_NAMES` in `tools/make_glyphs.py`: `key:a`, `key:page_up`, `key:numpad_enter`, `mouse:left`, `mouse:wheel_up`...). A source is a string or an object with `control`
   and its modifiers (`invert` for an axis, `value` for a button driving an axis, `sensitivity` for the mouse).
 - **How a target combines its sources**: a button is held when any source is (a trigger counts past the controller's
   threshold, a stick direction past half range); a trigger takes the largest source (a button gives full); an axis
@@ -263,7 +264,7 @@ own the pixels. The same sets ship to the launcher, so the launcher and the game
 control. The artwork: Any360's own pack (from Crackdown's), or the platform's glyphs where the title runs on a
 platform that has them (Steam), see C3. The sets live in `assets/glyphs` (`families.json`, SVG sources, atlases
 rendered by `tools/make_glyphs.py`, keyed by `PadControl` names): `xbox360`, `xbox_one`, `ps3`, `ps4`, `ps5`,
-`switch` and `steam_controller` so far.
+`switch`, `steam_controller`, `steam_deck` and `keyboard_mouse`.
 
 Unit tests: family from (type, vendor, product, label) on a table of known pads; active device with drift, jitter and
 a two-device hand-over; `GlyphFor` over swap, multi-bind, hot-plug, unplug, and the pad -> keyboard -> DualSense sequence (glyphs follow

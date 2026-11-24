@@ -1,0 +1,562 @@
+{
+ "family": "keyboard_mouse",
+ "generated_by": "tools/make_glyphs.py from assets/glyphs/families.json",
+ "alpha": "straight",
+ "columns": 8,
+ "atlases": {
+  "128": {
+   "file": "keyboard_mouse_128.png",
+   "width": 1024,
+   "height": 1792,
+   "cell": 128
+  },
+  "64": {
+   "file": "keyboard_mouse_64.png",
+   "width": 512,
+   "height": 896,
+   "cell": 64
+  }
+ },
+ "controls": {
+  "key:a": {
+   "svg": "keyboard/a.svg",
+   "column": 0,
+   "row": 0
+  },
+  "key:b": {
+   "svg": "keyboard/b.svg",
+   "column": 1,
+   "row": 0
+  },
+  "key:c": {
+   "svg": "keyboard/c.svg",
+   "column": 2,
+   "row": 0
+  },
+  "key:d": {
+   "svg": "keyboard/d.svg",
+   "column": 3,
+   "row": 0
+  },
+  "key:e": {
+   "svg": "keyboard/e.svg",
+   "column": 4,
+   "row": 0
+  },
+  "key:f": {
+   "svg": "keyboard/f.svg",
+   "column": 5,
+   "row": 0
+  },
+  "key:g": {
+   "svg": "keyboard/g.svg",
+   "column": 6,
+   "row": 0
+  },
+  "key:h": {
+   "svg": "keyboard/h.svg",
+   "column": 7,
+   "row": 0
+  },
+  "key:i": {
+   "svg": "keyboard/i.svg",
+   "column": 0,
+   "row": 1
+  },
+  "key:j": {
+   "svg": "keyboard/j.svg",
+   "column": 1,
+   "row": 1
+  },
+  "key:k": {
+   "svg": "keyboard/k.svg",
+   "column": 2,
+   "row": 1
+  },
+  "key:l": {
+   "svg": "keyboard/l.svg",
+   "column": 3,
+   "row": 1
+  },
+  "key:m": {
+   "svg": "keyboard/m.svg",
+   "column": 4,
+   "row": 1
+  },
+  "key:n": {
+   "svg": "keyboard/n.svg",
+   "column": 5,
+   "row": 1
+  },
+  "key:o": {
+   "svg": "keyboard/o.svg",
+   "column": 6,
+   "row": 1
+  },
+  "key:p": {
+   "svg": "keyboard/p.svg",
+   "column": 7,
+   "row": 1
+  },
+  "key:q": {
+   "svg": "keyboard/q.svg",
+   "column": 0,
+   "row": 2
+  },
+  "key:r": {
+   "svg": "keyboard/r.svg",
+   "column": 1,
+   "row": 2
+  },
+  "key:s": {
+   "svg": "keyboard/s.svg",
+   "column": 2,
+   "row": 2
+  },
+  "key:t": {
+   "svg": "keyboard/t.svg",
+   "column": 3,
+   "row": 2
+  },
+  "key:u": {
+   "svg": "keyboard/u.svg",
+   "column": 4,
+   "row": 2
+  },
+  "key:v": {
+   "svg": "keyboard/v.svg",
+   "column": 5,
+   "row": 2
+  },
+  "key:w": {
+   "svg": "keyboard/w.svg",
+   "column": 6,
+   "row": 2
+  },
+  "key:x": {
+   "svg": "keyboard/x.svg",
+   "column": 7,
+   "row": 2
+  },
+  "key:y": {
+   "svg": "keyboard/y.svg",
+   "column": 0,
+   "row": 3
+  },
+  "key:z": {
+   "svg": "keyboard/z.svg",
+   "column": 1,
+   "row": 3
+  },
+  "key:0": {
+   "svg": "keyboard/0.svg",
+   "column": 2,
+   "row": 3
+  },
+  "key:1": {
+   "svg": "keyboard/1.svg",
+   "column": 3,
+   "row": 3
+  },
+  "key:2": {
+   "svg": "keyboard/2.svg",
+   "column": 4,
+   "row": 3
+  },
+  "key:3": {
+   "svg": "keyboard/3.svg",
+   "column": 5,
+   "row": 3
+  },
+  "key:4": {
+   "svg": "keyboard/4.svg",
+   "column": 6,
+   "row": 3
+  },
+  "key:5": {
+   "svg": "keyboard/5.svg",
+   "column": 7,
+   "row": 3
+  },
+  "key:6": {
+   "svg": "keyboard/6.svg",
+   "column": 0,
+   "row": 4
+  },
+  "key:7": {
+   "svg": "keyboard/7.svg",
+   "column": 1,
+   "row": 4
+  },
+  "key:8": {
+   "svg": "keyboard/8.svg",
+   "column": 2,
+   "row": 4
+  },
+  "key:9": {
+   "svg": "keyboard/9.svg",
+   "column": 3,
+   "row": 4
+  },
+  "key:f1": {
+   "svg": "keyboard/f1.svg",
+   "column": 4,
+   "row": 4
+  },
+  "key:f2": {
+   "svg": "keyboard/f2.svg",
+   "column": 5,
+   "row": 4
+  },
+  "key:f3": {
+   "svg": "keyboard/f3.svg",
+   "column": 6,
+   "row": 4
+  },
+  "key:f4": {
+   "svg": "keyboard/f4.svg",
+   "column": 7,
+   "row": 4
+  },
+  "key:f5": {
+   "svg": "keyboard/f5.svg",
+   "column": 0,
+   "row": 5
+  },
+  "key:f6": {
+   "svg": "keyboard/f6.svg",
+   "column": 1,
+   "row": 5
+  },
+  "key:f7": {
+   "svg": "keyboard/f7.svg",
+   "column": 2,
+   "row": 5
+  },
+  "key:f8": {
+   "svg": "keyboard/f8.svg",
+   "column": 3,
+   "row": 5
+  },
+  "key:f9": {
+   "svg": "keyboard/f9.svg",
+   "column": 4,
+   "row": 5
+  },
+  "key:f10": {
+   "svg": "keyboard/f10.svg",
+   "column": 5,
+   "row": 5
+  },
+  "key:f11": {
+   "svg": "keyboard/f11.svg",
+   "column": 6,
+   "row": 5
+  },
+  "key:f12": {
+   "svg": "keyboard/f12.svg",
+   "column": 7,
+   "row": 5
+  },
+  "key:backtick": {
+   "svg": "keyboard/backtick.svg",
+   "column": 0,
+   "row": 6
+  },
+  "key:minus": {
+   "svg": "keyboard/minus.svg",
+   "column": 1,
+   "row": 6
+  },
+  "key:equals": {
+   "svg": "keyboard/equals.svg",
+   "column": 2,
+   "row": 6
+  },
+  "key:comma": {
+   "svg": "keyboard/comma.svg",
+   "column": 3,
+   "row": 6
+  },
+  "key:period": {
+   "svg": "keyboard/period.svg",
+   "column": 4,
+   "row": 6
+  },
+  "key:semicolon": {
+   "svg": "keyboard/semicolon.svg",
+   "column": 5,
+   "row": 6
+  },
+  "key:slash": {
+   "svg": "keyboard/slash.svg",
+   "column": 6,
+   "row": 6
+  },
+  "key:backslash": {
+   "svg": "keyboard/backslash.svg",
+   "column": 7,
+   "row": 6
+  },
+  "key:left_bracket": {
+   "svg": "keyboard/left_bracket.svg",
+   "column": 0,
+   "row": 7
+  },
+  "key:right_bracket": {
+   "svg": "keyboard/right_bracket.svg",
+   "column": 1,
+   "row": 7
+  },
+  "key:quote": {
+   "svg": "keyboard/quote.svg",
+   "column": 2,
+   "row": 7
+  },
+  "key:escape": {
+   "svg": "keyboard/escape.svg",
+   "column": 3,
+   "row": 7
+  },
+  "key:enter": {
+   "svg": "keyboard/enter.svg",
+   "column": 4,
+   "row": 7
+  },
+  "key:space": {
+   "svg": "keyboard/space.svg",
+   "column": 5,
+   "row": 7
+  },
+  "key:tab": {
+   "svg": "keyboard/tab.svg",
+   "column": 6,
+   "row": 7
+  },
+  "key:backspace": {
+   "svg": "keyboard/backspace.svg",
+   "column": 7,
+   "row": 7
+  },
+  "key:delete": {
+   "svg": "keyboard/delete.svg",
+   "column": 0,
+   "row": 8
+  },
+  "key:insert": {
+   "svg": "keyboard/insert.svg",
+   "column": 1,
+   "row": 8
+  },
+  "key:home": {
+   "svg": "keyboard/home.svg",
+   "column": 2,
+   "row": 8
+  },
+  "key:end": {
+   "svg": "keyboard/end.svg",
+   "column": 3,
+   "row": 8
+  },
+  "key:page_up": {
+   "svg": "keyboard/page_up.svg",
+   "column": 4,
+   "row": 8
+  },
+  "key:page_down": {
+   "svg": "keyboard/page_down.svg",
+   "column": 5,
+   "row": 8
+  },
+  "key:left": {
+   "svg": "keyboard/left.svg",
+   "column": 6,
+   "row": 8
+  },
+  "key:right": {
+   "svg": "keyboard/right.svg",
+   "column": 7,
+   "row": 8
+  },
+  "key:up": {
+   "svg": "keyboard/up.svg",
+   "column": 0,
+   "row": 9
+  },
+  "key:down": {
+   "svg": "keyboard/down.svg",
+   "column": 1,
+   "row": 9
+  },
+  "key:shift": {
+   "svg": "keyboard/shift.svg",
+   "column": 2,
+   "row": 9
+  },
+  "key:control": {
+   "svg": "keyboard/control.svg",
+   "column": 3,
+   "row": 9
+  },
+  "key:alt": {
+   "svg": "keyboard/alt.svg",
+   "column": 4,
+   "row": 9
+  },
+  "key:caps_lock": {
+   "svg": "keyboard/caps_lock.svg",
+   "column": 5,
+   "row": 9
+  },
+  "key:numpad_0": {
+   "svg": "keyboard/numpad_0.svg",
+   "column": 6,
+   "row": 9
+  },
+  "key:numpad_1": {
+   "svg": "keyboard/numpad_1.svg",
+   "column": 7,
+   "row": 9
+  },
+  "key:numpad_2": {
+   "svg": "keyboard/numpad_2.svg",
+   "column": 0,
+   "row": 10
+  },
+  "key:numpad_3": {
+   "svg": "keyboard/numpad_3.svg",
+   "column": 1,
+   "row": 10
+  },
+  "key:numpad_4": {
+   "svg": "keyboard/numpad_4.svg",
+   "column": 2,
+   "row": 10
+  },
+  "key:numpad_5": {
+   "svg": "keyboard/numpad_5.svg",
+   "column": 3,
+   "row": 10
+  },
+  "key:numpad_6": {
+   "svg": "keyboard/numpad_6.svg",
+   "column": 4,
+   "row": 10
+  },
+  "key:numpad_7": {
+   "svg": "keyboard/numpad_7.svg",
+   "column": 5,
+   "row": 10
+  },
+  "key:numpad_8": {
+   "svg": "keyboard/numpad_8.svg",
+   "column": 6,
+   "row": 10
+  },
+  "key:numpad_9": {
+   "svg": "keyboard/numpad_9.svg",
+   "column": 7,
+   "row": 10
+  },
+  "key:numpad_enter": {
+   "svg": "keyboard/numpad_enter.svg",
+   "column": 0,
+   "row": 11
+  },
+  "key:numpad_plus": {
+   "svg": "keyboard/numpad_plus.svg",
+   "column": 1,
+   "row": 11
+  },
+  "key:numpad_minus": {
+   "svg": "keyboard/numpad_minus.svg",
+   "column": 2,
+   "row": 11
+  },
+  "key:numpad_multiply": {
+   "svg": "keyboard/numpad_multiply.svg",
+   "column": 3,
+   "row": 11
+  },
+  "key:numpad_divide": {
+   "svg": "keyboard/numpad_divide.svg",
+   "column": 4,
+   "row": 11
+  },
+  "key:print_screen": {
+   "svg": "keyboard/print_screen.svg",
+   "column": 5,
+   "row": 11
+  },
+  "key:pause": {
+   "svg": "keyboard/pause.svg",
+   "column": 6,
+   "row": 11
+  },
+  "key:num_lock": {
+   "svg": "keyboard/num_lock.svg",
+   "column": 7,
+   "row": 11
+  },
+  "key:scroll_lock": {
+   "svg": "keyboard/scroll_lock.svg",
+   "column": 0,
+   "row": 12
+  },
+  "mouse:left": {
+   "svg": "keyboard/mouse_left.svg",
+   "column": 1,
+   "row": 12
+  },
+  "mouse:right": {
+   "svg": "keyboard/mouse_right.svg",
+   "column": 2,
+   "row": 12
+  },
+  "mouse:middle": {
+   "svg": "keyboard/mouse_middle.svg",
+   "column": 3,
+   "row": 12
+  },
+  "mouse:wheel": {
+   "svg": "keyboard/mouse_middle.svg",
+   "column": 4,
+   "row": 12
+  },
+  "mouse:wheel_up": {
+   "svg": "keyboard/mouse_wheel_up.svg",
+   "column": 5,
+   "row": 12
+  },
+  "mouse:wheel_down": {
+   "svg": "keyboard/mouse_wheel_down.svg",
+   "column": 6,
+   "row": 12
+  },
+  "mouse:x": {
+   "svg": "keyboard/mouse_move.svg",
+   "column": 7,
+   "row": 12
+  },
+  "mouse:y": {
+   "svg": "keyboard/mouse_move.svg",
+   "column": 0,
+   "row": 13
+  },
+  "key:wasd": {
+   "svg": "keyboard/wasd.svg",
+   "column": 1,
+   "row": 13
+  },
+  "key:arrows": {
+   "svg": "keyboard/arrows.svg",
+   "column": 2,
+   "row": 13
+  },
+  "mouse:move": {
+   "svg": "keyboard/mouse_move.svg",
+   "column": 3,
+   "row": 13
+  }
+ }
+}

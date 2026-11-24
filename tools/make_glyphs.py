@@ -34,6 +34,19 @@ COLUMNS = 8
 # Prompt-only glyphs: no PadControl of their own.
 EXTRA = frozenset(["dpad"] + [f"{p}_{d}" for p in ("dpad", "left", "right")
                               for d in ("up_left", "up_right", "down_left", "down_right")])
+# The keyboard family's names, as a bindings file writes a source (docs/GLYPHS.md section 2): every key and mouse
+# control a binding can name, then prompt-only glyphs (several keys, mouse motion).
+KEYBOARD_NAMES = tuple(
+    [f"key:{c}" for c in "abcdefghijklmnopqrstuvwxyz0123456789"] + [f"key:f{i}" for i in range(1, 13)]
+    + [f"key:{n}" for n in ("backtick", "minus", "equals", "comma", "period", "semicolon", "slash", "backslash",
+                            "left_bracket", "right_bracket", "quote", "escape", "enter", "space", "tab", "backspace",
+                            "delete", "insert", "home", "end", "page_up", "page_down", "left", "right", "up", "down",
+                            "shift", "control", "alt", "caps_lock")]
+    + [f"key:numpad_{i}" for i in range(10)]
+    + [f"key:{n}" for n in ("numpad_enter", "numpad_plus", "numpad_minus", "numpad_multiply", "numpad_divide",
+                            "print_screen", "pause", "num_lock", "scroll_lock")]
+    + [f"mouse:{n}" for n in ("left", "right", "middle", "wheel", "wheel_up", "wheel_down", "x", "y")]
+    + ["key:wasd", "key:arrows", "mouse:move"])
 BROWSERS = (
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
@@ -54,9 +67,12 @@ def families():
     """{family: [(control, svg path relative to svg/)]}, in PadControl order then prompt-only names."""
     index = json.loads((GLYPHS / "families.json").read_text(encoding="utf-8"))
     pads = pad_names()
-    order = pads + sorted(EXTRA)
     out, used = {}, set()
     for family, spec in index["families"].items():
+        kind = spec.get("kind", "pad")
+        if kind not in ("pad", "keyboard"):
+            sys.exit(f"{family}: unknown kind {kind}")
+        order = list(KEYBOARD_NAMES) if kind == "keyboard" else pads + sorted(EXTRA)
         controls = {}
         for block in spec.get("use", ()):
             if block not in index["shared"]:
@@ -67,7 +83,7 @@ def families():
         unknown = sorted(set(controls) - set(order))
         if unknown:
             sys.exit(f"{family}: unknown control names {unknown}")
-        missing = [name for name in pads + sorted(EXTRA) if name not in controls and name not in absent]
+        missing = [name for name in order if name not in controls and name not in absent]
         if missing:
             sys.exit(f"{family}: no glyph for {missing} (draw it or list it in `absent`)")
         both = sorted(absent & set(controls))

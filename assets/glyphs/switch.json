@@ -19,22 +19,22 @@
  },
  "controls": {
   "south": {
-   "svg": "switch/b.svg",
+   "svg": "letters/b.svg",
    "column": 0,
    "row": 0
   },
   "east": {
-   "svg": "switch/a.svg",
+   "svg": "letters/a.svg",
    "column": 1,
    "row": 0
   },
   "west": {
-   "svg": "switch/y.svg",
+   "svg": "letters/y.svg",
    "column": 2,
    "row": 0
   },
   "north": {
-   "svg": "switch/x.svg",
+   "svg": "letters/x.svg",
    "column": 3,
    "row": 0
   },
