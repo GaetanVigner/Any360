@@ -216,6 +216,11 @@ sys::Glyph PlayerGlyph(uint32_t user, sys::XboxControl control) {
   return g_glyphs.For(user, control, Clock::now());
 }
 
+uint32_t PlayerGlyphGeneration() {
+  std::lock_guard lock(g_players);
+  return g_glyphs.Generation(Clock::now());
+}
+
 void SetPlayerBindings(const sys::InputBindings& bindings) {
   std::lock_guard lock(g_players);
   g_glyphs.SetBindings(bindings);

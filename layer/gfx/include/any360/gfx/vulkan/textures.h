@@ -11,6 +11,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <future>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -19,6 +20,7 @@
 #include <vector>
 
 #include "any360/gfx/diagnostics.h"
+#include "any360/gfx/texture_patches.h"
 #include "device.h"
 
 namespace any360::gfx::vk {
@@ -104,6 +106,10 @@ class TextureCache {
   bool LoadBlocks(const uint32_t fetch[6], std::vector<uint8_t>& blocks, std::string& error) const;
 
   uint32_t uploads() const { return uploads_; }
+  // Uploads of patched textures (texture_patches.h): a patch set or the guest's content under it changed.
+  uint32_t patched_uploads() const { return patched_uploads_; }
+  // The patches this cache applies (TexturePatches::Global() unless a test gives its own).
+  void SetPatches(const TexturePatches* patches) { patches_ = patches; patches_seen_ = ~0ull; }
   // Time spent hashing texture memory and loading levels for uploads (untiling, conversion), in nanoseconds.
   uint64_t ns_hash() const { return ns_hash_; }
   uint64_t ns_load() const { return ns_load_; }
@@ -130,7 +136,11 @@ class TextureCache {
   // (unless memory is watched), the same version, and no change queued.
   uint64_t epoch() const { return epoch_; }
   uint64_t version() const { return version_; }
-  bool changes_queued() const { return any_changed_.load(std::memory_order_acquire); }
+  bool changes_queued() const {
+    // Patches set or removed, or a patched image still being composed, too.
+    return any_changed_.load(std::memory_order_acquire) || patches_->generation() != patches_seen_ ||
+           patch_jobs_unapplied_.load(std::memory_order_acquire) != 0;
+  }
   // A host that can watch guest memory for CPU writes (the reference runtime's physical memory access callbacks):
   // `watch(begin, end)` arms a one-shot watch, and the host reports writes with QueueMemoryChanged. Watched textures
   // are hashed again only after such a write, not at every frame.
@@ -205,6 +215,9 @@ class TextureCache {
   bool LoadLevel(const TextureFetch& t, const TextureFormatInfo& info, uint32_t level, std::vector<uint8_t>& blocks,
                  std::string& error) const;
 
+  VkImageView PatchedView(const uint32_t fetch[6], const TextureFetch& t, const TextureFormatInfo& info,
+                          const TexturePatch& patch, const std::array<uint32_t, 8>& fast_key, bool is_signed, std::string& error);
+
   struct Texture {
     Image image;  // the view member is unused: views are per swizzle
     uint64_t content_hash = 0;
@@ -223,7 +236,19 @@ class TextureCache {
   std::vector<uint8_t> scratch_;
   Image empty_[3];  // 1x1 black textures by ViewType, made on first use
   VkImageView Empty(ViewType type, std::string& error);
-  uint32_t uploads_ = 0;
+  uint32_t uploads_ = 0, patched_uploads_ = 0;
+  const TexturePatches* patches_ = &TexturePatches::Global();
+  uint64_t patches_seen_ = 0;
+  // A patched texture's host image being composed on a thread of its own: the hash it shows, its levels' texels.
+  struct PatchJob {
+    uint64_t hash = 0;
+    std::promise<void> promise;
+    std::shared_future<void> ready;
+    std::vector<uint8_t> blocks;
+    std::vector<VkBufferImageCopy> regions;
+  };
+  std::map<std::array<uint32_t, 5>, std::shared_ptr<PatchJob>> patch_jobs_;
+  std::atomic<int> patch_jobs_unapplied_{0};
   uint64_t ns_hash_ = 0, ns_load_ = 0;
   uint32_t images_created_ = 0, staging_created_ = 0;
   uint64_t ns_create_ = 0, staging_created_bytes_ = 0, ns_staging_ = 0;

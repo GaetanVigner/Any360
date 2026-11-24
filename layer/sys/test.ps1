@@ -62,6 +62,8 @@ try {
     if ($LASTEXITCODE) { throw "sys_object_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_input_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "sys_input_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'sys_png_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "sys_png_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_ldi_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "sys_ldi_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'sys_adapter_tests.exe') | Out-Host
@@ -88,6 +90,8 @@ try {
     if ($LASTEXITCODE) { throw "xdk_d3d_state_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_cp_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "gfx_cp_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'gfx/gfx_patch_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "gfx_patch_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_write_back_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "gfx_write_back_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_shader_tests.exe') | Out-Host

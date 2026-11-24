@@ -1736,6 +1736,46 @@ int main(int argc, char** argv) {
                     fresh.Count(Rgba(0x40, 0x40, 0x40, 0x40)), kSize * kSize);
         CHECK(walks >= 1 && found >= walks && fresh.Count(Rgba(0x40, 0x40, 0x40, 0x40)) == kSize * kSize);
       }
+      // A patched texture (texture_patches.h): 32x32 grey texels, patched at twice the size with a 16x16 red region
+      // in a corner. The quad shows the 64x64 host image texel for pixel: 32x32 red pixels, the rest the guest's
+      // grey. A patch removed: the guest's texture again; a patch set again over changed memory: the new content.
+      {
+        const uint32_t base = 0x180000, grey = Rgba(0x40, 0x40, 0x40, 0x40), red = Rgba(255, 0, 0, 255);
+        std::memset(g_memory + base, 0x40, 32 * 32 * 4);
+        TexturePatch patch;
+        patch.base = base, patch.width = 32, patch.height = 32, patch.scale = 2;
+        patch.regions.push_back({0, 0, 16, 16, std::vector<uint32_t>(32 * 32, red)});
+        TexturePatches::Global().Set(patch);
+        const uint32_t uploads_before = renderer.texture_cache()->patched_uploads();
+        const Pixels patched = scenario("patched texture", nullptr, [&] { textured(base, 32); });
+        const Pixels again = scenario("patched texture again", nullptr, [&] { textured(base, 32); });
+        const uint32_t uploads = renderer.texture_cache()->patched_uploads() - uploads_before;
+        TexturePatches::Global().Remove(base);
+        const Pixels unpatched = scenario("patch removed", nullptr, [&] { textured(base, 32); });
+        std::memset(g_memory + base, 0x80, 32 * 32 * 4);
+        renderer.texture_cache()->MemoryChanged(base, base + 32 * 32 * 4);
+        TexturePatches::Global().Set(patch);
+        // A page shown before keeps its image until the new one is composed (on a thread of its own): the draws
+        // never wait. Drawn until it is there (a frame or two).
+        const uint32_t uploads_before_new = renderer.texture_cache()->patched_uploads();
+        Pixels repatched;
+        uint32_t frames_late = 0;
+        do {
+          repatched = scenario("patched over new content", nullptr, [&] { textured(base, 32); });
+        } while (renderer.texture_cache()->patched_uploads() == uploads_before_new && ++frames_late < 200);
+        repatched = scenario("patched over new content", nullptr, [&] { textured(base, 32); });
+        std::printf("gfx_render_tests: patched texture over new content: shown %u frames later\n", frames_late);
+        CHECK(frames_late < 200);
+        TexturePatches::Global().Remove(base);
+        std::printf("gfx_render_tests: patched texture: %u red, %u grey of %u; %u uploads for two draws; removed: %u grey; "
+                    "over new content: %u red, %u light grey\n",
+                    patched.Count(red), patched.Count(grey), kSize * kSize, uploads, unpatched.Count(grey), repatched.Count(red),
+                    repatched.Count(Rgba(0x80, 0x80, 0x80, 0x80)));
+        CHECK(patched.Count(red) == 32 * 32 && patched.Count(grey) == kSize * kSize - 32 * 32);
+        CHECK(again.Count(red) == 32 * 32 && uploads == 1);
+        CHECK(unpatched.Count(grey) == kSize * kSize);
+        CHECK(repatched.Count(red) == 32 * 32 && repatched.Count(Rgba(0x80, 0x80, 0x80, 0x80)) == kSize * kSize - 32 * 32);
+      }
       // A texture taller than the resolve, within its last 32-row tile (64 rows over 40 resolved, at an address of its
       // own): copied, the rows below the resolve zeros.
       const uint32_t short_rect = kVertices + 0xB00, short_base = 0x140000;
@@ -1862,9 +1902,9 @@ int main(int argc, char** argv) {
   // and the 256-wide k_8_8_8_8 one of the screen bands (17); the depth-under-colour checks' three depth and three
   // colour surfaces and the unclipped rectangle's two colour surfaces (25); the depth pre-pass check's shorter
   // colour target (26).
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 7 && stats.resolves == 89);
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 10 && stats.resolves == 89);
   // (The resolved texture is read from the resolve on the GPU, not uploaded; the one read while the cache is walked
-  // is: 7 uploads. 89 resolves: the four of the scenarios before (one with an exponent bias on the GPU), the six
+  // is, and the patched texture's three (patched, removed, patched over new content): 10 uploads. 89 resolves: the four of the scenarios before (one with an exponent bias on the GPU), the six
   // k_16_16_16_16 ones on the GPU, the 70 with one, the two screen bands, the chain's six and the 40-row one.)
   // Depth resolve: a quad at depth 0.5 written into the D24S8 surface, its depth resolved to guest memory as k_24_8
   // (depth << 8 | stencil, 8-in-32, tiled), then sampled back as a k_24_8 texture into a 16_16_16_16_FLOAT target.

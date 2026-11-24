@@ -12,7 +12,7 @@ endif()
 add_library(any360_host_rexglue STATIC src/rexglue.cpp src/system.cpp)
 target_include_directories(any360_host_rexglue PUBLIC include)
 # The renderer stays private: its vendored headers (fmt among them) must not reach the title's sources.
-target_link_libraries(any360_host_rexglue PUBLIC any360_sys_ppc any360_host_diagnostics PRIVATE any360_gfx_vulkan)
+target_link_libraries(any360_host_rexglue PUBLIC any360_sys_ppc any360_host_diagnostics any360_gfx PRIVATE any360_gfx_vulkan)
 target_compile_options(any360_host_rexglue PRIVATE -Wall -Wextra)
 # The settings glue logs through the runtime's spdlog: kept apart from the renderer's vendored fmt (its namespace
 # renamed) so it compiles against the runtime's fmt. Titles get it with the binding. With it, the native replacements

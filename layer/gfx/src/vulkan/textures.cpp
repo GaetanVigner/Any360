@@ -5,6 +5,7 @@
 #include <cmath>
 #include <bit>
 #include <cstring>
+#include <thread>
 
 #include <immintrin.h>
 
@@ -813,6 +814,12 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   last_view_scaled_ = false;
   last_view_direct_ = false;
   last_used_ = nullptr;
+  if (const uint64_t g = patches_->generation(); g != patches_seen_) {
+    // Patches set or removed: views remembered by fetch constant are checked again.
+    patches_seen_ = g;
+    fast_.clear();
+    ++version_;
+  }
   if (any_changed_.load(std::memory_order_acquire)) {
     // Ranges reported from other threads (CPU writes watched, resolves written into guest memory).
     {
@@ -864,6 +871,13 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     span_end = std::max(span_end, uint32_t(p.address + bytes));
   }
   const uint32_t levels = last_level + 1;
+
+  // A patched texture (texture_patches.h): its own host image, the guest's content enlarged with the regions over it.
+  if (!patches_->empty() && t.dimension == 1 && t.depth == 1) {
+    if (const auto patch = patches_->Find(t.base); patch && patch->width == t.width && patch->height == t.height) {
+      return PatchedView(fetch, t, *info, *patch, fast_key, is_signed, error);
+    }
+  }
 
   // A resolve's destination left on the GPU, read as it is: copied from there (no memory read, no hash).
   // Each slice of a 2D or stacked texture (one level) that a resolve wrote there: all of them, or none.
@@ -1223,6 +1237,186 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   return view;
 }
 
+VkImageView TextureCache::PatchedView(const uint32_t fetch[6], const TextureFetch& t, const TextureFormatInfo& info,
+                                      const TexturePatch& patch, const std::array<uint32_t, 8>& fast_key, bool is_signed,
+                                      std::string& error) {
+  if (is_signed) return error = "a patched texture read signed (not handled)", VK_NULL_HANDLE;
+  // A slot of its own (layout bit 1), apart from the same texture unpatched.
+  const std::array<uint32_t, 5> key = {fetch[0] & 0xFFC00003, fetch[1], fetch[2], fetch[5] & 0xFFFFFE00,
+                                       (fetch[4] & 0x3FC) | 2u};
+  auto& slot = textures_[key];
+  const Placement p = Place(t, info, 0);
+  if (!p.address || uint64_t(p.address) + p.slice_stride > mirror_bytes_) return error = "texture outside the mirrored memory", VK_NULL_HANDLE;
+  const uint32_t span_begin = p.address, span_end = p.address + p.slice_stride;
+  // The guest's base level and the patch's version: either changing makes a new host image.
+  uint64_t hash = slot ? slot->content_hash : 0;
+  const bool stale = !slot || (watch_ ? slot->validated == 0 : slot->validated != epoch_);
+  if (stale) {
+    if (before_read_) before_read_(span_begin, span_end);
+    if (watch_) watch_(span_begin, span_end);
+    hash = HashMemory(physical_ + span_begin, p.slice_stride) * 0x100000001B3ull ^ (patch.version + 1);
+  }
+  const Functions& f = device_.fn();
+  const uint32_t s = patch.scale, width = t.width * s, height = t.height * s;
+  uint32_t levels = 1;
+  for (uint32_t m = std::max(width, height); m > 1; m >>= 1) ++levels;
+  if (!slot) {
+    slot = std::make_unique<Texture>();
+    VkImageCreateInfo ci{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ci.imageType = VK_IMAGE_TYPE_2D;
+    ci.format = VK_FORMAT_R8G8B8A8_UNORM;
+    ci.extent = {width, height, 1};
+    ci.mipLevels = levels;
+    ci.arrayLayers = 1;
+    ci.samples = VK_SAMPLE_COUNT_1_BIT;
+    ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ci.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if (f.vkCreateImage(device_.device(), &ci, nullptr, &slot->image.image) != VK_SUCCESS) {
+      slot.reset();
+      return error = "patched texture image", VK_NULL_HANDLE;
+    }
+    VkMemoryRequirements req;
+    f.vkGetImageMemoryRequirements(device_.device(), slot->image.image, &req);
+    VkMemoryAllocateInfo alloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    alloc.allocationSize = req.size;
+    alloc.memoryTypeIndex = device_.MemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (alloc.memoryTypeIndex == UINT32_MAX || f.vkAllocateMemory(device_.device(), &alloc, nullptr, &slot->image.memory) != VK_SUCCESS) {
+      f.vkDestroyImage(device_.device(), slot->image.image, nullptr);
+      slot.reset();
+      return error = "patched texture memory", VK_NULL_HANDLE;
+    }
+    f.vkBindImageMemory(device_.device(), slot->image.image, slot->image.memory, 0);
+    ++images_created_;
+    slot->image.format = VK_FORMAT_R8G8B8A8_UNORM;
+    slot->image.width = width;
+    slot->image.height = height;
+  }
+  slot->validated = epoch_;
+  slot->begin = span_begin, slot->end = span_end;
+  // The host image is composed on a thread of its own (enlarging, the regions, the mips: milliseconds a page), so the
+  // draws never wait for it: until it is ready, the previous image stays (and the views are not remembered, so the
+  // next draws ask again). Only a page never shown before waits for its first image.
+  std::shared_ptr<PatchJob>& job = patch_jobs_[key];
+  if (job && !stale && job->hash != slot->content_hash) hash = job->hash;  // still coming: what it will show
+  if (slot->content_hash != hash && (!job || job->hash != hash)) {
+    const auto decode_start = std::chrono::steady_clock::now();
+    auto next = std::make_shared<PatchJob>();
+    next->hash = hash;
+    next->ready = next->promise.get_future();
+    sys::RgbaImage guest;
+    if (!DecodeRGBA8(fetch, 0, guest.width, guest.height, guest.pixels, error)) return VK_NULL_HANDLE;
+    ns_load_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - decode_start).count());
+    // Detached: a job replaced before it is done finishes alone (its result dropped), nothing waits for it.
+    std::thread([next, guest = std::move(guest), patch = TexturePatch(patch), levels]() {
+      sys::RgbaImage composed;
+      ComposePatched(guest, patch, composed);
+      std::vector<sys::RgbaImage> mips;
+      BuildMips(composed, mips);
+      size_t bytes = 0;
+      for (uint32_t level = 0; level < levels; ++level) bytes += (level ? mips[level - 1] : composed).pixels.size() * 4;
+      next->blocks.reserve(bytes);
+      for (uint32_t level = 0; level < levels; ++level) {
+        const sys::RgbaImage& img = level ? mips[level - 1] : composed;
+        VkBufferImageCopy region{};
+        region.bufferOffset = next->blocks.size();
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1};
+        region.imageExtent = {img.width, img.height, 1};
+        next->regions.push_back(region);
+        const uint8_t* bytes_of = reinterpret_cast<const uint8_t*>(img.pixels.data());
+        next->blocks.insert(next->blocks.end(), bytes_of, bytes_of + img.pixels.size() * 4);
+      }
+      next->promise.set_value();
+    }).detach();
+    if (!job) patch_jobs_unapplied_.fetch_add(1, std::memory_order_release);
+    job = std::move(next);
+    fast_.clear();  // views of this texture remembered: asked again until the image is there
+    ++version_;
+  }
+  const bool shown_before = slot->content_hash != 0;
+  bool pending = false;
+  if (slot->content_hash != hash && job && job->hash == hash) {
+    pending = shown_before && job->ready.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
+  }
+  if (slot->content_hash != hash && job && job->hash == hash && !pending) {
+    const auto wait_start = std::chrono::steady_clock::now();
+    job->ready.wait();
+    ns_load_ += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - wait_start).count());
+    const std::vector<uint8_t>& blocks = job->blocks;
+    const std::vector<VkBufferImageCopy>& regions = job->regions;
+    Buffer staging;
+    if (!AcquireStaging(blocks.size(), staging)) return error = "texture staging", VK_NULL_HANDLE;
+    std::memcpy(staging.mapped, blocks.data(), blocks.size());
+    Image& image = slot->image;
+    auto record = [&](VkCommandBuffer cb) {
+      VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+      barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+      barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+      barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+      barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+      barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+      barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+      barrier.image = image.image;
+      barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, 1};
+      VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+      dependency.imageMemoryBarrierCount = 1;
+      dependency.pImageMemoryBarriers = &barrier;
+      f.vkCmdPipelineBarrier2(cb, &dependency);
+      f.vkCmdCopyBufferToImage(cb, staging.buffer, image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, uint32_t(regions.size()),
+                               regions.data());
+      barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+      barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+      barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+      barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+      barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+      barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      f.vkCmdPipelineBarrier2(cb, &dependency);
+    };
+    if (recorder_) {
+      record(recorder_());
+      pending_staging_.push_back(staging);
+    } else {
+      const bool ok = device_.Submit(record);
+      std::vector<Buffer> done{staging};
+      RecycleStaging(done);
+      if (!ok) return error = "patched texture upload", VK_NULL_HANDLE;
+    }
+    slot->content_hash = hash;
+    ++uploads_;
+    ++patched_uploads_;
+    job.reset();
+    patch_jobs_unapplied_.fetch_sub(1, std::memory_order_release);
+  }
+  // The view: the guest swizzle over the format's own, as for any texture (the decoded texels are in the format's
+  // component order).
+  uint32_t host_swizzle = 0;
+  for (uint32_t i = 0; i < 4; ++i) {
+    const uint32_t guest = (t.swizzle >> (3 * i)) & 7;
+    host_swizzle |= (guest >= 4 ? (guest & 5) : (info.swizzle >> (3 * guest)) & 7) << (3 * i);
+  }
+  VkImageView& view = slot->views[host_swizzle];
+  if (!view) {
+    VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vi.image = slot->image.image;
+    vi.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    vi.format = VK_FORMAT_R8G8B8A8_UNORM;
+    vi.components = {Component(host_swizzle & 7), Component((host_swizzle >> 3) & 7), Component((host_swizzle >> 6) & 7),
+                     Component((host_swizzle >> 9) & 7)};
+    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, levels, 0, 1};
+    if (f.vkCreateImageView(device_.device(), &vi, nullptr, &view) != VK_SUCCESS) {
+      view = VK_NULL_HANDLE;
+      return error = "patched texture view", VK_NULL_HANDLE;
+    }
+  }
+  if (!pending) {
+    if (fast_.size() > 65536) fast_.clear();
+    fast_[fast_key] = {view, epoch_, version_, s > 1, &slot->used};
+  }
+  last_view_scaled_ = s > 1;
+  slot->used = epoch_;
+  last_used_ = &slot->used;
+  return view;
+}
+
 VkSampler TextureCache::Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t min, uint32_t mip, uint32_t aniso) {
   const TextureFetch t = TextureFetch::Parse(fetch);
   if (mag == 3) mag = t.mag_filter;
@@ -1231,8 +1425,11 @@ VkSampler TextureCache::Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t 
   if (aniso == 7) aniso = t.aniso;
   uint32_t first_level, last_level;
   t.Levels(first_level, last_level);
+  // A patched texture (texture_patches.h) has a host image larger than the guest's, with its own mips: sampled with
+  // them (unless the base map alone is asked), so a glyph drawn smaller than its host size does not alias.
+  const bool patched = !patches_->empty() && t.dimension == 1 && mip != 2 && patches_->Find(t.base);
   const std::array<uint32_t, 10> key = {mag, min, mip, aniso, t.clamp_x, t.clamp_y, t.clamp_z, t.border_color, first_level,
-                                        last_level};
+                                        last_level | (patched ? 0x100u : 0u)};
   VkSampler& sampler = samplers_[key];
   if (sampler) return sampler;
   VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -1248,7 +1445,8 @@ VkSampler TextureCache::Sampler(const uint32_t fetch[6], uint32_t mag, uint32_t 
   }
   // The fetch constant's level range; the base map filter (2) samples its first level only.
   si.minLod = float(first_level);
-  si.maxLod = mip == 2 ? float(first_level) : float(last_level);
+  si.maxLod = mip == 2 ? float(first_level) : patched ? VK_LOD_CLAMP_NONE : float(last_level);
+  if (patched) si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
   si.borderColor = t.border_color == 0   ? VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK
                    : t.border_color == 1 ? VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE
                                          : VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;

@@ -1,7 +1,7 @@
 # any360::gfx: the GPU side of stage 1 (docs/DESIGN.md). `any360_gfx` is portable C++23 over any360_sys: the command
 # processor (PM4 execution behind sys::GpuBackend) and the Renderer interface the native Vulkan renderer implements.
 # Built from layer/sys/CMakeLists.txt, which adds this directory; `gfx_cp_tests` needs no reference runtime.
-add_library(any360_gfx STATIC src/command_processor.cpp src/capture.cpp src/async_renderer.cpp src/frame_counter.cpp)
+add_library(any360_gfx STATIC src/command_processor.cpp src/capture.cpp src/async_renderer.cpp src/frame_counter.cpp src/texture_patches.cpp src/glyph_pages.cpp)
 target_include_directories(any360_gfx PUBLIC include)
 target_link_libraries(any360_gfx PUBLIC any360_sys any360_xdk)  # any360_xdk: the D3D records' format (d3d_records.h)
 target_compile_options(any360_gfx PRIVATE -Wall -Wextra)
@@ -11,6 +11,14 @@ add_executable(gfx_cp_tests tests/gfx_cp_tests.cpp)
 target_link_libraries(gfx_cp_tests PRIVATE any360_gfx)
 target_compile_options(gfx_cp_tests PRIVATE -Wall -Wextra)
 add_test(NAME gfx_cp_tests COMMAND gfx_cp_tests)
+
+# Texture patches (texture_patches.h): the registry, the composed host image and its mips against reference models;
+# --bench times a 4x glyph page.
+add_executable(gfx_patch_tests tests/gfx_patch_tests.cpp)
+target_link_libraries(gfx_patch_tests PRIVATE any360_gfx)
+target_compile_options(gfx_patch_tests PRIVATE -Wall -Wextra)
+target_compile_definitions(gfx_patch_tests PRIVATE ANY360_GLYPHS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/glyphs")
+add_test(NAME gfx_patch_tests COMMAND gfx_patch_tests)
 
 # The frame counter (--any360_fps_overlay): its statistics, text and bitmap against reference models; --bench times
 # what it costs a frame, on and off.

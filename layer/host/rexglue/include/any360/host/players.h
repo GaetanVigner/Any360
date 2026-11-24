@@ -30,6 +30,8 @@ void ObservePlayer(rex::input::InputSystem* input, uint32_t user, const sys::Gam
 sys::ControllerFamily PlayerFamily(uint32_t user);
 // The glyph of a control of the title's controller for `user`, now (docs/GLYPHS.md section 3).
 sys::Glyph PlayerGlyph(uint32_t user, sys::XboxControl control);
+// Moves on whenever an answer of PlayerGlyph can change (bindings set, a player's shown family changed).
+uint32_t PlayerGlyphGeneration();
 // The bindings the glyphs follow (the same file as the input's).
 void SetPlayerBindings(const sys::InputBindings& bindings);
 

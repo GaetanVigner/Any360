@@ -298,7 +298,7 @@ user and `GlyphQuery`; the host owns one (`PlayerGlyph(user, control)`, players.
 An answer is `{family, set, control}`: the glyph set's name and the control's name in it (`east`, `key:space`), 2.6 ns
 and no allocation. The profile chain (`ResolveProfile`: the family's profile, its bases, then `gamepad`) is shared by
 the mapper and the query: each user is mapped with its pad's family profile (`Xam`, `XamHost::controller_family`), so
-a glyph always shows what the input does. Still to come: drawing from the sets (the title adapters, section 4).
+a glyph always shows what the input does. Drawing from the sets: the title adapters, section 4 ("Glyph pages").
 
 When several physical controls are bound, the first one of the active device's class wins (a keyboard player sees the
 key, not the pad button). The glyph images live in a **glyph set**: one atlas per family (PNG, several sizes, plus a
@@ -345,6 +345,28 @@ as characters of a font page; the title's *text* fonts are not touched, they com
 There is no single first route for every title: each adapter uses the mechanism its title needs. Any360 builds a
 mechanism when the first adapter needs it: **E** first (Crackdown's adapter), then **B** (Simpsons tokens), **A**
 (TDU's clip bitmaps, Crackdown's XUI images), **C** where none of these reaches. **D** comes free with the API.
+
+### Glyph pages (mechanism A by address, built 2026-11-24)
+
+A keyed by the texture's **address**, which the adapter reads from the title's own objects (no content hash): the
+title's pad glyphs are cells of texture pages (a button font's pages), and Any360 redraws each cell for its user's
+bindings and device.
+
+- `any360/sys/png.h`: PNG decoding (inflate, the five filters, 8-bit colour types) for the glyph atlases, no library.
+- `any360/gfx/texture_patches.h`: a guest 2D texture shown with regions replaced in the **host** image, never in
+  guest memory: the cache decodes the base level, enlarges it `scale` times (bilinear), writes the regions over it and
+  builds its mips; the guest's own content still counts (a rewritten page is patched again over it). 4x by default, so
+  a 32-texel cell is drawn from the 128-texel atlas: sharp, which the original art never was.
+- `any360/gfx/glyph_pages.h`: the adapter's pages and cells (a cell: its rectangle, its user, a control of the title's
+  controller, the bound control's glyph or its whole stick); answers through the glyph query, the art fitted in the
+  cell (centred, aspect kept, alpha-weighted resampling), patches set again only when an answer changes. A cell whose
+  glyph has no art (nothing of the family's kind bound) keeps the title's own.
+- Host: `SetGlyphPages(pages)` (any360/host/rexglue.h), updated at each swap; the sets are copied beside the title by
+  `any360_copy_glyphs(<target>)` (layer/sys/CMakeLists.txt) into `glyphs/`.
+
+First adapter: Mirror's Edge (its repository, `src/glyph_adapter.cpp`): the MultiFont `UI_Fonts_XboxButtons` found
+through UE3's GNames and GObjObjects, its characters A, B, X, Y, 0-6, L, R, H, V ([TdButtonFont] of TdGameUI.int)
+mapped to the controller's controls.
 
 Hard parts of A, to settle in its own phase:
 

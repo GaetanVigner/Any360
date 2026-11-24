@@ -1,0 +1,4 @@
+﻿bench DecodePng(xbox_one_128.png, 96780 bytes -> 1024x768): 3770 us/call, 834.4 MB/s out, 3243297 bytes and 2 allocations/call (image buffers reused)
+bench ComposePatched(256x256 page, 15 regions, 4x -> 1024x1024): 1761 us/call, 0 bytes and 0 allocations/call (output reused)
+bench BuildMips(1024x1024 -> 10 levels): 1883 us/call, 1398355 bytes and 10 allocations/call
+before (scalar per-byte lerp, 2026-11-24): bench ComposePatched(256x256 page, 15 regions, 4x -> 1024x1024): 10291 us/call, 0 bytes and 0 allocations/call

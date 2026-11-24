@@ -9,9 +9,11 @@
 #include "any360/host/hitch_tracer.h"
 #include "any360/host/profiler.h"
 #include "any360/host/hotkeys.h"
+#include "any360/host/players.h"
 #include "any360/host/settings.h"
 
 #include "any360/gfx/png.h"
+#include "any360/gfx/glyph_pages.h"
 #include "any360/gfx/async_renderer.h"
 #include "any360/gfx/capture.h"
 #include "any360/gfx/registers.h"
@@ -86,6 +88,52 @@ namespace any360::host::rexglue {
 namespace {
 
 constexpr uint32_t kPhysicalBytes = 0x20000000;  // 512 MB
+
+// The title adapter's glyph pages (SetGlyphPages), patched again at each frame whose glyph answers changed.
+std::mutex g_glyph_mutex;
+std::unique_ptr<gfx::GlyphPages> g_glyph_pages;
+std::vector<gfx::GlyphPage> g_glyph_pending;  // set before the graphics started
+bool g_glyph_pending_set = false;
+std::string g_glyphs_dir;
+std::function<void(const std::string&)> g_glyph_log;
+std::string g_glyph_error;  // the last one reported
+// The thread that updates them, woken at each swap (loading a set and fitting its art take milliseconds: never on the
+// renderer's thread).
+std::thread g_glyph_thread;
+std::condition_variable g_glyph_wake;
+std::atomic<bool> g_glyph_swapped{false};  // set by Swap without the lock (the update holds it for milliseconds)
+bool g_glyph_stop = false;
+
+// The folder of the running executable.
+std::filesystem::path ExecutableFolder() {
+#ifdef _WIN32
+  wchar_t path[MAX_PATH * 2];
+  const DWORD n = GetModuleFileNameW(nullptr, path, DWORD(std::size(path)));
+  return n ? std::filesystem::path(std::wstring(path, n)).parent_path() : std::filesystem::path();
+#else
+  std::error_code ec;
+  return std::filesystem::read_symlink("/proc/self/exe", ec).parent_path();
+#endif
+}
+
+// Once a frame (woken by the renderer's Swap), g_glyph_mutex held: nothing but a generation read while no answer
+// changed.
+void UpdateGlyphPages() {
+  if (!g_glyph_pages) return;
+  const auto start = std::chrono::steady_clock::now();
+  if (!g_glyph_pages->Update(PlayerGlyphGeneration(), PlayerGlyph, gfx::TexturePatches::Global())) return;
+  const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+  if (!g_glyph_log) return;
+  const sys::Glyph g = PlayerGlyph(0, sys::XboxControl::kA);
+  char line[200];
+  std::snprintf(line, sizeof(line), "Any360: glyph pages: player 1's prompts drawn with the %.*s set (%.1f ms)",
+                int(g.set.size()), g.set.data(), ms);
+  g_glyph_log(line);
+  if (g_glyph_pages->last_error() != g_glyph_error) {
+    g_glyph_error = g_glyph_pages->last_error();
+    g_glyph_log("Any360: glyph pages: " + g_glyph_error);
+  }
+}
 
 // The title's user data folder (--user_data_root), where the keys write; empty in tool mode.
 std::filesystem::path UserDataRoot() {
@@ -336,6 +384,8 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
 
   void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* registers) override {
     VulkanRenderer::Swap(frontbuffer, width, height, registers);
+    g_glyph_swapped.store(true, std::memory_order_release);  // the glyph thread updates the pages; the next frames
+    g_glyph_wake.notify_one();                               // see the patches
     if (!title_) {  // no window (tool mode): rendered, not presented
       Screenshot();
       Report();
@@ -1393,11 +1443,44 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   g_binding = binding.release();
   g_bound = true;
   RegisterHotkeys(*g_binding);
+  {
+    std::lock_guard lock(g_glyph_mutex);
+    g_glyphs_dir = options.glyphs_dir.empty() ? (ExecutableFolder() / "glyphs").string() : options.glyphs_dir;
+    g_glyph_log = options.log;
+    g_glyph_pages = std::make_unique<gfx::GlyphPages>(g_glyphs_dir, options.glyph_scale);
+    if (g_glyph_pending_set) g_glyph_pages->SetPages(std::move(g_glyph_pending));
+    g_glyph_pending_set = false;
+  }
+  g_glyph_thread = std::thread([] {
+    std::unique_lock lock(g_glyph_mutex);
+    while (!g_glyph_stop) {
+      // A wake-up missed (the flag set between the check and the wait) costs at most the timeout.
+      g_glyph_wake.wait_for(lock, std::chrono::milliseconds(100), [] { return g_glyph_swapped.load() || g_glyph_stop; });
+      g_glyph_swapped.store(false);
+      if (!g_glyph_stop) UpdateGlyphPages();
+    }
+  });
   return true;
+}
+
+void SetGlyphPages(std::vector<gfx::GlyphPage> pages) {
+  std::lock_guard lock(g_glyph_mutex);
+  if (!g_glyph_pages) {
+    g_glyph_pending = std::move(pages);
+    g_glyph_pending_set = true;
+    return;
+  }
+  g_glyph_pages->SetPages(std::move(pages));
 }
 
 void StopGraphics() {
   if (!g_binding) return;
+  {
+    std::lock_guard lock(g_glyph_mutex);
+    g_glyph_stop = true;
+  }
+  g_glyph_wake.notify_all();
+  if (g_glyph_thread.joinable()) g_glyph_thread.join();
   for (const Hotkey& key : kHotkeys) rex::ui::UnregisterBind(key.bind);
   sys::Graphics().StopVblank();
   g_binding->interrupts.Stop();

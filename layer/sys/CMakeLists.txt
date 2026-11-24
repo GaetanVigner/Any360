@@ -9,8 +9,19 @@ project(any360_sys LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# The glyph sets (assets/glyphs) beside a title's executable, in glyphs/, where the graphics binding looks for them
+# (any360/host/rexglue.h, GraphicsOptions::glyphs_dir): any360_copy_glyphs(<title target>) after each build.
+set(ANY360_GLYPH_ASSETS "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/glyphs" CACHE INTERNAL "Any360's glyph sets")
+function(any360_copy_glyphs target)
+  file(GLOB _any360_glyphs "${ANY360_GLYPH_ASSETS}/*.json" "${ANY360_GLYPH_ASSETS}/*_64.png" "${ANY360_GLYPH_ASSETS}/*_128.png")
+  add_custom_command(TARGET ${target} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>/glyphs"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_any360_glyphs} "$<TARGET_FILE_DIR:${target}>/glyphs"
+    VERBATIM)
+endfunction()
+
 add_library(any360_sys STATIC src/rtl.cpp src/info.cpp src/config.cpp src/error_tables.cpp src/video.cpp src/net.cpp
-            src/threading.cpp src/format.cpp src/objects.cpp src/scheduler.cpp src/precise_sleep.cpp src/memory.cpp src/files.cpp src/host_times.cpp src/xam.cpp src/win32.cpp src/input.cpp src/input_bindings.cpp src/input_glyphs.cpp src/input_players.cpp src/json.cpp src/crypt.cpp src/crypt_blocks.cpp src/crypt_host.cpp src/ldi.cpp
+            src/threading.cpp src/format.cpp src/objects.cpp src/scheduler.cpp src/precise_sleep.cpp src/memory.cpp src/files.cpp src/host_times.cpp src/xam.cpp src/win32.cpp src/input.cpp src/input_bindings.cpp src/input_glyphs.cpp src/input_players.cpp src/json.cpp src/png.cpp src/crypt.cpp src/crypt_blocks.cpp src/crypt_host.cpp src/ldi.cpp
             src/graphics.cpp src/audio.cpp src/variables.cpp src/host_sockets.cpp)
 target_include_directories(any360_sys PUBLIC include)
 if(WIN32)
@@ -40,6 +51,11 @@ target_link_libraries(sys_input_tests PRIVATE any360_sys)
 target_compile_options(sys_input_tests PRIVATE -Wall -Wextra)
 target_compile_definitions(sys_input_tests PRIVATE ANY360_GLYPHS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/glyphs")
 add_test(NAME sys_input_tests COMMAND sys_input_tests)
+add_executable(sys_png_tests tests/sys_png_tests.cpp)
+target_link_libraries(sys_png_tests PRIVATE any360_sys)
+target_compile_options(sys_png_tests PRIVATE -Wall -Wextra)
+target_compile_definitions(sys_png_tests PRIVATE ANY360_GLYPHS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/glyphs")
+add_test(NAME sys_png_tests COMMAND sys_png_tests)
 # Not a test: step 12's calls timed, with host memory a call, beside what the host offers (Windows' CNG, wcslen);
 # results kept in docs/perf/archive/ (sys_step12_bench [repeats]).
 add_executable(sys_step12_bench tests/sys_step12_bench.cpp)

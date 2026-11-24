@@ -28,6 +28,11 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
+
+namespace any360::gfx {
+struct GlyphPage;  // any360/gfx/glyph_pages.h (SetGlyphPages's callers include it)
+}
 
 // GraphicsOptions has pipeline_cache_path and async_pipelines.
 #define ANY360_REXGLUE_PIPELINE_CACHE 1
@@ -107,7 +112,13 @@ struct GraphicsOptions {
   // renderer holds it, before the window's scaling (with the frame counter of --any360_fps_overlay composited).
   // Empty: none.
   std::string screenshot_path;
+  // The glyph sets (Any360's assets/glyphs, copied beside the title): <set>.json and its atlases. Empty: the
+  // executable's folder's "glyphs". `glyph_scale`: host texels a guest texel of a patched glyph page (1-8).
+  std::string glyphs_dir;
+  uint32_t glyph_scale = 4;
 };
+// GraphicsOptions has glyphs_dir and SetGlyphPages exists.
+#define ANY360_REXGLUE_GLYPH_PAGES 1
 // GraphicsOptions has capture_path and capture_kicks.
 #define ANY360_REXGLUE_CAPTURE 1
 // GraphicsOptions has show_fps.
@@ -150,6 +161,10 @@ void ReportRuntimeFrames(std::function<void(const std::string&)> log, double sec
 // kept on the machine.
 #define ANY360_REXGLUE_REFERENCE_CAPTURE 1
 void WatchReferenceCapture(const std::string& trace_path, uint32_t frames, std::function<void(const std::string&)> log);
+// The title adapter's pages of pad glyphs (gfx/glyph_pages.h, docs/GLYPHS.md section 4): each cell redrawn from the
+// glyph sets for its user's bindings and device, as texture patches, from the next frame on and again whenever a
+// glyph answer changes. Replaces the previous list; callable before StartGraphics (kept until then) and from any thread.
+void SetGlyphPages(std::vector<gfx::GlyphPage> pages);
 // Stops the threads (call before the runtime goes away).
 void StopGraphics();
 // Whether the Vd* overrides go to Any360 (fixed by the first StartGraphics, before the title's first Vd* call).
