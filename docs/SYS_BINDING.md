@@ -367,6 +367,20 @@ console's own calls, with nothing for a title to call or hook (`any360/sys/input
 - `sys_object_tests` plays a burst of changes in one frame (RB, X, Y, RB released and pressed again, a double tap on
   X) through the steps, and the sticks staying live while buttons wait.
 
+Recorded runs (2026-11-24), for A/B measures on a player's route without the player: `--any360_input_record=<file>`
+records the first controller as the title receives it (buttons, triggers, sticks: every change the 1 kHz sampler
+sees, the bindings applied) from `--any360_input_record_from` seconds after the start, for
+`--any360_input_record_seconds` (0: until the title ends; a neutral state closes a timed one), written every half
+second so that a run stopped abruptly keeps it. `--any360_input_replay=<file>` plays it back on the first controller
+from the same second on, through the same queue as a player's (keystrokes included), the controller itself left out.
+Both count from the input script's clock: the same `--any360_input_script` takes the title to the same point (a menu
+into a level), then the route starts. A title is not deterministic to the frame (loading times, physics): a long route
+may drift from the recording, so a measure is best taken over its first minute or so. Checked in Mirror's Edge: a run
+recorded from the launch (menus, level selection, the level), played back with no player, reaches the same place 157 s
+in, the camera a few degrees apart (`docs/perf/archive/2026-11-24-input-recording/`). The text format and its tests:
+`any360/sys/input.h` (`InputRecording`), `sys_object_tests` (a recording's text, a recording made from the host's
+controller through the sampling thread and played back through `XamInputGetState`).
+
 ## Mirror's Edge in the database (2026-11-21)
 
 The sixth title (its own checkout, MirrorsEdgeRewrite; not published yet) boots on the full binding there. Its

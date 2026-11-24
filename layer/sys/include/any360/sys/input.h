@@ -104,4 +104,33 @@ class InputScript {
   std::vector<Press> presses_;
 };
 
+// A controller's states over time: recorded from a player (every change, as sampled) and played back on the first
+// controller, so that a run through a title (a route through a level, its sticks and triggers included) can be
+// repeated without a player, for A/B measures. Times are from the recording's start. Text form: a first line
+// "any360 input recording 1", then one line an event: "<microseconds> <buttons, hex> <left trigger> <right trigger>
+// <left x> <left y> <right x> <right y>".
+class InputRecording {
+ public:
+  using Clock = std::chrono::steady_clock;
+  static constexpr const char* kHeader = "any360 input recording 1";
+  struct Event {
+    Clock::duration at;
+    GamepadState state;
+  };
+  // `state` at `at` (not before the last event's time), kept when it differs from the last state.
+  void Add(Clock::duration at, const GamepadState& state);
+  // The state `since` the start: the last event's at or before it; neutral before the first.
+  GamepadState StateAt(Clock::duration since) const;
+  bool empty() const { return events_.empty(); }
+  const std::vector<Event>& events() const { return events_; }
+  Clock::duration length() const { return events_.empty() ? Clock::duration::zero() : events_.back().at; }
+  // The text of the events from index `from` on (with the header when `from` is 0).
+  std::string Text(size_t from = 0) const;
+  // Reads a recording's text; false (and `error`) when the header or a line cannot be read.
+  static bool Parse(const std::string& text, InputRecording& out, std::string* error = nullptr);
+
+ private:
+  std::vector<Event> events_;
+};
+
 }  // namespace any360::sys

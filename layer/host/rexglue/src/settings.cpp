@@ -80,6 +80,18 @@ REXCVAR_DEFINE_INT32(any360_sys_wait_first_look_ms, 16, "Kernel",
 REXCVAR_DEFINE_STRING(any360_input_script, "", "Kernel",
                       "Any360: button presses played on the first controller, for tests without a player: "
                       "\"20:start,24:a/500,30:a+x\" (seconds:buttons[/ms held], from the start)");
+REXCVAR_DEFINE_STRING(any360_input_record, "", "Kernel",
+                      "Any360 input group: records the first controller (buttons, triggers, sticks, every change) to this "
+                      "file from any360_input_record_from seconds after the start, for any360_input_record_seconds (0: "
+                      "until the title ends); written as it goes (any360/sys/input.h, InputRecording)");
+REXCVAR_DEFINE_STRING(any360_input_replay, "", "Kernel",
+                      "Any360 input group: plays a recording (any360_input_record) back on the first controller from "
+                      "any360_input_record_from seconds after the start, the controller itself left out; with the same "
+                      "input script both runs reach the same point first: an A/B on a player's route without a player");
+REXCVAR_DEFINE_DOUBLE(any360_input_record_from, 0.0, "Kernel",
+                      "Any360: the seconds after the start a recording or a replay begins (the input script's clock)");
+REXCVAR_DEFINE_DOUBLE(any360_input_record_seconds, 0.0, "Kernel",
+                      "Any360: how long a recording lasts (a neutral state closes it); 0: until the title ends");
 REXCVAR_DEFINE_STRING(any360_input_bindings, "", "Kernel",
                       "Any360 input group: the bindings file Any360Launcher writes (docs/GLYPHS.md, section 2); its "
                       "\"gamepad\" profile maps every controller before the title reads it. Empty: no remapping");
@@ -210,6 +222,32 @@ bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const 
         if (!error.empty()) REXLOG_WARN("Any360 system: input script entries not understood: {}", error);
         REXLOG_INFO("Any360 system: input script of {} presses on the first controller", script.presses().size());
         any360::sys::XamState().SetInputScript(std::move(script));
+      }
+      const auto from = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+          std::chrono::duration<double>(std::max(0.0, REXCVAR_GET(any360_input_record_from))));
+      if (const std::string path = REXCVAR_GET(any360_input_replay); !path.empty()) {
+        std::ifstream in(path, std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        any360::sys::InputRecording recording;
+        std::string error;
+        if (!any360::sys::InputRecording::Parse(text, recording, &error)) {
+          REXLOG_WARN("Any360 system: input replay {} not read: {}", path, error);
+        } else {
+          REXLOG_INFO("Any360 system: input replay of {} changes ({:.1f} s) on the first controller from {:.1f} s",
+                      recording.events().size(), std::chrono::duration<double>(recording.length()).count(),
+                      REXCVAR_GET(any360_input_record_from));
+          any360::sys::XamState().SetInputReplay(std::move(recording), from);
+        }
+      }
+      if (const std::string path = REXCVAR_GET(any360_input_record); !path.empty()) {
+        const auto length = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double>(std::max(0.0, REXCVAR_GET(any360_input_record_seconds))));
+        if (any360::sys::XamState().SetInputRecorder(path, from, length)) {
+          REXLOG_INFO("Any360 system: recording the first controller to {} from {:.1f} s", path,
+                      REXCVAR_GET(any360_input_record_from));
+        } else {
+          REXLOG_WARN("Any360 system: input recording {} cannot be written", path);
+        }
       }
       if (const std::string path = REXCVAR_GET(any360_input_bindings); !path.empty()) {
         std::ifstream in(path, std::ios::binary);

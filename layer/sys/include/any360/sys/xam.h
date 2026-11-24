@@ -391,6 +391,27 @@ class Xam {
     input_script_ = std::move(script);
     input_script_start_ = std::chrono::steady_clock::now();
   }
+  // Recording a run (InputRecording, input.h): the first controller's states as the title receives them, from `from`
+  // after this call, for `length` (zero: until the title ends), appended to `path` every half second by the
+  // sampling thread (StartInputSampling) so that a run stopped abruptly keeps them; a neutral state closes a timed
+  // one. False when the file cannot be written.
+  bool SetInputRecorder(const std::string& path, std::chrono::steady_clock::duration from,
+                        std::chrono::steady_clock::duration length);
+  // Playing one back: from `from` after this call the first controller is `recording`'s states (the controller itself
+  // left out; the input script's presses still added), through the same queue as a player's (keystrokes included).
+  void SetInputReplay(InputRecording recording, std::chrono::steady_clock::duration from) {
+    std::lock_guard lock(pads_mutex_);
+    replay_ = std::move(recording);
+    replay_start_ = std::chrono::steady_clock::now() + from;
+    replaying_ = !replay_.empty();
+  }
+  // Appends what the recorder gathered since its last write (the sampling thread calls it; at most every half second
+  // while it records, unless `now_anyway`).
+  void FlushInputRecording(bool now_anyway = false);
+  size_t recorded_events() {
+    std::lock_guard lock(pads_mutex_);
+    return recording_.events().size();
+  }
   // The launcher's bindings (input_bindings.h), layer 1: every controller's samples mapped with the "gamepad" profile
   // before the queue sees them (the input script's presses are the title's buttons, added after). An empty
   // InputBindings is the identity.
@@ -608,6 +629,17 @@ class Xam {
   std::chrono::steady_clock::duration input_step_ = InputQueue::kConsoleFrame;
   InputScript input_script_;
   std::chrono::steady_clock::time_point input_script_start_{};
+  // The recorder (pads_mutex_): its events, their start, length, how many are written to its file.
+  InputRecording recording_;
+  std::string recording_path_;
+  std::chrono::steady_clock::time_point recording_start_{}, recording_next_write_{};
+  std::chrono::steady_clock::duration recording_length_{};
+  size_t recording_written_ = 0;
+  bool recording_on_ = false, recording_open_ = false;
+  // The replay (pads_mutex_).
+  InputRecording replay_;
+  std::chrono::steady_clock::time_point replay_start_{};
+  bool replaying_ = false;
   std::thread sampler_;
   std::atomic<bool> sampling_{false};
   bool Connected(uint32_t user) const;

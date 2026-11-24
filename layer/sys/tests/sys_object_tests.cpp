@@ -2026,6 +2026,72 @@ void XamTests() {
   CHECK(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load16(buf + 4) == 0x1000);
   while (XamState().InputGetKeystroke(g, 0, 0, buf) == 0) {
   }
+  // A run recorded and played back: the host's controller (sampled every millisecond) holds A, then the left stick
+  // and the right trigger, then nothing, over a 300 ms recording; its file has those three changes in order. Played
+  // back from 50 ms on, the first controller reads them at their times while the host's controller (every button
+  // held) is left out.
+  {
+    static std::atomic<int> phase{0};
+    XamState().host().controller_state = [](uint32_t, GamepadState& s) {
+      const int p = phase.load();
+      if (p == 1) s.buttons = 0x1000;
+      if (p == 2) s.thumb_lx = 12000, s.right_trigger = 200;
+      if (p == 3) s.buttons = 0xFFFF;
+      return true;
+    };
+    const std::string path = (fs::temp_directory_path() / "any360_input_record_test.txt").string();
+    CHECK(XamState().SetInputRecorder(path, std::chrono::milliseconds(0), std::chrono::milliseconds(300)));
+    XamState().StartInputSampling(std::chrono::microseconds(1000));
+    phase = 1;
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    phase = 2;
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    phase = 0;
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    XamState().StopInputSampling();
+    std::ifstream in(path, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    InputRecording recorded;
+    std::string why;
+    CHECK(InputRecording::Parse(text, recorded, &why));
+    const auto& e = recorded.events();
+    std::printf("sys_object_tests: input recording: %zu changes, at %lld, %lld, %lld ms\n", e.size(),
+                e.size() > 0 ? (long long)std::chrono::duration_cast<std::chrono::milliseconds>(e[0].at).count() : -1,
+                e.size() > 1 ? (long long)std::chrono::duration_cast<std::chrono::milliseconds>(e[1].at).count() : -1,
+                e.size() > 2 ? (long long)std::chrono::duration_cast<std::chrono::milliseconds>(e[2].at).count() : -1);
+    CHECK(e.size() == 3);
+    if (e.size() == 3) {
+      CHECK(e[0].state.buttons == 0x1000 && e[1].state.thumb_lx == 12000 && e[1].state.right_trigger == 200 &&
+            e[2].state == GamepadState{});
+      CHECK(e[1].at - e[0].at >= std::chrono::milliseconds(60) && e[2].at - e[1].at >= std::chrono::milliseconds(60));
+      phase = 3;  // the host's controller: every button
+      // The changes queued while nothing polled come out one console frame at a time: polled until it shows it.
+      for (int i = 0; i < 40 && !(XamState().InputGetState(g, 0, 0, buf) == 0 && g.Load16(buf + 4) == 0xFFFF); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      }
+      CHECK(g.Load16(buf + 4) == 0xFFFF);
+      const auto start = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+      XamState().SetInputReplay(recorded, std::chrono::milliseconds(50));
+      auto read_at = [&](std::chrono::steady_clock::duration since) {
+        std::this_thread::sleep_until(start + since);
+        std::this_thread::sleep_for(std::chrono::milliseconds(40));  // a console frame's step through the queue
+        CHECK(XamState().InputGetState(g, 0, 0, buf) == 0);
+      };
+      read_at(e[0].at);
+      CHECK(g.Load16(buf + 4) == 0x1000 && int16_t(g.Load16(buf + 8)) == 0);
+      read_at(e[1].at);
+      CHECK(g.Load16(buf + 4) == 0 && g.Load8(buf + 7) == 200 && int16_t(g.Load16(buf + 8)) == 12000);
+      read_at(e[2].at);
+      CHECK(g.Load16(buf + 4) == 0 && g.Load8(buf + 7) == 0 && int16_t(g.Load16(buf + 8)) == 0);
+    }
+    XamState().SetInputReplay(InputRecording{}, std::chrono::milliseconds(0));
+    phase = 0;
+    in.close();
+    std::error_code removed;
+    std::filesystem::remove(path, removed);
+    while (XamState().InputGetKeystroke(g, 0, 0, buf) == 0) {
+    }
+  }
   CHECK(XamState().WsaStartup(g, 0x0202, buf) == 0 && g.Load16(buf) == 0x0202);
   CHECK(XamState().NetStartup() == 0);
   CHECK(XamState().Socket() == 0xFFFFFFFF && XamState().WsaGetLastError() == 10050);
@@ -2924,6 +2990,32 @@ void InputScriptTests() {
   CHECK(s.ButtonsAt(30100ms) == (0x1000 | 0x4000));
   CHECK(error == "bad, 31:nope, -1:a, 40:b/0");
   CHECK(InputScript::Parse("").empty());
+  // A recording: changes only (a neutral start and repeats dropped), times never going back, the state at any time,
+  // and its text read back the same, every field at its limits.
+  InputRecording r;
+  const GamepadState a{0x1000, 0, 0, 0, 0, 0, 0}, run{0x0000, 0, 255, -32768, 32767, 1234, -5};
+  r.Add(0ms, GamepadState{});
+  r.Add(10ms, a);
+  r.Add(12ms, a);
+  r.Add(500ms, run);
+  r.Add(400ms, GamepadState{});  // earlier than the last: kept at the last's time
+  CHECK(r.events().size() == 3 && r.events()[0].at == 10ms && r.events()[2].at == 500ms && r.length() == 500ms);
+  CHECK(r.StateAt(9ms) == GamepadState{} && r.StateAt(10ms) == a && r.StateAt(499ms) == a && r.StateAt(500ms) == GamepadState{});
+  InputRecording back;
+  std::string why;
+  CHECK(InputRecording::Parse(r.Text(), back, &why) && back.events().size() == 3);
+  for (size_t i = 0; i < back.events().size() && i < 3; ++i) {
+    CHECK(back.events()[i].at == r.events()[i].at && back.events()[i].state == r.events()[i].state);
+  }
+  InputRecording two;
+  two.Add(1ms, a);
+  two.Add(2ms, run);
+  CHECK(InputRecording::Parse(two.Text(), back) && back.events().size() == 2 && back.events()[1].state == run);
+  CHECK(two.Text(1).find(InputRecording::kHeader) == std::string::npos && two.Text(1).rfind("2000 0000 0 255 -32768 32767 1234 -5", 0) == 0);
+  CHECK(!InputRecording::Parse("not a recording\n1 0 0 0 0 0 0 0\n", back, &why) && why.find("not an Any360") == 0);
+  CHECK(!InputRecording::Parse(std::string(InputRecording::kHeader) + "\n5 0 0 0 40000 0 0 0\n", back, &why) &&
+        why.find("line 2") == 0);
+  CHECK(InputRecording::Parse(std::string(InputRecording::kHeader) + "\r\n\r\n", back) && back.empty());
 }
 
 void InputQueueTests() {

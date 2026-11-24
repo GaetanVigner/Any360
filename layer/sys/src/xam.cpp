@@ -1475,9 +1475,59 @@ void Xam::Sample(uint32_t user, std::chrono::steady_clock::time_point at) {
   GamepadState pad;
   if (host_.controller_state) host_.controller_state(user, pad);
   pad = pads_[user].mapper.Map(pad);
+  // A replay takes the first controller's place once it starts (the controller left out).
+  if (user == 0 && replaying_ && at >= replay_start_) pad = replay_.StateAt(at - replay_start_);
   // The input script's presses join the first controller's samples: its state and its keystrokes both see them.
   if (user == 0 && !input_script_.empty()) pad.buttons |= input_script_.ButtonsAt(at - input_script_start_);
+  // The recorder keeps what the title receives, from its start for its length (a neutral state closes it).
+  if (user == 0 && recording_on_ && at >= recording_start_) {
+    const auto since = at - recording_start_;
+    if (recording_length_ > std::chrono::steady_clock::duration::zero() && since >= recording_length_) {
+      recording_.Add(recording_length_, GamepadState{});
+      recording_on_ = false;
+    } else {
+      recording_.Add(since, pad);
+    }
+  }
   pads_[user].input.Sample(pad, at);
+}
+
+bool Xam::SetInputRecorder(const std::string& path, std::chrono::steady_clock::duration from,
+                           std::chrono::steady_clock::duration length) {
+  {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);  // writable, and empty until the first write
+    if (!out) return false;
+  }
+  std::lock_guard lock(pads_mutex_);
+  recording_ = InputRecording{};
+  recording_path_ = path;
+  recording_start_ = std::chrono::steady_clock::now() + from;
+  recording_next_write_ = recording_start_;
+  recording_length_ = length;
+  recording_written_ = 0;
+  recording_on_ = true;
+  recording_open_ = true;
+  return true;
+}
+
+void Xam::FlushInputRecording(bool now_anyway) {
+  std::string text, path;
+  bool first = false;
+  {
+    std::lock_guard lock(pads_mutex_);
+    if (!recording_open_) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (recording_on_ && !now_anyway && now < recording_next_write_) return;
+    recording_next_write_ = now + std::chrono::milliseconds(500);
+    first = recording_written_ == 0;
+    text = recording_.Text(recording_written_);
+    if (first && recording_.empty()) text = std::string(InputRecording::kHeader) + "\n";
+    recording_written_ = recording_.events().size();
+    path = recording_path_;
+    if (!recording_on_) recording_open_ = false;  // its last write
+  }
+  std::ofstream out(path, std::ios::binary | (first ? std::ios::trunc : std::ios::app));
+  out << text;
 }
 
 void Xam::SampleIfPolled(uint32_t user, std::chrono::steady_clock::time_point at) {
@@ -1496,6 +1546,7 @@ void Xam::StartInputSampling(std::chrono::microseconds period) {
           if (Connected(u)) Sample(u, at);
         }
       }
+      FlushInputRecording();  // the recorder's file, every half second
       next += period;
       const auto now = std::chrono::steady_clock::now();
       if (next < now) next = now;
@@ -1507,6 +1558,7 @@ void Xam::StartInputSampling(std::chrono::microseconds period) {
 void Xam::StopInputSampling() {
   sampling_.store(false);
   if (sampler_.joinable()) sampler_.join();
+  FlushInputRecording(true);
 }
 
 Xam::~Xam() { StopInputSampling(); }

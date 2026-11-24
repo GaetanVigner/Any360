@@ -1,6 +1,8 @@
 #include "any360/sys/input.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <iterator>
 #include <cstdlib>
 
 namespace any360::sys {
@@ -175,6 +177,73 @@ bool InputQueue::NextKeystroke(Clock::time_point at, uint16_t& key, uint16_t& fl
   key = keystrokes_.front()[0];
   flags = keystrokes_.front()[1];
   keystrokes_.pop_front();
+  return true;
+}
+
+void InputRecording::Add(Clock::duration at, const GamepadState& state) {
+  if (!events_.empty()) {
+    if (state == events_.back().state) return;
+    at = std::max(at, events_.back().at);
+  } else if (state == GamepadState{}) {
+    return;  // neutral before the first event anyway
+  }
+  events_.push_back({at, state});
+}
+
+GamepadState InputRecording::StateAt(Clock::duration since) const {
+  // The last event at or before `since`.
+  const auto after = std::upper_bound(events_.begin(), events_.end(), since,
+                                      [](Clock::duration t, const Event& e) { return t < e.at; });
+  return after == events_.begin() ? GamepadState{} : std::prev(after)->state;
+}
+
+std::string InputRecording::Text(size_t from) const {
+  std::string text;
+  if (from == 0) text = std::string(kHeader) + "\n";
+  char line[96];
+  for (size_t i = from; i < events_.size(); ++i) {
+    const Event& e = events_[i];
+    const GamepadState& s = e.state;
+    std::snprintf(line, sizeof line, "%lld %04X %u %u %d %d %d %d\n",
+                  static_cast<long long>(std::chrono::duration_cast<std::chrono::microseconds>(e.at).count()),
+                  unsigned(s.buttons), unsigned(s.left_trigger), unsigned(s.right_trigger), int(s.thumb_lx),
+                  int(s.thumb_ly), int(s.thumb_rx), int(s.thumb_ry));
+    text += line;
+  }
+  return text;
+}
+
+bool InputRecording::Parse(const std::string& text, InputRecording& out, std::string* error) {
+  out = InputRecording{};
+  size_t at = 0, number = 0;
+  auto fail = [&](const std::string& why) {
+    if (error) *error = why;
+    return false;
+  };
+  while (at < text.size()) {
+    size_t end = text.find('\n', at);
+    if (end == std::string::npos) end = text.size();
+    std::string line = text.substr(at, end - at);
+    at = end + 1;
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    ++number;
+    if (number == 1) {
+      if (line != kHeader) return fail("not an Any360 input recording (first line: " + line + ")");
+      continue;
+    }
+    if (line.empty()) continue;
+    long long us = 0;
+    unsigned buttons = 0, lt = 0, rt = 0;
+    int lx = 0, ly = 0, rx = 0, ry = 0;
+    if (std::sscanf(line.c_str(), "%lld %x %u %u %d %d %d %d", &us, &buttons, &lt, &rt, &lx, &ly, &rx, &ry) != 8 ||
+        us < 0 || buttons > 0xFFFF || lt > 255 || rt > 255 || lx < -32768 || lx > 32767 || ly < -32768 || ly > 32767 ||
+        rx < -32768 || rx > 32767 || ry < -32768 || ry > 32767) {
+      return fail("line " + std::to_string(number) + " not understood: " + line);
+    }
+    const GamepadState state{uint16_t(buttons), uint8_t(lt), uint8_t(rt), int16_t(lx), int16_t(ly), int16_t(rx), int16_t(ry)};
+    out.events_.push_back({std::chrono::microseconds(us), state});  // as recorded (a neutral first one included)
+  }
+  if (number == 0) return fail("empty");
   return true;
 }
 
