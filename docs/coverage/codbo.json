@@ -1,6 +1,6 @@
 {
  "name": "codbo",
- "date": "2026-11-11",
+ "date": "2026-11-25",
  "sdk": {
   "path": "F:\\The simpsons\\recomp-sys\\tools\\rexglue-sdk",
   "version": "0.8.0",
@@ -1547,7 +1547,7 @@
   {
    "mnemonic": "addi",
    "id": "PPC_INST_ADDI",
-   "count": 130730,
+   "count": 130756,
    "state": "handled"
   },
   {
@@ -1559,7 +1559,7 @@
   {
    "mnemonic": "lwz",
    "id": "PPC_INST_LWZ",
-   "count": 99046,
+   "count": 99053,
    "state": "handled"
   },
   {
@@ -1571,13 +1571,13 @@
   {
    "mnemonic": "li",
    "id": "PPC_INST_LI",
-   "count": 83773,
+   "count": 83777,
    "state": "handled"
   },
   {
    "mnemonic": "lis",
    "id": "PPC_INST_LIS",
-   "count": 64182,
+   "count": 64188,
    "state": "handled"
   },
   {
@@ -1595,13 +1595,13 @@
   {
    "mnemonic": "beq",
    "id": "PPC_INST_BEQ",
-   "count": 38190,
+   "count": 38192,
    "state": "handled"
   },
   {
    "mnemonic": "cmplwi",
    "id": "PPC_INST_CMPLWI",
-   "count": 34976,
+   "count": 34979,
    "state": "handled"
   },
   {
@@ -1613,7 +1613,7 @@
   {
    "mnemonic": "b",
    "id": "PPC_INST_B",
-   "count": 32156,
+   "count": 32181,
    "state": "handled"
   },
   {
@@ -1631,13 +1631,13 @@
   {
    "mnemonic": "rlwinm",
    "id": "PPC_INST_RLWINM",
-   "count": 25300,
+   "count": 25304,
    "state": "handled"
   },
   {
    "mnemonic": "add",
    "id": "PPC_INST_ADD",
-   "count": 22523,
+   "count": 22525,
    "state": "handled"
   },
   {
@@ -1661,7 +1661,7 @@
   {
    "mnemonic": "std",
    "id": "PPC_INST_STD",
-   "count": 14216,
+   "count": 14217,
    "state": "handled"
   },
   {
@@ -1673,7 +1673,7 @@
   {
    "mnemonic": "blr",
    "id": "PPC_INST_BLR",
-   "count": 13025,
+   "count": 13028,
    "state": "handled"
   },
   {
@@ -1691,7 +1691,7 @@
   {
    "mnemonic": "clrlwi",
    "id": "PPC_INST_CLRLWI",
-   "count": 10714,
+   "count": 10715,
    "state": "handled"
   },
   {
@@ -1703,13 +1703,13 @@
   {
    "mnemonic": "lhz",
    "id": "PPC_INST_LHZ",
-   "count": 9835,
+   "count": 9840,
    "state": "handled"
   },
   {
    "mnemonic": "ori",
    "id": "PPC_INST_ORI",
-   "count": 9751,
+   "count": 9753,
    "state": "handled"
   },
   {
@@ -1721,7 +1721,7 @@
   {
    "mnemonic": "lwzx",
    "id": "PPC_INST_LWZX",
-   "count": 9254,
+   "count": 9257,
    "state": "handled"
   },
   {
@@ -1733,7 +1733,7 @@
   {
    "mnemonic": "stb",
    "id": "PPC_INST_STB",
-   "count": 8458,
+   "count": 8459,
    "state": "handled"
   },
   {
@@ -1769,13 +1769,13 @@
   {
    "mnemonic": "ble",
    "id": "PPC_INST_BLE",
-   "count": 7233,
+   "count": 7234,
    "state": "handled"
   },
   {
    "mnemonic": "subf",
    "id": "PPC_INST_SUBF",
-   "count": 6843,
+   "count": 6844,
    "state": "handled"
   },
   {
@@ -1793,7 +1793,7 @@
   {
    "mnemonic": "cmplw",
    "id": "PPC_INST_CMPLW",
-   "count": 6061,
+   "count": 6062,
    "state": "handled"
   },
   {
@@ -1811,7 +1811,7 @@
   {
    "mnemonic": "mtctr",
    "id": "PPC_INST_MTCTR",
-   "count": 4177,
+   "count": 4179,
    "state": "handled"
   },
   {
@@ -1835,13 +1835,13 @@
   {
    "mnemonic": "stwx",
    "id": "PPC_INST_STWX",
-   "count": 3546,
+   "count": 3547,
    "state": "handled"
   },
   {
    "mnemonic": "bgt",
    "id": "PPC_INST_BGT",
-   "count": 3331,
+   "count": 3333,
    "state": "handled"
   },
   {
@@ -1865,13 +1865,13 @@
   {
    "mnemonic": "extsh",
    "id": "PPC_INST_EXTSH",
-   "count": 2560,
+   "count": 2561,
    "state": "handled"
   },
   {
    "mnemonic": "mullw",
    "id": "PPC_INST_MULLW",
-   "count": 2345,
+   "count": 2346,
    "state": "handled"
   },
   {
@@ -1889,7 +1889,7 @@
   {
    "mnemonic": "srawi",
    "id": "PPC_INST_SRAWI",
-   "count": 2176,
+   "count": 2177,
    "state": "handled"
   },
   {
@@ -2291,7 +2291,7 @@
   {
    "mnemonic": "divwu",
    "id": "PPC_INST_DIVWU",
-   "count": 314,
+   "count": 315,
    "state": "handled"
   },
   {
@@ -2325,15 +2325,15 @@
    "state": "handled"
   },
   {
-   "mnemonic": "vsubfp128",
-   "id": "PPC_INST_VSUBFP128",
+   "mnemonic": "bctr",
+   "id": "PPC_INST_BCTR",
    "count": 274,
    "state": "handled"
   },
   {
-   "mnemonic": "bctr",
-   "id": "PPC_INST_BCTR",
-   "count": 272,
+   "mnemonic": "vsubfp128",
+   "id": "PPC_INST_VSUBFP128",
+   "count": 274,
    "state": "handled"
   },
   {
@@ -2429,7 +2429,7 @@
   {
    "mnemonic": "twllei",
    "id": "PPC_INST_TWLLEI",
-   "count": 128,
+   "count": 129,
    "state": "handled"
   },
   {
@@ -3480,18 +3480,21 @@
  "unknown_tokens": {},
  "unimplemented_markers": {},
  "functions": {
-  "total": 18886,
-  "hooked": 0,
+  "total": 18915,
+  "hooked": 2,
   "sources": 85,
-  "hooked_addresses": []
+  "hooked_addresses": [
+   "82332180",
+   "824B3F38"
+  ]
  },
  "families": {
-  "load / store / cache": 400875,
-  "integer": 351674,
-  "branch / trap": 234900,
+  "load / store / cache": 400903,
+  "integer": 351714,
+  "branch / trap": 234936,
   "floating point": 190872,
-  "compare / CR": 81169,
-  "system": 28110,
+  "compare / CR": 81173,
+  "system": 28112,
   "VMX / VMX128": 18753
  }
 }

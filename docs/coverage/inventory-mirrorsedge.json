@@ -1,9 +1,9 @@
 {
  "name": "mirrorsedge",
- "date": "2026-11-21",
+ "date": "2026-11-25",
  "functions": 53832,
  "instructions": 3276176,
- "native": 0,
+ "native": 1,
  "verified": 0,
  "library": 0,
  "modules": {
@@ -75,9 +75,9 @@
    "kind": "game",
    "functions": 3203,
    "instructions": 259368,
-   "native": 0,
+   "native": 1,
    "verified": 0,
-   "native_instructions": 0
+   "native_instructions": 45
   },
   "code 828xxxxx": {
    "kind": "game",
@@ -112,8 +112,19 @@
    "native_instructions": 0
   }
  },
- "translated": [],
- "translated_by_file": {},
+ "translated": [
+  {
+   "address": "827FF5D0",
+   "instructions": 45,
+   "handler": "D3dGpuWaitStep",
+   "file": "xdk_natives.cpp",
+   "purpose": "Functions of the XDK's libraries done by Any360's host code (any360/host/xdk_natives.h) instead of their recompiled code. Each binding keeps the function's own code as its fallback; --any360_xdk_natives=false runs the functions' own code al",
+   "impl": ""
+  }
+ ],
+ "translated_by_file": {
+  "xdk_natives": 1
+ },
  "imports": {
   "total": 275,
   "by_state": {

@@ -1,5 +1,5 @@
 {
- "date": "2026-11-23",
+ "date": "2026-11-25",
  "reference": {
   "sdk": "ReXGlue",
   "version": "0.8.0"
@@ -70,13 +70,18 @@
     "XDK D3D runtime": 553,
     "XDK audio (XAudio, XMA)": 484,
     "XDK Xbox Live and voice (XOnline, XHV)": 378,
+    "libpng 1.0.5 and zlib 1.1.4": 194,
     "XAPI (Win32 layer over the kernel and XAM)": 194,
     "kernel import thunks": 2
    },
    "mirrorsedge": {},
    "simpsons": {
-    "XDK D3D command writers": 342,
-    "CRT (string / memory)": 64,
+    "XDK D3DX and XGraphics (shader compiler)": 10871,
+    "C runtime (CRT)": 1091,
+    "XDK audio (XAudio, XMA)": 1430,
+    "XDK D3D runtime": 1636,
+    "XDK Xbox Live and voice (XOnline, XHV)": 756,
+    "XAPI (Win32 layer over the kernel and XAM)": 348,
     "kernel import thunks": 96
    },
    "sonic06": {},
@@ -132,7 +137,7 @@
    "mvp_total": 233,
    "mvp_native": 233,
    "mnemonics": 322,
-   "instructions": 1306353,
+   "instructions": 1306463,
    "sdk": "0.8.0",
    "unnamed_library_functions": 0,
    "source": "",
@@ -150,7 +155,7 @@
    "mnemonics": 340,
    "instructions": 2667844,
    "sdk": "0.10.0",
-   "unnamed_library_functions": 6377,
+   "unnamed_library_functions": 6571,
    "source": "",
    "description": "",
    "sites": 1534,
@@ -182,7 +187,7 @@
    "mnemonics": 338,
    "instructions": 2938230,
    "sdk": "0.8.0",
-   "unnamed_library_functions": 502,
+   "unnamed_library_functions": 16228,
    "source": "",
    "description": "",
    "sites": 4697,

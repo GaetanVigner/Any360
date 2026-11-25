@@ -8,9 +8,8 @@ ARM64 and WebAssembly from the player's own copy of the game data, the way the p
 [awesome-decomp-games](https://submitgame.github.io/awesome-decomp-games/) do. What one title needed is reused by
 the next: Any360 lists every function of the platform a port must provide, and how much of it is native.
 
-Started from the [Crackdown port](https://github.com/GaetanVigner/CrackdownRewrite) (ReXGlue v0.10.0, 120 SDK patches,
-native Vulkan renderer in progress, 103 functions already rewritten). Next title:
-[The Simpsons Game](https://github.com/GaetanVigner/TheSimpsonsGameRewrite).
+Started from the [Crackdown port](https://github.com/GaetanVigner/CrackdownRewrite) (ReXGlue v0.10.0), where 608 of
+the game's functions now run as native code; four more titles have followed it onto Any360 (below).
 
 ## Games running on Any360
 
@@ -22,14 +21,16 @@ game to open its repository.
 | [![Crackdown on Any360](docs/showcase/crackdown.jpg)](https://github.com/GaetanVigner/CrackdownRewrite) | [![The Simpsons Game on Any360](docs/showcase/simpsons.jpg)](https://github.com/GaetanVigner/TheSimpsonsGameRewrite) | [![Test Drive Unlimited on Any360](docs/showcase/tdu.jpg)](https://github.com/GaetanVigner/TDURewrite) |
 | Pacific City, in game | Split-screen co-op | Title screen |
 
-Started on 2026-11-11: [Call of Duty: Black Ops](https://github.com/GaetanVigner/CoDBoRewrite), the fifth title, recompiled and
-running its first minute and a half on `any360::sys` and `any360::gfx` alone, with the network it needed (its local
-server's sockets, kept on the machine).
+| [Call of Duty: Black Ops](https://github.com/GaetanVigner/CoDBoRewrite) | [Mirror's Edge](https://github.com/GaetanVigner/MirrorsEdgeRewrite) |
+|:---:|:---:|
+| [![Call of Duty: Black Ops on Any360](docs/showcase/codbo.jpg)](https://github.com/GaetanVigner/CoDBoRewrite) | [![Mirror's Edge on Any360](docs/showcase/mirrorsedge.jpg)](https://github.com/GaetanVigner/MirrorsEdgeRewrite) |
+| Zombies, Kino der Toten | The first level's rooftops |
 
-Started on 2026-11-19: [Mirror's Edge](https://github.com/GaetanVigner/MirrorsEdgeRewrite), the sixth title and the first on
-Unreal Engine 3, playable through its first level on `any360::sys` and `any360::gfx` alone. Its depth pre-pass,
-predicated tiling and shadow maps fixed renderer bugs every title shares (depth read as colour, textures over resolves
-in bands, one viewport for every draw).
+Call of Duty: Black Ops, started on 2026-11-11, runs a campaign level and Zombies on `any360::sys` and `any360::gfx` alone,
+with the network it needed (its local server's sockets, kept on the machine). Mirror's Edge, started on 2026-11-19,
+the first title on Unreal Engine 3, is playable through its first level the same way; its depth pre-pass, predicated
+tiling and shadow maps fixed renderer bugs every title shares (depth read as colour, textures over resolves in bands,
+one viewport for every draw).
 
 **No game data, no game binaries.** Any360 holds the toolkit, the system layer, the renderer and reports made of counts,
 hashes, addresses and public API names. A title's reconstructed source lives in that title's own repository. Bring

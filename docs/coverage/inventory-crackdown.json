@@ -1,11 +1,11 @@
 {
  "name": "crackdown",
- "date": "2026-11-16",
+ "date": "2026-11-25",
  "functions": 41219,
  "instructions": 2667844,
- "native": 467,
- "verified": 281,
- "library": 11432,
+ "native": 608,
+ "verified": 161,
+ "library": 11411,
  "modules": {
   "XDK D3DX and XGraphics (shader compiler)": {
    "kind": "library",
@@ -107,17 +107,17 @@
    "kind": "library",
    "functions": 595,
    "instructions": 41901,
-   "native": 24,
+   "native": 29,
    "verified": 0,
-   "native_instructions": 903
+   "native_instructions": 1624
   },
   "XDK D3D runtime": {
    "kind": "library",
    "functions": 553,
    "instructions": 34977,
-   "native": 61,
-   "verified": 252,
-   "native_instructions": 8379
+   "native": 193,
+   "verified": 132,
+   "native_instructions": 10036
   },
   "code 829xxxxx": {
    "kind": "game",
@@ -139,9 +139,9 @@
    "kind": "library",
    "functions": 484,
    "instructions": 28795,
-   "native": 13,
+   "native": 14,
    "verified": 0,
-   "native_instructions": 367
+   "native_instructions": 1819
   },
   "code 827xxxxx": {
    "kind": "game",
@@ -176,20 +176,20 @@
    "native_instructions": 32
   },
   "libpng 1.0.5 and zlib 1.1.4": {
-   "kind": "middleware",
+   "kind": "library",
    "functions": 194,
    "instructions": 14367,
-   "native": 3,
+   "native": 5,
    "verified": 0,
-   "native_instructions": 48
+   "native_instructions": 430
   },
   "XAPI (Win32 layer over the kernel and XAM)": {
    "kind": "library",
    "functions": 194,
    "instructions": 9291,
-   "native": 2,
+   "native": 3,
    "verified": 0,
-   "native_instructions": 207
+   "native_instructions": 314
   },
   "kernel import thunks": {
    "kind": "library",
@@ -2146,6 +2146,54 @@
    "impl": ""
   },
   {
+   "address": "826ACC90",
+   "instructions": 29,
+   "handler": "ResourceAddRefOrOriginal",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826ACD08",
+   "instructions": 32,
+   "handler": "ResourceReleaseOrOriginal",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826ACDB0",
+   "instructions": 35,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826ACFE8",
+   "instructions": 38,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AD108",
+   "instructions": 71,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AD598",
+   "instructions": 38,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
    "address": "826AED90",
    "instructions": 92,
    "handler": "D3dCreateRenderTarget",
@@ -2162,8 +2210,88 @@
    "impl": ""
   },
   {
+   "address": "826AF2D8",
+   "instructions": 38,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AF370",
+   "instructions": 184,
+   "handler": "WindowScissorPacketsOrOriginal",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AF650",
+   "instructions": 153,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AF8B8",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AF8D8",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AF8E8",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AF908",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AF918",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AF940",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
    "address": "826AF950",
    "instructions": 32,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AF9D0",
+   "instructions": 3,
    "handler": "D3dState",
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
@@ -2178,8 +2306,24 @@
    "impl": ""
   },
   {
+   "address": "826AFA60",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
    "address": "826AFA70",
    "instructions": 31,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AFAF0",
+   "instructions": 3,
    "handler": "D3dState",
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
@@ -2194,8 +2338,24 @@
    "impl": ""
   },
   {
+   "address": "826AFB80",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
    "address": "826AFB90",
    "instructions": 23,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AFBF0",
+   "instructions": 3,
    "handler": "D3dState",
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
@@ -2226,6 +2386,686 @@
    "impl": ""
   },
   {
+   "address": "826AFDE0",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AFE00",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AFE10",
+   "instructions": 39,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AFEB0",
+   "instructions": 32,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826AFFD8",
+   "instructions": 14,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0010",
+   "instructions": 2,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0018",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0038",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0048",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0070",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B00B8",
+   "instructions": 2,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B00C0",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B00E8",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B00F8",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0118",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0128",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0150",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0160",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0188",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0198",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B01B8",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B01C8",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B01E8",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B01F8",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0220",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0230",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0258",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0268",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0288",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0298",
+   "instructions": 5,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B02B8",
+   "instructions": 5,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B02D8",
+   "instructions": 5,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B02F8",
+   "instructions": 5,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0318",
+   "instructions": 5,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0338",
+   "instructions": 5,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0358",
+   "instructions": 16,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B03B8",
+   "instructions": 2,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B03C0",
+   "instructions": 41,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0488",
+   "instructions": 38,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0530",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0550",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B05B8",
+   "instructions": 2,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B05F8",
+   "instructions": 2,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0638",
+   "instructions": 2,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0678",
+   "instructions": 2,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B07A0",
+   "instructions": 8,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B07C0",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B07E8",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0810",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0838",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0860",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0888",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B08B0",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B08D0",
+   "instructions": 8,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B08F0",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0918",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0940",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0968",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0990",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B09B8",
+   "instructions": 9,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B09E0",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0A10",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0A20",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0A30",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0A50",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0A70",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0AA0",
+   "instructions": 16,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0B98",
+   "instructions": 2,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0C48",
+   "instructions": 2,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0CF8",
+   "instructions": 2,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0DA8",
+   "instructions": 2,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0E90",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0EB0",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0EC0",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0EE0",
+   "instructions": 2,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0EE8",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0F08",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B0F18",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B10A0",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B10C0",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B10D0",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B10F0",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1100",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1120",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1130",
+   "instructions": 5,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
    "address": "826B1150",
    "instructions": 2,
    "handler": "PresentInterval",
@@ -2242,8 +3082,176 @@
    "impl": ""
   },
   {
+   "address": "826B1270",
+   "instructions": 34,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
    "address": "826B1308",
    "instructions": 48,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B13F8",
+   "instructions": 33,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1490",
+   "instructions": 15,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B14D0",
+   "instructions": 5,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1580",
+   "instructions": 26,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B15E8",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B17B0",
+   "instructions": 3,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1840",
+   "instructions": 19,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1890",
+   "instructions": 7,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B18B0",
+   "instructions": 14,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B18E8",
+   "instructions": 5,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1900",
+   "instructions": 14,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1938",
+   "instructions": 5,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1950",
+   "instructions": 14,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1988",
+   "instructions": 5,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B19A0",
+   "instructions": 15,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B19F8",
+   "instructions": 15,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1A50",
+   "instructions": 15,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1AA8",
+   "instructions": 15,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1B60",
+   "instructions": 63,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1C60",
+   "instructions": 31,
    "handler": "D3dState",
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
@@ -2260,6 +3268,30 @@
   {
    "address": "826B1E50",
    "instructions": 36,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B1EE0",
+   "instructions": 205,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B2218",
+   "instructions": 187,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B2698",
+   "instructions": 20,
    "handler": "D3dState",
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
@@ -2298,6 +3330,22 @@
    "impl": ""
   },
   {
+   "address": "826B3238",
+   "instructions": 21,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B3290",
+   "instructions": 21,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
    "address": "826B3458",
    "instructions": 111,
    "handler": "D3dState",
@@ -2308,6 +3356,14 @@
   {
    "address": "826B3848",
    "instructions": 115,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
+  },
+  {
+   "address": "826B3A98",
+   "instructions": 5,
    "handler": "D3dState",
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
@@ -2328,6 +3384,14 @@
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "hle_capture.cpp"
+  },
+  {
+   "address": "826B9688",
+   "instructions": 18,
+   "handler": "D3dState",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": ""
   },
   {
    "address": "826B96D0",
@@ -2440,14 +3504,6 @@
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "frame_pacing.cpp"
-  },
-  {
-   "address": "826BCA98",
-   "instructions": 455,
-   "handler": "SwapBuilder",
-   "file": "guest_bindings_base.cpp",
-   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
-   "impl": "frame_rate.cpp"
   },
   {
    "address": "826BD300",
@@ -2741,6 +3797,14 @@
    "address": "827427F0",
    "instructions": 204,
    "handler": "XdkVectorCopy",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "crt_native.cpp"
+  },
+  {
+   "address": "82742E80",
+   "instructions": 107,
+   "handler": "XdkVectorFill",
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "crt_native.cpp"
@@ -3362,6 +4426,14 @@
    "impl": "decomp/leaf_batch8.cpp"
   },
   {
+   "address": "82A4DCF0",
+   "instructions": 1452,
+   "handler": "XAudioReverb",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "crt_native.cpp"
+  },
+  {
    "address": "82A4F8A8",
    "instructions": 21,
    "handler": "decomp::Sub_82A4F8A8",
@@ -3442,6 +4514,14 @@
    "impl": "decomp/leaf_batch5.cpp"
   },
   {
+   "address": "82A7F5D0",
+   "instructions": 137,
+   "handler": "PngReadFilterRow",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "crt_native.cpp"
+  },
+  {
    "address": "82A85C38",
    "instructions": 10,
    "handler": "decomp::Sub_82A85C38",
@@ -3464,6 +4544,14 @@
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "decomp/leaf_batch9.cpp"
+  },
+  {
+   "address": "82A88378",
+   "instructions": 245,
+   "handler": "ZlibInflateFast",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "crt_native.cpp"
   },
   {
    "address": "82A89BE0",
@@ -3546,6 +4634,14 @@
    "impl": "decomp/leaf_batch6.cpp"
   },
   {
+   "address": "82AB57F8",
+   "instructions": 320,
+   "handler": "MathPow",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "crt_native.cpp"
+  },
+  {
    "address": "82AB5F10",
    "instructions": 66,
    "handler": "CrtMemmove",
@@ -3562,9 +4658,41 @@
    "impl": "decomp/leaf_batch6.cpp"
   },
   {
+   "address": "82AB6010",
+   "instructions": 52,
+   "handler": "MathSin",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "crt_native.cpp"
+  },
+  {
+   "address": "82AB60E0",
+   "instructions": 72,
+   "handler": "MathCos",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "crt_native.cpp"
+  },
+  {
    "address": "82AB61B8",
    "instructions": 9,
    "handler": "CrtWcslen",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "crt_native.cpp"
+  },
+  {
+   "address": "82AB64C0",
+   "instructions": 214,
+   "handler": "MathAtan2",
+   "file": "guest_bindings_base.cpp",
+   "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
+   "impl": "crt_native.cpp"
+  },
+  {
+   "address": "82AB66E8",
+   "instructions": 63,
+   "handler": "MathAsin",
    "file": "guest_bindings_base.cpp",
    "purpose": "Which guest function of the base guest (title update 0) each host replacement takes over.",
    "impl": "crt_native.cpp"
@@ -3939,7 +5067,7 @@
   }
  ],
  "translated_by_file": {
-  "guest_bindings_base": 465,
+  "guest_bindings_base": 606,
   "guest_bindings_tu6": 2
  },
  "imports": {

@@ -1,48 +1,48 @@
 {
  "name": "codbo",
- "date": "2026-11-11",
- "functions": 18886,
- "instructions": 1306353,
- "native": 0,
+ "date": "2026-11-25",
+ "functions": 18915,
+ "instructions": 1306463,
+ "native": 2,
  "verified": 0,
  "library": 0,
  "modules": {
   "code 825xxxxx": {
    "kind": "game",
-   "functions": 3941,
-   "instructions": 268275,
+   "functions": 3959,
+   "instructions": 268324,
    "native": 0,
    "verified": 0,
    "native_instructions": 0
   },
   "code 822xxxxx": {
    "kind": "game",
-   "functions": 3791,
-   "instructions": 259811,
+   "functions": 3793,
+   "instructions": 259828,
    "native": 0,
    "verified": 0,
    "native_instructions": 0
   },
   "code 823xxxxx": {
    "kind": "game",
-   "functions": 4015,
-   "instructions": 258891,
-   "native": 0,
+   "functions": 4017,
+   "instructions": 258898,
+   "native": 1,
    "verified": 0,
-   "native_instructions": 0
+   "native_instructions": 96
   },
   "code 824xxxxx": {
    "kind": "game",
-   "functions": 3917,
-   "instructions": 258803,
-   "native": 0,
+   "functions": 3923,
+   "instructions": 258815,
+   "native": 1,
    "verified": 0,
-   "native_instructions": 0
+   "native_instructions": 44
   },
   "code 821xxxxx": {
    "kind": "game",
-   "functions": 2609,
-   "instructions": 226785,
+   "functions": 2610,
+   "instructions": 226810,
    "native": 0,
    "verified": 0,
    "native_instructions": 0
@@ -56,8 +56,28 @@
    "native_instructions": 0
   }
  },
- "translated": [],
- "translated_by_file": {},
+ "translated": [
+  {
+   "address": "82332180",
+   "instructions": 96,
+   "handler": "",
+   "file": "error_log.cpp",
+   "purpose": "The game's own fatal errors in the log. sub_82332180 is the routine every fatal error of the game goes through (code in r3, a printf format in r4, its arguments from r5); it ends the game with a write to a read-only page, which says nothing",
+   "impl": ""
+  },
+  {
+   "address": "824B3F38",
+   "instructions": 44,
+   "handler": "D3dGpuWaitStep",
+   "file": "xdk_natives.cpp",
+   "purpose": "Functions of the XDK's libraries done by Any360's host code (any360/host/xdk_natives.h) instead of their recompiled code. Each binding keeps the function's own code as its fallback; --any360_xdk_natives=false runs the functions' own code al",
+   "impl": ""
+  }
+ ],
+ "translated_by_file": {
+  "error_log": 1,
+  "xdk_natives": 1
+ },
  "imports": {
   "total": 255,
   "by_state": {

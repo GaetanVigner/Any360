@@ -1,43 +1,35 @@
 {
  "name": "simpsons",
- "date": "2026-10-30",
+ "date": "2026-11-25",
  "functions": 81874,
  "instructions": 2938307,
- "native": 27,
+ "native": 43,
  "verified": 0,
- "library": 499,
+ "library": 23728,
  "modules": {
+  "XDK D3DX and XGraphics (shader compiler)": {
+   "kind": "library",
+   "functions": 10871,
+   "instructions": 676089,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
   "code 829xxxxx": {
    "kind": "game",
    "functions": 9610,
    "instructions": 320385,
-   "native": 2,
+   "native": 4,
    "verified": 0,
-   "native_instructions": 177
+   "native_instructions": 388
   },
-  "code 82Axxxxx": {
-   "kind": "game",
-   "functions": 7677,
-   "instructions": 302296,
+  "Havok Physics": {
+   "kind": "middleware",
+   "functions": 6638,
+   "instructions": 277751,
    "native": 1,
    "verified": 0,
    "native_instructions": 60
-  },
-  "code 828xxxxx": {
-   "kind": "game",
-   "functions": 9026,
-   "instructions": 290234,
-   "native": 1,
-   "verified": 0,
-   "native_instructions": 43
-  },
-  "code 82Bxxxxx": {
-   "kind": "game",
-   "functions": 5101,
-   "instructions": 277193,
-   "native": 2,
-   "verified": 0,
-   "native_instructions": 200
   },
   "code 827xxxxx": {
    "kind": "game",
@@ -47,14 +39,6 @@
    "verified": 0,
    "native_instructions": 146
   },
-  "code 826xxxxx": {
-   "kind": "game",
-   "functions": 8053,
-   "instructions": 264738,
-   "native": 8,
-   "verified": 0,
-   "native_instructions": 732
-  },
   "code 823xxxxx": {
    "kind": "game",
    "functions": 8302,
@@ -63,29 +47,13 @@
    "verified": 0,
    "native_instructions": 21
   },
-  "code 825xxxxx": {
+  "code 828xxxxx": {
    "kind": "game",
-   "functions": 4264,
-   "instructions": 260764,
-   "native": 0,
+   "functions": 8143,
+   "instructions": 256060,
+   "native": 1,
    "verified": 0,
-   "native_instructions": 0
-  },
-  "code 824xxxxx": {
-   "kind": "game",
-   "functions": 4235,
-   "instructions": 251255,
-   "native": 3,
-   "verified": 0,
-   "native_instructions": 148
-  },
-  "code 82Cxxxxx": {
-   "kind": "game",
-   "functions": 5931,
-   "instructions": 211751,
-   "native": 0,
-   "verified": 0,
-   "native_instructions": 0
+   "native_instructions": 43
   },
   "code 822xxxxx": {
    "kind": "game",
@@ -95,21 +63,93 @@
    "verified": 0,
    "native_instructions": 0
   },
-  "XDK D3D command writers": {
-   "kind": "library",
-   "functions": 342,
-   "instructions": 14973,
+  "code 826xxxxx": {
+   "kind": "game",
+   "functions": 4753,
+   "instructions": 121328,
+   "native": 8,
+   "verified": 0,
+   "native_instructions": 732
+  },
+  "code 82Axxxxx": {
+   "kind": "game",
+   "functions": 2705,
+   "instructions": 106094,
    "native": 0,
    "verified": 0,
    "native_instructions": 0
   },
-  "CRT (string / memory)": {
-   "kind": "library",
-   "functions": 64,
-   "instructions": 3005,
-   "native": 3,
+  "code 82Cxxxxx": {
+   "kind": "game",
+   "functions": 3731,
+   "instructions": 92998,
+   "native": 1,
    "verified": 0,
-   "native_instructions": 347
+   "native_instructions": 17
+  },
+  "C runtime (CRT)": {
+   "kind": "library",
+   "functions": 1091,
+   "instructions": 54874,
+   "native": 16,
+   "verified": 0,
+   "native_instructions": 584
+  },
+  "XDK audio (XAudio, XMA)": {
+   "kind": "library",
+   "functions": 1430,
+   "instructions": 54273,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "XDK D3D runtime": {
+   "kind": "library",
+   "functions": 1636,
+   "instructions": 53387,
+   "native": 2,
+   "verified": 0,
+   "native_instructions": 144
+  },
+  "code 82Bxxxxx": {
+   "kind": "game",
+   "functions": 763,
+   "instructions": 51772,
+   "native": 1,
+   "verified": 0,
+   "native_instructions": 197
+  },
+  "code 824xxxxx": {
+   "kind": "game",
+   "functions": 945,
+   "instructions": 51037,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "Lua": {
+   "kind": "middleware",
+   "functions": 883,
+   "instructions": 34174,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "XDK Xbox Live and voice (XOnline, XHV)": {
+   "kind": "library",
+   "functions": 756,
+   "instructions": 30487,
+   "native": 0,
+   "verified": 0,
+   "native_instructions": 0
+  },
+  "XAPI (Win32 layer over the kernel and XAM)": {
+   "kind": "library",
+   "functions": 348,
+   "instructions": 15885,
+   "native": 2,
+   "verified": 0,
+   "native_instructions": 7
   },
   "kernel import thunks": {
    "kind": "library",
@@ -274,6 +314,22 @@
    "impl": ""
   },
   {
+   "address": "8295C9C0",
+   "instructions": 121,
+   "handler": "",
+   "file": "camera_stick.cpp",
+   "purpose": "The gameplay camera's right stick above 60 fps.  Two camera behaviours turn the camera with the right stick, once per frame: sub_8295C9C0 and sub_82960870 (both virtual). Each scales the stick into an angle for this frame, proportional to t",
+   "impl": ""
+  },
+  {
+   "address": "82960870",
+   "instructions": 90,
+   "handler": "",
+   "file": "camera_stick.cpp",
+   "purpose": "The gameplay camera's right stick above 60 fps.  Two camera behaviours turn the camera with the right stick, once per frame: sub_8295C9C0 and sub_82960870 (both virtual). Each scales the stick into an angle for this frame, proportional to t",
+   "impl": ""
+  },
+  {
    "address": "8299EAB8",
    "instructions": 105,
    "handler": "",
@@ -292,7 +348,7 @@
   {
    "address": "82A3C440",
    "instructions": 40,
-   "handler": "",
+   "handler": "CrtMemset",
    "file": "crt_native.cpp",
    "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
    "impl": ""
@@ -300,7 +356,7 @@
   {
    "address": "82A3CD80",
    "instructions": 265,
-   "handler": "",
+   "handler": "CrtMemcpy",
    "file": "crt_native.cpp",
    "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
    "impl": ""
@@ -308,7 +364,111 @@
   {
    "address": "82A3D1D8",
    "instructions": 42,
-   "handler": "",
+   "handler": "CrtCopyForward",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A3D280",
+   "instructions": 23,
+   "handler": "CrtStrncpy",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A3E2B0",
+   "instructions": 47,
+   "handler": "CrtMemmove",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A3EF20",
+   "instructions": 19,
+   "handler": "CrtStrncmp",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A3EFB0",
+   "instructions": 31,
+   "handler": "CrtStrstr",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A3F030",
+   "instructions": 19,
+   "handler": "CrtStrncat",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A3FE90",
+   "instructions": 15,
+   "handler": "CrtStrchr",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A419A0",
+   "instructions": 21,
+   "handler": "CrtStricmp",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A428E0",
+   "instructions": 22,
+   "handler": "CrtStrrchr",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A42E88",
+   "instructions": 8,
+   "handler": "CrtFinite",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A43B38",
+   "instructions": 6,
+   "handler": "CrtGetExp",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A43B50",
+   "instructions": 10,
+   "handler": "CrtSetExp",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A48B08",
+   "instructions": 10,
+   "handler": "CrtSetExp",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
+  },
+  {
+   "address": "82A48B30",
+   "instructions": 6,
+   "handler": "CrtGetExp",
    "file": "crt_native.cpp",
    "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
    "impl": ""
@@ -324,7 +484,7 @@
   {
    "address": "82B74110",
    "instructions": 197,
-   "handler": "",
+   "handler": "XMemCpy",
    "file": "crt_native.cpp",
    "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
    "impl": ""
@@ -336,13 +496,22 @@
    "file": "freecam.cpp",
    "purpose": "Free camera and photo mode.  The camera manager (a singleton at 0x82D08B10, built per level) applies the gameplay camera every frame: on the running tick, sub_8269D808 updates the camera directors and pushes viewport 0's pose through sub_82",
    "impl": ""
+  },
+  {
+   "address": "82CADF80",
+   "instructions": 17,
+   "handler": "CrtWcscmp",
+   "file": "crt_native.cpp",
+   "purpose": "Native memset and memcpy for the game's C runtime.  The game's own memset (sub_82A3C440) and copies run as recompiled loops of byte-swapped loads and stores, which made them several percent of the main thread. A byte fill or copy is the sam",
+   "impl": ""
   }
  ],
  "translated_by_file": {
+  "crt_native": 19,
   "frame_pacing": 8,
   "freecam": 5,
-  "crt_native": 5,
   "physics_step": 4,
+  "camera_stick": 2,
   "audio": 1,
   "subtitles": 1,
   "tick_count": 1,

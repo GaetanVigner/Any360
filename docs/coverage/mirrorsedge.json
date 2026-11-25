@@ -1,6 +1,6 @@
 {
  "name": "mirrorsedge",
- "date": "2026-11-21",
+ "date": "2026-11-25",
  "sdk": {
   "path": "F:\\The simpsons\\recomp-sys\\tools\\rexglue-sdk",
   "version": "0.8.0",
@@ -3697,9 +3697,11 @@
  "unimplemented_markers": {},
  "functions": {
   "total": 53832,
-  "hooked": 0,
+  "hooked": 1,
   "sources": 209,
-  "hooked_addresses": []
+  "hooked_addresses": [
+   "827FF5D0"
+  ]
  },
  "families": {
   "load / store / cache": 1135517,
