@@ -10,6 +10,8 @@
 
 namespace any360::sys::json {
 
+struct Member;
+
 struct Value {
   enum class Type { kNull, kBool, kNumber, kString, kArray, kObject };
   Type type = Type::kNull;
@@ -17,11 +19,17 @@ struct Value {
   double number = 0;
   std::string string;
   std::vector<Value> array;
-  std::vector<std::pair<std::string, Value>> object;
+  // An object's members in order. Member, not std::pair: libstdc++ refuses a pair of a still incomplete Value.
+  std::vector<Member> object;
 
   bool is(Type t) const { return type == t; }
   // The member `name` of an object (the first one), or nullptr.
   const Value* Find(std::string_view name) const;
+};
+
+struct Member {
+  std::string first;  // the name
+  Value second;       // the value
 };
 
 inline constexpr int kMaxDepth = 64;

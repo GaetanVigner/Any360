@@ -1,6 +1,7 @@
 #include "any360/sys/json.h"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <string>
 
@@ -85,7 +86,7 @@ class Parser {
       Space();
       Value member;
       if (!ParseValue(member, depth + 1)) return false;
-      v.object.emplace_back(std::move(key), std::move(member));
+      v.object.push_back(Member{std::move(key), std::move(member)});
       Space();
       if (at_ < text_.size() && text_[at_] == ',') { ++at_; continue; }
       if (at_ < text_.size() && text_[at_] == '}') return ++at_, true;

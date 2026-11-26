@@ -1,6 +1,13 @@
 #include "any360/host/players.h"
 
+// The runtime's device assignment hook (ReXGlue 0.10). A title on an older runtime (The Simpsons Game's 0.8) has none:
+// there the runtime keeps its own order of devices and players, and the glyphs follow the default family.
+#if __has_include(<rex/input/device_assignment.h>)
 #include <rex/input/device_assignment.h>
+#define ANY360_DEVICE_ASSIGNMENT 1
+#else
+#define ANY360_DEVICE_ASSIGNMENT 0
+#endif
 #include <rex/input/input_system.h>
 
 #include <algorithm>
@@ -20,8 +27,14 @@ namespace {
 using sys::ControllerFamily;
 using Clock = std::chrono::steady_clock;
 
+#if ANY360_DEVICE_ASSIGNMENT
+using DeviceId = rex::input::DeviceId;
+#else
+using DeviceId = uint64_t;
+#endif
+
 struct Known {
-  rex::input::DeviceId id;
+  DeviceId id;
   uint32_t local;          // the device's number for PlayerSlots and the glyph query
   bool keyboard;           // a synthetic device: the keyboard and mouse (or the runtime's stand-in)
   ControllerFamily family;
@@ -57,7 +70,7 @@ const Known* FindLocal(uint32_t local) {
 }
 
 // A pad's identity across connections: its GUID, and which of the pads sharing it (in connection order).
-uint64_t Identity(const std::string& guid, size_t same_before) {
+[[maybe_unused]] uint64_t Identity(const std::string& guid, size_t same_before) {
   uint64_t h = 1469598103934665603ull;  // FNV-1a
   for (unsigned char c : guid) h = (h ^ c) * 1099511628211ull;
   return h ^ (uint64_t(same_before) << 56);
@@ -65,6 +78,7 @@ uint64_t Identity(const std::string& guid, size_t same_before) {
 
 std::string PlayerName(uint32_t user) { return "player " + std::to_string(user + 1); }
 
+#if ANY360_DEVICE_ASSIGNMENT
 class PlayerAssignment final : public rex::input::DeviceAssignment {
  public:
   void OnDevicesChanged(const std::vector<rex::input::DeviceInfo>& devices) override {
@@ -127,6 +141,7 @@ class PlayerAssignment final : public rex::input::DeviceAssignment {
         if (k.keyboard) out.push_back(k.id);
   }
 };
+#endif
 
 sys::GamepadState FromX(const rex::input::X_INPUT_STATE& s) {
   sys::GamepadState pad;
@@ -149,7 +164,12 @@ void InstallPlayers(rex::input::InputSystem* input, std::function<void(const std
     g_installed = true;
     g_log = std::move(log);
   }
+#if ANY360_DEVICE_ASSIGNMENT
   input->SetDeviceAssignment(std::make_unique<PlayerAssignment>());
+#else
+  std::lock_guard lock(g_players);
+  Log("Any360: the runtime has no device assignment hook: its own order of players stays");
+#endif
 }
 
 bool PlayersInstalled() {
