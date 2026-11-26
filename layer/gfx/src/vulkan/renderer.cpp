@@ -847,7 +847,7 @@ bool VulkanRenderer::SyncAliases(Surface& s, int32_t skip_top, int32_t skip_bott
     if (height > 0 && width > 0) {
       // Between single-sample images: the writer's samples resolved over the rows (it keeps them), this one's dropped
       // (resolved first: nothing lost) when it has any.
-      DropSamples(s);
+      DropSamples(s, top, top + height);
       EndRendering();
       const VkCommandBuffer cb = Record();
       ResolveSamples(cb, *writer, 0, source_top, width, source_top + height);
@@ -979,7 +979,7 @@ bool VulkanRenderer::CopyDepthWords(Surface& depth, Surface& colour, uint32_t de
     write.pBufferInfo = &info;
     f.vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
   }
-  DropSamples(colour);  // its samples resolved first (nothing lost), as SyncAliases does
+  DropSamples(colour, colour_top, colour_top + height);  // its samples resolved first (nothing lost), as SyncAliases does
   EndRendering();
   const VkCommandBuffer cb = Record();
   // The depth surface's samples into its single-sample image (sample zero), then its depth and stencil copied out.
@@ -1064,7 +1064,7 @@ void VulkanRenderer::ResolveSamples(VkCommandBuffer cb, Surface& s, int32_t x0, 
   const int32_t left = std::max({s.drawn[0], x0, 0}), top = std::max({s.drawn[1], y0, 0});
   const int32_t right = std::min({s.drawn[2], x1, int32_t(s.image.width)});
   const int32_t bottom = std::min({s.drawn[3], y1, int32_t(s.image.height)});
-  const bool views = s.views.image && s.use_views;
+  const bool views = s.views.image != VK_NULL_HANDLE;  // what the layers hold newer, drawn as views or not now
   if ((!s.ms.image && !views) || right <= left || bottom <= top) return;
   one_sample = !views && one_sample && s.key.depth == 0 && s.bits_alias && SampleBitsViews(s);
   // What stays to resolve: nothing once the read covers all that was drawn; less when it covers a band across it
@@ -1193,15 +1193,15 @@ void VulkanRenderer::FreeSpareSamples(bool all) {
   }
 }
 
-void VulkanRenderer::DropSamples(Surface& s) {
-  if (s.use_views) {
+void VulkanRenderer::DropSamples(Surface& s, int32_t top, int32_t bottom) {
+  if (s.views.image) {
     // The rows are about to be written outside the layers: what the layers hold newer into them first, the layers
     // loaded again before the next pass draws them.
     if (s.drawn[2] > s.drawn[0]) {
       EndRendering();
       ResolveSamples(Record(), s, INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX);
     }
-    s.views_stale = true;
+    s.StaleRows(top, bottom);
   }
   if (!s.ms.image) return;
   EndRendering();
@@ -1219,13 +1219,9 @@ void VulkanRenderer::DropSamples(Surface& s) {
 bool VulkanRenderer::UseViews(Surface& s, bool views) {
   if (!views) {
     if (!s.use_views) return true;
-    // Drawn as rows from now on: what the layers hold newer goes into them first.
-    if (s.drawn[2] > s.drawn[0]) {
-      EndRendering();
-      ResolveSamples(Record(), s, INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX);
-    }
-    s.use_views = false;
-    s.views_stale = true;
+    // Drawn as rows from now on. What the layers hold newer stays there until something needs it in the rows (a
+    // draw over those rows, a read: ResolveSamples), often never (a clear over it first).
+    s.use_views = false;  // what is drawn in its rows from now on is loaded into the layers again (GrowDrawn)
     target_memo_.valid = false;
     return true;
   }
@@ -1243,18 +1239,18 @@ bool VulkanRenderer::UseViews(Surface& s, bool views) {
       return Fail("2x MSAA layers");
     }
     s.views_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-    s.views_stale = true;
+    s.StaleRows(0, INT32_MAX);  // all of it, once
     // The copies' buffer large enough for all its rows, both orders (depth: the stencil's bytes too).
-    const VkDeviceSize texels = VkDeviceSize(s.image.height) * ((s.image.width + 3) & ~3u);
+    const VkDeviceSize texels = VkDeviceSize(s.image.height) * ((s.image.width + 15) & ~15u);
     const VkDeviceSize need = 2 * ((texels * ViewTexelBytes(s) + 15) & ~VkDeviceSize(15)) +
                               (s.key.depth ? 2 * ((texels + 15) & ~VkDeviceSize(15)) : 0);
     if (!ViewRowsPass(need)) return false;
   }
-  if (s.views_stale) {
-    // The rows' content into the layers, all of it (what a surface holds outside `written` may still be read).
+  if (s.StaleViews()) {
+    // The rows written outside the layers since they matched, into the layers.
     EndRendering();
-    CopyViews(Record(), s, 0, 0, int32_t(s.image.width), int32_t(s.image.height), true);
-    s.views_stale = false;
+    CopyViews(Record(), s, 0, s.views_stale[0], int32_t(s.image.width), s.views_stale[1], true);
+    s.FreshViews();
     s.drawn[0] = s.drawn[1] = INT32_MAX, s.drawn[2] = s.drawn[3] = INT32_MIN;
   }
   if (!s.use_views) {
@@ -1294,7 +1290,7 @@ void VulkanRenderer::CopyViews(VkCommandBuffer cb, Surface& s, int32_t left, int
   stats_.view_resolve_pixels += uint64_t(right - left) * uint64_t(bottom - top) * uint64_t(pixel_rows);
   // In a batch: the rows through the buffer, each order a single copy and a compute pass between (a copy a row band
   // of a pixel's sample cost the GPU far more than the bytes: thousands of regions a frame).
-  const uint32_t width = uint32_t(right - left), row_texels = (width + 3) & ~3u;
+  const uint32_t width = uint32_t(right - left), row_texels = (width + 15) & ~15u;  // rows of 16-byte words
   const uint32_t pixels = uint32_t(bottom - top), rows = pixels * uint32_t(pixel_rows), layer_rows = pixels * uint32_t(sc);
   struct Part {
     VkImageAspectFlags aspect;
@@ -1321,9 +1317,44 @@ void VulkanRenderer::CopyViews(VkCommandBuffer cb, Surface& s, int32_t left, int
       rows_at[p] = at, layers_at[p] = at + block;
       at += 2 * block;
     }
-    // The source's copy: the rows image's band, or each layer's.
     VkBufferImageCopy copies[4]{};
     uint32_t count = 0;
+    if (sc == 1) {
+      // A layer's pixel rows are every other row of the rows image: the buffer holds the rows image's order, each
+      // layer copied with a row length of two rows from its first row (no reordering pass).
+      VkBufferImageCopy rows_copies[2]{}, layer_copies[4]{};
+      for (uint32_t p = 0; p < part_count; ++p) {
+        VkBufferImageCopy& r = rows_copies[p];
+        r.bufferOffset = rows_at[p];
+        r.bufferRowLength = row_texels;
+        r.imageSubresource = {parts[p].aspect, 0, 0, 1};
+        r.imageOffset = {left, top * pixel_rows, 0};
+        r.imageExtent = {width, rows, 1};
+        for (uint32_t layer = 0; layer < 2; ++layer) {
+          VkBufferImageCopy& l = layer_copies[2 * p + layer];
+          l.bufferOffset = rows_at[p] + VkDeviceSize(layer) * row_texels * parts[p].bytes;
+          l.bufferRowLength = 2 * row_texels;
+          l.imageSubresource = {parts[p].aspect, 0, layer, 1};
+          l.imageOffset = {left, top, 0};
+          l.imageExtent = {width, layer_rows, 1};
+        }
+      }
+      if (into_views) {
+        f.vkCmdCopyImageToBuffer(cb, from.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, view_rows_buffer_.buffer, part_count, rows_copies);
+      } else {
+        f.vkCmdCopyImageToBuffer(cb, from.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, view_rows_buffer_.buffer, 2 * part_count, layer_copies);
+      }
+      memory(VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+             VK_ACCESS_2_TRANSFER_READ_BIT);
+      if (into_views) {
+        f.vkCmdCopyBufferToImage(cb, view_rows_buffer_.buffer, to.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 2 * part_count, layer_copies);
+      } else {
+        f.vkCmdCopyBufferToImage(cb, view_rows_buffer_.buffer, to.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, part_count, rows_copies);
+      }
+      f.vkCmdPipelineBarrier2(cb, &dependency);
+      return;
+    }
+    // The source's copy: the rows image's band, or each layer's.
     for (uint32_t p = 0; p < part_count; ++p) {
       for (uint32_t layer = 0; layer < (into_views ? 1u : 2u); ++layer) {
         VkBufferImageCopy& c = copies[count++];
@@ -1346,11 +1377,11 @@ void VulkanRenderer::CopyViews(VkCommandBuffer cb, Surface& s, int32_t left, int
     f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, view_rows_pipeline_);
     f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, view_rows_pipeline_layout_, 0, 1, &view_rows_set_, 0, nullptr);
     for (uint32_t p = 0; p < part_count; ++p) {
-      const uint32_t row_words = row_texels * parts[p].bytes / 4;
-      const uint32_t push[7] = {rows * row_words, row_words, rows, uint32_t(sc), uint32_t(rows_at[p] / 4),
-                                uint32_t(layers_at[p] / 4), into_views ? 1u : 0u};
+      const uint32_t row_words = row_texels * parts[p].bytes / 16;
+      const uint32_t push[6] = {row_words, rows, uint32_t(sc), uint32_t(rows_at[p] / 16), uint32_t(layers_at[p] / 16),
+                                into_views ? 1u : 0u};
       f.vkCmdPushConstants(cb, view_rows_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), push);
-      f.vkCmdDispatch(cb, (push[0] + 63) / 64, 1, 1);
+      f.vkCmdDispatch(cb, (row_words + 63) / 64, rows, 1);
     }
     memory(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
            VK_ACCESS_2_TRANSFER_READ_BIT);
@@ -1416,7 +1447,7 @@ bool VulkanRenderer::ViewRowsPass(VkDeviceSize need) {
     layout_info.bindingCount = 1;
     layout_info.pBindings = &binding;
     if (f.vkCreateDescriptorSetLayout(d, &layout_info, nullptr, &view_rows_layout_) != VK_SUCCESS) return Fail("view rows set layout");
-    const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 28};
+    const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 24};
     VkPipelineLayoutCreateInfo pipeline_layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     pipeline_layout_info.setLayoutCount = 1;
     pipeline_layout_info.pSetLayouts = &view_rows_layout_;
@@ -1560,7 +1591,7 @@ bool VulkanRenderer::ClearColor(const SurfaceKey& key, const float rgba[4]) {
       const VkImageSubresourceRange layers{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, s->views.layers};
       f.vkCmdClearColorImage(cb, s->views.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &layers);
       s->drawn[0] = s->drawn[1] = INT32_MAX, s->drawn[2] = s->drawn[3] = INT32_MIN;
-      s->views_stale = false;
+      s->FreshViews();
     }
   });
 }
@@ -1588,7 +1619,7 @@ bool VulkanRenderer::ClearDepthStencil(const SurfaceKey& key, float depth, uint3
       const VkImageSubresourceRange layers{aspects, 0, 1, 0, s->views.layers};
       f.vkCmdClearDepthStencilImage(cb, s->views.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value, 1, &layers);
       s->drawn[0] = s->drawn[1] = INT32_MAX, s->drawn[2] = s->drawn[3] = INT32_MIN;
-      s->views_stale = false;
+      s->FreshViews();
     }
   });
 }
@@ -2640,6 +2671,13 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // The targets drawn as views or as rows (their layers loaded or copied back first when that changes).
   for (Surface* t : {colors[0], colors[1], colors[2], colors[3], depth_surface}) {
     if (t && !UseViews(*t, as_views)) return;
+    // Drawn as rows: what its layers hold newer over the rows this draw reaches, into them first.
+    // A band through the middle of it would leave both sides newer over the same rows: all of it then.
+    if (t && !as_views && t->views.image && t->drawn[2] > t->drawn[0] && t->drawn[1] < bottom && t->drawn[3] > top) {
+      const bool edge = top <= t->drawn[1] || bottom >= t->drawn[3];
+      EndRendering();
+      ResolveSamples(Record(), *t, 0, edge ? top : INT32_MIN, int32_t(t->image.width), edge ? bottom : INT32_MAX);
+    }
   }
   // The pass's rows: a layer's for views.
   const uint32_t pass_height = as_views ? height / 2 : height;
@@ -2990,7 +3028,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     // vertices reach when that is known (extent_bottom).
     const int32_t mark_bottom = extent_known ? std::min(bottom, extent_bottom) : bottom;
     for (uint32_t i = 0; i < 4; ++i) GrowDrawn(colors[i], left, top, right, mark_bottom);
-    GrowDrawn(depth_surface, left, top, right, mark_bottom);
+    // A depth target only tested (no depth write, stencil off or keeping every value) keeps its rows: not something
+    // a surface's layers then need to load again.
+    const bool stencil_writes = (depth_control & 1) && (((depth_control >> 11) & 0x1FF) != 0 ||
+                                                        ((depth_control & 0x80) && ((depth_control >> 23) & 0x1FF) != 0));
+    GrowDrawn(depth_surface, left, top, right, mark_bottom, (depth_control & 4) || stencil_writes);
     bool layouts_ready = true;
     for (uint32_t i = 0; i < 4; ++i) layouts_ready &= !colors[i] || colors[i]->target_layout() == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     layouts_ready &= !depth_surface || depth_surface->target_layout() == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -5127,8 +5169,18 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       // A 2x target cleared in its layers (as its passes draw it), any other in its rows (before the command buffer is
       // taken: making the layers may flush).
       const bool as_views = views_2x_ && msaa == 1;
+      const int32_t cleared[4] = {x0 * int32_t(host_x), y0 * int32_t(host_y), (x0 + int32_t(width)) * int32_t(host_x),
+                                  (y0 + int32_t(height)) * int32_t(host_y)};
       for (Surface* t : {color_target, depth_target}) {
         if (t && !UseViews(*t, as_views)) return;
+        // Cleared as rows over rows its layers hold newer, the layers not cleared with them (not whole pixel rows):
+        // the layers' rows into the rows first (they would otherwise come back over the clear later).
+        const int32_t pixel = 2 * int32_t(scale_);
+        if (t && !as_views && t->views.image && t->drawn[2] > t->drawn[0] && t->drawn[1] < cleared[3] &&
+            t->drawn[3] > cleared[1] && (cleared[1] % pixel || cleared[3] % pixel)) {
+          EndRendering();
+          ResolveSamples(Record(), *t, INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX);
+        }
       }
       EndRendering();
       VkCommandBuffer cb = Record();
@@ -5186,6 +5238,60 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
         rendering.pDepthAttachment = rendering.pStencilAttachment = &depth;
         f.vkCmdBeginRendering(cb, &rendering);
         f.vkCmdEndRendering(cb);
+      }
+      // Targets drawn as views: their rows cleared too (the same value in both samples' rows), so the rectangle is
+      // no longer something the layers hold newer: what reads the rows next copies none of the clear back.
+      if (as_views) {
+        VkRenderingInfo rows{VK_STRUCTURE_TYPE_RENDERING_INFO};
+        rows.renderArea = {{area[0], area[1]}, {width * host_x, height * host_y}};
+        rows.layerCount = 1;
+        for (Surface* t : {color_target, depth_target}) {
+          if (!t || !t->use_views) continue;
+          VkRenderingAttachmentInfo a = t == color_target ? color : depth;
+          const bool is_depth = t == depth_target;
+          Transition(cb, t->image, t->layout,
+                     is_depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                     is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT);
+          a.imageView = t->image.view;
+          a.imageLayout = is_depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+          rows.colorAttachmentCount = is_depth ? 0 : 1;
+          rows.pColorAttachments = is_depth ? nullptr : &a;
+          rows.pDepthAttachment = rows.pStencilAttachment = is_depth ? &a : nullptr;
+          f.vkCmdBeginRendering(cb, &rows);
+          f.vkCmdEndRendering(cb);
+          ShrinkDrawn(*t, area[0], area[1], area[2], area[3]);
+        }
+      }
+      // Targets with layers cleared as rows: their layers cleared too, so the rectangle needs no load before the
+      // next 2x pass (nor any copy back: both hold the clear).
+      if (!as_views) {
+        for (Surface* t : {color_target, depth_target}) {
+          if (!t || !t->views.image) continue;
+          const bool is_depth = t == depth_target;
+          VkRenderingAttachmentInfo a = is_depth ? depth : color;
+          Transition(cb, t->views, t->views_layout,
+                     is_depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                     is_depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT);
+          a.imageView = t->views.view;
+          a.imageLayout = is_depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+          // The rows image's rectangle in a layer's rows (whole pixel rows of the rows image: both samples).
+          const int32_t pixel = 2 * int32_t(scale_);
+          const int32_t layer_top = area[1] / pixel * int32_t(scale_), layer_bottom = area[3] / pixel * int32_t(scale_);
+          if (area[1] % pixel || area[3] % pixel || layer_bottom <= layer_top) continue;  // not whole pixel rows: left
+          VkRenderingInfo layers{VK_STRUCTURE_TYPE_RENDERING_INFO};
+          layers.renderArea = {{area[0], layer_top}, {uint32_t(area[2] - area[0]), uint32_t(layer_bottom - layer_top)}};
+          layers.viewMask = 0b11;
+          layers.colorAttachmentCount = is_depth ? 0 : 1;
+          layers.pColorAttachments = is_depth ? nullptr : &a;
+          layers.pDepthAttachment = layers.pStencilAttachment = is_depth ? &a : nullptr;
+          f.vkCmdBeginRendering(cb, &layers);
+          f.vkCmdEndRendering(cb);
+          // All its rows held outside the layers within the rectangle, across the whole width: none left.
+          if (area[0] <= 0 && area[2] >= int32_t(t->image.width) && area[1] <= t->views_stale[0] &&
+              area[3] >= t->views_stale[1]) {
+            t->FreshViews();
+          }
+        }
       }
     }
   }

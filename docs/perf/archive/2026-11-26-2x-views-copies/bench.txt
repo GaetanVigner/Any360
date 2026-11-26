@@ -1,0 +1,17 @@
+gfx_replay elev_s1_multi.cap --gpu Radeon --bench --repeat 4 (AMD Radeon(TM) Graphics); GPU ms over the run by kind
+
+67aff5e behaviour (same build, whole loads and no row clears: the switches used during the change):
+--scale 1          committed  GPU 528.563 | other 3.681 draws 296.838 resolves 54.141 MSAA resolves 164.790 depth resolves 4.718 texture copies 3.014 write-backs 0.773 | layers loaded 101 times, copied back 195 (445.9 Mpixels)
+--scale 2 --msaa 4 committed  GPU 2359.303 | other 12.808 draws 1270.411 resolves 247.281 MSAA resolves 802.746 depth resolves 11.958 texture copies 10.550 write-backs 2.939 | layers loaded 101 times, copied back 195 (1783.7 Mpixels)
+
+This change:
+--scale 1          new        GPU 444.081 | other 5.660 draws 305.098 resolves 55.940 MSAA resolves 68.292 depth resolves 4.694 texture copies 2.975 write-backs 0.807 | layers loaded 101 times, copied back 147 (280.4 Mpixels)
+--scale 2 --msaa 4 new        GPU 1999.550 | other 33.780 draws 1275.473 resolves 264.505 MSAA resolves 399.783 depth resolves 12.172 texture copies 10.577 write-backs 2.645 | layers loaded 101 times, copied back 147 (1121.6 Mpixels)
+
+Rows path (ANY360_2X_AS_ROWS=1):
+--scale 1          rows       GPU 305.988 | other 4.726 draws 241.676 resolves 50.839 MSAA resolves 0.000 depth resolves 4.655 texture copies 2.630 write-backs 0.899
+--scale 2 --msaa 4 rows       GPU 1614.112 | other 32.180 draws 1217.376 resolves 266.952 MSAA resolves 80.493 depth resolves 9.193 texture copies 4.424 write-backs 2.928
+
+In game before this change (route2, one launch each, Radeon; GPU ms a frame by kind):
+720p views: MSAA resolves 13.40, other 9.85; rows: MSAA resolves 0.00, other 1.27
+1440p views: MSAA resolves 48.73; rows: MSAA resolves 3.16

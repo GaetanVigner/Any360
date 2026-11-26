@@ -244,7 +244,14 @@ class VulkanRenderer : public gfx::Renderer {
     VkImageLayout views_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkImageView views_depth[2] = {};  // a depth surface's layers' depth aspect, one each (depth resolves read them)
     bool use_views = false;    // draws render into views
-    bool views_stale = true;   // image holds what views does not
+    // Host rows of the image holding what the layers do not (written outside the layers since they last matched; [0] >= [1]:
+    // none): loaded into the layers before the next 2x pass.
+    int32_t views_stale[2] = {0, INT32_MAX};
+    bool StaleViews() const { return views_stale[0] < views_stale[1]; }
+    void StaleRows(int32_t top, int32_t bottom) {
+      views_stale[0] = std::min(views_stale[0], top), views_stale[1] = std::max(views_stale[1], bottom);
+    }
+    void FreshViews() { views_stale[0] = INT32_MAX, views_stale[1] = INT32_MIN; }
     Image& target() { return use_views ? views : ms.image ? ms : image; }  // what draws render into
     VkImageLayout& target_layout() { return use_views ? views_layout : ms.image ? ms_layout : layout; }
   };
@@ -433,7 +440,8 @@ class VulkanRenderer : public gfx::Renderer {
   bool SampleBitsViews(Surface& surface);
   // A surface back to one sample: its samples resolved, its multisampled image pooled once the batch has run (nothing
   // of it lost; the next surface of its size and format needing samples takes it, else freed after 2 s).
-  void DropSamples(Surface& surface);
+  // top, bottom: the host rows about to be written in its image (a surface drawn as views loads them again).
+  void DropSamples(Surface& surface, int32_t top = 0, int32_t bottom = INT32_MAX);
   // A surface's multisampled image (not yet drawn into).
   bool CreateSamples(Surface& surface);
   // A surface drawn back at one sample given its samples again, when a clear over `area` is about to cover all it
@@ -470,11 +478,28 @@ class VulkanRenderer : public gfx::Renderer {
   std::map<std::array<uint32_t, 4>, std::unique_ptr<EdramGroup>> edram_groups_;
   uint64_t edram_version_ = 0;
   uint32_t viewport_extent_ = 4096;  // the host viewport's size for every draw (a power of two: Draw)
-  void GrowDrawn(Surface* surface, int32_t left, int32_t top, int32_t right, int32_t bottom) {
+  // What a surface's samples or layers hold newer, less a rectangle its single-sample image now holds the same: by
+  // the band rule of ResolveSamples (only a band across what was drawn takes it in).
+  static void ShrinkDrawn(Surface& s, int32_t x0, int32_t y0, int32_t x1, int32_t y1) {
+    int32_t* d = s.drawn;
+    if (x0 <= d[0] && x1 >= d[2]) {
+      if (y0 <= d[1]) d[1] = std::max(d[1], y1);
+      if (y1 >= d[3]) d[3] = std::min(d[3], y0);
+    } else if (y0 <= d[1] && y1 >= d[3]) {
+      if (x0 <= d[0]) d[0] = std::max(d[0], x1);
+      if (x1 >= d[2]) d[2] = std::min(d[2], x0);
+    }
+    if (d[2] <= d[0] || d[3] <= d[1]) d[0] = d[1] = INT32_MAX, d[2] = d[3] = INT32_MIN;
+  }
+  // `writes`: the rows change (false: a depth target only tested).
+  void GrowDrawn(Surface* surface, int32_t left, int32_t top, int32_t right, int32_t bottom, bool writes = true) {
     if (!surface) return;
     if (surface->group) MarkWritten(surface, top, bottom);
     int32_t* w = surface->written;
     w[0] = std::min(w[0], left), w[1] = std::min(w[1], top), w[2] = std::max(w[2], right), w[3] = std::max(w[3], bottom);
+    if (writes && surface->views.image && !surface->use_views) {  // its rows drawn, not its layers
+      surface->StaleRows(top, bottom);
+    }
     if (!surface->ms.image && !surface->use_views) return;
     surface->drawn[0] = std::min(surface->drawn[0], left), surface->drawn[1] = std::min(surface->drawn[1], top);
     surface->drawn[2] = std::max(surface->drawn[2], right), surface->drawn[3] = std::max(surface->drawn[3], bottom);

@@ -3291,6 +3291,64 @@ int main(int argc, char** argv) {
     // a batch (through the buffer, not a copy a row); the depth resolves read the sample's layer itself (nothing
     // copied back into the rows).
     CHECK(st.view_loads == 1 && st.view_resolves == 0 && st.view_copies_by_rows == 0);
+    // The same 2x surface drawn at 1x in between, a pass that only tests its depth (no depth write, a colour target
+    // written): its rows get the layers' depth first (it reads them), and the 2x pass after it loads nothing (nothing
+    // was written in the rows); sample 0's depth resolved again is still the 1x pass's.
+    {
+      const uint32_t loads = st.view_loads, backs = st.view_resolves, dest = 0x1CC000;
+      std::memset(g_memory + dest, 0xCD, kSize * kSize * 4);
+      CHECK(r2.ClearDepthStencil({1024, kSize, 0, 1}, 1.0f, 0));
+      const uint32_t loads_cleared = r2.stats().view_loads;
+      w.Defaults();
+      // 2x at sample 0's offset, ALWAYS: the layers' depth newer than the rows.
+      w.Reg(0x2000, kSize | 1u << 16);
+      w.Shader(0, t::BuildFetchPositionShader());
+      w.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+      w.Reg(kRbColorMask, 0);
+      w.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 7u << 4);
+      w.Put({Type0(0x210F, 6), Bits(kSize / 2.0f), Bits(kSize / 2.0f - 0.25f), Bits(-float(kSize) / 2.0f),
+             Bits(kSize / 2.0f + 0.25f), Bits(1), Bits(0)});
+      w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, plane | 3, 2u | 16u << 2});
+      w.DrawAuto(kTriangleStrip, 4);
+      w.Reg(kRbColorMask, 0xF);
+      w.Put({Type0(0x210F, 6), Bits(kSize / 2.0f), Bits(kSize / 2.0f), Bits(-float(kSize) / 2.0f), Bits(kSize / 2.0f), Bits(1), Bits(0)});
+      w.Reg(0x2000, kSize);  // 1x
+      w.Shader(0, t::BuildFetchPositionShader());
+      w.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+      w.Reg(kRbDepthControl, 1u << 1 | 6u << 4);  // z_enable, GEQUAL, no write
+      w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, plane | 3, 2u | 16u << 2});
+      w.DrawAuto(kTriangleStrip, 4);
+      w.Reg(0x2000, kSize | 1u << 16);  // 2x again, the same draw
+      w.Reg(kRbColorMask, 0);
+      w.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 7u << 4);
+      w.Put({Type0(0x210F, 6), Bits(kSize / 2.0f), Bits(kSize / 2.0f - 0.25f), Bits(-float(kSize) / 2.0f),
+             Bits(kSize / 2.0f + 0.25f), Bits(1), Bits(0)});
+      w.DrawAuto(kTriangleStrip, 4);
+      w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});
+      w.Put({Type0(0x2318, 4), 4u, dest, kSize | kSize << 16, 2u | 22u << 7});
+      w.Reg(0x2208, 6);
+      w.DrawAuto(8, 3);
+      w.Reg(0x2208, 4);
+      w.Reg(kRbColorMask, 0xF);
+      w.Run();
+      r2.WriteBackForTools(dest);
+      r2.WaitIdle();
+      uint32_t wrong = 0;
+      for (uint32_t y = 0; y < kSize; ++y) {
+        for (uint32_t x = 0; x < kSize; ++x) {
+          uint32_t a, b;
+          std::memcpy(&a, g_memory + dest + vk::TiledOffset2D(int32_t(x), int32_t(y), kSize, 2), 4);
+          std::memcpy(&b, g_memory + dests[0] + vk::TiledOffset2D(int32_t(x), int32_t(y), kSize, 2), 4);
+          wrong += (std::byteswap(a) >> 8) != (std::byteswap(b) >> 8);
+        }
+      }
+      const vk::RendererStats& after = r2.stats();
+      std::printf("gfx_render_tests: 2x, 1x depth test, 2x at scale %u: %u depth words differ, layers loaded %u times, "
+                  "copied back %u (%u failed)\n", scale, wrong, after.view_loads - loads, after.view_resolves - backs,
+                  after.failed);
+      CHECK(wrong == 0 && after.view_loads == loads_cleared && loads_cleared == loads && after.view_resolves == backs + 1 &&
+            after.failed == 0);
+    }
   }
   // The queue from two threads at once: one-time submits on a thread of their own while the renderer draws and its
   // submitter thread submits batches. Every submit succeeds and no draw fails (Device::queue_mutex: unguarded, two
