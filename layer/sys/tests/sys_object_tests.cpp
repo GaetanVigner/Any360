@@ -3024,6 +3024,14 @@ void InputScriptTests() {
   CHECK(s.ButtonsAt(30100ms) == (0x1000 | 0x4000));
   CHECK(error == "bad, 31:nope, -1:a, 40:b/0");
   CHECK(InputScript::Parse("").empty());
+  // Triggers: pulled all the way while held, alone or with buttons; none for a buttons-only press.
+  const InputScript t = InputScript::Parse("10:rt/2000,11:a+lt", &error);
+  CHECK(t.presses().size() == 2);
+  CHECK(t.TriggersAt(9999ms) == 0 && t.TriggersAt(10s) == InputScript::kRightTrigger && t.ButtonsAt(10s) == 0);
+  CHECK(t.TriggersAt(11100ms) == (InputScript::kRightTrigger | InputScript::kLeftTrigger) &&
+        t.ButtonsAt(11100ms) == 0x1000);
+  CHECK(t.TriggersAt(11999ms) == InputScript::kRightTrigger && t.TriggersAt(12s) == 0);
+  CHECK(s.TriggersAt(20s) == 0);
   // A recording: changes only (a neutral start and repeats dropped), times never going back, the state at any time,
   // and its text read back the same, every field at its limits.
   InputRecording r;

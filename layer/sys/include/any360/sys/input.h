@@ -80,7 +80,8 @@ class InputQueue {
 // Button presses played at set times, for tests that reach a title's game without a player: "20:start,24:a/500,
 // 30:a+x" presses Start 20 s after the script starts (for kPressDefault), A at 24 s for 500 ms, A and X at 30 s. The
 // buttons are added to the first controller's (XInputGetState); names: a b x y start back up down left right lb rb ls
-// rs. An entry it cannot read is skipped (`error` says which).
+// rs, and lt rt (the trigger pulled all the way: "40:rt/20000" accelerates for 20 s in a racing title). An entry it
+// cannot read is skipped (`error` says which).
 class InputScript {
  public:
   using Clock = std::chrono::steady_clock;
@@ -88,7 +89,9 @@ class InputScript {
   struct Press {
     Clock::duration at, hold;
     uint16_t buttons;
+    uint8_t triggers = 0;  // kLeftTrigger | kRightTrigger
   };
+  static constexpr uint8_t kLeftTrigger = 1, kRightTrigger = 2;
   static InputScript Parse(const std::string& text, std::string* error = nullptr);
   bool empty() const { return presses_.empty(); }
   const std::vector<Press>& presses() const { return presses_; }
@@ -98,6 +101,13 @@ class InputScript {
     for (const Press& p : presses_)
       if (since >= p.at && since < p.at + p.hold) buttons |= p.buttons;
     return buttons;
+  }
+  // The triggers pulled `since` after the script started (kLeftTrigger | kRightTrigger).
+  uint8_t TriggersAt(Clock::duration since) const {
+    uint8_t triggers = 0;
+    for (const Press& p : presses_)
+      if (since >= p.at && since < p.at + p.hold) triggers |= p.triggers;
+    return triggers;
   }
 
  private:

@@ -81,7 +81,8 @@ REXCVAR_DEFINE_INT32(any360_sys_wait_first_look_ms, 16, "Kernel",
                      "as late, up to any360_sys_wait_look_ms)");
 REXCVAR_DEFINE_STRING(any360_input_script, "", "Kernel",
                       "Any360: button presses played on the first controller, for tests without a player: "
-                      "\"20:start,24:a/500,30:a+x\" (seconds:buttons[/ms held], from the start)");
+                      "\"20:start,24:a/500,30:a+x,40:rt/20000\" (seconds:buttons[/ms held], from the start; lt and rt pull a "
+                      "trigger all the way)");
 REXCVAR_DEFINE_STRING(any360_input_record, "", "Kernel",
                       "Any360 input group: records the first controller (buttons, triggers, sticks, every change) to this "
                       "file from any360_input_record_from seconds after the start, for any360_input_record_seconds (0: "

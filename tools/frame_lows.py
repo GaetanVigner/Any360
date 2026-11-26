@@ -7,13 +7,20 @@ streaming, a load); the others are its steady periods. Per variant: the steady p
 and each dip with the texture loading time of the launch's worst diagnosed period; then each variant against the
 first by a rank test (z: past 2 or so, a difference beyond the launches' spread).
 
-  python tools/frame_lows.py <runs> <logs dir> [--draws 1500]
+  python tools/frame_lows.py <runs> <logs dir> [--draws 1500] [--after SECONDS]
+
+The runtime's own GPU (a title launched without any360_gpu, its VdSwap calls counted) gives the same figures in its
+"the runtime's GPU: N FPS (VdSwap calls); frame times: ..." lines, every period: those count as periods without
+diagnostics. They carry no draw count, so such an A/B selects the periods by time instead: --after SECONDS keeps the
+periods logged that long after the log's first line (the same input script brings both variants to the route), and
+replaces the draw count's test for every variant.
 
 <runs>: lines "=== <variant arguments> (<log file name>)", one a launch (a launch script's output).
 """
 import argparse
 import re
 import statistics
+from datetime import datetime
 from pathlib import Path
 
 RUN = re.compile(r'^﻿?=== (?P<variant>.+?) \((?P<log>[^()]+\.log)\)')
@@ -21,12 +28,30 @@ ON = re.compile(r'Any360: [\d.]+ FPS; per frame: (?P<draws>\d+) draws')
 OFF = re.compile(r'Any360: (?P<fps>[\d.]+) FPS with the diagnostics off .*?frame times: median (?P<median>[\d.]+) ms '
                  r'\([\d.]+ FPS\), 10% low (?P<p10>[\d.]+) FPS, 1% low (?P<p1>[\d.]+) FPS.*?slowest frame '
                  r'(?P<slowest>[\d.]+) ms, (?P<over>\d+) over 16.7 ms.*?(?P<private>\d+) MB private')
+RUNTIME = re.compile(r"Any360: the runtime's GPU: (?P<fps>[\d.]+) FPS \(VdSwap calls\); frame times: median "
+                     r'(?P<median>[\d.]+) ms \([\d.]+ FPS\), 10% low (?P<p10>[\d.]+) FPS, 1% low (?P<p1>[\d.]+) FPS; '
+                     r'slowest frame (?P<slowest>[\d.]+) ms, (?P<over>\d+) over 16.7 ms; (?P<private>\d+) MB private')
+STAMP = re.compile(r'^\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d+)?)\]')
 LOADING = re.compile(r'textures ms: hashing [\d.]+, loading for uploads (?P<loading>[\d.]+)')
 
 
-def launch(log, draws):
-    periods, loading, city, seen = [], [], False, 0
+def stamp(line):
+    m = STAMP.match(line)
+    return datetime.strptime(m[1], '%Y-%m-%d %H:%M:%S.%f' if '.' in m[1] else '%Y-%m-%d %H:%M:%S') if m else None
+
+
+def launch(log, draws, after=None):
+    periods, loading, city, seen, start = [], [], False, 0, None
     for line in log.read_text(encoding='utf-8', errors='replace').splitlines():
+        if after is not None:
+            t = stamp(line)
+            if t is not None:
+                start = start or t
+                city = (t - start).total_seconds() >= after
+            m = OFF.search(line) or RUNTIME.search(line)
+            if m and city:
+                periods.append({k: float(m[k]) for k in ('fps', 'median', 'p10', 'p1', 'slowest', 'over', 'private')})
+            continue
         m = ON.search(line)
         if m:
             city = int(m['draws']) >= draws
@@ -66,13 +91,14 @@ def main():
     p.add_argument('runs')
     p.add_argument('logs')
     p.add_argument('--draws', type=int, default=1500)
+    p.add_argument('--after', type=float, help='periods from this many seconds after the log starts (no draw test)')
     a = p.parse_args()
     by = {}
     for line in Path(a.runs).read_text(encoding='utf-8-sig', errors='replace').splitlines():
         m = RUN.match(line)
         if m:
             variant = re.sub(r' --any360_input_script=\S+', '', m['variant']).strip()
-            by.setdefault(variant, []).append((m['log'],) + launch(Path(a.logs) / m['log'], a.draws))
+            by.setdefault(variant, []).append((m['log'],) + launch(Path(a.logs) / m['log'], a.draws, a.after))
     summary = {}
     for variant, runs in by.items():
         steady, dips = [], []

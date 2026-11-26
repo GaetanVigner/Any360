@@ -1487,7 +1487,12 @@ void Xam::Sample(uint32_t user, std::chrono::steady_clock::time_point at) {
   // A replay takes the first controller's place once it starts (the controller left out).
   if (user == 0 && replaying_ && at >= replay_start_) pad = replay_.StateAt(at - replay_start_);
   // The input script's presses join the first controller's samples: its state and its keystrokes both see them.
-  if (user == 0 && !input_script_.empty()) pad.buttons |= input_script_.ButtonsAt(at - input_script_start_);
+  if (user == 0 && !input_script_.empty()) {
+    pad.buttons |= input_script_.ButtonsAt(at - input_script_start_);
+    const uint8_t triggers = input_script_.TriggersAt(at - input_script_start_);
+    if (triggers & InputScript::kLeftTrigger) pad.left_trigger = 255;
+    if (triggers & InputScript::kRightTrigger) pad.right_trigger = 255;
+  }
   // The recorder keeps what the title receives, from its start for its length (a neutral state closes it).
   if (user == 0 && recording_on_ && at >= recording_start_) {
     const auto since = at - recording_start_;

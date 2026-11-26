@@ -44,9 +44,11 @@ InputScript InputScript::Parse(const std::string& text, std::string* error) {
       bool known = false;
       for (const auto& k : kButtons)
         if (name == k.name) press.buttons |= k.bit, known = true;
+      if (name == "lt") press.triggers |= kLeftTrigger, known = true;
+      if (name == "rt") press.triggers |= kRightTrigger, known = true;
       ok = known;
     }
-    if (ok && press.buttons) {
+    if (ok && (press.buttons || press.triggers)) {
       script.presses_.push_back(press);
     } else if (error && !entry.empty()) {
       *error += (error->empty() ? "" : ", ") + entry;

@@ -1524,28 +1524,49 @@ namespace {
 std::function<void(const std::string&)> g_runtime_frames_log;
 double g_runtime_frames_seconds = 5.0;
 
-// The runtime's VdSwap calls: frames per second and the slowest frame, every g_runtime_frames_seconds.
+// The process's private memory (bytes; 0 where the system does not say).
+uint64_t ProcessPrivateBytes() {
+#ifdef _WIN32
+  PROCESS_MEMORY_COUNTERS_EX counters{};
+  if (K32GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters), sizeof(counters))) {
+    return counters.PrivateUsage;
+  }
+#endif
+  return 0;
+}
+
+// The runtime's VdSwap calls, every g_runtime_frames_seconds: frames per second, the median frame time and the 10% / 1%
+// lows, the slowest frame, the frames over 16.7 ms and the process's private memory: the figures the binding's own
+// "diagnostics off" line gives, so a route measured on both GPUs compares line for line (tools/frame_lows.py).
 void CountRuntimeFrame() {
   static uint64_t frames = 0;
   static double worst_ms = 0;
   static uint32_t slow = 0;
+  static std::vector<float> intervals;
   static std::chrono::steady_clock::time_point since, last;
   const auto now = std::chrono::steady_clock::now();
   if (frames++) {
     const double ms = std::chrono::duration<double, std::milli>(now - last).count();
     worst_ms = std::max(worst_ms, ms);
-    slow += ms > 1000.0 / 55.0;
+    slow += ms > 1000.0 / 60.0;
+    intervals.push_back(float(ms));
   } else {
     since = now;
+    intervals.reserve(4096);
   }
   last = now;
   const double seconds = std::chrono::duration<double>(now - since).count();
   if (frames < 2 || seconds < g_runtime_frames_seconds) return;
-  char line[200];
-  std::snprintf(line, sizeof(line), "Any360: the runtime's GPU: %.1f FPS (VdSwap calls); slowest frame %.1f ms, %u over 18 ms",
-                double(frames - 1) / seconds, worst_ms, slow);
+  const gfx::FrameTimeSummary f = gfx::SummarizeFrameTimes(intervals);
+  char line[320];
+  std::snprintf(line, sizeof(line),
+                "Any360: the runtime's GPU: %.1f FPS (VdSwap calls); frame times: median %.2f ms (%.1f FPS), 10%% low "
+                "%.1f FPS, 1%% low %.1f FPS; slowest frame %.1f ms, %u over 16.7 ms; %.0f MB private",
+                double(frames - 1) / seconds, f.median_ms, 1e3 / f.median_ms, 1e3 / f.p90_ms, 1e3 / f.p99_ms, worst_ms,
+                slow, double(ProcessPrivateBytes()) / 1e6);
   g_runtime_frames_log(line);
   frames = 1, since = now, worst_ms = 0, slow = 0;
+  intervals.clear();
 }
 }  // namespace
 
