@@ -48,7 +48,7 @@ std::mutex g_players;
 bool g_installed = false;
 std::function<void(const std::string&)> g_log;
 std::vector<Known> g_known;
-uint32_t g_next_local = 1;
+[[maybe_unused]] uint32_t g_next_local = 1;  // unused without the device hook
 sys::PlayerSlots g_slots;
 sys::GlyphQuery g_glyphs;
 struct UserSeen {

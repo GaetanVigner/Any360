@@ -297,6 +297,10 @@ class VulkanRenderer : public gfx::Renderer {
   // display gamma ramp as the reference presents them (k_8_8_8_8 front buffers: the 256-entry table). CPU frames'
   // pixels are already through it.
   bool ReadFrame(std::vector<uint32_t>& pixels);
+  // Texels read back from an image of `format` made RGBA8 (red in the low byte) in place: BGRA8 swapped, the 10-bit
+  // A2B10G10R10 / A2R10G10B10 ones rounded to 8 bits a channel (alpha 0-3 to 0-255). RGBA8 and other formats as they
+  // are.
+  static void TexelsToRGBA8(VkFormat format, std::vector<uint32_t>& pixels);
   // The 8-bit output of each 8-bit input through the gamma ramp's table, per channel (red, green, blue).
   const std::array<std::array<uint8_t, 256>, 3>& gamma_lut() const { return gamma_lut_; }
   // Records the GPU frame's blit onto `target` (in TRANSFER_DST layout) over [dst0, dst1), through the gamma ramp (a
@@ -754,7 +758,7 @@ class VulkanRenderer : public gfx::Renderer {
   bool stopping_ = false;
   std::thread completer_;
   std::set<uint32_t> front_on_gpu_;  // front buffers presented from their resolve image (not read back)
-  // Reads `image` (RGBA8 or BGRA8) over a rectangle as RGBA8 pixels.
+  // Reads `image` (RGBA8, BGRA8 or a 10-bit A2B10G10R10 / A2R10G10B10 one) over a rectangle as RGBA8 pixels.
   bool ReadImageRGBA8(Image& image, VkImageLayout& layout, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                       std::vector<uint32_t>& pixels);
   // A depth resolve kept on the GPU: the depth of one sample a pixel into an R32F image (DepthPass, depth_shader.cpp).

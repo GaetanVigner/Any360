@@ -5865,12 +5865,32 @@ bool VulkanRenderer::ReadImageRGBA8(Image& image, VkImageLayout& layout, uint32_
   if (ok) {
     pixels.resize(size_t(width) * height);
     std::memcpy(pixels.data(), readback.mapped, pixels.size() * 4);
-    if (image.format == VK_FORMAT_B8G8R8A8_UNORM) {
-      for (uint32_t& p : pixels) p = (p & 0xFF00FF00u) | (p & 0xFF) << 16 | ((p >> 16) & 0xFF);
-    }
+    TexelsToRGBA8(image.format, pixels);
   }
   DestroyBuffer(device_, readback);
   return ok;
+}
+
+void VulkanRenderer::TexelsToRGBA8(VkFormat format, std::vector<uint32_t>& pixels) {
+  switch (format) {
+    case VK_FORMAT_B8G8R8A8_UNORM:
+      for (uint32_t& p : pixels) p = (p & 0xFF00FF00u) | (p & 0xFF) << 16 | ((p >> 16) & 0xFF);
+      break;
+    case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+    case VK_FORMAT_A2R10G10B10_UNORM_PACK32: {
+      // Red in bits 0-9 (A2B10G10R10) or 20-29 (A2R10G10B10), green in 10-19, the other in the rest; alpha 30-31.
+      const bool red_low = format == VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+      auto to8 = [](uint32_t v10) { return (v10 * 255 + 511) / 1023; };
+      for (uint32_t& p : pixels) {
+        const uint32_t low = to8(p & 0x3FF), green = to8((p >> 10) & 0x3FF), high = to8((p >> 20) & 0x3FF);
+        const uint32_t red = red_low ? low : high, blue = red_low ? high : low;
+        p = red | green << 8 | blue << 16 | ((p >> 30) * 85) << 24;
+      }
+      break;
+    }
+    default:
+      break;
+  }
 }
 
 void VulkanRenderer::Swap(uint32_t, uint32_t width, uint32_t height, const uint32_t* regs) {

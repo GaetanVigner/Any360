@@ -118,10 +118,25 @@ int main(int argc, char** argv) {
     if (!std::strcmp(argv[i], "--frames") && i + 1 < argc) frames = uint32_t(std::max(400, std::atoi(argv[++i])));
     else options.prefer = argv[i];
   }
+  {
+    // Read-back texels to RGBA8 (screenshots, ReadFrame): 10-bit front buffers (The Simpsons Game) rounded per channel,
+    // both channel orders; BGRA8 swapped; RGBA8 kept.
+    std::vector<uint32_t> p = {0x3FF | 0x200u << 10 | 0x000u << 20 | 3u << 30, 0x001 | 0x002u << 10 | 0x3FEu << 20 | 1u << 30};
+    vk::VulkanRenderer::TexelsToRGBA8(VK_FORMAT_A2B10G10R10_UNORM_PACK32, p);
+    CHECK(p[0] == (0xFFu | 0x80u << 8 | 0x00u << 16 | 0xFFu << 24));  // 0x200 * 255 / 1023 rounds to 128
+    CHECK(p[1] == (0x00u | 0x00u << 8 | 0xFFu << 16 | 0x55u << 24));
+    std::vector<uint32_t> q = {0x3FF | 0x000u << 10 | 0x155u << 20 | 2u << 30};
+    vk::VulkanRenderer::TexelsToRGBA8(VK_FORMAT_A2R10G10B10_UNORM_PACK32, q);
+    CHECK(q[0] == (0x55u | 0x00u << 8 | 0xFFu << 16 | 0xAAu << 24));
+    std::vector<uint32_t> b = {0x11223344}, r = {0x11223344};
+    vk::VulkanRenderer::TexelsToRGBA8(VK_FORMAT_B8G8R8A8_UNORM, b);
+    vk::VulkanRenderer::TexelsToRGBA8(VK_FORMAT_R8G8B8A8_UNORM, r);
+    CHECK(b[0] == 0x11443322 && r[0] == 0x11223344);
+  }
   vk::Device device;
   if (!device.Create(options)) {
     std::printf("gfx_resource_tests: skipped (%s)\n", device.error().c_str());
-    return 0;
+    return g_failures ? 1 : 0;
   }
   g_memory = static_cast<uint8_t*>(::operator new(kMemory, std::align_val_t(65536)));
   std::memset(g_memory, 0, kMemory);
