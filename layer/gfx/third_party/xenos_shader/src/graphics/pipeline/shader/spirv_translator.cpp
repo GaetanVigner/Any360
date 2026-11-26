@@ -315,6 +315,7 @@ void SpirvShaderTranslator::StartTranslation() {
       {"edram_rt_clamp", offsetof(SystemConstants, edram_rt_clamp), type_float4_array_4},
       {"edram_blend_constant", offsetof(SystemConstants, edram_blend_constant), type_float4_},
       {"ndc_offset_view1", offsetof(SystemConstants, ndc_offset_view1), type_float3_},
+      {"textures_whole_target", offsetof(SystemConstants, textures_whole_target), type_uint_},
   };
   id_vector_temp_.clear();
   id_vector_temp_.reserve(rex::countof(system_constants));

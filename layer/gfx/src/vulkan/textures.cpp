@@ -815,6 +815,7 @@ void TextureCache::Evict(uint64_t frames, std::vector<Image>& images, std::vecto
 VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::string& error, bool is_signed) {
   last_view_scaled_ = false;
   last_view_direct_ = false;
+  last_view_patched_ = false;
   last_used_ = nullptr;
   if (const uint64_t g = patches_->generation(); g != patches_seen_) {
     // Patches set or removed: views remembered by fetch constant are checked again.
@@ -842,6 +843,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
   if (const auto hit = fast_.find(fast_key);
       hit != fast_.end() && (watch_ || hit->second.epoch == epoch_) && hit->second.version == version_) {
     last_view_scaled_ = hit->second.scaled;
+    last_view_patched_ = hit->second.patched;
     last_used_ = hit->second.used;
     *last_used_ = epoch_;
     return hit->second.view;
@@ -1237,7 +1239,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     }
   }
   if (fast_.size() > 65536) fast_.clear();
-  fast_[fast_key] = {view, epoch_, version_, scale > 1, &slot->used};
+  fast_[fast_key] = {view, epoch_, version_, scale > 1, false, &slot->used};
   last_view_scaled_ = scale > 1;
   slot->used = epoch_;
   last_used_ = &slot->used;
@@ -1416,11 +1418,12 @@ VkImageView TextureCache::PatchedView(const uint32_t fetch[6], const TextureFetc
   }
   if (!pending) {
     if (fast_.size() > 65536) fast_.clear();
-    fast_[fast_key] = {view, epoch_, version_, false, &slot->used};
+    fast_[fast_key] = {view, epoch_, version_, false, true, &slot->used};
   }
   // Not flagged resolution-scaled: the shaders see the guest's size (normalized coordinates sample the larger image
   // the same), whatever the renderer's scale and the patch's.
   last_view_scaled_ = false;
+  last_view_patched_ = true;
   slot->used = epoch_;
   last_used_ = &slot->used;
   return view;

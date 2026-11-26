@@ -1044,14 +1044,15 @@ class VulkanRenderer : public gfx::Renderer {
     uint64_t* used = nullptr;  // the texture's last-use frame, marked at each reuse (TextureCache::last_used)
     uint32_t signs = 0;
     bool scaled = false;  // a resolution-scaled texture (copied from a scaled resolve)
+    bool patched = false;  // a patched texture (TextureCache::last_view_patched)
   };
   std::array<TextureMemo, 32 * 3 * 2> texture_memo_;
   uint32_t evict_frames_ = 0;  // frames since textures were last evicted
   // By texture fetch constant: the last sampler for its words and the binding's filters.
   struct SamplerMemo {
     uint32_t key[10] = {};
-    VkSampler sampler = VK_NULL_HANDLE;
     uint64_t patches = 0;  // the patches' generation it was chosen under (a patched texture samples its mips)
+    VkSampler sampler = VK_NULL_HANDLE;
   };
   std::array<SamplerMemo, 32> sampler_memo_;  // indices converted in ordinary memory, then copied at once
   VkCommandPool batch_pool_ = VK_NULL_HANDLE;

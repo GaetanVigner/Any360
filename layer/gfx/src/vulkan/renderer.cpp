@@ -2359,6 +2359,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   for (StageTextures& st : stage_textures) st.views.clear(), st.samplers.clear();
   uint32_t swizzled_signs[8] = {};
   uint32_t textures_scaled = 0;  // fetch constants bound to resolution-scaled textures
+  // Fetch constants bound to textures at the guest's resolution with no detail of their own (neither scaled nor
+  // patched): those the size of the draw's scissor are passes over the whole target (textures_whole_target).
+  uint32_t textures_guest = 0;
   for (uint32_t stage = 0; stage < 2; ++stage) {
     TranslatedShader* shader = stage ? ps : vs;
     if (!shader) continue;
@@ -2376,7 +2379,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
                                                                            : TextureCache::ViewType::k2DArray;
       VkImageView view;
       uint32_t signs = 0;
-      bool scaled = false;
+      bool scaled = false, patched = false;
       TextureMemo* memo =
           binding.fetch_constant < 32 ? &texture_memo_[(binding.fetch_constant * 3 + uint32_t(view_type)) * 2 + signed_view] : nullptr;
       if (memo && memo->view && !textures_->changes_queued() && memo->version == textures_->version() &&
@@ -2385,11 +2388,13 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         signs = memo->signs;
         if (memo->used) *memo->used = textures_->epoch();
         scaled = memo->scaled;
+        patched = memo->patched;
       } else {
         {
           Timer texture_timer(stats_.ns_textures);
           view = textures_->View(fetch, view_type, error, signed_view);
           scaled = textures_->last_view_scaled();
+          patched = textures_->last_view_patched();
         }
         if (!view) {
           Fail("texture " + std::to_string(binding.fetch_constant) + ": " + error);
@@ -2406,13 +2411,14 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         } else if (memo) {
           std::memcpy(memo->fetch, fetch, sizeof(memo->fetch));
           memo->version = textures_->version(), memo->epoch = textures_->epoch();
-          memo->view = view, memo->signs = signs, memo->scaled = scaled;
+          memo->view = view, memo->signs = signs, memo->scaled = scaled, memo->patched = patched;
           memo->used = textures_->last_used();
         }
       }
       stage_textures[stage].views.push_back(view);
       swizzled_signs[binding.fetch_constant / 4] |= signs << (8 * (binding.fetch_constant % 4));
       if (scaled && binding.fetch_constant < 32) textures_scaled |= 1u << binding.fetch_constant;
+      if (!scaled && !patched && stage && binding.fetch_constant < 32) textures_guest |= 1u << binding.fetch_constant;
     }
     for (const auto& binding : shader->shader->GetSamplerBindingsAfterTranslation()) {
       const uint32_t* fetch = regs + reg::kFetchConstants + 6 * binding.fetch_constant;
@@ -2806,6 +2812,19 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   }
   std::memcpy(system->texture_swizzled_signs, swizzled_signs, sizeof(swizzled_signs));
   system->textures_resolution_scaled = textures_scaled;
+  // A texture the size of the scissor (in guest pixels): a pass over the whole target (a colour grading table built
+  // from an identity table), whose reads of one texel a guest pixel are data, made at the guest pixel's centre. Text,
+  // sprites and patched pages drawn 1:1 over part of a target keep the host's resolution (spirv_translator_fetch.cpp).
+  system->textures_whole_target = 0;
+  if (scale_ > 1) {
+    const uint32_t scissor_w = uint32_t((right - left) / sample_x), scissor_h = uint32_t((bottom - top) / sample_y);
+    for (uint32_t bits = textures_guest; bits;) {
+      const uint32_t i = uint32_t(std::countr_zero(bits));
+      bits &= bits - 1;
+      const TextureFetch t = TextureFetch::Parse(regs + reg::kFetchConstants + 6 * i);
+      if (t.width == scissor_w && t.height == scissor_h) system->textures_whole_target |= 1u << i;
+    }
+  }
   // Alpha test (RB_COLORCONTROL): the compare function's less / equal / greater bits are the pass flags; a disabled
   // test is "always" (with none of them set, every pixel would be discarded).
   const uint32_t color_control = regs[kRbColorControl];

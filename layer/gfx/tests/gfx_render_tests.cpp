@@ -3240,6 +3240,77 @@ int main(int argc, char** argv) {
       std::printf("gfx_render_tests: a texture read 1:1 at 2x, written back: %u of 4096 texels exact, %u grey\n", exact, grey);
       CHECK(exact == 4096 && grey == 0);
     }
+    // A texture smaller than the target read one texel a guest pixel over part of it (text from a font page, a
+    // sprite) is shown, not data: each host pixel samples its own place, so the two host pixels of a guest pixel
+    // differ along a gradient (made at the guest pixel's centre, every texel came out a 2x2 block: Mirror's Edge's
+    // menu text at 2x). A patched texture drawn so shows its own texels, one a host pixel.
+    {
+      const uint32_t texture = 0x1C0000, quad = kVertices + 0x500;
+      constexpr uint32_t kTex = 32;
+      for (uint32_t y = 0; y < kTex; ++y) {
+        for (uint32_t x = 0; x < kTex; ++x) {
+          SetBig(texture + uint32_t(vk::TiledOffset2D(int32_t(x), int32_t(y), kTex, 2)), Rgba(uint8_t(8 * x), 0, 0, 255));
+        }
+      }
+      // The target's top left quarter (32x32 guest pixels), texcoords half a texel in.
+      const float h = 0.5f / float(kTex);
+      const float v[4][6] = {{-1, 0, 0, 1, h, 1 + h}, {0, 0, 0, 1, 1 + h, 1 + h}, {-1, 1, 0, 1, h, h}, {0, 1, 0, 1, 1 + h, h}};
+      for (uint32_t i = 0; i < 4; ++i) {
+        for (uint32_t c = 0; c < 6; ++c) SetBig(quad + 24 * i + 4 * c, Bits(v[i][c]));
+      }
+      // The red of each host pixel over the quad's rows, drawn once.
+      auto draw = [&] {
+        CHECK(scaled.ClearColor(color0, clear));
+        w.Defaults();
+        w.Shader(0, t::BuildTexturedVertexShader());
+        w.Shader(1, t::BuildTexturedPixelShader(1));
+        w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, quad | 3, 2u | 24u << 2});
+        // tf1: clamp to edge, pitch 32, tiled, k_8_8_8_8 8-in-32; 32x32; linear mag and min filters; 2D.
+        w.Put({Type3(pm4::SET_CONSTANT, 7), 1u << 16 | 6, 2u | 2u << 10 | 2u << 13 | 1u << 22 | 1u << 31,
+               6u | 2u << 6 | texture, (kTex - 1) | (kTex - 1) << 13, 0x688u << 1 | 1u << 19 | 1u << 21, 0, 1u << 9});
+        w.DrawAuto(kTriangleStrip, 4);
+        w.Run();
+        std::vector<uint8_t> bytes;
+        CHECK(scaled.ReadBack(color0, 2 * kSize, 2 * kSize, bytes));
+        return bytes;
+      };
+      // Guest pixels inside the quad (one in from its edges, which clamp) whose host pixels step by about `step`.
+      auto stepped = [&](const std::vector<uint8_t>& bytes, int step) {
+        uint32_t count = 0;
+        for (uint32_t y = 2; y < 2 * kTex - 2; ++y) {
+          for (uint32_t x = 1; x + 1 < kTex; ++x) {
+            const size_t left = (size_t(y) * 2 * kSize + 2 * x) * 4;
+            if (left + 8 > bytes.size()) continue;
+            const int d = int(bytes[left + 4]) - int(bytes[left]);
+            count += d >= step - 1 && d <= step + 1;
+          }
+        }
+        return count;
+      };
+      const uint32_t inside = (2 * kTex - 4) * (kTex - 2);
+      const uint32_t plain = stepped(draw(), 4);
+      std::printf("gfx_render_tests: a font-page-like texture drawn 1:1 over part of the target at 2x: %u of %u guest "
+                  "pixels with their own host detail\n", plain, inside);
+      CHECK(plain == inside);
+      // Patched at twice the size: host texel x holds red 4x, so the host pixels of a guest pixel step by 4 exactly.
+      TexturePatch patch;
+      patch.base = texture, patch.width = kTex, patch.height = kTex, patch.scale = 2;
+      std::vector<uint32_t> region(4 * kTex * kTex);
+      for (uint32_t y = 0; y < 2 * kTex; ++y) {
+        for (uint32_t x = 0; x < 2 * kTex; ++x) region[y * 2 * kTex + x] = Rgba(uint8_t(4 * x), 0, 0, 255);
+      }
+      patch.regions.push_back({0, 0, kTex, kTex, std::move(region)});
+      TexturePatches::Global().Set(patch);
+      const uint32_t uploads_before = scaled.texture_cache()->patched_uploads();
+      std::vector<uint8_t> bytes;
+      for (uint32_t i = 0; i < 100 && scaled.texture_cache()->patched_uploads() == uploads_before; ++i) bytes = draw();
+      bytes = draw();
+      TexturePatches::Global().Remove(texture);
+      const uint32_t patched = stepped(bytes, 4);
+      std::printf("gfx_render_tests: a patched texture drawn 1:1 over part of the target at 2x: %u of %u guest pixels "
+                  "show its host texels\n", patched, inside);
+      CHECK(patched == inside);
+    }
   }
   // 2x MSAA sample positions. The console's sample 0 of a 2x pixel lies at (-0.25, +0.25) of a pixel from its centre
   // (window coordinates, y down), sample 1 at (+0.25, -0.25). A title that moves its 2x viewport by the sample's

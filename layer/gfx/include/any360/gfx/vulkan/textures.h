@@ -208,6 +208,9 @@ class TextureCache {
   // Whether the last view View returned is of a resolution-scaled texture (copied from a scaled GPU source: scale x
   // scale texels a guest texel), which the shaders sample with the scale taken into account.
   bool last_view_scaled() const { return last_view_scaled_; }
+  // Whether the last view View returned is of a patched texture (texture_patches.h): enlarged, with detail of its
+  // own past the guest's resolution.
+  bool last_view_patched() const { return last_view_patched_; }
   uint32_t gpu_copies() const { return gpu_copies_; }
   // For diagnostics: textures over a GPU source that could not use it, by reason.
   std::map<std::string, uint32_t>& source_misses() { return source_misses_; }
@@ -275,9 +278,10 @@ class TextureCache {
     VkImageView view;
     uint64_t epoch, version;
     bool scaled;
+    bool patched;
     uint64_t* used;
   };
-  bool last_view_scaled_ = false, last_view_direct_ = false;
+  bool last_view_scaled_ = false, last_view_direct_ = false, last_view_patched_ = false;
   uint32_t direct_views_ = 0;
   std::function<VkImageView(const GpuSource&, VkFormat, VkComponentMapping)> source_view_;
   std::function<void(const GpuSource&)> source_for_copy_;

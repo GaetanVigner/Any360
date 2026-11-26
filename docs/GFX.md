@@ -526,6 +526,17 @@ Reference captures at 2x with 4x host MSAA, pixels off before / after: debris 7.
 lamp 8.01% / 5.21%, Pygmalion wall 4.71% / 2.70%. Test: `gfx_render_tests` (at 2x, a black and white column texture
 read 1:1 with linear filtering, resolved and written back: every texel exact).
 
+Only passes over the whole target since 2026-11-26: the renderer sets a bit a fetch constant
+(`textures_whole_target`, a system constant) when its texture is at the guest's resolution, not patched, and the
+size of the draw's scissor in guest pixels; the shader makes the 1:1 fetch at the guest pixel's centre only then.
+A texture drawn 1:1 over part of a target is shown, not data: Mirror's Edge draws its menu text from a 256x256 font
+page one texel a guest pixel, and at 2x every texel came out a 2x2 block (the patched button glyph pages too, which
+have a texel a host pixel of their own). Those now sample at each host pixel (the game's own font smooth, a patched
+page sharp). Black Ops's table (a 32x1024 texture drawn over its 32x1024 target) still matches: the four reference
+captures above give the same pixels off as before (with the bit never set, debris goes back to 7.24%). Tests:
+`gfx_render_tests` (at 2x, a 32x32 gradient texture drawn 1:1 over a quarter of the target: the two host pixels of
+every guest pixel differ; patched at twice the size: each host pixel shows its own patched texel).
+
 Polygon offset's slope factor is multiplied by the resolution scale (the guest's unit is 1/16 of a guest pixel; a
 host pixel is a fraction of one), as the reference does: less bias at 2x let shadow maps fight with their receivers.
 

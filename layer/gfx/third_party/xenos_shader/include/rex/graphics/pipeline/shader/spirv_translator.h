@@ -324,6 +324,11 @@ class SpirvShaderTranslator : public ShaderTranslator {
     // any360: with kSysFlag_MsaaSamplesAsViews, the NDC offset of view 1 (sample 1); view 0 takes ndc_offset.
     float ndc_offset_view1[3];
     float padding_ndc_offset_view1;
+    // any360: one bit per texture fetch constant whose texture is the size of the draw's scissor, at the guest's
+    // resolution and with no host detail of its own (not a patched texture): a pass over the whole target, where a
+    // read of one texel a guest pixel is data, made at the guest pixel's centre (spirv_translator_fetch.cpp).
+    uint32_t textures_whole_target;
+    uint32_t padding_whole_target[3];
   };
 
   enum ConstantBuffer : uint32_t {
@@ -947,6 +952,7 @@ class SpirvShaderTranslator : public ShaderTranslator {
     kSystemConstantEdramRTClamp,
     kSystemConstantEdramBlendConstant,
     kSystemConstantNdcOffsetView1,
+    kSystemConstantTexturesWholeTarget,
   };
   spv::Id uniform_system_constants_;
   spv::Id uniform_float_constants_;

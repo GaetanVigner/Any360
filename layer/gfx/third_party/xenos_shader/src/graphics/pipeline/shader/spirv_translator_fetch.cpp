@@ -1263,6 +1263,10 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
         // pixel a quarter of a texel either side, which blends neighbouring entries (across a table's slices: Call of
         // Duty: Black Ops's grading turned black pink at 2x). Such a fetch is made at the guest pixel's centre, the
         // console's value; the host has no more detail to show there anyway.
+        // Only where the texture is the size of the draw's scissor (textures_whole_target, set by the renderer): a
+        // texture drawn 1:1 over part of a target (text from a font page, a sprite, a patched glyph page) is shown,
+        // not data, and keeps the host's resolution (at the guest pixel's centre, each texel became a block of
+        // scale x scale host pixels: Mirror's Edge's menu text at 2x).
         spv::Id one_to_one = spv::NoResult;
         if (t[0] != spv::NoResult && t[1] != spv::NoResult) {
           auto near_value = [&](spv::Id value, float target) {
@@ -1286,6 +1290,17 @@ void SpirvShaderTranslator::ProcessTextureFetchInstruction(
               builder_->createBinOp(spv::OpLogicalAnd, type_bool_, near_value(per_guest[1][0], 0.0f), near_value(per_guest[1][1], 1.0f)));
           one_to_one = builder_->createBinOp(spv::OpLogicalAnd, type_bool_, one_to_one,
                                              builder_->createUnaryOp(spv::OpLogicalNot, type_bool_, texture_resolution_scaled));
+          id_vector_temp_.clear();
+          id_vector_temp_.push_back(builder_->makeIntConstant(kSystemConstantTexturesWholeTarget));
+          spv::Id textures_whole_target = builder_->createLoad(
+              builder_->createAccessChain(spv::StorageClassUniform, uniform_system_constants_, id_vector_temp_),
+              spv::NoPrecision);
+          one_to_one = builder_->createBinOp(
+              spv::OpLogicalAnd, type_bool_, one_to_one,
+              builder_->createBinOp(spv::OpINotEqual, type_bool_,
+                                    builder_->createBinOp(spv::OpBitwiseAnd, type_uint_, textures_whole_target,
+                                                          builder_->makeUintConstant(UINT32_C(1) << fetch_constant_index)),
+                                    const_uint_0_));
         }
         for (uint32_t i = 0; i < 2; ++i) {
           if (t[i] == spv::NoResult) continue;
