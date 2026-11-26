@@ -1802,6 +1802,35 @@ int main(int argc, char** argv) {
         CHECK(unpatched.Count(grey) == kSize * kSize);
         CHECK(repatched.Count(red) == 32 * 32 && repatched.Count(Rgba(0x80, 0x80, 0x80, 0x80)) == kSize * kSize - 32 * 32);
       }
+      // A patched texture drawn smaller than its host image samples the patch's mips, also when the same texture was
+      // drawn before the patch was set (the sampler chosen then had no mips: Mirror's Edge's button glyphs aliased).
+      // 32x32 texels patched at 8x with a one-texel black and white checkerboard, drawn on 64x64 pixels (a quarter of
+      // the host size): the mips give grey, the base level alone black and white.
+      {
+        const uint32_t base = 0x190000;
+        std::memset(g_memory + base, 0x40, 32 * 32 * 4);
+        scenario("minified texture before its patch", nullptr, [&] { textured(base, 32); });
+        TexturePatch patch;
+        patch.base = base, patch.width = 32, patch.height = 32, patch.scale = 8;
+        std::vector<uint32_t> checker(256 * 256);
+        for (uint32_t y = 0; y < 256; ++y)
+          for (uint32_t x = 0; x < 256; ++x) checker[y * 256 + x] = (x + y) & 1 ? Rgba(255, 255, 255, 255) : Rgba(0, 0, 0, 255);
+        patch.regions.push_back({0, 0, 32, 32, std::move(checker)});
+        TexturePatches::Global().Set(patch);
+        const uint32_t uploads_before = renderer.texture_cache()->patched_uploads();
+        uint32_t frames = 0;
+        do scenario("minified patched texture", nullptr, [&] { textured(base, 32); });
+        while (renderer.texture_cache()->patched_uploads() == uploads_before && ++frames < 200);
+        const Pixels minified = scenario("minified patched texture", nullptr, [&] { textured(base, 32); });
+        TexturePatches::Global().Remove(base);
+        uint32_t grey = 0;
+        for (uint32_t i = 0; i < kSize * kSize; ++i) {
+          const uint32_t r = minified.data[i] & 0xFF;
+          grey += r >= 0x60 && r <= 0xA0;
+        }
+        std::printf("gfx_render_tests: patched texture minified 4x: %u of %u pixels grey (its mips)\n", grey, kSize * kSize);
+        CHECK(grey == kSize * kSize);
+      }
       // A texture taller than the resolve, within its last 32-row tile (64 rows over 40 resolved, at an address of its
       // own): copied, the rows below the resolve zeros.
       const uint32_t short_rect = kVertices + 0xB00, short_base = 0x140000;
@@ -1918,17 +1947,18 @@ int main(int argc, char** argv) {
   }
 
   const vk::RendererStats& stats = renderer.stats();
-  std::printf("gfx_render_tests: %s (depth %s), %u draws, %u skipped, %u failed%s%s, %u shaders, %u pipelines, %u render targets\n",
+  std::printf("gfx_render_tests: %s (depth %s), %u draws, %u skipped, %u failed%s%s, %u shaders, %u pipelines, %u render targets, %u texture uploads, %u resolves\n",
               device.properties().deviceName, renderer.depth_format() == VK_FORMAT_D24_UNORM_S8_UINT ? "D24S8" : "D32S8",
               stats.draws, stats.skipped, stats.failed, stats.failed ? ": " : "", renderer.last_error().c_str(),
-              stats.translations, stats.pipelines, stats.render_targets);
+              stats.translations, stats.pipelines, stats.render_targets, stats.texture_uploads, stats.resolves);
   // Render targets: colour 0, depth, colour 1, the 16_16_16_16_FLOAT target, the float24 depth surface and the nine
   // render target formats, of which the two AS_ ones share their base format's surface (12, not 14), as k_8_8_8_8
   // shares k_8_8_8_8_GAMMA's; the three fresh targets read back as zeros (15); the 256-wide half-float one (16);
   // and the 256-wide k_8_8_8_8 one of the screen bands (17); the depth-under-colour checks' three depth and three
   // colour surfaces and the unclipped rectangle's two colour surfaces (25); the depth pre-pass check's shorter
   // colour target (26).
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 12 && stats.resolves == 89);
+  // Texture uploads: 14 (the minified patched texture adds its guest image and its patched one).
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 14 && stats.resolves == 89);
   // (The resolved texture is read from the resolve on the GPU, not uploaded; the one read while the cache is walked
   // is, and the patched texture's five (patched, removed, patched over new content, another patch over it, removed over it): 12 uploads. 89 resolves: the four of the scenarios before (one with an exponent bias on the GPU), the six
   // k_16_16_16_16 ones on the GPU, the 70 with one, the two screen bands, the chain's six and the 40-row one.)

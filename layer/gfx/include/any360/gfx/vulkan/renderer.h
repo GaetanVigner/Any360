@@ -1051,6 +1051,7 @@ class VulkanRenderer : public gfx::Renderer {
   struct SamplerMemo {
     uint32_t key[10] = {};
     VkSampler sampler = VK_NULL_HANDLE;
+    uint64_t patches = 0;  // the patches' generation it was chosen under (a patched texture samples its mips)
   };
   std::array<SamplerMemo, 32> sampler_memo_;  // indices converted in ordinary memory, then copied at once
   VkCommandPool batch_pool_ = VK_NULL_HANDLE;

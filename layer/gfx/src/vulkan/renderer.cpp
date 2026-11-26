@@ -2420,11 +2420,12 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
                                 uint32_t(binding.min_filter), uint32_t(binding.mip_filter), uint32_t(binding.aniso_filter)};
       SamplerMemo* memo = binding.fetch_constant < 32 ? &sampler_memo_[binding.fetch_constant] : nullptr;
       VkSampler sampler;
-      if (memo && memo->sampler && std::memcmp(memo->key, key, sizeof(key)) == 0) {
+      const uint64_t patches = textures_->patches_generation();
+      if (memo && memo->sampler && memo->patches == patches && std::memcmp(memo->key, key, sizeof(key)) == 0) {
         sampler = memo->sampler;
       } else {
         sampler = textures_->Sampler(fetch, key[6], key[7], key[8], key[9]);
-        if (memo && sampler) std::memcpy(memo->key, key, sizeof(key)), memo->sampler = sampler;
+        if (memo && sampler) std::memcpy(memo->key, key, sizeof(key)), memo->patches = patches, memo->sampler = sampler;
       }
       if (!sampler) {
         Fail("sampler");

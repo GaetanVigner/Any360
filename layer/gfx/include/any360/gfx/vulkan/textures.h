@@ -110,6 +110,8 @@ class TextureCache {
   uint32_t patched_uploads() const { return patched_uploads_; }
   // The patches this cache applies (TexturePatches::Global() unless a test gives its own).
   void SetPatches(const TexturePatches* patches) { patches_ = patches; patches_seen_ = ~0ull; }
+  // Changes when a patch is set or removed: a sampler chosen before (Sampler) may no longer fit its texture.
+  uint64_t patches_generation() const { return patches_->generation(); }
   // Time spent hashing texture memory and loading levels for uploads (untiling, conversion), in nanoseconds.
   uint64_t ns_hash() const { return ns_hash_; }
   uint64_t ns_load() const { return ns_load_; }
