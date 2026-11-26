@@ -3350,6 +3350,126 @@ int main(int argc, char** argv) {
             after.failed == 0);
     }
   }
+  // A 2x k_16_16_16_16_FLOAT target resolved to a k_16_16_16_16_FLOAT texture with an exponent bias of -3, straight
+  // from its layers (one compute pass: the two samples averaged, times 2^bias) and through its rows (ANY360_VIEWS_
+  // RESOLVE_ROWS=1: the layers copied into the rows, blitted, scaled). A full quad in one colour, then a sloped
+  // triangle in another: inside either, each texel is the colour times 1/8; along the triangle's edges a pixel's
+  // samples differ and the resolve averages them. At scale 1 both paths write the same words, and the one from the
+  // layers copies nothing into the rows. At scale 2 a host texel is the average of the two samples at its place
+  // (through the rows, the upper half of a pixel was sample 0 and the lower half sample 1): every texel inside the
+  // shapes is the scale-1 word.
+  {
+    auto set_env = [](const char* name, const char* value) {
+#ifdef _WIN32
+      _putenv_s(name, value);
+#else
+      if (*value) setenv(name, value, 1);
+      else unsetenv(name);
+#endif
+    };
+    const uint32_t tri = kVertices + 0x3200, rect = kVertices + 0x3300, dest = 0x1D0000;
+    const float tv[3][4] = {{-1, -1, 0.5f, 1}, {1, -0.6f, 0.5f, 1}, {-0.3f, 1, 0.5f, 1}};
+    for (uint32_t i = 0; i < 3; ++i) {
+      for (uint32_t k = 0; k < 4; ++k) SetBig(tri + 16 * i + 4 * k, Bits(tv[i][k]));
+    }
+    const float rv[3][2] = {{0, 0}, {float(kSize), 0}, {float(kSize), float(kSize)}};
+    for (uint32_t i = 0; i < 3; ++i) {
+      SetBig(rect + 8 * i, Bits(rv[i][0]));
+      SetBig(rect + 8 * i + 4, Bits(rv[i][1]));
+    }
+    // Half floats exactly, and their averages too: no rounding anywhere (how a pixel shader's output or a blit rounds
+    // to half floats is the driver's).
+    const float colour_a[4] = {1.0f, 0.125f, 0.375f, 1.0f}, colour_b[4] = {0.25f, 0.75f, 3.0f, 0.5f};
+    // The halves a texel of one colour holds: the colour as the target holds it (a half float, round to nearest
+    // even), times 1/8 (three less in the exponent).
+    auto half = [](float f) {
+      const uint32_t b = std::bit_cast<uint32_t>(f);
+      const uint32_t sign = (b >> 16) & 0x8000, mantissa = b & 0x7FFFFF;
+      const int32_t exponent = int32_t((b >> 23) & 0xFF) - 127 + 15;
+      uint32_t h = sign | uint32_t(exponent) << 10 | mantissa >> 13;
+      const uint32_t rest = mantissa & 0x1FFF;
+      if (rest > 0x1000 || (rest == 0x1000 && (h & 1))) ++h;
+      return uint16_t(h);
+    };
+    uint64_t word_a = 0, word_b = 0;
+    for (uint32_t c = 0; c < 4; ++c) {
+      word_a |= uint64_t(uint16_t(half(colour_a[c]) - (3u << 10))) << (16 * c);
+      word_b |= uint64_t(uint16_t(half(colour_b[c]) - (3u << 10))) << (16 * c);
+    }
+    std::vector<uint64_t> words[2][2];  // [scale - 1][through the rows]
+    uint32_t direct[2][2] = {}, backs[2][2] = {}, failed = 0;
+    for (const uint32_t scale : {1u, 2u}) {
+      for (const bool rows : {false, true}) {
+        set_env("ANY360_VIEWS_RESOLVE_ROWS", rows ? "1" : "");
+        vk::VulkanRenderer r2(device, g_memory, kMemory, scale);
+        CHECK(r2.Initialize());
+        set_env("ANY360_VIEWS_RESOLVE_ROWS", "");
+        CommandProcessor c(g_memory);
+        c.SetRenderer(&r2);
+        c.InitializeRingBuffer({}, kRing, 12);
+        Scene w{c};
+        std::memset(g_memory + dest, 0xCD, kSize * kSize * 8);
+        w.Defaults();
+        w.Reg(0x2000, kSize | 1u << 16);    // RB_SURFACE_INFO: pitch, 2x MSAA
+        w.Reg(0x2001, 7u << 16 | 1536);     // RB_COLOR_INFO: k_16_16_16_16_FLOAT at tile 1536
+        w.Shader(0, t::BuildFetchPositionShader());
+        w.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+        w.Put({Type3(pm4::SET_CONSTANT, 5), 0u << 16 | 1024, Bits(colour_a[0]), Bits(colour_a[1]), Bits(colour_a[2]), Bits(colour_a[3])});
+        w.Vertices(0);
+        w.DrawAuto(kTriangleStrip, 4);
+        w.Put({Type3(pm4::SET_CONSTANT, 5), 0u << 16 | 1024, Bits(colour_b[0]), Bits(colour_b[1]), Bits(colour_b[2]), Bits(colour_b[3])});
+        w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, tri | 3, 2u | 16u << 2});
+        w.DrawAuto(4, 3);  // a triangle list
+        w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});
+        // Control (colour 0, samples 0 and 1 averaged), base, pitch | height, info: endian 8-in-16,
+        // k_16_16_16_16_FLOAT, exponent bias -3.
+        w.Put({Type0(0x2318, 4), 4u << 4, dest, kSize | kSize << 16, 1u | 32u << 7 | 0x3Du << 16});
+        w.Reg(0x2208, 6);
+        w.DrawAuto(8, 3);
+        w.Reg(0x2208, 4);
+        w.Run();
+        r2.WriteBackForTools(dest);
+        r2.WaitIdle();
+        std::vector<uint64_t>& out = words[scale - 1][rows];
+        for (uint32_t y = 0; y < kSize; ++y) {
+          for (uint32_t x = 0; x < kSize; ++x) {
+            const uint8_t* texel = g_memory + dest + vk::TiledOffset2D(int32_t(x), int32_t(y), kSize, 3);
+            uint64_t word = 0;
+            for (uint32_t k = 0; k < 4; ++k) word |= uint64_t(uint16_t(texel[2 * k] << 8 | texel[2 * k + 1])) << (16 * k);
+            out.push_back(word);
+          }
+        }
+        direct[scale - 1][rows] = r2.stats().view_direct_resolves;
+        backs[scale - 1][rows] = r2.stats().view_resolves;
+        failed += r2.stats().failed;
+      }
+    }
+    uint32_t differ = 0, pure_a = 0, pure_b = 0, mixed = 0, inside_differ = 0, inside = 0;
+    for (size_t i = 0; i < words[0][0].size(); ++i) {
+      const uint64_t v = words[0][0][i];
+      differ += v != words[0][1][i];
+      pure_a += v == word_a, pure_b += v == word_b;
+      mixed += v != word_a && v != word_b;
+      // Away from the edges (its neighbours the same colour at scale 1): the same word at scale 2.
+      const uint32_t x = uint32_t(i % kSize), y = uint32_t(i / kSize);
+      bool deep = (v == word_a || v == word_b) && x > 0 && y > 0 && x + 1 < kSize && y + 1 < kSize;
+      for (int32_t dy = -1; deep && dy <= 1; ++dy) {
+        for (int32_t dx = -1; deep && dx <= 1; ++dx) deep = words[0][0][(y + dy) * kSize + (x + dx)] == v;
+      }
+      if (deep) {
+        ++inside;
+        inside_differ += words[1][0][i] != v;
+      }
+    }
+    std::printf("gfx_render_tests: 2x k_16_16_16_16_FLOAT resolve, bias -3, from the layers: %u of %u words differ from "
+                "the copy through the rows at scale 1 (%u of one colour, %u of the other, %u averaged at edges); "
+                "%u resolves from the layers, %u copies into the rows; at scale 2, %u of %u texels away from the edges "
+                "differ from scale 1 (%u failed)\n",
+                differ, kSize * kSize, pure_a, pure_b, mixed, direct[0][0], backs[0][0], inside_differ, inside, failed);
+    CHECK(failed == 0 && differ == 0 && pure_a > kSize * kSize / 4 && pure_b > kSize * kSize / 4 && mixed > 0);
+    CHECK(direct[0][0] == 1 && backs[0][0] == 0 && direct[0][1] == 0 && backs[0][1] >= 1);
+    CHECK(direct[1][0] == 1 && backs[1][0] == 0 && inside > kSize * kSize / 2 && inside_differ == 0);
+  }
   // The queue from two threads at once: one-time submits on a thread of their own while the renderer draws and its
   // submitter thread submits batches. Every submit succeeds and no draw fails (Device::queue_mutex: unguarded, two
   // threads on the queue lost the device now and then at a title's start).

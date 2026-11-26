@@ -75,7 +75,7 @@ add_test(NAME gfx_shader_tests COMMAND gfx_shader_tests)
 # any360_gfx_vulkan: the Vulkan side of the renderer. The loader is opened at run time (VK_NO_PROTOTYPES), so the
 # build needs only the vendored Khronos headers (third_party/vulkan-headers) and no Vulkan SDK.
 add_library(any360_gfx_vulkan STATIC src/vulkan/device.cpp src/vulkan/renderer.cpp src/vulkan/textures.cpp
-            src/vulkan/presenter.cpp src/vulkan/gamma_shader.cpp src/vulkan/depth_shader.cpp src/vulkan/depth_word_shader.cpp src/vulkan/view_rows_shader.cpp src/vulkan/draw_extent.cpp
+            src/vulkan/presenter.cpp src/vulkan/gamma_shader.cpp src/vulkan/depth_shader.cpp src/vulkan/depth_word_shader.cpp src/vulkan/view_rows_shader.cpp src/vulkan/views_resolve_shader.cpp src/vulkan/draw_extent.cpp
             src/vulkan/scale_shader.cpp
             src/vulkan/fixed16_shader.cpp
             src/vulkan/write_back.cpp)

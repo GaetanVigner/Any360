@@ -84,6 +84,7 @@ struct RendererStats {
   uint32_t view_resolves = 0;          // and their layers copied into their rows for a read
   uint64_t view_resolve_pixels = 0;    // the host pixels of those copies (both ways)
   uint32_t view_copies_by_rows = 0;    // of those, copies outside a batch (a region a pixel row's sample: slow)
+  uint32_t view_direct_resolves = 0;   // colour resolves averaged straight from the layers (no copy into the rows)
   uint32_t edram_alias_copies = 0;     // copies between surfaces over the same EDRAM (SyncAliases)
   uint32_t edram_depth_to_colour = 0;
   uint32_t extents_estimated = 0;  // draws without clipping whose rows came from their vertices (EstimateVertexMaxY)
@@ -458,6 +459,8 @@ class VulkanRenderer : public gfx::Renderer {
   std::vector<VkImageCopy> view_regions_;  // CopyViews' regions, reused
   // Guest 2x MSAA drawn as views (the default; ANY360_2X_AS_ROWS=1: as rows, both samples at the pixel's x).
   bool views_2x_ = true;
+  // Colour resolves of a surface drawn as views read its layers (ANY360_VIEWS_RESOLVE_ROWS=1: through its rows, A/B).
+  bool views_resolve_ = true;
   // Before a surface is read or drawn: what the surfaces over the same EDRAM wrote since it last did, copied into it
   // at their rows (their samples first resolved and dropped, its own too). True when something was copied.
   // Rows within [skip_top, skip_bottom) (host rows) are left: the caller overwrites them whole.
@@ -797,6 +800,10 @@ class VulkanRenderer : public gfx::Renderer {
   // k_16_16_16_16 targets resolved to k_16_16_16_16 textures on the GPU (fixed16_shader.cpp): the depth copy's set
   // layout (a sampled image, a storage image), when the device stores R16G16B16A16_UNORM in storage images.
   bool Fixed16Pass();
+  // The compute pass averaging a 2x surface's two layers into a half-float resolve image (the depth copy's set
+  // and pipeline layouts).
+  bool ViewsResolvePass();
+  VkPipeline views_resolve_pipeline_ = VK_NULL_HANDLE;
   bool fixed16_storage_ = false;
   VkPipelineLayout fixed16_pipeline_layout_ = VK_NULL_HANDLE;
   VkPipeline fixed16_pipeline_ = VK_NULL_HANDLE;

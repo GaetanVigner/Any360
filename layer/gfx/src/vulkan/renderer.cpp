@@ -301,6 +301,7 @@ VulkanRenderer::~VulkanRenderer() {
   DestroyBuffer(device_, view_rows_buffer_);
   if (scale_pipeline_) f.vkDestroyPipeline(d, scale_pipeline_, nullptr);
   if (fixed16_pipeline_) f.vkDestroyPipeline(d, fixed16_pipeline_, nullptr);
+  if (views_resolve_pipeline_) f.vkDestroyPipeline(d, views_resolve_pipeline_, nullptr);
   if (fixed16_pipeline_layout_) f.vkDestroyPipelineLayout(d, fixed16_pipeline_layout_, nullptr);
   if (scale_pipeline_layout_) f.vkDestroyPipelineLayout(d, scale_pipeline_layout_, nullptr);
   if (scale_layout_) f.vkDestroyDescriptorSetLayout(d, scale_layout_, nullptr);
@@ -368,6 +369,7 @@ bool VulkanRenderer::Fail(const std::string& why) {
 bool VulkanRenderer::Initialize() {
   MeasureTickRate();  // the diagnostics' clock rate, once
   if (const char* rows = std::getenv("ANY360_2X_AS_ROWS"); rows && *rows == '1') views_2x_ = false;  // A/B
+  if (const char* rows = std::getenv("ANY360_VIEWS_RESOLVE_ROWS"); rows && *rows == '1') views_resolve_ = false;  // A/B
   const Functions& f = device_.fn();
   VkDevice d = device_.device();
   // Compute too: a memory-exporting vertex shader without rasterization runs as a compute dispatch.
@@ -4586,8 +4588,17 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   // An exponent bias takes a set from the batch's depth pool: a full pool is reset by a flush, before this resolve
   // records anything (a flush in the middle left the rest recorded into a command buffer already submitted: Mirror's
   // Edge's renderer hung a few frames in, its HDR resolves no longer each flushing on the CPU path).
-  if (bias || fixed16) {
-    if (!(fixed16 ? Fixed16Pass() : ScalePass())) return false;
+  // A guest 2x surface drawn as views whose layers hold the rectangle (none of its rows written outside them since
+  // they last matched): each host texel's two samples averaged straight from the layers, the bias with them, in one
+  // compute pass; the layers are not copied into the rows (a transpose of every texel), nor blitted and scaled after.
+  // The destination takes storage writes: half-float ones (any other format copies through the rows as before).
+  const int32_t rows_top = y0 * 2 * s, rows_bottom = (y0 + int32_t(height)) * 2 * s;
+  const bool from_views = views_resolve_ && surface.views.image && !surface.key.depth && sample_x == 1 &&
+                          sample_y == 2 && format == VK_FORMAT_R16G16B16A16_SFLOAT &&
+                          !(surface.StaleViews() && surface.views_stale[0] < rows_bottom && surface.views_stale[1] > rows_top);
+  if (from_views && !ViewsResolvePass()) return false;
+  if (bias || fixed16 || from_views) {
+    if (!from_views && !(fixed16 ? Fixed16Pass() : ScalePass())) return false;
     if (depth_sets_ >= kDepthSets) Flush();
   }
   // After the draws in the batch: the surface's samples over the rectangle into the destination's texels, one sample
@@ -4598,11 +4609,55 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
   // A copy of a surface the title draws with one sample: one sample of the host's MSAA too. Averaged, a buffer of
   // data (the ids an outline pass compares) gets values no draw wrote, between those of the surfaces a pixel
   // covers, and the pass finds edges that are not there (lines inside The Simpsons Game's characters).
-  ResolveSamples(cb, surface, x0 * int32_t(sample_x) * s, y0 * int32_t(sample_y) * s,
-                 (x0 + int32_t(width)) * int32_t(sample_x) * s, (y0 + int32_t(height)) * int32_t(sample_y) * s,
-                 /*one_sample=*/sample_x * sample_y == 1);
+  if (!from_views) {
+    ResolveSamples(cb, surface, x0 * int32_t(sample_x) * s, y0 * int32_t(sample_y) * s,
+                   (x0 + int32_t(width)) * int32_t(sample_x) * s, (y0 + int32_t(height)) * int32_t(sample_y) * s,
+                   /*one_sample=*/sample_x * sample_y == 1);
+  }
   GpuMark(batch(), cb, kGpuResolves);
-  if (fixed16) {
+  if (from_views) {
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    alloc.descriptorPool = batch().depth_pool;
+    alloc.descriptorSetCount = 1;
+    alloc.pSetLayouts = &depth_layout_;
+    if (f.vkAllocateDescriptorSets(device_.device(), &alloc, &set) != VK_SUCCESS) return Fail("views resolve set");
+    ++depth_sets_;
+    const VkDescriptorImageInfo infos[2] = {{VK_NULL_HANDLE, surface.views.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                            {VK_NULL_HANDLE, r.image.view, VK_IMAGE_LAYOUT_GENERAL}};
+    VkWriteDescriptorSet writes[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
+    for (uint32_t i = 0; i < 2; ++i) {
+      writes[i].dstSet = set;
+      writes[i].dstBinding = i;
+      writes[i].descriptorCount = 1;
+      writes[i].descriptorType = i ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      writes[i].pImageInfo = &infos[i];
+    }
+    f.vkUpdateDescriptorSets(device_.device(), 2, writes, 0, nullptr);
+    Transition(cb, surface.views, surface.views_layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
+    f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, views_resolve_pipeline_);
+    f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, depth_pipeline_layout_, 0, 1, &set, 0, nullptr);
+    // A layer's host rows are the guest pixel rows times the scale, as the destination's.
+    struct {
+      int32_t source[2], dest[2];
+      uint32_t size[2];
+      float scale;  // the average's half and 2^bias
+    } push{{x0 * s, y0 * s}, {dx0 * s, dy0 * s}, {width * uint32_t(s), height * uint32_t(s)}, std::ldexp(0.5f, bias)};
+    f.vkCmdPushConstants(cb, depth_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);
+    f.vkCmdDispatch(cb, (width * uint32_t(s) + 7) / 8, (height * uint32_t(s) + 7) / 8, 1);
+    // Before what reads the destination next in the same layout (the half-pixel fill's copies).
+    VkMemoryBarrier2 written{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+    written.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    written.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+    written.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    written.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+    VkDependencyInfo done{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    done.memoryBarrierCount = 1;
+    done.pMemoryBarriers = &written;
+    f.vkCmdPipelineBarrier2(cb, &done);
+    ++stats_.view_direct_resolves;
+  } else if (fixed16) {
     // The samples averaged and converted in a compute pass (the CPU path's words), the bias with them.
     VkDescriptorSet set = VK_NULL_HANDLE;
     VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
@@ -4687,7 +4742,8 @@ bool VulkanRenderer::ResolveOnGpu(Surface& surface, int32_t x0, int32_t y0, uint
       f.vkCmdCopyImage(cb, r.image.image, VK_IMAGE_LAYOUT_GENERAL, r.image.image, VK_IMAGE_LAYOUT_GENERAL, 1, &column);
     }
   }
-  if (bias && !fixed16 && !ScaleOnGpu(cb, r.image, r.layout, dx0 * s, dy0 * s, width * uint32_t(s), height * uint32_t(s), bias)) {
+  if (bias && !fixed16 && !from_views &&
+      !ScaleOnGpu(cb, r.image, r.layout, dx0 * s, dy0 * s, width * uint32_t(s), height * uint32_t(s), bias)) {
     return false;
   }
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -6064,6 +6120,31 @@ bool VulkanRenderer::Fixed16Pass() {
   const VkResult created = f.vkCreateComputePipelines(d, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &fixed16_pipeline_);
   f.vkDestroyShaderModule(d, module, nullptr);
   if (created != VK_SUCCESS) return Fail("fixed16 resolve pipeline");
+  return true;
+}
+
+std::vector<uint32_t> BuildViewsResolveShader();  // views_resolve_shader.cpp
+
+bool VulkanRenderer::ViewsResolvePass() {
+  if (views_resolve_pipeline_) return true;
+  if (!DepthPass()) return false;  // its set layout, pipeline layout and per-batch pools
+  const Functions& f = device_.fn();
+  const VkDevice d = device_.device();
+  const std::vector<uint32_t> code = BuildViewsResolveShader();
+  VkShaderModuleCreateInfo module_info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+  module_info.codeSize = code.size() * 4;
+  module_info.pCode = code.data();
+  VkShaderModule module = VK_NULL_HANDLE;
+  if (f.vkCreateShaderModule(d, &module_info, nullptr, &module) != VK_SUCCESS) return Fail("views resolve shader");
+  VkComputePipelineCreateInfo pipeline_info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+  pipeline_info.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+  pipeline_info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+  pipeline_info.stage.module = module;
+  pipeline_info.stage.pName = "main";
+  pipeline_info.layout = depth_pipeline_layout_;
+  const VkResult created = f.vkCreateComputePipelines(d, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &views_resolve_pipeline_);
+  f.vkDestroyShaderModule(d, module, nullptr);
+  if (created != VK_SUCCESS) return Fail("views resolve pipeline");
   return true;
 }
 
