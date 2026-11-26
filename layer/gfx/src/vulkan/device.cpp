@@ -207,7 +207,10 @@ bool Device::Create(const DeviceOptions& options) {
     VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &v12_supported};
     fn_.vkGetPhysicalDeviceFeatures2(physical_, &query);
   }
-  VkPhysicalDeviceVulkan12Features v12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &v13};
+  // Multiview (every Vulkan 1.1 device has it): a 2x MSAA target drawn one layer a sample, a view each.
+  VkPhysicalDeviceVulkan11Features v11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, &v13};
+  v11.multiview = VK_TRUE;
+  VkPhysicalDeviceVulkan12Features v12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, &v11};
   v12.uniformBufferStandardLayout = v12_supported.uniformBufferStandardLayout;
   v12.scalarBlockLayout = v12_supported.scalarBlockLayout;  // the system constants' vec3 + float members
   v13.shaderDemoteToHelperInvocation = v13_supported.shaderDemoteToHelperInvocation;
@@ -551,9 +554,10 @@ void DestroyBuffer(const Device& d, Buffer& b) {
   b = {};
 }
 
-bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
-                   VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples, VkFormat alias,
-                   std::source_location where) {
+namespace {
+bool CreateImageLayers(const Device& d, uint32_t width, uint32_t height, uint32_t layers, VkFormat format,
+                       VkImageUsageFlags usage, VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples,
+                       VkFormat alias, std::source_location where) {
   g_images.fetch_add(1, std::memory_order_relaxed);
   const Functions& f = d.fn();
   VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -570,7 +574,7 @@ bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat fo
   info.format = format;
   info.extent = {width, height, 1};
   info.mipLevels = 1;
-  info.arrayLayers = 1;
+  info.arrayLayers = layers;
   info.samples = samples;
   info.tiling = VK_IMAGE_TILING_OPTIMAL;
   info.usage = usage;
@@ -594,6 +598,7 @@ bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat fo
   out.format = format;
   out.width = width;
   out.height = height;
+  out.layers = layers;
   // A view only for an image that can have one (a transfer-only image, a resolve's staging, has none).
   constexpr VkImageUsageFlags kViewUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
                                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
@@ -601,10 +606,23 @@ bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat fo
   if (!(usage & kViewUsage)) return true;
   VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
   view.image = out.image;
-  view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  view.viewType = layers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
   view.format = format;
-  view.subresourceRange = {aspect, 0, 1, 0, 1};
+  view.subresourceRange = {aspect, 0, 1, 0, layers};
   return f.vkCreateImageView(d.device(), &view, nullptr, &out.view) == VK_SUCCESS;
+}
+}  // namespace
+
+bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
+                   VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples, VkFormat alias,
+                   std::source_location where) {
+  return CreateImageLayers(d, width, height, 1, format, usage, aspect, out, samples, alias, where);
+}
+
+bool CreateImage2DArray(const Device& d, uint32_t width, uint32_t height, uint32_t layers, VkFormat format,
+                        VkImageUsageFlags usage, VkImageAspectFlags aspect, Image& out, std::source_location where) {
+  return CreateImageLayers(d, width, height, layers, format, usage, aspect, out, VK_SAMPLE_COUNT_1_BIT,
+                           VK_FORMAT_UNDEFINED, where);
 }
 
 void DestroyImage(const Device& d, Image& i) {

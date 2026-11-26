@@ -656,6 +656,20 @@ void SpirvShaderTranslator::CompleteFragmentShaderInMain() {
                                                const_uint_0_);
         spv::Id pixel_x = select_uint(four, builder_->createBinOp(spv::OpShiftRightLogical, type_uint_, x, const_uint_1), x);
         spv::Id pixel_y = select_uint(multi, builder_->createBinOp(spv::OpShiftRightLogical, type_uint_, y, const_uint_1), y);
+        // Drawn one layer a sample (kSysFlag_MsaaSamplesAsViews): the sample is the view, the row the pixel's.
+        if (input_view_index_ != spv::NoResult) {
+          spv::Id as_views = builder_->createBinOp(
+              spv::OpINotEqual, type_bool_,
+              builder_->createBinOp(spv::OpBitwiseAnd, type_uint_, main_system_constant_flags_,
+                                    builder_->makeUintConstant(kSysFlag_MsaaSamplesAsViews)),
+              const_uint_0_);
+          row = builder_->createTriOp(
+              spv::OpSelect, type_bool_, as_views,
+              builder_->createBinOp(spv::OpINotEqual, type_bool_, builder_->createLoad(input_view_index_, spv::NoPrecision),
+                                    builder_->makeIntConstant(0)),
+              row);
+          pixel_y = select_uint(as_views, y, pixel_y);
+        }
         spv::Id offset = builder_->createTriOp(
             spv::OpBitFieldUExtract, type_uint_, alpha_to_mask,
             builder_->createBinOp(

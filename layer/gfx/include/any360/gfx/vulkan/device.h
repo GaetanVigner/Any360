@@ -164,11 +164,16 @@ struct Image {
   VkImageView view = VK_NULL_HANDLE;
   VkFormat format = VK_FORMAT_UNDEFINED;
   uint32_t width = 0, height = 0;
+  uint32_t layers = 1;  // array layers (the view covers them all: a 2D array view when more than one)
 };
 // `alias`: another format of the same size views of the image may take (VK_FORMAT_UNDEFINED: none).
 bool CreateImage2D(const Device& d, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage,
                    VkImageAspectFlags aspect, Image& out, VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
                    VkFormat alias = VK_FORMAT_UNDEFINED, std::source_location where = std::source_location::current());
+// An array of layers single-sample 2D images, its view a 2D array of them all.
+bool CreateImage2DArray(const Device& d, uint32_t width, uint32_t height, uint32_t layers, VkFormat format,
+                        VkImageUsageFlags usage, VkImageAspectFlags aspect, Image& out,
+                        std::source_location where = std::source_location::current());
 void DestroyImage(const Device& d, Image& i);
 
 // Buffers and images created since the start, and their bytes: a renderer that creates some every frame pays the

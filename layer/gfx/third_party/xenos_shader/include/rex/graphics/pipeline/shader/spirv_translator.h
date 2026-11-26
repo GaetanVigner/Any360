@@ -160,6 +160,9 @@ class SpirvShaderTranslator : public ShaderTranslator {
     // taking into account the potential relation with occlusion queries (but
     // should be safe at least temporarily).
     kSysFlag_FSIDepthStencilEarlyWrite_Shift,
+    // any360: a 2x MSAA target drawn as one layer a sample (multiview, the view index is the sample): fragment
+    // coordinates count pixels, not sample rows.
+    kSysFlag_MsaaSamplesAsViews_Shift,
 
     kSysFlag_Count,
 
@@ -208,6 +211,7 @@ class SpirvShaderTranslator : public ShaderTranslator {
     kSysFlag_FSIDepthWrite = 1u << kSysFlag_FSIDepthWrite_Shift,
     kSysFlag_FSIStencilTest = 1u << kSysFlag_FSIStencilTest_Shift,
     kSysFlag_FSIDepthStencilEarlyWrite = 1u << kSysFlag_FSIDepthStencilEarlyWrite_Shift,
+    kSysFlag_MsaaSamplesAsViews = 1u << kSysFlag_MsaaSamplesAsViews_Shift,
   };
   static_assert(kSysFlag_Count <= 32, "Too many flags in the system constants");
 
@@ -316,6 +320,10 @@ class SpirvShaderTranslator : public ShaderTranslator {
     uint32_t vertex_index_max;
     float tessellation_factor_range_min;
     float tessellation_factor_range_max;
+
+    // any360: with kSysFlag_MsaaSamplesAsViews, the NDC offset of view 1 (sample 1); view 0 takes ndc_offset.
+    float ndc_offset_view1[3];
+    float padding_ndc_offset_view1;
   };
 
   enum ConstantBuffer : uint32_t {
@@ -759,6 +767,8 @@ class SpirvShaderTranslator : public ShaderTranslator {
                           spv::Id is_all_signed);
 
   spv::Id LoadMsaaSamplesFromFlags();
+  // any360: declares gl_ViewIndex (input_view_index_) and what it needs.
+  void AddViewIndexInput();
   // Whether it's possible and worth skipping running the translated shader for
   // 2x2 quads.
   bool FSI_IsDepthStencilEarly() const {
@@ -936,6 +946,7 @@ class SpirvShaderTranslator : public ShaderTranslator {
     kSystemConstantEdramRTKeepMask,
     kSystemConstantEdramRTClamp,
     kSystemConstantEdramBlendConstant,
+    kSystemConstantNdcOffsetView1,
   };
   spv::Id uniform_system_constants_;
   spv::Id uniform_float_constants_;
@@ -968,6 +979,8 @@ class SpirvShaderTranslator : public ShaderTranslator {
   spv::Id input_front_facing_;
   // PS, only when needed - int.
   spv::Id input_sample_id_;
+  // any360: gl_ViewIndex (multiview: the sample of a 2x MSAA target drawn as layers), or NoResult.
+  spv::Id input_view_index_;
   // PS, only when needed - int[1].
   spv::Id input_sample_mask_;
 

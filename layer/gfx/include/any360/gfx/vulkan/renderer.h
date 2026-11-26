@@ -80,6 +80,10 @@ struct RendererStats {
   uint32_t samples_dropped = 0;        // surfaces back to one sample (drawn without colour and depth together)
   uint32_t samples_given_back = 0;     // and given their samples again (drawn with them together, then cleared)
   uint32_t samples_reused = 0;         // of those, samples taken from the pool of dropped ones (no image created)
+  uint32_t view_loads = 0;             // 2x MSAA as views: surfaces' rows copied into their layers before a draw
+  uint32_t view_resolves = 0;          // and their layers copied into their rows for a read
+  uint64_t view_resolve_pixels = 0;    // the host pixels of those copies (both ways)
+  uint32_t view_copies_by_rows = 0;    // of those, copies outside a batch (a region a pixel row's sample: slow)
   uint32_t edram_alias_copies = 0;     // copies between surfaces over the same EDRAM (SyncAliases)
   uint32_t edram_depth_to_colour = 0;
   uint32_t extents_estimated = 0;  // draws without clipping whose rows came from their vertices (EstimateVertexMaxY)
@@ -231,8 +235,18 @@ class VulkanRenderer : public gfx::Renderer {
     std::vector<uint64_t> have;
     // A colour surface: a depth surface wrote over its EDRAM since it last looked (SyncDepthIntoColour).
     bool depth_over = false;
-    Image& target() { return ms.image ? ms : image; }  // what draws render into
-    VkImageLayout& target_layout() { return ms.image ? ms_layout : layout; }
+    // Guest 2x MSAA drawn at the console's sample positions (UseViews): two layers of a pixel each (sample 0, then 1,
+    // the pass's views), each drawn with its sample's offset. The image keeps its rows (a pixel's samples one under the
+    // other, as EDRAM holds them) for everything else: the layers are copied into them before they are read
+    // (ResolveSamples: drawn is what the layers hold newer), and loaded from them when they hold newer content
+    // (views_stale: written while the surface was not drawn as views).
+    Image views;
+    VkImageLayout views_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageView views_depth[2] = {};  // a depth surface's layers' depth aspect, one each (depth resolves read them)
+    bool use_views = false;    // draws render into views
+    bool views_stale = true;   // image holds what views does not
+    Image& target() { return use_views ? views : ms.image ? ms : image; }  // what draws render into
+    VkImageLayout& target_layout() { return use_views ? views_layout : ms.image ? ms_layout : layout; }
   };
   Surface* GetSurface(const SurfaceKey& key);
   bool ClearColor(const SurfaceKey& key, const float rgba[4]);
@@ -355,7 +369,7 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t color_masks;       // RB_COLOR_MASK of the bound targets
     uint32_t primitive_restart; // strips cut where the index buffer holds the reset index
     uint32_t samples;           // host MSAA samples of the pass's targets
-    uint32_t reserved;          // zero (keeps the key free of implicit padding: it is compared with memcmp)
+    uint32_t view_mask;         // the pass's views (0b11: a 2x MSAA pass drawn one layer a sample; 0: none)
     bool operator<(const PipelineKey& other) const { return std::memcmp(this, &other, sizeof(*this)) < 0; }
     bool operator==(const PipelineKey& other) const { return std::memcmp(this, &other, sizeof(*this)) == 0; }
   };
@@ -381,7 +395,7 @@ class VulkanRenderer : public gfx::Renderer {
     uint32_t topology, cull_mode, front_face_clockwise, polygon_mode, depth_control, depth_format;
     uint32_t color_formats[4], blend_controls[4], color_masks, primitive_restart;
     uint32_t samples;  // 0 one sample with host MSAA on, 1 the host MSAA, 2 not known (recorded without host MSAA)
-    uint32_t reserved;
+    uint32_t view_mask;  // PipelineKey::view_mask
     bool operator==(const PipelineRecipe& o) const { return std::memcmp(this, &o, sizeof(*this)) == 0; }
   };
   void RecordRecipe(const PipelineKey& key);  // the renderer's thread
@@ -425,6 +439,17 @@ class VulkanRenderer : public gfx::Renderer {
   // A surface drawn back at one sample given its samples again, when a clear over `area` is about to cover all it
   // holds (the multisampled image needs nothing of the single-sample one).
   void GiveSamplesBack(Surface* surface, const int32_t area[4]);
+  // A surface about to be drawn by a pass of guest 2x MSAA (views true: into its layers, made and loaded first when
+  // needed) or of anything else (false: its layers copied into its rows first; they are loaded again before the next
+  // 2x pass). Outside a pass. False when the layers cannot be made.
+  bool UseViews(Surface& surface, bool views);
+  // Copies between a surface's layers and its rows over host pixels [left, right) x [top, bottom) of the rows (whole
+  // pixel rows: both samples), outside a pass.
+  void CopyViews(VkCommandBuffer cb, Surface& surface, int32_t left, int32_t top, int32_t right, int32_t bottom,
+                 bool into_views);
+  std::vector<VkImageCopy> view_regions_;  // CopyViews' regions, reused
+  // Guest 2x MSAA drawn as views (the default; ANY360_2X_AS_ROWS=1: as rows, both samples at the pixel's x).
+  bool views_2x_ = true;
   // Before a surface is read or drawn: what the surfaces over the same EDRAM wrote since it last did, copied into it
   // at their rows (their samples first resolved and dropped, its own too). True when something was copied.
   // Rows within [skip_top, skip_bottom) (host rows) are left: the caller overwrites them whole.
@@ -450,7 +475,7 @@ class VulkanRenderer : public gfx::Renderer {
     if (surface->group) MarkWritten(surface, top, bottom);
     int32_t* w = surface->written;
     w[0] = std::min(w[0], left), w[1] = std::min(w[1], top), w[2] = std::max(w[2], right), w[3] = std::max(w[3], bottom);
-    if (!surface->ms.image) return;
+    if (!surface->ms.image && !surface->use_views) return;
     surface->drawn[0] = std::min(surface->drawn[0], left), surface->drawn[1] = std::min(surface->drawn[1], top);
     surface->drawn[2] = std::max(surface->drawn[2], right), surface->drawn[3] = std::max(surface->drawn[3], bottom);
   }
@@ -722,6 +747,17 @@ class VulkanRenderer : public gfx::Renderer {
   VkDescriptorPool depth_word_pool_ = VK_NULL_HANDLE;
   VkDescriptorSet depth_word_set_ = VK_NULL_HANDLE;
   Buffer depth_word_buffer_;  // the depth and stencil copies and the words, grown as needed
+  // CopyViews within a batch: the rows through a buffer, reordered by a compute pass (view_rows_shader.cpp).
+  // Its pipeline, and its buffer grown to need bytes (a flush and a wait when it grows: outside any command buffer
+  // a caller holds).
+  bool ViewRowsPass(VkDeviceSize need);
+  uint32_t ViewTexelBytes(const Surface& surface) const;  // a texel's bytes in that buffer (depth: its depth aspect)
+  VkDescriptorSetLayout view_rows_layout_ = VK_NULL_HANDLE;
+  VkPipelineLayout view_rows_pipeline_layout_ = VK_NULL_HANDLE;
+  VkPipeline view_rows_pipeline_ = VK_NULL_HANDLE;
+  VkDescriptorPool view_rows_pool_ = VK_NULL_HANDLE;
+  VkDescriptorSet view_rows_set_ = VK_NULL_HANDLE;
+  Buffer view_rows_buffer_;  // both orders of the rows copied, grown as needed
   VkDescriptorSetLayout depth_layout_ = VK_NULL_HANDLE;
   VkPipelineLayout depth_pipeline_layout_ = VK_NULL_HANDLE;
   VkPipeline depth_pipeline_ = VK_NULL_HANDLE;
@@ -887,6 +923,7 @@ class VulkanRenderer : public gfx::Renderer {
     VkFormat formats[4] = {};  // the render pass's attachments
     VkFormat depth = VK_FORMAT_UNDEFINED;
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
+    uint32_t view_mask = 0;
     VkCommandBuffer cb = VK_NULL_HANDLE;
     std::atomic<bool> done{false};
   };
@@ -925,6 +962,7 @@ class VulkanRenderer : public gfx::Renderer {
     VkRenderingAttachmentInfo depth;
     bool has_depth = false;
     VkRect2D area;
+    uint32_t view_mask = 0;
     std::vector<std::unique_ptr<RecordTask>> tasks;
   };
   struct Entry {
@@ -963,6 +1001,7 @@ class VulkanRenderer : public gfx::Renderer {
   VkFormat segment_formats_[4] = {};
   VkFormat segment_depth_ = VK_FORMAT_UNDEFINED;
   VkSampleCountFlagBits segment_samples_ = VK_SAMPLE_COUNT_1_BIT;
+  uint32_t segment_view_mask_ = 0;
   static constexpr uint32_t kChunkDraws = 32;
   // By texture fetch constant (32), view type (3) and signedness: the last view and swizzled signs for its six words,
   // reused while the texture cache says views stay valid (no search by the fetch constant's words then).

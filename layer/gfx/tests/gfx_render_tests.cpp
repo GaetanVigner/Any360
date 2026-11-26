@@ -3211,6 +3211,87 @@ int main(int argc, char** argv) {
       CHECK(exact == 4096 && grey == 0);
     }
   }
+  // 2x MSAA sample positions. The console's sample 0 of a 2x pixel lies at (-0.25, +0.25) of a pixel from its centre
+  // (window coordinates, y down), sample 1 at (+0.25, -0.25). A title that moves its 2x viewport by the sample's
+  // offset sees, in that sample, what a 1x pass sees at the pixel's centre, to the bit: Mirror's Edge resolves the
+  // depth of sample 0 of its 2x scene, writes it back through a 1x pass and tests its lights GEQUAL against it (black
+  // walls when the sample was elsewhere). A plane sloped along x and y, drawn at 1x, then at 2x moved by sample 0's
+  // offset and by sample 1's, each depth resolved (the 2x ones of that sample): the same words everywhere, at
+  // resolution scales 1 and 2.
+  for (const uint32_t scale : {1u, 2u}) {
+    vk::VulkanRenderer r2(device, g_memory, kMemory, scale);
+    CHECK(r2.Initialize());
+    CommandProcessor c(g_memory);
+    c.SetRenderer(&r2);
+    c.InitializeRingBuffer({}, kRing, 12);
+    Scene w{c};
+    const uint32_t plane = kVertices + 0x3000, rect = kVertices + 0x3100;
+    const uint32_t dests[3] = {0x1C0000, 0x1C4000, 0x1C8000};  // 1x, 2x sample 0, 2x sample 1
+    const float xs[4] = {-1, 1, -1, 1}, ys[4] = {-1, -1, 1, 1};
+    for (uint32_t i = 0; i < 4; ++i) {
+      const float v[4] = {xs[i], ys[i], 0.5f + 0.3f * xs[i] + 0.15f * ys[i], 1};
+      for (uint32_t k = 0; k < 4; ++k) SetBig(plane + 16 * i + 4 * k, Bits(v[k]));
+    }
+    const float rv[3][2] = {{0, 0}, {float(kSize), 0}, {float(kSize), float(kSize)}};
+    for (uint32_t i = 0; i < 3; ++i) {
+      SetBig(rect + 8 * i, Bits(rv[i][0]));
+      SetBig(rect + 8 * i + 4, Bits(rv[i][1]));
+    }
+    const struct {
+      uint32_t msaa, sample;
+      float dx, dy;
+    } passes[3] = {{0, 0, 0, 0}, {1, 0, -0.25f, 0.25f}, {1, 1, 0.25f, -0.25f}};
+    for (uint32_t p = 0; p < 3; ++p) {
+      std::memset(g_memory + dests[p], 0xCD, kSize * kSize * 4);
+      CHECK(r2.ClearDepthStencil({1024, kSize, 0, 1}, 1.0f, 0));
+      w.Defaults();
+      w.Reg(0x2000, kSize | passes[p].msaa << 16);  // RB_SURFACE_INFO: pitch, MSAA
+      w.Shader(0, t::BuildFetchPositionShader());
+      w.Shader(1, t::BuildSingleExportShader(uc::AllocType::kPsColors, uint32_t(uc::ExportRegister::kPSColor0), {0, false}));
+      w.Reg(kRbColorMask, 0);
+      w.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 7u << 4);  // z_enable, z_write, ALWAYS
+      w.Put({Type0(0x210F, 6), Bits(kSize / 2.0f), Bits(kSize / 2.0f + passes[p].dx), Bits(-float(kSize) / 2.0f),
+             Bits(kSize / 2.0f + passes[p].dy), Bits(1), Bits(0)});
+      w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, plane | 3, 2u | 16u << 2});
+      w.DrawAuto(kTriangleStrip, 4);
+      w.Put({Type3(pm4::SET_CONSTANT, 3), 1u << 16 | 0, rect | 3, 2u | 6u << 2});
+      // Control: depth, the sample; k_24_8, 8-in-32.
+      w.Put({Type0(0x2318, 4), 4u | passes[p].sample << 4, dests[p], kSize | kSize << 16, 2u | 22u << 7});
+      w.Reg(0x2208, 6);
+      w.DrawAuto(8, 3);
+      w.Reg(0x2208, 4);
+      w.Reg(kRbColorMask, 0xF);
+      w.Run();
+      r2.WriteBackForTools(dests[p]);
+      r2.WaitIdle();
+    }
+    CHECK(r2.stats().failed == 0);
+    uint32_t differ[2] = {}, sloped = 0;
+    uint32_t first = 0, previous = 0;
+    for (uint32_t y = 0; y < kSize; ++y) {
+      for (uint32_t x = 0; x < kSize; ++x) {
+        uint32_t words[3];
+        for (uint32_t p = 0; p < 3; ++p) {
+          std::memcpy(&words[p], g_memory + dests[p] + vk::TiledOffset2D(int32_t(x), int32_t(y), kSize, 2), 4);
+          words[p] = std::byteswap(words[p]) >> 8;
+        }
+        differ[0] += words[1] != words[0];
+        differ[1] += words[2] != words[0];
+        if (x == 0 && y == 0) first = words[0];
+        sloped += x > 0 && words[0] != previous;
+        previous = words[0];
+      }
+    }
+    const vk::RendererStats& st = r2.stats();
+    std::printf("gfx_render_tests: 2x sample positions at scale %u: %u (sample 0) and %u (sample 1) of %u depth words "
+                "differ from 1x (%06X at the corner, %u steps); layers loaded %u times, copied back %u\n", scale,
+                differ[0], differ[1], kSize * kSize, first, sloped, st.view_loads, st.view_resolves);
+    CHECK(differ[0] == 0 && differ[1] == 0 && sloped > kSize * kSize / 2 && first != 0xCDCDCD);
+    // The layers loaded from the rows once, when made (the clear before the second 2x pass clears them too), within
+    // a batch (through the buffer, not a copy a row); the depth resolves read the sample's layer itself (nothing
+    // copied back into the rows).
+    CHECK(st.view_loads == 1 && st.view_resolves == 0 && st.view_copies_by_rows == 0);
+  }
   // The queue from two threads at once: one-time submits on a thread of their own while the renderer draws and its
   // submitter thread submits batches. Every submit succeeds and no draw fails (Device::queue_mutex: unguarded, two
   // threads on the queue lost the device now and then at a title's start).

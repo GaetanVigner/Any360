@@ -17,7 +17,7 @@
 //                 reference's size to be compared
 //     --msaa N    draws with N samples a host pixel (host MSAA: 2, 4, 8)
 //     --pipeline-cache FILE  keeps the pipelines in FILE across runs (the time spent creating them is printed)
-//     --pick X,Y  with --trace, prints each draw that changes colour target 0's pixel at (X, Y) (host pixels):
+//     --pick X,Y  with --trace, prints each draw that changes colour target 0's pixel at (X, Y) (host pixels, at --scale too):
 //                 its number, the new value, its shaders and vertex fetch constant 0, each shader's microcode once and
 //                 the texture fetch constants set (slow)
 //     --dump-textures DIR  with --pick, writes the first levels of each texture those draws read, as loaded, as
@@ -171,7 +171,7 @@ class TracingRenderer : public Renderer {
       const uint32_t pitch = regs[0x2000] & 0x3FFF;
       const vk::SurfaceKey key{regs[0x2001] & 0xFFF, pitch, (regs[0x2001] >> 16) & 0xF, 0};
       std::vector<uint8_t> bytes;
-      if (pitch > uint32_t(pick_x_) && r_.ReadBack(key, uint32_t(pick_x_) + 1, uint32_t(pick_y_) + 1, bytes) &&
+      if (pitch * r_.resolution_scale() > uint32_t(pick_x_) && r_.ReadBack(key, uint32_t(pick_x_) + 1, uint32_t(pick_y_) + 1, bytes) &&
           bytes.size() >= size_t(pick_x_ + 1) * (pick_y_ + 1) * 4) {
         // A texel of 4 or 8 bytes (the 64-bit targets: half floats, k_16_16_16_16), as the host holds the target.
         const size_t texel = bytes.size() / (size_t(pick_x_ + 1) * (pick_y_ + 1));
@@ -868,10 +868,11 @@ int main(int argc, char** argv) {
   std::printf("gfx_replay: %s: %u draws, %u skipped, %u failed; %u resolves, %u shaders, %u pipelines, %u render targets, "
               "%u texture uploads; %.1f ms creating pipelines; %u sample resolves (%.1f Mpixels), %u surfaces back to "
               "one sample (%u given samples again, %u of them from the pool); %u EDRAM alias copies (%u depth into colour); "
-              "%u draw extents from their vertices (%.3f ms)\n",
+              "%u draw extents from their vertices (%.3f ms); 2x as views: layers loaded %u times, copied back %u (%.1f Mpixels; %u copies a row)\n",
               device.properties().deviceName, r.draws, r.skipped, r.failed, r.resolves, r.translations, r.pipelines,
               r.render_targets, r.texture_uploads, r.ns_pipelines / 1e6, r.sample_resolves, r.sample_resolve_pixels / 1e6,
-              r.samples_dropped, r.samples_given_back, r.samples_reused, r.edram_alias_copies, r.edram_depth_to_colour, r.extents_estimated, r.ns_extents / 1e6);
+              r.samples_dropped, r.samples_given_back, r.samples_reused, r.edram_alias_copies, r.edram_depth_to_colour, r.extents_estimated, r.ns_extents / 1e6,
+              r.view_loads, r.view_resolves, r.view_resolve_pixels / 1e6, r.view_copies_by_rows);
   if (features) tracing.PrintFeatures();
   // Textures over a resolve kept on the GPU that could not copy from it, and why (they read guest memory instead).
   if (renderer.texture_cache()) {

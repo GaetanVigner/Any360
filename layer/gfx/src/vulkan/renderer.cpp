@@ -294,6 +294,11 @@ VulkanRenderer::~VulkanRenderer() {
   if (depth_word_layout_) f.vkDestroyDescriptorSetLayout(d, depth_word_layout_, nullptr);
   if (depth_word_pool_) f.vkDestroyDescriptorPool(d, depth_word_pool_, nullptr);
   DestroyBuffer(device_, depth_word_buffer_);
+  if (view_rows_pipeline_) f.vkDestroyPipeline(d, view_rows_pipeline_, nullptr);
+  if (view_rows_pipeline_layout_) f.vkDestroyPipelineLayout(d, view_rows_pipeline_layout_, nullptr);
+  if (view_rows_layout_) f.vkDestroyDescriptorSetLayout(d, view_rows_layout_, nullptr);
+  if (view_rows_pool_) f.vkDestroyDescriptorPool(d, view_rows_pool_, nullptr);
+  DestroyBuffer(device_, view_rows_buffer_);
   if (scale_pipeline_) f.vkDestroyPipeline(d, scale_pipeline_, nullptr);
   if (fixed16_pipeline_) f.vkDestroyPipeline(d, fixed16_pipeline_, nullptr);
   if (fixed16_pipeline_layout_) f.vkDestroyPipelineLayout(d, fixed16_pipeline_layout_, nullptr);
@@ -334,6 +339,10 @@ VulkanRenderer::~VulkanRenderer() {
     if (surface->image_bits) f.vkDestroyImageView(d, surface->image_bits, nullptr);
     DestroyImage(device_, surface->image);
     DestroyImage(device_, surface->ms);
+    for (VkImageView v : surface->views_depth) {
+      if (v) f.vkDestroyImageView(d, v, nullptr);
+    }
+    DestroyImage(device_, surface->views);
   }
   for (auto& [image, views] : source_views_) {
     for (auto& [key, view] : views) f.vkDestroyImageView(d, view, nullptr);
@@ -358,6 +367,7 @@ bool VulkanRenderer::Fail(const std::string& why) {
 
 bool VulkanRenderer::Initialize() {
   MeasureTickRate();  // the diagnostics' clock rate, once
+  if (const char* rows = std::getenv("ANY360_2X_AS_ROWS"); rows && *rows == '1') views_2x_ = false;  // A/B
   const Functions& f = device_.fn();
   VkDevice d = device_.device();
   // Compute too: a memory-exporting vertex shader without rasterization runs as a compute dispatch.
@@ -1054,8 +1064,9 @@ void VulkanRenderer::ResolveSamples(VkCommandBuffer cb, Surface& s, int32_t x0, 
   const int32_t left = std::max({s.drawn[0], x0, 0}), top = std::max({s.drawn[1], y0, 0});
   const int32_t right = std::min({s.drawn[2], x1, int32_t(s.image.width)});
   const int32_t bottom = std::min({s.drawn[3], y1, int32_t(s.image.height)});
-  if (!s.ms.image || right <= left || bottom <= top) return;
-  one_sample = one_sample && s.key.depth == 0 && s.bits_alias && SampleBitsViews(s);
+  const bool views = s.views.image && s.use_views;
+  if ((!s.ms.image && !views) || right <= left || bottom <= top) return;
+  one_sample = !views && one_sample && s.key.depth == 0 && s.bits_alias && SampleBitsViews(s);
   // What stays to resolve: nothing once the read covers all that was drawn; less when it covers a band across it
   // (the rows or columns it spans); else all of it (resolved again when read).
   int32_t* d = s.drawn;
@@ -1069,6 +1080,11 @@ void VulkanRenderer::ResolveSamples(VkCommandBuffer cb, Surface& s, int32_t x0, 
     if (x1 >= d[2]) d[2] = std::min(d[2], x0);
   }
   if (d[2] <= d[0] || d[3] <= d[1]) d[0] = d[1] = INT32_MAX, d[2] = d[3] = INT32_MIN;
+  if (views) {
+    // The layers' pixels into the rows (a copy each sample's rows: nothing averaged, nothing lost).
+    CopyViews(cb, s, left, top, right, bottom, false);
+    return;
+  }
   ++stats_.sample_resolves;
   stats_.sample_resolve_pixels += uint64_t(right - left) * uint64_t(bottom - top);
   const bool in_batch = batch_open_ && cb == current_piece_;  // not the presenter's command buffer
@@ -1152,7 +1168,7 @@ bool VulkanRenderer::CreateSamples(Surface& s) {
 }
 
 void VulkanRenderer::GiveSamplesBack(Surface* s, const int32_t area[4]) {
-  if (!s || s->ms.image || !s->paired || samples_ == VK_SAMPLE_COUNT_1_BIT) return;
+  if (!s || s->ms.image || s->use_views || !s->paired || samples_ == VK_SAMPLE_COUNT_1_BIT) return;
   const int32_t* w = s->written;
   if (w[2] > w[0] && w[3] > w[1] && (area[0] > w[0] || area[1] > w[1] || area[2] < w[2] || area[3] < w[3])) return;
   if (!CreateSamples(*s)) return;
@@ -1178,6 +1194,15 @@ void VulkanRenderer::FreeSpareSamples(bool all) {
 }
 
 void VulkanRenderer::DropSamples(Surface& s) {
+  if (s.use_views) {
+    // The rows are about to be written outside the layers: what the layers hold newer into them first, the layers
+    // loaded again before the next pass draws them.
+    if (s.drawn[2] > s.drawn[0]) {
+      EndRendering();
+      ResolveSamples(Record(), s, INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX);
+    }
+    s.views_stale = true;
+  }
   if (!s.ms.image) return;
   EndRendering();
   ResolveSamples(Record(), s, INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX);
@@ -1189,6 +1214,268 @@ void VulkanRenderer::DropSamples(Surface& s) {
   s.ms_layout = VK_IMAGE_LAYOUT_UNDEFINED;
   target_memo_.valid = false;  // its pipeline had the samples
   ++stats_.samples_dropped;
+}
+
+bool VulkanRenderer::UseViews(Surface& s, bool views) {
+  if (!views) {
+    if (!s.use_views) return true;
+    // Drawn as rows from now on: what the layers hold newer goes into them first.
+    if (s.drawn[2] > s.drawn[0]) {
+      EndRendering();
+      ResolveSamples(Record(), s, INT32_MIN, INT32_MIN, INT32_MAX, INT32_MAX);
+    }
+    s.use_views = false;
+    s.views_stale = true;
+    target_memo_.valid = false;
+    return true;
+  }
+  if (s.ms.image) DropSamples(s);  // a 2x pass draws its two samples: no host MSAA over them
+  const VkImageAspectFlags aspect =
+      s.key.depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+  if (!s.views.image) {
+    // A layer a sample, each half the rows (the rows hold a pixel's two samples one under the other).
+    const VkImageUsageFlags usage = (s.key.depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                                                 : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) |
+                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                    VK_IMAGE_USAGE_SAMPLED_BIT;  // depth resolves read a layer
+    if (!CreateImage2DArray(device_, s.image.width, s.image.height / 2, 2, s.image.format, usage, aspect, s.views)) {
+      DestroyImage(device_, s.views);
+      return Fail("2x MSAA layers");
+    }
+    s.views_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+    s.views_stale = true;
+    // The copies' buffer large enough for all its rows, both orders (depth: the stencil's bytes too).
+    const VkDeviceSize texels = VkDeviceSize(s.image.height) * ((s.image.width + 3) & ~3u);
+    const VkDeviceSize need = 2 * ((texels * ViewTexelBytes(s) + 15) & ~VkDeviceSize(15)) +
+                              (s.key.depth ? 2 * ((texels + 15) & ~VkDeviceSize(15)) : 0);
+    if (!ViewRowsPass(need)) return false;
+  }
+  if (s.views_stale) {
+    // The rows' content into the layers, all of it (what a surface holds outside `written` may still be read).
+    EndRendering();
+    CopyViews(Record(), s, 0, 0, int32_t(s.image.width), int32_t(s.image.height), true);
+    s.views_stale = false;
+    s.drawn[0] = s.drawn[1] = INT32_MAX, s.drawn[2] = s.drawn[3] = INT32_MIN;
+  }
+  if (!s.use_views) {
+    s.use_views = true;
+    target_memo_.valid = false;
+  }
+  return true;
+}
+
+void VulkanRenderer::CopyViews(VkCommandBuffer cb, Surface& s, int32_t left, int32_t top, int32_t right, int32_t bottom,
+                               bool into_views) {
+  // Host rows of the rows image: a pixel row is 2 x scale of them, sample 0's scale rows then sample 1's; a layer's
+  // pixel row is scale rows.
+  const int32_t sc = int32_t(scale_), pixel_rows = 2 * sc;
+  left = std::max(left, 0), right = std::min(right, int32_t(s.image.width));
+  top = std::max(top, 0) / pixel_rows, bottom = (std::min(bottom, int32_t(s.image.height)) + pixel_rows - 1) / pixel_rows;
+  if (right <= left || bottom <= top) return;
+  const Functions& f = device_.fn();
+  const VkImageAspectFlags aspect =
+      s.key.depth ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+  // Timed with the MSAA resolves (not in the presenter's command buffer).
+  if (batch_open_ && cb == current_piece_) GpuMark(batch(), cb, kGpuSampleResolves);
+  // After what wrote either image (a pass reads and writes its attachments: nothing orders it with a copy).
+  VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+  barrier.srcStageMask = barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+  barrier.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+  barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+  VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+  dependency.memoryBarrierCount = 1;
+  dependency.pMemoryBarriers = &barrier;
+  f.vkCmdPipelineBarrier2(cb, &dependency);
+  Image& from = into_views ? s.image : s.views;
+  Image& to = into_views ? s.views : s.image;
+  Transition(cb, from, into_views ? s.layout : s.views_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, aspect);
+  Transition(cb, to, into_views ? s.views_layout : s.layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, aspect);
+  ++(into_views ? stats_.view_loads : stats_.view_resolves);
+  stats_.view_resolve_pixels += uint64_t(right - left) * uint64_t(bottom - top) * uint64_t(pixel_rows);
+  // In a batch: the rows through the buffer, each order a single copy and a compute pass between (a copy a row band
+  // of a pixel's sample cost the GPU far more than the bytes: thousands of regions a frame).
+  const uint32_t width = uint32_t(right - left), row_texels = (width + 3) & ~3u;
+  const uint32_t pixels = uint32_t(bottom - top), rows = pixels * uint32_t(pixel_rows), layer_rows = pixels * uint32_t(sc);
+  struct Part {
+    VkImageAspectFlags aspect;
+    uint32_t bytes;  // a texel's in the buffer
+  };
+  const Part parts[2] = {{VkImageAspectFlags(s.key.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), ViewTexelBytes(s)},
+                         {VK_IMAGE_ASPECT_STENCIL_BIT, 1}};
+  const uint32_t part_count = s.key.depth ? 2 : 1;
+  VkDeviceSize need = 0;
+  for (uint32_t p = 0; p < part_count; ++p) need += 2 * ((VkDeviceSize(rows) * row_texels * parts[p].bytes + 15) & ~VkDeviceSize(15));
+  if (batch_open_ && cb == current_piece_ && view_rows_pipeline_ && view_rows_buffer_.size >= need) {
+    auto memory = [&](VkPipelineStageFlags2 src, VkAccessFlags2 src_access, VkPipelineStageFlags2 dst, VkAccessFlags2 dst_access) {
+      VkMemoryBarrier2 b{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+      b.srcStageMask = src, b.srcAccessMask = src_access, b.dstStageMask = dst, b.dstAccessMask = dst_access;
+      VkDependencyInfo d{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+      d.memoryBarrierCount = 1;
+      d.pMemoryBarriers = &b;
+      f.vkCmdPipelineBarrier2(cb, &d);
+    };
+    VkDeviceSize at = 0;
+    VkDeviceSize rows_at[2], layers_at[2];
+    for (uint32_t p = 0; p < part_count; ++p) {
+      const VkDeviceSize block = (VkDeviceSize(rows) * row_texels * parts[p].bytes + 15) & ~VkDeviceSize(15);
+      rows_at[p] = at, layers_at[p] = at + block;
+      at += 2 * block;
+    }
+    // The source's copy: the rows image's band, or each layer's.
+    VkBufferImageCopy copies[4]{};
+    uint32_t count = 0;
+    for (uint32_t p = 0; p < part_count; ++p) {
+      for (uint32_t layer = 0; layer < (into_views ? 1u : 2u); ++layer) {
+        VkBufferImageCopy& c = copies[count++];
+        c.bufferRowLength = row_texels;
+        c.imageSubresource = {parts[p].aspect, 0, layer, 1};
+        if (into_views) {
+          c.bufferOffset = rows_at[p];
+          c.imageOffset = {left, top * pixel_rows, 0};
+          c.imageExtent = {width, rows, 1};
+        } else {
+          c.bufferOffset = layers_at[p] + VkDeviceSize(layer) * layer_rows * row_texels * parts[p].bytes;
+          c.imageOffset = {left, top * sc, 0};
+          c.imageExtent = {width, layer_rows, 1};
+        }
+      }
+    }
+    f.vkCmdCopyImageToBuffer(cb, from.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, view_rows_buffer_.buffer, count, copies);
+    memory(VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+           VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+    f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, view_rows_pipeline_);
+    f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, view_rows_pipeline_layout_, 0, 1, &view_rows_set_, 0, nullptr);
+    for (uint32_t p = 0; p < part_count; ++p) {
+      const uint32_t row_words = row_texels * parts[p].bytes / 4;
+      const uint32_t push[7] = {rows * row_words, row_words, rows, uint32_t(sc), uint32_t(rows_at[p] / 4),
+                                uint32_t(layers_at[p] / 4), into_views ? 1u : 0u};
+      f.vkCmdPushConstants(cb, view_rows_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), push);
+      f.vkCmdDispatch(cb, (push[0] + 63) / 64, 1, 1);
+    }
+    memory(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+           VK_ACCESS_2_TRANSFER_READ_BIT);
+    // The destination's copy, from the other order.
+    count = 0;
+    for (uint32_t p = 0; p < part_count; ++p) {
+      for (uint32_t layer = 0; layer < (into_views ? 2u : 1u); ++layer) {
+        VkBufferImageCopy& c = copies[count++];
+        c.bufferRowLength = row_texels;
+        c.imageSubresource = {parts[p].aspect, 0, layer, 1};
+        if (into_views) {
+          c.bufferOffset = layers_at[p] + VkDeviceSize(layer) * layer_rows * row_texels * parts[p].bytes;
+          c.imageOffset = {left, top * sc, 0};
+          c.imageExtent = {width, layer_rows, 1};
+        } else {
+          c.bufferOffset = rows_at[p];
+          c.imageOffset = {left, top * pixel_rows, 0};
+          c.imageExtent = {width, rows, 1};
+        }
+      }
+    }
+    f.vkCmdCopyBufferToImage(cb, view_rows_buffer_.buffer, to.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, count, copies);
+    f.vkCmdPipelineBarrier2(cb, &dependency);  // before what draws or reads either image (or the buffer) next
+    return;
+  }
+  // Elsewhere (a one-time command buffer: a read-back, the presenter): a copy a pixel row's sample.
+  ++stats_.view_copies_by_rows;
+  view_regions_.clear();
+  for (int32_t row = top; row < bottom; ++row) {
+    for (uint32_t sample = 0; sample < 2; ++sample) {
+      VkImageCopy region{};
+      region.srcSubresource = region.dstSubresource = {aspect, 0, 0, 1};
+      (into_views ? region.dstSubresource : region.srcSubresource).baseArrayLayer = sample;
+      const VkOffset3D rows{left, (2 * row + int32_t(sample)) * sc, 0}, layer{left, row * sc, 0};
+      region.srcOffset = into_views ? rows : layer;
+      region.dstOffset = into_views ? layer : rows;
+      region.extent = {uint32_t(right - left), uint32_t(sc), 1};
+      view_regions_.push_back(region);
+    }
+  }
+  f.vkCmdCopyImage(cb, from.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, to.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   uint32_t(view_regions_.size()), view_regions_.data());
+  f.vkCmdPipelineBarrier2(cb, &dependency);  // before what draws or reads either image next
+}
+
+uint32_t VulkanRenderer::ViewTexelBytes(const Surface& s) const {
+  if (s.key.depth) return 4;  // the depth aspect copied out: 4 bytes a texel (D24 in a word, or a float)
+  const VkFormat format = s.image.format;
+  return format == VK_FORMAT_R16G16B16A16_SFLOAT || format == VK_FORMAT_R16G16B16A16_SNORM ||
+                 format == VK_FORMAT_R32G32_SFLOAT
+             ? 8
+             : 4;
+}
+
+std::vector<uint32_t> BuildViewRowsShader();  // view_rows_shader.cpp
+
+bool VulkanRenderer::ViewRowsPass(VkDeviceSize need) {
+  const Functions& f = device_.fn();
+  const VkDevice d = device_.device();
+  if (!view_rows_pipeline_) {
+    const VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+    VkDescriptorSetLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    layout_info.bindingCount = 1;
+    layout_info.pBindings = &binding;
+    if (f.vkCreateDescriptorSetLayout(d, &layout_info, nullptr, &view_rows_layout_) != VK_SUCCESS) return Fail("view rows set layout");
+    const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 28};
+    VkPipelineLayoutCreateInfo pipeline_layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pipeline_layout_info.setLayoutCount = 1;
+    pipeline_layout_info.pSetLayouts = &view_rows_layout_;
+    pipeline_layout_info.pushConstantRangeCount = 1;
+    pipeline_layout_info.pPushConstantRanges = &push;
+    if (f.vkCreatePipelineLayout(d, &pipeline_layout_info, nullptr, &view_rows_pipeline_layout_) != VK_SUCCESS) {
+      return Fail("view rows pipeline layout");
+    }
+    const std::vector<uint32_t> code = BuildViewRowsShader();
+    VkShaderModuleCreateInfo module_info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    module_info.codeSize = code.size() * 4;
+    module_info.pCode = code.data();
+    VkShaderModule module = VK_NULL_HANDLE;
+    if (f.vkCreateShaderModule(d, &module_info, nullptr, &module) != VK_SUCCESS) return Fail("view rows shader");
+    VkComputePipelineCreateInfo pipeline_info{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    pipeline_info.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+    pipeline_info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    pipeline_info.stage.module = module;
+    pipeline_info.stage.pName = "main";
+    pipeline_info.layout = view_rows_pipeline_layout_;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    const VkResult created = f.vkCreateComputePipelines(d, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline);
+    f.vkDestroyShaderModule(d, module, nullptr);
+    if (created != VK_SUCCESS) return Fail("view rows pipeline");
+    const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1};
+    VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    pool_info.maxSets = 1;
+    pool_info.poolSizeCount = 1;
+    pool_info.pPoolSizes = &size;
+    VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    alloc.descriptorSetCount = 1;
+    alloc.pSetLayouts = &view_rows_layout_;
+    if (f.vkCreateDescriptorPool(d, &pool_info, nullptr, &view_rows_pool_) != VK_SUCCESS ||
+        (alloc.descriptorPool = view_rows_pool_, f.vkAllocateDescriptorSets(d, &alloc, &view_rows_set_)) != VK_SUCCESS) {
+      f.vkDestroyPipeline(d, pipeline, nullptr);
+      return Fail("view rows set");
+    }
+    view_rows_pipeline_ = pipeline;
+  }
+  if (view_rows_buffer_.size >= need) return true;
+  // Grown (when a larger surface takes layers): the batches that use the old one run first.
+  Flush();
+  WaitIdle();
+  DestroyBuffer(device_, view_rows_buffer_);
+  if (!CreateBuffer(device_, std::max<VkDeviceSize>(need, 8u << 20),
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    false, view_rows_buffer_)) {
+    view_rows_buffer_ = {};
+    return Fail("view rows buffer");
+  }
+  const VkDescriptorBufferInfo info{view_rows_buffer_.buffer, 0, VK_WHOLE_SIZE};
+  VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+  write.dstSet = view_rows_set_;
+  write.dstBinding = 0;
+  write.descriptorCount = 1;
+  write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  write.pBufferInfo = &info;
+  f.vkUpdateDescriptorSets(d, 1, &write, 0, nullptr);
+  return true;
 }
 
 void VulkanRenderer::Transition(VkCommandBuffer cb, Image& image, VkImageLayout& layout, VkImageLayout to,
@@ -1241,7 +1528,7 @@ void VulkanRenderer::Transition(VkCommandBuffer cb, Image& image, VkImageLayout&
   barrier.newLayout = to;
   barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
   barrier.image = image.image;
-  barrier.subresourceRange = {aspect, 0, 1, 0, 1};
+  barrier.subresourceRange = {aspect, 0, 1, 0, image.layers};
   VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
   dependency.imageMemoryBarrierCount = 1;
   dependency.pImageMemoryBarriers = &barrier;
@@ -1268,6 +1555,13 @@ bool VulkanRenderer::ClearColor(const SurfaceKey& key, const float rgba[4]) {
       f.vkCmdClearColorImage(cb, s->ms.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &range);
       s->drawn[0] = s->drawn[1] = INT32_MAX, s->drawn[2] = s->drawn[3] = INT32_MIN;
     }
+    if (s->views.image) {
+      Transition(cb, s->views, s->views_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+      const VkImageSubresourceRange layers{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, s->views.layers};
+      f.vkCmdClearColorImage(cb, s->views.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &color, 1, &layers);
+      s->drawn[0] = s->drawn[1] = INT32_MAX, s->drawn[2] = s->drawn[3] = INT32_MIN;
+      s->views_stale = false;
+    }
   });
 }
 
@@ -1288,6 +1582,13 @@ bool VulkanRenderer::ClearDepthStencil(const SurfaceKey& key, float depth, uint3
       Transition(cb, s->ms, s->ms_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, aspects);
       f.vkCmdClearDepthStencilImage(cb, s->ms.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value, 1, &range);
       s->drawn[0] = s->drawn[1] = INT32_MAX, s->drawn[2] = s->drawn[3] = INT32_MIN;
+    }
+    if (s->views.image) {
+      Transition(cb, s->views, s->views_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, aspects);
+      const VkImageSubresourceRange layers{aspects, 0, 1, 0, s->views.layers};
+      f.vkCmdClearDepthStencilImage(cb, s->views.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &value, 1, &layers);
+      s->drawn[0] = s->drawn[1] = INT32_MAX, s->drawn[2] = s->drawn[3] = INT32_MIN;
+      s->views_stale = false;
     }
   });
 }
@@ -1535,6 +1836,7 @@ void VulkanRenderer::RecordRecipe(const PipelineKey& key) {
   std::memcpy(r.blend_controls, key.blend_controls, sizeof(r.blend_controls));
   r.color_masks = key.color_masks, r.primitive_restart = key.primitive_restart;
   r.samples = samples_ == VK_SAMPLE_COUNT_1_BIT ? 2 : key.samples > 1 ? 1 : 0;
+  r.view_mask = key.view_mask;
   std::lock_guard lock(recipes_mutex_);
   if (!recipe_set_.insert(r).second) return;
   recipe_list_.push_back(r);
@@ -1630,11 +1932,13 @@ size_t VulkanRenderer::WarmUpPipelines(std::chrono::microseconds budget) {
     std::memcpy(key.color_formats, r.color_formats, sizeof(key.color_formats));
     std::memcpy(key.blend_controls, r.blend_controls, sizeof(key.blend_controls));
     key.color_masks = r.color_masks, key.primitive_restart = r.primitive_restart;
+    // A 2x pass drawn as views is warmed as views only while they are on (ANY360_2X_AS_ROWS).
+    key.view_mask = views_2x_ ? r.view_mask : 0;
     // The sample counts this run draws the recipe with: one recorded without host MSAA may be either now.
     uint32_t counts[2] = {1, 0};
     if (samples_ > VK_SAMPLE_COUNT_1_BIT) {
       if (r.samples == 1) counts[0] = uint32_t(samples_);
-      if (r.samples == 2) counts[1] = uint32_t(samples_);
+      if (r.samples == 2 && !key.view_mask) counts[1] = uint32_t(samples_);
     }
     for (uint32_t samples : counts) {
       if (!samples) continue;
@@ -1720,6 +2024,7 @@ VkPipeline VulkanRenderer::CreatePipeline(const PipelineKey& key) {
   rendering.pColorAttachmentFormats = color_formats;
   rendering.depthAttachmentFormat = VkFormat(key.depth_format);
   rendering.stencilAttachmentFormat = VkFormat(key.depth_format);
+  rendering.viewMask = key.view_mask;
   VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, &rendering};
   info.stageCount = key.ps_module ? 2 : 1;
   info.pStages = stages;
@@ -2143,6 +2448,11 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const int32_t msaa_x = ((surface_info >> 16) & 3) == 2 ? 2 : 1, msaa_y = ((surface_info >> 16) & 3) ? 2 : 1;
   // Host pixels a guest pixel: its samples, each scale x scale pixels (the scale is the renderer's: not in the key).
   const int32_t sample_x = msaa_x * int32_t(scale_), sample_y = msaa_y * int32_t(scale_);
+  // Guest 2x MSAA drawn as views (UseViews): a layer a sample, a pixel's samples at the console's positions. The
+  // rows image's coordinates (above: a pixel is sample_y host rows) stay those of everything the surfaces track; the
+  // pass's own rows are halved (a pixel is scale rows of a layer).
+  const bool as_views = views_2x_ && ((surface_info >> 16) & 3) == 1;
+  const int32_t pass_sample_y = as_views ? int32_t(scale_) : sample_y;
   const uint32_t window_offset = regs[kPaScWindowOffset];
   const int32_t offset_x = int32_t(window_offset << 17) >> 17, offset_y = int32_t(window_offset << 1) >> 17;
   for (uint32_t i = 0; i < 4; ++i) color_infos[i] = regs[kRbColorInfo[i]];
@@ -2241,7 +2551,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // map; a depth pre-pass is drawn with them in the same frame) goes back to one sample at the swap, as do the
   // multisampled targets of a pass that mixes both kinds (their samples resolved first: nothing lost).
   VkSampleCountFlagBits pass_samples = VK_SAMPLE_COUNT_1_BIT;
-  if (samples_ > VK_SAMPLE_COUNT_1_BIT) {
+  if (samples_ > VK_SAMPLE_COUNT_1_BIT && !as_views) {  // a 2x pass drawn as views has its two samples
     Surface* const targets[5] = {colors[0], colors[1], colors[2], colors[3], depth_surface};
     const bool paired = depth_surface && (colors[0] || colors[1] || colors[2] || colors[3]);
     bool multisampled = false, single = false;
@@ -2303,6 +2613,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   key.depth_control = depth_control;
   key.depth_format = depth_surface ? depth_format_ : VK_FORMAT_UNDEFINED;
   key.samples = uint32_t(pass_samples);
+  key.view_mask = as_views ? 0b11u : 0u;
   for (uint32_t i = 0; i < 4; ++i) {
     key.color_formats[i] = colors[i] ? colors[i]->image.format : VK_FORMAT_UNDEFINED;
     key.blend_controls[i] = colors[i] ? (regs[kRbBlendControl[i]] & 0x1FFF1FFF) : kNoBlending;
@@ -2326,6 +2637,13 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   target_memo_.pipeline = pipeline;
   target_memo_.valid = true;
   }
+  // The targets drawn as views or as rows (their layers loaded or copied back first when that changes).
+  for (Surface* t : {colors[0], colors[1], colors[2], colors[3], depth_surface}) {
+    if (t && !UseViews(*t, as_views)) return;
+  }
+  // The pass's rows: a layer's for views.
+  const uint32_t pass_height = as_views ? height / 2 : height;
+  const int32_t pass_top = as_views ? top / 2 : top, pass_bottom = as_views ? (bottom + 1) / 2 : bottom;
 
   // Constants, each at an aligned offset of the batch's ring: system, VS floats, PS floats, bool/loop, fetch. A draw
   // takes at most this much, and every range the descriptors read (up to 4 KB) must stay inside the buffer.
@@ -2389,7 +2707,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // the size, so the two passes' depths differed in their last bits: Mirror's Edge's and Call of Duty's colour passes
   // over their depth pre-pass (GEQUAL) failed in flickering horizontal stripes on large flat surfaces.
   const float size[2] = {width <= viewport_extent_ ? float(viewport_extent_) : float(width),
-                         height <= viewport_extent_ ? float(viewport_extent_) : float(height)};
+                         pass_height <= viewport_extent_ ? float(viewport_extent_) : float(pass_height)};
   // Points: PA_SU_POINT_SIZE (half width and height) and PA_SU_POINT_MINMAX (the radius a vertex shader's size is
   // clamped to), both 12.4 fixed point, as diameters in guest pixels; and how a guest pixel diameter becomes a
   // radius in host normalized device coordinates (a guest pixel is `sample` host pixels).
@@ -2400,7 +2718,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     system->point_vertex_diameter_min = float(point_minmax & 0xFFFF) * 0.125f;
     system->point_vertex_diameter_max = float(point_minmax >> 16) * 0.125f;
     system->point_screen_diameter_to_ndc_radius[0] = float(sample_x) / size[0];
-    system->point_screen_diameter_to_ndc_radius[1] = float(sample_y) / size[1];
+    system->point_screen_diameter_to_ndc_radius[1] = float(pass_sample_y) / size[1];
   }
   // The window offset moves vertices too when PA_SU_SC_MODE_CNTL asks for it.
   // D3D's pixel centres (PA_SU_VTX_CNTL pix_center 0) are at integer window coordinates, the host's at .5: the
@@ -2412,12 +2730,22 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     const float scale = (vte & (1u << (2 * i))) ? AsFloat(regs[kPaClVportXScale + 2 * i]) : 1.0f;
     const float offset = (vte & (1u << (2 * i + 1))) ? AsFloat(regs[kPaClVportXScale + 2 * i + 1]) : 0.0f;
     if (i < 2) {
-      const float samples = float(i ? sample_y : sample_x);  // guest pixels to surface samples
+      const float samples = float(i ? pass_sample_y : sample_x);  // guest pixels to surface samples
       system->ndc_scale[i] = scale * samples * 2.0f / size[i];
-      system->ndc_offset[i] = (offset + window_shift[i] + half_pixel) * samples * 2.0f / size[i] - 1.0f;
+      if (as_views) {
+        // Each view (sample) sees the scene at its position in the pixel: the geometry moved the other way. The
+        // console's samples of a 2x pixel lie at (-0.25, +0.25) and (+0.25, -0.25) from its centre (window
+        // coordinates, y down); a title that moves its viewport by a sample's offset sees there what a 1x pass sees
+        // at the pixel's centre, to the bit (quarters: exact sums).
+        constexpr float kSample[2][2] = {{-0.25f, 0.25f}, {0.25f, -0.25f}};
+        system->ndc_offset[i] = (offset + window_shift[i] + half_pixel - kSample[0][i]) * samples * 2.0f / size[i] - 1.0f;
+        system->ndc_offset_view1[i] = (offset + window_shift[i] + half_pixel - kSample[1][i]) * samples * 2.0f / size[i] - 1.0f;
+      } else {
+        system->ndc_offset[i] = (offset + window_shift[i] + half_pixel) * samples * 2.0f / size[i] - 1.0f;
+      }
     } else {
       system->ndc_scale[i] = scale;
-      system->ndc_offset[i] = offset;
+      system->ndc_offset[i] = system->ndc_offset_view1[i] = offset;
     }
   }
   // Index offset and clamp (VGT_INDX_OFFSET, VGT_MIN_VTX_INDX, VGT_MAX_VTX_INDX), applied by the vertex shader.
@@ -2447,6 +2775,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   // passes it, with the guest MSAA mode that places each fragment's guest sample.
   system->alpha_to_mask = (color_control & (1u << 4)) ? (color_control >> 24) | (1u << 8) : 0;
   system->flags |= ((regs[kRbSurfaceInfo] >> 16) & 3) << SpirvShaderTranslator::kSysFlag_MsaaSamples_Shift;
+  if (as_views) system->flags |= SpirvShaderTranslator::kSysFlag_MsaaSamplesAsViews;
   // The enabled user clip planes (PA_CL_UCP_n), packed in order.
   for (uint32_t bits = clip_planes, n = 0; bits; bits &= bits - 1, ++n) {
     std::memcpy(system->user_clip_planes[n], regs + kPaClUcp0X + 4 * std::countr_zero(bits), 16);
@@ -2643,7 +2972,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   job.sets[SpirvShaderTranslator::kDescriptorSetTexturesPixel] = texture_sets[1];
   std::memcpy(job.offsets, offsets, sizeof(offsets[0]) * SpirvShaderTranslator::kConstantBufferCount);
   job.viewport = {0, 0, size[0], size[1], 0, 1};
-  job.scissor = {{left, top}, {uint32_t(right - left), uint32_t(bottom - top)}};
+  job.scissor = {{left, pass_top}, {uint32_t(right - left), uint32_t(pass_bottom - pass_top)}};
   job.depth_bias[0] = bias_offset, job.depth_bias[1] = bias_scale;
   std::memcpy(job.blend, blend_constants, sizeof(job.blend));
   job.stencil[0] = stencil_front, job.stencil[1] = stencil_back;
@@ -2656,7 +2985,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     const std::array<uint64_t, 7> key = {
         colors[0] ? uint64_t(colors[0]->target().view) : 0, colors[1] ? uint64_t(colors[1]->target().view) : 0,
         colors[2] ? uint64_t(colors[2]->target().view) : 0, colors[3] ? uint64_t(colors[3]->target().view) : 0,
-        depth_surface ? uint64_t(depth_surface->target().view) : 0, width, height};
+        depth_surface ? uint64_t(depth_surface->target().view) : 0, width, pass_height};
     // The rows the draw writes in EDRAM, for the surfaces over it (MarkWritten): its scissor's, or as low as its
     // vertices reach when that is known (extent_bottom).
     const int32_t mark_bottom = extent_known ? std::min(bottom, extent_bottom) : bottom;
@@ -2684,6 +3013,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       Surface* first = depth_surface;
       for (uint32_t i = 0; i < 4 && !first; ++i) first = colors[i];
       segment_samples_ = first->ms.image ? samples_ : VK_SAMPLE_COUNT_1_BIT;  // the pass's targets all alike
+      segment_view_mask_ = as_views ? 0b11u : 0u;
       if (depth_surface) {
         Transition(cb, depth_surface->target(), depth_surface->target_layout(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                    VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
@@ -2696,8 +3026,9 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       // With recording threads, the pass's draws come in secondary command buffers.
       segment_secondary_ = !workers_.empty();
       rendering.flags = segment_secondary_ ? VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT : 0;
-      rendering.renderArea = {{0, 0}, {width, height}};
+      rendering.renderArea = {{0, 0}, {width, pass_height}};
       rendering.layerCount = 1;
+      rendering.viewMask = segment_view_mask_;
       rendering.colorAttachmentCount = 4;
       rendering.pColorAttachments = color;
       rendering.pDepthAttachment = depth_surface ? &depth : nullptr;
@@ -2712,6 +3043,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         s.depth = depth;
         s.has_depth = depth_surface != nullptr;
         s.area = rendering.renderArea;
+        s.view_mask = segment_view_mask_;
         s.tasks.clear();
         order_.push_back({VK_NULL_HANDLE, int32_t(segment_count_++)});
       } else {
@@ -2797,6 +3129,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
         std::memcpy(open_task_->formats, segment_formats_, sizeof(segment_formats_));
         open_task_->depth = segment_depth_;
         open_task_->samples = segment_samples_;
+        open_task_->view_mask = segment_view_mask_;
       }
       open_task_->jobs.push_back(job);
       if (open_task_->jobs.size() >= kChunkDraws) DispatchChunk();
@@ -3268,6 +3601,7 @@ void VulkanRenderer::RecordLoop(uint32_t index) {
     rendering.depthAttachmentFormat = task->depth;
     rendering.stencilAttachmentFormat = task->depth;
     rendering.rasterizationSamples = task->samples;
+    rendering.viewMask = task->view_mask;
     VkCommandBufferInheritanceInfo inheritance{VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO, &rendering};
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
@@ -3483,6 +3817,7 @@ void VulkanRenderer::Submit(uint32_t index) {
       rendering.flags = VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT;
       rendering.renderArea = seg.area;
       rendering.layerCount = 1;
+      rendering.viewMask = seg.view_mask;
       rendering.colorAttachmentCount = 4;
       rendering.pColorAttachments = seg.color;
       rendering.pDepthAttachment = seg.has_depth ? &seg.depth : nullptr;
@@ -4789,6 +5124,12 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
     {
       // In the batch, after whatever it copies from the surface. A render pass over the rectangle that clears on
       // load and stores: clears exactly the rectangle.
+      // A 2x target cleared in its layers (as its passes draw it), any other in its rows (before the command buffer is
+      // taken: making the layers may flush).
+      const bool as_views = views_2x_ && msaa == 1;
+      for (Surface* t : {color_target, depth_target}) {
+        if (t && !UseViews(*t, as_views)) return;
+      }
       EndRendering();
       VkCommandBuffer cb = Record();
       GpuMark(batch(), cb, kGpuResolves);  // a resolve clearing its targets
@@ -4829,6 +5170,10 @@ void VulkanRenderer::Copy(const uint32_t* regs) {
       VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
       rendering.renderArea = {{area[0], area[1]}, {width * host_x, height * host_y}};
       rendering.layerCount = 1;
+      if (as_views) {  // a layer's rows: half the rows image's
+        rendering.renderArea = {{area[0], area[1] / 2}, {width * host_x, height * host_y / 2}};
+        rendering.viewMask = 0b11;
+      }
       if (color_target) {
         rendering.colorAttachmentCount = 1;
         rendering.pColorAttachments = &color;
@@ -5146,6 +5491,12 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
   w.float24 = r.float24;
   w.element = ResolveElementBytes(r.image.format);
   w.signature = r.Signature();
+  // A scaled depth resolve is taken down by the depth copy's compute pass (a set of the batch's pool).
+  const bool depth_down = w.depth && r.scale > 1;
+  if (depth_down) {
+    if (!DepthPass()) return false;
+    if (depth_sets_ >= kDepthSets) Flush();  // resets the pool
+  }
   if (!r.width || !AcquireReadback(VkDeviceSize(r.width) * r.height * w.element, w.buffer)) {
     return false;
   }
@@ -5167,15 +5518,57 @@ bool VulkanRenderer::QueueWriteBack(uint32_t base, Resolved& r) {
         r.small = Image{};
       }
       if (!CreateImage2D(device_, small_width, small_height, r.image.format,
-                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT, r.small)) {
+                         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                             (depth_down ? VK_IMAGE_USAGE_STORAGE_BIT : 0u),
+                         VK_IMAGE_ASPECT_COLOR_BIT, r.small)) {
         DestroyImage(device_, r.small);
         ReleaseReadback(w.buffer);
         return Fail("resolve write-back image");
       }
       r.small_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     }
-    Transition(cb, r.small, r.small_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
     const int32_t s = int32_t(r.scale);
+    if (depth_down) {
+      // Depth: the top-left host texel of each guest texel, as a resolve at the guest's resolution reads its pixel
+      // (a blit's nearest texel is another one).
+      VkDescriptorSet set = VK_NULL_HANDLE;
+      VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+      alloc.descriptorPool = batch().depth_pool;
+      alloc.descriptorSetCount = 1;
+      alloc.pSetLayouts = &depth_layout_;
+      const Functions& f = device_.fn();
+      if (f.vkAllocateDescriptorSets(device_.device(), &alloc, &set) != VK_SUCCESS) {
+        ReleaseReadback(w.buffer);
+        return Fail("depth write-back set");
+      }
+      ++depth_sets_;
+      Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+      Transition(cb, r.small, r.small_layout, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
+      const VkDescriptorImageInfo scaled_info{VK_NULL_HANDLE, r.image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+      const VkDescriptorImageInfo small_info{VK_NULL_HANDLE, r.small.view, VK_IMAGE_LAYOUT_GENERAL};
+      VkWriteDescriptorSet writes[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
+      writes[0].dstSet = writes[1].dstSet = set;
+      writes[0].dstBinding = 0, writes[1].dstBinding = 1;
+      writes[0].descriptorCount = writes[1].descriptorCount = 1;
+      writes[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+      writes[0].pImageInfo = &scaled_info;
+      writes[1].pImageInfo = &small_info;
+      f.vkUpdateDescriptorSets(device_.device(), 2, writes, 0, nullptr);
+      f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, depth_pipeline_);
+      f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, depth_pipeline_layout_, 0, 1, &set, 0, nullptr);
+      const int32_t region[8] = {int32_t(r.x) * s, int32_t(r.y) * s, int32_t(r.x), int32_t(r.y),
+                                 int32_t(r.width), int32_t(r.height), s, s};
+      f.vkCmdPushConstants(cb, depth_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(region), region);
+      f.vkCmdDispatch(cb, (r.width + 7) / 8, (r.height + 7) / 8, 1);
+      Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+      Transition(cb, r.small, r.small_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+      source = &r.small;
+    }
+  }
+  if (r.scale > 1 && !depth_down) {
+    const int32_t s = int32_t(r.scale);
+    Transition(cb, r.small, r.small_layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
     VkImageBlit blit{};
     blit.srcSubresource = blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     blit.srcOffsets[0] = {int32_t(r.x) * s, int32_t(r.y) * s, 0};
@@ -5652,7 +6045,20 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   // texture is data a title samples texel by texel, a shadow map's percentage-closer filter with offsets of one guest
   // texel and getWeights2D's weights on the guest grid. Scaled, the point fetches landed on host texels off that grid
   // and light leaked along shadow edges (Call of Duty: Black Ops's stairs at 2x: thin lit streaks).
-  const uint32_t s = 1;
+  // A 2x MSAA surface drawn as views is the screen at the host's resolution, each sample's layer where the console
+  // has that sample: its depth resolved at the host's resolution, read from the sample's layer. A title writing it
+  // back as depth and testing the same geometry against it (Mirror's Edge's lights, GEQUAL) then matches every host
+  // pixel; at the guest's resolution half of them failed in alternate columns (walls and characters seen through).
+  const bool from_views = surface.use_views && surface.views.image && surface.key.depth;
+  const uint32_t s = from_views ? scale_ : 1;
+  if (from_views && !surface.views_depth[sample & 1]) {
+    VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vi.image = surface.views.image;
+    vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    vi.format = surface.views.format;
+    vi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, sample & 1, 1};
+    if (f.vkCreateImageView(d, &vi, nullptr, &surface.views_depth[sample & 1]) != VK_SUCCESS) return Fail("depth layer view");
+  }
   if (r.image.image && r.scale != s) {
     Record();
     RetireResolveImage(r.image);  // another scale: nothing of it is kept
@@ -5673,7 +6079,8 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   alloc.pSetLayouts = &depth_layout_;
   if (f.vkAllocateDescriptorSets(d, &alloc, &set) != VK_SUCCESS) return Fail("depth resolve set");
   ++depth_sets_;
-  const VkDescriptorImageInfo source{VK_NULL_HANDLE, surface.depth_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  const VkDescriptorImageInfo source{VK_NULL_HANDLE, from_views ? surface.views_depth[sample & 1] : surface.depth_view,
+                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
   const VkDescriptorImageInfo dest{VK_NULL_HANDLE, r.image.view, VK_IMAGE_LAYOUT_GENERAL};
   VkWriteDescriptorSet writes[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
   writes[0].dstSet = writes[1].dstSet = set;
@@ -5689,20 +6096,27 @@ bool VulkanRenderer::ResolveDepthOnGpu(Surface& surface, int32_t x0, int32_t y0,
   EndRendering();
   VkCommandBuffer cb = Record();
   GpuMark(batch(), cb, kGpuDepthResolves);
-  ResolveSamples(cb, surface, x0 * int32_t(sample_x), y0 * int32_t(sample_y),
-                 (x0 + int32_t(width)) * int32_t(sample_x), (y0 + int32_t(height)) * int32_t(sample_y));
-  GpuMark(batch(), cb, kGpuDepthResolves);
-  Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-             VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+  if (from_views) {
+    // Read in the layer itself (the rows get the layers when something else reads them).
+    Transition(cb, surface.views, surface.views_layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+               VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+  } else {
+    ResolveSamples(cb, surface, x0 * int32_t(sample_x), y0 * int32_t(sample_y),
+                   (x0 + int32_t(width)) * int32_t(sample_x), (y0 + int32_t(height)) * int32_t(sample_y));
+    GpuMark(batch(), cb, kGpuDepthResolves);
+    Transition(cb, surface.image, surface.layout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+               VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+  }
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
   f.vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, depth_pipeline_);
   f.vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, depth_pipeline_layout_, 0, 1, &set, 0, nullptr);
   // `sample_x` / `sample_y`: host pixels a guest pixel; a sample is scale x scale of them (its top-left one read).
   const int32_t sc = int32_t(scale_), rs = int32_t(s);
-  const int32_t region[8] = {x0 * int32_t(sample_x) + (int32_t(sample_x) > sc ? int32_t(sample >> 1) * sc : 0),
-                             y0 * int32_t(sample_y) + (int32_t(sample_y) > sc ? int32_t(sample & 1) * sc : 0),
+  // From a layer: a guest pixel is scale x scale host pixels there, each read.
+  const int32_t region[8] = {from_views ? x0 * sc : x0 * int32_t(sample_x) + (int32_t(sample_x) > sc ? int32_t(sample >> 1) * sc : 0),
+                             from_views ? y0 * sc : y0 * int32_t(sample_y) + (int32_t(sample_y) > sc ? int32_t(sample & 1) * sc : 0),
                              x0 * rs, y0 * rs, int32_t(width) * rs, int32_t(height) * rs,
-                             rs > 1 ? 1 : int32_t(sample_x), rs > 1 ? 1 : int32_t(sample_y)};
+                             rs > 1 || from_views ? 1 : int32_t(sample_x), rs > 1 || from_views ? 1 : int32_t(sample_y)};
   f.vkCmdPushConstants(cb, depth_pipeline_layout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(region), region);
   f.vkCmdDispatch(cb, (width * s + 7) / 8, (height * s + 7) / 8, 1);
   Transition(cb, r.image, r.layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);

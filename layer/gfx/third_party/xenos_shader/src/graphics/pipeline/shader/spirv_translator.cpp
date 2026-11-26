@@ -122,6 +122,7 @@ void SpirvShaderTranslator::Reset() {
   input_fragment_coordinates_ = spv::NoResult;
   input_front_facing_ = spv::NoResult;
   input_sample_id_ = spv::NoResult;
+  input_view_index_ = spv::NoResult;
   input_sample_mask_ = spv::NoResult;
   std::fill(input_output_interpolators_.begin(), input_output_interpolators_.end(), spv::NoResult);
   output_point_coordinates_ = spv::NoResult;
@@ -313,6 +314,7 @@ void SpirvShaderTranslator::StartTranslation() {
       {"edram_rt_keep_mask", offsetof(SystemConstants, edram_rt_keep_mask), type_uint4_array_2},
       {"edram_rt_clamp", offsetof(SystemConstants, edram_rt_clamp), type_float4_array_4},
       {"edram_blend_constant", offsetof(SystemConstants, edram_blend_constant), type_float4_},
+      {"ndc_offset_view1", offsetof(SystemConstants, ndc_offset_view1), type_float3_},
   };
   id_vector_temp_.clear();
   id_vector_temp_.reserve(rex::countof(system_constants));
@@ -1727,6 +1729,17 @@ void SpirvShaderTranslator::EnsureBuildPointAvailable() {
   builder_->setBuildPoint(&new_block);
 }
 
+void SpirvShaderTranslator::AddViewIndexInput() {
+  if (input_view_index_ != spv::NoResult) return;
+  builder_->addCapability(spv::CapabilityMultiView);
+  if (features_.spirv_version < spv::Spv_1_3) builder_->addExtension("SPV_KHR_multiview");
+  input_view_index_ =
+      builder_->createVariable(spv::NoPrecision, spv::StorageClassInput, type_int_, "gl_ViewIndex");
+  builder_->addDecoration(input_view_index_, spv::DecorationBuiltIn, spv::BuiltInViewIndex);
+  if (is_pixel_shader()) builder_->addDecoration(input_view_index_, spv::DecorationFlat);
+  main_interface_.push_back(input_view_index_);
+}
+
 void SpirvShaderTranslator::StartVertexOrTessEvalShaderBeforeMain() {
   if (IsSpirvComputeShader()) {
     // For memexport fallback execution, each invocation corresponds to one
@@ -1760,6 +1773,9 @@ void SpirvShaderTranslator::StartVertexOrTessEvalShaderBeforeMain() {
                                                    type_int_, "gl_VertexIndex");
     builder_->addDecoration(input_vertex_index_, spv::DecorationBuiltIn, spv::BuiltInVertexIndex);
     main_interface_.push_back(input_vertex_index_);
+    // any360: the view (multiview), the sample of a 2x MSAA target drawn one layer a sample: each view its own NDC
+    // offset (ndc_offset_view1 for view 1), the sample's position in the pixel.
+    AddViewIndexInput();
   }
 
   uint32_t output_location = 0;
@@ -2661,6 +2677,19 @@ void SpirvShaderTranslator::CompleteVertexOrTessEvalShaderInMain() {
       builder_->createLoad(builder_->createAccessChain(spv::StorageClassUniform,
                                                        uniform_system_constants_, id_vector_temp_),
                            spv::NoPrecision);
+  if (input_view_index_ != spv::NoResult) {
+    id_vector_temp_.clear();
+    id_vector_temp_.push_back(builder_->makeIntConstant(kSystemConstantNdcOffsetView1));
+    spv::Id ndc_offset_view1 = builder_->createLoad(
+        builder_->createAccessChain(spv::StorageClassUniform, uniform_system_constants_, id_vector_temp_),
+        spv::NoPrecision);
+    spv::Id view1 = builder_->createBinOp(spv::OpIEqual, type_bool_,
+                                          builder_->createLoad(input_view_index_, spv::NoPrecision),
+                                          builder_->makeIntConstant(1));
+    ndc_offset = builder_->createTriOp(spv::OpSelect, type_float3_,
+                                       builder_->smearScalar(spv::NoPrecision, view1, type_bool3_), ndc_offset_view1,
+                                       ndc_offset);
+  }
   spv::Id ndc_offset_mul_w = builder_->createNoContractionBinOp(
       spv::OpVectorTimesScalar, type_float3_, ndc_offset, position_w);
   position_xyz =
@@ -3005,6 +3034,9 @@ void SpirvShaderTranslator::StartFragmentShaderBeforeMain() {
     main_interface_.push_back(input_fragment_coordinates_);
   }
 
+  // any360: alpha to coverage of a 2x MSAA target drawn one layer a sample takes the sample from the view.
+  if (alpha_to_coverage_possible && !edram_fragment_shader_interlock_) AddViewIndexInput();
+
   // Is front facing.
   if (edram_fragment_shader_interlock_ ||
       (param_gen_needed && !GetSpirvShaderModification().pixel.param_gen_point)) {
@@ -3317,7 +3349,14 @@ void SpirvShaderTranslator::StartFragmentShaderInMain() {
     // Any360 draws a guest MSAA surface as its samples (2x: twice the rows; 4x: twice the columns too), so a
     // fragment's coordinates count samples: back to the guest pixel the sample is in, the resolution scale's
     // fraction kept as above (soft particles and screen-space effects read textures at the pixel's place).
-    spv::Id param_gen_msaa = LoadMsaaSamplesFromFlags();
+    // Drawn one layer a sample (kSysFlag_MsaaSamplesAsViews): the coordinates count pixels already.
+    spv::Id param_gen_msaa = builder_->createTriOp(
+        spv::OpSelect, type_uint_,
+        builder_->createBinOp(spv::OpINotEqual, type_bool_,
+                              builder_->createBinOp(spv::OpBitwiseAnd, type_uint_, main_system_constant_flags_,
+                                                    builder_->makeUintConstant(kSysFlag_MsaaSamplesAsViews)),
+                              const_uint_0_),
+        const_uint_0_, LoadMsaaSamplesFromFlags());
     auto param_gen_samples_to_pixels = [&](spv::Id value, xenos::MsaaSamples doubled_from) {
       spv::Id halved = builder_->createNoContractionBinOp(
           spv::OpFAdd, type_float_,
