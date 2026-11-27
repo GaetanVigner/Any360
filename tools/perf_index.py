@@ -72,7 +72,7 @@ def d3d_rows(path):
 
 
 CPU_TOTAL = re.compile(rf'^cpu_e2e_bench: total a call of each function: Any360 {NUMBER} ns, ReXGlue {NUMBER} ns')
-CPU_SET = re.compile(r'^cpu_e2e_bench: (\w+), (\d+) functions')
+CPU_SET = re.compile(r'^cpu_e2e_bench: (\w+), (\d+) functions(?: \((\d+) instructions\))?')
 CPU_ALLOCATED = re.compile(rf'^cpu_e2e_bench: allocated per call {NUMBER} B in {NUMBER} allocations')
 
 
@@ -85,8 +85,9 @@ def cpu_rows(path):
             if m:
                 found[key] = m.groups()
     if len(found) == 3:
-        title, count = found['set']
-        yield (f'CPU translation ({title})', f'{count} functions, total a call of each'), {
+        title, count, instructions = found['set']
+        size = f'{count} functions ({int(instructions):,} instructions)' if instructions else f'{count} functions'
+        yield (f'CPU translation ({title})', f'{size}, total a call of each'), {
             'ns': float(found['total'][0]), 'bytes': float(found['allocated'][0]),
             'allocs': float(found['allocated'][1]), 'versus': 'reference recompilation',
             'versus_ns': float(found['total'][1])}

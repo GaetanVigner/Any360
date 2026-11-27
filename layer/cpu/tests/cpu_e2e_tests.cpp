@@ -1,7 +1,7 @@
 // The CPU translator's end-to-end test: a title's functions as Any360 translates them from the XEX's words, against
 // the same functions as the reference runtime recompiled them (tools/cpu_e2e.py), each pair run from the same
 // register states on two guest spaces that start with the same memory; every register and every byte either version
-// touched must match, and a run that stops at its step budget must stop at the same step in both.
+// touched must match, and a run that stops at its bound (steps or call depth) must stop at the same point in both.
 //
 //   cpu_e2e_tests [states a function] [trace]
 #include <cstdint>
@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
       if ((!registers.empty() || memory || translated_ends != reference_ends) && failed++ < 2) {
         std::printf("FAILED sub_%08X state %u:%s", pair.address, s, registers.c_str());
         if (memory) std::printf(" memory at %08X", where);
-        if (translated_ends != reference_ends) std::printf(" one version ran out of steps");
+        if (translated_ends != reference_ends) std::printf(" one version reached its bound");
         std::printf("\n");
       }
       stopped += !reference_ends;
@@ -54,9 +54,9 @@ int main(int argc, char** argv) {
   }
   const size_t pairs = sizeof e2e::kPairs / sizeof e2e::kPairs[0];
   std::printf("cpu_e2e_tests: %s, %zu functions (%llu instructions) of the %u both versions take, %llu runs "
-              "(%llu stopped at %llu steps): %s\n",
+              "(%llu stopped at %llu steps or %d calls deep), %llu indirect calls: %s\n",
               e2e::kTitle, pairs, (unsigned long long)instructions, e2e::kCandidates, (unsigned long long)runs,
-              (unsigned long long)stopped, (unsigned long long)kSteps,
+              (unsigned long long)stopped, (unsigned long long)kSteps, kMaxDepth, (unsigned long long)g_indirect_calls,
               failed_functions ? (std::to_string(failed_functions) + " functions differ").c_str()
                                : "all match the reference");
   return failed_functions ? 1 : 0;

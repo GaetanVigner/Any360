@@ -53,8 +53,11 @@ int main(int argc, char** argv) {
   const int repeats = argc > 1 ? std::stoi(argv[1]) : 3;
   Space translated_space(11), reference_space(11);
   const Memory translated_memory{translated_space.base()}, reference_memory{reference_space.base()};
-  std::printf("cpu_e2e_bench: %s, %zu functions, %u states x %u rounds, fastest of %d runs\n", e2e::kTitle,
-              sizeof e2e::kPairs / sizeof e2e::kPairs[0], kStates, kRounds, repeats);
+  uint64_t instructions = 0;
+  for (const e2e::Pair& pair : e2e::kPairs) instructions += pair.instructions;
+  std::printf("cpu_e2e_bench: %s, %zu functions (%llu instructions), %u states x %u rounds, fastest of %d runs\n",
+              e2e::kTitle, sizeof e2e::kPairs / sizeof e2e::kPairs[0], (unsigned long long)instructions, kStates,
+              kRounds, repeats);
   {
     any360::sys::AllocCounts unused;
     std::vector<Ctx> inputs;

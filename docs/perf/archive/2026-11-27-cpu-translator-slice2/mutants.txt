@@ -1,0 +1,28 @@
+mutant 0 line 2365: 12 -> 13: caught
+mutant 1 line 3260: 0 -> 1: caught
+mutant 2 line 3120: 156 -> 157: caught
+mutant 3 line 12770: 0 -> 1: caught
+mutant 4 line 5957: 112 -> 113: caught
+mutant 5 line 23392: 4 -> 5: MISSED
+mutant 6 line 10761: 96 -> 97: caught
+mutant 7 line 8700: 1 -> 2: MISSED
+mutant 8 line 21264: 112 -> 113: caught
+mutant 9 line 7447: 40 -> 41: caught
+mutant 10 line 21278: 116 -> 117: caught
+mutant 11 line 1734: 3 -> 4: MISSED
+mutant 12 line 20716: 4 -> 5: caught
+mutant 13 line 23800: 6492 -> 6493: MISSED
+mutant 14 line 5536: 0 -> 1: caught
+mutant 15 line 15431: 0 -> 1: MISSED
+mutant 16 line 22298: 32 -> 33: MISSED
+mutant 17 line 14140: 2 -> 3: MISSED
+mutant 18 line 18131: 1 -> 2: MISSED
+mutant 19 line 13197: 128 -> 129: caught
+mutants: 12 of 20 caught
+reach.py 23392 NOT reached (sub_82E74868)
+reach.py 8700 reached (sub_828534B0)
+reach.py 1734 NOT reached (sub_82329620)
+reach.py 23800 NOT reached (sub_82E80FF0)
+reach.py 15431 reached (sub_82C35B68)
+reach.py 14140 NOT reached (sub_82AFA428)
+reach.py 18131 NOT reached (sub_82C16788)

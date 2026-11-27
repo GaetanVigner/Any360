@@ -44,6 +44,7 @@ inline Ctx RandomState(uint32_t seed) {
   ctx.ctr.u64 = DataWord(next());
   const uint32_t flush = any360::xdk::ppc_model::Fpscr::kFlushMask;
   ctx.fpscr.csr = next() & 1 ? (ctx.fpscr.csr | flush) : (ctx.fpscr.csr & ~flush);
+  ctx.xer.ca = next() & 1;
   return ctx;
 }
 

@@ -38,7 +38,7 @@ System calls are done on every title; the XDK libraries the titles link (D3D run
 
 1842 not native, 352 used by a known title. Owner: this toolkit: an Any360 translator from the XEX's PowerPC words (layer/cpu).
 
-Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of them (state `translated`), 86.7% of the occurrences. A function is translated only when all its instructions are, which is still a small share of the titles' code (CPU.md gives it by title). No title runs translated code yet, so none is native.
+Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 117 of them (state `translated`), 96.9% of the occurrences. A function is translated only when all its instructions and callees are, a smaller share of the titles' code (CPU.md gives it by title). No title runs translated code yet, so none is native.
 
 | rank | unit | family | state | use | share | cumulative | source | by title |
 |---:|---|---|---|---:|---:|---:|---|---|
@@ -67,60 +67,60 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of t
 | 23 | cmplw | compare / CR | reference, translated (not bound) | 96,674 | 0.95% | 81.1% | static occurrences | codbo 6,062, crackdown 25,308, mirrorsedge 32,050, simpsons 33,254 |
 | 24 | mtctr | system | reference, translated (not bound) | 96,122 | 0.94% | 82.1% | static occurrences | codbo 4,179, crackdown 21,018, mirrorsedge 46,255, simpsons 24,670 |
 | 25 | fmuls | floating point | reference, translated (not bound) | 95,401 | 0.94% | 83.0% | static occurrences | codbo 16,459, crackdown 10,279, mirrorsedge 55,076, simpsons 13,587 |
-| 26 | lbz | load / store / cache | reference | 86,334 | 0.85% | 83.8% | static occurrences | codbo 14,734, crackdown 25,602, mirrorsedge 22,319, simpsons 23,679 |
-| 27 | bctrl | branch / trap | reference | 82,407 | 0.81% | 84.7% | static occurrences | codbo 1,979, crackdown 18,348, mirrorsedge 40,894, simpsons 21,186 |
+| 26 | lbz | load / store / cache | reference, translated (not bound) | 86,334 | 0.85% | 83.8% | static occurrences | codbo 14,734, crackdown 25,602, mirrorsedge 22,319, simpsons 23,679 |
+| 27 | bctrl | branch / trap | reference, translated (not bound) | 82,407 | 0.81% | 84.7% | static occurrences | codbo 1,979, crackdown 18,348, mirrorsedge 40,894, simpsons 21,186 |
 | 28 | blt- | branch / trap | reference, translated (not bound) | 76,916 | 0.75% | 85.4% | static occurrences | codbo 10,556, crackdown 20,024, mirrorsedge 23,865, simpsons 22,471 |
 | 29 | mtlr | system | reference, translated (not bound) | 71,702 | 0.70% | 86.1% | static occurrences | codbo 7,824, crackdown 16,508, mirrorsedge 24,510, simpsons 22,860 |
-| 30 | stb | load / store / cache | reference | 63,784 | 0.63% | 86.7% | static occurrences | codbo 8,459, crackdown 23,634, mirrorsedge 15,857, simpsons 15,834 |
-| 31 | lwzx | load / store / cache | reference | 55,971 | 0.55% | 87.3% | static occurrences | codbo 9,257, crackdown 13,892, mirrorsedge 19,372, simpsons 13,450 |
+| 30 | stb | load / store / cache | reference, translated (not bound) | 63,784 | 0.63% | 86.7% | static occurrences | codbo 8,459, crackdown 23,634, mirrorsedge 15,857, simpsons 15,834 |
+| 31 | lwzx | load / store / cache | reference, translated (not bound) | 55,971 | 0.55% | 87.3% | static occurrences | codbo 9,257, crackdown 13,892, mirrorsedge 19,372, simpsons 13,450 |
 | 32 | lvx128 | VMX / VMX128 | reference | 53,880 | 0.53% | 87.8% | static occurrences | codbo 4,669, crackdown 22,025, mirrorsedge 5,928, simpsons 21,258 |
-| 33 | subf | integer | reference | 52,326 | 0.51% | 88.3% | static occurrences | codbo 7,268, crackdown 17,805, mirrorsedge 13,463, simpsons 13,790 |
+| 33 | subf | integer | reference, translated (not bound) | 52,326 | 0.51% | 88.3% | static occurrences | codbo 7,268, crackdown 17,805, mirrorsedge 13,463, simpsons 13,790 |
 | 34 | ble- | branch / trap | reference, translated (not bound) | 50,454 | 0.50% | 88.8% | static occurrences | codbo 7,234, crackdown 10,948, mirrorsedge 17,996, simpsons 14,276 |
-| 35 | ori | integer | reference | 47,863 | 0.47% | 89.3% | static occurrences | codbo 9,753, crackdown 10,809, mirrorsedge 10,577, simpsons 16,724 |
-| 36 | fmr | floating point | reference | 44,991 | 0.44% | 89.7% | static occurrences | codbo 12,947, crackdown 8,251, mirrorsedge 15,087, simpsons 8,706 |
-| 37 | lfd | floating point | reference | 44,647 | 0.44% | 90.2% | static occurrences | codbo 7,344, crackdown 12,591, mirrorsedge 11,972, simpsons 12,740 |
+| 35 | ori | integer | reference, translated (not bound) | 47,863 | 0.47% | 89.3% | static occurrences | codbo 9,753, crackdown 10,809, mirrorsedge 10,577, simpsons 16,724 |
+| 36 | fmr | floating point | reference, translated (not bound) | 44,991 | 0.44% | 89.7% | static occurrences | codbo 12,947, crackdown 8,251, mirrorsedge 15,087, simpsons 8,706 |
+| 37 | lfd | floating point | reference, translated (not bound) | 44,647 | 0.44% | 90.2% | static occurrences | codbo 7,344, crackdown 12,591, mirrorsedge 11,972, simpsons 12,740 |
 | 38 | bge- | branch / trap | reference, translated (not bound) | 44,041 | 0.43% | 90.6% | static occurrences | codbo 6,494, crackdown 12,525, mirrorsedge 12,599, simpsons 12,423 |
-| 39 | fsubs | floating point | reference | 42,876 | 0.42% | 91.0% | static occurrences | codbo 9,041, crackdown 5,706, mirrorsedge 20,481, simpsons 7,648 |
-| 40 | fmadds | floating point | reference | 41,255 | 0.40% | 91.4% | static occurrences | codbo 9,645, crackdown 3,348, mirrorsedge 22,392, simpsons 5,870 |
-| 41 | fcmpu | floating point | reference | 41,236 | 0.40% | 91.8% | static occurrences | codbo 7,536, crackdown 8,759, mirrorsedge 14,452, simpsons 10,489 |
-| 42 | fadds | floating point | reference | 40,746 | 0.40% | 92.2% | static occurrences | codbo 7,237, crackdown 4,544, mirrorsedge 23,123, simpsons 5,842 |
+| 39 | fsubs | floating point | reference, translated (not bound) | 42,876 | 0.42% | 91.0% | static occurrences | codbo 9,041, crackdown 5,706, mirrorsedge 20,481, simpsons 7,648 |
+| 40 | fmadds | floating point | reference, translated (not bound) | 41,255 | 0.40% | 91.4% | static occurrences | codbo 9,645, crackdown 3,348, mirrorsedge 22,392, simpsons 5,870 |
+| 41 | fcmpu | floating point | reference, translated (not bound) | 41,236 | 0.40% | 91.8% | static occurrences | codbo 7,536, crackdown 8,759, mirrorsedge 14,452, simpsons 10,489 |
+| 42 | fadds | floating point | reference, translated (not bound) | 40,746 | 0.40% | 92.2% | static occurrences | codbo 7,237, crackdown 4,544, mirrorsedge 23,123, simpsons 5,842 |
 | 43 | cmpw | compare / CR | reference, translated (not bound) | 37,837 | 0.37% | 92.6% | static occurrences | codbo 7,417, crackdown 6,456, mirrorsedge 14,832, simpsons 9,132 |
-| 44 | lhz | load / store / cache | reference | 36,618 | 0.36% | 93.0% | static occurrences | codbo 9,840, crackdown 8,333, mirrorsedge 7,219, simpsons 11,226 |
-| 45 | sth | load / store / cache | reference | 29,660 | 0.29% | 93.3% | static occurrences | codbo 3,985, crackdown 10,457, mirrorsedge 5,833, simpsons 9,385 |
+| 44 | lhz | load / store / cache | reference, translated (not bound) | 36,618 | 0.36% | 93.0% | static occurrences | codbo 9,840, crackdown 8,333, mirrorsedge 7,219, simpsons 11,226 |
+| 45 | sth | load / store / cache | reference, translated (not bound) | 29,660 | 0.29% | 93.3% | static occurrences | codbo 3,985, crackdown 10,457, mirrorsedge 5,833, simpsons 9,385 |
 | 46 | stvx128 | VMX / VMX128 | reference | 25,163 | 0.25% | 93.5% | static occurrences | codbo 4,069, crackdown 3,396, mirrorsedge 3,969, simpsons 13,729 |
-| 47 | cntlzw | integer | reference | 22,158 | 0.22% | 93.7% | static occurrences | codbo 795, crackdown 12,492, mirrorsedge 4,976, simpsons 3,895 |
-| 48 | rlwimi | integer | reference | 21,780 | 0.21% | 93.9% | static occurrences | codbo 925, crackdown 10,027, mirrorsedge 5,151, simpsons 5,677 |
+| 47 | cntlzw | integer | reference, translated (not bound) | 22,158 | 0.22% | 93.7% | static occurrences | codbo 795, crackdown 12,492, mirrorsedge 4,976, simpsons 3,895 |
+| 48 | rlwimi | integer | reference, translated (not bound) | 21,780 | 0.21% | 93.9% | static occurrences | codbo 925, crackdown 10,027, mirrorsedge 5,151, simpsons 5,677 |
 | 49 | rotlwi | integer | reference, translated (not bound) | 21,662 | 0.21% | 94.1% | static occurrences | codbo 2,988, crackdown 3,676, mirrorsedge 9,416, simpsons 5,582 |
 | 50 | bgt- | branch / trap | reference, translated (not bound) | 21,467 | 0.21% | 94.4% | static occurrences | codbo 3,333, crackdown 4,982, mirrorsedge 6,182, simpsons 6,970 |
-| 51 | stfd | floating point | reference | 20,914 | 0.21% | 94.6% | static occurrences | codbo 4,356, crackdown 6,920, mirrorsedge 5,612, simpsons 4,026 |
+| 51 | stfd | floating point | reference, translated (not bound) | 20,914 | 0.21% | 94.6% | static occurrences | codbo 4,356, crackdown 6,920, mirrorsedge 5,612, simpsons 4,026 |
 | 52 | or | integer | reference, translated (not bound) | 19,504 | 0.19% | 94.8% | static occurrences | codbo 2,234, crackdown 6,894, mirrorsedge 4,916, simpsons 5,460 |
-| 53 | frsp | floating point | reference | 19,442 | 0.19% | 94.9% | static occurrences | codbo 4,046, crackdown 5,178, mirrorsedge 6,006, simpsons 4,212 |
-| 54 | mulli | integer | reference | 17,814 | 0.17% | 95.1% | static occurrences | codbo 6,368, crackdown 3,536, mirrorsedge 3,168, simpsons 4,742 |
-| 55 | srawi | integer | reference | 17,790 | 0.17% | 95.3% | static occurrences | codbo 2,210, crackdown 5,890, mirrorsedge 5,688, simpsons 4,002 |
-| 56 | stwx | load / store / cache | reference | 17,644 | 0.17% | 95.5% | static occurrences | codbo 3,547, crackdown 4,486, mirrorsedge 4,560, simpsons 5,051 |
-| 57 | addic | integer | reference | 16,216 | 0.16% | 95.6% | static occurrences | codbo 2,228, crackdown 3,642, mirrorsedge 5,287, simpsons 5,059 |
+| 53 | frsp | floating point | reference, translated (not bound) | 19,442 | 0.19% | 94.9% | static occurrences | codbo 4,046, crackdown 5,178, mirrorsedge 6,006, simpsons 4,212 |
+| 54 | mulli | integer | reference, translated (not bound) | 17,814 | 0.17% | 95.1% | static occurrences | codbo 6,368, crackdown 3,536, mirrorsedge 3,168, simpsons 4,742 |
+| 55 | srawi | integer | reference, translated (not bound) | 17,790 | 0.17% | 95.3% | static occurrences | codbo 2,210, crackdown 5,890, mirrorsedge 5,688, simpsons 4,002 |
+| 56 | stwx | load / store / cache | reference, translated (not bound) | 17,644 | 0.17% | 95.5% | static occurrences | codbo 3,547, crackdown 4,486, mirrorsedge 4,560, simpsons 5,051 |
+| 57 | addic | integer | reference, translated (not bound) | 16,216 | 0.16% | 95.6% | static occurrences | codbo 2,228, crackdown 3,642, mirrorsedge 5,287, simpsons 5,059 |
 | 58 | fcfid | floating point | reference | 15,909 | 0.16% | 95.8% | static occurrences | codbo 2,959, crackdown 5,078, mirrorsedge 4,349, simpsons 3,523 |
 | 59 | stvx | VMX / VMX128 | reference | 15,083 | 0.15% | 95.9% | static occurrences | codbo 179, crackdown 14,546, mirrorsedge 179, simpsons 179 |
 | 60 | vmulfp128 | VMX / VMX128 | reference | 14,581 | 0.14% | 96.1% | static occurrences | codbo 343, crackdown 6,065, mirrorsedge 614, simpsons 7,559 |
 | 61 | vspltw | VMX / VMX128 | reference | 12,017 | 0.12% | 96.2% | static occurrences | codbo 26, crackdown 6,028, mirrorsedge 492, simpsons 5,471 |
-| 62 | mullw | integer | reference | 11,168 | 0.11% | 96.3% | static occurrences | codbo 2,352, crackdown 2,274, mirrorsedge 3,260, simpsons 3,282 |
-| 63 | and | integer | reference | 10,197 | 0.10% | 96.4% | static occurrences | codbo 2,235, crackdown 1,823, mirrorsedge 3,259, simpsons 2,880 |
-| 64 | fdivs | floating point | reference | 9,507 | 0.09% | 96.5% | static occurrences | codbo 2,107, crackdown 2,310, mirrorsedge 2,944, simpsons 2,146 |
+| 62 | mullw | integer | reference, translated (not bound) | 11,168 | 0.11% | 96.3% | static occurrences | codbo 2,352, crackdown 2,274, mirrorsedge 3,260, simpsons 3,282 |
+| 63 | and | integer | reference, translated (not bound) | 10,197 | 0.10% | 96.4% | static occurrences | codbo 2,235, crackdown 1,823, mirrorsedge 3,259, simpsons 2,880 |
+| 64 | fdivs | floating point | reference, translated (not bound) | 9,507 | 0.09% | 96.5% | static occurrences | codbo 2,107, crackdown 2,310, mirrorsedge 2,944, simpsons 2,146 |
 | 65 | vmaddfp | VMX / VMX128 | reference | 8,829 | 0.09% | 96.6% | static occurrences | codbo 485, crackdown 3,701, mirrorsedge 503, simpsons 4,140 |
 | 66 | vmsum4fp128 | VMX / VMX128 | reference | 8,755 | 0.09% | 96.7% | static occurrences | codbo 469, crackdown 1,953, mirrorsedge 4,925, simpsons 1,408 |
-| 67 | extsw | integer | reference | 8,466 | 0.08% | 96.8% | static occurrences | codbo 2,313, crackdown 1,682, mirrorsedge 2,517, simpsons 1,954 |
+| 67 | extsw | integer | reference, translated (not bound) | 8,466 | 0.08% | 96.8% | static occurrences | codbo 2,313, crackdown 1,682, mirrorsedge 2,517, simpsons 1,954 |
 | 68 | bdnz- | branch / trap | reference, translated (not bound) | 8,318 | 0.08% | 96.8% | static occurrences | codbo 1,705, crackdown 1,360, mirrorsedge 4,106, simpsons 1,147 |
-| 69 | slw | integer | reference | 8,096 | 0.08% | 96.9% | static occurrences | codbo 967, crackdown 1,953, mirrorsedge 2,536, simpsons 2,640 |
+| 69 | slw | integer | reference, translated (not bound) | 8,096 | 0.08% | 96.9% | static occurrences | codbo 967, crackdown 1,953, mirrorsedge 2,536, simpsons 2,640 |
 | 70 | beqlr | branch / trap | reference, translated (not bound) | 7,850 | 0.08% | 97.0% | static occurrences | codbo 595, crackdown 1,443, mirrorsedge 2,219, simpsons 3,593 |
-| 71 | fmsubs | floating point | reference | 7,669 | 0.08% | 97.1% | static occurrences | codbo 875, crackdown 518, mirrorsedge 5,529, simpsons 747 |
-| 72 | extsh | integer | reference | 7,370 | 0.07% | 97.1% | static occurrences | codbo 2,572, crackdown 1,505, mirrorsedge 1,530, simpsons 1,763 |
+| 71 | fmsubs | floating point | reference, translated (not bound) | 7,669 | 0.08% | 97.1% | static occurrences | codbo 875, crackdown 518, mirrorsedge 5,529, simpsons 747 |
+| 72 | extsh | integer | reference, translated (not bound) | 7,370 | 0.07% | 97.1% | static occurrences | codbo 2,572, crackdown 1,505, mirrorsedge 1,530, simpsons 1,763 |
 | 73 | lvlx | VMX / VMX128 | reference | 7,347 | 0.07% | 97.2% | static occurrences | codbo 1, crackdown 4,303, mirrorsedge 511, simpsons 2,532 |
-| 74 | extsb | integer | reference | 7,329 | 0.07% | 97.3% | static occurrences | codbo 878, crackdown 2,357, mirrorsedge 905, simpsons 3,189 |
-| 75 | xori | integer | reference | 7,312 | 0.07% | 97.4% | static occurrences | codbo 174, crackdown 3,651, mirrorsedge 1,890, simpsons 1,597 |
-| 76 | fneg | floating point | reference | 7,194 | 0.07% | 97.4% | static occurrences | codbo 1,730, crackdown 1,294, mirrorsedge 3,062, simpsons 1,108 |
-| 77 | oris | integer | reference | 6,837 | 0.07% | 97.5% | static occurrences | codbo 510, crackdown 1,756, mirrorsedge 2,453, simpsons 2,118 |
-| 78 | lfsx | floating point | reference | 6,383 | 0.06% | 97.6% | static occurrences | codbo 1,683, crackdown 1,343, mirrorsedge 1,663, simpsons 1,694 |
-| 79 | lbzx | load / store / cache | reference | 5,775 | 0.06% | 97.6% | static occurrences | codbo 1,332, crackdown 1,180, mirrorsedge 1,169, simpsons 2,094 |
+| 74 | extsb | integer | reference, translated (not bound) | 7,329 | 0.07% | 97.3% | static occurrences | codbo 878, crackdown 2,357, mirrorsedge 905, simpsons 3,189 |
+| 75 | xori | integer | reference, translated (not bound) | 7,312 | 0.07% | 97.4% | static occurrences | codbo 174, crackdown 3,651, mirrorsedge 1,890, simpsons 1,597 |
+| 76 | fneg | floating point | reference, translated (not bound) | 7,194 | 0.07% | 97.4% | static occurrences | codbo 1,730, crackdown 1,294, mirrorsedge 3,062, simpsons 1,108 |
+| 77 | oris | integer | reference, translated (not bound) | 6,837 | 0.07% | 97.5% | static occurrences | codbo 510, crackdown 1,756, mirrorsedge 2,453, simpsons 2,118 |
+| 78 | lfsx | floating point | reference, translated (not bound) | 6,383 | 0.06% | 97.6% | static occurrences | codbo 1,683, crackdown 1,343, mirrorsedge 1,663, simpsons 1,694 |
+| 79 | lbzx | load / store / cache | reference, translated (not bound) | 5,775 | 0.06% | 97.6% | static occurrences | codbo 1,332, crackdown 1,180, mirrorsedge 1,169, simpsons 2,094 |
 | 80 | stvewx | VMX / VMX128 | reference | 5,723 | 0.06% | 97.7% | static occurrences | crackdown 1,633, mirrorsedge 130, simpsons 3,960 |
 | 81 | fsel | floating point | reference | 5,665 | 0.06% | 97.7% | static occurrences | codbo 1,769, crackdown 553, mirrorsedge 2,794, simpsons 549 |
 | 82 | vmsum3fp128 | VMX / VMX128 | reference | 5,532 | 0.05% | 97.8% | static occurrences | codbo 20, crackdown 2,808, mirrorsedge 564, simpsons 2,140 |
@@ -131,24 +131,24 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of t
 | 87 | vor | VMX / VMX128 | reference | 5,287 | 0.05% | 98.0% | static occurrences | codbo 30, crackdown 2,216, mirrorsedge 623, simpsons 2,418 |
 | 88 | bctr | branch / trap | reference | 5,199 | 0.05% | 98.1% | static occurrences | codbo 274, crackdown 1,319, mirrorsedge 1,264, simpsons 2,342 |
 | 89 | vor128 | VMX / VMX128 | reference | 5,136 | 0.05% | 98.1% | static occurrences | codbo 696, crackdown 607, mirrorsedge 419, simpsons 3,414 |
-| 90 | clrldi | integer | reference | 4,902 | 0.05% | 98.2% | static occurrences | codbo 422, crackdown 1,545, mirrorsedge 1,165, simpsons 1,770 |
-| 91 | subfic | integer | reference | 4,853 | 0.05% | 98.2% | static occurrences | codbo 956, crackdown 1,256, mirrorsedge 1,254, simpsons 1,387 |
-| 92 | rldicr | integer | reference | 4,821 | 0.05% | 98.3% | static occurrences | codbo 747, crackdown 999, mirrorsedge 1,951, simpsons 1,124 |
-| 93 | fnmsubs | floating point | reference | 4,538 | 0.04% | 98.3% | static occurrences | codbo 589, crackdown 337, mirrorsedge 2,918, simpsons 694 |
-| 94 | srw | integer | reference | 4,522 | 0.04% | 98.4% | static occurrences | codbo 602, crackdown 1,225, mirrorsedge 1,378, simpsons 1,317 |
+| 90 | clrldi | integer | reference, translated (not bound) | 4,902 | 0.05% | 98.2% | static occurrences | codbo 422, crackdown 1,545, mirrorsedge 1,165, simpsons 1,770 |
+| 91 | subfic | integer | reference, translated (not bound) | 4,853 | 0.05% | 98.2% | static occurrences | codbo 956, crackdown 1,256, mirrorsedge 1,254, simpsons 1,387 |
+| 92 | rldicr | integer | reference, translated (not bound) | 4,821 | 0.05% | 98.3% | static occurrences | codbo 747, crackdown 999, mirrorsedge 1,951, simpsons 1,124 |
+| 93 | fnmsubs | floating point | reference, translated (not bound) | 4,538 | 0.04% | 98.3% | static occurrences | codbo 589, crackdown 337, mirrorsedge 2,918, simpsons 694 |
+| 94 | srw | integer | reference, translated (not bound) | 4,522 | 0.04% | 98.4% | static occurrences | codbo 602, crackdown 1,225, mirrorsedge 1,378, simpsons 1,317 |
 | 95 | fctiwz | floating point | reference | 4,482 | 0.04% | 98.4% | static occurrences | codbo 1,131, crackdown 923, mirrorsedge 1,235, simpsons 1,193 |
-| 96 | xor | integer | reference | 4,351 | 0.04% | 98.5% | static occurrences | codbo 1,245, crackdown 671, mirrorsedge 1,704, simpsons 731 |
-| 97 | stbx | load / store / cache | reference | 4,086 | 0.04% | 98.5% | static occurrences | codbo 1,255, crackdown 1,132, mirrorsedge 656, simpsons 1,043 |
+| 96 | xor | integer | reference, translated (not bound) | 4,351 | 0.04% | 98.5% | static occurrences | codbo 1,245, crackdown 671, mirrorsedge 1,704, simpsons 731 |
+| 97 | stbx | load / store / cache | reference, translated (not bound) | 4,086 | 0.04% | 98.5% | static occurrences | codbo 1,255, crackdown 1,132, mirrorsedge 656, simpsons 1,043 |
 | 98 | subfe | integer | reference | 4,079 | 0.04% | 98.5% | static occurrences | codbo 1,304, crackdown 1,357, mirrorsedge 676, simpsons 742 |
-| 99 | fabs | floating point | reference | 3,975 | 0.04% | 98.6% | static occurrences | codbo 598, crackdown 658, mirrorsedge 1,855, simpsons 864 |
+| 99 | fabs | floating point | reference, translated (not bound) | 3,975 | 0.04% | 98.6% | static occurrences | codbo 598, crackdown 658, mirrorsedge 1,855, simpsons 864 |
 | 100 | bnelr | branch / trap | reference, translated (not bound) | 3,866 | 0.04% | 98.6% | static occurrences | codbo 200, crackdown 445, mirrorsedge 1,863, simpsons 1,358 |
 | 101 | fsqrts | floating point | reference | 3,843 | 0.04% | 98.7% | static occurrences | codbo 869, crackdown 955, mirrorsedge 1,331, simpsons 688 |
-| 102 | stfsx | floating point | reference | 3,821 | 0.04% | 98.7% | static occurrences | codbo 1,091, crackdown 1,044, mirrorsedge 757, simpsons 929 |
-| 103 | andc | integer | reference | 3,769 | 0.04% | 98.7% | static occurrences | codbo 343, crackdown 645, mirrorsedge 1,468, simpsons 1,313 |
+| 102 | stfsx | floating point | reference, translated (not bound) | 3,821 | 0.04% | 98.7% | static occurrences | codbo 1,091, crackdown 1,044, mirrorsedge 757, simpsons 929 |
+| 103 | andc | integer | reference, translated (not bound) | 3,769 | 0.04% | 98.7% | static occurrences | codbo 343, crackdown 645, mirrorsedge 1,468, simpsons 1,313 |
 | 104 | vaddfp | VMX / VMX128 | reference | 3,434 | 0.03% | 98.8% | static occurrences | codbo 8, crackdown 1,412, mirrorsedge 118, simpsons 1,896 |
-| 105 | fadd | floating point | reference | 3,365 | 0.03% | 98.8% | static occurrences | codbo 77, crackdown 2,985, mirrorsedge 163, simpsons 140 |
-| 106 | lhzx | load / store / cache | reference | 3,336 | 0.03% | 98.8% | static occurrences | codbo 1,034, crackdown 384, mirrorsedge 989, simpsons 929 |
-| 107 | addze | integer | reference | 3,316 | 0.03% | 98.9% | static occurrences | codbo 612, crackdown 541, mirrorsedge 1,670, simpsons 493 |
+| 105 | fadd | floating point | reference, translated (not bound) | 3,365 | 0.03% | 98.8% | static occurrences | codbo 77, crackdown 2,985, mirrorsedge 163, simpsons 140 |
+| 106 | lhzx | load / store / cache | reference, translated (not bound) | 3,336 | 0.03% | 98.8% | static occurrences | codbo 1,034, crackdown 384, mirrorsedge 989, simpsons 929 |
+| 107 | addze | integer | reference, translated (not bound) | 3,316 | 0.03% | 98.9% | static occurrences | codbo 612, crackdown 541, mirrorsedge 1,670, simpsons 493 |
 | 108 | stfiwx | floating point | reference | 3,299 | 0.03% | 98.9% | static occurrences | codbo 110, crackdown 1,368, mirrorsedge 323, simpsons 1,498 |
 | 109 | vmrghw | VMX / VMX128 | reference | 3,173 | 0.03% | 98.9% | static occurrences | crackdown 1,981, mirrorsedge 28, simpsons 1,164 |
 | 110 | vrlimi128 | VMX / VMX128 | reference | 3,111 | 0.03% | 99.0% | static occurrences | codbo 72, crackdown 1,692, mirrorsedge 294, simpsons 1,053 |
@@ -158,26 +158,26 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of t
 | 114 | mtmsrd | system | reference | 2,521 | 0.02% | 99.1% | static occurrences | codbo 1,520, crackdown 213, mirrorsedge 465, simpsons 323 |
 | 115 | vspltw128 | VMX / VMX128 | reference | 2,382 | 0.02% | 99.1% | static occurrences | codbo 692, crackdown 231, mirrorsedge 685, simpsons 774 |
 | 116 | vcfsx | VMX / VMX128 | reference | 2,359 | 0.02% | 99.1% | static occurrences | crackdown 933, mirrorsedge 15, simpsons 1,411 |
-| 117 | fmul | floating point | reference | 2,346 | 0.02% | 99.1% | static occurrences | codbo 286, crackdown 517, mirrorsedge 821, simpsons 722 |
-| 118 | andi. | integer | reference | 2,314 | 0.02% | 99.2% | static occurrences | codbo 100, crackdown 785, mirrorsedge 619, simpsons 810 |
+| 117 | fmul | floating point | reference, translated (not bound) | 2,346 | 0.02% | 99.1% | static occurrences | codbo 286, crackdown 517, mirrorsedge 821, simpsons 722 |
+| 118 | andi. | integer | reference, translated (not bound) | 2,314 | 0.02% | 99.2% | static occurrences | codbo 100, crackdown 785, mirrorsedge 619, simpsons 810 |
 | 119 | vsldoi | VMX / VMX128 | reference | 2,312 | 0.02% | 99.2% | static occurrences | codbo 8, crackdown 770, mirrorsedge 356, simpsons 1,178 |
 | 120 | cmpldi | compare / CR | reference, translated (not bound) | 2,235 | 0.02% | 99.2% | static occurrences | codbo 338, crackdown 290, mirrorsedge 1,062, simpsons 545 |
-| 121 | not | integer | reference | 2,168 | 0.02% | 99.2% | static occurrences | codbo 276, crackdown 468, mirrorsedge 738, simpsons 686 |
+| 121 | not | integer | reference, translated (not bound) | 2,168 | 0.02% | 99.2% | static occurrences | codbo 276, crackdown 468, mirrorsedge 738, simpsons 686 |
 | 122 | subfc | integer | reference | 1,964 | 0.02% | 99.2% | static occurrences | codbo 331, crackdown 983, mirrorsedge 339, simpsons 311 |
 | 123 | vnmsubfp | VMX / VMX128 | reference | 1,933 | 0.02% | 99.3% | static occurrences | codbo 25, crackdown 985, mirrorsedge 76, simpsons 847 |
 | 124 | vperm | VMX / VMX128 | reference | 1,893 | 0.02% | 99.3% | static occurrences | codbo 14, crackdown 483, mirrorsedge 91, simpsons 1,305 |
-| 125 | rldimi | integer | reference | 1,843 | 0.02% | 99.3% | static occurrences | codbo 59, crackdown 55, mirrorsedge 1,653, simpsons 76 |
+| 125 | rldimi | integer | reference, translated (not bound) | 1,843 | 0.02% | 99.3% | static occurrences | codbo 59, crackdown 55, mirrorsedge 1,653, simpsons 76 |
 | 126 | vxor | VMX / VMX128 | reference | 1,815 | 0.02% | 99.3% | static occurrences | crackdown 720, mirrorsedge 110, simpsons 985 |
 | 127 | fctidz | floating point | reference | 1,784 | 0.02% | 99.3% | static occurrences | codbo 155, crackdown 792, mirrorsedge 310, simpsons 527 |
 | 128 | vsel | VMX / VMX128 | reference | 1,731 | 0.02% | 99.4% | static occurrences | codbo 103, crackdown 716, mirrorsedge 184, simpsons 728 |
-| 129 | neg | integer | reference | 1,701 | 0.02% | 99.4% | static occurrences | codbo 367, crackdown 247, mirrorsedge 718, simpsons 369 |
+| 129 | neg | integer | reference, translated (not bound) | 1,701 | 0.02% | 99.4% | static occurrences | codbo 367, crackdown 247, mirrorsedge 718, simpsons 369 |
 | 130 | vspltisw | VMX / VMX128 | reference | 1,616 | 0.02% | 99.4% | static occurrences | codbo 12, crackdown 888, mirrorsedge 71, simpsons 645 |
 | 131 | mulhw | integer | reference | 1,517 | 0.01% | 99.4% | static occurrences | codbo 143, crackdown 1,195, mirrorsedge 29, simpsons 150 |
 | 132 | vmrglw128 | VMX / VMX128 | reference | 1,500 | 0.01% | 99.4% | static occurrences | codbo 134, crackdown 22, mirrorsedge 1,280, simpsons 64 |
 | 133 | srd | integer | reference | 1,443 | 0.01% | 99.4% | static occurrences | codbo 54, crackdown 374, mirrorsedge 251, simpsons 764 |
-| 134 | sthx | load / store / cache | reference | 1,409 | 0.01% | 99.4% | static occurrences | codbo 441, crackdown 274, mirrorsedge 284, simpsons 410 |
+| 134 | sthx | load / store / cache | reference, translated (not bound) | 1,409 | 0.01% | 99.4% | static occurrences | codbo 441, crackdown 274, mirrorsedge 284, simpsons 410 |
 | 135 | lvlx128 | VMX / VMX128 | reference | 1,390 | 0.01% | 99.5% | static occurrences | codbo 639, crackdown 36, mirrorsedge 711, simpsons 4 |
-| 136 | rldicl | integer | reference | 1,379 | 0.01% | 99.5% | static occurrences | codbo 355, crackdown 799, mirrorsedge 115, simpsons 110 |
+| 136 | rldicl | integer | reference, translated (not bound) | 1,379 | 0.01% | 99.5% | static occurrences | codbo 355, crackdown 799, mirrorsedge 115, simpsons 110 |
 | 137 | vsubfp128 | VMX / VMX128 | reference | 1,338 | 0.01% | 99.5% | static occurrences | codbo 274, crackdown 338, mirrorsedge 250, simpsons 476 |
 | 138 | mftb | system | reference | 1,286 | 0.01% | 99.5% | static occurrences | codbo 26, crackdown 576, mirrorsedge 17, simpsons 667 |
 | 139 | stwcx. | load / store / cache | reference | 1,284 | 0.01% | 99.5% | static occurrences | codbo 741, crackdown 111, mirrorsedge 261, simpsons 171 |
@@ -187,7 +187,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of t
 | 143 | stvlx128 | VMX / VMX128 | reference | 1,105 | 0.01% | 99.6% | static occurrences | codbo 416, crackdown 1, mirrorsedge 396, simpsons 292 |
 | 144 | lwarx | load / store / cache | reference | 1,081 | 0.01% | 99.6% | static occurrences | codbo 643, crackdown 96, mirrorsedge 196, simpsons 146 |
 | 145 | vmrglw | VMX / VMX128 | reference | 1,054 | 0.01% | 99.6% | static occurrences | crackdown 685, mirrorsedge 18, simpsons 351 |
-| 146 | fdiv | floating point | reference | 1,026 | 0.01% | 99.6% | static occurrences | codbo 71, crackdown 105, mirrorsedge 723, simpsons 127 |
+| 146 | fdiv | floating point | reference, translated (not bound) | 1,026 | 0.01% | 99.6% | static occurrences | codbo 71, crackdown 105, mirrorsedge 723, simpsons 127 |
 | 147 | ldx | load / store / cache | reference | 1,017 | 0.01% | 99.6% | static occurrences | codbo 280, crackdown 137, mirrorsedge 215, simpsons 385 |
 | 148 | stdx | load / store / cache | reference | 926 | 0.01% | 99.6% | static occurrences | codbo 451, crackdown 109, mirrorsedge 142, simpsons 224 |
 | 149 | blelr | branch / trap | reference, translated (not bound) | 925 | 0.01% | 99.6% | static occurrences | codbo 135, crackdown 120, mirrorsedge 159, simpsons 511 |
@@ -209,7 +209,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of t
 | 165 | stvewx128 | VMX / VMX128 | reference | 610 | 0.01% | 99.7% | static occurrences | codbo 283, crackdown 3, mirrorsedge 324 |
 | 166 | twlgei | branch / trap | reference | 604 | 0.01% | 99.7% | static occurrences | codbo 18, crackdown 170, mirrorsedge 246, simpsons 170 |
 | 167 | vcmpgtfp | VMX / VMX128 | reference | 603 | 0.01% | 99.7% | static occurrences | crackdown 92, mirrorsedge 312, simpsons 199 |
-| 168 | fmadd | floating point | reference | 587 | 0.01% | 99.7% | static occurrences | codbo 101, crackdown 105, mirrorsedge 233, simpsons 148 |
+| 168 | fmadd | floating point | reference, translated (not bound) | 587 | 0.01% | 99.7% | static occurrences | codbo 101, crackdown 105, mirrorsedge 233, simpsons 148 |
 | 169 | vand | VMX / VMX128 | reference | 542 | 0.01% | 99.7% | static occurrences | crackdown 166, mirrorsedge 44, simpsons 332 |
 | 170 | lwzu | load / store / cache | reference | 538 | 0.01% | 99.7% | static occurrences | codbo 497, crackdown 10, mirrorsedge 7, simpsons 24 |
 | 171 | vspltisw128 | VMX / VMX128 | reference | 534 | 0.01% | 99.8% | static occurrences | codbo 237, crackdown 100, mirrorsedge 168, simpsons 29 |
@@ -222,7 +222,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of t
 | 178 | bltlr | branch / trap | reference, translated (not bound) | 493 | 0.00% | 99.8% | static occurrences | codbo 82, crackdown 86, mirrorsedge 96, simpsons 229 |
 | 179 | lvsl | VMX / VMX128 | reference | 485 | 0.00% | 99.8% | static occurrences | codbo 26, crackdown 61, mirrorsedge 124, simpsons 274 |
 | 180 | vupklsb128 | VMX / VMX128 | reference | 481 | 0.00% | 99.8% | static occurrences | codbo 353, mirrorsedge 128 |
-| 181 | fsub | floating point | reference | 455 | 0.00% | 99.8% | static occurrences | codbo 61, crackdown 108, mirrorsedge 177, simpsons 109 |
+| 181 | fsub | floating point | reference, translated (not bound) | 455 | 0.00% | 99.8% | static occurrences | codbo 61, crackdown 108, mirrorsedge 177, simpsons 109 |
 | 182 | lvrx128 | VMX / VMX128 | reference | 448 | 0.00% | 99.8% | static occurrences | codbo 399, crackdown 4, mirrorsedge 41, simpsons 4 |
 | 183 | vand128 | VMX / VMX128 | reference | 444 | 0.00% | 99.8% | static occurrences | codbo 433, crackdown 2, mirrorsedge 6, simpsons 3 |
 | 184 | vcfux | VMX / VMX128 | reference | 439 | 0.00% | 99.8% | static occurrences | crackdown 163, mirrorsedge 4, simpsons 272 |
@@ -267,9 +267,9 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of t
 | 223 | vaddshs | VMX / VMX128 | reference | 212 | 0.00% | 99.9% | static occurrences | simpsons 212 |
 | 224 | vcuxwfp128 | VMX / VMX128 | reference | 212 | 0.00% | 99.9% | static occurrences | codbo 48, crackdown 16, mirrorsedge 121, simpsons 27 |
 | 225 | vsel128 | VMX / VMX128 | reference | 206 | 0.00% | 99.9% | static occurrences | codbo 3, crackdown 38, mirrorsedge 8, simpsons 157 |
-| 226 | fmsub | floating point | reference | 195 | 0.00% | 99.9% | static occurrences | codbo 23, crackdown 39, mirrorsedge 96, simpsons 37 |
+| 226 | fmsub | floating point | reference, translated (not bound) | 195 | 0.00% | 99.9% | static occurrences | codbo 23, crackdown 39, mirrorsedge 96, simpsons 37 |
 | 227 | vaddsws | VMX / VMX128 | reference | 195 | 0.00% | 99.9% | static occurrences | codbo 2, simpsons 193 |
-| 228 | dcbt | load / store / cache | reference | 191 | 0.00% | 99.9% | static occurrences | codbo 4, crackdown 65, mirrorsedge 74, simpsons 48 |
+| 228 | dcbt | load / store / cache | reference, translated (not bound) | 191 | 0.00% | 99.9% | static occurrences | codbo 4, crackdown 65, mirrorsedge 74, simpsons 48 |
 | 229 | vcmpeqfp128 | VMX / VMX128 | reference | 187 | 0.00% | 99.9% | static occurrences | codbo 14, crackdown 120, mirrorsedge 10, simpsons 43 |
 | 230 | stwux | load / store / cache | reference | 184 | 0.00% | 99.9% | static occurrences | codbo 26, crackdown 22, mirrorsedge 110, simpsons 26 |
 | 231 | sthu | load / store / cache | reference | 183 | 0.00% | 99.9% | static occurrences | codbo 183 |
@@ -311,8 +311,8 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of t
 | 267 | vcmpgefp128 | VMX / VMX128 | reference | 54 | 0.00% | 100.0% | static occurrences | codbo 43, mirrorsedge 11 |
 | 268 | vrsqrtefp128 | VMX / VMX128 | reference | 52 | 0.00% | 100.0% | static occurrences | codbo 33, crackdown 13, mirrorsedge 2, simpsons 4 |
 | 269 | vandc128 | VMX / VMX128 | reference | 50 | 0.00% | 100.0% | static occurrences | codbo 30, crackdown 1, mirrorsedge 15, simpsons 4 |
-| 270 | lwsync | load / store / cache | reference | 48 | 0.00% | 100.0% | static occurrences | codbo 20, mirrorsedge 28 |
-| 271 | nor | integer | reference | 43 | 0.00% | 100.0% | static occurrences | codbo 7, crackdown 8, mirrorsedge 14, simpsons 14 |
+| 270 | lwsync | load / store / cache | reference, translated (not bound) | 48 | 0.00% | 100.0% | static occurrences | codbo 20, mirrorsedge 28 |
+| 271 | nor | integer | reference, translated (not bound) | 43 | 0.00% | 100.0% | static occurrences | codbo 7, crackdown 8, mirrorsedge 14, simpsons 14 |
 | 272 | adde | integer | reference | 42 | 0.00% | 100.0% | static occurrences | codbo 42 |
 | 273 | fctid | floating point | reference | 41 | 0.00% | 100.0% | static occurrences | codbo 10, crackdown 9, mirrorsedge 10, simpsons 12 |
 | 274 | vadduws | VMX / VMX128 | reference | 39 | 0.00% | 100.0% | static occurrences | codbo 36, crackdown 1, mirrorsedge 1, simpsons 1 |
@@ -329,7 +329,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of t
 | 285 | lhzux | load / store / cache | reference | 29 | 0.00% | 100.0% | static occurrences | codbo 29 |
 | 286 | rotlw | integer | reference | 29 | 0.00% | 100.0% | static occurrences | codbo 15, crackdown 7, mirrorsedge 3, simpsons 4 |
 | 287 | frsqrte | floating point | reference | 28 | 0.00% | 100.0% | static occurrences | codbo 23, crackdown 2, mirrorsedge 3 |
-| 288 | rotldi | integer | reference | 28 | 0.00% | 100.0% | static occurrences | codbo 8, crackdown 5, mirrorsedge 11, simpsons 4 |
+| 288 | rotldi | integer | reference, translated (not bound) | 28 | 0.00% | 100.0% | static occurrences | codbo 8, crackdown 5, mirrorsedge 11, simpsons 4 |
 | 289 | lwax | load / store / cache | reference | 27 | 0.00% | 100.0% | static occurrences | codbo 2, crackdown 8, mirrorsedge 7, simpsons 10 |
 | 290 | stwbrx | load / store / cache | reference | 27 | 0.00% | 100.0% | static occurrences | codbo 7, crackdown 5, mirrorsedge 5, simpsons 10 |
 | 291 | tdlgei | branch / trap | reference | 26 | 0.00% | 100.0% | static occurrences | codbo 8, crackdown 5, mirrorsedge 10, simpsons 3 |
@@ -355,7 +355,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of t
 | 311 | sthbrx | load / store / cache | reference | 10 | 0.00% | 100.0% | static occurrences | crackdown 3, mirrorsedge 3, simpsons 4 |
 | 312 | vexptefp128 | VMX / VMX128 | reference | 10 | 0.00% | 100.0% | static occurrences | codbo 2, mirrorsedge 8 |
 | 313 | vspltb | VMX / VMX128 | reference | 10 | 0.00% | 100.0% | static occurrences | codbo 3, crackdown 2, mirrorsedge 3, simpsons 2 |
-| 314 | eieio | load / store / cache | reference | 9 | 0.00% | 100.0% | static occurrences | codbo 2, crackdown 1, mirrorsedge 1, simpsons 5 |
+| 314 | eieio | load / store / cache | reference, translated (not bound) | 9 | 0.00% | 100.0% | static occurrences | codbo 2, crackdown 1, mirrorsedge 1, simpsons 5 |
 | 315 | vaddubs | VMX / VMX128 | reference | 9 | 0.00% | 100.0% | static occurrences | crackdown 9 |
 | 316 | vcmpbfp128 | VMX / VMX128 | reference | 9 | 0.00% | 100.0% | static occurrences | crackdown 1, simpsons 8 |
 | 317 | vrfim128 | VMX / VMX128 | reference | 9 | 0.00% | 100.0% | static occurrences | codbo 4, mirrorsedge 5 |
@@ -366,7 +366,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of t
 | 322 | vcmpgtuh | VMX / VMX128 | reference | 8 | 0.00% | 100.0% | static occurrences | crackdown 4, simpsons 4 |
 | 323 | vcmpgtuw | VMX / VMX128 | reference | 8 | 0.00% | 100.0% | static occurrences | simpsons 8 |
 | 324 | nand | integer | reference | 7 | 0.00% | 100.0% | static occurrences | crackdown 1, mirrorsedge 5, simpsons 1 |
-| 325 | sync | load / store / cache | reference | 7 | 0.00% | 100.0% | static occurrences | codbo 1, crackdown 3, mirrorsedge 2, simpsons 1 |
+| 325 | sync | load / store / cache | reference, translated (not bound) | 7 | 0.00% | 100.0% | static occurrences | codbo 1, crackdown 3, mirrorsedge 2, simpsons 1 |
 | 326 | vrfin128 | VMX / VMX128 | reference | 7 | 0.00% | 100.0% | static occurrences | codbo 4, mirrorsedge 3 |
 | 327 | bdnzt- | branch / trap | reference, translated (not bound) | 6 | 0.00% | 100.0% | static occurrences | codbo 2, crackdown 2, simpsons 2 |
 | 328 | bns- | branch / trap | reference, translated (not bound) | 6 | 0.00% | 100.0% | static occurrences | crackdown 6 |
@@ -395,7 +395,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 52 of t
 | 351 | stfsux | floating point | reference | 1 | 0.00% | 100.0% | static occurrences | codbo 1 |
 | 352 | vsraw128 | VMX / VMX128 | reference | 1 | 0.00% | 100.0% | static occurrences | mirrorsedge 1 |
 
-Not used by any known title (1490), by family and state: integer (missing) 551, system (missing) 385, branch / trap (missing) 202, load / store / cache (missing) 105, VMX / VMX128 (reference) 59, floating point (missing) 51, branch / trap (reference) 50, VMX / VMX128 (missing) 42, integer (reference) 9, compare / CR (missing) 9, compare / CR (reference) 8, load / store / cache (reference) 8, floating point (reference) 5, system (reference) 5, system (reference, translated (not bound)) 1.
+Not used by any known title (1490), by family and state: integer (missing) 551, system (missing) 385, branch / trap (missing) 202, load / store / cache (missing) 105, VMX / VMX128 (reference) 59, floating point (missing) 51, branch / trap (reference) 50, VMX / VMX128 (missing) 42, compare / CR (missing) 9, integer (reference) 8, compare / CR (reference) 8, load / store / cache (reference) 7, floating point (reference) 5, system (reference) 5, load / store / cache (reference, translated (not bound)) 1, system (reference, translated (not bound)) 1, integer (reference, translated (not bound)) 1.
 The full list is in db/roadmap.json.
 
 ## XDK library functions

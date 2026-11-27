@@ -333,7 +333,7 @@
 {
 "id":"lbz",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":86334,
 "source":"static occurrences",
 "titles":{
@@ -346,7 +346,7 @@
 {
 "id":"bctrl",
 "family":"branch / trap",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":82407,
 "source":"static occurrences",
 "titles":{
@@ -385,7 +385,7 @@
 {
 "id":"stb",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":63784,
 "source":"static occurrences",
 "titles":{
@@ -398,7 +398,7 @@
 {
 "id":"lwzx",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":55971,
 "source":"static occurrences",
 "titles":{
@@ -424,7 +424,7 @@
 {
 "id":"subf",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":52326,
 "source":"static occurrences",
 "titles":{
@@ -450,7 +450,7 @@
 {
 "id":"ori",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":47863,
 "source":"static occurrences",
 "titles":{
@@ -463,7 +463,7 @@
 {
 "id":"fmr",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":44991,
 "source":"static occurrences",
 "titles":{
@@ -476,7 +476,7 @@
 {
 "id":"lfd",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":44647,
 "source":"static occurrences",
 "titles":{
@@ -502,7 +502,7 @@
 {
 "id":"fsubs",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":42876,
 "source":"static occurrences",
 "titles":{
@@ -515,7 +515,7 @@
 {
 "id":"fmadds",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":41255,
 "source":"static occurrences",
 "titles":{
@@ -528,7 +528,7 @@
 {
 "id":"fcmpu",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":41236,
 "source":"static occurrences",
 "titles":{
@@ -541,7 +541,7 @@
 {
 "id":"fadds",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":40746,
 "source":"static occurrences",
 "titles":{
@@ -567,7 +567,7 @@
 {
 "id":"lhz",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":36618,
 "source":"static occurrences",
 "titles":{
@@ -580,7 +580,7 @@
 {
 "id":"sth",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":29660,
 "source":"static occurrences",
 "titles":{
@@ -606,7 +606,7 @@
 {
 "id":"cntlzw",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":22158,
 "source":"static occurrences",
 "titles":{
@@ -619,7 +619,7 @@
 {
 "id":"rlwimi",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":21780,
 "source":"static occurrences",
 "titles":{
@@ -658,7 +658,7 @@
 {
 "id":"stfd",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":20914,
 "source":"static occurrences",
 "titles":{
@@ -684,7 +684,7 @@
 {
 "id":"frsp",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":19442,
 "source":"static occurrences",
 "titles":{
@@ -697,7 +697,7 @@
 {
 "id":"mulli",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":17814,
 "source":"static occurrences",
 "titles":{
@@ -710,7 +710,7 @@
 {
 "id":"srawi",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":17790,
 "source":"static occurrences",
 "titles":{
@@ -723,7 +723,7 @@
 {
 "id":"stwx",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":17644,
 "source":"static occurrences",
 "titles":{
@@ -736,7 +736,7 @@
 {
 "id":"addic",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":16216,
 "source":"static occurrences",
 "titles":{
@@ -801,7 +801,7 @@
 {
 "id":"mullw",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":11168,
 "source":"static occurrences",
 "titles":{
@@ -814,7 +814,7 @@
 {
 "id":"and",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":10197,
 "source":"static occurrences",
 "titles":{
@@ -827,7 +827,7 @@
 {
 "id":"fdivs",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":9507,
 "source":"static occurrences",
 "titles":{
@@ -866,7 +866,7 @@
 {
 "id":"extsw",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":8466,
 "source":"static occurrences",
 "titles":{
@@ -892,7 +892,7 @@
 {
 "id":"slw",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":8096,
 "source":"static occurrences",
 "titles":{
@@ -918,7 +918,7 @@
 {
 "id":"fmsubs",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":7669,
 "source":"static occurrences",
 "titles":{
@@ -931,7 +931,7 @@
 {
 "id":"extsh",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":7370,
 "source":"static occurrences",
 "titles":{
@@ -957,7 +957,7 @@
 {
 "id":"extsb",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":7329,
 "source":"static occurrences",
 "titles":{
@@ -970,7 +970,7 @@
 {
 "id":"xori",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":7312,
 "source":"static occurrences",
 "titles":{
@@ -983,7 +983,7 @@
 {
 "id":"fneg",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":7194,
 "source":"static occurrences",
 "titles":{
@@ -996,7 +996,7 @@
 {
 "id":"oris",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":6837,
 "source":"static occurrences",
 "titles":{
@@ -1009,7 +1009,7 @@
 {
 "id":"lfsx",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":6383,
 "source":"static occurrences",
 "titles":{
@@ -1022,7 +1022,7 @@
 {
 "id":"lbzx",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":5775,
 "source":"static occurrences",
 "titles":{
@@ -1164,7 +1164,7 @@
 {
 "id":"clrldi",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":4902,
 "source":"static occurrences",
 "titles":{
@@ -1177,7 +1177,7 @@
 {
 "id":"subfic",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":4853,
 "source":"static occurrences",
 "titles":{
@@ -1190,7 +1190,7 @@
 {
 "id":"rldicr",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":4821,
 "source":"static occurrences",
 "titles":{
@@ -1203,7 +1203,7 @@
 {
 "id":"fnmsubs",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":4538,
 "source":"static occurrences",
 "titles":{
@@ -1216,7 +1216,7 @@
 {
 "id":"srw",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":4522,
 "source":"static occurrences",
 "titles":{
@@ -1242,7 +1242,7 @@
 {
 "id":"xor",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":4351,
 "source":"static occurrences",
 "titles":{
@@ -1255,7 +1255,7 @@
 {
 "id":"stbx",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":4086,
 "source":"static occurrences",
 "titles":{
@@ -1281,7 +1281,7 @@
 {
 "id":"fabs",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":3975,
 "source":"static occurrences",
 "titles":{
@@ -1320,7 +1320,7 @@
 {
 "id":"stfsx",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":3821,
 "source":"static occurrences",
 "titles":{
@@ -1333,7 +1333,7 @@
 {
 "id":"andc",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":3769,
 "source":"static occurrences",
 "titles":{
@@ -1359,7 +1359,7 @@
 {
 "id":"fadd",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":3365,
 "source":"static occurrences",
 "titles":{
@@ -1372,7 +1372,7 @@
 {
 "id":"lhzx",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":3336,
 "source":"static occurrences",
 "titles":{
@@ -1385,7 +1385,7 @@
 {
 "id":"addze",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":3316,
 "source":"static occurrences",
 "titles":{
@@ -1513,7 +1513,7 @@
 {
 "id":"fmul",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":2346,
 "source":"static occurrences",
 "titles":{
@@ -1526,7 +1526,7 @@
 {
 "id":"andi.",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":2314,
 "source":"static occurrences",
 "titles":{
@@ -1565,7 +1565,7 @@
 {
 "id":"not",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":2168,
 "source":"static occurrences",
 "titles":{
@@ -1617,7 +1617,7 @@
 {
 "id":"rldimi",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":1843,
 "source":"static occurrences",
 "titles":{
@@ -1668,7 +1668,7 @@
 {
 "id":"neg",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":1701,
 "source":"static occurrences",
 "titles":{
@@ -1733,7 +1733,7 @@
 {
 "id":"sthx",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":1409,
 "source":"static occurrences",
 "titles":{
@@ -1759,7 +1759,7 @@
 {
 "id":"rldicl",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":1379,
 "source":"static occurrences",
 "titles":{
@@ -1888,7 +1888,7 @@
 {
 "id":"fdiv",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":1026,
 "source":"static occurrences",
 "titles":{
@@ -2169,7 +2169,7 @@
 {
 "id":"fmadd",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":587,
 "source":"static occurrences",
 "titles":{
@@ -2334,7 +2334,7 @@
 {
 "id":"fsub",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":455,
 "source":"static occurrences",
 "titles":{
@@ -2891,7 +2891,7 @@
 {
 "id":"fmsub",
 "family":"floating point",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":195,
 "source":"static occurrences",
 "titles":{
@@ -2915,7 +2915,7 @@
 {
 "id":"dcbt",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":191,
 "source":"static occurrences",
 "titles":{
@@ -3428,7 +3428,7 @@
 {
 "id":"lwsync",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":48,
 "source":"static occurrences",
 "titles":{
@@ -3439,7 +3439,7 @@
 {
 "id":"nor",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":43,
 "source":"static occurrences",
 "titles":{
@@ -3637,7 +3637,7 @@
 {
 "id":"rotldi",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":28,
 "source":"static occurrences",
 "titles":{
@@ -3932,7 +3932,7 @@
 {
 "id":"eieio",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":9,
 "source":"static occurrences",
 "titles":{
@@ -4057,7 +4057,7 @@
 {
 "id":"sync",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":7,
 "source":"static occurrences",
 "titles":{
@@ -6392,7 +6392,7 @@
 {
 "id":"dcbf",
 "family":"load / store / cache",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":0,
 "source":"unused",
 "titles":{}
@@ -13632,7 +13632,7 @@
 {
 "id":"nop",
 "family":"integer",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":0,
 "source":"unused",
 "titles":{}

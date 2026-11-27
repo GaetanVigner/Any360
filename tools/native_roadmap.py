@@ -234,7 +234,7 @@ def write(result):
             share = sum(u['uses'] for u in translated) / sum(u['uses'] for u in used)
             md += [f'Any360\'s translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes {len(translated)} of them '
                    f'(state `translated`), {100 * share:.1f}% of the occurrences. A function is translated only when '
-                   'all its instructions are, which is still a small share of the titles\' code (CPU.md gives it by '
+                   'all its instructions and callees are, a smaller share of the titles\' code (CPU.md gives it by '
                    'title). No title runs translated code yet, so none is native.', '']
         if used:
             total = sum(u['uses'] for u in used)

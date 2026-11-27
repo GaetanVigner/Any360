@@ -54,3 +54,73 @@ bdzf 7C8903A6 7F032800 405A0008 38C00001 4E800020
 bdzlr 7C8903A6 4E400020 38C00001 4E800020
 # cmplwi cr0,r4,0; beqlr; addi r4,r4,-1; addi r3,r3,1; bl -16; blr
 bl_self 28040000 4D820020 3884FFFF 38630001 4BFFFFF1 4E800020
+# lbz r3,1(r4); lhz r5,2(r4); stb r3,7(r4); sth r5,10(r4); blr
+lbz_lhz_stb_sth 88640001 A0A40002 98640007 B0A4000A 4E800020
+# li r6,12; lwzx r3,r4,r6; lbzx r5,r4,r6; lhzx r7,r4,r6; li r8,20; stwx r5,r4,r8; stbx r3,r4,r8; sthx r7,r4,r8; lwzx r9,0,r4; blr
+indexed 38C0000C 7C64302E 7CA430AE 7CE4322E 39000014 7CA4412E 7C6441AE 7CE4432E 7D20202E 4E800020
+# lfd f1,8(r4); stfd f1,16(r4); blr
+lfd C8240008 D8240010 4E800020
+# stfd f2,24(r4); blr
+stfd D8440018 4E800020
+# li r6,24; lfsx f2,r4,r6; blr
+lfsx 38C00018 7C44342E 4E800020
+# li r7,32; stfsx f2,r4,r7; blr
+stfsx 38E00020 7C443D2E 4E800020
+# stfs f1,40(r4); blr
+stfs D0240028 4E800020
+# fmr f3,f1; blr
+fmr FC600890 4E800020
+# fneg f4,f1; blr
+fneg FC800850 4E800020
+# fabs f5,f1; blr
+fabs FCA00A10 4E800020
+# frsp f6,f1; blr
+frsp FCC00818 4E800020
+# fcmpu cr6,f1,f2; fcmpu cr0,f2,f1; blr
+fcmpu FF011000 FC020800 4E800020
+# fadds f3,f1,f2; blr
+fadds EC61102A 4E800020
+# fsubs f3,f1,f2; blr
+fsubs EC611028 4E800020
+# fdivs f3,f1,f2; blr
+fdivs EC611024 4E800020
+# fmuls f3,f1,f2; blr
+fmuls EC6100B2 4E800020
+# fadd f3,f1,f2; blr
+fadd FC61102A 4E800020
+# fsub f3,f1,f2; blr
+fsub FC611028 4E800020
+# fmul f3,f1,f2; blr
+fmul FC6100B2 4E800020
+# fmadds f4,f1,f2,f3; blr
+fmadds EC8118BA 4E800020
+# fmsubs f4,f1,f2,f3; blr
+fmsubs EC8118B8 4E800020
+# fnmsubs f4,f1,f2,f3; blr
+fnmsubs EC8118BC 4E800020
+# fmadd f4,f1,f2,f3; blr
+fmadd FC8118BA 4E800020
+# fmsub f4,f1,f2,f3; blr
+fmsub FC8118B8 4E800020
+# ori r3,r4,0x8001; oris r5,r4,0x8001; xori r6,r4,0xFFFF; andi. r7,r4,0xF0F0; nop; blr
+logical_immediate 60838001 64858001 6886FFFF 7087F0F0 60000000 4E800020
+# and r3,r4,r5; andc r6,r4,r5; xor r7,r4,r5; nor r8,r4,r5; not r9,r4; and. r10,r4,r5; blr
+logical 7C832838 7C862878 7C872A78 7C8828F8 7C8920F8 7C8A2839 4E800020
+# subf r3,r4,r5; subf. r6,r5,r4; neg r7,r4; extsb r8,r4; extsh r9,r4; extsw r10,r4; extsb. r11,r4; blr
+arithmetic 7C642850 7CC52051 7CE400D0 7C880774 7C890734 7C8A07B4 7C8B0775 4E800020
+# slw r3,r5,r4; srw r6,r5,r4; srawi r7,r4,5; srawi r8,r4,0; srawi. r9,r4,31; cntlzw r10,r4; blr
+shifts 7CA32030 7CA62430 7C872E70 7C880670 7C89FE71 7C8A0034 4E800020
+# rlwimi r3,r4,5,10,20; rlwimi r5,r4,16,20,10; rlwimi. r6,r4,0,0,31; blr
+rlwimi 50832AA8 50858514 5086003F 4E800020
+# mulli r3,r4,-7; mullw r5,r4,r6; addic r7,r4,-1; addic. r8,r4,5; subfic r9,r4,-3; subfic r10,r4,100; addze r11,r4; blr
+multiply_carry 1C64FFF9 7CA431D6 30E4FFFF 35040005 2124FFFD 21440064 7D640194 4E800020
+# addze r3,r4; addze r5,r5; blr
+addze 7C640194 7CA50194 4E800020
+# rldicl r3,r4,32,32; clrldi r5,r4,32; rotldi r6,r4,1; rldicr r7,r4,61,63; rldicr r8,r4,8,55; rldimi r9,r4,32,0; rldicl. r10,r4,4,60; blr
+rotate64 78830022 78850020 78860800 7887EFE6 788845E4 7889000E 788A2721 4E800020
+# dcbt r0,r4; dcbf r0,r4; sync; lwsync; eieio; li r3,1; blr
+no_effect 7C00222C 7C0020AC 7C0004AC 7C2004AC 7C0006AC 38600001 4E800020
+# mtctr r4; bctrl; addi r3,r3,1; blr
+bctrl 7C8903A6 4E800421 38630001 4E800020
+# fdiv f3,f1,f2; blr
+fdiv FC611024 4E800020

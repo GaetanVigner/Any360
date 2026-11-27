@@ -101,6 +101,7 @@ SUBSTITUTIONS = [
     (r'\bREX_LOAD_U(8|16|32|64)\(', r'Load\1(base, '),
     (r'\bREX_STORE_U(8|16|32|64)\(', r'Store\1(base, '),
     (r'\bREX_RAW_ADDR\(', 'Raw(base, '),
+    (r'\bREX_CALL_INDIRECT_FUNC\(', 'ANY360_CPU_CALL_INDIRECT(ctx, base, '),
     (r'(?:\brex::ppc::)?\bsimde_mm_vmaddfp\(', 'Vmaddfp('),
     (r'\bsimde_mm_shuffle_epi8\(', 'ShuffleEpi8('),
     (r'\bsimde__m128i\b', '__m128i'),
