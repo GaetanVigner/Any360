@@ -418,7 +418,8 @@ bool CommandProcessor::Wait(uint32_t wait_info, uint32_t poll, uint32_t referenc
   for (;;) {
     const uint64_t progress = progress_.load(std::memory_order_acquire);
     if (Test(wait_info, poll, reference, mask, true)) {
-      if (renderer_) renderer_->CpuWritesVisible(renderer_->CpuWriteMark());  // the CPU's writes before what it waited on
+      // A wait on memory the CPU may have written: its writes before that value are visible to what follows.
+      if (renderer_ && (wait_info & 0x10)) renderer_->CpuWritesVisible(renderer_->CpuWriteMark());
       return true;
     }
     // What the wait may depend on (a fence written after earlier draws) starts on the GPU first.

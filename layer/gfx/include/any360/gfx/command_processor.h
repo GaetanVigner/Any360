@@ -82,7 +82,7 @@ class Renderer {
   virtual void Invalidate(uint32_t /*base*/, uint32_t /*size*/) {}
   // CPU writes the host's watch reported: CpuWriteMark (any thread) counts those reported so far, and
   // CpuWritesVisible(mark), in stream order, makes the ones before `mark` visible to the draws that follow. The
-  // command processor marks each kick as it starts running it.
+  // command processor marks each kick as it starts running it, and each wait on memory as it passes.
   virtual uint64_t CpuWriteMark() const { return 0; }
   virtual void CpuWritesVisible(uint64_t /*mark*/) {}
   // The display gamma ramp at a swap, before Swap: the 256-entry table (DC_LUT_30_COLOR values: 10-bit blue, green,

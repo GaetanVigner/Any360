@@ -32,7 +32,7 @@ is real in games that stream textures through the CPU, not an artefact of the be
   They are counted (`CpuWriteMark`) and applied only once the renderer is told a mark taken after them
   (`CpuWritesVisible`), so draws kicked before a write keep the content they were kicked with.
 - `Renderer::CpuWriteMark` / `CpuWritesVisible` (new virtuals): the command processor marks each kick as it starts
-  running it (ring kicks and direct submissions) and each WAIT_REG_MEM the CPU satisfies; the asynchronous renderer
+  running it (ring kicks and direct submissions) and each WAIT_REG_MEM on memory as it passes; the asynchronous renderer
   reads the mark on the command processor's thread and queues each new one, in order with the draws, to the
   renderer's thread (one 16-byte command a kick when the mark moved).
 - Writes the GPU side reports (resolve write-backs, the command processor's own memory writes) still go through
@@ -46,6 +46,13 @@ Rejected: coalescing at the swap or at the renderer's frame (`NewFrame`): a titl
 with it in the same frame (glyph atlases, Lock/Unlock then draw, video planes) would show the old content for a
 frame. The kick is the boundary the hardware has: a CPU write is visible to the draws kicked after it.
 
+Which waits mark: the first push (6841697) marked every WAIT_REG_MEM that passed. Counted on two Test Drive
+Unlimited captures (`gfx_replay --async --bench`, `t1`: 3 frames, `drive`: 1 frame, a temporary counter, not
+kept), the XDK stream has 47-190 waits on a register a frame (coherency waits on `COHER_STATUS_HOST`, which the stream
+completes itself) against 2-6 waits on memory and 3-9 kicks. Marking at register waits would have released CPU writes
+dozens of times a frame in games, close to the behaviour this change removes. The follow-up marks only waits on memory
+(the ones the CPU can satisfy). The bench's stream has no waits: its numbers below are the same for both.
+
 ## Tests
 
 - `gfx_texture_watch_tests` (new, registered with ctest and run under the validation layer by `layer\sys\test.ps1`):
@@ -58,8 +65,8 @@ frame. The kick is the boundary the hardware has: a CPU write is visible to the 
   That is 8x fewer uploads and 8.7x less texture time a frame. The queue of CPU writes (`cpu_writes_`) and the
   ranges applied (`changed_taken_`) are vectors that keep their capacity, so they stop allocating once they have
   grown to a frame's writes. Allocations were not metered separately.
-- `gfx_cp_tests` (`CpuWriteMarks`, new): the command processor marks a kick and a wait the CPU satisfies with the
-  count reported so far; the asynchronous renderer queues each new mark once, in order.
+- `gfx_cp_tests` (`CpuWriteMarks`, new): the command processor marks a kick and a wait on memory the CPU satisfies
+  with the count reported so far, and not a wait on a register the stream wrote; the asynchronous renderer queues each new mark once, in order.
 - `any360_bench --frames 240 --check bench/expected/city.txt`: passes before and after on NVIDIA and Radeon with the
   same expected file (largest difference 0 of 255 on NVIDIA, 1 on the Radeon): the picture does not change, so the
   expected file is not regenerated.
@@ -107,7 +114,7 @@ Small configuration (`--any360_cpu_affinity=0x3 --any360_gpu_device=Radeon`: 2 p
   median and both lows improve together, so the lows are not traded away. More frames a second cost slightly
   more CPU in total, but FPS per CPU% is up 24%.
 - On two processors the title and the renderer rarely overlap, so the storm was mostly absent before (1.28 uploads
-  a frame). Only the uploads and private memory change significantly; FPS and lows show no measurable difference
+  a frame). Only the uploads and private memory change significantly; FPS and lows are inconclusive (109-188 FPS between launches, p >= 0.39)
   (the 1% lows of 18-40 FPS are the two processors' scheduling, in both variants).
 - This scene's lows are bounded by draws (1.1 us of the renderer's thread a draw, submit 0.5-0.7 ms a frame) and
   the command processor (0.5 ms a frame). Those are the next costs in the profile.

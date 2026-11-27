@@ -772,7 +772,8 @@ void DirectSubmission() {
 }
 
 // CPU writes the host's watch reports become visible in stream order: the command processor marks each kick as it
-// starts running it, and each wait the CPU satisfies, with the count of writes reported so far; the asynchronous
+// starts running it, and each wait on memory as it passes, with the count of writes reported so far (not a wait on a
+// register, which the stream itself completes: coherency waits, hundreds a frame in XDK titles); the asynchronous
 // renderer passes each new mark to its target in order with the draws, once.
 struct MarkRecorder : Recorder {
   std::atomic<uint64_t> reported{0};
@@ -803,6 +804,19 @@ void CpuWriteMarks() {
   for (int i = 0; i < 200 && !cp.Idle(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
   CHECK(Big(marker) == 0x600D && cp.Idle());
   CHECK(!recorder.marks.empty() && recorder.marks.back().first == 7);
+  // A wait on a register the stream wrote passes without a mark: the writes reported since wait for the next kick.
+  const size_t marks = recorder.marks.size();
+  recorder.reported = 9;
+  ring.Put({Type0(0x2041, 1), 9, Type3(pm4::WAIT_REG_MEM, 5), 0x3, 0x2041, 9, 0xFF, 0, Type3(pm4::MEM_WRITE, 2), marker | 2, 0xBEEF});
+  ring.Kick();
+  for (int i = 0; i < 200 && !cp.Idle(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  CHECK(Big(marker) == 0xBEEF && cp.Idle());
+  CHECK(recorder.marks.size() == marks + 1 && recorder.marks.back().first == 9);  // the kick's mark only
+  recorder.reported = 11;
+  ring.Put({Type0(0x2041, 1), 10, Type3(pm4::WAIT_REG_MEM, 5), 0x3, 0x2041, 10, 0xFF, 0});
+  ring.Kick();
+  for (int i = 0; i < 200 && !cp.Idle(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  CHECK(recorder.marks.size() == marks + 2 && recorder.marks.back().first == 11);
   cp.Stop();
 
   // The asynchronous renderer: the mark read from the target, each new one queued once, in order with the calls.
