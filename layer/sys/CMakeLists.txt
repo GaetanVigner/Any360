@@ -84,6 +84,12 @@ add_test(NAME sys_net_tests COMMAND sys_net_tests)
 # any360::xdk: native replacements of statically linked library functions, with their tests and benchmark.
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../xdk ${CMAKE_CURRENT_BINARY_DIR}/xdk)
 
+# any360::cpu: the translator of the titles' PowerPC code, with its instruction and end-to-end tests (Any360's own
+# build only, not a title's that adds this folder).
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../cpu ${CMAKE_CURRENT_BINARY_DIR}/cpu)
+endif()
+
 # any360::gfx, built with the system layer it sits on.
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../gfx ${CMAKE_CURRENT_BINARY_DIR}/gfx)
 

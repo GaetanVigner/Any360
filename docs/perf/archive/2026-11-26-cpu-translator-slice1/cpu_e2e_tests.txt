@@ -1,0 +1,1 @@
+cpu_e2e_tests: mirrorsedge, 300 functions (5122 instructions) of the 4411 both versions take, 19200 runs (71 stopped at 16384 steps): all match the reference

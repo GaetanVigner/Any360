@@ -5,9 +5,7 @@
 "family":"integer",
 "reference":"missing",
 "any360":"todo",
-"titles":{
-"simpsons":1
-}
+"titles":{}
 },
 {
 "id":"PPC_INST_ABS",
@@ -100,7 +98,7 @@
 "codbo":130756,
 "crackdown":313453,
 "mirrorsedge":314733,
-"simpsons":290987
+"simpsons":290986
 }
 },
 {
@@ -258,7 +256,7 @@
 "codbo":2235,
 "crackdown":1823,
 "mirrorsedge":3259,
-"simpsons":2881
+"simpsons":2880
 }
 },
 {
@@ -1299,7 +1297,7 @@
 "codbo":3333,
 "crackdown":4982,
 "mirrorsedge":6182,
-"simpsons":6971
+"simpsons":6970
 }
 },
 {
@@ -2346,7 +2344,7 @@
 "codbo":11551,
 "crackdown":30710,
 "mirrorsedge":24101,
-"simpsons":36752
+"simpsons":36750
 }
 },
 {
@@ -2464,7 +2462,7 @@
 "codbo":34979,
 "crackdown":97712,
 "mirrorsedge":117252,
-"simpsons":107626
+"simpsons":107625
 }
 },
 {
@@ -6895,7 +6893,7 @@
 "codbo":83777,
 "crackdown":161944,
 "mirrorsedge":168704,
-"simpsons":171276
+"simpsons":171275
 }
 },
 {
@@ -6916,7 +6914,7 @@
 "codbo":64188,
 "crackdown":104794,
 "mirrorsedge":113692,
-"simpsons":95197
+"simpsons":95196
 }
 },
 {
@@ -7306,7 +7304,7 @@
 "codbo":99053,
 "crackdown":287667,
 "mirrorsedge":434861,
-"simpsons":342649
+"simpsons":342633
 }
 },
 {
@@ -9405,7 +9403,7 @@
 "codbo":101105,
 "crackdown":215295,
 "mirrorsedge":264130,
-"simpsons":267095
+"simpsons":267093
 }
 },
 {
@@ -11376,7 +11374,7 @@
 "codbo":510,
 "crackdown":1756,
 "mirrorsedge":2453,
-"simpsons":2119
+"simpsons":2118
 }
 },
 {
@@ -12061,7 +12059,7 @@
 "codbo":8459,
 "crackdown":23634,
 "mirrorsedge":15857,
-"simpsons":15835
+"simpsons":15834
 }
 },
 {
@@ -12845,7 +12843,7 @@
 "codbo":53308,
 "crackdown":168614,
 "mirrorsedge":224081,
-"simpsons":192095
+"simpsons":192092
 }
 },
 {
@@ -13011,7 +13009,7 @@
 "codbo":7268,
 "crackdown":17805,
 "mirrorsedge":13463,
-"simpsons":13791
+"simpsons":13790
 }
 },
 {

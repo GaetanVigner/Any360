@@ -63,7 +63,10 @@ ordinary native codebase. The stages and milestones are in [docs/DESIGN.md](docs
 
 Live page: **https://gaetanvigner.github.io/Any360/** (click the map).
 
-The database, the layers, the tools and how to run them: [docs/REPOSITORY.md](docs/REPOSITORY.md).
+The database, the layers, the tools and how to run them: [docs/REPOSITORY.md](docs/REPOSITORY.md). What is not native
+yet, most called first (what runs through ReXGlue counts as not migrated): [docs/ROADMAP.md](docs/ROADMAP.md); the
+first of it, Any360's PowerPC translator: [docs/CPU.md](docs/CPU.md); every measured function's time and memory a
+call: [docs/perf/FUNCTIONS.md](docs/perf/FUNCTIONS.md).
 
 ## State
 

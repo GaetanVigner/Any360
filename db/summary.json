@@ -1,5 +1,5 @@
 {
- "date": "2026-11-25",
+ "date": "2026-11-27",
  "reference": {
   "sdk": "ReXGlue",
   "version": "0.8.0"
@@ -58,8 +58,8 @@
    "imports_native": 317,
    "mvp_total": 277,
    "mvp_native": 277,
-   "mnemonics": 338,
-   "instructions": 2938230,
+   "mnemonics": 337,
+   "instructions": 2938197,
    "sdk": "0.8.0",
    "unnamed_library_functions": 16228,
    "source": "",
@@ -115,7 +115,7 @@
  },
  "instructions": {
   "total": 1842,
-  "used": 353,
+  "used": 352,
   "any360": {
    "todo": 1842
   },

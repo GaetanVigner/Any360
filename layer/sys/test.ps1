@@ -88,6 +88,13 @@ try {
     if ($LASTEXITCODE) { throw "xdk_d3d_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'xdk/xdk_d3d_state_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "xdk_d3d_state_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'cpu/cpu_isa_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "cpu_isa_tests failed ($LASTEXITCODE)" }
+    $cpuE2e = Join-Path $BuildDir 'cpu/cpu_e2e_tests.exe'
+    if (Test-Path $cpuE2e) {
+        & $cpuE2e | Out-Host
+        if ($LASTEXITCODE) { throw "cpu_e2e_tests failed ($LASTEXITCODE)" }
+    }
     & (Join-Path $BuildDir 'gfx/gfx_cp_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "gfx_cp_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_patch_tests.exe') | Out-Host

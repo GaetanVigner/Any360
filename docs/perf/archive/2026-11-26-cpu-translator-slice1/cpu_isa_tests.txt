@@ -1,0 +1,1 @@
+cpu_isa_tests: 27 cases, 110592 states, all match the ISA

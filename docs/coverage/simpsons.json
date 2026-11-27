@@ -1,6 +1,6 @@
 {
  "name": "simpsons",
- "date": "2026-11-25",
+ "date": "2026-11-26",
  "sdk": {
   "path": "F:\\The simpsons\\recomp-sys\\tools\\rexglue-sdk",
   "version": "0.8.0",
@@ -1919,25 +1919,25 @@
   {
    "mnemonic": "lwz",
    "id": "PPC_INST_LWZ",
-   "count": 342649,
+   "count": 342633,
    "state": "handled"
   },
   {
    "mnemonic": "addi",
    "id": "PPC_INST_ADDI",
-   "count": 290987,
+   "count": 290986,
    "state": "handled"
   },
   {
    "mnemonic": "mr",
    "id": "PPC_INST_MR",
-   "count": 263605,
+   "count": 263603,
    "state": "handled"
   },
   {
    "mnemonic": "stw",
    "id": "PPC_INST_STW",
-   "count": 192095,
+   "count": 192092,
    "state": "handled"
   },
   {
@@ -1949,13 +1949,13 @@
   {
    "mnemonic": "li",
    "id": "PPC_INST_LI",
-   "count": 171276,
+   "count": 171275,
    "state": "handled"
   },
   {
    "mnemonic": "cmplwi",
    "id": "PPC_INST_CMPLWI",
-   "count": 107626,
+   "count": 107625,
    "state": "handled"
   },
   {
@@ -1967,7 +1967,7 @@
   {
    "mnemonic": "lis",
    "id": "PPC_INST_LIS",
-   "count": 95197,
+   "count": 95196,
    "state": "handled"
   },
   {
@@ -2051,7 +2051,7 @@
   {
    "mnemonic": "clrlwi",
    "id": "PPC_INST_CLRLWI",
-   "count": 28091,
+   "count": 28089,
    "state": "handled"
   },
   {
@@ -2099,7 +2099,7 @@
   {
    "mnemonic": "stb",
    "id": "PPC_INST_STB",
-   "count": 15835,
+   "count": 15834,
    "state": "handled"
   },
   {
@@ -2129,7 +2129,7 @@
   {
    "mnemonic": "subf",
    "id": "PPC_INST_SUBF",
-   "count": 13150,
+   "count": 13149,
    "state": "handled"
   },
   {
@@ -2201,7 +2201,7 @@
   {
    "mnemonic": "bgt",
    "id": "PPC_INST_BGT",
-   "count": 6971,
+   "count": 6970,
    "state": "handled"
   },
   {
@@ -2363,7 +2363,7 @@
   {
    "mnemonic": "and",
    "id": "PPC_INST_AND",
-   "count": 2403,
+   "count": 2402,
    "state": "handled"
   },
   {
@@ -2387,7 +2387,7 @@
   {
    "mnemonic": "oris",
    "id": "PPC_INST_ORIS",
-   "count": 2119,
+   "count": 2118,
    "state": "handled"
   },
   {
@@ -3867,12 +3867,6 @@
    "state": "handled"
   },
   {
-   "mnemonic": "a",
-   "id": "PPC_INST_A",
-   "count": 1,
-   "state": "unhandled"
-  },
-  {
    "mnemonic": "beq+",
    "id": "PPC_INST_BEQ",
    "count": 1,
@@ -3946,66 +3940,8 @@
   }
  ],
  "unknown_tokens": {
-  "registers": 12,
-  "emitted": 11,
-  "call": 5,
   "in": 4,
-  "as": 2,
-  "correctly": 2,
-  "function": 2,
-  "every": 2,
-  "null": 2,
-  "dereferencing": 2,
-  "one": 2,
-  "file.": 1,
-  "which": 1,
-  "same": 1,
-  "whether": 1,
-  "comfortably": 1,
-  "even": 1,
-  "permission": 1,
-  "underflow": 1,
-  "return": 1,
-  "through": 1,
-  "to": 1,
-  "simpsons_recomp.81.cpp": 1,
-  "keeps": 1,
-  "reuse": 1,
-  "container": 1,
-  "normal": 1,
-  "upstream.": 1,
-  "guard": 1,
-  "stack": 1,
-  "check": 1,
-  "the": 1,
-  "also": 1,
-  "r31": 1,
-  "range": 1,
-  "formatter": 1,
-  "underlying": 1,
-  "regions": 1,
-  "falling": 1,
-  "physical": 1,
-  "behaves": 1,
-  "object": 1,
-  "table": 1,
-  "against": 1,
-  "links": 1,
-  "needing": 1,
-  "after": 1,
-  "them": 1,
-  "this": 1,
-  "abort": 1,
-  "end": 1,
-  "delegate": 1,
-  "shuffle": 1,
-  "with": 1,
-  "loading": 1,
-  "cluster": 1,
-  "patched": 1,
-  "sibling": 1,
-  "regenerating": 1,
-  "take": 1
+  "normal": 1
  },
  "unimplemented_markers": {},
  "functions": {
@@ -4059,10 +3995,10 @@
   ]
  },
  "families": {
-  "load / store / cache": 990621,
-  "integer": 805212,
-  "branch / trap": 574622,
-  "compare / CR": 197445,
+  "load / store / cache": 990599,
+  "integer": 805203,
+  "branch / trap": 574621,
+  "compare / CR": 197444,
   "floating point": 192811,
   "VMX / VMX128": 94971,
   "system": 82548

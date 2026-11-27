@@ -113,7 +113,8 @@ struct Ctx {
   Cr cr0{}, cr1{}, cr2{}, cr3{}, cr4{}, cr5{}, cr6{}, cr7{};
   Xer xer{};
   Fpscr fpscr{};
-  uint64_t lr = 0, ctr = 0;
+  uint64_t lr = 0;
+  Reg ctr{.u64 = 0};
 
   Reg& Gpr(int n);
   Reg& Fpr(int n);

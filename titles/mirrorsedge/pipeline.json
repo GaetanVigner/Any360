@@ -1,6 +1,7 @@
 {
  "_comment": "Where the Mirror's Edge pipeline finds the title (nothing of it is in this repository): the ReXGlue codegen output of default.xex in the MirrorsEdgeRewrite checkout, generated from the player's own disc (USA).",
  "xex": "F:/Mirrorsedge/game/default.xex",
+ "image": "F:/Mirrorsedge/MirrorsEdgeRewrite/out/image/default_image.bin",
  "generated": "F:/Mirrorsedge/MirrorsEdgeRewrite/generated/default",
  "port_src": "F:/Mirrorsedge/MirrorsEdgeRewrite/src",
  "sdk": "F:/The simpsons/recomp-sys/tools/rexglue-sdk",

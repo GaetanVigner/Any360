@@ -845,7 +845,7 @@ def promote_memory(body, label, slots_written):
     return '\n'.join(new), declared, stats
 
 
-UNSUPPORTED = re.compile(r'\b(REX_MM_|PPC_CALL_INDIRECT|ctx\.ctr|__imp__|rex::(?!ppc::simde_mm_vmaddfp)|REX_LOAD_STRING|simde_mm_v(?!maddfp))')
+UNSUPPORTED = re.compile(r'\b(REX_MM_|PPC_CALL_INDIRECT|__imp__|rex::(?!ppc::simde_mm_vmaddfp)|REX_LOAD_STRING|simde_mm_v(?!maddfp))')
 
 
 def functions(generated):

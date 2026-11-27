@@ -29,9 +29,10 @@ IMPORT = re.compile(r'\{\s*0x[0-9A-Fa-f]+,\s*__imp__([A-Za-z0-9_]+)\s*\}')
 EXPORT = re.compile(r'REX_(?:EXPORT(_STUB(?:_ONCE|_RETURN)?)?|HOOK_RAW())\(\s*__imp__([A-Za-z0-9_]+)')
 TABLE_EXPORT = re.compile(r'XE_EXPORT\(\s*(\w+),\s*0x([0-9A-Fa-f]+),\s*([A-Za-z0-9_]+),\s*k(Function|Variable)')
 VARIABLE_MAPPING = re.compile(r'SetVariableMapping\("(\w+)\.exe",\s*0x([0-9A-Fa-f]+)')
-# One `// mnemonic operands` comment per instruction, followed by the instruction's code: a comment followed by
-# another comment is prose (some codegens annotate functions), not an instruction.
-MNEMONIC = re.compile(r'^[ \t]*// ([a-z][a-z0-9_.]*[+-]?)(?: [^\n]*)?\n(?![ \t]*//)', re.M)
+# One `// mnemonic operands` comment per instruction, followed by the instruction's code: the operands are one
+# comma-separated word. A comment followed by another comment, or with words after the operands, is prose (function
+# annotations, hand patches' notes), not an instruction.
+MNEMONIC = re.compile(r'^[ \t]*// ([a-z][a-z0-9_.]*[+-]?)(?: [^\s,]+(?:,[^\s,]+)*)? ?\n(?![ \t]*//)', re.M)
 DEFINE_FUNC = re.compile(r'DEFINE_REX_FUNC\(sub_([0-9A-Fa-f]{8})\)')
 UNIMPLEMENTED = re.compile(r'REX_UNIMPLEMENTED\(0x([0-9A-Fa-f]+),\s*"([^"]+)"\)')
 OPCODE = re.compile(r'^\{\s*"([a-z0-9_.+-]+)",.*?(PPC_INST_[A-Z0-9_]+)\s*\},?\s*$', re.M)

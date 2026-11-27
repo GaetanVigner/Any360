@@ -1,0 +1,280 @@
+{
+ "_comment": "Uses of each GPU unit in the reference captures (gfx_replay --features), by title. Made by tools/native_roadmap.py --features; counts only.",
+ "titles": [
+  "codbo",
+  "mirrorsedge",
+  "simpsons",
+  "tdu"
+ ],
+ "units": {
+  "command processor:DRAW_INDX": {
+   "codbo": 21423,
+   "mirrorsedge": 34740,
+   "simpsons": 12354,
+   "tdu": 9476
+  },
+  "command processor:DRAW_INDX_2": {
+   "codbo": 1122,
+   "mirrorsedge": 1089,
+   "simpsons": 464,
+   "tdu": 288
+  },
+  "command processor:EVENT_WRITE": {
+   "codbo": 574,
+   "mirrorsedge": 10379,
+   "simpsons": 360,
+   "tdu": 5829
+  },
+  "command processor:EVENT_WRITE_EXT": {
+   "mirrorsedge": 9895,
+   "tdu": 5566
+  },
+  "command processor:EVENT_WRITE_SHD": {
+   "codbo": 484,
+   "mirrorsedge": 254,
+   "simpsons": 502,
+   "tdu": 38
+  },
+  "command processor:EVENT_WRITE_ZPD": {
+   "codbo": 96,
+   "mirrorsedge": 6852
+  },
+  "command processor:IM_LOAD": {
+   "codbo": 5231,
+   "mirrorsedge": 37073,
+   "simpsons": 9311,
+   "tdu": 1734
+  },
+  "command processor:IM_LOAD_IMMEDIATE": {
+   "codbo": 445,
+   "mirrorsedge": 757,
+   "simpsons": 5929,
+   "tdu": 424
+  },
+  "command processor:INDIRECT_BUFFER": {
+   "codbo": 751,
+   "mirrorsedge": 549,
+   "simpsons": 4118,
+   "tdu": 108
+  },
+  "command processor:INTERRUPT": {
+   "codbo": 8,
+   "mirrorsedge": 37,
+   "simpsons": 26,
+   "tdu": 14
+  },
+  "command processor:INVALIDATE_STATE": {
+   "codbo": 574,
+   "mirrorsedge": 672,
+   "simpsons": 6050,
+   "tdu": 19
+  },
+  "command processor:LOAD_ALU_CONSTANT": {
+   "codbo": 4074,
+   "mirrorsedge": 31395,
+   "simpsons": 8645
+  },
+  "command processor:MEM_WRITE": {
+   "codbo": 8,
+   "mirrorsedge": 444
+  },
+  "command processor:REG_RMW": {
+   "mirrorsedge": 12,
+   "simpsons": 26
+  },
+  "command processor:SET_BIN_MASK_HI": {
+   "codbo": 11,
+   "mirrorsedge": 20513,
+   "simpsons": 24,
+   "tdu": 544
+  },
+  "command processor:SET_BIN_MASK_LO": {
+   "codbo": 19,
+   "mirrorsedge": 70377,
+   "simpsons": 180,
+   "tdu": 18291
+  },
+  "command processor:SET_BIN_SELECT_HI": {
+   "codbo": 11,
+   "mirrorsedge": 13,
+   "simpsons": 24,
+   "tdu": 4
+  },
+  "command processor:SET_BIN_SELECT_LO": {
+   "codbo": 11,
+   "mirrorsedge": 50,
+   "simpsons": 24,
+   "tdu": 21
+  },
+  "command processor:SET_CONSTANT": {
+   "codbo": 8286,
+   "mirrorsedge": 10250,
+   "tdu": 270
+  },
+  "command processor:WAIT_REG_MEM": {
+   "codbo": 665,
+   "mirrorsedge": 2000,
+   "simpsons": 5235,
+   "tdu": 367
+  },
+  "command processor:XE_SWAP": {
+   "codbo": 8,
+   "mirrorsedge": 12,
+   "simpsons": 26,
+   "tdu": 4
+  },
+  "primitive types:kLineList": {
+   "tdu": 2
+  },
+  "primitive types:kLineStrip": {
+   "tdu": 2
+  },
+  "primitive types:kPointList": {
+   "codbo": 764,
+   "mirrorsedge": 576,
+   "simpsons": 28
+  },
+  "primitive types:kQuadList": {
+   "simpsons": 252
+  },
+  "primitive types:kRectangleList": {
+   "codbo": 156,
+   "mirrorsedge": 240,
+   "simpsons": 294,
+   "tdu": 91
+  },
+  "primitive types:kTriangleFan": {
+   "tdu": 7
+  },
+  "primitive types:kTriangleList": {
+   "codbo": 21415,
+   "mirrorsedge": 34723,
+   "simpsons": 96,
+   "tdu": 2072
+  },
+  "primitive types:kTriangleStrip": {
+   "mirrorsedge": 5,
+   "simpsons": 11866,
+   "tdu": 7393
+  },
+  "texture formats:k_16": {
+   "tdu": 10
+  },
+  "texture formats:k_16_16": {
+   "codbo": 2316,
+   "tdu": 45
+  },
+  "texture formats:k_16_16_16_16": {
+   "codbo": 487,
+   "mirrorsedge": 376
+  },
+  "texture formats:k_16_16_16_16_EXPAND": {
+   "tdu": 151
+  },
+  "texture formats:k_16_16_16_16_FLOAT": {
+   "mirrorsedge": 372,
+   "tdu": 272
+  },
+  "texture formats:k_24_8": {
+   "mirrorsedge": 480
+  },
+  "texture formats:k_24_8_FLOAT": {
+   "codbo": 12543,
+   "mirrorsedge": 307,
+   "simpsons": 107513
+  },
+  "texture formats:k_2_10_10_10": {
+   "simpsons": 170
+  },
+  "texture formats:k_2_10_10_10_AS_16_16_16_16": {
+   "simpsons": 683
+  },
+  "texture formats:k_32_FLOAT": {
+   "tdu": 62
+  },
+  "texture formats:k_5_6_5": {
+   "codbo": 4632
+  },
+  "texture formats:k_8": {
+   "codbo": 401,
+   "mirrorsedge": 160,
+   "simpsons": 293
+  },
+  "texture formats:k_8_8": {
+   "codbo": 8
+  },
+  "texture formats:k_8_8_8_8": {
+   "codbo": 3073,
+   "mirrorsedge": 806,
+   "simpsons": 3659,
+   "tdu": 945
+  },
+  "texture formats:k_8_8_8_8_AS_16_16_16_16": {
+   "codbo": 48
+  },
+  "texture formats:k_DXN": {
+   "codbo": 3561
+  },
+  "texture formats:k_DXT1": {
+   "codbo": 14272,
+   "mirrorsedge": 85005,
+   "simpsons": 1990,
+   "tdu": 20732
+  },
+  "texture formats:k_DXT2_3": {
+   "codbo": 2325,
+   "simpsons": 1150,
+   "tdu": 90
+  },
+  "texture formats:k_DXT4_5": {
+   "codbo": 13372,
+   "mirrorsedge": 16660,
+   "simpsons": 491,
+   "tdu": 1928
+  },
+  "vertex formats:k_16_16_16_16": {
+   "codbo": 88
+  },
+  "vertex formats:k_16_16_16_16_FLOAT": {
+   "tdu": 5256
+  },
+  "vertex formats:k_16_16_FLOAT": {
+   "codbo": 3121,
+   "mirrorsedge": 34816,
+   "tdu": 3012
+  },
+  "vertex formats:k_2_10_10_10": {
+   "codbo": 7070,
+   "simpsons": 7442,
+   "tdu": 598
+  },
+  "vertex formats:k_32_32_32_32_FLOAT": {
+   "codbo": 24322,
+   "mirrorsedge": 394,
+   "simpsons": 4225,
+   "tdu": 91
+  },
+  "vertex formats:k_32_32_32_FLOAT": {
+   "codbo": 156,
+   "mirrorsedge": 34814,
+   "simpsons": 17745,
+   "tdu": 1732
+  },
+  "vertex formats:k_32_32_FLOAT": {
+   "codbo": 655,
+   "mirrorsedge": 9886,
+   "simpsons": 13070,
+   "tdu": 6645
+  },
+  "vertex formats:k_32_FLOAT": {
+   "simpsons": 995,
+   "tdu": 5379
+  },
+  "vertex formats:k_8_8_8_8": {
+   "codbo": 5831,
+   "mirrorsedge": 96570,
+   "simpsons": 10078,
+   "tdu": 3382
+  }
+ }
+}

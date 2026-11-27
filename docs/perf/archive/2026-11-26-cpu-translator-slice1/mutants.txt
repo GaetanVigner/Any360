@@ -1,0 +1,22 @@
+﻿mutant 0 line 1634: 16 -> 17: caught
+mutant 1 line 5320: 1216 -> 1217: MISSED
+mutant 2 line 7881: 6516 -> 6517: caught
+mutant 3 line 7444: 9136 -> 9137: MISSED
+mutant 4 line 7155: 4 -> 5: MISSED
+mutant 5 line 1032: 992 -> 993: caught
+mutant 6 line 2670: 16 -> 17: caught
+mutant 7 line 1475: 3768 -> 3769: caught
+mutant 8 line 4775: 16 -> 17: caught
+mutant 9 line 7127: 4096 -> 4097: MISSED
+mutant 10 line 4487: 0 -> 1: caught
+mutant 11 line 4623: 20 -> 21: caught
+mutant 12 line 6097: 4 -> 5: MISSED
+mutant 13 line 3804: 8 -> 9: caught
+mutant 14 line 7345: 72 -> 73: caught
+mutant 15 line 2275: 0 -> 1: caught
+mutant 16 line 1228: 16 -> 17: caught
+mutant 17 line 4728: 8 -> 9: caught
+mutant 18 line 693: 30000 -> 30001: caught
+mutant 19 line 8332: 12952 -> 12953: MISSED
+mutants: 14 of 20 caught
+6 missed lines, each checked with an abort() inserted before it (reach.py): 5320 7444 7155 7127 6097 8332 NOT reached by any state
