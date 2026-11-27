@@ -7,9 +7,11 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <iterator>
 #include <limits>
 #include <string>
+#include <utility>
 
 #include "cpu_hooks.h"
 #include "cpu_indirect.h"
@@ -253,8 +255,8 @@ template <int kForm, bool kSingle>
 void ExpectFused(Ctx& c, const Memory&) {
   c.fpscr.disableFlushMode();
   const double a = c.f1.f64, cc = c.f2.f64, b = c.f3.f64;
-  const double product_sum = kForm == 0 ? std::fma(a, cc, b) : std::fma(a, cc, -b);
-  const double result = kForm == 2 ? -product_sum : product_sum;
+  const double product_sum = kForm == 0 || kForm == 3 ? std::fma(a, cc, b) : std::fma(a, cc, -b);
+  const double result = kForm >= 2 ? -product_sum : product_sum;
   c.f4.f64 = kSingle ? Single(result) : result;
 }
 void ExpectLogicalImmediate(Ctx& c, const Memory&) {
@@ -478,6 +480,412 @@ void ExpectImports(Ctx& c, const Memory& m) {
   ImportCall(c, m, c.cr0.eq ? "xam" : "xboxkrnl", c.cr0.eq ? 65 : 179);
 }
 
+uint64_t Exts(uint64_t value, int bits) { return uint64_t(int64_t(value << (64 - bits)) >> (64 - bits)); }
+
+// The update forms: the access at EA = rA + d (rA + rB), then EA into rA.
+uint32_t Update(Ctx& c, uint64_t offset) {
+  c.r4.u64 += offset;
+  return uint32_t(c.r4.u64);
+}
+void ExpectUpdateLoads(Ctx& c, const Memory& m) {
+  c.r3.u64 = Load8(m, Update(c, 1));
+  c.r5.u64 = Load16(m, Update(c, 2));
+  c.r6.u64 = Exts(Load16(m, Update(c, 2)), 16);
+  c.r7.u64 = Load32(m, Update(c, 4));
+  c.r8.u64 = Load64(m, Update(c, 8));
+}
+void ExpectUpdateStores(Ctx& c, const Memory& m) {
+  Store8(m, Update(c, 1), uint8_t(c.r3.u64));
+  Store16(m, Update(c, 2), uint16_t(c.r5.u64));
+  Store64(m, Update(c, 8), c.r6.u64);
+}
+void ExpectUpdateIndexed(Ctx& c, const Memory& m) {
+  c.r9.u64 = 8;
+  c.r3.u64 = Load8(m, Update(c, 8));
+  c.r5.u64 = Load16(m, Update(c, 8));
+  c.r6.u64 = Exts(Load16(m, Update(c, 8)), 16);
+  c.r7.u64 = Load32(m, Update(c, 8));
+  c.r8.u64 = Exts(Load32(m, Update(c, 8)), 32);
+  c.r10.u64 = Load64(m, Update(c, 8));
+  Store8(m, Update(c, 8), uint8_t(c.r3.u64));
+  Store16(m, Update(c, 8), uint16_t(c.r5.u64));
+  Store32(m, Update(c, 8), uint32_t(c.r7.u64));
+  Store64(m, Update(c, 8), c.r10.u64);
+}
+void ExpectAlgebraic(Ctx& c, const Memory& m) {
+  c.r3.u64 = Exts(Load16(m, Ea(c.r4.u64, 2)), 16);
+  c.r9.u64 = 6;
+  c.r5.u64 = Exts(Load16(m, Ea(c.r4.u64, 6)), 16);
+  c.r6.u64 = Exts(Load32(m, Ea(c.r4.u64, 8)), 32);
+  c.r7.u64 = Exts(Load32(m, Ea(c.r4.u64, 6)), 32);
+  c.r8.u64 = Load64(m, Ea(c.r4.u64, 6));
+  Store64(m, Ea(c.r4.u64, 6), c.r3.u64);
+}
+void ExpectByteReverse(Ctx& c, const Memory& m) {
+  c.r9.u64 = 4;
+  c.r3.u64 = std::byteswap(Load32(m, Ea(c.r4.u64, 4)));
+  c.r5.u64 = std::byteswap(Load16(m, Ea(c.r4.u64, 4)));
+  Store32(m, Ea(c.r4.u64, 4), std::byteswap(uint32_t(c.r6.u64)));
+  c.r10.u64 = 12;
+  Store16(m, Ea(c.r4.u64, 12), std::byteswap(uint16_t(c.r7.u64)));
+}
+// lwarx / ldarx reserve the word they load; stwcx. / stdcx. store while the reservation holds and say so in cr0.eq.
+// ctx.reserved, which the ISA does not name, is the reserved word as it lies in guest memory.
+void ExpectReservation(Ctx& c, const Memory& m) {
+  const uint32_t ea = uint32_t(c.r4.u64);
+  const uint32_t word = Load32(m, ea);
+  c.reserved.u32 = std::byteswap(word);
+  c.r3.u64 = word + 1ull;
+  Store32(m, ea, uint32_t(c.r3.u64));
+  c.cr0.lt = 0, c.cr0.gt = 0, c.cr0.eq = 1, c.cr0.so = c.xer.so;
+  const uint64_t doubleword = Load64(m, ea);
+  c.reserved.u64 = std::byteswap(doubleword);
+  c.r5.u64 = doubleword + 2;
+  Store64(m, ea, c.r5.u64);
+  c.cr0.lt = 0, c.cr0.gt = 0, c.cr0.eq = 1, c.cr0.so = c.xer.so;
+}
+void ExpectCacheZero(Ctx& c, const Memory& m) {
+  const uint32_t block = uint32_t(c.r4.u64) & ~31u;
+  for (uint32_t i = 0; i < 32; ++i) Store8(m, block + i, 0);
+  c.r9.u64 = 256;
+  const uint32_t line = uint32_t(c.r4.u64 + 256) & ~127u;
+  for (uint32_t i = 0; i < 128; ++i) Store8(m, line + i, 0);
+}
+void ExpectOrHints(Ctx& c, const Memory&) { c.r3.u64 = 1; }
+void ExpectCacheHints(Ctx& c, const Memory&) { c.r3.u64 = 2; }
+void ExpectLogicalRest(Ctx& c, const Memory&) {
+  const uint64_t x = c.r4.u64, y = c.r7.u64;
+  c.r3.u64 = x & 0x80010000u;
+  Compare(c.cr0, int32_t(c.r3.u64), 0, c.xer.so);
+  c.r5.u64 = x ^ 0x80010000u;
+  c.r6.u64 = x | ~y;
+  c.r8.u64 = ~(x ^ y);
+  c.r9.u64 = ~(x & y);
+  c.r10.u64 = x | ~y;
+  Compare(c.cr0, int32_t(c.r10.u64), 0, c.xer.so);
+}
+uint64_t ShiftDouble(uint64_t value, uint64_t amount, bool left) {
+  const uint32_t n = uint32_t(amount & 0x7F);
+  if (n >= 64) return 0;
+  return left ? value << n : value >> n;
+}
+void ExpectShift64(Ctx& c, const Memory&) {
+  const uint64_t x = c.r4.u64;
+  c.r3.u64 = ShiftDouble(x, 63, true);
+  c.r5.u64 = ShiftDouble(x, 64, true);
+  c.r6.u64 = ShiftDouble(x, 127, false);
+  c.r9.u64 = 1;
+  c.r7.u64 = ShiftDouble(x, 1, false);
+  c.r8.u64 = ShiftDouble(x, c.r10.u64, true);
+  c.r11.u64 = ShiftDouble(x, c.r10.u64, false);
+  Compare(c.cr0, int32_t(c.r11.u64), 0, c.xer.so);
+}
+// sraw / srad: amounts of the width or more give the sign in every bit and CA the sign.
+void ShiftWordAlgebraic(Ctx& c, any360::xdk::ppc_model::Reg& target, uint64_t value, uint64_t amount) {
+  const int32_t s = int32_t(value);
+  const uint32_t n = uint32_t(amount & 0x3F);
+  if (n >= 32) {
+    target.u64 = uint64_t(int64_t(s >> 31));
+    c.xer.ca = s < 0;
+    return;
+  }
+  c.xer.ca = s < 0 && (uint32_t(s) & ((1u << n) - 1)) != 0;
+  target.u64 = uint64_t(int64_t(s >> n));
+}
+void ShiftDoubleAlgebraic(Ctx& c, any360::xdk::ppc_model::Reg& target, uint64_t value, uint64_t amount) {
+  const int64_t s = int64_t(value);
+  const uint32_t n = uint32_t(amount & 0x7F);
+  if (n >= 64) {
+    target.u64 = uint64_t(s >> 63);
+    c.xer.ca = s < 0;
+    return;
+  }
+  c.xer.ca = s < 0 && (uint64_t(s) & ((1ull << n) - 1)) != 0;
+  target.u64 = uint64_t(s >> n);
+}
+void CaptureCarry(Ctx& c, any360::xdk::ppc_model::Reg& target) {
+  const uint64_t ca = c.xer.ca;
+  c.xer.ca = uint8_t(Carry32(c.r0.u64, ca));
+  target.u64 = c.r0.u64 + ca;
+}
+void ExpectShiftAlgebraic(Ctx& c, const Memory&) {
+  c.r9.u64 = 31;
+  ShiftWordAlgebraic(c, c.r3, c.r4.u64, 31);
+  CaptureCarry(c, c.r19);
+  c.r10.u64 = 32;
+  ShiftWordAlgebraic(c, c.r5, c.r6.u64, 32);
+  CaptureCarry(c, c.r20);
+  c.r11.u64 = 63;
+  ShiftWordAlgebraic(c, c.r7, c.r6.u64, 63);
+  CaptureCarry(c, c.r21);
+  ShiftWordAlgebraic(c, c.r8, c.r6.u64, c.r12.u64);
+  Compare(c.cr0, int32_t(c.r8.u64), 0, c.xer.so);
+  CaptureCarry(c, c.r22);
+  ShiftDoubleAlgebraic(c, c.r13, c.r4.u64, 63);
+  CaptureCarry(c, c.r23);
+  c.r14.u64 = 64;
+  ShiftDoubleAlgebraic(c, c.r15, c.r6.u64, 64);
+  CaptureCarry(c, c.r24);
+  c.r16.u64 = 127;
+  ShiftDoubleAlgebraic(c, c.r17, c.r6.u64, 127);
+  CaptureCarry(c, c.r25);
+  ShiftDoubleAlgebraic(c, c.r18, c.r4.u64, c.r12.u64);
+  Compare(c.cr0, int32_t(c.r18.u64), 0, c.xer.so);
+}
+void ExpectSrawCa(Ctx& c, const Memory&) {
+  c.r10.u64 = 32;
+  ShiftWordAlgebraic(c, c.r5, c.r6.u64, 32);
+}
+void ExpectSradCa(Ctx& c, const Memory&) {
+  c.r14.u64 = 64;
+  ShiftDoubleAlgebraic(c, c.r15, c.r6.u64, 64);
+}
+void ExpectSradi(Ctx& c, const Memory&) {
+  const uint64_t x = c.r4.u64;
+  ShiftDoubleAlgebraic(c, c.r3, x, 0);
+  CaptureCarry(c, c.r8);
+  ShiftDoubleAlgebraic(c, c.r5, x, 20);
+  CaptureCarry(c, c.r9);
+  ShiftDoubleAlgebraic(c, c.r6, x, 63);
+  CaptureCarry(c, c.r10);
+  ShiftDoubleAlgebraic(c, c.r7, x, 32);
+  Compare(c.cr0, int32_t(c.r7.u64), 0, c.xer.so);
+}
+void ExpectCountRotate(Ctx& c, const Memory&) {
+  const uint64_t x = c.r4.u64;
+  c.r3.u64 = x == 0 ? 64 : uint64_t(std::countl_zero(x));
+  c.r5.u64 = c.r3.u64;
+  Compare(c.cr0, int32_t(c.r5.u64), 0, c.xer.so);
+  const int n = int(c.r7.u64 & 31);
+  c.r6.u64 = Rotate32(uint32_t(x), n) & Mask(8 + 32, 23 + 32);
+  c.r8.u64 = Rotate32(uint32_t(x), n) & Mask(32, 63);
+  c.r9.u64 = std::rotl(x, 8) & Mask(16, 63 - 8);
+  c.r10.u64 = x & Mask(32, 63);
+  Compare(c.cr0, int32_t(c.r10.u64), 0, c.xer.so);
+}
+// The carrying forms: rD = a + b + carry in, CA the carry out of the low word (as in the titles' 32-bit mode).
+void Extended(Ctx& c, any360::xdk::ppc_model::Reg& target, uint64_t a, uint64_t b, uint64_t carry) {
+  const uint64_t ca = Carry32(a, b, carry);
+  target.u64 = a + b + carry;
+  c.xer.ca = uint8_t(ca);
+}
+void ExpectCarryRest(Ctx& c, const Memory&) {
+  const uint64_t x = c.r4.u64, y = c.r5.u64, ones = ~0ull;
+  Extended(c, c.r3, x, y, 0);
+  Extended(c, c.r6, x, y, c.xer.ca);
+  Extended(c, c.r7, x, ones, c.xer.ca);
+  Extended(c, c.r9, ~x, y, c.xer.ca);
+  Extended(c, c.r10, ~x, ones, c.xer.ca);
+  Extended(c, c.r11, ~x, 0, c.xer.ca);
+  Extended(c, c.r13, y, x, c.xer.ca);
+  Compare(c.cr0, int32_t(c.r13.u64), 0, c.xer.so);
+  Extended(c, c.r8, ~x, y, 1);
+  Extended(c, c.r14, ~x, x, c.xer.ca);
+  Compare(c.cr0, int32_t(c.r14.u64), 0, c.xer.so);
+  Extended(c, c.r12, ~y, x, 1);
+  Compare(c.cr0, int32_t(c.r12.u64), 0, c.xer.so);
+}
+// mulhw / mulhwu: the ISA defines the low word (the product's high word); the high word is undefined, here the low
+// word sign-extended (mulhw) or zero-extended (mulhwu).
+uint64_t MulHighWord(uint64_t a, uint64_t b) { return Exts(uint64_t(int64_t(int32_t(a)) * int64_t(int32_t(b))) >> 32, 32); }
+uint64_t MulHighWordUnsigned(uint64_t a, uint64_t b) { return (uint64_t(uint32_t(a)) * uint32_t(b)) >> 32; }
+uint64_t MulHigh(uint64_t a, uint64_t b) { return uint64_t((__int128(int64_t(a)) * __int128(int64_t(b))) >> 64); }
+uint64_t MulHighUnsigned(uint64_t a, uint64_t b) {
+  return uint64_t((static_cast<unsigned __int128>(a) * static_cast<unsigned __int128>(b)) >> 64);
+}
+void ExpectMultiplyHigh(Ctx& c, const Memory&) {
+  const uint64_t x = c.r4.u64, y = c.r5.u64;
+  c.r3.u64 = MulHighWord(x, y);
+  c.r6.u64 = MulHighWordUnsigned(x, y);
+  c.r7.u64 = MulHigh(x, y);
+  c.r8.u64 = MulHighUnsigned(x, y);
+  c.r9.u64 = x * y;
+  c.r10.u64 = MulHighWord(x, y);
+  Compare(c.cr0, int32_t(c.r10.u64), 0, c.xer.so);
+  c.r11.u64 = ~0ull;
+  c.r12.u64 = MulHigh(x, ~0ull);
+  c.r13.u64 = MulHighUnsigned(x, ~0ull);
+  c.r14.u64 = x * ~0ull;
+}
+// Division by zero and the most negative value divided by -1 leave rD undefined in the ISA, as does the high word of
+// divw / divwu: here 0 and a zero high word.
+uint64_t DivWord(uint64_t a, uint64_t b) {
+  const int32_t n = int32_t(a), d = int32_t(b);
+  if (d == 0 || (n == INT32_MIN && d == -1)) return 0;
+  return uint32_t(n / d);
+}
+uint64_t DivWordUnsigned(uint64_t a, uint64_t b) { return uint32_t(b) ? uint32_t(a) / uint32_t(b) : 0; }
+uint64_t DivDouble(uint64_t a, uint64_t b) {
+  const int64_t n = int64_t(a), d = int64_t(b);
+  if (d == 0 || (n == INT64_MIN && d == -1)) return 0;
+  return uint64_t(n / d);
+}
+uint64_t DivDoubleUnsigned(uint64_t a, uint64_t b) { return b ? a / b : 0; }
+void ExpectDivide(Ctx& c, const Memory&) {
+  const uint64_t x = c.r4.u64, y = c.r5.u64, minus_one = ~0ull, most_negative = 1ull << 63;
+  c.r3.u64 = DivWord(x, y);
+  c.r9.u64 = 0;
+  c.r6.u64 = DivWord(x, 0);
+  c.r10.u64 = minus_one;
+  c.r7.u64 = DivWord(x, minus_one);
+  c.r8.u64 = DivWordUnsigned(x, y);
+  c.r11.u64 = DivWordUnsigned(x, 0);
+  c.r12.u64 = DivDouble(x, y);
+  c.r13.u64 = DivDouble(x, minus_one);
+  c.r14.u64 = most_negative;
+  c.r15.u64 = DivDouble(most_negative, minus_one);
+  c.r16.u64 = DivDoubleUnsigned(x, y);
+  c.r17.u64 = DivDoubleUnsigned(x, 0);
+  c.r18.u64 = DivWord(x, y);
+  Compare(c.cr0, int32_t(c.r18.u64), 0, c.xer.so);
+  c.r19.u64 = DivWordUnsigned(x, y);
+  Compare(c.cr0, int32_t(c.r19.u64), 0, c.xer.so);
+}
+// Condition register bit n (0 the lt bit of cr0) and the whole register as mfcr reads it.
+uint8_t& CrBit(Ctx& c, int n) {
+  Cr* fields[8] = {&c.cr0, &c.cr1, &c.cr2, &c.cr3, &c.cr4, &c.cr5, &c.cr6, &c.cr7};
+  Cr& f = *fields[n / 4];
+  switch (n % 4) {
+    case 0: return f.lt;
+    case 1: return f.gt;
+    case 2: return f.eq;
+    default: return f.so;
+  }
+}
+uint64_t CrWord(Ctx& c) {
+  uint64_t word = 0;
+  for (int n = 0; n < 32; ++n) word |= uint64_t(CrBit(c, n)) << (31 - n);
+  return word;
+}
+void SetCrField(Ctx& c, int field, uint64_t value) {
+  for (int b = 0; b < 4; ++b) CrBit(c, 4 * field + b) = (value >> (31 - (4 * field + b))) & 1;
+}
+void ExpectCrLogic(Ctx& c, const Memory&) {
+  auto bit = [&](int n) -> uint8_t& { return CrBit(c, n); };
+  bit(1) = bit(5) & bit(9);
+  bit(2) = bit(6) & !bit(10);
+  bit(3) = bit(7) == bit(11);
+  bit(12) = !(bit(16) & bit(20));
+  bit(13) = !(bit(17) | bit(21));
+  bit(14) = bit(18) | bit(22);
+  bit(15) = bit(19) | !bit(23);
+  bit(24) = bit(25) ^ bit(26);
+  c.cr7 = c.cr0;
+}
+// mfocrf: the ISA leaves the bits outside the named field undefined; here 0.
+void ExpectCrMoves(Ctx& c, const Memory&) {
+  c.r3.u64 = CrWord(c);
+  c.r5.u64 = CrWord(c) & 0x00F00000u;
+  SetCrField(c, 0, c.r4.u64);
+  SetCrField(c, 7, c.r4.u64);
+  c.r7.u64 = CrWord(c);
+  for (int f = 0; f < 8; ++f) SetCrField(c, f, c.r6.u64);
+  c.xer.so = (c.r4.u64 >> 31) & 1, c.xer.ov = (c.r4.u64 >> 30) & 1, c.xer.ca = (c.r4.u64 >> 29) & 1;
+}
+void ExpectLfsu(Ctx& c, const Memory& m) {
+  c.fpscr.disableFlushMode();
+  c.f1.f64 = double(std::bit_cast<float>(Load32(m, Update(c, 4))));
+}
+void ExpectLfdu(Ctx& c, const Memory& m) {
+  c.fpscr.disableFlushMode();
+  c.f2.u64 = Load64(m, Update(c, 8));
+}
+void ExpectStfsu(Ctx& c, const Memory& m) {
+  c.fpscr.disableFlushMode();
+  Store32(m, Update(c, 4), std::bit_cast<uint32_t>(float(c.f1.f64)));
+}
+void ExpectStfdu(Ctx& c, const Memory& m) {
+  c.fpscr.disableFlushMode();
+  Store64(m, Update(c, 8), c.f2.u64);
+}
+void ExpectLfsux(Ctx& c, const Memory& m) {
+  c.r9.u64 = 8;
+  c.fpscr.disableFlushMode();
+  c.f3.f64 = double(std::bit_cast<float>(Load32(m, Update(c, 8))));
+}
+void ExpectLfdux(Ctx& c, const Memory& m) {
+  c.r9.u64 = 8;
+  c.fpscr.disableFlushMode();
+  c.f4.u64 = Load64(m, Update(c, 8));
+}
+void ExpectStfsux(Ctx& c, const Memory& m) {
+  c.r9.u64 = 8;
+  c.fpscr.disableFlushMode();
+  Store32(m, Update(c, 8), std::bit_cast<uint32_t>(float(c.f1.f64)));
+}
+void ExpectStfdux(Ctx& c, const Memory& m) {
+  c.r9.u64 = 8;
+  c.fpscr.disableFlushMode();
+  Store64(m, Update(c, 8), c.f1.u64);
+}
+void ExpectLfdx(Ctx& c, const Memory& m) {
+  c.r9.u64 = 16;
+  c.fpscr.disableFlushMode();
+  c.f2.u64 = Load64(m, Ea(c.r4.u64, 16));
+}
+void ExpectStfdx(Ctx& c, const Memory& m) {
+  c.r9.u64 = 16;
+  c.fpscr.disableFlushMode();
+  Store64(m, Ea(c.r4.u64, 16), c.f1.u64);
+}
+void ExpectStfiwx(Ctx& c, const Memory& m) {
+  c.r9.u64 = 16;
+  c.fpscr.disableFlushMode();
+  Store32(m, Ea(c.r4.u64, 16), uint32_t(c.f1.u64));
+}
+void ExpectFcfid(Ctx& c, const Memory&) {
+  c.fpscr.disableFlushMode();
+  c.f3.f64 = double(int64_t(c.f1.u64));
+}
+// fctiw / fctiwz: the low word is the ISA's (saturated, 0x80000000 for a NaN); the high word, undefined in the ISA,
+// is here the low word sign-extended, 0 for a NaN.
+template <bool kTruncate>
+void ExpectConvertWord(Ctx& c, const Memory&) {
+  c.fpscr.disableFlushMode();
+  const double x = c.f1.f64;
+  uint32_t low;
+  if (std::isnan(x)) {
+    low = 0x80000000u;
+  } else {
+    const double r = kTruncate ? std::trunc(x) : std::nearbyint(x);
+    low = r > 2147483647.0 ? 0x7FFFFFFFu : r < -2147483648.0 ? 0x80000000u : uint32_t(int32_t(r));
+  }
+  c.f3.u64 = std::isnan(x) ? low : Exts(low, 32);
+}
+template <bool kTruncate>
+void ExpectConvertDouble(Ctx& c, const Memory&) {
+  c.fpscr.disableFlushMode();
+  const double x = c.f1.f64;
+  const double r = kTruncate ? std::trunc(x) : std::nearbyint(x);
+  c.f3.u64 = std::isnan(x) ? 0x8000000000000000ull
+             : r >= 9223372036854775808.0 ? 0x7FFFFFFFFFFFFFFFull
+             : r < -9223372036854775808.0 ? 0x8000000000000000ull
+                                         : uint64_t(int64_t(r));
+}
+template <bool kSingle>
+void ExpectSquareRoot(Ctx& c, const Memory&) {
+  c.fpscr.disableFlushMode();
+  const double root = std::sqrt(c.f1.f64);
+  c.f3.f64 = kSingle ? Single(root) : root;
+}
+// fres / frsqrte: estimates the ISA bounds (1/256 and 1/32 of the result); here the exact result rounded to single.
+void ExpectFres(Ctx& c, const Memory&) {
+  c.fpscr.disableFlushMode();
+  c.f3.f64 = Single(1.0 / c.f1.f64);
+}
+void ExpectFrsqrte(Ctx& c, const Memory&) {
+  c.fpscr.disableFlushMode();
+  c.f3.f64 = Single(1.0 / std::sqrt(c.f1.f64));
+}
+void ExpectFsel(Ctx& c, const Memory&) {
+  c.fpscr.disableFlushMode();
+  c.f4.f64 = c.f1.f64 >= 0.0 ? c.f2.f64 : c.f3.f64;
+}
+void ExpectFnabs(Ctx& c, const Memory&) {
+  c.fpscr.disableFlushMode();
+  c.f3.u64 = c.f1.u64 | (1ull << 63);
+}
+
 // Operand values of the floating-point cases. kSingle and kDouble: frA any edge, frB finite and not zero (no
 // operation makes a new NaN; a NaN operand goes through). kFused: values whose products and sums are exact in a
 // double, so that one rounding and two agree. kCompare: any edge for both.
@@ -489,13 +897,29 @@ const double kFiniteEdge[] = {1.5, -2.25, double(1.0f / 3.0f), double(3.0e38f), 
 const double kFusedEdge[] = {0.0, -0.0, 1.5, -2.25, 0.125, 1024.5, -3.0, std::numeric_limits<double>::quiet_NaN(),
                              std::numeric_limits<double>::infinity()};
 constexpr int kSingleEdges = 11, kSingleFinite = 6;
+// kIntegerBits: frA's bits an integer (fcfid). kConvert: values around the conversions' limits and halves, 2^63 left
+// out (a known difference). kRoot: zeros, infinity, a NaN, denormals and positive values (no operation makes a new
+// NaN). kSelect: frA's signs, zeros and NaN, frC and frB any edge. kNegatedFused: kFused without the NaN.
+const uint64_t kIntegerBitsEdge[] = {0, 1, ~0ull, 1ull << 63, ~0ull >> 1, (1ull << 53) + 1, ~(1ull << 53), 0x80000000u,
+                                     0x7FFFFFFFu, 0x0123456789ABCDEFull, 0xFFFFFFFF00000001ull};
+const double kConvertEdge[] = {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(),
+                               -std::numeric_limits<double>::infinity(), 0.0, -0.0, 0.5, -0.5, 1.5, 2.5, -1.5, -2.5,
+                               2147483646.5, 2147483647.0, 2147483647.5, 2147483648.0, -2147483648.0, -2147483648.5,
+                               -2147483649.0, 9223372036854774784.0, -9223372036854775808.0, -1.8446744073709552e19,
+                               1e300, -1e300, 4.9e-324, 1e-310, 123456.789};
+const double kRootEdge[] = {0.0, -0.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN(),
+                            4.9e-324, double(1e-40f), 2.0, 0.25, 1e300, double(3.0e38f), 1.0 / 3.0, 1e-300};
+const double kSelectEdge[] = {0.0, -0.0, -1.5, 1.5, std::numeric_limits<double>::quiet_NaN(),
+                              -std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), 4.9e-324,
+                              -4.9e-324};
 
 struct Case {
   const char* name;
   Translated translated;
   Expected expected;
   enum R4 { kAnyValue, kPointer, kCount } r4;
-  enum Floats { kNoFloats, kSingle, kDouble, kFused, kCompare } floats = kNoFloats;
+  enum Floats { kNoFloats, kSingle, kDouble, kFused, kCompare, kNegatedFused, kIntegerBits, kConvert, kRoot, kSelect };
+  Floats floats = kNoFloats;
 };
 
 void DrawFloats(Ctx& c, Case::Floats floats, uint32_t s) {
@@ -508,7 +932,18 @@ void DrawFloats(Ctx& c, Case::Floats floats, uint32_t s) {
     const int n = int(std::size(kAnyEdge));
     c.f1.f64 = kAnyEdge[s % n];
     c.f2.f64 = kAnyEdge[(s / n) % n];
-  } else if (floats == Case::kFused) {
+  } else if (floats == Case::kIntegerBits) {
+    c.f1.u64 = kIntegerBitsEdge[s % std::size(kIntegerBitsEdge)];
+  } else if (floats == Case::kConvert) {
+    c.f1.f64 = kConvertEdge[s % std::size(kConvertEdge)];
+  } else if (floats == Case::kRoot) {
+    c.f1.f64 = kRootEdge[s % std::size(kRootEdge)];
+  } else if (floats == Case::kSelect) {
+    const uint32_t n = uint32_t(std::size(kAnyEdge)), k = uint32_t(std::size(kSelectEdge));
+    c.f1.f64 = kSelectEdge[s % k];
+    c.f2.f64 = kAnyEdge[(s / k) % n];
+    c.f3.f64 = kAnyEdge[(s / k / n) % n];
+  } else if (floats == Case::kFused || floats == Case::kNegatedFused) {
     const int n = int(std::size(kFusedEdge));
     c.f1.f64 = kFusedEdge[s % n];
     c.f2.f64 = kFusedEdge[(s / n) % n];
@@ -516,6 +951,11 @@ void DrawFloats(Ctx& c, Case::Floats floats, uint32_t s) {
     if (std::isinf(c.f1.f64) && c.f2.f64 == 0) c.f2.f64 = 1.5;
     if (std::isinf(c.f2.f64) && c.f1.f64 == 0) c.f1.f64 = -2.25;
     if (std::isinf(c.f3.f64) && (std::isinf(c.f1.f64) || std::isinf(c.f2.f64))) c.f3.f64 = 0.125;
+    if (floats == Case::kNegatedFused) {
+      for (double* f : {&c.f1.f64, &c.f2.f64, &c.f3.f64}) {
+        if (std::isnan(*f)) *f = 0.5;
+      }
+    }
   }
 }
 
@@ -569,7 +1009,7 @@ const Case kCases[] = {
     {"fdiv", &isa::fdiv, &ExpectArithmetic<'/', false>, Case::kAnyValue, Case::kDouble},
     {"fmadds", &isa::fmadds, &ExpectFused<0, true>, Case::kAnyValue, Case::kFused},
     {"fmsubs", &isa::fmsubs, &ExpectFused<1, true>, Case::kAnyValue, Case::kFused},
-    {"fnmsubs", &isa::fnmsubs, &ExpectFused<2, true>, Case::kAnyValue, Case::kFused},
+    {"fnmsubs", &isa::fnmsubs, &ExpectFused<2, true>, Case::kAnyValue, Case::kNegatedFused},
     {"fmadd", &isa::fmadd, &ExpectFused<0, false>, Case::kAnyValue, Case::kFused},
     {"fmsub", &isa::fmsub, &ExpectFused<1, false>, Case::kAnyValue, Case::kFused},
     {"logical_immediate", &isa::logical_immediate, &ExpectLogicalImmediate, Case::kAnyValue},
@@ -594,6 +1034,52 @@ const Case kCases[] = {
     {"bctr_tail", &isa::bctr_tail, &ExpectBctrTail, Case::kAnyValue},
     {"bnectr", &isa::bnectr, &ExpectBnectr, Case::kAnyValue},
     {"blrl", &isa::blrl, &ExpectBlrl, Case::kAnyValue},
+    {"update_loads", &isa::update_loads, &ExpectUpdateLoads, Case::kPointer},
+    {"update_stores", &isa::update_stores, &ExpectUpdateStores, Case::kPointer},
+    {"update_indexed", &isa::update_indexed, &ExpectUpdateIndexed, Case::kPointer},
+    {"algebraic", &isa::algebraic, &ExpectAlgebraic, Case::kPointer},
+    {"byte_reverse", &isa::byte_reverse, &ExpectByteReverse, Case::kPointer},
+    {"reservation", &isa::reservation, &ExpectReservation, Case::kPointer},
+    {"cache_zero", &isa::cache_zero, &ExpectCacheZero, Case::kPointer},
+    {"cache_hints", &isa::cache_hints, &ExpectCacheHints, Case::kAnyValue},
+    {"or_hints", &isa::or_hints, &ExpectOrHints, Case::kAnyValue},
+    {"logical_rest", &isa::logical_rest, &ExpectLogicalRest, Case::kAnyValue},
+    {"shift64", &isa::shift64, &ExpectShift64, Case::kAnyValue},
+    {"shift_algebraic", &isa::shift_algebraic, &ExpectShiftAlgebraic, Case::kAnyValue},
+    {"sraw_ca", &isa::sraw_ca, &ExpectSrawCa, Case::kAnyValue},
+    {"srad_ca", &isa::srad_ca, &ExpectSradCa, Case::kAnyValue},
+    {"sradi", &isa::sradi, &ExpectSradi, Case::kAnyValue},
+    {"count_rotate", &isa::count_rotate, &ExpectCountRotate, Case::kAnyValue},
+    {"carry_rest", &isa::carry_rest, &ExpectCarryRest, Case::kAnyValue},
+    {"multiply_high", &isa::multiply_high, &ExpectMultiplyHigh, Case::kAnyValue},
+    {"divide", &isa::divide, &ExpectDivide, Case::kAnyValue},
+    {"cr_logic", &isa::cr_logic, &ExpectCrLogic, Case::kAnyValue},
+    {"cr_moves", &isa::cr_moves, &ExpectCrMoves, Case::kAnyValue},
+    {"lfsu", &isa::lfsu, &ExpectLfsu, Case::kPointer},
+    {"lfdu", &isa::lfdu, &ExpectLfdu, Case::kPointer},
+    {"stfsu", &isa::stfsu, &ExpectStfsu, Case::kPointer, Case::kSingle},
+    {"stfdu", &isa::stfdu, &ExpectStfdu, Case::kPointer, Case::kDouble},
+    {"lfsux", &isa::lfsux, &ExpectLfsux, Case::kPointer},
+    {"lfdux", &isa::lfdux, &ExpectLfdux, Case::kPointer},
+    {"stfsux", &isa::stfsux, &ExpectStfsux, Case::kPointer, Case::kSingle},
+    {"stfdux", &isa::stfdux, &ExpectStfdux, Case::kPointer, Case::kDouble},
+    {"lfdx", &isa::lfdx, &ExpectLfdx, Case::kPointer},
+    {"stfdx", &isa::stfdx, &ExpectStfdx, Case::kPointer, Case::kDouble},
+    {"stfiwx", &isa::stfiwx, &ExpectStfiwx, Case::kPointer, Case::kIntegerBits},
+    {"fcfid", &isa::fcfid, &ExpectFcfid, Case::kAnyValue, Case::kIntegerBits},
+    {"fctiw", &isa::fctiw, &ExpectConvertWord<false>, Case::kAnyValue, Case::kConvert},
+    {"fctiwz", &isa::fctiwz, &ExpectConvertWord<true>, Case::kAnyValue, Case::kConvert},
+    {"fctid", &isa::fctid, &ExpectConvertDouble<false>, Case::kAnyValue, Case::kConvert},
+    {"fctidz", &isa::fctidz, &ExpectConvertDouble<true>, Case::kAnyValue, Case::kConvert},
+    {"fsqrt", &isa::fsqrt, &ExpectSquareRoot<false>, Case::kAnyValue, Case::kRoot},
+    {"fsqrts", &isa::fsqrts, &ExpectSquareRoot<true>, Case::kAnyValue, Case::kRoot},
+    {"fres", &isa::fres, &ExpectFres, Case::kAnyValue, Case::kRoot},
+    {"frsqrte", &isa::frsqrte, &ExpectFrsqrte, Case::kAnyValue, Case::kRoot},
+    {"fsel", &isa::fsel, &ExpectFsel, Case::kAnyValue, Case::kSelect},
+    {"fnabs", &isa::fnabs, &ExpectFnabs, Case::kAnyValue, Case::kDouble},
+    {"fnmadd", &isa::fnmadd, &ExpectFused<3, false>, Case::kAnyValue, Case::kNegatedFused},
+    {"fnmadds", &isa::fnmadds, &ExpectFused<3, true>, Case::kAnyValue, Case::kNegatedFused},
+    {"fnmsub", &isa::fnmsub, &ExpectFused<2, false>, Case::kAnyValue, Case::kNegatedFused},
 };
 
 uint64_t Bits(double x) { return std::bit_cast<uint64_t>(x); }
@@ -636,6 +1122,50 @@ void KnownDifferences(const Memory& m) {
   std::printf("cpu_isa_tests: mtmsrd r4,1 of 0xFFFFFFFF: msr %X (EE and IR) and the global lock released (any register "
               "but r13), the ISA %X (EE and RI), the lock's state not an MSR bit\n",
               c.msr, 0x8002u);
+  const std::pair<const char*, Translated> wide_converts[] = {{"fctidz", &isa::fctidz}, {"fctid", &isa::fctid}};
+  for (const auto& [name, convert] : wide_converts) {
+    c = Ctx{};
+    c.fpscr.csr = _mm_getcsr();
+    c.f1.f64 = 9223372036854775808.0;
+    RunFrom([&](Ctx& x) { convert(x, m); }, c);
+    CHECK(c.f3.u64 == 0x8000000000000000ull);
+    std::printf("cpu_isa_tests: %s of 2^63: %016llX, the ISA %016llX (saturated)\n", name,
+                (unsigned long long)c.f3.u64, 0x7FFFFFFFFFFFFFFFull);
+  }
+  c = Ctx{};
+  c.r6.u64 = 0x80000000u;
+  isa::sraw_ca(c, m);
+  CHECK(c.xer.ca == 0 && c.r5.u64 == ~0ull);
+  std::printf("cpu_isa_tests: sraw of 0x80000000 by 32: CA %d (the amount taken as 31), the ISA 1\n", c.xer.ca);
+  c = Ctx{};
+  c.r6.u64 = 1ull << 63;
+  isa::srad_ca(c, m);
+  CHECK(c.xer.ca == 0 && c.r15.u64 == ~0ull);
+  std::printf("cpu_isa_tests: srad of 2^63 by 64: CA %d (the amount taken as 63), the ISA 1\n", c.xer.ca);
+  c = Ctx{};
+  c.fpscr.csr = _mm_getcsr();
+  c.f1.f64 = std::numeric_limits<double>::quiet_NaN(), c.f2.f64 = 1.0, c.f3.f64 = 1.0;
+  RunFrom([&](Ctx& x) { isa::fnmadds(x, m); }, c);
+  CHECK(Bits(c.f4.f64) == 0xFFF8000000000000ull);
+  std::printf("cpu_isa_tests: fnmadds of a NaN frA 7FF8000000000000: %016llX (negated), the ISA %016llX (the NaN)\n",
+              (unsigned long long)Bits(c.f4.f64), 0x7FF8000000000000ull);
+  c = Ctx{};
+  c.fpscr.csr = _mm_getcsr();
+  volatile double minus_one = -1.0;
+  c.f1.f64 = minus_one;
+  RunFrom([&](Ctx& x) { isa::fsqrt(x, m); }, c);
+  CHECK(Bits(c.f3.f64) == 0xFFF8000000000000ull);
+  std::printf("cpu_isa_tests: fsqrt of -1: %016llX (the host's default NaN), the ISA %016llX\n",
+              (unsigned long long)Bits(c.f3.f64), 0x7FF8000000000000ull);
+  c = Ctx{};
+  c.r4.u64 = kWindow + 0x900, c.r3.u64 = 0x12345678u;
+  std::memcpy(&c.reserved.u32, any360::xdk::ppc_model::Raw(m, kWindow + 0x900), 4);
+  const uint32_t before = Load32(m, kWindow + 0x900);
+  isa::stwcx_alone(c, m);
+  const uint32_t after = Load32(m, kWindow + 0x900);
+  CHECK(c.cr0.eq == 1 && after == 0x12345678u);
+  std::printf("cpu_isa_tests: stwcx. with no lwarx before it, the word %08X equal to the context's reserved value: "
+              "stores (%08X, eq %d), the ISA does not (no reservation, eq 0)\n", before, after, c.cr0.eq);
 }
 
 }  // namespace

@@ -1,0 +1,4 @@
+6346 NOT reached | inline void sub_8252CC00(Ctx& ctx, const | ctx.f10.s64 = std::isnan(ctx.f0.f64) ? int64_t(0x80000000U) : (ctx.f0.f64 >= dou
+16645 reached | inline void sub_829F9FE0(Ctx& ctx, const | ctx.r10.u64 = uint32_t(ctx.r9.u32 ? ctx.r10.u32 / ctx.r9.u32 : 0);
+27446 build failed
+36514 reached | inline void sub_82D8AF88(Ctx& ctx, const | ctx.r9.u64 = ctx.r10.u8 & 0x40 ? 0 : (ctx.r9.u64 << (ctx.r10.u8 & 0x3F));

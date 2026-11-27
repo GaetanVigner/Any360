@@ -46,6 +46,7 @@ inline Ctx RandomState(uint32_t seed) {
   ctx.fpscr.csr = next() & 1 ? (ctx.fpscr.csr | flush) : (ctx.fpscr.csr & ~flush);
   ctx.xer.ca = next() & 1;
   ctx.msr = next();
+  ctx.reserved.u64 = DataWord(next());
   return ctx;
 }
 
@@ -84,6 +85,11 @@ inline std::string Differences(const Ctx& a, const Ctx& b) {
   if (a.lr != b.lr) std::snprintf(line, sizeof line, " lr %llx/%llx", (unsigned long long)a.lr, (unsigned long long)b.lr), out += line;
   if (a.ctr.u64 != b.ctr.u64) {
     std::snprintf(line, sizeof line, " ctr %llx/%llx", (unsigned long long)a.ctr.u64, (unsigned long long)b.ctr.u64);
+    out += line;
+  }
+  if (a.reserved.u64 != b.reserved.u64) {
+    std::snprintf(line, sizeof line, " reserved %llx/%llx", (unsigned long long)a.reserved.u64,
+                  (unsigned long long)b.reserved.u64);
     out += line;
   }
   if (a.fpscr.csr != b.fpscr.csr) std::snprintf(line, sizeof line, " fpscr %x/%x", a.fpscr.csr, b.fpscr.csr), out += line;

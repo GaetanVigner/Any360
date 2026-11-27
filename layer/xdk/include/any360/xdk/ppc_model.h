@@ -116,6 +116,7 @@ struct Ctx {
   uint64_t lr = 0;
   Reg ctr{.u64 = 0};
   uint32_t msr = 0x200A000;
+  Reg reserved{.u64 = 0};
 
   Reg& Gpr(int n);
   Reg& Fpr(int n);

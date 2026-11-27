@@ -288,6 +288,18 @@
 "first":"2026-11-27-cpu-runtime-hooks"
 },
 {
+"function":"CPU translation (mirrorsedge)",
+"measure":"348 functions (16,060 instructions), total a call of each",
+"ns":59569.5,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"reference recompilation",
+"versus_ns":60468.5,
+"speed":1.0150916156758072,
+"archive":"2026-11-27-cpu-scalar-rest",
+"first":"2026-11-27-cpu-scalar-rest"
+},
+{
 "function":"D3DResource GetType",
 "measure":"D3D native against the title",
 "ns":5.0,

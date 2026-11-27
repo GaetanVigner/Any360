@@ -156,3 +156,97 @@ bctr_tail 7C8903A6 4E800420 4E800020
 bnectr 2C040000 7CA903A6 4C820420 38600001 4E800020
 # mtlr r4; blrl; addi r3,r3,1; blr
 blrl 7C8803A6 4E800021 38630001 4E800020
+# lbzu r3,1(r4); lhzu r5,2(r4); lhau r6,2(r4); lwzu r7,4(r4); ldu r8,8(r4); blr
+update_loads 8C640001 A4A40002 ACC40002 84E40004 E9040009 4E800020
+# stbu r3,1(r4); sthu r5,2(r4); stdu r6,8(r4); blr
+update_stores 9C640001 B4A40002 F8C40009 4E800020
+# li r9,8; lbzux r3,r4,r9; lhzux r5,r4,r9; lhaux r6,r4,r9; lwzux r7,r4,r9; lwaux r8,r4,r9; ldux r10,r4,r9; stbux r3,r4,r9; sthux r5,r4,r9; stwux r7,r4,r9; stdux r10,r4,r9; blr
+update_indexed 39200008 7C6448EE 7CA44A6E 7CC44AEE 7CE4486E 7D044AEA 7D44486A 7C6449EE 7CA44B6E 7CE4496E 7D44496A 4E800020
+# lha r3,2(r4); li r9,6; lhax r5,r4,r9; lwa r6,8(r4); lwax r7,r4,r9; ldx r8,r4,r9; stdx r3,r4,r9; blr
+algebraic A8640002 39200006 7CA44AAE E8C4000A 7CE44AAA 7D04482A 7C64492A 4E800020
+# li r9,4; lwbrx r3,r4,r9; lhbrx r5,r4,r9; stwbrx r6,r4,r9; li r10,12; sthbrx r7,r4,r10; blr
+byte_reverse 39200004 7C644C2C 7CA44E2C 7CC44D2C 3940000C 7CE4572C 4E800020
+# lwarx r3,0,r4; addi r3,r3,1; stwcx. r3,0,r4; ldarx r5,0,r4; addi r5,r5,2; stdcx. r5,0,r4; blr
+reservation 7C602028 38630001 7C60212D 7CA020A8 38A50002 7CA021AD 4E800020
+# dcbz r0,r4; li r9,256; dcbzl r4,r9; blr
+cache_zero 7C0027EC 39200100 7C244FEC 4E800020
+# dcbtst r0,r4; dcbst r0,r4; li r3,2; blr
+cache_hints 7C0021EC 7C00206C 38600002 4E800020
+# cctpl; cctpm; db16cyc; li r3,1; blr
+or_hints 7C210B78 7C421378 7FFFFB78 38600001 4E800020
+# andis. r3,r4,0x8001; xoris r5,r4,0x8001; orc r6,r4,r7; eqv r8,r4,r7; nand r9,r4,r7; orc. r10,r4,r7; blr
+logical_rest 74838001 6C858001 7C863B38 7C883A38 7C893BB8 7C8A3B39 4E800020
+# li r9,63; sld r3,r4,r9; li r9,64; sld r5,r4,r9; li r9,127; srd r6,r4,r9; li r9,1; srd r7,r4,r9; sld r8,r4,r10; srd. r11,r4,r10; blr
+shift64 3920003F 7C834836 39200040 7C854836 3920007F 7C864C36 39200001 7C874C36 7C885036 7C8B5437 4E800020
+# li r9,31; sraw r3,r4,r9; addze r19,r0; li r10,32; sraw r5,r6,r10; addze r20,r0; li r11,63; sraw r7,r6,r11; addze r21,r0; sraw. r8,r6,r12; addze r22,r0; srad r13,r4,r11; addze r23,r0; li r14,64; srad r15,r6,r14; addze r24,r0; li r16,127; srad r17,r6,r16; addze r25,r0; srad. r18,r4,r12; blr
+shift_algebraic 3920001F 7C834E30 7E600194 39400020 7CC55630 7E800194 3960003F 7CC75E30 7EA00194 7CC86631 7EC00194 7C8D5E34 7EE00194 39C00040 7CCF7634 7F000194 3A00007F 7CD18634 7F200194 7C926635 4E800020
+# li r10,32; sraw r5,r6,r10; blr
+sraw_ca 39400020 7CC55630 4E800020
+# li r14,64; srad r15,r6,r14; blr
+srad_ca 39C00040 7CCF7634 4E800020
+# stwcx. r3,0,r4; blr
+stwcx_alone 7C60212D 4E800020
+# sradi r3,r4,0; addze r8,r0; sradi r5,r4,20; addze r9,r0; sradi r6,r4,63; addze r10,r0; sradi. r7,r4,32; blr
+sradi 7C830674 7D000194 7C85A674 7D200194 7C86FE76 7D400194 7C870677 4E800020
+# cntlzd r3,r4; cntlzd. r5,r4; rlwnm r6,r4,r7,8,23; rotlw r8,r4,r7; rldic r9,r4,8,16; rldic. r10,r4,0,32; blr
+count_rotate 7C830074 7C850075 5C863A2E 5C88383E 78894408 788A0029 4E800020
+# addc r3,r4,r5; adde r6,r4,r5; addme r7,r4; subfe r9,r4,r5; subfme r10,r4; subfze r11,r4; adde. r13,r5,r4; subfc r8,r4,r5; subfe. r14,r4,r4; subfc. r12,r5,r4; blr
+carry_rest 7C642814 7CC42914 7CE401D4 7D242910 7D4401D0 7D640190 7DA52115 7D042810 7DC42111 7D852011 4E800020
+# mulhw r3,r4,r5; mulhwu r6,r4,r5; mulhd r7,r4,r5; mulhdu r8,r4,r5; mulld r9,r4,r5; mulhw. r10,r4,r5; li r11,-1; mulhd r12,r4,r11; mulhdu r13,r4,r11; mulld r14,r4,r11; blr
+multiply_high 7C642896 7CC42816 7CE42892 7D042812 7D2429D2 7D442897 3960FFFF 7D845892 7DA45812 7DC459D2 4E800020
+# divw r3,r4,r5; li r9,0; divw r6,r4,r9; li r10,-1; divw r7,r4,r10; divwu r8,r4,r5; divwu r11,r4,r9; divd r12,r4,r5; divd r13,r4,r10; li r14,-1; rldicr r14,r14,63,0; divd r15,r14,r10; divdu r16,r4,r5; divdu r17,r4,r9; divw. r18,r4,r5; divwu. r19,r4,r5; blr
+divide 7C642BD6 39200000 7CC44BD6 3940FFFF 7CE453D6 7D042B96 7D644B96 7D842BD2 7DA453D2 39C0FFFF 79CEF806 7DEE53D2 7E042B92 7E244B92 7E442BD7 7E642B97 4E800020
+# crand 1,5,9; crandc 2,6,10; creqv 3,7,11; crnand 12,16,20; crnor 13,17,21; cror 14,18,22; crorc 15,19,23; crxor 24,25,26; mcrf cr7,cr0; blr
+cr_logic 4C254A02 4C465102 4C675A42 4D90A1C2 4DB1A842 4DD2B382 4DF3BB42 4F19D182 4F800000 4E800020
+# mfcr r3; mfocrf r5,0x20; mtcrf 0x81,r4; mfcr r7; mtcr r6; mtxer r4; blr
+cr_moves 7C600026 7CB20026 7C881120 7CE00026 7CCFF120 7C8103A6 4E800020
+# lfsu f1,4(r4); blr
+lfsu C4240004 4E800020
+# lfdu f2,8(r4); blr
+lfdu CC440008 4E800020
+# stfsu f1,4(r4); blr
+stfsu D4240004 4E800020
+# stfdu f2,8(r4); blr
+stfdu DC440008 4E800020
+# li r9,8; lfsux f3,r4,r9; blr
+lfsux 39200008 7C644C6E 4E800020
+# li r9,8; lfdux f4,r4,r9; blr
+lfdux 39200008 7C844CEE 4E800020
+# li r9,8; stfsux f1,r4,r9; blr
+stfsux 39200008 7C244D6E 4E800020
+# li r9,8; stfdux f1,r4,r9; blr
+stfdux 39200008 7C244DEE 4E800020
+# li r9,16; lfdx f2,r4,r9; blr
+lfdx 39200010 7C444CAE 4E800020
+# li r9,16; stfdx f1,r4,r9; blr
+stfdx 39200010 7C244DAE 4E800020
+# li r9,16; stfiwx f1,r4,r9; blr
+stfiwx 39200010 7C244FAE 4E800020
+# fcfid f3,f1; blr
+fcfid FC600E9C 4E800020
+# fctiw f3,f1; blr
+fctiw FC60081C 4E800020
+# fctiwz f3,f1; blr
+fctiwz FC60081E 4E800020
+# fctid f3,f1; blr
+fctid FC600E5C 4E800020
+# fctidz f3,f1; blr
+fctidz FC600E5E 4E800020
+# fsqrt f3,f1; blr
+fsqrt FC60082C 4E800020
+# fsqrts f3,f1; blr
+fsqrts EC60082C 4E800020
+# fres f3,f1; blr
+fres EC600830 4E800020
+# frsqrte f3,f1; blr
+frsqrte FC600834 4E800020
+# fsel f4,f1,f2,f3; blr
+fsel FC8118AE 4E800020
+# fnabs f3,f1; blr
+fnabs FC600910 4E800020
+# fnmadd f4,f1,f2,f3; blr
+fnmadd FC8118BE 4E800020
+# fnmadds f4,f1,f2,f3; blr
+fnmadds EC8118BE 4E800020
+# fnmsub f4,f1,f2,f3; blr
+fnmsub FC8118BC 4E800020
