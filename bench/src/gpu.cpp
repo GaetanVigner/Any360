@@ -12,6 +12,7 @@
 #include "any360/gfx/png.h"
 #include "any360/gfx/vulkan/presenter.h"
 #include "any360/gfx/vulkan/renderer.h"
+#include "any360/host/usage.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -38,6 +39,11 @@ uint64_t PrivateBytes() {
   counters.cb = sizeof(counters);
   if (!GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters), sizeof(counters))) return 0;
   return counters.PrivateUsage;
+}
+
+bool KeepAffinity(const std::string& mask) {
+  const uint64_t parsed = host::ParseAffinityMask(mask);
+  return parsed && host::KeepProcessAffinity(parsed);
 }
 
 bool SavePng(const std::string& path, uint32_t width, uint32_t height, const std::vector<uint32_t>& pixels) {
@@ -74,11 +80,11 @@ struct BenchGpu::State {
   uint32_t period_slow = 0;
   vk::RendererStats period_stats{};
   uint64_t period_cp_busy = 0;
-  double period_cpu = 0;
+  host::UsageMeter period_usage;
+  std::unique_ptr<host::UsageMeter> run_usage;
   std::atomic<bool> measure_requested{false};
   bool measuring = false;
   Clock::time_point run_start{};
-  double run_cpu = 0;
   vk::RendererStats run_stats{};
   uint64_t run_cp_busy = 0, run_async_busy = 0, run_frames = 0;
   float run_worst = 0;
@@ -118,7 +124,7 @@ void BenchGpu::State::OnSwap(vk::VulkanRenderer& r) {
     last_swap = period_start = now;
     period_stats = r.stats();
     period_cp_busy = cp->ns_busy();
-    period_cpu = ProcessCpuSeconds();
+    period_usage.Take();
     return;
   }
   const float ms = std::chrono::duration<float, std::milli>(now - last_swap).count();
@@ -129,7 +135,7 @@ void BenchGpu::State::OnSwap(vk::VulkanRenderer& r) {
   if (measure_requested.exchange(false)) {
     measuring = true;
     run_start = now;
-    run_cpu = ProcessCpuSeconds();
+    run_usage = std::make_unique<host::UsageMeter>();
     run_stats = r.stats();
     run_cp_busy = cp->ns_busy();
     run_async_busy = async ? async->busy_ns() : 0;
@@ -148,37 +154,34 @@ void BenchGpu::State::Report(const vk::RendererStats& s, Clock::time_point t) {
   const double seconds = std::chrono::duration<double>(t - period_start).count();
   const double n = double(std::max<size_t>(1, period_ms.size())), ms = n * 1e6;
   const vk::RendererStats& l = period_stats;
-  const double cpu = ProcessCpuSeconds(), cp_busy = double(cp->ns_busy() - period_cp_busy);
-  const double fps = n / seconds, cpu_pct = 100.0 * (cpu - period_cpu) / seconds,
-               gpu_pct = 100.0 * double(s.ns_gpu - l.ns_gpu) / 1e9 / seconds;
+  const double cp_busy = double(cp->ns_busy() - period_cp_busy);
+  const double fps = n / seconds;
+  const std::string usage = host::FormatUsage(period_usage.Take(int64_t(s.ns_gpu - l.ns_gpu)));
   const double private_mb = double(PrivateBytes()) / 1e6;
   peak_private = std::max(peak_private, private_mb);
   char line[1024];
   std::snprintf(line, sizeof(line),
                 "Any360: %.1f FPS; per frame: %.0f draws, %.0f skipped, %.0f failed, %.0f resolves, %.1f texture uploads, "
                 "%.1f pipelines; ms: draws %.2f (textures %.2f, shaders %.2f, pipelines %.2f, guest memory %.2f, submit %.2f), "
-                "resolves %.2f, swaps %.2f; command processor %.2f, GPU %.2f",
+                "resolves %.2f, swaps %.2f; command processor %.2f, GPU %.2f; %s",
                 fps, (s.draws - l.draws) / n, (s.skipped - l.skipped) / n, (s.failed - l.failed) / n, (s.resolves - l.resolves) / n,
                 (s.texture_uploads - l.texture_uploads) / n, (s.pipelines - l.pipelines) / n, (s.ns_draws - l.ns_draws) / ms,
                 (s.ns_textures - l.ns_textures) / ms, (s.ns_shaders - l.ns_shaders) / ms, (s.ns_pipelines - l.ns_pipelines) / ms,
                 (s.ns_memory - l.ns_memory) / ms, (s.ns_submit - l.ns_submit) / ms, (s.ns_resolves - l.ns_resolves) / ms,
-                (s.ns_swaps - l.ns_swaps) / ms, cp_busy / ms, double(s.ns_gpu - l.ns_gpu) / ms);
+                (s.ns_swaps - l.ns_swaps) / ms, cp_busy / ms, double(s.ns_gpu - l.ns_gpu) / ms, usage.c_str());
   if (o.log) o.log(line);
   const gfx::FrameTimeSummary f = gfx::SummarizeFrameTimes(period_ms);
   std::snprintf(line, sizeof(line),
                 "Any360: %.1f FPS with the diagnostics off (bench); frame times: median %.2f ms (%.1f FPS), 10%% low %.1f FPS, "
-                "1%% low %.1f FPS; slowest frame %.1f ms, %u over 16.7 ms; %.0f MB private; CPU %.0f%%, GPU %.0f%%; "
-                "%.2f FPS per CPU%%, %.2f FPS per GPU%%",
+                "1%% low %.1f FPS; slowest frame %.1f ms, %u over 16.7 ms; %.0f MB private; %s",
                 fps, f.median_ms, f.median_ms > 0 ? 1e3 / f.median_ms : 0, f.p90_ms > 0 ? 1e3 / f.p90_ms : 0,
-                f.p99_ms > 0 ? 1e3 / f.p99_ms : 0, period_worst, period_slow, private_mb, cpu_pct, gpu_pct,
-                cpu_pct > 0 ? fps / cpu_pct : 0, gpu_pct > 0 ? fps / gpu_pct : 0);
+                f.p99_ms > 0 ? 1e3 / f.p99_ms : 0, period_worst, period_slow, private_mb, usage.c_str());
   if (o.log) o.log(line);
   period_ms.clear();
   period_worst = 0, period_slow = 0;
   period_start = t;
   period_stats = s;
   period_cp_busy = cp->ns_busy();
-  period_cpu = cpu;
 }
 
 BenchGpu::BenchGpu() : s_(std::make_unique<State>()) {}
@@ -317,8 +320,13 @@ RunSummary BenchGpu::Summary() {
   r.p1_fps = f.p99_ms > 0 ? 1e3 / f.p99_ms : 0;
   r.slowest_ms = s.run_worst;
   r.over_16ms = s.run_slow;
-  r.cpu_pct = r.seconds > 0 ? 100.0 * (ProcessCpuSeconds() - s.run_cpu) / r.seconds : 0;
-  r.gpu_pct = r.seconds > 0 ? 100.0 * double(b.ns_gpu - a.ns_gpu) / 1e9 / r.seconds : 0;
+  const host::UsageShares usage = s.run_usage->Take(int64_t(b.ns_gpu - a.ns_gpu));
+  r.cpu_pct = std::max(0.0, usage.cpu_core_pct);
+  r.cpu_allowed_pct = std::max(0.0, usage.cpu_allowed_pct);
+  r.cores = usage.cores, r.mask = usage.mask;
+  r.gpu_pct = usage.gpu_pct >= 0 ? usage.gpu_pct : std::max(0.0, usage.gpu_own_pct);
+  r.gpu_own_pct = std::max(0.0, usage.gpu_own_pct);
+  r.usage = host::FormatUsage(usage);
   r.private_mb = double(PrivateBytes()) / 1e6;
   r.peak_private_mb = std::max(s.peak_private, r.private_mb);
   const double n = double(std::max<uint64_t>(1, r.frames)), ms = n * 1e6;

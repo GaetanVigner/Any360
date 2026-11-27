@@ -44,9 +44,11 @@ bench\build.ps1                       # out\bench\bench\any360_bench.exe
 any360_bench --frames 1200            # headless, uncapped
 any360_bench --window --frames 0      # in a window (frames 0: until closed)
 any360_bench --gpu Radeon --objects 4000 --workers 4 --json run.json
+any360_bench --any360_cpu_affinity=0x3 --any360_gpu_device=Radeon   # the small configuration
 ```
 
-Options: `--scene city`, `--frames N`, `--warmup N` (frames before the measure, 120), `--objects N`, `--workers N`
+Options: `--scene city`, `--any360_cpu_affinity=MASK` (kept on those processors, as the titles' option),
+`--any360_gpu_device=NAME` (as `--gpu`), `--frames N`, `--warmup N` (frames before the measure, 120), `--objects N`, `--workers N`
 (1-4), `--window`, `--gpu NAME`, `--sync-renderer` (no asynchronous renderer), `--sync-pipelines` (every pipeline
 compiled before its draw), `--report-seconds S`, `--json FILE`, `--check FILE`, `--write-expected FILE`.
 
@@ -54,9 +56,11 @@ compiled before its draw), `--report-seconds S`, `--json FILE`, `--check FILE`, 
 
 - Every period (5 s): the two lines titles write, so `tools/frame_lows.py` reads a bench run as it reads a game's:
   `Any360: <fps> FPS; per frame: <n> draws, ...` and `Any360: <fps> FPS with the diagnostics off (bench); frame times:
-  median ..., 10% low ..., 1% low ...; slowest frame ...; <n> MB private; CPU <n>%, GPU <n>%; FPS per CPU% and GPU%`.
-- At the end, over the measured frames: FPS, median, 10% and 1% lows, slowest frame; CPU% (process time over wall
-  time, 100 = one core), GPU% (GPU busy time over wall time), FPS per CPU% and per GPU%, private memory; ms a frame of
+  median ..., 10% low ..., 1% low ...; slowest frame ...; <n> MB private; CPU <n>% of a core, <n>% of the <n> allowed
+  (mask ...); GPU <n>% (system), <n>% (batches)`, the usage text every runtime writes (`any360/host/usage.h`), which
+  `tools/frame_lows.py` turns into CPU%, GPU% and FPS per CPU% and per GPU%.
+- At the end, over the measured frames: FPS, median, 10% and 1% lows, slowest frame; the same usage (CPU% of a core and
+  of the allowed processors, GPU% as the system counts it and as the renderer's batches measure it), FPS per CPU% and per GPU%, private memory; ms a frame of
   the title's main and render threads (their waits excluded), the command processor, the renderer's thread, the
   renderer's draws (textures, shaders, pipelines, guest memory, submit), resolves, swaps and the GPU; per frame the
   draws, resolves, texture uploads, pipelines, system calls and watched writes; the hashes of the command stream and

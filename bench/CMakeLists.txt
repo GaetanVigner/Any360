@@ -4,7 +4,7 @@
 # address space); the executable holds the title code, which sees any360::sys only through its exports.
 add_library(any360_bench_gfx STATIC src/city.cpp src/gpu.cpp src/guest_space.cpp)
 target_include_directories(any360_bench_gfx PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../layer/gfx/tests)
-target_link_libraries(any360_bench_gfx PRIVATE any360_gfx_vulkan)
+target_link_libraries(any360_bench_gfx PRIVATE any360_gfx_vulkan any360_host_diagnostics)
 target_link_libraries(any360_bench_gfx PUBLIC any360_sys psapi)
 target_compile_options(any360_bench_gfx PRIVATE -Wall -Wextra)
 target_compile_definitions(any360_bench_gfx PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

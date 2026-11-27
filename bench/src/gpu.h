@@ -31,8 +31,13 @@ struct RunSummary {
   uint64_t frames = 0;
   double seconds = 0, fps = 0, median_ms = 0, p10_fps = 0, p1_fps = 0, slowest_ms = 0;
   uint32_t over_16ms = 0;
-  double cpu_pct = 0;   // process CPU time over wall time, of one core (100 = one core busy)
-  double gpu_pct = 0;   // GPU busy time over wall time
+  double cpu_pct = 0;          // process CPU time over wall time, of one core (100 = one core busy)
+  double cpu_allowed_pct = 0;  // the same over the processors the process may run on
+  uint32_t cores = 0;
+  uint64_t mask = 0;
+  double gpu_pct = 0;          // the system's count of the busiest engine's time over wall time (else the renderer's)
+  double gpu_own_pct = 0;      // the renderer's batches' time over wall time
+  std::string usage;           // any360/host/usage.h's text
   double private_mb = 0, peak_private_mb = 0;
   // Per frame (ms): the renderer's draws (textures, shaders, pipelines, guest memory, submit), resolves, swaps; the
   // command processor busy; the GPU's time.
@@ -70,6 +75,10 @@ class BenchGpu {
  private:
   std::unique_ptr<State> s_;
 };
+
+// Restricts the process to the processors of `mask` ("0x3", "3", "0-1") and keeps it there (any360/host/usage.h);
+// false when the text names none or the system refuses.
+bool KeepAffinity(const std::string& mask);
 
 // Writes RGBA8 pixels (red in the low byte) as a PNG.
 bool SavePng(const std::string& path, uint32_t width, uint32_t height, const std::vector<uint32_t>& pixels);

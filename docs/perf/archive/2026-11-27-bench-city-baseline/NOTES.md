@@ -16,4 +16,9 @@ The bench title's first scene (docs/BENCH.md), measured as it lands. Raw lines i
     ring: 13 K system calls a frame, almost all of them those yields.
 - Private memory: 1,132 MB before the title starts (the renderer's mirror of the 512 MB physical memory and the
   device), 1,367 MB at the end.
-- Not measured yet: the small configuration (2 cores, the Radeon iGPU); windowed mode.
+- The small configuration (`--any360_cpu_affinity=0x3 --any360_gpu_device=Radeon`, 600 frames, 2026-11-28): 100 and
+  157 FPS in two launches, median 7.5 / 5.4 ms, 1% lows 23 / 27 FPS, 65 and 15 frames over 16.7 ms; the process used
+  only 33-75% of its 2 processors: threads sleep while frames are late (the title's yields, the renderer's waits).
+  Texture uploads fall to 1.0 a frame there (8.5 on 16 processors): the extra uploads come from uploads racing the
+  CPU's rewrite.
+- Not measured yet: windowed mode.

@@ -2,7 +2,7 @@
 // any360::gfx the way a recompiled title runs on them, headless or in a window, with the frame report titles give.
 //
 //   any360_bench [--scene city] [--frames N] [--warmup N] [--objects N] [--workers N] [--window] [--gpu NAME]
-//                [--sync-renderer] [--sync-pipelines] [--report-seconds S] [--json FILE] [--screenshot FILE.png]
+//                [--any360_cpu_affinity=MASK] [--any360_gpu_device=NAME] [--sync-renderer] [--sync-pipelines] [--report-seconds S] [--json FILE] [--screenshot FILE.png]
 //                [--check FILE | --write-expected FILE]
 #include <algorithm>
 #include <cmath>
@@ -74,6 +74,14 @@ int main(int argc, char** argv) {
     else if (a == "--workers") title.workers = uint32_t(std::strtoul(next(), nullptr, 10));
     else if (a == "--window") gpu_options.window = true;
     else if (a == "--gpu") gpu_options.gpu = next();
+    else if (a.rfind("--any360_gpu_device=", 0) == 0) gpu_options.gpu = a.substr(20);
+    else if (a == "--cpu-affinity" || a.rfind("--any360_cpu_affinity=", 0) == 0) {
+      const std::string mask = a == "--cpu-affinity" ? std::string(next()) : a.substr(22);
+      if (!KeepAffinity(mask)) {
+        std::printf("any360_bench: cannot keep the processors %s\n", mask.c_str());
+        return 2;
+      }
+    }
     else if (a == "--sync-renderer") gpu_options.async_renderer = false;
     else if (a == "--sync-pipelines") gpu_options.async_pipelines = false;
     else if (a == "--report-seconds") gpu_options.report_seconds = std::strtod(next(), nullptr);
@@ -132,8 +140,8 @@ int main(int argc, char** argv) {
               title.warmup, title.city.objects, title.workers, s.device.c_str(), gpu_options.window ? "windowed" : "headless");
   std::printf("any360_bench: %.1f FPS, median %.2f ms, 10%% low %.1f FPS, 1%% low %.1f FPS, slowest %.1f ms, %u over 16.7 ms\n",
               s.fps, s.median_ms, s.p10_fps, s.p1_fps, s.slowest_ms, s.over_16ms);
-  std::printf("any360_bench: CPU %.0f%%, GPU %.0f%%, %.2f FPS per CPU%%, %.2f FPS per GPU%%; private %.0f MB (peak %.0f, %.0f before the title)\n",
-              s.cpu_pct, s.gpu_pct, s.cpu_pct > 0 ? s.fps / s.cpu_pct : 0, s.gpu_pct > 0 ? s.fps / s.gpu_pct : 0, s.private_mb,
+  std::printf("any360_bench: %s; %.2f FPS per CPU%%, %.2f FPS per GPU%%; private %.0f MB (peak %.0f, %.0f before the title)\n",
+              s.usage.c_str(), s.cpu_pct > 0 ? s.fps / s.cpu_pct : 0, s.gpu_pct > 0 ? s.fps / s.gpu_pct : 0, s.private_mb,
               s.peak_private_mb, private_before);
   std::printf("any360_bench: ms a frame: title main %.3f, title render %.3f, command processor %.3f, renderer thread %.3f, "
               "draws %.3f (textures %.3f, shaders %.3f, pipelines %.3f, guest memory %.3f, submit %.3f), resolves %.3f, swaps %.3f, GPU %.3f\n",
@@ -151,7 +159,8 @@ int main(int argc, char** argv) {
     out << "{\n  \"scene\": \"" << scene << "\", \"device\": \"" << s.device << "\", \"frames\": " << result.frames
         << ", \"objects\": " << title.city.objects << ",\n  \"fps\": " << s.fps << ", \"median_ms\": " << s.median_ms
         << ", \"p10_fps\": " << s.p10_fps << ", \"p1_fps\": " << s.p1_fps << ", \"slowest_ms\": " << s.slowest_ms
-        << ",\n  \"cpu_pct\": " << s.cpu_pct << ", \"gpu_pct\": " << s.gpu_pct << ", \"private_mb\": " << s.private_mb
+        << ",\n  \"cpu_pct\": " << s.cpu_pct << ", \"cpu_allowed_pct\": " << s.cpu_allowed_pct << ", \"cores\": " << s.cores
+        << ", \"gpu_pct\": " << s.gpu_pct << ", \"gpu_batches_pct\": " << s.gpu_own_pct << ", \"private_mb\": " << s.private_mb
         << ", \"peak_private_mb\": " << s.peak_private_mb << ",\n  \"ms\": {\"title_main\": " << result.main_ms
         << ", \"title_render\": " << result.render_ms << ", \"command_processor\": " << s.cp_ms
         << ", \"renderer_thread\": " << s.renderer_thread_ms << ", \"draws\": " << s.draws_ms << ", \"textures\": " << s.textures_ms
