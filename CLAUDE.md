@@ -63,6 +63,12 @@ owner adds a rule, it goes here (or into a skill under `.claude/skills/`) in the
   memory. Never trade 1% lows for the average: lows are stutter.
 - A/B in game with enough launches (5 or more a variant, alternating, same route), on the report's periods without
   diagnostics (`tools/frame_lows.py`), with a rank test before calling a difference real.
+- Benchmarks run with the frame rate uncapped on every variant, lifted the same way on each: the game's own limiter,
+  the vblank rate the title waits on, and the present vsync. A capped run (30/30, 60/60) compares nothing. Check in
+  the logs that no variant sits on a cap.
+- Report efficiency, not only frame rate: the process CPU% and the GPU%, and the frame rate per CPU% and per GPU%. Run
+  every benchmark on two machines' worth of resources: the usual one, and a small one (2 cores, the AMD Radeon iGPU)
+  standing in for a weaker PC. Any360 has to run well on every kind of system.
 - Publish the comparison at the end of each step (`tools/d3d_perf.py` -> docs/D3D_PERF.md) and archive every
   before/after (raw reports, A/B outputs) under `docs/perf/archive/` with the date and the step: they are kept for
   later optimization passes.
