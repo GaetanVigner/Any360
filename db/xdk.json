@@ -262,7 +262,7 @@
    "simpsons": "0x827418C0",
    "tdu": "0x82644140"
   },
-  "note": "the same instructions in the three titles (the C locale's). Any360: xdk::CrtToupper, bound in Test Drive Unlimited (the two others: no run has called it)"
+  "note": "the same instructions in the three titles (the C locale's). Any360: xdk::CrtToupper, bound in Test Drive Unlimited and Crackdown (63,383 calls checked on its city route, 0 different; The Simpsons Game: no run has called it)"
  },
  {
   "name": "wcscmp",

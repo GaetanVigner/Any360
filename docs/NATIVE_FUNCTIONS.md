@@ -113,7 +113,7 @@ function of the three (602 are identical), most call sites first. Each has its m
 | `strncmp` | `CrtStrncmp` | the same | bound: 32,740 | bound: 21,021 | bound: 18 |
 | `wcslen` | `CrtWcslen` | the same | bound: 253 | bound: 155,149 | not called: not bound |
 | `tolower` | `CrtTolower` | nothing (the "C" locale's, on the register) | bound: 869 | bound: 88,097 | not called: not bound |
-| `toupper` | `CrtToupper` | nothing | bound: 2,081 | not called: not bound | not called: not bound |
+| `toupper` | `CrtToupper` | nothing | bound: 2,081 | bound: 63,383 (2026-11-27, the city route) | not called: not bound |
 | `strncpy` | `CrtStrncpy` | ranges of `count` bytes that are not plain memory | bound: 4,436 | bound: 31,436 | bound: 85 |
 | `strncat` | `CrtStrncat` | strings that reach the register window, a written range that overlaps the source or is not plain memory | bound: 517 | bound: 14 | bound: 36 |
 | `wcscpy` | `CrtWcscpy` | a source that reaches the register window, a destination that overlaps it, ranges that are not plain memory | bound: 1 | bound: 2,171 | not called: not bound |

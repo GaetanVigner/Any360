@@ -195,6 +195,7 @@ def platform_functions_section():
         md.append(f'| {category} | ' + ' | '.join(cells) + ' |')
     md.append('| **all** | ' + ' | '.join(f'**{t[1]:,} / {t[0]:,} ({100 * t[1] / t[0]:.1f}%)**'
                                            for t in (totals[n] for n in names)) + ' |')
+    md.append('| covered by a bound parent | ' + ' | '.join(f'{len(titles[n].get("covered", []))}' for n in names) + ' |')
     md += ['', 'System calls are done on every title; the XDK libraries the titles link (D3D runtime first, then the '
            'CRT, XAPI and audio) are what remains. Cheapest next steps: functions Any360 already has native but a '
            'title does not bind yet, each bound after its in-game check (docs/NATIVE_FUNCTIONS.md):', '']
@@ -204,6 +205,29 @@ def platform_functions_section():
         if titles[n].get('note'):
             line += ' ' + titles[n]['note']
         md.append(line)
+    md += ['', 'Counted apart from "ready" and from what remains:', '',
+           '- **covered**: native in Any360 inside a parent the title binds natively (its helpers, done by the parent '
+           'itself); the function\'s own code runs only when that parent declines a call. Nothing to bind.',
+           '- **waiting on frame pacing**: native in Any360, held back because binding it changes how the title waits '
+           'on the GPU; it waits on the owner of frame pacing.',
+           '- **not worth binding**: native in Any360, checked right, measured without a gain (1x or slower) as a '
+           'host routine: bound in no title.', '']
+    for key, label in (('covered', 'covered'), ('pacing', 'waiting on frame pacing'),
+                       ('not_worth', 'not worth binding')):
+        for n in names:
+            entry = titles[n].get(key)
+            if not entry:
+                continue
+            if key == 'pacing':
+                listed = ', '.join(entry['functions']) + f' (owner: {entry["owner"]})'
+                count = len(entry['functions'])
+            elif key == 'not_worth':
+                listed = ', '.join(f'{e["name"]} ({e["why"]})' for e in entry)
+                count = len(entry)
+            else:
+                listed = ', '.join(entry)
+                count = len(entry)
+            md.append(f'- {n}, {label} ({count}): {listed}.')
     return md
 
 

@@ -1,0 +1,17 @@
+[2026-11-27 23:46:04.072] [info] [core] [t27248] Any360 xdk: bound library functions run both ways, compared (any360_xdk_verify)
+[2026-11-27 23:46:15.172] [info] [core] [t27248] Crackdown: guest frames: 55.8 FPS over 10.0 s; frame times: median 5.31 ms (188.3 FPS), 10% low 30.8 FPS, 1% low 30.2 FPS; slowest frame 2116.9 ms; 2624 MB private
+[2026-11-27 23:46:25.174] [info] [core] [t27248] Crackdown: guest frames: 178.3 FPS over 10.0 s; frame times: median 3.98 ms (251.4 FPS), 10% low 86.1 FPS, 1% low 61.3 FPS; slowest frame 248.6 ms; 2723 MB private
+[2026-11-27 23:46:35.177] [info] [core] [t27248] Crackdown: guest frames: 312.5 FPS over 10.0 s; frame times: median 2.20 ms (454.7 FPS), 10% low 218.7 FPS, 1% low 65.0 FPS; slowest frame 326.7 ms; 2834 MB private
+[2026-11-27 23:46:45.199] [info] [core] [t27248] Crackdown: guest frames: 54.3 FPS over 10.0 s; frame times: median 17.32 ms (57.7 FPS), 10% low 45.7 FPS, 1% low 39.5 FPS; slowest frame 243.2 ms; 2755 MB private
+[2026-11-27 23:46:55.213] [info] [core] [t27248] Crackdown: guest frames: 53.6 FPS over 10.0 s; frame times: median 16.85 ms (59.3 FPS), 10% low 40.2 FPS, 1% low 24.2 FPS; slowest frame 58.3 ms; 2768 MB private
+[2026-11-27 23:47:05.218] [info] [core] [t27248] Crackdown: guest frames: 37.6 FPS over 10.0 s; frame times: median 25.31 ms (39.5 FPS), 10% low 28.8 FPS, 1% low 24.3 FPS; slowest frame 87.4 ms; 2774 MB private
+[2026-11-27 23:47:15.237] [info] [core] [t27248] Crackdown: guest frames: 43.1 FPS over 10.0 s; frame times: median 21.57 ms (46.4 FPS), 10% low 31.8 FPS, 1% low 28.3 FPS; slowest frame 36.0 ms; 2776 MB private
+[2026-11-27 23:47:25.239] [info] [core] [t27248] Crackdown: guest frames: 40.6 FPS over 10.0 s; frame times: median 22.89 ms (43.7 FPS), 10% low 30.6 FPS, 1% low 27.8 FPS; slowest frame 37.8 ms; 2777 MB private
+[2026-11-27 23:47:35.255] [info] [core] [t27248] Crackdown: guest frames: 39.9 FPS over 10.0 s; frame times: median 23.48 ms (42.6 FPS), 10% low 30.5 FPS, 1% low 26.9 FPS; slowest frame 40.4 ms; 2778 MB private
+[2026-11-27 23:47:45.273] [info] [core] [t27248] Crackdown: guest frames: 41.7 FPS over 10.0 s; frame times: median 22.53 ms (44.4 FPS), 10% low 33.4 FPS, 1% low 27.9 FPS; slowest frame 79.9 ms; 2778 MB private
+[2026-11-27 23:47:55.290] [info] [core] [t27248] Crackdown: guest frames: 42.5 FPS over 10.0 s; frame times: median 22.43 ms (44.6 FPS), 10% low 34.4 FPS, 1% low 29.4 FPS; slowest frame 35.7 ms; 2778 MB private
+[2026-11-27 23:48:05.306] [info] [core] [t27248] Crackdown: guest frames: 42.9 FPS over 10.0 s; frame times: median 21.43 ms (46.7 FPS), 10% low 31.9 FPS, 1% low 27.9 FPS; slowest frame 37.9 ms; 2778 MB private
+[2026-11-27 23:48:15.322] [info] [core] [t27248] Crackdown: guest frames: 42.3 FPS over 10.0 s; frame times: median 21.38 ms (46.8 FPS), 10% low 30.4 FPS, 1% low 27.5 FPS; slowest frame 81.4 ms; 2778 MB private
+[2026-11-27 23:48:25.339] [info] [core] [t27248] Crackdown: guest frames: 43.4 FPS over 10.0 s; frame times: median 21.22 ms (47.1 FPS), 10% low 32.5 FPS, 1% low 28.1 FPS; slowest frame 36.7 ms; 2779 MB private
+[2026-11-27 23:48:35.350] [info] [core] [t27248] Crackdown: guest frames: 43.7 FPS over 10.0 s; frame times: median 21.43 ms (46.7 FPS), 10% low 35.2 FPS, 1% low 28.4 FPS; slowest frame 37.3 ms; 2779 MB private
+[2026-11-27 23:48:45.363] [info] [core] [t27248] Crackdown: guest frames: 43.5 FPS over 10.0 s; frame times: median 21.66 ms (46.2 FPS), 10% low 35.5 FPS, 1% low 28.2 FPS; slowest frame 38.7 ms; 2779 MB private

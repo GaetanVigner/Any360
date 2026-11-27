@@ -1,0 +1,25 @@
+[2026-11-27 23:48:56.737] [info] [core] [t40556] Windows crash reporting enabled for current log.
+[2026-11-27 23:48:59.442] [error] [sys] [t43980] Unhandled guest access violation: read of guest 0x00000000 (host 0x0000000100000000) on thread 0xF800005C
+[2026-11-27 23:48:59.442] [error] [sys] [t43980] [SAVE_CRASH] Guest read fault: addr=0x00000000 region=no_access alloc=0x00000000+0x10000 state=3 protect=0 stack_limit=0x70400000 stack_base=0x70410000 offset_from_stack_base=-0x70410000 r1=0x70410000 lr=0x00000000 thread=0x13
+[2026-11-27 23:48:59.442] [error] [core] [t43980] [GUEST_FAULT] Unhandled read of guest 0x00000000 rip=0x7FF778C1BC45 function=0x00000000 (unknown) thread=0x13 host_thread=43980 lr=0x00000000 r1=0x70410000 r3=0x00000000 r4=0x00000000 r5=0x00000000 r6=0x00000000 r7=0x00000000 r8=0x00000000 r9=0x00000000 r10=0x00000000 r11=0x00000000 r12=0x00000000
+[2026-11-27 23:48:59.549] [error] [core] [t43980] Any360 crash report: exception C0000005 at 00007FF778C1BC45 crackdown.exe+0x53BC45 on thread 43980
+[2026-11-27 23:48:59.549] [error] [core] [t43980] Any360 crash report: read of 0000000100000000
+[2026-11-27 23:48:59.549] [error] [core] [t43980] Any360 crash report:   #00 00007FF7789089AF crackdown.exe+0x2289AF
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #01 00007FFE2C93FAA3 KERNELBASE.dll+0x10FAA3
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #02 00007FFE2F32F8FD ntdll.dll+0x16F8FD
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #03 00007FFE2F2E7733 ntdll.dll+0x127733
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #04 00007FFE2F32AB3F ntdll.dll+0x16AB3F
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #05 00007FFE2F286985 ntdll.dll+0xC6985
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #06 00007FFE2F32A47E ntdll.dll+0x16A47E
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #07 00007FF778C1BC45 crackdown.exe+0x53BC45
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #08 00007FF778C1BADF crackdown.exe+0x53BADF
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #09 00007FF778766617 crackdown.exe+0x86617
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #10 00007FF77876926F crackdown.exe+0x8926F
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #11 00007FF778BD36DA crackdown.exe+0x4F36DA
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #12 00007FF77913EA4B crackdown.exe+0xA5EA4B
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #13 00007FF77B619A93 crackdown.exe+0x2F39A93
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #14 00007FF77AC87C25 crackdown.exe+0x25A7C25
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #15 00007FF77C3CD4B1 crackdown.exe+0x3CED4B1
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #16 00007FF77A1D91CD crackdown.exe+0x1AF91CD
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #17 00007FF77BB480DF crackdown.exe+0x34680DF
+[2026-11-27 23:48:59.550] [error] [core] [t43980] Any360 crash report:   #18 00007FF77870BD9C crackdown.exe+0x2BD9C
