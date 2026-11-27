@@ -17,7 +17,8 @@
   "titles": {
    "crackdown": "0x82AB9C18",
    "simpsons": "0x82A42E88",
-   "tdu": "0x82654358"
+   "tdu": "0x82654358",
+   "mirrorsedge": "0x829E8DB8"
   },
   "note": "1 unless the double's exponent is all ones. Any360: xdk::CrtFinite, bound in The Simpsons Game (the two others: no run has called it)"
  },
@@ -28,7 +29,8 @@
   "titles": {
    "crackdown": "0x82AC4458",
    "simpsons": "0x82A43B38",
-   "tdu": "0x8264C920"
+   "tdu": "0x8264C920",
+   "mirrorsedge": "0x829EE070"
   },
   "note": "the exponent field less 1022 (in the image twice in Test Drive Unlimited and The Simpsons Game). Any360: xdk::CrtGetExp, bound in the three"
  },
@@ -39,7 +41,8 @@
   "titles": {
    "crackdown": "0x82AB9C38",
    "simpsons": "0x82A42EA8",
-   "tdu": "0x82654378"
+   "tdu": "0x82654378",
+   "mirrorsedge": "0x829E8DD8"
   },
   "note": "Any360: xdk::CrtIsnan, bound in Crackdown (the two others: no run has called it)"
  },
@@ -72,7 +75,8 @@
   "titles": {
    "crackdown": "0x82ABD120",
    "simpsons": "0x82A419A0",
-   "tdu": "0x827834F0"
+   "tdu": "0x827834F0",
+   "mirrorsedge": "0x829E9650"
   },
   "note": "the same instructions in the three titles: the difference of the first bytes that differ, A to Z lowered; at the second string's end the first's byte as it is. Any360: xdk::CrtStricmp, bound in the three"
  },
@@ -110,7 +114,8 @@
   "titles": {
    "crackdown": "0x82AB5268",
    "simpsons": "0x82A5A5F0",
-   "tdu": "0x8265D078"
+   "tdu": "0x8265D078",
+   "mirrorsedge": "0x829F4F48"
   },
   "note": "the same instructions in the three titles: the C locale's, a byte is a character. Any360: xdk::CrtMbtowc, bound in Crackdown (the two others: no run has called it)"
  },
@@ -132,7 +137,8 @@
   "titles": {
    "crackdown": "0x82ABE3B0",
    "simpsons": "0x82A3D1D8",
-   "tdu": "0x82646010"
+   "tdu": "0x82646010",
+   "mirrorsedge": "0x829E3C48"
   },
   "note": "bytes to alignment, then words; the same instructions in the three titles. Any360: xdk::CrtCopyForward, bound in the three"
  },
@@ -143,7 +149,8 @@
   "titles": {
    "crackdown": "0x82AB5F10",
    "simpsons": "0x82A3E2B0",
-   "tdu": "0x82644930"
+   "tdu": "0x82644930",
+   "mirrorsedge": "0x829E67A0"
   },
   "note": "the same instructions in the three titles: memcpy below the source (signed compare), a backward copy above it. Any360: xdk::CrtMemmove, bound in the three"
  },
@@ -154,7 +161,8 @@
   "titles": {
    "crackdown": "0x82ABDE40",
    "simpsons": "0x82A3C440",
-   "tdu": "0x826460C0"
+   "tdu": "0x826460C0",
+   "mirrorsedge": "0x829E55B0"
   },
   "note": "Any360: xdk::CrtMemset, the one function the three titles bind (docs/NATIVE_FUNCTIONS.md)"
  },
@@ -183,7 +191,8 @@
   "titles": {
    "crackdown": "0x82AB9380",
    "simpsons": "0x82A3FE90",
-   "tdu": "0x82641450"
+   "tdu": "0x82641450",
+   "mirrorsedge": "0x829E7BC0"
   },
   "note": "the same instructions in the three titles. Any360: xdk::CrtStrchr, bound in the three"
  },
@@ -205,7 +214,8 @@
   "titles": {
    "crackdown": "0x82AB9440",
    "simpsons": "0x82A3EF20",
-   "tdu": "0x8263FF40"
+   "tdu": "0x8263FF40",
+   "mirrorsedge": "0x829E7E60"
   },
   "note": "the same instructions in the three titles. Any360: xdk::CrtStrncmp, bound in the three"
  },
@@ -216,7 +226,8 @@
   "titles": {
    "crackdown": "0x82AB6918",
    "simpsons": "0x82A3D280",
-   "tdu": "0x826401C8"
+   "tdu": "0x826401C8",
+   "mirrorsedge": "0x829E6738"
   },
   "note": "the same instructions in the three titles. Any360: xdk::CrtStrncpy, bound in the three"
  },
@@ -227,7 +238,8 @@
   "titles": {
    "crackdown": "0x82ABA4F0",
    "simpsons": "0x82A428E0",
-   "tdu": "0x82640DE0"
+   "tdu": "0x82640DE0",
+   "mirrorsedge": "0x829F40C0"
   },
   "note": "the same instructions in the three titles. Any360: xdk::CrtStrrchr, bound in the three"
  },
@@ -238,7 +250,8 @@
   "titles": {
    "crackdown": "0x82AB93C0",
    "simpsons": "0x82A3EFB0",
-   "tdu": "0x82644078"
+   "tdu": "0x82644078",
+   "mirrorsedge": "0x829E7000"
   },
   "note": "the same instructions in the three titles. Any360: xdk::CrtStrstr (the host's search once both strings end in plain memory), bound in the three"
  },
@@ -271,7 +284,8 @@
   "titles": {
    "crackdown": "0x82AB9D98",
    "simpsons": "0x82CADF80",
-   "tdu": "0x82783FC8"
+   "tdu": "0x82783FC8",
+   "mirrorsedge": "0x829E5DD0"
   },
   "note": "the same instructions in the three titles: -1, 0 or 1. Any360: xdk::CrtWcscmp, bound in Crackdown and The Simpsons Game (Test Drive Unlimited: no run has called it)"
  },
@@ -282,7 +296,8 @@
   "titles": {
    "crackdown": "0x82ABBCE8",
    "simpsons": "0x82A41268",
-   "tdu": "0x82640DC0"
+   "tdu": "0x82640DC0",
+   "mirrorsedge": "0x829E3F18"
   },
   "note": "the same instructions in the three titles. Any360: xdk::CrtWcscpy, bound in Test Drive Unlimited and Crackdown (The Simpsons Game: no run has called it)"
  },
@@ -293,7 +308,8 @@
   "titles": {
    "crackdown": "0x82AB61B8",
    "simpsons": "0x82A3FED0",
-   "tdu": "0x826431B0"
+   "tdu": "0x826431B0",
+   "mirrorsedge": "0x829E3F38"
   },
   "note": "the same instructions in the three titles. Any360: xdk::CrtWcslen, bound in Test Drive Unlimited and Crackdown (The Simpsons Game: no run has called it)"
  },
@@ -304,7 +320,8 @@
   "titles": {
    "crackdown": "0x82AB9DE0",
    "simpsons": "0x82CADFC8",
-   "tdu": "0x82644158"
+   "tdu": "0x82644158",
+   "mirrorsedge": "0x829E8940"
   },
   "note": "the same instructions in the three titles. Any360: xdk::CrtWcsncpy, bound in Crackdown (the two others: no run has called it)"
  },
@@ -443,7 +460,8 @@
   "any360": "native",
   "titles": {
    "simpsons": "0x8244C910",
-   "crackdown": "0x826B9688"
+   "crackdown": "0x826B9688",
+   "mirrorsedge": "0x82804DD0"
   },
   "note": "DrawPrimitiveUP's body: BeginVertices, the vertices copied into its block, EndVertices"
  },
@@ -1320,7 +1338,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0AA0"
+   "crackdown": "0x826B0AA0",
+   "mirrorsedge": "0x82801570"
   },
   "note": "PA_CL_VTE_CNTL and the clip disable"
  },
@@ -1718,7 +1737,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826ACC90"
+   "crackdown": "0x826ACC90",
+   "mirrorsedge": "0x827FEAE0"
   },
   "note": "reference count + 1, a type-4 resource's parent too at 1"
  },
@@ -1727,7 +1747,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826ACDB0"
+   "crackdown": "0x826ACDB0",
+   "mirrorsedge": "0x827FEC40"
   },
   "note": "the resource's type: textures by dimension (line, 2D, array, volume, cube), a volume texture's surface a volume"
  },
@@ -1745,7 +1766,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826ACD08"
+   "crackdown": "0x826ACD08",
+   "mirrorsedge": "0x827FEB58"
   },
   "note": "reference count - 1; at 0 the parent released, the resource destroyed"
  },
@@ -1961,7 +1983,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826ACFE8"
+   "crackdown": "0x826ACFE8",
+   "mirrorsedge": "0x828106A0"
   },
   "note": "a GPU texture format's block in texels (4x4 compressed, 4x1, 2x1, 1x1)"
  },
@@ -2007,7 +2030,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826C67A0"
+   "crackdown": "0x826C67A0",
+   "mirrorsedge": "0x82816A00"
   },
   "note": "the vertex shader's exports matched to the pixel shader's inputs (unread ones emptied, registers remapped)"
  },
@@ -2284,7 +2308,8 @@
   "titles": {
    "crackdown": "0x82746048",
    "simpsons": "0x82433BD0",
-   "tdu": "0x82697068"
+   "tdu": "0x82697068",
+   "mirrorsedge": "0x82A012C8"
   },
   "note": "the thread's last error (thread + 352, the thread named by r13 + 256; 0 while r13 + 336 is not zero). Any360: xdk::XapiGetLastError, checked in the three and bound in none: five instructions, no gain as a host routine"
  },
@@ -2295,7 +2320,8 @@
   "titles": {
    "crackdown": "0x82745FF8",
    "simpsons": "0x82433B80",
-   "tdu": "0x82697018"
+   "tdu": "0x82697018",
+   "mirrorsedge": "0x82A01278"
   },
   "note": "stores the thread's last error (nothing while r13 + 336 is not zero). Any360: xdk::XapiSetLastError, checked in the three and bound in none: no gain as a host routine"
  },

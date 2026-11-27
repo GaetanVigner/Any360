@@ -3311,4 +3311,11 @@ inline void ResourceReleaseOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunct
   original(ctx, base);
 }
 
+// D3D_LinkShaders (Crackdown sub_826C67A0) bound on its own: LinkShaders(ctx, m) above, its own code when it declines.
+inline void LinkShadersOrOriginal(PPCContext& ctx, uint8_t* base, GuestFunction original) {
+  const any360::xdk::Memory& m = xdk::g_memory;
+  if (m.base == base && DrawHelpers() && LinkShaders(ctx, m)) return;
+  original(ctx, base);
+}
+
 }  // namespace any360::host::rexglue::d3d_draw

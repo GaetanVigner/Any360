@@ -1,0 +1,6 @@
+Any360 D3D self-test: 5 cases on a copy of device 4005B680
+D3DResource GetType            3000 calls, 0 declined, 0 different; median original 8.8 ns, native 6.3 ns (1.40x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Format block                   3000 calls, 0 declined, 2 different; median original 8.8 ns, native 5.0 ns (1.75x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00; first: call 1652: memory at D3616010 (r3 0000003C r4 0000000034083004 r5 340840B0 r6 00000000 r7 00000000B4B85000)
+Resource AddRef                3000 calls, 0 declined, 0 different; median original 28.8 ns, native 8.8 ns (3.28x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Resource Release               3000 calls, 0 declined, 0 different; median original 25.0 ns, native 10.0 ns (2.50x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+shader link                    3000 calls, 0 declined, 1 different; median original 216.3 ns, native 91.3 ns (2.37x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00; first: call 1844: memory at D3614011 (r3 34084000 r4 000000003408B000 r5 34089F00 r6 00000000 r7 00000000B4B85000)

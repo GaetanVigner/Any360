@@ -793,6 +793,7 @@ void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFu
   // Bench: both sides timed on the same input, in alternating order; the side that ran last stands.
   const uint64_t timed_call = g_timed_calls.fetch_add(1, std::memory_order_relaxed) + 1;
   uint64_t original_ticks, native_ticks;
+  const PPCContext entry = ctx;
   PPCContext own = ctx, mine = ctx;
   if (OriginalFirst(f)) {
     const uint64_t a = Ticks();
@@ -824,7 +825,7 @@ void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFu
     // Once more on the same input, right away: a second run as slow is the replacement's own work; a fast one, the
     // first touch of the memory (a page fault, a watched page).
     put_back();
-    PPCContext again = ctx;
+    PPCContext again = entry;
     at_entry();
     const uint64_t a = Ticks();
     s.native(again);
