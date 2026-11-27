@@ -1,0 +1,14 @@
+# any360_bench --frames 1200 (city, 2000 objects, 2 workers, headless, asynchronous renderer and pipelines),
+# NVIDIA GeForce RTX 5070 Ti, whole machine (other sessions busy), 5 launches in a row.
+327.1 FPS, median 2.96 ms, 10% low 274.0 FPS, 1% low 252.2 FPS, slowest 4.3 ms, 0 over 16.7 ms | CPU 280%, GPU 11%, 1.17 FPS per CPU%, 29.07 FPS per GPU%; private 1367 MB (peak 1367, 1132 before the title)
+280.9 FPS, median 3.17 ms, 10% low 250.2 FPS, 1% low 206.9 FPS, slowest 239.8 ms, 3 over 16.7 ms | CPU 265%, GPU 9%, 1.06 FPS per CPU%, 31.43 FPS per GPU%; private 1367 MB (peak 1367, 1133 before the title)
+319.1 FPS, median 3.03 ms, 10% low 256.9 FPS, 1% low 227.3 FPS, slowest 4.9 ms, 0 over 16.7 ms | CPU 285%, GPU 8%, 1.12 FPS per CPU%, 38.40 FPS per GPU%; private 1368 MB (peak 1368, 1132 before the title)
+307.3 FPS, median 3.15 ms, 10% low 250.2 FPS, 1% low 224.2 FPS, slowest 4.7 ms, 0 over 16.7 ms | CPU 276%, GPU 8%, 1.11 FPS per CPU%, 39.50 FPS per GPU%; private 1366 MB (peak 1366, 1132 before the title)
+330.5 FPS, median 2.92 ms, 10% low 269.1 FPS, 1% low 238.8 FPS, slowest 6.2 ms, 0 over 16.7 ms | CPU 289%, GPU 8%, 1.14 FPS per CPU%, 39.45 FPS per GPU%; private 1367 MB (peak 1367, 1133 before the title)
+
+# One 240-frame run's breakdown (ms a frame):
+# title main 0.918, title render 3.032, command processor 0.454, renderer thread 2.959, draws 2.745 (textures 0.842,
+# shaders 0.000, pipelines 0.034, guest memory 0.000, submit 0.486), resolves 0.029, swaps 0.000, GPU 0.308
+# a frame: 2530 draws, 2.0 resolves, 8.46 texture uploads, 0.00 pipelines, 13403 system calls, 104.7 watched writes,
+# 73164 PM4 dwords
+# Radeon (AMD Radeon(TM) Graphics), 240 frames: 319.3 FPS, median 3.13 ms, 10% low 285.3, 1% low 244.8 FPS

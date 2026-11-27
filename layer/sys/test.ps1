@@ -121,6 +121,13 @@ try {
             Remove-Item Env:ANY360_ZERO_MULTIPLY, Env:ANY360_DOT_RULE -ErrorAction SilentlyContinue
         }
     }
+    # Any360's bench title (docs/BENCH.md): its scenes end to end, checked against their expected results.
+    $bench = Join-Path $BuildDir 'bench/any360_bench.exe'
+    $benchExpected = Join-Path $Root 'bench/expected'
+    if (Test-Path $bench) {
+        & $bench --frames 240 --check (Join-Path $benchExpected 'city.txt') | Select-String 'any360_bench: (check|scene|[0-9.]+ FPS|[0-9]+ failing)' | Out-Host
+        if ($LASTEXITCODE) { throw "any360_bench city failed ($LASTEXITCODE)" }
+    }
     $capture = Join-Path $BuildDir 'gfx/gfx_render_tests.a360cap'
     & (Join-Path $BuildDir 'gfx/gfx_render_tests.exe') --copy --capture $capture | Out-Host
     if ($LASTEXITCODE) { throw "gfx_render_tests failed ($LASTEXITCODE)" }
@@ -142,6 +149,14 @@ try {
                     $device = ($out | Select-String -Pattern '(NVIDIA|AMD|Intel|Radeon)[^,(]*' | Select-Object -First 1).Matches.Value
                     "$($test): validation layer on $(if ($device) { $device } elseif ($gpu) { $gpu } else { 'the default GPU' }), $($errors.Count) validation messages" | Out-Host
                     if ($errors.Count) { ($out | Select-String -SimpleMatch 'VUID' | Select-Object -First 5) | Out-Host; throw "$($test): validation errors on '$gpu'" }
+                }
+                if (Test-Path $bench) {
+                    $bench_args = @('--frames', '120', '--sync-pipelines'); if ($gpu) { $bench_args = @($gpu) + $bench_args }
+                    $out = & $bench @bench_args 2>&1 | ForEach-Object { "$_" }
+                    if ($LASTEXITCODE) { $out | Out-Host; throw "any360_bench failed under validation on '$gpu' ($LASTEXITCODE)" }
+                    $errors = @($out | Select-String -SimpleMatch 'Validation Error')
+                    "any360_bench: validation layer on $(if ($gpu) { $gpu } else { 'the default GPU' }), $($errors.Count) validation messages" | Out-Host
+                    if ($errors.Count) { ($out | Select-String -SimpleMatch 'VUID' | Select-Object -First 5) | Out-Host; throw "any360_bench: validation errors on '$gpu'" }
                 }
             }
         } finally {

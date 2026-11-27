@@ -161,6 +161,11 @@ if(ANY360_REFERENCE_SDK)
     # The binding of a ReXGlue title to these layers (graphics first): built here to keep it compiling.
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../host/rexglue ${CMAKE_CURRENT_BINARY_DIR}/host/rexglue)
 
+    # Any360's own benchmark title (docs/BENCH.md): scenes run on these layers as a recompiled title runs on them.
+    if(WIN32)
+        add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../bench ${CMAKE_CURRENT_BINARY_DIR}/bench)
+    endif()
+
     enable_testing()
     add_executable(sys_io_tests tests/sys_io_tests.cpp)
     target_include_directories(sys_io_tests PRIVATE tests)
