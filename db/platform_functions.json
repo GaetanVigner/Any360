@@ -58,17 +58,17 @@
       "ready": ["D3D_GpuFormatBlock", "D3DResource_GetType", "D3DResource_AddRef", "D3DResource_Release", "D3DDevice_SetRenderState_ViewportEnable", "SetLastError", "GetLastError", "strrchr", "memset", "_stricmp", "wcslen", "_get_exp", "mbtowc"]
     },
     "mirrorsedge": {
-      "estimated": true,
+      "estimated": false,
       "counts": {
         "system calls": [275, 275],
-        "D3D runtime": [529, 1],
-        "CRT": [385, 0],
+        "D3D runtime": [538, 1],
+        "D3DX / XGraphics": [4134, 0],
+        "CRT": [389, 0],
         "XAPI": [195, 0],
-        "audio (XAudio, XMA)": [325, 0],
-        "Xbox Live and voice (XOnline, XHV)": [315, 0],
-        "libpng / zlib": [66, 0]
+        "audio (XAudio, XMA)": [331, 0],
+        "Xbox Live and voice (XOnline, XHV)": [333, 0],
+        "libpng / zlib": [84, 0]
       },
-      "note": "D3DX / XGraphics not counted: at most ~3,767 functions over 14 scattered runs, surely some game code.",
       "ready": ["D3DResource_AddRef", "D3DResource_Release", "D3DResource_GetType", "D3DDevice_SetRenderState_ViewportEnable", "D3DDevice_DrawVerticesUP", "D3D_GpuFormatBlock", "D3D_LinkShaders", "memcpy", "wcscpy", "wcslen", "memset", "wcscmp", "strncpy", "memmove", "strstr", "strchr", "strncmp", "wcsncpy", "_finite", "_isnan", "_stricmp", "_get_exp", "strrchr", "mbtowc", "GetLastError", "SetLastError"]
     }
   }

@@ -1,0 +1,93 @@
+[
+ {
+  "name": "XDK D3D runtime",
+  "kind": "library",
+  "from": "827FE000",
+  "to": "82821300",
+  "proof": "crackdown 826[A-C]|simpsons 824[3-6]|tdu 826[6-9]|codbo 824[A-B]|Vd[A-Z]|D3D"
+ },
+ {
+  "name": "XDK audio (XAudio, XMA)",
+  "kind": "library",
+  "from": "82821300",
+  "to": "82838000",
+  "proof": "crackdown 82A[4-6]|simpsons 82C[3-7]|tdu 826[A-D]|XAudio|XMA"
+ },
+ {
+  "name": "XDK Xbox Live and voice (XOnline, XHV)",
+  "kind": "library",
+  "from": "829C2000",
+  "to": "829C3000",
+  "proof": "crackdown 829(29|2[A-D])|crackdown 82A[89]|simpsons 826[6-8]|tdu 8263|tdu 827[5-8]|XMsg|XamSession|XNet|XamVoice"
+ },
+ {
+  "name": "C runtime (CRT)",
+  "kind": "library",
+  "from": "829E0000",
+  "to": "829F9500",
+  "proof": "crackdown 82A[B-D]|simpsons 82A[3-6]|tdu 826[3-6]|KeTls|CRT"
+ },
+ {
+  "name": "XAPI (Win32 layer over the kernel and XAM)",
+  "kind": "library",
+  "from": "829F9400",
+  "to": "82A05000",
+  "proof": "crackdown 8274[2-9A]|crackdown 82AD[67]|simpsons 8243|simpsons 82B7[4-8]|tdu 8269"
+ },
+ {
+  "name": "XDK Xbox Live and voice (XOnline, XHV)",
+  "kind": "library",
+  "from": "82A1F000",
+  "to": "82A31000",
+  "proof": "crackdown 829(29|2[A-D])|crackdown 82A[89]|simpsons 826[6-8]|tdu 8263|tdu 827[5-8]|XMsg|XamSession|XNet|XamVoice"
+ },
+ {
+  "name": "XDK D3DX and XGraphics (shader compiler)",
+  "kind": "library",
+  "from": "82A70000",
+  "to": "82B3C000",
+  "proof": "crackdown 82(7[5-9A-F]|8|9[01])|simpsons 82(4[6-9A-F]|5|6[0-6]|B[7-9A-F]|C[0-3])|D3DX|ShaderDump|microcode|register|sampler|shader|FX API|texcoord|for-loop"
+ },
+ {
+  "name": "libpng 1.0.5 and zlib 1.1.4",
+  "kind": "library",
+  "from": "82B3C000",
+  "to": "82B44500",
+  "proof": "crackdown 82A[78]|simpsons 82(B[C-F]|C[01])|zlib|libpng|IHDR|header check|invalid|read_data_fn|write_data_fn|png_|inflate|deflate"
+ },
+ {
+  "name": "XDK D3DX and XGraphics (shader compiler)",
+  "kind": "library",
+  "from": "82B44500",
+  "to": "82B50000",
+  "proof": "crackdown 82(7[5-9A-F]|8|9[01])|simpsons 82(4[6-9A-F]|5|6[0-6]|B[7-9A-F]|C[0-3])|D3DX|ShaderDump|microcode|register|sampler|shader|FX API|texcoord|for-loop"
+ },
+ {
+  "name": "PhysX (NVIDIA physics)",
+  "kind": "middleware",
+  "from": "82B50000",
+  "to": "82D40000",
+  "proof": "PhysicsSDK|Nx[A-Z]|Pxs|Pxc|physx|Cloth|Joint|Body::|Shape|Fluid|CCD|ContactBoxMesh|SceneQuery"
+ },
+ {
+  "name": "XDK Xbox Live and voice (XOnline, XHV)",
+  "kind": "library",
+  "from": "82B57000",
+  "to": "82B59300",
+  "proof": "crackdown 829(29|2[A-D])|crackdown 82A[89]|simpsons 826[6-8]|tdu 8263|tdu 827[5-8]|XMsg|XamSession|XNet|XamVoice"
+ },
+ {
+  "name": "XAPI (Win32 layer over the kernel and XAM)",
+  "kind": "library",
+  "from": "82B5E000",
+  "to": "82B5F000",
+  "proof": "crackdown 8274[2-9A]|crackdown 82AD[67]|simpsons 8243|simpsons 82B7[4-8]|tdu 8269"
+ },
+ {
+  "name": "XDK D3DX and XGraphics (shader compiler)",
+  "kind": "library",
+  "from": "82D40000",
+  "to": "82E68000",
+  "proof": "crackdown 82(8|9[0-2])|simpsons 82(5|6[0-6])|xgraphics|ucode|vfetch|swizzle|loop|IL_REGTYPE|aModifiers|bias"
+ }
+]

@@ -1,0 +1,83 @@
+{
+ "_comment": "Named address ranges of the Mirror's Edge (USA, default.xex) image for the inventory. kind: library = statically linked SDK code, replaced as a unit by Any360 (not decompiled); middleware = third-party engine code the title links (PhysX): neither the title's own code nor something Any360 provides, so it stays recompiled or is replaced by the vendor's library for the target, never decompiled function by function; everything else is the game's own code (Unreal Engine 3 and Mirror's Edge). Evidence (tools/library_ranges.py over titles/mirrorsedge/library_evidence.json): functions with the same instructions in the other titles' library ranges, the system calls a window makes and the strings it refers to (D3DX: ShaderDump and the shader compiler's messages; XGraphics: its xgraphics/ucode source paths; PhysX: PhysicsSDK messages; libpng and zlib: their messages). Each range runs from the first to the last proven function of its window.",
+ "modules": [
+  {
+   "start": "0x827FEAE0",
+   "end": "0x82820828",
+   "name": "XDK D3D runtime",
+   "kind": "library"
+  },
+  {
+   "start": "0x82823268",
+   "end": "0x82836158",
+   "name": "XDK audio (XAudio, XMA)",
+   "kind": "library"
+  },
+  {
+   "start": "0x829C26F8",
+   "end": "0x829C2EA8",
+   "name": "XDK Xbox Live and voice (XOnline, XHV)",
+   "kind": "library"
+  },
+  {
+   "start": "0x829E3C48",
+   "end": "0x829F9240",
+   "name": "C runtime (CRT)",
+   "kind": "library"
+  },
+  {
+   "start": "0x829F95A8",
+   "end": "0x82A01A40",
+   "name": "XAPI (Win32 layer over the kernel and XAM)",
+   "kind": "library"
+  },
+  {
+   "start": "0x82A1FE70",
+   "end": "0x82A300A8",
+   "name": "XDK Xbox Live and voice (XOnline, XHV)",
+   "kind": "library"
+  },
+  {
+   "start": "0x82A7B330",
+   "end": "0x82B3BF70",
+   "name": "XDK D3DX and XGraphics (shader compiler)",
+   "kind": "library"
+  },
+  {
+   "start": "0x82B3C0D0",
+   "end": "0x82B42518",
+   "name": "libpng 1.0.5 and zlib 1.1.4",
+   "kind": "library"
+  },
+  {
+   "start": "0x82B445E0",
+   "end": "0x82B4DBC8",
+   "name": "XDK D3DX and XGraphics (shader compiler)",
+   "kind": "library"
+  },
+  {
+   "start": "0x82B57098",
+   "end": "0x82B59190",
+   "name": "XDK Xbox Live and voice (XOnline, XHV)",
+   "kind": "library"
+  },
+  {
+   "start": "0x82B5E840",
+   "end": "0x82B5EA88",
+   "name": "XAPI (Win32 layer over the kernel and XAM)",
+   "kind": "library"
+  },
+  {
+   "start": "0x82B5F4A0",
+   "end": "0x82D26560",
+   "name": "PhysX (NVIDIA physics)",
+   "kind": "middleware"
+  },
+  {
+   "start": "0x82D45268",
+   "end": "0x82E64C30",
+   "name": "XDK D3DX and XGraphics (shader compiler)",
+   "kind": "library"
+  }
+ ]
+}
