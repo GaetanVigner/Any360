@@ -1,0 +1,10 @@
+=== rexdefault (crackdown_510.log)
+private at end: 3363 MB; hangs: 0; errors: 2
+Crackdown: guest frames: 301.0 FPS over 10.0 s; frame times: median 3.27 ms (305.8 FPS), 10% low 280.3 FPS, 1% low 248.0 FPS; slowest frame 10.7 ms; 2932 MB private
+Crackdown: guest frames: 296.2 FPS over 10.0 s; frame times: median 3.31 ms (301.8 FPS), 10% low 274.5 FPS, 1% low 221.5 FPS; slowest frame 10.7 ms; 3099 MB private
+Crackdown: guest frames: 295.4 FPS over 10.0 s; frame times: median 3.29 ms (303.5 FPS), 10% low 271.8 FPS, 1% low 206.1 FPS; slowest frame 11.8 ms; 3279 MB private
+=== any360 (crackdown_511.log)
+private at end: 2799 MB; hangs: 0; errors: 0
+Crackdown: guest frames: 213.6 FPS over 10.0 s; frame times: median 4.66 ms (214.7 FPS), 10% low 172.1 FPS, 1% low 147.7 FPS; slowest frame 13.9 ms; 2795 MB private
+Crackdown: guest frames: 198.6 FPS over 10.0 s; frame times: median 5.14 ms (194.4 FPS), 10% low 165.3 FPS, 1% low 147.8 FPS; slowest frame 16.4 ms; 2797 MB private
+Crackdown: guest frames: 218.7 FPS over 10.0 s; frame times: median 4.45 ms (224.8 FPS), 10% low 168.8 FPS, 1% low 140.7 FPS; slowest frame 27.2 ms; 2802 MB private

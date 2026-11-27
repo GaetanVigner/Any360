@@ -28,6 +28,10 @@
 
 #include "any360/host/rexglue.h"
 
+namespace any360::host::rexglue::d3d_draw {
+bool DrawRecords();
+}
+
 ANY360_REXGLUE_GRAPHICS_EXPORTS()
 ANY360_REXGLUE_BIND_GRAPHICS(VdSwap)
 
@@ -80,6 +84,7 @@ void Entry(PPCContext& ctx, uint8_t* base) {
 
   // Before the binding: the overrides reach the runtime's exports, found in its library by name.
   CHECK(!GraphicsBound());
+  CHECK(!d3d_draw::DrawRecords());
   CHECK(ReferenceExport("__imp__VdSwap") != nullptr && ReferenceExport("__imp__NoSuchExport") == nullptr);
   const uint32_t scratch = memory->SystemHeapAlloc(0x200, 0x100);
   ctx.r3.u64 = scratch;
@@ -105,6 +110,7 @@ void Entry(PPCContext& ctx, uint8_t* base) {
     return;
   }
   CHECK(GraphicsBound());
+  CHECK(d3d_draw::DrawRecords());
   {
     std::lock_guard lock(g_log_mutex);
     CHECK(g_log.find("no display window; frames are rendered, not presented") != std::string::npos);

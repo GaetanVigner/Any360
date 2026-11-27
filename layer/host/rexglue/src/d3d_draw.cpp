@@ -30,7 +30,8 @@ REXCVAR_DEFINE_BOOL(any360_d3d_native_draw_helpers, true, "GPU",
 namespace any360::host::rexglue::d3d_draw {
 
 bool NativeDraws() { return REXCVAR_GET(any360_d3d_native_draws); }
-bool DrawRecords() { return REXCVAR_GET(any360_d3d_records); }
+// Records while Any360's graphics are bound; the runtime's PM4 while the runtime's GPU runs.
+bool DrawRecords() { return REXCVAR_GET(any360_d3d_records) && GraphicsBound(); }
 bool DrawHelpers() { return REXCVAR_GET(any360_d3d_native_draw_helpers); }
 bool DirectSubmit() { return REXCVAR_GET(any360_direct_submit); }
 bool NativeSegments() { return REXCVAR_GET(any360_native_segments); }
