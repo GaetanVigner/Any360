@@ -1260,6 +1260,10 @@ void StartSampling(const std::string& path) {
   if (!sampler && !path.empty()) sampler = std::make_unique<Sampler>(path, true);
 }
 
+namespace {
+uint64_t ProcessPrivateBytes();  // below, with the runtime's frame report
+}  // namespace
+
 bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   if (g_bound) return true;
   rex::Runtime* runtime = rex::Runtime::instance();
@@ -1326,6 +1330,20 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
 #endif
     binding->window = window;
   }
+  // Diagnostics: ANY360_LOG_ALLOCATIONS=1 logs every GPU buffer and image created, with its caller, from the device's
+  // creation on (the renderer's own buffers, made with it, included).
+  if (const char* allocations = std::getenv("ANY360_LOG_ALLOCATIONS"); allocations && *allocations == '1' && options.log) {
+    gfx::vk::SetAllocationLog(options.log);
+  }
+  // With the allocations, the process's private memory at each step of the start (what the driver takes too).
+  const bool log_steps = options.log && std::getenv("ANY360_LOG_ALLOCATIONS") && *std::getenv("ANY360_LOG_ALLOCATIONS") == '1';
+  const auto step = [&](const char* what) {
+    if (!log_steps) return;
+    char text[120];
+    std::snprintf(text, sizeof text, "Any360: %.0f MB private %s", double(ProcessPrivateBytes()) / 1048576.0, what);
+    options.log(text);
+  };
+  step("before the Vulkan device");
   if (!binding->device.Create(device_options)) {
     error = "Vulkan: " + binding->device.error();
     return false;
@@ -1338,8 +1356,10 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
   binding->capture_path = options.capture_path;
   binding->capture_kicks = std::max(1u, options.capture_kicks);
   binding->log = options.log;
+  step("with the device");
   binding->renderer = std::make_unique<PresentingRenderer>(binding->device, physical, binding->window, title_window,
                                                           options.log, options.stats_seconds, options.resolution_scale);
+  step("with the device and the renderer");
   binding->renderer->SetPipelineCache(options.pipeline_cache_path);
   binding->renderer->SetScreenshotPath(options.screenshot_path);
   // The frame counter: the title's own setting (GraphicsOptions::show_fps) or --any360_fps_overlay, for every title.
@@ -1438,10 +1458,7 @@ bool StartGraphics(const GraphicsOptions& options, std::string& error) {
     binding->renderer->SetAuditWrites(true);
     if (options.log) options.log("Any360: GPU-side writes into guest memory audited");
   }
-  // Diagnostics: ANY360_LOG_ALLOCATIONS=1 logs every GPU buffer and image created, with its caller.
-  if (const char* allocations = std::getenv("ANY360_LOG_ALLOCATIONS"); allocations && *allocations == '1' && options.log) {
-    gfx::vk::SetAllocationLog(options.log);
-  }
+  step("with the command processor started");
   sys::Graphics().StartVblank(vblank_hz);
   g_vblank_hz = vblank_hz;
   g_binding = binding.release();

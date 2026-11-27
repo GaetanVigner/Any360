@@ -1,0 +1,20 @@
+@exe:simpsons_before.exe --any360_cpu_affinity=0xFF: 5 launches
+  simpsons_025.log: dip 1% low 514 FPS, slowest 5.1 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 732-783
+  simpsons_027.log: dip 1% low 505 FPS, slowest 4.0 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 744-835
+  simpsons_029.log: dip 1% low 507 FPS, slowest 3.5 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 743-834
+  simpsons_031.log: dip 1% low 502 FPS, slowest 3.7 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 750-839
+  simpsons_033.log: dip 1% low 493 FPS, slowest 4.7 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 743-834
+  steady (74 periods): FPS mean 770.2 (median 765.2, min 732.3), 10% low mean 668.1 (median 669.9, min 636.5), 1% low mean 532.8 (median 534.1, min 505.5); process private memory mean 2748 MB, max 2777 MB
+  usage: CPU% of a core mean 273 (median 273) [8 processors allowed, mask 0xFF]; CPU% of the allowed mean 34 (median 34); GPU% mean 56 (median 56); FPS per CPU% mean 2.82 (median 2.82); FPS per GPU% mean 13.77 (median 13.77)
+  dips (5): 1% low mean 504.3, slowest frame mean 4.2 ms, over 16.7 ms mean 0.0, texture loading mean 0.00 ms a frame
+--any360_cpu_affinity=0xFF: 5 launches
+  simpsons_026.log: dip 1% low 512 FPS, slowest 3.9 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 742-832
+  simpsons_028.log: dip 1% low 500 FPS, slowest 3.6 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 741-831
+  simpsons_030.log: dip 1% low 510 FPS, slowest 3.4 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 742-835
+  simpsons_032.log: dip 1% low 500 FPS, slowest 3.6 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 739-834
+  simpsons_034.log: dip 1% low 505 FPS, slowest 3.4 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 738-832
+  steady (75 periods): FPS mean 769.3 (median 768.4, min 738.4), 10% low mean 664.7 (median 670.0, min 635.4), 1% low mean 528.4 (median 526.7, min 500.4); process private memory mean 2408 MB, max 2420 MB
+  usage: CPU% of a core mean 271 (median 272) [8 processors allowed, mask 0xFF]; CPU% of the allowed mean 34 (median 34); GPU% mean 56 (median 56); FPS per CPU% mean 2.84 (median 2.82); FPS per GPU% mean 13.77 (median 13.77)
+  dips (5): 1% low mean 505.1, slowest frame mean 3.6 ms, over 16.7 ms mean 0.0, texture loading mean 0.00 ms a frame
+@exe:simpsons_before.exe --any360_cpu_affinity=0xFF against --any360_cpu_affinity=0xFF: steady fps z +0.99, p10 z +1.65, p1 z +1.97; dips 1% low z +0.10, slowest z +1.78
+@exe:simpsons_before.exe --any360_cpu_affinity=0xFF against --any360_cpu_affinity=0xFF: usage cpu z +1.21, gpu z +0.42, fps_per_cpu z -0.71, fps_per_gpu z +0.73

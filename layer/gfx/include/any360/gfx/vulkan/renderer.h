@@ -106,6 +106,7 @@ struct RendererStats {
   uint64_t ns_write_backs = 0, ns_write_backs_reference = 0;
   uint64_t ns_texture_hash = 0, ns_texture_load = 0;  // within textures: hashing, loading levels for uploads
   uint32_t flushes = 0;
+  uint32_t ring_growths = 0;  // a ring of constants or indices doubled for the next batches (GrowRing)
   // Time spent (nanoseconds, summed): draws in all, of which copying guest memory and submitting; resolves; swaps.
   uint64_t ns_draws = 0, ns_memory = 0, ns_submit = 0, ns_resolves = 0, ns_swaps = 0;
   // The GPU's time running the batches (time stamps at each batch's start and end), and from each batch's submission
@@ -850,6 +851,13 @@ class VulkanRenderer : public gfx::Renderer {
   std::map<uint64_t, ShaderTime> shader_times_;
   std::array<std::chrono::steady_clock::time_point, 8> submitted_at_{};
   uint32_t constant_head_ = 0, index_head_ = 0;  // ring allocation of the batch's constants and indices
+  // The size every batch's rings are given when it is next free: small at first, doubled whenever a draw finds no room
+  // (a flush the frame did not ask for), up to the ceilings.
+  static constexpr VkDeviceSize kConstantRingFirst = 2u << 20, kConstantRingMost = 32u << 20;
+  static constexpr VkDeviceSize kIndexRingFirst = 1u << 20, kIndexRingMost = 16u << 20;
+  VkDeviceSize constants_capacity_ = kConstantRingFirst, indices_capacity_ = kIndexRingFirst;
+  void GrowRing(VkDeviceSize& capacity, VkDeviceSize need, VkDeviceSize most);
+  bool SizeBatchRings(Batch& b);  // the batch's rings brought to the current capacities (the batch free)
   // The last block of each constant buffer written in the open batch: a draw whose block is the same reuses it
   // (most draws change only some constants; the batch's buffer is write-combined, slow to write and to read back).
   struct LastConstants {

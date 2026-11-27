@@ -211,6 +211,28 @@ int main(int argc, char** argv) {
     CHECK(p.At(4, 59) == a && p.At(59, 4) == b && p.Count(a) + p.Count(b) == kSize * kSize);
     std::printf("gfx_render_tests: triangles %u + %u pixels\n", p.Count(a), p.Count(b));
   }
+  // The batch rings start small and grow: 12 draws of 65535 DMA indices (128 KB each, the upper-right triangle over
+  // and over) need more than a batch's first index ring (1 MB). The ring grows, every draw lands, nothing fails.
+  {
+    constexpr uint32_t kCount = 65535;
+    for (uint32_t i = 0; i < kCount; ++i) {
+      const uint16_t big = uint16_t(indices[i % 3] << 8 | indices[i % 3] >> 8);
+      std::memcpy(g_memory + kIndices + 2 * i, &big, 2);
+    }
+    const uint32_t color = Rgba(90, 160, 20, 255), growths_before = renderer.stats().ring_growths;
+    const uint32_t failed_before = renderer.stats().failed;
+    Pixels p = scenario("ring growth", nullptr, [&] {
+      s.Vertices(0);
+      s.Color(90, 160, 20, 255);
+      for (int d = 0; d < 12; ++d) s.DrawIndexed16(kTriangleList, kCount);
+    });
+    const uint32_t growths = renderer.stats().ring_growths - growths_before;
+    std::printf("gfx_render_tests: ring growth: %u growths, %u of %u pixels\n", growths, p.Count(color), kSize * kSize / 2);
+    CHECK(growths > 0 && renderer.stats().failed == failed_before);
+    CHECK(p.At(59, 4) == color && p.At(4, 59) == kBlack);
+    // The indices as the later scenarios expect them: the first three, zero after.
+    std::memset(g_memory + kIndices + 6, 0, 2 * kCount - 6);
+  }
   // Primitive reset and index offset: a triangle strip of DMA indices {0, 1, 2, reset, 1, 3, 2} with reset index
   // 0x1234 (PA_SU_SC_MODE_CNTL multi_prim_ib_ena) is the two triangles of a quad; the vertex fetch constant points
   // at vertex set 5 (all zero: nothing would be drawn) and VGT_INDX_OFFSET 16 moves the indices to set 6's quad

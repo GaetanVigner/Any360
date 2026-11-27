@@ -515,7 +515,7 @@ void SetAllocationLog(std::function<void(const std::string&)> log) {
 bool CreateBuffer(const Device& d, VkDeviceSize size, VkBufferUsageFlags usage, bool host_visible, Buffer& out,
                   std::source_location where) {
   g_buffers.fetch_add(1, std::memory_order_relaxed);
-  Created("buffer", size, 0, 0, 0, usage, where);
+  Created(host_visible ? "host-visible buffer" : "buffer", size, 0, 0, 0, usage, where);
   const Functions& f = d.fn();
   VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
   info.size = size;

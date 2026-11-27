@@ -455,14 +455,6 @@ bool VulkanRenderer::Initialize() {
   if (!shared_memory_imported_ && !vram_guest_on_ && !CreateBuffer(device_, mirror_bytes_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true, shared_memory_)) {
     return Fail("guest memory buffer");
   }
-  // Each batch's rings: constants and indices of every draw until the next flush.
-  for (Batch& b : batches_) {
-    if (!CreateBuffer(device_, 32u << 20, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, b.constants) ||
-        !CreateBuffer(device_, 16u << 20, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true, b.indices)) {
-      return Fail("buffers");
-    }
-  }
-
   // Descriptor sets, written once: dynamic offsets select each draw's constants.
   VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
                                   {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, SpirvShaderTranslator::kConstantBufferCount * kBatches}};
@@ -483,20 +475,12 @@ bool VulkanRenderer::Initialize() {
   empty_set_ = allocated[1];
   for (uint32_t i = 0; i < kBatches; ++i) batches_[i].constants_set = allocated[2 + i];
   VkDescriptorBufferInfo shared_info{vram_guest_on_ ? vram_guest_.buffer : shared_memory_.buffer, 0, VK_WHOLE_SIZE};
-  const uint32_t ranges[SpirvShaderTranslator::kConstantBufferCount] = {
-      uint32_t(sizeof(SpirvShaderTranslator::SystemConstants)), kFloatBufferBytes, kFloatBufferBytes, kBoolLoopBytes, kFetchBytes};
   const VkWriteDescriptorSet shared_write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, shared_set_, 0, 0, 1,
                                           VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &shared_info, nullptr};
   f.vkUpdateDescriptorSets(d, 1, &shared_write, 0, nullptr);
+  // Each batch's rings: constants and indices of every draw until the next flush, small at first (see GrowRing).
   for (Batch& b : batches_) {
-    VkDescriptorBufferInfo constant_infos[SpirvShaderTranslator::kConstantBufferCount];
-    VkWriteDescriptorSet writes[SpirvShaderTranslator::kConstantBufferCount] = {};
-    for (uint32_t i = 0; i < SpirvShaderTranslator::kConstantBufferCount; ++i) {
-      constant_infos[i] = {b.constants.buffer, 0, ranges[i]};
-      writes[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, b.constants_set, i, 0, 1,
-                   VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, nullptr, &constant_infos[i], nullptr};
-    }
-    f.vkUpdateDescriptorSets(d, SpirvShaderTranslator::kConstantBufferCount, writes, 0, nullptr);
+    if (!SizeBatchRings(b)) return Fail("buffers");
   }
 
   // The batches: a command buffer and a fence each; the completion thread that waits for them.
@@ -2704,11 +2688,16 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
   const uint32_t immediate_need = immediate ? index_bytes + 4 : 0;  // the packet's indices staged too
   const uint32_t images_need = uint32_t(stage_textures[0].views.size() + stage_textures[1].views.size());
   const uint32_t samplers_need = uint32_t(stage_textures[0].samplers.size() + stage_textures[1].samplers.size());
-  if (constant_head_ + most > batch().constants.size || index_head_ + index_need + immediate_need > batch().indices.size || draw_sets_ + 2 > kDrawSets ||
-      (query_open_ && queries_used_ >= kQueriesPerBatch) ||
+  const bool constants_full = constant_head_ + most > batch().constants.size;
+  const bool indices_full = index_head_ + index_need + immediate_need > batch().indices.size;
+  if (constants_full || indices_full || draw_sets_ + 2 > kDrawSets || (query_open_ && queries_used_ >= kQueriesPerBatch) ||
       draw_images_ + images_need > kDrawDescriptors || draw_samplers_ + samplers_need > kDrawDescriptors) {
+    // A ring too small for the frames drawn: the batches grow (each when it is next free), up to their ceiling.
+    if (constants_full) GrowRing(constants_capacity_, most, kConstantRingMost);
+    if (indices_full) GrowRing(indices_capacity_, index_need + immediate_need, kIndexRingMost);
     Flush();
   }
+  if (!batch_open_) SizeBatchRings(batch());  // nothing recorded in it yet, and the GPU is done with it
   draw_images_ += images_need;
   draw_samplers_ += samplers_need;
   mark(stats_.ns_draw_targets);
@@ -3283,7 +3272,11 @@ bool VulkanRenderer::MemExportWithoutRasterization(const DrawCall& draw) {
   const uint32_t float_bytes = map.float_dynamic_addressing ? 256 * 16 : 16 * std::max(1u, map.float_count);
   const uint32_t need = uint32_t(sizeof(SpirvShaderTranslator::SystemConstants)) + float_bytes + 16 + kBoolLoopBytes +
                         kFetchBytes + 6 * constant_alignment_ + kFloatBufferBytes;
-  if (constant_head_ + need > batch().constants.size) Flush();
+  if (constant_head_ + need > batch().constants.size) {
+    GrowRing(constants_capacity_, need, kConstantRingMost);
+    Flush();
+  }
+  if (!batch_open_) SizeBatchRings(batch());
   uint8_t* base = static_cast<uint8_t*>(batch().constants.mapped);
   uint32_t offsets[SpirvShaderTranslator::kConstantBufferCount] = {};
   auto put = [&](uint32_t index, const void* data, uint32_t bytes) {
@@ -3957,6 +3950,43 @@ void VulkanRenderer::TakeReleased(std::vector<std::function<void()>>& actions) {
   if (submitted_unlisted_ >= 0) release(uint32_t(submitted_unlisted_));
 }
 
+void VulkanRenderer::GrowRing(VkDeviceSize& capacity, VkDeviceSize need, VkDeviceSize most) {
+  const VkDeviceSize grown = std::max(capacity * 2, std::bit_ceil(need));
+  if (grown > capacity && capacity < most) {
+    capacity = std::min(grown, most);
+    ++stats_.ring_growths;
+  }
+}
+
+bool VulkanRenderer::SizeBatchRings(Batch& b) {
+  // Called only while the batch is free: no recorded work reads its rings, so they are replaced in place.
+  bool ok = true;
+  if (b.constants.size < constants_capacity_) {
+    DestroyBuffer(device_, b.constants);
+    ok = CreateBuffer(device_, constants_capacity_, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true, b.constants);
+    if (ok) {
+      // The constant set reads the ring at dynamic offsets: rewritten for the new buffer.
+      const uint32_t ranges[SpirvShaderTranslator::kConstantBufferCount] = {
+          uint32_t(sizeof(SpirvShaderTranslator::SystemConstants)), kFloatBufferBytes, kFloatBufferBytes, kBoolLoopBytes,
+          kFetchBytes};
+      VkDescriptorBufferInfo infos[SpirvShaderTranslator::kConstantBufferCount];
+      VkWriteDescriptorSet writes[SpirvShaderTranslator::kConstantBufferCount] = {};
+      for (uint32_t i = 0; i < SpirvShaderTranslator::kConstantBufferCount; ++i) {
+        infos[i] = {b.constants.buffer, 0, ranges[i]};
+        writes[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, b.constants_set, i, 0, 1,
+                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, nullptr, &infos[i], nullptr};
+      }
+      device_.fn().vkUpdateDescriptorSets(device_.device(), SpirvShaderTranslator::kConstantBufferCount, writes, 0, nullptr);
+    }
+  }
+  if (ok && b.indices.size < indices_capacity_) {
+    DestroyBuffer(device_, b.indices);
+    ok = CreateBuffer(device_, indices_capacity_, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true, b.indices);
+  }
+  if (!ok) Fail("batch rings");
+  return ok;
+}
+
 void VulkanRenderer::Flush() {
   if (!batch_open_) return;
   Timer submit_timer(stats_.ns_submit);
@@ -4163,6 +4193,7 @@ void VulkanRenderer::Flush() {
   current_ = (current_ + 1) % kBatches;
   WaitBatch(current_);
   Batch& next = batch();
+  SizeBatchRings(next);
   f.vkResetFences(d, 1, &next.fence);
   for (auto& task : submissions_[current_].spent) spare_tasks_.push_back(std::move(task));
   submissions_[current_].spent.clear();

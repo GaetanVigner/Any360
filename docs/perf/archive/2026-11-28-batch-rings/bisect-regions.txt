@@ -1,0 +1,182 @@
+﻿lock taken 2026-11-27T23:06:04
+===== full
+private committed: 2455 MB in 311 allocations
+  0x019880240000     211.9 MB      2 regions  0x4
+  0x01d921890000      64.0 MB      1 regions  0x4
+  0x01d8cc330000      32.0 MB      1 regions  0x4
+  0x01d8ce340000      32.0 MB      1 regions  0x4
+  0x01d8c6ea0000      32.0 MB      1 regions  0x404
+  0x01d8ea890000      32.0 MB      1 regions  0x404
+  0x01d8ec890000      32.0 MB      1 regions  0x404
+  0x01d8ee890000      32.0 MB      1 regions  0x404
+  0x01d8f0890000      32.0 MB      1 regions  0x404
+  0x01d8f2890000      32.0 MB      1 regions  0x404
+  0x01d8f4890000      32.0 MB      1 regions  0x404
+  0x01d8f6890000      32.0 MB      1 regions  0x404
+  0x01d8f8890000      32.0 MB      1 regions  0x404
+  0x01d8fa890000      32.0 MB      1 regions  0x404
+  0x01d8fc890000      32.0 MB      1 regions  0x404
+  0x01d8fe890000      32.0 MB      1 regions  0x404
+  0x01d900890000      32.0 MB      1 regions  0x404
+  0x01d902890000      32.0 MB      1 regions  0x404
+  0x01d904890000      32.0 MB      1 regions  0x404
+  0x01d906890000      32.0 MB      1 regions  0x404
+  0x01d908890000      32.0 MB      1 regions  0x404
+  0x01d90a890000      32.0 MB      1 regions  0x404
+  0x01d90c890000      32.0 MB      1 regions  0x404
+  0x01d90f890000      32.0 MB      1 regions  0x404
+  0x01d912890000      32.0 MB      1 regions  0x404
+  the other 286 allocations: 1444 MB
+  up to   256.00 MB:      1 allocations,      212 MB
+  up to   128.00 MB:      1 allocations,       64 MB
+  up to    64.00 MB:      2 allocations,       64 MB
+  up to    32.00 MB:     31 allocations,      980 MB
+  up to    16.00 MB:     54 allocations,      829 MB
+  up to     8.00 MB:     12 allocations,       61 MB
+  up to     4.00 MB:     62 allocations,      223 MB
+  up to     2.00 MB:      9 allocations,       13 MB
+  up to     1.00 MB:      5 allocations,        5 MB
+  up to     0.50 MB:      1 allocations,        0 MB
+  up to     0.25 MB:      1 allocations,        0 MB
+  up to     0.12 MB:      7 allocations,        1 MB
+=== <route> (simpsons_018.log)
+hangs: 0; errors: 0
+Any360: 1475.2 FPS; per frame: 7 draws, 0 skipped, 0 failed, 6 resolves, 0.1 texture uploads, 0.0 texture copies from resolves (12.0 sampled in place), 0.0 translations, 0.0 pipelines (0.0 draws waiti
+Any360: 2075.1 FPS; per frame: 7 draws, 0 skipped, 0 failed, 6 resolves, 0.0 texture uploads, 0.0 texture copies from resolves (12.0 sampled in place), 0.0 translations, 0.0 pipelines (0.0 draws waiti
+FPS along the route: 6560.1 3677.0 163.2 1443.4 966.6 182.1 234.7 611.1 2304.1 1617.7 2144.2
+===== rexglue
+private committed: 1365 MB in 222 allocations
+  0x02798a480000     170.1 MB      9 regions  0x4
+  0x0279d45f0000      32.0 MB      1 regions  0x4
+  0x0279d6600000      32.0 MB      1 regions  0x4
+  0x0279fa130000      32.0 MB      1 regions  0x404
+  0x0279f6450000      31.7 MB      1 regions  0x404
+  0x023980240000      31.4 MB      1 regions  0x404
+  0x0279cb0a0000      31.2 MB      2 regions  0x404
+  0x0279cf0a0000      31.1 MB      1 regions  0x404
+  0x0279fcd30000      31.0 MB      1 regions  0x404
+  0x0068a1300000      16.0 MB      1 regions  0x4
+  0x0068a2300000      16.0 MB      1 regions  0x4
+  0x0068a3300000      16.0 MB      1 regions  0x4
+  0x0068a4300000      16.0 MB      1 regions  0x4
+  0x0068a8800000      16.0 MB      1 regions  0x4
+  0x0068a9900000      16.0 MB      1 regions  0x4
+  0x0068aae00000      16.0 MB      1 regions  0x4
+  0x0068abe00000      16.0 MB      1 regions  0x4
+  0x0068ace00000      16.0 MB      1 regions  0x4
+  0x0068ade00000      16.0 MB      1 regions  0x4
+  0x0068aee00000      16.0 MB      1 regions  0x4
+  0x0068afe00000      16.0 MB      1 regions  0x4
+  0x0068b0e00000      16.0 MB      1 regions  0x4
+  0x0068b1f40000      16.0 MB      1 regions  0x4
+  0x0068b2f40000      16.0 MB      1 regions  0x4
+  0x0068b3f40000      16.0 MB      1 regions  0x4
+  the other 197 allocations: 687 MB
+  up to   256.00 MB:      1 allocations,      170 MB
+  up to    64.00 MB:      2 allocations,       64 MB
+  up to    32.00 MB:      6 allocations,      188 MB
+  up to    16.00 MB:     44 allocations,      674 MB
+  up to     8.00 MB:     10 allocations,       56 MB
+  up to     4.00 MB:     53 allocations,      192 MB
+  up to     2.00 MB:      8 allocations,       12 MB
+  up to     1.00 MB:      4 allocations,        4 MB
+  up to     0.50 MB:      2 allocations,        1 MB
+  up to     0.25 MB:      1 allocations,        0 MB
+  up to     0.12 MB:      5 allocations,        1 MB
+  up to     0.06 MB:     31 allocations,        2 MB
+=== @rexglue <route> (simpsons_019.log)
+hangs: 0; errors: 0
+Any360: the runtime's GPU: 2877.3 FPS (VdSwap calls); frame times: median 0.31 ms (3238.3 FPS), 10% low 2224.7 FPS, 1% low 1308.6 FPS; slowest frame 100.9 ms, 1 over 16.7 ms; 1468 MB private
+Any360: the runtime's GPU: 2700.5 FPS (VdSwap calls); frame times: median 0.30 ms (3354.6 FPS), 10% low 2103.9 FPS, 1% low 628.9 FPS; slowest frame 36.8 ms, 2 over 16.7 ms; 1468 MB private
+FPS along the route: 4820.1 5530.0 5326.7 2849.3 437.6 68.0 612.5 572.9 783.8 758.9 419.6 1207.7 1893.6 1988.9 2428.5 2045.1 2764.8 2991.6 3063.9 2611.9 2385.9 2877.3 2700.5
+===== sys
+private committed: 1259 MB in 217 allocations
+  0x015680240000     159.8 MB      8 regions  0x4
+  0x0156ca1f0000      32.0 MB      1 regions  0x4
+  0x0156cc200000      32.0 MB      1 regions  0x4
+  0x0196f19e0000      32.0 MB      1 regions  0x404
+  0x0156c0e90000      31.2 MB      2 regions  0x404
+  0x0156c4e90000      31.2 MB      1 regions  0x404
+  0x0196edde0000      31.1 MB      1 regions  0x404
+  0x0196f45e0000      27.9 MB      2 regions  0x404
+  0x001e0d900000      16.0 MB      1 regions  0x4
+  0x001e0e900000      16.0 MB      1 regions  0x4
+  0x001e0f900000      16.0 MB      1 regions  0x4
+  0x001e10900000      16.0 MB      1 regions  0x4
+  0x001e14e00000      16.0 MB      1 regions  0x4
+  0x001e15e00000      16.0 MB      1 regions  0x4
+  0x001e17300000      16.0 MB      1 regions  0x4
+  0x001e18300000      16.0 MB      1 regions  0x4
+  0x001e19300000      16.0 MB      1 regions  0x4
+  0x001e1a300000      16.0 MB      1 regions  0x4
+  0x001e1b300000      16.0 MB      1 regions  0x4
+  0x001e1c300000      16.0 MB      1 regions  0x4
+  0x001e1d300000      16.0 MB      1 regions  0x4
+  0x001e1e400000      16.0 MB      1 regions  0x4
+  0x001e1f400000      16.0 MB      1 regions  0x4
+  0x001e20400000      16.0 MB      1 regions  0x4
+  0x001e21400000      16.0 MB      1 regions  0x4
+  the other 192 allocations: 610 MB
+  up to   256.00 MB:      1 allocations,      160 MB
+  up to    64.00 MB:      2 allocations,       64 MB
+  up to    32.00 MB:      5 allocations,      153 MB
+  up to    16.00 MB:     41 allocations,      633 MB
+  up to     8.00 MB:      8 allocations,       44 MB
+  up to     4.00 MB:     51 allocations,      184 MB
+  up to     2.00 MB:      8 allocations,       12 MB
+  up to     1.00 MB:      4 allocations,        4 MB
+  up to     0.50 MB:      3 allocations,        1 MB
+  up to     0.25 MB:      1 allocations,        0 MB
+  up to     0.12 MB:      5 allocations,        0 MB
+  up to     0.06 MB:     30 allocations,        2 MB
+=== @rexglue --any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio --any360_xdk_natives=true <route> (simpsons_020.log)
+hangs: 0; errors: 0
+Any360: the runtime's GPU: 30.0 FPS (VdSwap calls); frame times: median 33.30 ms (30.0 FPS), 10% low 30.0 FPS, 1% low 30.0 FPS; slowest frame 33.4 ms, 151 over 16.7 ms; 1355 MB private
+Any360: the runtime's GPU: 30.0 FPS (VdSwap calls); frame times: median 33.30 ms (30.0 FPS), 10% low 30.0 FPS, 1% low 30.0 FPS; slowest frame 33.4 ms, 151 over 16.7 ms; 1355 MB private
+FPS along the route: 29.6 30.0 30.0 29.9 29.9 30.0 30.0 30.0 30.0 30.0 30.0 30.0 30.0 30.0 30.0 30.0 30.0 30.0 30.0 30.0 30.0 30.0
+===== gpu
+private committed: 2375 MB in 284 allocations
+  0x02b284f00000     210.0 MB      2 regions  0x4
+  0x02b3239f0000      64.0 MB      1 regions  0x4
+  0x02b2ceff0000      32.0 MB      1 regions  0x4
+  0x02b2d1000000      32.0 MB      1 regions  0x4
+  0x027280240000      32.0 MB      1 regions  0x404
+  0x02b2c5b20000      32.0 MB      1 regions  0x404
+  0x02b2c9b20000      32.0 MB      1 regions  0x404
+  0x02b2ee9f0000      32.0 MB      1 regions  0x404
+  0x02b2f09f0000      32.0 MB      1 regions  0x404
+  0x02b2f29f0000      32.0 MB      1 regions  0x404
+  0x02b2f49f0000      32.0 MB      1 regions  0x404
+  0x02b2f69f0000      32.0 MB      1 regions  0x404
+  0x02b2f89f0000      32.0 MB      1 regions  0x404
+  0x02b2fa9f0000      32.0 MB      1 regions  0x404
+  0x02b2fc9f0000      32.0 MB      1 regions  0x404
+  0x02b2fe9f0000      32.0 MB      1 regions  0x404
+  0x02b3009f0000      32.0 MB      1 regions  0x404
+  0x02b3029f0000      32.0 MB      1 regions  0x404
+  0x02b3049f0000      32.0 MB      1 regions  0x404
+  0x02b3069f0000      32.0 MB      1 regions  0x404
+  0x02b3089f0000      32.0 MB      1 regions  0x404
+  0x02b30a9f0000      32.0 MB      1 regions  0x404
+  0x02b30c9f0000      32.0 MB      1 regions  0x404
+  0x02b30e9f0000      32.0 MB      1 regions  0x404
+  0x02b3119f0000      32.0 MB      1 regions  0x404
+  the other 259 allocations: 1365 MB
+  up to   256.00 MB:      1 allocations,      210 MB
+  up to   128.00 MB:      1 allocations,       64 MB
+  up to    64.00 MB:      2 allocations,       64 MB
+  up to    32.00 MB:     30 allocations,      949 MB
+  up to    16.00 MB:     53 allocations,      799 MB
+  up to     8.00 MB:     11 allocations,       53 MB
+  up to     4.00 MB:     60 allocations,      216 MB
+  up to     2.00 MB:      8 allocations,       12 MB
+  up to     1.00 MB:      5 allocations,        4 MB
+  up to     0.50 MB:      1 allocations,        0 MB
+  up to     0.25 MB:      1 allocations,        0 MB
+  up to     0.12 MB:      5 allocations,        1 MB
+=== @rexglue --any360_gpu=true --any360_gpu_device=NVIDIA --any360_gpu_vblank_hz=1000 <route> (simpsons_021.log)
+hangs: 0; errors: 0
+Any360: 2024.0 FPS; per frame: 7 draws, 0 skipped, 0 failed, 6 resolves, 0.0 texture uploads, 0.0 texture copies from resolves (12.0 sampled in place), 0.0 translations, 0.0 pipelines (0.0 draws waiti
+Any360: 3223.7 FPS; per frame: 7 draws, 0 skipped, 0 failed, 6 resolves, 0.0 texture uploads, 0.0 texture copies from resolves (12.0 sampled in place), 0.0 translations, 0.0 pipelines (0.0 draws waiti
+FPS along the route: 4823.5 3397.6 125.1 1062.1 1252.3 2899.1 1852.1 2492.1 2194.5 556.9 2940.0
+lock released 2026-11-27T23:14:01
