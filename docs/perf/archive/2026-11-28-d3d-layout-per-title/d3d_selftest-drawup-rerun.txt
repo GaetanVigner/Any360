@@ -1,0 +1,2 @@
+Any360 D3D self-test: 7 cases on a copy of device 4005B680
+DrawVerticesUP                 3000 calls, 0 declined, 0 different; median original 253.8 ns, native 147.5 ns (1.72x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00

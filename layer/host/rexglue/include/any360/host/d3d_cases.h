@@ -584,8 +584,8 @@ inline void CanonicalCommands(CallSetup& s, uint32_t cursor = 0) {
 // kHelpers: every dirty group, the title's shader, state, misc and wait helpers called too (they read through the
 // device copy's pointers, which are the title's: shaders and buffers, read only by them).
 // The Begin draws (d3d_draw.h): the draws' device, the runtime's allocator given a segment in the scratch (its
-// descriptor at +13140 a fake one whose word at +152 is set, its top at +14540), failing now and then (bit 6 of
-// +10813). BeginIndexedVertices' index pointer in the scratch, its vertex pointer the ninth argument (the caller's
+// descriptor at segment a fake one whose word at +152 is set, its top at segment_top), failing now and then (bit 6 of
+// shader_flags). BeginIndexedVertices' index pointer in the scratch, its vertex pointer the ninth argument (the caller's
 // stack word at +84). Their packet lies past the cursor (EndVertices moves it): decoded up to +13076.
 template <bool kRecords, bool kIndexed>
 struct Begin {
@@ -623,11 +623,11 @@ struct DrawIndexed {
     const uint64_t busy = uint64_t(busy_hi) << 32 | busy_lo;
     // Sparse masks too (a bit, a run, a few bits): a group's test and its upload's mask must agree bit for bit.
     if (kHelpers) {
-      // The frame the GPU is done with (*+10768), read once into the scratch: the shader helper's cache test reads it,
+      // The frame the GPU is done with (gpu_done_frame), read once into the scratch: the shader helper's cache test reads it,
       // and the title's GPU moves it between the two sides.
-      if (const uint32_t fence = Get32(s, s.device + 10768); any360::xdk::IsPlainMemory(fence, 4)) {
+      if (const uint32_t fence = Get32(s, s.device + g_d3d_layout.gpu_done_frame); any360::xdk::IsPlainMemory(fence, 4)) {
         Put32(s, s.scratch + 0x7E00, Get32(s, fence));
-        Put32(s, s.device + 10768, s.scratch + 0x7E00);
+        Put32(s, s.device + g_d3d_layout.gpu_done_frame, s.scratch + 0x7E00);
       }
       Put64(s, s.device + 16, rng() % 2 ? RandomMask(rng) : 0);
       Put64(s, s.device + 24, rng() % 2 ? RandomMask(rng) : 0);
@@ -637,10 +637,10 @@ struct DrawIndexed {
       Put64(s, s.device + 24, rng() % 2 ? RandomMask(rng) & 0x007FFFFC00000000ull : 0);
       Put64(s, s.device + 32, rng() % 2 ? RandomMask(rng) & (0x0000003FFFFFFFFFull | 0x00003FC000000000ull | (uint64_t(1) << 56)) : 0);
     }
-    s.Host(s.device + 10812)[0] &= 0xFD;
-    s.Host(s.device + 11907)[0] = uint8_t(rng() % 4);
+    s.Host(s.device + g_d3d_layout.tiling_flags)[0] &= 0xFD;
+    s.Host(s.device + g_d3d_layout.tiling_pending[1])[0] = uint8_t(rng() % 4);
     const uint32_t declaration = s.scratch + 0x8000 + 4 * uint32_t(rng() % 64);
-    Put32(s, s.device + 12156, declaration);
+    Put32(s, s.device + g_d3d_layout.vertex_declaration, declaration);
     static constexpr uint32_t kPrimitives[] = {1, 2, 3, 4, 5, 6, 8, 13};
     ctx.r3.u64 = s.device;
     ctx.r4.u64 = kPrimitives[rng() % 8];
@@ -1559,10 +1559,10 @@ void Begin<kRecords, kIndexed>::Setup(CallSetup& s, PPCContext& ctx) {
   DrawIndexed<kRecords, true>::Setup(s, ctx);
   std::mt19937_64& rng = *s.rng;
   const uint32_t segment = s.scratch + 0x7000;
-  Put32(s, s.device + 13140, segment);
+  Put32(s, s.device + g_d3d_layout.segment, segment);
   Put32(s, segment + 152, 1);
-  Put32(s, s.device + 14540, s.scratch + 0x2E000);
-  uint8_t& flags = s.Host(s.device + 10813)[0];
+  Put32(s, s.device + g_d3d_layout.segment_top, s.scratch + 0x2E000);
+  uint8_t& flags = s.Host(s.device + g_d3d_layout.shader_flags)[0];
   flags = rng() % 8 == 0 ? flags | 0x40 : flags & ~0x40;
   const uint64_t primitive = ctx.r4.u64;
   ctx.r4.u64 = primitive;

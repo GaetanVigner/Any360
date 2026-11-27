@@ -1,0 +1,8 @@
+Any360 D3D self-test: 7 cases on a copy of device 4005B680
+D3DResource GetType            3000 calls, 0 declined, 0 different; median original 11.3 ns, native 8.8 ns (1.28x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Format block                   3000 calls, 0 declined, 0 different; median original 13.8 ns, native 8.8 ns (1.57x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Resource AddRef                3000 calls, 0 declined, 0 different; median original 62.5 ns, native 16.3 ns (3.84x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+Resource Release               3000 calls, 0 declined, 0 different; median original 28.8 ns, native 11.3 ns (2.55x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+shader link                    3000 calls, 0 declined, 0 different; median original 215.0 ns, native 90.0 ns (2.39x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+ViewportEnable                 3000 calls, 0 declined, 0 different; median original 12.5 ns, native 10.0 ns (1.25x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+DrawVerticesUP                 3000 calls, 0 declined, 1 different; median original 348.8 ns, native 196.3 ns (1.78x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00; first: call 2471: memory at DF5F5005 (r3 34061000 r4 0000000000000006 r5 00000003 r6 3409D02C r7 0000000000000010)

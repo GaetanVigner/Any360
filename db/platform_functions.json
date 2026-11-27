@@ -76,7 +76,7 @@
       "estimated": false,
       "counts": {
         "system calls": [275, 275],
-        "D3D runtime": [538, 6],
+        "D3D runtime": [538, 8],
         "D3DX / XGraphics": [4134, 0],
         "CRT": [389, 14],
         "XAPI": [195, 0],
@@ -84,14 +84,14 @@
         "Xbox Live and voice (XOnline, XHV)": [333, 0],
         "libpng / zlib": [84, 0]
       },
-      "ready": ["D3DDevice_SetRenderState_ViewportEnable", "D3DDevice_DrawVerticesUP", "strchr"],
+      "ready": ["strchr"],
       "not_worth": [
         {"name": "memmove", "why": "0.8x in game (2,424 -> 2,855 ns a call; slower on empty moves and on copies of 16 KB and more); docs/perf/archive/2026-11-27-mirrorsedge-natives"},
         {"name": "_finite", "why": "0.9x in game (10.2 -> 11.1 ns); docs/perf/archive/2026-11-27-mirrorsedge-natives"},
         {"name": "GetLastError", "why": "1.0x in three titles, 0.5x in one; docs/NATIVE_FUNCTIONS.md, 2026-11-11"},
         {"name": "SetLastError", "why": "0.9-1.0x, 0.7x in one; docs/NATIVE_FUNCTIONS.md, 2026-11-11"}
       ],
-      "note": "ViewportEnable and DrawVerticesUP: the same instructions as Crackdown's with the device's fields 128 and 368 bytes further (10572 / 13444 against 10444 / 13076): the natives read Crackdown's device layout (xdk::g_d3d_layout), so they stay unbound until the layout is a title's parameter. strchr: not called in any run. The GPU wait step (frame pacing, refresh-codbo) was bound on 2026-11-23, before that split, and stays bound."
+      "note": "ViewportEnable and DrawVerticesUP bound on the title's D3D layout (titles/mirrorsedge/d3d_layout.json, 2026-11-28). strchr: not called in any run. The GPU wait step (frame pacing, refresh-codbo) was bound on 2026-11-23, before that split, and stays bound."
     }
   }
 }

@@ -73,6 +73,11 @@ struct D3dLayout {
   uint32_t tiling_hiz_pitch = 12892;
   // The command buffer's cursor and the point past which a writer first makes room (the runtime's own check).
   uint32_t command_cursor = 48, command_end = 56;
+  // DrawPrimitiveUP's end: the command buffer's position past the vertices BeginVertices reserved (EndVertices moves the
+  // cursor there).
+  uint32_t begin_end = 13076;
+  // The command buffer's segment the runtime's allocator hands vertices out of: its descriptor and its top.
+  uint32_t segment = 13140, segment_top = 14540;
   // The mirror's RB_COLORCONTROL (0x2202: alpha function bits 0-2, alpha test bit 3), RB_BLEND_RED-ALPHA (0x2105-0x2108,
   // floats), the six user clip planes (16 bytes each), the word the clip plane enables set 0x1000 in, the bound index
   // buffer.

@@ -704,9 +704,10 @@ inline void D3dGpuWaitStep(PPCContext& ctx, uint8_t* base, GuestFunction origina
 
 // The D3D runtime's state setters (any360/xdk/d3d_state.h), one kind each: r3 the device. `Kind` has Native (the
 // replacement on the registers), Writes (the device bytes, sources and stack it may write) and kFunction. The
-// device's layout (g_d3d_layout) is a constant, so that its offsets compile to immediates as the runtime's own do: the
-// default layout, the runtime Crackdown links (a title with another runtime gets kinds on its own layout).
-inline constexpr any360::xdk::D3dLayout g_d3d_layout{};
+// device's layout (g_d3d_layout): the title's runtime's, set by the title before its first D3D call (SetD3dLayout;
+// titles/<title>/d3d_layout.json, tools/d3d_layout_map.py); the default is the runtime Crackdown links.
+inline any360::xdk::D3dLayout g_d3d_layout{};
+inline void SetD3dLayout(const any360::xdk::D3dLayout& layout) { g_d3d_layout = layout; }
 // A kind whose function returns nothing (its r3 left as its code last used it) says so with kVoid.
 template <class Kind>
 constexpr bool KeepsR3() {
@@ -1167,17 +1168,17 @@ struct TextureLevelBytes {
 // vertices, r7 the stride -> r3 the block (0: none). BeginVertices (the title's entry, `g_begin_vertices`: its hooks
 // and bindings run) from its 128-byte frame with r6 the stride; when it gives a block, the vertices copied into it
 // (count x stride bytes, 32 bits) by the CRT's memcpy, here natively, by the title's (`g_vertex_copy`) when the copy
-// is one the native declines; then EndVertices: the cursor (+48) moved past the draw (+13076).
+// is one the native declines; then EndVertices: the cursor (command_cursor) moved past the draw (begin_end).
 // Declined when verified or timed: BeginVertices makes room in the command buffer (the draw would be sent twice).
 inline GuestFunction g_begin_vertices = nullptr, g_vertex_copy = nullptr;
-inline constexpr uint32_t kDrawUpFrame = 128, kBeginEnd = 13076;
+inline constexpr uint32_t kDrawUpFrame = 128;
 struct DrawVerticesUp {
   static constexpr Function kFunction = Function::kD3dDrawUp;
   static bool Native(const any360::xdk::Memory& m, PPCContext& ctx) {
     const any360::xdk::D3dLayout& l = g_d3d_layout;
     const uint32_t device = ctx.r3.u32, vertices = ctx.r6.u32;
     if (!g_begin_vertices || !g_vertex_copy || !any360::xdk::IsPlainMemory(device + l.command_cursor, 4) ||
-        !any360::xdk::IsPlainMemory(device + kBeginEnd, 4))
+        !any360::xdk::IsPlainMemory(device + l.begin_end, 4))
       return false;
     const uint32_t bytes = ctx.r5.u32 * ctx.r7.u32;  // mullw r5,r30,r29
     const uint64_t r1 = ctx.r1.u64;
@@ -1190,7 +1191,7 @@ struct DrawVerticesUp {
         g_vertex_copy(ctx, m.base);
       }
       uint8_t* d = m.Host(device);
-      any360::xdk::detail::Set32(d + l.command_cursor, any360::xdk::detail::At32(d + kBeginEnd));
+      any360::xdk::detail::Set32(d + l.command_cursor, any360::xdk::detail::At32(d + l.begin_end));
     }
     ctx.r1.u64 = r1;
     return true;

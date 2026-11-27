@@ -1169,8 +1169,41 @@ void TestStateFields(uint32_t seed) {
               native, model, static_cast<unsigned long long>(spent.bytes), static_cast<unsigned long long>(spent.count));
 }
 
+// The titles' layouts (tools/d3d_layout_header.py --tests from titles/*/d3d_layout.json).
+struct TitleLayout {
+  const char* title;
+  xdk::D3dLayout layout;
+};
+const TitleLayout kTitleLayouts[] = {
+#include "d3d_title_layouts.inc"
+};
+
+// Each title's layout: the device offsets of the setters' fields inside the 32 KB a device copy holds, and every case
+// that takes a layout run on it.
+void TestTitleLayouts() {
+  uint32_t seed = 5000;
+  for (const TitleLayout& t : kTitleLayouts) {
+    const xdk::D3dLayout& l = t.layout;
+    for (uint32_t at : {l.state_dirty, l.blend_control, l.blend_flags, l.vte_control, l.clip_control, l.mode_control,
+                        l.poly_offset, l.command_cursor, l.command_end, l.begin_end, l.segment, l.segment_top,
+                        l.release_cursor, l.release_end, l.tile_count, l.surfaces, l.viewport_set, l.shader_flags}) {
+      CHECK(at < (32u << 10));
+    }
+    TestViewportChain(l, seed++);
+    TestRenderStateFields(l, seed++);
+    TestSurfaceSetters(l, seed++);
+    TestRenderStates(l, seed++);
+    TestBlend(l, seed++);
+    TestSetTexture(l, seed++);
+    TestSetStreamSource(l, seed++);
+    TestSetVertexDeclaration(l, seed++);
+    TestSetShader(l, seed++);
+  }
+}
+
 int main() {
   const xdk::D3dLayout standard, shifted = Shifted();
+  TestTitleLayouts();
   TestStateFields(2800);
   TestViewportChain(standard, 2500);
   TestViewportChain(shifted, 2600);
