@@ -276,6 +276,10 @@ class VulkanRenderer : public gfx::Renderer {
   // A swap: the front buffer (texture fetch constant 0, as VdSwap writes it) read into the presented frame.
   void Swap(uint32_t frontbuffer, uint32_t width, uint32_t height, const uint32_t* registers) override;
   void Invalidate(uint32_t base, uint32_t size) override;
+  uint64_t CpuWriteMark() const override { return textures_ ? textures_->CpuWriteMark() : 0; }
+  void CpuWritesVisible(uint64_t mark) override {
+    if (textures_) textures_->CpuWritesVisible(mark);
+  }
   void GammaRamp(const uint32_t* table, const uint32_t* pwl) override;
   bool CountsSamples() const override { return query_pool_ != VK_NULL_HANDLE && occlusion_counts_; }
   // Occlusion queries counted on the GPU (the default), or answered at once with a fixed count by the command

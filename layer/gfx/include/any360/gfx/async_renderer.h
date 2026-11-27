@@ -40,12 +40,14 @@ class AsyncRenderer : public Renderer {
   void Flush() override;
   void WhenDone(std::function<void()> action) override;
   void Invalidate(uint32_t base, uint32_t size) override;
+  uint64_t CpuWriteMark() const override { return target_.CpuWriteMark(); }
+  void CpuWritesVisible(uint64_t mark) override;
   void GammaRamp(const uint32_t* table, const uint32_t* pwl) override;
   bool CountsSamples() const override { return target_.CountsSamples(); }  // set when the target starts
   void OcclusionQuery(bool end, uint32_t address) override;
 
  private:
-  enum class Op : uint32_t { kWrap, kRegisters, kShaderLoaded, kDraw, kCopy, kSwap, kFlush, kWhenDone, kInvalidate, kGammaRamp, kQuery };
+  enum class Op : uint32_t { kWrap, kRegisters, kShaderLoaded, kDraw, kCopy, kSwap, kFlush, kWhenDone, kInvalidate, kGammaRamp, kQuery, kCpuWritesVisible };
   struct Header {
     Op op;
     uint32_t bytes;  // the payload's, after the header
@@ -70,6 +72,7 @@ class AsyncRenderer : public Renderer {
   alignas(64) size_t produced_ = 0;  // published_, the producer's copy
   size_t consumed_seen_ = 0;         // consumed_ as the producer last read it (room is checked against it first)
   std::atomic<bool> stopping_{false};
+  uint64_t cpu_mark_sent_ = 0;  // the last CpuWritesVisible mark queued (the producer's)
   std::atomic<bool> spin_{true};
   std::atomic<uint64_t> busy_ns_{0};
   std::mutex mutex_;

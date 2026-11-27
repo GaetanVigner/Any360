@@ -1165,14 +1165,14 @@ std::atomic<double> g_vblank_hz{60.0};  // the rate StartGraphics chose (SetVbla
 Binding* g_binding = nullptr;
 
 // A CPU write to watched guest memory (the runtime's physical memory access callbacks): the textures over it are
-// checked again before their next use. The watch is one-shot; the texture cache arms it again when it reads the
-// memory. Only the range invalidated here may be unwatched: the runtime would otherwise drop the watch of up to 4 MB
+// checked again before the draws of the next kick the command processor runs. The watch is one-shot; the texture
+// cache arms it again when it reads the memory. Only the range invalidated here may be unwatched: the runtime would otherwise drop the watch of up to 4 MB
 // around the write without telling us, and what we hold of those pages would go stale.
 std::pair<uint32_t, uint32_t> MemoryWritten(void* context, uint32_t start, uint32_t length, bool) {
   g_watch_writes.fetch_add(1, std::memory_order_relaxed);
   g_watch_bytes.fetch_add(length, std::memory_order_relaxed);
   auto* renderer = static_cast<gfx::vk::VulkanRenderer*>(context);
-  if (auto* textures = renderer->texture_cache()) textures->QueueMemoryChanged(start, start + length);
+  if (auto* textures = renderer->texture_cache()) textures->QueueCpuWrite(start, start + length);
   renderer->GuestMemoryWritten(start, start + length);  // the vertices copied into video memory
   renderer->CpuWrote(start, start + length);  // resolves kept on the GPU there are superseded
   return {start, length};

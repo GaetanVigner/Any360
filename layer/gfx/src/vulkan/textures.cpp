@@ -828,16 +828,7 @@ VkImageView TextureCache::View(const uint32_t fetch[6], ViewType type, std::stri
     fast_.clear();
     ++version_;
   }
-  if (any_changed_.load(std::memory_order_acquire)) {
-    // Ranges reported from other threads (CPU writes watched, resolves written into guest memory).
-    {
-      std::lock_guard lock(changed_mutex_);
-      changed_taken_.swap(changed_);
-      any_changed_.store(false, std::memory_order_relaxed);
-    }
-    MemoryChanged(changed_taken_);  // a watched write is reported a page at a time: many ranges
-    changed_taken_.clear();
-  }
+  if (any_changed_.load(std::memory_order_acquire) || CpuWritesDue()) TakeChanges();
   const std::array<uint32_t, 8> fast_key = {fetch[0], fetch[1], fetch[2], fetch[3], fetch[4], fetch[5], uint32_t(type),
                                             uint32_t(is_signed)};
   if (const auto hit = fast_.find(fast_key);
@@ -1572,6 +1563,26 @@ void TextureCache::QueueMemoryChanged(uint32_t begin, uint32_t end) {
   std::lock_guard lock(changed_mutex_);
   changed_.emplace_back(begin, end);
   any_changed_.store(true, std::memory_order_release);
+}
+
+void TextureCache::QueueCpuWrite(uint32_t begin, uint32_t end) {
+  std::lock_guard lock(changed_mutex_);
+  cpu_writes_.emplace_back(begin, end);
+  cpu_reported_.fetch_add(1, std::memory_order_release);
+}
+
+void TextureCache::TakeChanges() {
+  {
+    std::lock_guard lock(changed_mutex_);
+    changed_taken_.swap(changed_);
+    any_changed_.store(false, std::memory_order_relaxed);
+    const uint64_t due = std::min<uint64_t>(cpu_writes_.size(), cpu_visible_ - cpu_applied_);
+    changed_taken_.insert(changed_taken_.end(), cpu_writes_.begin(), cpu_writes_.begin() + ptrdiff_t(due));
+    cpu_writes_.erase(cpu_writes_.begin(), cpu_writes_.begin() + ptrdiff_t(due));
+    cpu_applied_ += due;
+  }
+  MemoryChanged(changed_taken_);  // a watched write is reported a page at a time: many ranges
+  changed_taken_.clear();
 }
 
 void TextureCache::MemoryChanged(uint32_t begin, uint32_t end) {

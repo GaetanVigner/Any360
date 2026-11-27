@@ -80,6 +80,11 @@ class Renderer {
   }
   // The CPU wrote [base, base + size) (COHER_*_HOST): cached copies of that memory are stale.
   virtual void Invalidate(uint32_t /*base*/, uint32_t /*size*/) {}
+  // CPU writes the host's watch reported: CpuWriteMark (any thread) counts those reported so far, and
+  // CpuWritesVisible(mark), in stream order, makes the ones before `mark` visible to the draws that follow. The
+  // command processor marks each kick as it starts running it.
+  virtual uint64_t CpuWriteMark() const { return 0; }
+  virtual void CpuWritesVisible(uint64_t /*mark*/) {}
   // The display gamma ramp at a swap, before Swap: the 256-entry table (DC_LUT_30_COLOR values: 10-bit blue, green,
   // red from bit 0) and the piecewise linear one (128 entries of red, green, blue DC_LUT_PWL_DATA values).
   virtual void GammaRamp(const uint32_t* /*table*/, const uint32_t* /*pwl*/) {}

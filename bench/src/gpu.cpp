@@ -274,7 +274,7 @@ sys::GpuBackend* BenchGpu::backend() { return s_->cp.get(); }
 void BenchGpu::MemoryWritten(uint32_t begin, uint32_t end) {
   vk::VulkanRenderer* r = s_->renderer.get();
   if (!r) return;
-  if (vk::TextureCache* textures = r->texture_cache()) textures->QueueMemoryChanged(begin, end);
+  if (vk::TextureCache* textures = r->texture_cache()) textures->QueueCpuWrite(begin, end);
   r->GuestMemoryWritten(begin, end);
   r->CpuWrote(begin, end);
 }

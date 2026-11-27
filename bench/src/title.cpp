@@ -259,7 +259,7 @@ void TitleMain(PPCContext& ctx, uint8_t*) {
     Call(ctx, kKeInitializeEvent, {kEvJobDone + 16 * w, 1, 0});
     G().Store32(kDoneArray + 4 * w, kEvJobDone + 16 * w);
   }
-  Call(ctx, kKeInitializeSemaphore, {kSemQueued, 0, 2});
+  Call(ctx, kKeInitializeSemaphore, {kSemQueued, 0, 3});  // up to 2 frames ready, and the stop release
   Call(ctx, kKeInitializeSemaphore, {kSemSlots, 2, 2});
   Call(ctx, kRtlInitializeCriticalSection, {kCritical});
   G().Store64(kZeroInterval, 0);

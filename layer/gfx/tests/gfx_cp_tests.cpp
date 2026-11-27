@@ -1,6 +1,7 @@
 // Scenario tests of the command processor against the PM4 semantics: packets written by hand into a fake physical
 // memory, executed synchronously (Execute) or by the worker thread, the effects read back from the register file,
 // memory and a recording renderer.
+#include <atomic>
 #include <bit>
 #include <chrono>
 #include <cstdio>
@@ -8,8 +9,10 @@
 #include <filesystem>
 #include <memory>
 #include <thread>
+#include <utility>
 #include <vector>
 
+#include "any360/gfx/async_renderer.h"
 #include "any360/gfx/capture.h"
 #include "any360/gfx/command_processor.h"
 #include "any360/xdk/d3d_records.h"
@@ -768,6 +771,57 @@ void DirectSubmission() {
   CHECK(!b.SubmitBins(rb.write, 4, 0));
 }
 
+// CPU writes the host's watch reports become visible in stream order: the command processor marks each kick as it
+// starts running it, and each wait the CPU satisfies, with the count of writes reported so far; the asynchronous
+// renderer passes each new mark to its target in order with the draws, once.
+struct MarkRecorder : Recorder {
+  std::atomic<uint64_t> reported{0};
+  std::vector<std::pair<uint64_t, size_t>> marks;  // the mark, and the draws seen before it
+  uint64_t CpuWriteMark() const override { return reported.load(); }
+  void CpuWritesVisible(uint64_t mark) override { marks.emplace_back(mark, draws.size()); }
+};
+
+void CpuWriteMarks() {
+  CommandProcessor cp(g_physical.data());
+  Ring ring{cp};
+  MarkRecorder recorder;
+  cp.SetRenderer(&recorder);
+  Fresh(cp, ring);
+  recorder.reported = 3;
+  ring.Put(Type2());
+  ring.Run();
+  CHECK(!recorder.marks.empty() && recorder.marks.back().first == 3);
+  // A wait the CPU satisfies after writing: the writes before it are visible to what follows the wait.
+  cp.Start();
+  const uint32_t fence = kData + 0x100, marker = kData + 0x104;
+  ring.Put({Type3(pm4::WAIT_REG_MEM, 5), 0x13, fence | 2, 1, 0xFFFFFFFF, 0x100, Type3(pm4::MEM_WRITE, 2), marker | 2, 0x600D});
+  ring.Kick();
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  CHECK(Big(marker) == 0);
+  recorder.reported = 7;
+  SetBig(fence, 1);
+  for (int i = 0; i < 200 && !cp.Idle(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  CHECK(Big(marker) == 0x600D && cp.Idle());
+  CHECK(!recorder.marks.empty() && recorder.marks.back().first == 7);
+  cp.Stop();
+
+  // The asynchronous renderer: the mark read from the target, each new one queued once, in order with the calls.
+  CommandProcessor cp2(g_physical.data());
+  MarkRecorder target;
+  {
+    AsyncRenderer async(cp2, target);
+    target.reported = 4;
+    CHECK(async.CpuWriteMark() == 4);
+    async.CpuWritesVisible(async.CpuWriteMark());
+    async.CpuWritesVisible(4);
+    async.CpuWritesVisible(2);
+    async.Flush();
+    async.CpuWritesVisible(9);
+    async.Drain();
+    CHECK(target.marks.size() == 2 && target.marks[0].first == 4 && target.marks[1].first == 9);
+  }
+}
+
 int main() {
   ReferenceDetails();
   GammaRamp();
@@ -783,6 +837,7 @@ int main() {
   CaptureWaitsForRenderer();
   Records();
   DirectSubmission();
+  CpuWriteMarks();
   std::printf("gfx_cp_tests: %d failing checks\n", g_failures);
   return g_failures ? 1 : 0;
 }

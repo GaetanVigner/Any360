@@ -417,7 +417,10 @@ bool CommandProcessor::Wait(uint32_t wait_info, uint32_t poll, uint32_t referenc
   uint32_t polls = 0;
   for (;;) {
     const uint64_t progress = progress_.load(std::memory_order_acquire);
-    if (Test(wait_info, poll, reference, mask, true)) return true;
+    if (Test(wait_info, poll, reference, mask, true)) {
+      if (renderer_) renderer_->CpuWritesVisible(renderer_->CpuWriteMark());  // the CPU's writes before what it waited on
+      return true;
+    }
     // What the wait may depend on (a fence written after earlier draws) starts on the GPU first.
     if (!submitted && renderer_) renderer_->Flush(), submitted = true;
     if (stopping_) return false;
@@ -463,6 +466,7 @@ bool CommandProcessor::Execute() {
   }
   busy_ = true;
   ++kicks_;
+  if (renderer_) renderer_->CpuWritesVisible(renderer_->CpuWriteMark());
   const auto busy_start = std::chrono::steady_clock::now();
   struct BusyTime {
     std::atomic<uint64_t>& total;
@@ -518,6 +522,7 @@ bool CommandProcessor::Execute() {
       }
       if (here) {
         ++direct_kicks_;
+        if (renderer_) renderer_->CpuWritesVisible(renderer_->CpuWriteMark());
         RunIndirect(d.address, d.dwords, 0);
         if (stopping_) break;
         continue;

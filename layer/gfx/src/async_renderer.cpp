@@ -176,6 +176,14 @@ void AsyncRenderer::Invalidate(uint32_t base, uint32_t size) {
   Publish(at, Op::kInvalidate, sizeof(p));
 }
 
+void AsyncRenderer::CpuWritesVisible(uint64_t mark) {
+  if (mark <= cpu_mark_sent_) return;
+  cpu_mark_sent_ = mark;
+  uint8_t* at = Reserve(Align8(sizeof(Header) + sizeof(mark)));
+  std::memcpy(at + sizeof(Header), &mark, sizeof(mark));
+  Publish(at, Op::kCpuWritesVisible, sizeof(mark));
+}
+
 void AsyncRenderer::OcclusionQuery(bool end, uint32_t address) {
   SendRegisters();
   const uint32_t p[2] = {uint32_t(end), address};
@@ -298,6 +306,12 @@ void AsyncRenderer::Execute(Op op, const uint8_t* payload, uint32_t bytes) {
       uint32_t p[2];
       std::memcpy(p, payload, sizeof(p));
       target_.Invalidate(p[0], p[1]);
+      break;
+    }
+    case Op::kCpuWritesVisible: {
+      uint64_t mark;
+      std::memcpy(&mark, payload, sizeof(mark));
+      target_.CpuWritesVisible(mark);
       break;
     }
     case Op::kGammaRamp: {

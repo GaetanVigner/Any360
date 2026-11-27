@@ -8,6 +8,7 @@
 // when its memory changed (hashed per use). Cube, 3D, stacked, signed and mip-mapped textures are later steps.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -140,11 +141,11 @@ class TextureCache {
   uint64_t version() const { return version_; }
   bool changes_queued() const {
     // Patches set or removed, or a patched image just composed (once: the draws ask again and pick it up), too.
-    return any_changed_.load(std::memory_order_acquire) || patches_->generation() != patches_seen_ ||
+    return any_changed_.load(std::memory_order_acquire) || CpuWritesDue() || patches_->generation() != patches_seen_ ||
            patch_job_done_->load(std::memory_order_acquire);
   }
   // A host that can watch guest memory for CPU writes (the reference runtime's physical memory access callbacks):
-  // `watch(begin, end)` arms a one-shot watch, and the host reports writes with QueueMemoryChanged. Watched textures
+  // `watch(begin, end)` arms a one-shot watch, and the host reports writes with QueueCpuWrite. Watched textures
   // are hashed again only after such a write, not at every frame.
   void SetMemoryWatch(std::function<void(uint32_t, uint32_t)> watch) { watch_ = std::move(watch); }
   bool watching() const { return bool(watch_); }
@@ -168,6 +169,21 @@ class TextureCache {
   void RecycleStaging(std::vector<Buffer>& buffers);
   // MemoryChanged from another thread (the renderer's completion thread): applied before the next texture use.
   void QueueMemoryChanged(uint32_t begin, uint32_t end);
+  // A CPU write the host's watch reported (any thread). It is applied before the next texture use once
+  // CpuWritesVisible has been given a mark taken after it (CpuWriteMark), so draws kicked before the write keep the
+  // content they were kicked with. Until CpuWritesVisible is first called, every reported write is applied at once.
+  void QueueCpuWrite(uint32_t begin, uint32_t end);
+  // The number of CPU writes reported so far (any thread).
+  uint64_t CpuWriteMark() const { return cpu_reported_.load(std::memory_order_acquire); }
+  // The CPU writes before `mark` are visible to the textures used from now on (the renderer's thread).
+  void CpuWritesVisible(uint64_t mark) {
+    cpu_visible_ = std::max({cpu_visible_ == UINT64_MAX ? 0 : cpu_visible_, cpu_applied_, mark});
+  }
+  // CPU writes reported but not yet visible (waiting for a mark).
+  uint64_t cpu_writes_waiting() const {
+    const uint64_t reported = CpuWriteMark();
+    return reported - std::min(reported, std::max(cpu_applied_, cpu_visible_));
+  }
 
   // Guest memory a resolve left on the GPU (its texels at their coordinates in `image`, the renderer's): a texture
   // that reads exactly that destination (same base, pitch, host format and endianness; tiled 2D, one level) is
@@ -301,6 +317,12 @@ class TextureCache {
   std::vector<std::pair<uint32_t, uint32_t>> changed_;  // queued MemoryChanged ranges
   std::vector<std::pair<uint32_t, uint32_t>> changed_taken_;  // reused to apply them
   std::atomic<bool> any_changed_{false};  // checked by each View without the lock
+  // CPU writes in report order: cpu_writes_[i] is write number cpu_applied_ + i.
+  std::vector<std::pair<uint32_t, uint32_t>> cpu_writes_;
+  std::atomic<uint64_t> cpu_reported_{0};
+  uint64_t cpu_applied_ = 0, cpu_visible_ = UINT64_MAX;
+  bool CpuWritesDue() const { return cpu_visible_ > cpu_applied_ && cpu_reported_.load(std::memory_order_acquire) > cpu_applied_; }
+  void TakeChanges();
   std::map<uint32_t, GpuSource> gpu_sources_;  // by base
   std::function<void(uint32_t, uint32_t)> before_read_;
   uint32_t gpu_copies_ = 0;

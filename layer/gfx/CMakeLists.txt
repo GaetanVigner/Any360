@@ -128,6 +128,13 @@ target_compile_options(gfx_resource_tests PRIVATE -Wall -Wextra)
 target_compile_definitions(gfx_resource_tests PRIVATE $<$<BOOL:${WIN32}>:NOMINMAX WIN32_LEAN_AND_MEAN>)
 add_test(NAME gfx_resource_tests COMMAND gfx_resource_tests)
 
+# The texture cache under a CPU write watch: writes applied in kick order, one upload a kick for a texture rewritten
+# a page at a time; --bench times a streamed texture's frame kick-ordered against applied at once.
+add_executable(gfx_texture_watch_tests tests/gfx_texture_watch_tests.cpp)
+target_link_libraries(gfx_texture_watch_tests PRIVATE any360_gfx_vulkan)
+target_compile_options(gfx_texture_watch_tests PRIVATE -Wall -Wextra)
+add_test(NAME gfx_texture_watch_tests COMMAND gfx_texture_watch_tests)
+
 # Replays a frame capture (capture.h) and reports what its frames need: gfx_replay CAPTURE [--gpu NAME] [--out DIR].
 add_executable(gfx_replay tests/gfx_replay.cpp)
 target_link_libraries(gfx_replay PRIVATE any360_gfx_vulkan $<$<BOOL:${WIN32}>:winmm psapi>)
