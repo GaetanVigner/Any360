@@ -66,6 +66,14 @@ target_compile_definitions(any360_xenos_shader PUBLIC FMT_HEADER_ONLY
                            $<$<BOOL:${WIN32}>:NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS>)
 # Third-party code: upstream warnings are not ours to fix.
 target_compile_options(any360_xenos_shader PRIVATE -w)
+# The vendored translator keeps the SDK's class names (rex::graphics::SpirvShaderTranslator, spv::Builder...) with a
+# different layout. On ELF a title's executable exports the symbols its runtime library also defines and the library
+# then binds to the executable's copies: the runtime's own pipeline cache ran Any360's translator on its objects and
+# spun forever (The Simpsons Game on Linux, ReXGlue 0.8). Hidden, our copies stay inside the executable. Windows DLLs
+# never bind to an executable's symbols.
+if(NOT WIN32)
+  target_compile_options(any360_xenos_shader PRIVATE -fvisibility=hidden -fvisibility-inlines-hidden)
+endif()
 
 add_executable(gfx_shader_tests tests/gfx_shader_tests.cpp)
 target_link_libraries(gfx_shader_tests PRIVATE any360_xenos_shader)
@@ -86,6 +94,8 @@ target_compile_options(any360_gfx_vulkan PRIVATE -Wall -Wextra)
 target_compile_options(any360_gfx_vulkan PUBLIC -Wno-missing-field-initializers)
 if(NOT WIN32)
     target_link_libraries(any360_gfx_vulkan PUBLIC ${CMAKE_DL_LIBS})
+    # Its inline and template code from the vendored translator's headers stays hidden too (see any360_xenos_shader).
+    target_compile_options(any360_gfx_vulkan PRIVATE -fvisibility=hidden -fvisibility-inlines-hidden)
 endif()
 
 # The resolve write-back against its first version (no GPU needed); --bench times both.
