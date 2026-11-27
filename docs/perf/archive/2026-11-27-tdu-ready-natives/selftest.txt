@@ -1,0 +1,11 @@
+Any360 D3D self-test: 10 cases on a copy of device 40011A00
+_finite                        3000 calls, 0 declined, 0 different; median original 2.5 ns, native 3.8 ns (0.67x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+_isnan                         3000 calls, 0 declined, 0 different; median original 5.0 ns, native 3.8 ns (1.33x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+_sptype                        3000 calls, 0 declined, 0 different; median original 6.3 ns, native 5.0 ns (1.25x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+_add_exp                       3000 calls, 0 declined, 0 different; median original 7.5 ns, native 8.8 ns (0.86x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+wcscmp                         3000 calls, 0 declined, 0 different; median original 38.8 ns, native 20.0 ns (1.94x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+XAudio fill 256                3000 calls, 0 declined, 0 different; median original 236.3 ns, native 16.3 ns (14.51x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+XAudio fill 512                3000 calls, 0 declined, 0 different; median original 476.3 ns, native 32.5 ns (14.64x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+XAudio fill 1024               3000 calls, 0 declined, 0 different; median original 985.0 ns, native 62.5 ns (15.76x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+XAudio fill 2048               3000 calls, 0 declined, 0 different; median original 1923.8 ns, native 121.3 ns (15.87x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00
+XAudio fill 4096               3000 calls, 0 declined, 0 different; median original 3787.6 ns, native 241.3 ns (15.70x faster); allocated per call: original 0.0 B in 0.00, native 0.0 B in 0.00

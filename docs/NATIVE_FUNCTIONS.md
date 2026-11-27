@@ -497,8 +497,8 @@ audio library and the D3D runtime. The two taken here:
   and its model (`xaudio_reference.h`) does the 64 instructions one element at a time. vmaddfp is fused, one
   rounding, as the console and Crackdown's recompiled code do it (the host's FMA3, the same instruction and operand
   order, under the vector unit's flush mode); a host without FMA3 declines every call. Test Drive Unlimited's
-  build of the SDK compiles vmaddfp as a multiply then an add (two roundings): the replacement would differ from
-  its recompiled code in the last bit, and the game barely calls it: not bound there.
+  recompiled code does vmaddfp as a multiply then an add (two roundings); it was left unbound there on the
+  expectation of last-bit differences, but 269,904 mixes while driving compared the same (2026-11-27, below): bound.
 - **D3D's upload of the dirty shader constants** (`xdk::D3dDirtyConstants`, `d3d.h`): Crackdown `sub_826C5EA0`,
   Test Drive Unlimited `sub_8268DEF0`, the same steps in another order with the command buffer's pointer at
   device + 48 and + 40 (the binding's parameter). For each run of set bits in a 64-bit mask: type-2 pads to 16
@@ -611,8 +611,9 @@ the block's float, then the block's first word to 0; five builds of the same ste
 lfs and stfs move a single's bits as they are on the console: the replacement copies the bits (the recompiled
 code converts to double and back, the same bits for every float but a signalling NaN). `xdk_xaudio_tests`: 13,555
 with them (the five sizes, any alignment, signalling NaNs and denormals, declines). In game: Crackdown calls them 64
-times (at start), verified none different, 1,327 -> 86 ns a call (15.4x); Test Drive Unlimited and The Simpsons
-Game did not call them in their menus: not bound there.
+times (at start), verified none different, 1,327 -> 86 ns a call (15.4x); The Simpsons Game did not call them in
+its menus: not bound there. Test Drive Unlimited does not call them either; checked by the self-test and bound
+(2026-11-27, below).
 
 ### zlib's inflate_fast (2026-11-16)
 
@@ -819,6 +820,34 @@ to measure against (the platforms' own reverbs are other algorithms). A modest g
   state had been measured 1 KB short, so that buffer was neither compared nor put back between the two sides. The
   off-game test now fails any write outside the plan. The verifier also starts each side with the host's
   floating-point control word the call found (the code writes it only when the guest's flush mode changes).
+
+### Test Drive Unlimited's ready natives (2026-11-27)
+
+The 15 functions Any360 had native and Test Drive Unlimited did not bind (docs/ROADMAP.md): the five called on the
+driving route checked with `--any360_xdk_verify` and timed with `--any360_xdk_bench` (one launch each, to the island
+and driving); the ten its runs never call checked and timed by the self-test (`--any360_d3d_selftest`, the title's
+recompiled function against the replacement on generated inputs, 3,000 calls each). Their cases are generic
+(`layer/host/rexglue/include/any360/host/xdk_cases.h`: the double helpers, wcscmp, XAudio's fills), registered by a
+title with `ANY360_D3D_CASE` and its own addresses, the same as the D3D cases. Every call compared the same; no side
+allocates. Bound: the ones at least as fast as the title's own code.
+
+| function | checked | own code | replacement | | bound |
+|---|---|---:|---:|---:|---|
+| XAudio mix ramp | in game, 269,904 calls | 194.5 ns | 106.3 ns | 1.8x | yes |
+| wcsncpy | in game, 2 calls | 1,434.7 ns | 104.8 ns | 13.7x | yes |
+| XAudio fill 256 / 512 / 1024 / 2048 / 4096 | self-test | 236-3,788 ns | 16-241 ns | 14.5-15.9x | yes |
+| wcscmp | self-test | 38.8 ns | 20.0 ns | 1.94x | yes |
+| _isnan | self-test | 5.0 ns | 3.8 ns | 1.33x | yes |
+| _sptype | self-test | 6.3 ns | 5.0 ns | 1.25x | yes |
+| _add_exp | self-test | 7.5 ns | 8.8 ns | 0.86x | no |
+| _finite | self-test | 2.5 ns | 3.8 ns | 0.67x | no |
+| mbtowc | in game, 39 calls | 14.1 ns | 17.5 ns | 0.8x | no |
+| GetLastError | in game, 640,000 calls | 10.2 ns | 9.9 ns | 1.0x | no |
+| SetLastError | in game, 640,000 calls | 10.2 ns | 10.4 ns | 0.98x | no |
+
+The self-test's times are medians (1.25 ns ticks), the in-game ones means over the calls. The five left out are a
+handful of instructions where the call through the binding costs what the work does. Raw outputs:
+`docs/perf/archive/2026-11-27-tdu-ready-natives/`.
 
 ### Found on the way
 

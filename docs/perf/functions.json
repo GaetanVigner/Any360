@@ -1,5 +1,53 @@
 [
 {
+"function":"_add_exp",
+"measure":"D3D native against the title",
+"ns":8.8,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"title",
+"versus_ns":7.5,
+"speed":0.8522727272727272,
+"archive":"2026-11-27-tdu-ready-natives",
+"first":"2026-11-27-tdu-ready-natives"
+},
+{
+"function":"_finite",
+"measure":"D3D native against the title",
+"ns":3.8,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"title",
+"versus_ns":2.5,
+"speed":0.6578947368421053,
+"archive":"2026-11-27-tdu-ready-natives",
+"first":"2026-11-27-tdu-ready-natives"
+},
+{
+"function":"_isnan",
+"measure":"D3D native against the title",
+"ns":3.8,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"title",
+"versus_ns":5.0,
+"speed":1.3157894736842106,
+"archive":"2026-11-27-tdu-ready-natives",
+"first":"2026-11-27-tdu-ready-natives"
+},
+{
+"function":"_sptype",
+"measure":"D3D native against the title",
+"ns":5.0,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"title",
+"versus_ns":6.3,
+"speed":1.26,
+"archive":"2026-11-27-tdu-ready-natives",
+"first":"2026-11-27-tdu-ready-natives"
+},
+{
 "function":"ApplyScissor",
 "measure":"D3D native against the title",
 "ns":30.0,
@@ -3564,6 +3612,18 @@
 "first":"2026-11-18-sys-step12-fixed-costs"
 },
 {
+"function":"wcscmp",
+"measure":"D3D native against the title",
+"ns":20.0,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"title",
+"versus_ns":38.8,
+"speed":1.94,
+"archive":"2026-11-27-tdu-ready-natives",
+"first":"2026-11-27-tdu-ready-natives"
+},
+{
 "function":"WindowScissorPackets (PM4)",
 "measure":"D3D native against the title",
 "ns":20.0,
@@ -5962,6 +6022,66 @@
 "speed":null,
 "archive":"2026-11-21-sys-step12-resolve",
 "first":"2026-11-19-sys-step12-avatar"
+},
+{
+"function":"XAudio fill 1024",
+"measure":"D3D native against the title",
+"ns":62.5,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"title",
+"versus_ns":985.0,
+"speed":15.76,
+"archive":"2026-11-27-tdu-ready-natives",
+"first":"2026-11-27-tdu-ready-natives"
+},
+{
+"function":"XAudio fill 2048",
+"measure":"D3D native against the title",
+"ns":121.3,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"title",
+"versus_ns":1923.8,
+"speed":15.8598516075845,
+"archive":"2026-11-27-tdu-ready-natives",
+"first":"2026-11-27-tdu-ready-natives"
+},
+{
+"function":"XAudio fill 256",
+"measure":"D3D native against the title",
+"ns":16.3,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"title",
+"versus_ns":236.3,
+"speed":14.496932515337424,
+"archive":"2026-11-27-tdu-ready-natives",
+"first":"2026-11-27-tdu-ready-natives"
+},
+{
+"function":"XAudio fill 4096",
+"measure":"D3D native against the title",
+"ns":241.3,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"title",
+"versus_ns":3787.6,
+"speed":15.696643182760049,
+"archive":"2026-11-27-tdu-ready-natives",
+"first":"2026-11-27-tdu-ready-natives"
+},
+{
+"function":"XAudio fill 512",
+"measure":"D3D native against the title",
+"ns":32.5,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"title",
+"versus_ns":476.3,
+"speed":14.655384615384616,
+"archive":"2026-11-27-tdu-ready-natives",
+"first":"2026-11-27-tdu-ready-natives"
 },
 {
 "function":"XAutomationpUnbindController",

@@ -18,20 +18,20 @@ Counted on 2026-11-27 from each title's refresh: what the title imports or links
 | system calls | 248 / 248 | 317 / 317 | 303 / 327 | 255 / 255 | 275 / 275 |
 | D3D runtime | 185 / 556 | 1 / 1,636 | 4 / 1,436 | 1 / 569 | 6 / 538 |
 | D3DX / XGraphics | 0 / 4,171 | 0 / 10,871 | - | 0 / 298 | 0 / 4,134 |
-| CRT | 26 / 595 | 15 / 1,092 | 19 / 761 | 0 / 362 | 14 / 389 |
+| CRT | 26 / 595 | 15 / 1,092 | 23 / 761 | 0 / 362 | 14 / 389 |
 | XAPI | 2 / 194 | 1 / 349 | 1 / 324 | 0 / 396 | 0 / 195 |
-| audio (XAudio, XMA) | 7 / 484 | 0 / 1,430 | 0 / 1,388 | 0 / 695 | 0 / 331 |
+| audio (XAudio, XMA) | 7 / 484 | 0 / 1,430 | 6 / 1,388 | 0 / 695 | 0 / 331 |
 | Xbox Live and voice (XOnline, XHV) | 0 / 378 | 0 / 756 | 0 / 956 | 0 / 179 | 0 / 333 |
 | libpng / zlib | 2 / 194 | - | - | - | 0 / 84 |
 | kernel import thunks | 0 / 2 | 0 / 96 | - | - | - |
-| **all** | **470 / 6,822 (6.9%)** | **334 / 16,547 (2.0%)** | **327 / 5,192 (6.3%)** | **256 / 2,754 (9.3%)** | **295 / 6,279 (4.7%)** |
+| **all** | **470 / 6,822 (6.9%)** | **334 / 16,547 (2.0%)** | **337 / 5,192 (6.5%)** | **256 / 2,754 (9.3%)** | **295 / 6,279 (4.7%)** |
 | covered by a bound parent | 10 | 0 | 0 | 0 | 0 |
 
 System calls are done on every title; the XDK libraries the titles link (D3D runtime first, then the CRT, XAPI and audio) are what remains. Cheapest next steps: functions Any360 already has native but a title does not bind yet, each bound after its in-game check (docs/NATIVE_FUNCTIONS.md):
 
 - crackdown (3): _add_exp, _finite, _sptype. No run of the game has called the three, the city route of 2026-11-27 included: bound once a run calls them.
 - simpsons (33): D3D dirty words, D3DDevice_BeginTiling, D3DDevice_BeginVertices, D3DDevice_Clear, D3DDevice_DrawIndexedVertices, D3DDevice_DrawVertices, D3DDevice_DrawVerticesUP, D3DDevice_EndTiling, D3DDevice_Resolve, D3DDevice_SetPixelShader, D3DDevice_SetPredication, D3DDevice_SetTexture, D3DDevice_SetVertexShader, D3D_InternalClearDraw, D3D_LoadShaderLiterals, _add_exp, _isnan, _sptype, mbtowc, tolower, toupper, wcscpy, wcslen, wcsncpy, GetLastError, SetLastError, XAudio fill 256, XAudio fill 512, XAudio fill 1024, XAudio fill 2048, XAudio fill 4096, png_read_filter_row, inflate_fast.
-- tdu (15): _add_exp, _finite, _isnan, _sptype, mbtowc, wcscmp, wcsncpy, GetLastError, SetLastError, XAudio fill 256, XAudio fill 512, XAudio fill 1024, XAudio fill 2048, XAudio fill 4096, XAudio mix ramp.
+- tdu (0): none.
 - codbo (13): D3D_GpuFormatBlock, D3DResource_GetType, D3DResource_AddRef, D3DResource_Release, D3DDevice_SetRenderState_ViewportEnable, SetLastError, GetLastError, strrchr, memset, _stricmp, wcslen, _get_exp, mbtowc.
 - mirrorsedge (3): D3DDevice_SetRenderState_ViewportEnable, D3DDevice_DrawVerticesUP, strchr. ViewportEnable and DrawVerticesUP: the same instructions as Crackdown's with the device's fields 128 and 368 bytes further (10572 / 13444 against 10444 / 13076): the natives read Crackdown's device layout (xdk::g_d3d_layout), so they stay unbound until the layout is a title's parameter. strchr: not called in any run. The GPU wait step (frame pacing, refresh-codbo) was bound on 2026-11-23, before that split, and stays bound.
 
@@ -44,6 +44,7 @@ Counted apart from "ready" and from what remains:
 - crackdown, covered (10): D3D_ClearDraw, D3D_ClearRects, D3D_CopyPatchedShader, D3D_EmptyShaderExports, D3D_GpuTimestamp, D3D_LinkShaders, D3D_PatchVertexFetches, D3D_PatchedShaderCache, D3D_RemapShaderExports, D3D_UpdateShaderControl.
 - crackdown, waiting on frame pacing (2): D3DQuery_GetData, D3D GPU wait step (owner: refresh-codbo).
 - crackdown, not worth binding (2): GetLastError (1.0x in three titles, 0.5x in one; docs/NATIVE_FUNCTIONS.md, 2026-11-11), SetLastError (0.9-1.0x, 0.7x in one; docs/NATIVE_FUNCTIONS.md, 2026-11-11).
+- tdu, not worth binding (5): _finite (0.67x, self-test; docs/NATIVE_FUNCTIONS.md, 2026-11-27), _add_exp (0.86x, self-test; docs/NATIVE_FUNCTIONS.md, 2026-11-27), mbtowc (0.8x, 39 calls driving; docs/NATIVE_FUNCTIONS.md, 2026-11-27), GetLastError (1.0x driving; docs/NATIVE_FUNCTIONS.md, 2026-11-27), SetLastError (0.98x driving; docs/NATIVE_FUNCTIONS.md, 2026-11-27).
 - mirrorsedge, not worth binding (4): memmove (0.8x in game (2,424 -> 2,855 ns a call; slower on empty moves and on copies of 16 KB and more); docs/perf/archive/2026-11-27-mirrorsedge-natives), _finite (0.9x in game (10.2 -> 11.1 ns); docs/perf/archive/2026-11-27-mirrorsedge-natives), GetLastError (1.0x in three titles, 0.5x in one; docs/NATIVE_FUNCTIONS.md, 2026-11-11), SetLastError (0.9-1.0x, 0.7x in one; docs/NATIVE_FUNCTIONS.md, 2026-11-11).
 
 ## CPU instructions

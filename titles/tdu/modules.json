@@ -9,6 +9,8 @@
   {"start": "0x826A7AF8", "end": "0x826DD328", "name": "XDK audio (XAudio, XMA)", "kind": "library"},
   {"start": "0x826FFE98", "end": "0x82759230", "name": "Havok Physics", "kind": "middleware"},
   {"start": "0x82759230", "end": "0x827834F0", "name": "XDK Xbox Live and voice (XOnline, XHV)", "kind": "library"},
+  {"start": "0x827834F0", "end": "0x82783548", "name": "C runtime (CRT)", "kind": "library"},
+  {"start": "0x82783FC8", "end": "0x82784010", "name": "C runtime (CRT)", "kind": "library"},
   {"start": "0x82B7FC00", "end": "0x82B93000", "name": "Bink video", "kind": "middleware"}
  ]
 }

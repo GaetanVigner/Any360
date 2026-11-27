@@ -44,12 +44,19 @@
       "counts": {
         "system calls": [327, 303],
         "D3D runtime": [1436, 4],
-        "CRT": [761, 19],
+        "CRT": [761, 23],
         "XAPI": [324, 1],
-        "audio (XAudio, XMA)": [1388, 0],
+        "audio (XAudio, XMA)": [1388, 6],
         "Xbox Live and voice (XOnline, XHV)": [956, 0]
       },
-      "ready": ["_add_exp", "_finite", "_isnan", "_sptype", "mbtowc", "wcscmp", "wcsncpy", "GetLastError", "SetLastError", "XAudio fill 256", "XAudio fill 512", "XAudio fill 1024", "XAudio fill 2048", "XAudio fill 4096", "XAudio mix ramp"]
+      "ready": [],
+      "not_worth": [
+        {"name": "_finite", "why": "0.67x, self-test; docs/NATIVE_FUNCTIONS.md, 2026-11-27"},
+        {"name": "_add_exp", "why": "0.86x, self-test; docs/NATIVE_FUNCTIONS.md, 2026-11-27"},
+        {"name": "mbtowc", "why": "0.8x, 39 calls driving; docs/NATIVE_FUNCTIONS.md, 2026-11-27"},
+        {"name": "GetLastError", "why": "1.0x driving; docs/NATIVE_FUNCTIONS.md, 2026-11-27"},
+        {"name": "SetLastError", "why": "0.98x driving; docs/NATIVE_FUNCTIONS.md, 2026-11-27"}
+      ]
     },
     "codbo": {
       "estimated": true,

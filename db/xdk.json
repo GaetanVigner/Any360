@@ -8,7 +8,7 @@
    "simpsons": "0x82A48B48",
    "tdu": "0x8264C938"
   },
-  "note": "the double with r4 added to its exponent field. Any360: xdk::CrtAddExp, bound in no title (no run has called it; Crackdown keeps its own copy)"
+  "note": "the double with r4 added to its exponent field. Any360: xdk::CrtAddExp, bound in no title (Test Drive Unlimited's self-test: right, 0.86x; Crackdown keeps its own copy)"
  },
  {
   "name": "_finite",
@@ -20,7 +20,7 @@
    "tdu": "0x82654358",
    "mirrorsedge": "0x829E8DB8"
   },
-  "note": "1 unless the double's exponent is all ones. Any360: xdk::CrtFinite, bound in The Simpsons Game (the two others: no run has called it)"
+  "note": "1 unless the double's exponent is all ones. Any360: xdk::CrtFinite, bound in The Simpsons Game; not in Test Drive Unlimited (self-test: right, 0.67x); Crackdown: no run has called it"
  },
  {
   "name": "_get_exp",
@@ -44,7 +44,7 @@
    "tdu": "0x82654378",
    "mirrorsedge": "0x829E8DD8"
   },
-  "note": "Any360: xdk::CrtIsnan, bound in Crackdown (the two others: no run has called it)"
+  "note": "Any360: xdk::CrtIsnan, bound in Crackdown and Test Drive Unlimited (checked there by the self-test: its runs do not call it)"
  },
  {
   "name": "_set_exp",
@@ -66,7 +66,7 @@
    "simpsons": "0x82A48BA8",
    "tdu": "0x8264C998"
   },
-  "note": "1 plus infinity, 2 minus infinity, 3 quiet NaN, 4 signalling NaN, 0 otherwise. Any360: xdk::CrtSptype, bound in no title (no run has called it)"
+  "note": "1 plus infinity, 2 minus infinity, 3 quiet NaN, 4 signalling NaN, 0 otherwise. Any360: xdk::CrtSptype, bound in Test Drive Unlimited (checked by the self-test, 1.25x: its runs do not call it)"
  },
  {
   "name": "_stricmp",
@@ -117,7 +117,7 @@
    "tdu": "0x8265D078",
    "mirrorsedge": "0x829F4F48"
   },
-  "note": "the same instructions in the three titles: the C locale's, a byte is a character. Any360: xdk::CrtMbtowc, bound in Crackdown (the two others: no run has called it)"
+  "note": "the same instructions in the three titles: the C locale's, a byte is a character. Any360: xdk::CrtMbtowc, bound in Crackdown; not in Test Drive Unlimited (39 calls checked, 0.8x); The Simpsons Game: no run has called it"
  },
  {
   "name": "memcpy",
@@ -287,7 +287,7 @@
    "tdu": "0x82783FC8",
    "mirrorsedge": "0x829E5DD0"
   },
-  "note": "the same instructions in the three titles: -1, 0 or 1. Any360: xdk::CrtWcscmp, bound in Crackdown and The Simpsons Game (Test Drive Unlimited: no run has called it)"
+  "note": "the same instructions in the three titles: -1, 0 or 1. Any360: xdk::CrtWcscmp, bound in the three titles (Test Drive Unlimited checked by the self-test: its runs do not call it)"
  },
  {
   "name": "wcscpy",
@@ -323,7 +323,7 @@
    "tdu": "0x82644158",
    "mirrorsedge": "0x829E8940"
   },
-  "note": "the same instructions in the three titles. Any360: xdk::CrtWcsncpy, bound in Crackdown (the two others: no run has called it)"
+  "note": "the same instructions in the three titles. Any360: xdk::CrtWcsncpy, bound in Crackdown and Test Drive Unlimited (The Simpsons Game: no run has called it)"
  },
  {
   "name": "D3D GPU wait step",
@@ -2354,7 +2354,7 @@
    "tdu": "0x826B9FD8",
    "simpsons": "0x82C6EA10"
   },
-  "note": "XAudio's fill of a block's 1024 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown; not in the two others (no run called it)"
+  "note": "XAudio's fill of a block's 1024 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown and Test Drive Unlimited (checked there by the self-test: its runs do not call it); not in The Simpsons Game (no run called it)"
  },
  {
   "name": "XAudio fill 2048",
@@ -2365,7 +2365,7 @@
    "tdu": "0x826B9F08",
    "simpsons": "0x82C6E940"
   },
-  "note": "XAudio's fill of a block's 2048 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown; not in the two others (no run called it)"
+  "note": "XAudio's fill of a block's 2048 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown and Test Drive Unlimited (checked there by the self-test: its runs do not call it); not in The Simpsons Game (no run called it)"
  },
  {
   "name": "XAudio fill 256",
@@ -2376,7 +2376,7 @@
    "tdu": "0x826B9F70",
    "simpsons": "0x82C6E9A8"
   },
-  "note": "XAudio's fill of a block's 256 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown; not in the two others (no run called it)"
+  "note": "XAudio's fill of a block's 256 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown and Test Drive Unlimited (checked there by the self-test: its runs do not call it); not in The Simpsons Game (no run called it)"
  },
  {
   "name": "XAudio fill 4096",
@@ -2387,7 +2387,7 @@
    "tdu": "0x826BA040",
    "simpsons": "0x82C6EA78"
   },
-  "note": "XAudio's fill of a block's 4096 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown; not in the two others (no run called it)"
+  "note": "XAudio's fill of a block's 4096 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown and Test Drive Unlimited (checked there by the self-test: its runs do not call it); not in The Simpsons Game (no run called it)"
  },
  {
   "name": "XAudio fill 512",
@@ -2398,7 +2398,7 @@
    "tdu": "0x826B9E38",
    "simpsons": "0x82C6E870"
   },
-  "note": "XAudio's fill of a block's 512 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown; not in the two others (no run called it)"
+  "note": "XAudio's fill of a block's 512 floats (from +8) with its float at +4, then 0 at +0; the same steps in the three titles. Named after what it does. Any360: xdk::XAudioFill, bound in Crackdown and Test Drive Unlimited (checked there by the self-test: its runs do not call it); not in The Simpsons Game (no run called it)"
  },
  {
   "name": "XAudio mix ramp",
@@ -2408,7 +2408,7 @@
    "crackdown": "0x82A4B6A0",
    "tdu": "0x826B50B8"
   },
-  "note": "XAudio's mix of a source into a destination with a volume ramp: four vectors of four samples at a time, vmaddfp with the gains kept in four running sums of four steps; named after what it does. Any360: xdk::XAudioMixRamp (fused, as the console and Crackdown's recompiled code), bound in Crackdown; not in Test Drive Unlimited, whose recompiled vmaddfp rounds twice and which barely calls it"
+  "note": "XAudio's mix of a source into a destination with a volume ramp: four vectors of four samples at a time, vmaddfp with the gains kept in four running sums of four steps; named after what it does. Any360: xdk::XAudioMixRamp (fused, as the console and Crackdown's recompiled code), bound in Crackdown and Test Drive Unlimited (its recompiled vmaddfp is a multiply then an add, yet 269,904 mixes while driving were the same as the fused replacement's)"
  },
  {
   "name": "XAudio reverb",
