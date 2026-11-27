@@ -2,12 +2,12 @@
 # (include/any360/host/rexglue.h). Compiled in the title's build, against the runtime's headers; layer/sys adds it
 # when ANY360_REFERENCE_SDK names a runtime install. A title adds layer/sys with EXCLUDE_FROM_ALL and links this.
 # Diagnostics with no runtime or renderer behind them: thread stacks, the hitch tracer (any360/host/hitch_tracer.h),
-# the function profiler (any360/host/profiler.h).
-add_library(any360_host_diagnostics STATIC src/thread_stacks.cpp src/hitch_tracer.cpp src/profiler.cpp)
+# the function profiler (any360/host/profiler.h), the process's CPU and GPU usage (any360/host/usage.h).
+add_library(any360_host_diagnostics STATIC src/thread_stacks.cpp src/hitch_tracer.cpp src/profiler.cpp src/usage.cpp)
 target_include_directories(any360_host_diagnostics PUBLIC include)
 target_compile_options(any360_host_diagnostics PRIVATE -Wall -Wextra)
 if(WIN32)
-  target_link_libraries(any360_host_diagnostics PUBLIC dbghelp psapi winmm)
+  target_link_libraries(any360_host_diagnostics PUBLIC dbghelp psapi winmm gdi32)
 endif()
 add_library(any360_host_rexglue STATIC src/rexglue.cpp src/system.cpp)
 target_include_directories(any360_host_rexglue PUBLIC include)
@@ -20,7 +20,7 @@ target_compile_options(any360_host_rexglue PRIVATE -Wall -Wextra)
 add_library(any360_host_rexglue_settings STATIC src/settings.cpp src/crash_report.cpp src/xdk_natives.cpp
             src/d3d_selftest.cpp src/d3d_draw.cpp src/players.cpp)
 target_include_directories(any360_host_rexglue_settings PUBLIC include)
-target_link_libraries(any360_host_rexglue_settings PUBLIC any360_sys_ppc any360_xdk)
+target_link_libraries(any360_host_rexglue_settings PUBLIC any360_sys_ppc any360_xdk any360_host_diagnostics)
 target_compile_options(any360_host_rexglue_settings PRIVATE -Wall -Wextra)
 target_link_libraries(any360_host_rexglue PUBLIC any360_host_rexglue_settings)
 # The audio group's decoder and output (StartAudio), when the XMA decoder is built and the build is a title's
@@ -61,7 +61,7 @@ if(WIN32)
     add_test(NAME host_system_tests COMMAND host_system_tests)
     # The hitch tracer's sampling on a thread spinning in a known function.
     add_executable(host_diagnostics_tests tests/host_diagnostics_tests.cpp)
-    target_link_libraries(host_diagnostics_tests PRIVATE any360_host_diagnostics)
+    target_link_libraries(host_diagnostics_tests PRIVATE any360_host_diagnostics d3d11)
     target_compile_options(host_diagnostics_tests PRIVATE -Wall -Wextra)
     add_test(NAME host_diagnostics_tests COMMAND host_diagnostics_tests)
     # Any360's keys (hotkeys.h): one each, none of the runtime's, the numbered files they write.

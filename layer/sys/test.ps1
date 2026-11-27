@@ -184,6 +184,11 @@ try {
         & $xma | Out-Host
         if ($LASTEXITCODE) { throw "xma_tests failed ($LASTEXITCODE)" }
     }
+    # The A/B tool's reading of the frame lines: frame figures, usage and efficiency (tools/frame_lows.py).
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $python) { throw 'tools_frame_lows_tests: no python on the PATH' }
+    & $python.Source -I (Join-Path $Root 'tools\test_frame_lows.py') | Out-Host
+    if ($LASTEXITCODE) { throw "tools_frame_lows_tests failed ($LASTEXITCODE)" }
 } finally {
     foreach ($name in @([Environment]::GetEnvironmentVariables().Keys)) {
         if (-not $saved.Contains($name)) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }

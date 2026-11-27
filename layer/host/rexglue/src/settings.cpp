@@ -1,6 +1,7 @@
 #include "any360/host/settings.h"
 #include "any360/host/players.h"
 #include "any360/host/keyboard_binds.h"
+#include "any360/host/usage.h"
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
@@ -17,6 +18,10 @@
 #include "any360/sys/scheduler.h"
 #include "any360/sys/xam.h"
 
+REXCVAR_DEFINE_STRING(any360_cpu_affinity, "", "Kernel",
+                      "Any360: the logical processors the title runs on, as a mask (0xFF) or a list (0-7, 0,1): set when "
+                      "the system binding starts, after the runtime's own processor setup, and set again by each frame "
+                      "report that finds it changed (the report's usage says the mask); empty: the system's choice");
 REXCVAR_DEFINE_STRING(any360_sys_groups, "", "Kernel",
                       "Any360: system call groups run on any360::sys, comma-separated (stateless, files, objects, threads, "
                       "memory, xam, input, audio), all (the eight) or none; empty: the title's default (none unless "
@@ -154,6 +159,16 @@ std::vector<std::string> SystemGroupsNamed(const std::string& setting, const std
 
 bool StartSystemFromSettings(const std::filesystem::path& game_data_root, const std::filesystem::path& user_data_root,
                              const std::vector<SystemMount>& title_mounts) {
+  if (const std::string affinity = REXCVAR_GET(any360_cpu_affinity); !affinity.empty()) {
+    const uint64_t mask = ParseAffinityMask(affinity), before = ProcessAffinity();
+    if (!mask) {
+      REXLOG_ERROR("Any360: any360_cpu_affinity \"{}\" is not a processor mask or list", affinity);
+    } else if (KeepProcessAffinity(mask)) {
+      REXLOG_INFO("Any360: the title runs on processors mask 0x{:X} (0x{:X} before)", ProcessAffinity(), before);
+    } else {
+      REXLOG_ERROR("Any360: the system refused processors mask 0x{:X}", mask);
+    }
+  }
   const std::vector<std::string> groups = SystemGroupsNamed(REXCVAR_GET(any360_sys_groups), g_default_groups);
   if (groups.empty()) return false;
   SystemOptions options;

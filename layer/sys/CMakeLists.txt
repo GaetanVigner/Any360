@@ -45,6 +45,11 @@ add_executable(sys_object_tests tests/sys_object_tests.cpp tests/watched_memory.
 target_link_libraries(sys_object_tests PRIVATE any360_sys)
 target_compile_options(sys_object_tests PRIVATE -Wall -Wextra)
 add_test(NAME sys_object_tests COMMAND sys_object_tests)
+# The A/B tool's reading of the frame lines (tools/frame_lows.py): frame figures, usage and efficiency.
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME tools_frame_lows_tests COMMAND Python3::Interpreter -I ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/test_frame_lows.py)
+endif()
 # The input bindings (docs/GLYPHS.md): the JSON reader, the launcher's file, layer 1's mapper; --bench times a sample.
 add_executable(sys_input_tests tests/sys_input_tests.cpp)
 target_link_libraries(sys_input_tests PRIVATE any360_sys)

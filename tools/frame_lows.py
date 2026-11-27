@@ -15,6 +15,11 @@ diagnostics. They carry no draw count, so such an A/B selects the periods by tim
 periods logged that long after the log's first line (the same input script brings both variants to the route), and
 replaces the draw count's test for every variant.
 
+Both lines end with the process's usage over the period (any360/host/usage.h): "CPU 245% of a core, 31% of the 8
+allowed (mask 0xFF); GPU 62% (system), 60% (batches)". Per variant, the steady periods' CPU% (of a core and of the processors
+allowed), GPU% (the system's count of the busiest engine, the batches' timestamps where the system gives none) and
+the efficiency, frames per second per CPU% and per GPU% (each period's rate over its usage), with rank tests too.
+
 <runs>: lines "=== <variant arguments> (<log file name>)", one a launch (a launch script's output).
 """
 import argparse
@@ -31,6 +36,9 @@ OFF = re.compile(r'Any360: (?P<fps>[\d.]+) FPS with the diagnostics off .*?frame
 RUNTIME = re.compile(r"Any360: the runtime's GPU: (?P<fps>[\d.]+) FPS \(VdSwap calls\); frame times: median "
                      r'(?P<median>[\d.]+) ms \([\d.]+ FPS\), 10% low (?P<p10>[\d.]+) FPS, 1% low (?P<p1>[\d.]+) FPS; '
                      r'slowest frame (?P<slowest>[\d.]+) ms, (?P<over>\d+) over 16.7 ms; (?P<private>\d+) MB private')
+USAGE = re.compile(r'CPU (?P<cpu>[\d.]+)% of a core(?:, (?P<cpu_allowed>[\d.]+)% of the (?P<cores>\d+) allowed)?'
+                   r'(?: \(mask 0x(?P<mask>[0-9A-Fa-f]+)(?:, set again (?P<resets>\d+) times?)?\))?'
+                   r'(?:; GPU (?:(?P<gpu>[\d.]+)% \(system\))?(?:, )?(?:(?P<gpu_own>[\d.]+)% \(batches\))?)?')
 STAMP = re.compile(r'^\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d+)?)\]')
 LOADING = re.compile(r'textures ms: hashing [\d.]+, loading for uploads (?P<loading>[\d.]+)')
 
@@ -38,6 +46,20 @@ LOADING = re.compile(r'textures ms: hashing [\d.]+, loading for uploads (?P<load
 def stamp(line):
     m = STAMP.match(line)
     return datetime.strptime(m[1], '%Y-%m-%d %H:%M:%S.%f' if '.' in m[1] else '%Y-%m-%d %H:%M:%S') if m else None
+
+
+def period(m, line):
+    """A period's figures from its frame line: the frame times, and the usage where the line gives it (else None)."""
+    q = {k: float(m[k]) for k in ('fps', 'median', 'p10', 'p1', 'slowest', 'over', 'private')}
+    u = USAGE.search(line, m.end())
+    for k in ('cpu', 'cpu_allowed', 'cores', 'gpu', 'gpu_own', 'resets'):
+        q[k] = float(u[k]) if u and u[k] is not None else None
+    q['mask'] = int(u['mask'], 16) if u and u['mask'] else None
+    if q['gpu'] is None:
+        q['gpu'] = q['gpu_own']
+    q['fps_per_cpu'] = q['fps'] / q['cpu'] if q['cpu'] else None
+    q['fps_per_gpu'] = q['fps'] / q['gpu'] if q['gpu'] else None
+    return q
 
 
 def launch(log, draws, after=None):
@@ -50,7 +72,7 @@ def launch(log, draws, after=None):
                 city = (t - start).total_seconds() >= after
             m = OFF.search(line) or RUNTIME.search(line)
             if m and city:
-                periods.append({k: float(m[k]) for k in ('fps', 'median', 'p10', 'p1', 'slowest', 'over', 'private')})
+                periods.append(period(m, line))
             continue
         m = ON.search(line)
         if m:
@@ -64,7 +86,7 @@ def launch(log, draws, after=None):
         if m and city:
             seen += 1
             if seen > 1:
-                periods.append({k: float(m[k]) for k in ('fps', 'median', 'p10', 'p1', 'slowest', 'over', 'private')})
+                periods.append(period(m, line))
     return periods, loading
 
 
@@ -84,6 +106,28 @@ def z_score(a, b):
         return 0.0
     u = sum(r for r, (_, g) in zip(ranks, values) if g == 0) - n1 * (n1 + 1) / 2
     return (u - n1 * n2 / 2) / (n1 * n2 * (n1 + n2 + 1) / 12) ** 0.5
+
+
+USAGE_FIGURES = (('cpu', 'CPU% of a core', 0), ('cpu_allowed', 'CPU% of the allowed', 0), ('gpu', 'GPU%', 0),
+                 ('fps_per_cpu', 'FPS per CPU%', 2), ('fps_per_gpu', 'FPS per GPU%', 2))
+
+
+def usage_text(periods):
+    """The periods' usage and efficiency: each figure's mean and median over the periods that give it."""
+    parts = []
+    for k, name, digits in USAGE_FIGURES:
+        values = [q[k] for q in periods if q.get(k) is not None]
+        if values:
+            parts.append(f'{name} mean {statistics.mean(values):.{digits}f} (median {statistics.median(values):.{digits}f})')
+    cores = {int(q['cores']) for q in periods if q.get('cores')}
+    masks = {q['mask'] for q in periods if q.get('mask')}
+    if parts and cores:
+        parts[0] += (f' [{"/".join(str(c) for c in sorted(cores))} processors allowed' +
+                     (f', mask {"/".join(f"0x{m:X}" for m in sorted(masks))}' if masks else '') + ']')
+    resets = sum(int(q['resets']) for q in periods if q.get('resets'))
+    if resets:
+        parts.append(f'mask set again {resets} time' + ('s' if resets != 1 else ''))
+    return '; '.join(parts)
 
 
 def main():
@@ -121,6 +165,9 @@ def main():
                 f'min {min(q[k] for q in steady):.1f})' for k, name in (('fps', 'FPS'), ('p10', '10% low'), ('p1', '1% low'))) +
                   f'; process private memory mean {statistics.mean(q["private"] for q in steady):.0f} MB, max '
                   f'{max(q["private"] for q in steady):.0f} MB')
+            usage = usage_text(steady)
+            if usage:
+                print(f'  usage: {usage}')
         if dips:
             print(f'  dips ({len(dips)}): 1% low mean {statistics.mean(d["p1"] for d in dips):.1f}, slowest frame mean '
                   f'{statistics.mean(d["slowest"] for d in dips):.1f} ms, over 16.7 ms mean '
@@ -133,6 +180,11 @@ def main():
               ', '.join(f'{k} z {z_score([q[k] for q in s0], [q[k] for q in s1]):+.2f}' for k in ('fps', 'p10', 'p1')) +
               f'; dips 1% low z {z_score([d["p1"] for d in d0], [d["p1"] for d in d1]):+.2f}, slowest z '
               f'{z_score([d["slowest"] for d in d0], [d["slowest"] for d in d1]):+.2f}')
+        effs = [(k, [q[k] for q in s0 if q.get(k) is not None], [q[k] for q in s1 if q.get(k) is not None])
+                for k in ('cpu', 'gpu', 'fps_per_cpu', 'fps_per_gpu')]
+        effs = [f'{k} z {z_score(a, b):+.2f}' for k, a, b in effs if a and b]
+        if effs:
+            print(f'{names[0]} against {other}: usage ' + ', '.join(effs))
 
 
 if __name__ == '__main__':

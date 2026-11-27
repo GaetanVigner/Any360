@@ -94,6 +94,9 @@ owner adds a rule, it goes here (or into a skill under `.claude/skills/`) in the
 - Batch as many checks as possible into each launch; bisect by halves when something fails.
 - Warn the owner before a visible launch. Minimized launches are for measuring only (they get no gamepad input).
 - Never capture the screen to grab a game window (it captured the owner's desktop once).
+- Give a launch its processors with `--any360_cpu_affinity=<mask>` (both runtimes): the runtime opens the process to
+  every processor while it starts, so a mask a launch script sets from outside does not hold. Check the mask in the
+  frame report's usage ("... allowed (mask 0xFF)").
 - After each run, stop only the stray processes your own launch arguments identify.
 - Slow frames: `--any360_hitch_trace_ms=<ms>` writes per-thread stack samples of frames over the threshold
   (`hitch_<n>.txt` in the logs); the report's slowest-frame line also says what `any360::sys` did in that frame.

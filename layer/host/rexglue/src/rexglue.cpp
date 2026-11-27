@@ -8,6 +8,7 @@
 #include "any360/sys/activity.h"
 #include "any360/host/hitch_tracer.h"
 #include "any360/host/profiler.h"
+#include "any360/host/usage.h"
 #include "any360/host/hotkeys.h"
 #include "any360/host/players.h"
 #include "any360/host/settings.h"
@@ -673,16 +674,18 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
     vector_bytes = double(swapped[0] - last_swapped_[0] + swapped[1] - last_swapped_[1]) / n;  // registers, indices
     const double swap_ms = (vector_bytes * swap_cost_.vectorized + (swap_bytes - vector_bytes) * swap_cost_.scalar) / 1e6;
     for (int i = 0; i < 5; ++i) last_swapped_[i] = swapped[i];
+    const int64_t batches_ns = int64_t(s.ns_gpu - last_.ns_gpu + s.ns_gpu_upload - last_.ns_gpu_upload);
+    const std::string usage = any360::host::FormatUsage(usage_.Take(batches_ns > 0 ? batches_ns : -1));
     if (!gfx::Diagnosing()) {
       const double fps = n / seconds, frame_ms = 1e3 / fps;
       const uint64_t watch_writes = g_watch_writes.load(), watch_bytes = g_watch_bytes.load();
-      char off[1536];
+      char off[1792];
       std::snprintf(off, sizeof(off),
                     "Any360: %.1f FPS with the diagnostics off (%.1f with them, the period before: %+.0f%%); %s; byte "
                     "swapping %.2f MB a frame, ~%.2f ms over plain copies: without it ~%.0f FPS (the command processor's "
                     "thread bound); slowest frame %.1f ms, %u over 16.7 ms, %u over 50 ms (%s); %.1f watched writes a frame (%.2f MB "
                     "invalidated); %.0f MB private, %zu textures, %zu targets, %zu resolves kept, %zu pipelines; "
-                    "%llu frames presented, %llu not",
+                    "%llu frames presented, %llu not; %s",
                     fps, last_on_fps_, last_on_fps_ > 0 ? 100.0 * (fps / last_on_fps_ - 1.0) : 0.0,
                     TakeFrameTimes().c_str(), swap_bytes / 1e6, swap_ms,
                     1e3 / std::max(0.1, frame_ms - swap_ms), worst_ms_, slow_frames_, very_slow_frames_, SlowestFrame().c_str(),
@@ -690,7 +693,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
                     double(PrivateBytes()) / 1e6, texture_cache() ? texture_cache()->texture_count() : size_t(0),
                     surface_count(), resolved_count(), pipeline_count(),
                     (unsigned long long)(presenter_.presented() - last_presented_),
-                    (unsigned long long)(present_failures_ - last_present_failures_));
+                    (unsigned long long)(present_failures_ - last_present_failures_), usage.c_str());
       log_(off);
       last_presented_ = presenter_.presented(), last_present_failures_ = present_failures_;
       last_watch_writes_ = watch_writes, last_watch_bytes_ = watch_bytes;
@@ -960,6 +963,7 @@ class PresentingRenderer : public gfx::vk::VulkanRenderer {
   }
 
   std::function<void(const std::string&)> log_;
+  any360::host::UsageMeter usage_;  // the process's CPU and GPU usage over each report's period
   double stats_seconds_;
  public:
   std::string screenshot_path_;
@@ -1558,12 +1562,14 @@ void CountRuntimeFrame() {
   const double seconds = std::chrono::duration<double>(now - since).count();
   if (frames < 2 || seconds < g_runtime_frames_seconds) return;
   const gfx::FrameTimeSummary f = gfx::SummarizeFrameTimes(intervals);
-  char line[320];
+  static any360::host::UsageMeter usage;
+  const std::string shares = any360::host::FormatUsage(usage.Take());
+  char line[512];
   std::snprintf(line, sizeof(line),
                 "Any360: the runtime's GPU: %.1f FPS (VdSwap calls); frame times: median %.2f ms (%.1f FPS), 10%% low "
-                "%.1f FPS, 1%% low %.1f FPS; slowest frame %.1f ms, %u over 16.7 ms; %.0f MB private",
+                "%.1f FPS, 1%% low %.1f FPS; slowest frame %.1f ms, %u over 16.7 ms; %.0f MB private; %s",
                 double(frames - 1) / seconds, f.median_ms, 1e3 / f.median_ms, 1e3 / f.p90_ms, 1e3 / f.p99_ms, worst_ms,
-                slow, double(ProcessPrivateBytes()) / 1e6);
+                slow, double(ProcessPrivateBytes()) / 1e6, shares.c_str());
   g_runtime_frames_log(line);
   frames = 1, since = now, worst_ms = 0, slow = 0;
   intervals.clear();
