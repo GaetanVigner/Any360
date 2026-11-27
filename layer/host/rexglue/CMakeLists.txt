@@ -64,6 +64,13 @@ if(WIN32)
     target_link_libraries(host_diagnostics_tests PRIVATE any360_host_diagnostics d3d11)
     target_compile_options(host_diagnostics_tests PRIVATE -Wall -Wextra)
     add_test(NAME host_diagnostics_tests COMMAND host_diagnostics_tests)
+    # The verify and bench modes' two sides (src/xdk_sides.h): each run of a replacement on the call's registers, the
+    # standing side's bytes kept.
+    add_executable(host_xdk_sides_tests tests/host_xdk_sides_tests.cpp)
+    target_link_libraries(host_xdk_sides_tests PRIVATE any360_host_rexglue "${ANY360_REFERENCE_SDK}/lib/rexruntimerd.lib"
+                          "${ANY360_REFERENCE_SDK}/lib/spdlogrd.lib" "${ANY360_REFERENCE_SDK}/lib/fmtrd.lib")
+    target_compile_options(host_xdk_sides_tests PRIVATE -Wall -Wextra)
+    add_test(NAME host_xdk_sides_tests COMMAND host_xdk_sides_tests)
     # Any360's keys (hotkeys.h): one each, none of the runtime's, the numbered files they write.
     add_executable(host_hotkeys_tests tests/host_hotkeys_tests.cpp)
     target_include_directories(host_hotkeys_tests PRIVATE include)

@@ -1,6 +1,7 @@
 #include "any360/host/xdk_natives.h"
 
 #include "any360/xdk/xaudio_reverb.h"
+#include "xdk_sides.h"
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
@@ -670,20 +671,6 @@ bool MixNative(PPCContext& ctx, any360::xdk::VmxRegisters x, bool groups) {
 
 }  // namespace
 
-namespace {
-
-// A function whose replacement takes and gives back registers of its own (not the r3-r5 calls of RunSlow): what
-// both sides write (put back between them: these functions read what they write), the replacement on a copy of
-// the registers, and the first register the two sides leave different.
-struct Sides {
-  uint32_t f;
-  std::vector<any360::xdk::Range> writes;
-  uint32_t work;  // for the timings by size
-  std::function<void(PPCContext&)> native;
-  std::function<const char*(const PPCContext&, const PPCContext&)> differs;
-  std::string call;  // the call's arguments, for a difference logged
-};
-
 void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFunction original) {
   const uint32_t f = s.f;
   // The host's floating-point control word as the call found it: each side starts with it, the one the context
@@ -824,12 +811,15 @@ void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFu
   if (native_ticks > 10 * original_ticks + 2000 && slow_logged.fetch_add(1, std::memory_order_relaxed) < 6) {
     // Once more on the same input, right away: a second run as slow is the replacement's own work; a fast one, the
     // first touch of the memory (a page fault, a watched page).
+    std::vector<std::vector<uint8_t>> stood;
+    for (const any360::xdk::Range& w : s.writes) stood.emplace_back(g_memory.Host(w.at), g_memory.Host(w.at) + w.size);
     put_back();
     PPCContext again = entry;
     at_entry();
     const uint64_t a = Ticks();
     s.native(again);
     const uint64_t again_ticks = Ticks() - a;
+    for (size_t i = 0; i < s.writes.size(); ++i) std::memcpy(g_memory.Host(s.writes[i].at), stood[i].data(), s.writes[i].size);
     _mm_setcsr(ctx.fpscr.csr);
     REXLOG_WARN("Any360 xdk bench: {} took {} ticks, its own code {}, again {}: {}", kNames[f], native_ticks,
                 original_ticks, again_ticks, s.call);
@@ -841,6 +831,8 @@ void RunSides(Mode mode, const Sides& s, PPCContext& ctx, uint8_t* base, GuestFu
   if (s.work < kExactSizes) g_exact[f][s.work].fetch_add(1, std::memory_order_relaxed);
   if (timed_call == 200000 || timed_call % 2000000 == 0) ReportTimes();
 }
+
+namespace {
 
 // The mode, resolved; kSelect turned into the native or the original one for function `f`.
 Mode SlowMode(uint32_t f, uint8_t* base) {

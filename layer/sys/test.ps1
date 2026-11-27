@@ -179,6 +179,8 @@ try {
     if ($LASTEXITCODE) { throw "host_hotkeys_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'host/rexglue/host_keyboard_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "host_keyboard_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'host/rexglue/host_xdk_sides_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "host_xdk_sides_tests failed ($LASTEXITCODE)" }
     $xma = Join-Path $BuildDir 'xma_tests.exe'  # built where FFmpeg is (Any360's own on x86-64)
     if (Test-Path $xma) {
         & $xma | Out-Host

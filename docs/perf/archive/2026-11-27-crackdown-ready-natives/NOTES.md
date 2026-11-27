@@ -24,3 +24,9 @@ it). `toupper` is the C locale's, the same instructions as in Test Drive Unlimit
 The in-game measure (`--any360_xdk_bench=true`, crackdown_513) crashed 3 s after start, in the D3D scissor native's
 bench path (`RunD3dStateSlow` -> `ApplyScissor` -> `ScissorPacketsCall`, a read of guest address 0): a bug of the bench
 mode for the D3D state setters, not of these functions; the normal and verify modes run (`bench_mode_crash.txt`).
+
+**Measured after the bench mode's fix (2026-11-28, crackdown_514, city route):** `toupper` 63,383 calls, its own
+code 8.4 ns a call, the host routine 7.9 ns (1.1x), 0 bytes (`bench_toupper.txt`; `tolower` beside it 7.8 -> 7.6 ns).
+The crash was the bench mode re-running a slow replacement on the registers a side left instead of the call's
+(r3 0 there: the scissor read the device at guest address 0); Any360 60b57f1 and the following commit fix it, with
+host_xdk_sides_tests.
