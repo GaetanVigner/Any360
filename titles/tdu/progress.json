@@ -8,19 +8,19 @@
  "sys": {
   "groups": ["stateless", "files", "objects", "threads", "memory", "xam", "input", "audio"],
   "default": false,
-  "where": "all eight groups, opt-in on `master`: `--any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio`; checked from boot through the intro videos to the title screen (no call reaches ReXGlue's kernel there); driving, saves and sound still to check in game"
+  "where": "all eight groups, opt-in on `master`: `--any360_sys_groups=stateless,files,objects,threads,memory,xam,input,audio`; checked from boot through the intro videos, the title screen, a save loaded and the house menu to driving on the island (`--any360_sys_trace=true`, 2026-11-27): two calls still reach the runtime there, `XamEnumerate` and `NtClose` on the null handle `XamUserCreateStatsEnumerator` leaves; sound and rumble still to check by ear and hand"
  },
  "gfx": {
   "bound": true,
   "default": false,
-  "where": "opt-in on `master`: `--any360_gpu=true` (`--any360_gpu_scale=2 --any360_gpu_msaa=4`, `--any360_gpu_vblank_hz=240` for up to 120 FPS); 83-115 FPS driving at 2x with 4x MSAA on an RTX 5070 Ti, against 54-85 for the runtime's GPU at 2x",
+  "where": "opt-in on `master`: `--any360_gpu=true` (`--any360_gpu_scale=2 --any360_gpu_msaa=4`; `--any360_gpu_vblank_hz=1000` lifts the 30 FPS lock); uncapped, driving at scale 1 on an RTX 5070 Ti: 115 FPS (1% low 101), 3.3 GB private, against 72 FPS (1% low 34) and 17-19 GB growing for the runtime's GPU (2026-11-27, 5 launches each)",
   "todo": [
    "A rare resolve into a format the renderer refuses (host format 37 to guest format 4).",
    "`any360_gpu_fences_after_draws=false` is faster but breaks this title's display: find what it waits on."
   ]
  },
  "next": [
-  "Check the system binding in game past the title screen: a save loaded, driving, sound, the gamepad and its rumble, a long session; `--any360_sys_trace=true` logs any call that still reaches the runtime.",
+  "Give `XamUserCreateStatsEnumerator` a real enumerator (or the title's error path) so `XamEnumerate` and `NtClose` stop reaching the runtime with a null handle; then check sound, the gamepad's rumble and a long session in game.",
   "Name what is left of the executable's library code: the ranges listed as not named in Any360's titles/tdu/modules.json (code shared with the other titles of unknown purpose, an XML parser, zlib, a JPEG path), then the game's own modules (Eden's ed* libraries carry their names in their strings).",
   "More native replacements of library functions (the CRT's string routines next), each under the rule of Any360's docs/NATIVE_FUNCTIONS.md: a reference model, unit tests, a benchmark, then `--any360_xdk_verify=true` and `--any360_xdk_bench=true` in game.",
   "A golden test target (guest sandbox) so rewritten game functions can be verified."
@@ -28,6 +28,8 @@
  "open": [
   "A game thread spins at 90% of a core (`sub_826737B8`).",
   "Frame captures only trigger with `--any360_gpu_vblank_hz=1000` (the command processor is never idle at a kick otherwise).",
-  "The intro videos once ran too fast above 60 Hz; not seen again since the video pacing fix."
+  "The intro videos once ran too fast above 60 Hz; not seen again since the video pacing fix.",
+  "With `--any360_gpu_vblank_hz=1000` the vertical blanks arrive about every 2 ms: the menus stop at 240 FPS (the runtime's GPU, `--vsync=false`, reaches 500); driving runs far below it.",
+  "The runtime's GPU (`--any360_gpu=false`) uncapped grows by ~4 GB of private memory a minute (18 GB after 4 minutes); Any360's GPU stays flat."
  ]
 }
