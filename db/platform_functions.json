@@ -1,0 +1,75 @@
+{
+  "date": "2026-11-26",
+  "about": "Xbox platform functions each title imports or links (system calls, XDK D3D runtime, D3DX/XGraphics, CRT, XAPI, audio, Xbox Live, libpng/zlib, import thunks), not the game's own code nor its middleware. ported = native in Any360 and bound in the title; ready = native in Any360, not bound in that title yet. Counts from the 2026-11-26 refresh of each title on Any360 main (81b3a4b / 226b68b / 65dcfdb); estimated = library ranges found by landmarks matched against other titles (no modules.json yet), +-10-20%.",
+  "categories": ["system calls", "D3D runtime", "D3DX / XGraphics", "CRT", "XAPI", "audio (XAudio, XMA)", "Xbox Live and voice (XOnline, XHV)", "libpng / zlib", "kernel import thunks"],
+  "titles": {
+    "crackdown": {
+      "estimated": false,
+      "counts": {
+        "system calls": [248, 248],
+        "D3D runtime": [553, 184],
+        "D3DX / XGraphics": [4171, 0],
+        "CRT": [595, 25],
+        "XAPI": [194, 2],
+        "audio (XAudio, XMA)": [484, 7],
+        "Xbox Live and voice (XOnline, XHV)": [378, 0],
+        "libpng / zlib": [194, 2],
+        "kernel import thunks": [2, 0]
+      },
+      "ready": ["D3D GPU wait step", "D3DQuery_GetData", "D3DResource_LockCpu", "D3D_ClearDraw", "D3D_ClearRects", "D3D_CopyPatchedShader", "D3D_EmptyShaderExports", "D3D_GpuTimestamp", "D3D_LinkShaders", "D3D_PatchVertexFetches", "D3D_PatchedShaderCache", "D3D_RemapShaderExports", "D3D_UpdateShaderControl", "_add_exp", "_finite", "_sptype", "toupper", "GetLastError", "SetLastError"]
+    },
+    "simpsons": {
+      "estimated": false,
+      "counts": {
+        "system calls": [317, 317],
+        "D3D runtime": [1636, 1],
+        "D3DX / XGraphics": [10871, 0],
+        "CRT": [1092, 15],
+        "XAPI": [349, 1],
+        "audio (XAudio, XMA)": [1430, 0],
+        "Xbox Live and voice (XOnline, XHV)": [756, 0],
+        "kernel import thunks": [96, 0]
+      },
+      "ready": ["D3D dirty words", "D3DDevice_BeginTiling", "D3DDevice_BeginVertices", "D3DDevice_Clear", "D3DDevice_DrawIndexedVertices", "D3DDevice_DrawVertices", "D3DDevice_DrawVerticesUP", "D3DDevice_EndTiling", "D3DDevice_Resolve", "D3DDevice_SetPixelShader", "D3DDevice_SetPredication", "D3DDevice_SetTexture", "D3DDevice_SetVertexShader", "D3D_InternalClearDraw", "D3D_LoadShaderLiterals", "_add_exp", "_isnan", "_sptype", "mbtowc", "tolower", "toupper", "wcscpy", "wcslen", "wcsncpy", "GetLastError", "SetLastError", "XAudio fill 256", "XAudio fill 512", "XAudio fill 1024", "XAudio fill 2048", "XAudio fill 4096", "png_read_filter_row", "inflate_fast"]
+    },
+    "tdu": {
+      "estimated": false,
+      "counts": {
+        "system calls": [327, 303],
+        "D3D runtime": [1436, 4],
+        "CRT": [761, 19],
+        "XAPI": [324, 1],
+        "audio (XAudio, XMA)": [1388, 0],
+        "Xbox Live and voice (XOnline, XHV)": [956, 0]
+      },
+      "ready": ["_add_exp", "_finite", "_isnan", "_sptype", "mbtowc", "wcscmp", "wcsncpy", "GetLastError", "SetLastError", "XAudio fill 256", "XAudio fill 512", "XAudio fill 1024", "XAudio fill 2048", "XAudio fill 4096", "XAudio mix ramp"]
+    },
+    "codbo": {
+      "estimated": true,
+      "counts": {
+        "system calls": [255, 255],
+        "D3D runtime": [569, 1],
+        "D3DX / XGraphics": [298, 0],
+        "CRT": [362, 0],
+        "XAPI": [396, 0],
+        "audio (XAudio, XMA)": [695, 0],
+        "Xbox Live and voice (XOnline, XHV)": [179, 0]
+      },
+      "ready": ["D3D_GpuFormatBlock", "D3DResource_GetType", "D3DResource_AddRef", "D3DResource_Release", "D3DDevice_SetRenderState_ViewportEnable", "SetLastError", "GetLastError", "strrchr", "memset", "_stricmp", "wcslen", "_get_exp", "mbtowc"]
+    },
+    "mirrorsedge": {
+      "estimated": true,
+      "counts": {
+        "system calls": [275, 275],
+        "D3D runtime": [529, 1],
+        "CRT": [385, 0],
+        "XAPI": [195, 0],
+        "audio (XAudio, XMA)": [325, 0],
+        "Xbox Live and voice (XOnline, XHV)": [315, 0],
+        "libpng / zlib": [66, 0]
+      },
+      "note": "D3DX / XGraphics not counted: at most ~3,767 functions over 14 scattered runs, surely some game code.",
+      "ready": ["D3DResource_AddRef", "D3DResource_Release", "D3DResource_GetType", "D3DDevice_SetRenderState_ViewportEnable", "D3DDevice_DrawVerticesUP", "D3D_GpuFormatBlock", "D3D_LinkShaders", "memcpy", "wcscpy", "wcslen", "memset", "wcscmp", "strncpy", "memmove", "strstr", "strchr", "strncmp", "wcsncpy", "_finite", "_isnan", "_stricmp", "_get_exp", "strrchr", "mbtowc", "GetLastError", "SetLastError"]
+    }
+  }
+}

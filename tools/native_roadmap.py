@@ -167,6 +167,46 @@ def areas():
     return out
 
 
+def platform_functions_section():
+    """The Xbox platform functions of each title, ported and remaining by category (db/platform_functions.json)."""
+    data = load(DB / 'platform_functions.json')
+    if not data:
+        return []
+    titles = data['titles']
+    names = list(titles)
+    md = ['', '## Xbox platform functions by title', '',
+          f'Counted on {data["date"]} from each title\'s refresh: what the title imports or links from the Xbox platform, '
+          'not the game\'s own code nor its middleware. Each cell is ported / in the title (ported: native in Any360 '
+          'and bound in the title). Titles marked ~ have no `modules.json` yet: their library ranges come from '
+          'landmarks matched against the other titles, +-10-20%. Source: `db/platform_functions.json`.', '',
+          '| category | ' + ' | '.join(f'{n}{" ~" if titles[n]["estimated"] else ""}' for n in names) + ' |',
+          '|---|' + '---:|' * len(names)]
+    totals = {n: [0, 0] for n in names}
+    for category in data['categories']:
+        cells = []
+        for n in names:
+            pair = titles[n]['counts'].get(category)
+            if pair:
+                totals[n][0] += pair[0]
+                totals[n][1] += pair[1]
+                cells.append(f'{pair[1]:,} / {pair[0]:,}')
+            else:
+                cells.append('-')
+        md.append(f'| {category} | ' + ' | '.join(cells) + ' |')
+    md.append('| **all** | ' + ' | '.join(f'**{t[1]:,} / {t[0]:,} ({100 * t[1] / t[0]:.1f}%)**'
+                                           for t in (totals[n] for n in names)) + ' |')
+    md += ['', 'System calls are done on every title; the XDK libraries the titles link (D3D runtime first, then the '
+           'CRT, XAPI and audio) are what remains. Cheapest next steps: functions Any360 already has native but a '
+           'title does not bind yet, each bound after its in-game check (docs/NATIVE_FUNCTIONS.md):', '']
+    for n in names:
+        ready = titles[n].get('ready', [])
+        line = f'- {n} ({len(ready)}): ' + (', '.join(ready) if ready else 'none') + '.'
+        if titles[n].get('note'):
+            line += ' ' + titles[n]['note']
+        md.append(line)
+    return md
+
+
 def write(result):
     data = {'_comment': 'Every unit not yet native, by area, most used first. Made by tools/native_roadmap.py.',
             'areas': [{'area': name, 'owner': OWNERS[name], 'units': units} for name, units in result]}
@@ -183,6 +223,7 @@ def write(result):
         used = [u for u in units if u['uses']]
         md.append(f'| {name} | {len(units)} | {sum(1 for u in units if u["state"].startswith("reference"))} | {len(used)} | '
                   f'{sum(u["uses"] for u in used):,.0f} | {OWNERS[name]} |')
+    md += platform_functions_section()
     for name, units in result:
         used = [u for u in units if u['uses']]
         unused = [u for u in units if not u['uses']]
