@@ -1,0 +1,2 @@
+mirrorsedge Counter({('count differs', 'labels same'): 69, ('count differs', 'body unsupported'): 18, ('count same', 'labels same'): 5}) [('0x822b7be8', 126, 26), ('0x822d4d10', 1539, 1450), ('0x8236a2c8', 133, 25), ('0x823738f8', 27, 21), ('0x823741d8', 20, 16)]
+crackdown Counter({('count differs', 'labels same'): 120, ('count differs', 'body unsupported'): 32, ('count same', 'labels same'): 5}) [('0x821327d8', 52, 42), ('0x821328a8', 52, 42), ('0x821afb38', 194, 173), ('0x821b92c0', 125, 120), ('0x821ce440', 77, 73)]

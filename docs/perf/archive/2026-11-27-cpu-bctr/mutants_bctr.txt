@@ -1,0 +1,16 @@
+mutant 0 swap line 17936: caught | sub_8299BF40 | switch (ctx.r11.u32) {
+mutant 1 register line 29400: caught | sub_82CB8898 | switch (ctx.r9.u32) {
+mutant 2 tail line 5449: caught | sub_822BC788 | ANY360_CPU_CALL_INDIRECT(ctx, base, ctx.ctr.u32 + 4);
+mutant 3 swap line 21354: caught | sub_82C097E0 | switch (ctx.r3.u32) {
+mutant 4 register line 36468: caught | sub_82E50798 | switch (ctx.r4.u32) {
+mutant 5 tail line 3072: caught | sub_8226EDB8 | ANY360_CPU_CALL_INDIRECT(ctx, base, ctx.ctr.u32 + 4);
+mutant 6 swap line 36576: caught | sub_82E50800 | switch (ctx.r11.u32) {
+mutant 7 register line 27020: caught | sub_82C27F98 | switch (ctx.r12.u32) {
+mutant 8 tail line 12100: caught | sub_82525030 | ANY360_CPU_CALL_INDIRECT(ctx, base, ctx.ctr.u32 + 4);
+mutant 9 swap line 31527: caught | sub_82CF43F8 | switch (ctx.r11.u32) {
+mutant 10 register line 15104: caught | sub_826D5E60 | switch (ctx.r5.u32) {
+mutant 11 tail line 26414: caught | sub_82C1F818 | ANY360_CPU_CALL_INDIRECT(ctx, base, ctx.ctr.u32 + 4);
+mutant 12 swap line 27020: caught | sub_82C27F98 | switch (ctx.r11.u32) {
+mutant 13 register line 31527: caught | sub_82CF43F8 | switch (ctx.r12.u32) {
+mutant 14 tail line 18304: caught | sub_829AD190 | ANY360_CPU_CALL_INDIRECT(ctx, base, ctx.ctr.u32 + 4);
+mutants: 15 of 15 caught

@@ -16,20 +16,21 @@ memory), with ReXGlue's recompilation kept only as the oracle its output is comp
 Whole functions are what a title can run translated, so the share that counts is theirs: a function is translated
 only when all its instructions are covered and every function it calls is translated too.
 
-| | slice 1 (2026-11-26) | slice 2 (2026-11-27) | runtime hooks (2026-11-27) |
-|---|---:|---:|---:|
-| Mirror's Edge functions | 6,514 of 53,832 (12.1%) | 15,644 (29.1%) | 16,272 (30.2%) |
-| Mirror's Edge instructions in them | 2.4% | 13.9% | 14.7% |
-| Crackdown functions | 4,631 of 41,219 (11.2%) | 11,567 (28.1%) | 12,156 (29.5%) |
-| Crackdown instructions in them | 1.3% | 10.6% | 11.4% |
-| mnemonics covered (of the 352 the titles use) | 52 | 120 | 125 |
-| their static occurrences in the titles | 86.7% | 96.9% | 97.0% |
+| | slice 1 (2026-11-26) | slice 2 (2026-11-27) | runtime hooks (2026-11-27) | bctr (2026-11-27) |
+|---|---:|---:|---:|---:|
+| Mirror's Edge functions | 6,514 of 53,832 (12.1%) | 15,644 (29.1%) | 16,272 (30.2%) | 17,321 (32.2%) |
+| Mirror's Edge instructions in them | 2.4% | 13.9% | 14.7% | 15.3% |
+| Crackdown functions | 4,631 of 41,219 (11.2%) | 11,567 (28.1%) | 12,156 (29.5%) | 13,138 (31.9%) |
+| Crackdown instructions in them | 1.3% | 10.6% | 11.4% | 12.3% |
+| mnemonics covered (of the 352 the titles use) | 52 | 120 | 125 | 128 |
+| their static occurrences in the titles | 86.7% | 96.9% | 97.0% | 97.0% |
 
 What keeps the other functions out, by the calls from otherwise translated functions it blocks (Mirror's Edge, after
-the runtime hooks): `lwarx` (1,596; with `stwcx.`, the atomics inside the `mfmsr` / `mtmsrd` sections), `bctr` (1,565;
-switch tables, and tail calls through a pointer), `lbzu` (1,388), `fcfid` (790), functions that run into the next one
-(534), the vector unit (472; VMX128, opcode 4: `lvx128`, `stvx128` ...), `divw` (449), `subfe` (433), `divwu` (396),
-`fsqrts` (320). Every call to an import is now translated.
+the runtime hooks and `bctr`): `lwarx` (1,596; with `stwcx.`, the atomics inside the `mfmsr` / `mtmsrd` sections),
+`lbzu` (1,388), `fcfid` (793), functions that run into the next one (709), `divwu` (558), the vector unit (472;
+VMX128, opcode 4: `lvx128`, `stvx128` ...), `divw` (451), `subfe` (433), branches out of the function to anywhere but
+a function start (409; into the middle of another function), `fsqrts` (323). Every call to an import and every `bctr`
+with a bound check is now translated.
 
 ## Instructions covered
 
@@ -64,8 +65,29 @@ switch tables, and tail calls through a pointer), `lbzu` (1,388), `fcfid` (790),
 | `mtmsrd rS,1` | X, opcode 31 xo 178, L = 1 | a full fence, msr's bits 0x8020 from rS, then `ANY360_CPU_ENTER_GLOBAL_LOCK()` when rS is r13, else `ANY360_CPU_LEAVE_GLOBAL_LOCK()` |
 | `mftb`, `mftbu` | XFX, opcode 31 xo 371, TBR 268 / 269 | rD = `ANY360_CPU_QUERY_TIMEBASE()` (the guest's 50 MHz time base), its high word for `mftbu` |
 | `tw`, `twi`, `td`, `tdi` (`twllei`, `twlgei`, `tdllei`, `tdlgei` ...) | X opcode 31 xo 4 / 68, D opcodes 3 / 2 | `ANY360_CPU_TRAP(ctx, base, 0)` when one of the TO field's conditions holds (signed <, >, ==, unsigned <, >; the low words for `tw` / `twi`), nothing for TO 0, always for TO 31; `twi 31,r0,imm` passes imm as the trap's type |
+| `bctr` through a jump table | XL, opcode 19 xo 528 | `switch` on the table's index register, a `goto` to each entry's label, `__builtin_trap()` outside the table (see below) |
+| other `bctr` | XL, opcode 19 xo 528 | a tail call: `ANY360_CPU_CALL_INDIRECT(ctx, base, ctr)`, then a return |
+| `bnectr` (conditional `bcctr` without the count decrement) | XL, opcode 19 xo 528 | the condition of BO / BI, then the tail call above |
+| `blrl` | XL, opcode 19 xo 16, LK 1 | the old lr kept, lr set, then `ANY360_CPU_CALL_INDIRECT(ctx, base, old lr)` |
 
 Beside the instructions:
+
+- Jump tables are found from the words before each `bctr`, back to the first unconditional branch, as the titles'
+  recompilation finds them: the `mtctr` of the target; for tables of offsets the `add` of a base and the `rlwinm` that
+  scales the offset; the indexed load (`lwzx`: a table of addresses; `lhzx` / `lbzx`: offsets from the base); the
+  `slwi` that scales the index, followed back to the index register; the `lis` / `addi` (or `ori`) pairs of the base
+  and of the table. The entry count is the index's bound check before the `bctr` (`cmplwi` / `cmpwi` index,n: n + 1;
+  `clrlwi` index,n: 2^(32 - n)), the table read up to the first entry that is not a word-aligned address in the image
+  at or after the function's start (none: a tail call through ctr). Over every `bctr` of Mirror's Edge (1,264) and
+  Crackdown (1,319) this gives the recompilation's switch (same index register, same targets) or its tail call,
+  except for the tables without a bound check (10 in each title), which are left out (the function is not
+  translated): their entry count is a guess on both sides.
+- A function whose jump table reaches past its listed end (the function tables come from the image's `.pdata`, which
+  leaves out-of-line case blocks out) takes them in, as the recompilation does: it ends at the first unconditional
+  branch after its last table target, never past the next listed function's start. Words in between that nothing
+  branches to are translated as code no label reaches.
+- Each `switch` case is a label of the function: a table entry outside it or on another function's start leaves the
+  function out.
 
 - A branch to another function's start (a tail call, `b` or a conditional branch) becomes that function's translation
   and a return. A branch to the function's own start is a loop.
@@ -108,21 +130,27 @@ It follows the titles' recompilation, which the tests compare it with; `cpu_isa_
   `mtmsrd r13,1` that disables interrupts, r13 holding the processor block's address) and released for any other
   register (the `mtmsrd rX,1` that puts back what `mfmsr rX` read); `mfmsr` reads the lock, not msr.
 
+- `bctr` through a jump table with an index outside the table: `__builtin_trap()`, as the recompilation; the ISA
+  jumps to whatever address the word past the table holds. The bound check before every table the translator takes
+  keeps the index inside on the titles' paths.
+
 Changing these makes the translation differ from what the titles run today: it is a decision for the in-game binding,
 not for the translator alone.
 
 ## Tests
 
-- `cpu_isa_tests`: each case of `layer/cpu/tests/isa_cases.txt` (69 cases, encoded words ending in `blr`; `import`
+- `cpu_isa_tests`: each case of `layer/cpu/tests/isa_cases.txt` (74 cases, encoded words ending in `blr`; `import`
   lines make addresses import thunks for the cases) translated at build time, against the ISA's definition of the
   same instructions written by hand in the test (Power ISA 2.06 Book I; the runtime hooks' calls, in order, as the
-  recorded handlers see them), on 4,096 register states each (282,624 in all), integer edge values included; floating-point cases draw
+  recorded handlers see them), on 4,096 register states each (303,104 in all), integer edge values included; floating-point cases draw
   their operands from edge values (zeros, infinities, a NaN, denormals, values that round or overflow). Each
   floating-point instruction is the first one of a case, so that its flush-mode change is checked. Every register and
-  every byte of guest memory compared.
-- `cpu_e2e_tests`: the end-to-end set (300 of the 12,908 Mirror's Edge functions both versions take, spread over the
-  image, and up to 16 more for each runtime hook, of the functions whose own code calls it: 319 functions, 10,661
-  instructions, 458 with their callees), each run from 64 register states on two guest spaces that start with the
+  every byte of guest memory compared. A line `@<address> <words>` of the cases file is data (a jump table) the
+  translator reads and the test writes into guest memory (`kCaseData` in the generated header): the `bctr` cases
+  expect the ISA's jump to the address read from the table, against the translation's `switch` on the index.
+- `cpu_e2e_tests`: the end-to-end set (300 of the 13,539 Mirror's Edge functions both versions take, spread over the
+  image, and up to 16 more for each runtime hook, of the functions whose own code calls it: 320 functions, 10,334
+  instructions, 474 with their callees), each run from 64 register states on two guest spaces that start with the
   same memory; every register and every byte either version touched, and every runtime hook's call in order, must
   match. Runs on made-up
   data are bounded: both versions pass `ANY360_CPU_STEP()` at each function entry and label and `ANY360_CPU_ENTER()` at
@@ -145,6 +173,7 @@ the time base on the runtime's, traps on its trap handler.
 ## Measures
 
 The results are in [perf/archive/2026-11-26-cpu-translator-slice1](perf/archive/2026-11-26-cpu-translator-slice1/),
-[perf/archive/2026-11-27-cpu-translator-slice2](perf/archive/2026-11-27-cpu-translator-slice2/) and
-[perf/archive/2026-11-27-cpu-runtime-hooks](perf/archive/2026-11-27-cpu-runtime-hooks/) (NOTES.md), and
-indexed in [perf/FUNCTIONS.md](perf/FUNCTIONS.md).
+[perf/archive/2026-11-27-cpu-translator-slice2](perf/archive/2026-11-27-cpu-translator-slice2/),
+[perf/archive/2026-11-27-cpu-runtime-hooks](perf/archive/2026-11-27-cpu-runtime-hooks/) and
+[perf/archive/2026-11-27-cpu-bctr](perf/archive/2026-11-27-cpu-bctr/) (NOTES.md), and indexed in
+[perf/FUNCTIONS.md](perf/FUNCTIONS.md).

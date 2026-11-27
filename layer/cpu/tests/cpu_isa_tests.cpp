@@ -362,6 +362,55 @@ void ExpectBctrl(Ctx& c, const Memory& m) {
   IndirectCall(c, m, uint32_t(c.ctr.u64));
   c.r3.u64 += 1;
 }
+void ExpectBctrWords(Ctx& c, const Memory& m) {
+  CompareUnsigned(c.cr6, uint32_t(c.r4.u64), 3, c.xer.so);
+  if (c.cr6.gt) {
+    c.r3.u64 = ~0ull;
+    return;
+  }
+  c.r12.u64 = 0x20000;
+  c.r0.u64 = uint32_t(c.r4.u64) << 2;
+  c.r0.u64 = Load32(m, 0x20000 + uint32_t(c.r0.u64));
+  c.ctr.u64 = c.r0.u64;
+  c.r3.u64 = 10 + (uint32_t(c.ctr.u64) - 0x10020) / 8;
+}
+void ExpectBctrBytes(Ctx& c, const Memory& m) {
+  CompareUnsigned(c.cr6, uint32_t(c.r4.u64), 2, c.xer.so);
+  if (c.cr6.gt) {
+    c.r3.u64 = ~0ull;
+    return;
+  }
+  c.r0.u64 = uint32_t(Load8(m, 0x20010 + uint32_t(c.r4.u64))) << 2;
+  c.r12.u64 = 0x10030 + c.r0.u64;
+  c.ctr.u64 = c.r12.u64;
+  c.r3.u64 = 20 + (uint32_t(c.ctr.u64) - 0x10030) / 8;
+}
+void ExpectBctrTail(Ctx& c, const Memory& m) {
+  c.ctr.u64 = c.r4.u64;
+  IndirectCall(c, m, uint32_t(c.ctr.u64));
+}
+void ExpectBnectr(Ctx& c, const Memory& m) {
+  Compare(c.cr0, int32_t(c.r4.u64), 0, c.xer.so);
+  c.ctr.u64 = c.r5.u64;
+  if (!c.cr0.eq) {
+    IndirectCall(c, m, uint32_t(c.ctr.u64));
+    return;
+  }
+  c.r3.u64 = 1;
+}
+void ExpectBlrl(Ctx& c, const Memory& m) {
+  const uint32_t target = uint32_t(c.r4.u64);
+  c.lr = 0x10008;
+  IndirectCall(c, m, target);
+  c.r3.u64 += 1;
+}
+
+// The cases' data lines (jump tables) in a guest space.
+void WriteCaseData(const Memory& m) {
+  for (const isa::CaseData& d : isa::kCaseData) {
+    for (uint32_t i = 0; i < d.count; ++i) Store32(m, d.address + 4 * i, d.words[i]);
+  }
+}
 
 void SetMsr(Ctx& c, uint64_t source) { c.msr = (uint32_t(source) & 0x8020u) | (c.msr & ~0x8020u); }
 void ExpectMsr(Ctx& c, const Memory&) {
@@ -540,6 +589,11 @@ const Case kCases[] = {
     {"trap_other", &isa::trap_other, &ExpectTrapOther, Case::kAnyValue},
     {"trap_register", &isa::trap_register, &ExpectTrapRegister, Case::kAnyValue},
     {"imports", &isa::imports, &ExpectImports, Case::kAnyValue},
+    {"bctr_words", &isa::bctr_words, &ExpectBctrWords, Case::kAnyValue},
+    {"bctr_bytes", &isa::bctr_bytes, &ExpectBctrBytes, Case::kAnyValue},
+    {"bctr_tail", &isa::bctr_tail, &ExpectBctrTail, Case::kAnyValue},
+    {"bnectr", &isa::bnectr, &ExpectBnectr, Case::kAnyValue},
+    {"blrl", &isa::blrl, &ExpectBlrl, Case::kAnyValue},
 };
 
 uint64_t Bits(double x) { return std::bit_cast<uint64_t>(x); }
@@ -603,6 +657,8 @@ int main() {
       DrawFloats(input, c.floats, s);
       Ctx translated = input, expected = input;
       ResetHooks(s);
+      WriteCaseData(translated_memory);
+      WriteCaseData(expected_memory);
       RunFrom([&](Ctx& x) { c.translated(x, translated_memory); }, translated);
       const uint64_t translated_hooks = g_hook_trace;
       ResetHooks(s);

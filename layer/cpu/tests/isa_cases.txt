@@ -142,3 +142,17 @@ import 00010180 xboxkrnl 179
 import 00010200 xam 65
 # bl 0x10100; addi r3,r3,1; cmpwi r3,0; beq 0x10200; b 0x10180
 imports 48000101 38630001 2C030000 418201F4 48000170
+# cmplwi cr6,r4,3; bgt cr6,+60; lis r12,2; addi r12,r12,0; slwi r0,r4,2; lwzx r0,r12,r0; mtctr r0; bctr; li r3,10; blr; li r3,11; blr; li r3,12; blr; li r3,13; blr; li r3,-1; blr
+bctr_words 2B040003 4199003C 3D800002 398C0000 5480103A 7C0C002E 7C0903A6 4E800420 3860000A 4E800020 3860000B 4E800020 3860000C 4E800020 3860000D 4E800020 3860FFFF 4E800020
+# the table of bctr_words: the addresses of li r3,12, li r3,10, li r3,13, li r3,11
+@20000 00010030 00010020 00010038 00010028
+# cmplwi cr6,r4,2; bgt cr6,+68; lis r12,2; addi r12,r12,16; lbzx r0,r12,r4; lis r12,1; addi r12,r12,48; slwi r0,r0,2; add r12,r12,r0; mtctr r12; bctr; blr; li r3,20; blr; li r3,21; blr; li r3,22; blr; li r3,-1; blr
+bctr_bytes 2B040002 41990044 3D800002 398C0010 7C0C20AE 3D800001 398C0030 5400103A 7D8C0214 7D8903A6 4E800420 4E800020 38600014 4E800020 38600015 4E800020 38600016 4E800020 3860FFFF 4E800020
+# the table of bctr_bytes: words from 0x10030 / 4, bytes 4, 0, 2 (li r3,22, li r3,20, li r3,21)
+@20010 04000200
+# mtctr r4; bctr; blr
+bctr_tail 7C8903A6 4E800420 4E800020
+# cmpwi cr0,r4,0; mtctr r5; bnectr; li r3,1; blr
+bnectr 2C040000 7CA903A6 4C820420 38600001 4E800020
+# mtlr r4; blrl; addi r3,r3,1; blr
+blrl 7C8803A6 4E800021 38630001 4E800020

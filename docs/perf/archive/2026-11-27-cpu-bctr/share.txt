@@ -1,0 +1,13 @@
+slice 2 (dd25509):
+mirrorsedge 15644 53832 29.1% 455463 3276176 13.9%
+crackdown 11567 41219 28.1% 282623 2667844 10.6%
++ tail calls through ctr and switch tables:
+mirrorsedge 16568 53832 30.8% 467828 3276176 14.3%
+crackdown 12431 41219 30.2% 300238 2667844 11.3%
++ function extents:
+mirrorsedge 16677 53832 31.0% 475201 3276176 14.5%
+crackdown 12528 41219 30.4% 305559 2667844 11.5%
+
+after the rebase on the runtime hooks batch (imports passed, --xex):
+mirrorsedge 17321 53832 32.2% 501246 3276176 15.3%
+crackdown 13138 41219 31.9% 328591 2667844 12.3%
