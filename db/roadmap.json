@@ -1138,7 +1138,7 @@
 {
 "id":"bctr",
 "family":"branch / trap",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":5199,
 "source":"static occurrences",
 "titles":{
@@ -4135,7 +4135,7 @@
 {
 "id":"blrl",
 "family":"branch / trap",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":4,
 "source":"static occurrences",
 "titles":{
@@ -4148,7 +4148,7 @@
 {
 "id":"bnectr",
 "family":"branch / trap",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":4,
 "source":"static occurrences",
 "titles":{

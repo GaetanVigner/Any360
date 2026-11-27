@@ -253,6 +253,18 @@
 },
 {
 "function":"CPU translation (mirrorsedge)",
+"measure":"300 functions (11,251 instructions), total a call of each",
+"ns":27209.9,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"reference recompilation",
+"versus_ns":27320.8,
+"speed":1.0040757224392591,
+"archive":"2026-11-27-cpu-bctr",
+"first":"2026-11-27-cpu-bctr"
+},
+{
+"function":"CPU translation (mirrorsedge)",
 "measure":"300 functions, total a call of each",
 "ns":6103.5,
 "bytes":0.0,

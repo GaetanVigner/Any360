@@ -51,7 +51,7 @@ Counted apart from "ready" and from what remains:
 
 1842 not native, 352 used by a known title. Owner: this toolkit: an Any360 translator from the XEX's PowerPC words (layer/cpu).
 
-Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 125 of them (state `translated`), 97.0% of the occurrences. A function is translated only when all its instructions and callees are, a smaller share of the titles' code (CPU.md gives it by title). No title runs translated code yet, so none is native.
+Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 128 of them (state `translated`), 97.0% of the occurrences. A function is translated only when all its instructions and callees are, a smaller share of the titles' code (CPU.md gives it by title). No title runs translated code yet, so none is native.
 
 | rank | unit | family | state | use | share | cumulative | source | by title |
 |---:|---|---|---|---:|---:|---:|---|---|
@@ -142,7 +142,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 125 of 
 | 85 | addis | integer | reference, translated (not bound) | 5,390 | 0.05% | 97.9% | static occurrences | codbo 2,991, crackdown 684, mirrorsedge 917, simpsons 798 |
 | 86 | vsubfp | VMX / VMX128 | reference | 5,362 | 0.05% | 98.0% | static occurrences | codbo 1, crackdown 2,286, mirrorsedge 210, simpsons 2,865 |
 | 87 | vor | VMX / VMX128 | reference | 5,287 | 0.05% | 98.0% | static occurrences | codbo 30, crackdown 2,216, mirrorsedge 623, simpsons 2,418 |
-| 88 | bctr | branch / trap | reference | 5,199 | 0.05% | 98.1% | static occurrences | codbo 274, crackdown 1,319, mirrorsedge 1,264, simpsons 2,342 |
+| 88 | bctr | branch / trap | reference, translated (not bound) | 5,199 | 0.05% | 98.1% | static occurrences | codbo 274, crackdown 1,319, mirrorsedge 1,264, simpsons 2,342 |
 | 89 | vor128 | VMX / VMX128 | reference | 5,136 | 0.05% | 98.1% | static occurrences | codbo 696, crackdown 607, mirrorsedge 419, simpsons 3,414 |
 | 90 | clrldi | integer | reference, translated (not bound) | 4,902 | 0.05% | 98.2% | static occurrences | codbo 422, crackdown 1,545, mirrorsedge 1,165, simpsons 1,770 |
 | 91 | subfic | integer | reference, translated (not bound) | 4,853 | 0.05% | 98.2% | static occurrences | codbo 956, crackdown 1,256, mirrorsedge 1,254, simpsons 1,387 |
@@ -386,8 +386,8 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 125 of 
 | 329 | mulhdu | integer | reference | 6 | 0.00% | 100.0% | static occurrences | codbo 2, crackdown 4 |
 | 330 | stbux | load / store / cache | reference | 6 | 0.00% | 100.0% | static occurrences | codbo 6 |
 | 331 | vadduhm | VMX / VMX128 | reference | 6 | 0.00% | 100.0% | static occurrences | crackdown 3, simpsons 3 |
-| 332 | blrl | branch / trap | reference | 4 | 0.00% | 100.0% | static occurrences | codbo 1, crackdown 1, mirrorsedge 1, simpsons 1 |
-| 333 | bnectr | branch / trap | reference | 4 | 0.00% | 100.0% | static occurrences | codbo 1, crackdown 1, mirrorsedge 1, simpsons 1 |
+| 332 | blrl | branch / trap | reference, translated (not bound) | 4 | 0.00% | 100.0% | static occurrences | codbo 1, crackdown 1, mirrorsedge 1, simpsons 1 |
+| 333 | bnectr | branch / trap | reference, translated (not bound) | 4 | 0.00% | 100.0% | static occurrences | codbo 1, crackdown 1, mirrorsedge 1, simpsons 1 |
 | 334 | lvehx | VMX / VMX128 | reference | 4 | 0.00% | 100.0% | static occurrences | codbo 4 |
 | 335 | mtxer | system | reference | 4 | 0.00% | 100.0% | static occurrences | codbo 1, crackdown 1, mirrorsedge 1, simpsons 1 |
 | 336 | stfdu | floating point | reference | 4 | 0.00% | 100.0% | static occurrences | codbo 4 |
