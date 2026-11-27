@@ -1,7 +1,8 @@
 // The CPU translator's end-to-end test: a title's functions as Any360 translates them from the XEX's words, against
 // the same functions as the reference runtime recompiled them (tools/cpu_e2e.py), each pair run from the same
 // register states on two guest spaces that start with the same memory; every register and every byte either version
-// touched must match, and a run that stops at its bound (steps or call depth) must stop at the same point in both.
+// touched must match, a run that stops at its bound (steps or call depth) must stop at the same point in both, and
+// both must call the runtime's hooks (global lock, time base, traps, imports: cpu_hooks.h) the same way, in order.
 //
 //   cpu_e2e_tests [states a function] [trace]
 #include <cstdint>
@@ -31,16 +32,22 @@ int main(int argc, char** argv) {
       const Ctx input = RandomState(pair.address ^ (s * 0x01000193u));
       Ctx translated = input, reference = input;
       bool translated_ends = false, reference_ends = false;
+      const uint32_t seed = pair.address ^ s;
+      ResetHooks(seed);
       RunFrom([&](Ctx& c) { translated_ends = RunWithin(kSteps, [&] { pair.translated(c, translated_memory); }); },
               translated);
+      const uint64_t translated_hooks = g_hook_trace;
+      ResetHooks(seed);
       RunFrom([&](Ctx& c) { reference_ends = RunWithin(kSteps, [&] { pair.reference(c, reference_memory); }); },
               reference);
       const std::string registers = Differences(translated, reference);
       uint32_t where = 0;
       const bool memory = MemoryDiffers(translated_space, reference_space, &where);
-      if ((!registers.empty() || memory || translated_ends != reference_ends) && failed++ < 2) {
+      const bool hooks = translated_hooks != g_hook_trace;
+      if ((!registers.empty() || memory || hooks || translated_ends != reference_ends) && failed++ < 2) {
         std::printf("FAILED sub_%08X state %u:%s", pair.address, s, registers.c_str());
         if (memory) std::printf(" memory at %08X", where);
+        if (hooks) std::printf(" runtime hooks");
         if (translated_ends != reference_ends) std::printf(" one version reached its bound");
         std::printf("\n");
       }
@@ -54,9 +61,13 @@ int main(int argc, char** argv) {
   }
   const size_t pairs = sizeof e2e::kPairs / sizeof e2e::kPairs[0];
   std::printf("cpu_e2e_tests: %s, %zu functions (%llu instructions) of the %u both versions take, %llu runs "
-              "(%llu stopped at %llu steps or %d calls deep), %llu indirect calls: %s\n",
+              "(%llu stopped at %llu steps or %d calls deep), %llu indirect calls, %llu import calls, %llu traps, "
+              "%llu global lock checks / enters / leaves %llu / %llu, %llu time base reads: %s\n",
               e2e::kTitle, pairs, (unsigned long long)instructions, e2e::kCandidates, (unsigned long long)runs,
               (unsigned long long)stopped, (unsigned long long)kSteps, kMaxDepth, (unsigned long long)g_indirect_calls,
+              (unsigned long long)g_hook_counts.imports, (unsigned long long)g_hook_counts.traps,
+              (unsigned long long)g_hook_counts.lock_checks, (unsigned long long)g_hook_counts.lock_enters,
+              (unsigned long long)g_hook_counts.lock_leaves, (unsigned long long)g_hook_counts.timebase_reads,
               failed_functions ? (std::to_string(failed_functions) + " functions differ").c_str()
                                : "all match the reference");
   return failed_functions ? 1 : 0;

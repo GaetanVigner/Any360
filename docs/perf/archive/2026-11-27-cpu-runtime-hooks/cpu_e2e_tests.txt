@@ -1,0 +1,1 @@
+cpu_e2e_tests: mirrorsedge, 319 functions (10661 instructions) of the 12908 both versions take, 20416 runs (1223 stopped at 16384 steps or 256 calls deep), 8738684 indirect calls, 1659968 import calls, 256 traps, 0 global lock checks / enters / leaves 0 / 0, 128 time base reads: all match the reference

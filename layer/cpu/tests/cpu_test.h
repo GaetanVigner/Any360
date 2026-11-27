@@ -45,6 +45,7 @@ inline Ctx RandomState(uint32_t seed) {
   const uint32_t flush = any360::xdk::ppc_model::Fpscr::kFlushMask;
   ctx.fpscr.csr = next() & 1 ? (ctx.fpscr.csr | flush) : (ctx.fpscr.csr & ~flush);
   ctx.xer.ca = next() & 1;
+  ctx.msr = next();
   return ctx;
 }
 
@@ -86,6 +87,7 @@ inline std::string Differences(const Ctx& a, const Ctx& b) {
     out += line;
   }
   if (a.fpscr.csr != b.fpscr.csr) std::snprintf(line, sizeof line, " fpscr %x/%x", a.fpscr.csr, b.fpscr.csr), out += line;
+  if (a.msr != b.msr) std::snprintf(line, sizeof line, " msr %x/%x", a.msr, b.msr), out += line;
   return out;
 }
 

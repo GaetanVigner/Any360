@@ -3,8 +3,10 @@
 words, beside the same functions as ReXGlue recompiled them (tools/ppc_model.py, on the same context), for
 layer/cpu/tests to run both on the same inputs and compare every register and every byte of memory.
 
-The functions are those both tools take (Any360's covered instructions; nothing the model leaves out, such as calls to
-imports), spread over the title's address space: `count` of them, every k-th in address order. Stops when an instruction
+The functions are those both tools take (Any360's covered instructions; nothing the model leaves out), spread over the
+title's address space: `count` of them, every k-th in address order; then, of any size, up to `aim` of those whose own
+code calls each of the runtime's hooks (the global lock, the time base, a trap, an import), which every k-th rarely
+picks. Stops when an instruction
 the recompiled code names is not in ppc_translate.COVERED_MNEMONICS (the roadmap would not count it as translated), or
 when a function's two versions differ in their steps or their floating-point mode changes. Writes
 <out>/cpu_e2e_{translated,reference,table}.h, with ANY360_CPU_STEP() at each entry and label (a test bounds a run on made-up
@@ -35,7 +37,7 @@ def supported_by_model(found, address, seen=None):
     if body is None:
         return False
     for line in body.splitlines():
-        if not line.strip().startswith('//') and ppc_model.UNSUPPORTED.search(line):
+        if not line.strip().startswith('//') and ppc_model.unsupported(line):
             return False
     return all(supported_by_model(found, c, seen) for c in re.findall(r'\bsub_([0-9A-F]{8})\(ctx, base\)', body)
                if c != address)
@@ -59,6 +61,8 @@ def per_function(text, needle):
     return counts
 
 
+AIMED_HOOKS = ('ANY360_CPU_CHECK_GLOBAL_LOCK', 'ANY360_CPU_ENTER_GLOBAL_LOCK', 'ANY360_CPU_LEAVE_GLOBAL_LOCK',
+               'ANY360_CPU_QUERY_TIMEBASE', 'ANY360_CPU_TRAP', 'ANY360_CPU_CALL_IMPORT')
 STEP = 'ANY360_CPU_STEP();'
 ENTER = 'ANY360_CPU_ENTER();'
 STEP_MACRO = ['#ifndef ANY360_CPU_STEP', '#define ANY360_CPU_STEP()', '#define ANY360_CPU_ENTER()', '#endif']
@@ -87,36 +91,43 @@ def main():
     parser.add_argument('--title', required=True)
     parser.add_argument('--count', type=int, default=300)
     parser.add_argument('--min', type=int, default=6)
+    parser.add_argument('--aim', type=int, default=16)
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
 
     pipeline = json.loads((ROOT / 'titles' / args.title / 'pipeline.json').read_text(encoding='utf-8'))
     image = Path(pipeline['image']).read_bytes()
+    libraries = ppc_translate.import_libraries(pipeline['xex'])
     table = json.loads((ROOT / 'docs' / 'data' / f'functions-{args.title}.json').read_text(encoding='utf-8'))
     sizes = {int(r[0], 16): int(r[1]) for r in table['rows']}
     found = ppc_model.functions(pipeline['generated'])
 
-    candidates = []
+    candidates, aimed = [], {hook: [] for hook in AIMED_HOOKS}
     for address in sorted(sizes):
-        if sizes[address] < args.min:
-            continue
+        order = []
         try:
-            ppc_translate.translate_tree(image, sizes, address, set(), [], False)
+            ppc_translate.translate_tree(image, sizes, address, set(), order, False, libraries)
         except ppc_translate.Unsupported:
             continue
-        if supported_by_model(found, f'{address:08X}'):
+        if not supported_by_model(found, f'{address:08X}'):
+            continue
+        uncovered = {m for m in MNEMONIC.findall(found[f'{address:08X}']) if not ppc_translate.COVERED.fullmatch(m)}
+        if uncovered:
+            sys.exit(f'cpu_e2e: sub_{address:08X} translates, with instructions not in COVERED_MNEMONICS: '
+                     f'{", ".join(sorted(uncovered))}')
+        if sizes[address] >= args.min:
             candidates.append(address)
-            uncovered = {m for m in MNEMONIC.findall(found[f'{address:08X}'])
-                         if not ppc_translate.COVERED.fullmatch(m)}
-            if uncovered:
-                sys.exit(f'cpu_e2e: sub_{address:08X} translates, with instructions not in COVERED_MNEMONICS: '
-                         f'{", ".join(sorted(uncovered))}')
+        own = '\n'.join(order[-1][1])
+        for hook, found_in in aimed.items():
+            if hook in own and len(found_in) < args.aim:
+                found_in.append(address)
     step = max(1, len(candidates) // args.count)
     roots = candidates[::step][:args.count]
+    roots += sorted({a for found_in in aimed.values() for a in found_in} - set(roots))
 
     done, order = set(), []
     for root in roots:
-        ppc_translate.translate_tree(image, sizes, root, done, order, False)
+        ppc_translate.translate_tree(image, sizes, root, done, order, False, libraries)
     bodies = [(f'sub_{a:08X}', body) for a, body in order]
     args.out.mkdir(parents=True, exist_ok=True)
     what = f'{len(roots)} roots, {len(bodies)} functions'
@@ -140,6 +151,7 @@ def main():
         (args.out / f'cpu_e2e{suffix}_table.h').write_text(f'''// Generated by tools/cpu_e2e.py from {args.title}: the functions both versions take{"" if stepped else ", without steps"}.
 #pragma once
 
+#include "cpu_hooks.h"
 #include "cpu_indirect.h"
 
 #include "cpu_e2e{suffix}_reference.h"
@@ -162,8 +174,9 @@ inline constexpr Pair kPairs[] = {{
 
 }}  // namespace any360::cpu::e2e{suffix}
 ''', encoding='utf-8')
-    print(f'cpu_e2e: {args.title}: {len(candidates)} functions both tools take, {len(roots)} picked, '
-          f'{len(bodies)} translated with their callees')
+    print(f'cpu_e2e: {args.title}: {len(candidates)} functions both tools take, {len(roots)} picked '
+          f'({len(roots) - min(args.count, len(candidates[::step]))} for the runtime hooks: '
+          f'{", ".join(f"{h[11:].lower()} {len(a)}" for h, a in aimed.items())}), {len(bodies)} translated with their callees')
 
 
 if __name__ == '__main__':

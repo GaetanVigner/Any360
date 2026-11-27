@@ -124,3 +124,21 @@ no_effect 7C00222C 7C0020AC 7C0004AC 7C2004AC 7C0006AC 38600001 4E800020
 bctrl 7C8903A6 4E800421 38630001 4E800020
 # fdiv f3,f1,f2; blr
 fdiv FC611024 4E800020
+# mfmsr r3; mtmsrd r13,1; mfmsr r5; mtmsrd r3,1; mfmsr r6; blr
+msr 7C6000A6 7DA10164 7CA000A6 7C610164 7CC000A6 4E800020
+# mtmsrd r4,1; blr
+mtmsrd_mask 7C810164 4E800020
+# mftb r3; mftbu r5; blr
+timebase 7C6C42E6 7CAD42E6 4E800020
+# twllei r4,0; twlgei r4,-1; tdllei r4,0; tdlgei r4,-1; li r6,1; rldicr r6,r6,32,31; twllei r6,0; tdllei r6,0; twlgei r6,-1; tdlgei r6,-1; blr
+trap_immediate 0CC40000 0CA4FFFF 08C40000 08A4FFFF 38C00001 78C607C6 0CC60000 08C60000 0CA6FFFF 08A6FFFF 4E800020
+# twi 31,r0,22; twi 31,r0,20; twi 0,r4,1; twi 31,r4,7; twi 24,r4,5; tdi 8,r4,5; tdi 3,r4,-2; blr
+trap_other 0FE00016 0FE00014 0C040001 0FE40007 0F040005 09040005 0864FFFE 4E800020
+# tw 4,r4,r5; tw 16,r4,r5; tw 3,r4,r5; td 16,r4,r5; td 9,r4,r5; td 31,r4,r5; tw 0,r4,r5; tw 4,r3,r5; blr
+trap_register 7C842808 7E042808 7C642808 7E042888 7D242888 7FE42888 7C042808 7C832808 4E800020
+# Calls to imports: bl to an import's thunk, a conditional and an unconditional branch to one (tail calls).
+import 00010100 xboxkrnl 304
+import 00010180 xboxkrnl 179
+import 00010200 xam 65
+# bl 0x10100; addi r3,r3,1; cmpwi r3,0; beq 0x10200; b 0x10180
+imports 48000101 38630001 2C030000 418201F4 48000170

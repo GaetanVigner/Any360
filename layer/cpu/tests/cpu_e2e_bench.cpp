@@ -4,7 +4,8 @@
 // the same memory (Space::Refill), its pages already committed by an untimed run. The states kept are those whose
 // every call of that sequence ends within the test's step budget (cpu_e2e_table.h); the times are of the versions
 // without steps (cpu_e2e_plain_table.h). Prints a row a function (ns a call for both, speed = reference / Any360) and
-// the totals, with the host allocations a call.
+// the totals, with the host allocations a call. The runtime's hooks (cpu_hooks.h) start each timed run and each
+// selection run from the same state.
 //
 //   cpu_e2e_bench [repeats]
 #include <algorithm>
@@ -31,6 +32,7 @@ constexpr uint64_t kSteps = 1 << 14;
 
 double Time(any360::cpu::e2e_plain::Function f, const std::vector<Ctx>& inputs, const Memory& memory,
             any360::sys::AllocCounts* spent) {
+  ResetHooks(0);
   const any360::sys::AllocCounts before = any360::sys::ThreadAllocations();
   const auto start = std::chrono::steady_clock::now();
   for (uint32_t round = 0; round < kRounds; ++round) {
@@ -78,6 +80,7 @@ int main(int argc, char** argv) {
     for (uint32_t s = 0; s < kStates; ++s) inputs.push_back(RandomState(pair.address ^ (s * 0x01000193u)));
     while (!inputs.empty()) {
       size_t stopped = inputs.size();
+      ResetHooks(0);
       for (uint32_t round = 0; round < kRounds && stopped == inputs.size(); ++round) {
         for (size_t k = 0; k < inputs.size(); ++k) {
           Ctx ctx = inputs[k];

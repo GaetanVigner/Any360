@@ -1462,7 +1462,7 @@
 {
 "id":"twllei",
 "family":"branch / trap",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":2621,
 "source":"static occurrences",
 "titles":{
@@ -1475,7 +1475,7 @@
 {
 "id":"mtmsrd",
 "family":"system",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":2521,
 "source":"static occurrences",
 "titles":{
@@ -1785,7 +1785,7 @@
 {
 "id":"mftb",
 "family":"system",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":1286,
 "source":"static occurrences",
 "titles":{
@@ -1824,7 +1824,7 @@
 {
 "id":"mfmsr",
 "family":"system",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":1135,
 "source":"static occurrences",
 "titles":{
@@ -2144,7 +2144,7 @@
 {
 "id":"twlgei",
 "family":"branch / trap",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":604,
 "source":"static occurrences",
 "titles":{
@@ -2246,7 +2246,7 @@
 {
 "id":"twi",
 "family":"branch / trap",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":526,
 "source":"static occurrences",
 "titles":{
@@ -3229,7 +3229,7 @@
 {
 "id":"tdllei",
 "family":"branch / trap",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":98,
 "source":"static occurrences",
 "titles":{
@@ -3676,7 +3676,7 @@
 {
 "id":"tdlgei",
 "family":"branch / trap",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":26,
 "source":"static occurrences",
 "titles":{
@@ -11784,7 +11784,7 @@
 {
 "id":"mftbu",
 "family":"system",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":0,
 "source":"unused",
 "titles":{}
@@ -14784,7 +14784,7 @@
 {
 "id":"td",
 "family":"branch / trap",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":0,
 "source":"unused",
 "titles":{}
@@ -14840,7 +14840,7 @@
 {
 "id":"tdi",
 "family":"branch / trap",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":0,
 "source":"unused",
 "titles":{}
@@ -15384,7 +15384,7 @@
 {
 "id":"tw",
 "family":"branch / trap",
-"state":"reference",
+"state":"reference, translated (not bound)",
 "uses":0,
 "source":"unused",
 "titles":{}

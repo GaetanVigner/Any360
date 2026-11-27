@@ -1,0 +1,5 @@
+cpu_isa_tests: fmadds 641 * 6700417 * 2^-56 + 1: 3F800000 (rounded to double, then to single), the ISA 3F800001 (rounded once)
+cpu_isa_tests: fadd inf + -inf: FFF8000000000000 (the host's default NaN), the ISA 7FF8000000000000
+cpu_isa_tests: stfs of the double 1/3: 3EAAAAAB (rounded to single), the ISA 3EAAAAAA (truncated)
+cpu_isa_tests: mtmsrd r4,1 of 0xFFFFFFFF: msr 8020 (EE and IR) and the global lock released (any register but r13), the ISA 8002 (EE and RI), the lock's state not an MSR bit
+cpu_isa_tests: 69 cases, 282624 states, all match the ISA

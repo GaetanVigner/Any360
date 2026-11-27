@@ -11,6 +11,7 @@
 #include <limits>
 #include <string>
 
+#include "cpu_hooks.h"
 #include "cpu_indirect.h"
 #include "cpu_isa_cases.h"
 #include "cpu_test.h"
@@ -362,6 +363,72 @@ void ExpectBctrl(Ctx& c, const Memory& m) {
   c.r3.u64 += 1;
 }
 
+void SetMsr(Ctx& c, uint64_t source) { c.msr = (uint32_t(source) & 0x8020u) | (c.msr & ~0x8020u); }
+void ExpectMsr(Ctx& c, const Memory&) {
+  c.r3.u64 = CheckGlobalLock();
+  SetMsr(c, c.r13.u64);
+  EnterGlobalLock();
+  c.r5.u64 = CheckGlobalLock();
+  SetMsr(c, c.r3.u64);
+  LeaveGlobalLock();
+  c.r6.u64 = CheckGlobalLock();
+}
+void ExpectMtmsrdMask(Ctx& c, const Memory&) {
+  SetMsr(c, c.r4.u64);
+  LeaveGlobalLock();
+}
+void ExpectTimebase(Ctx& c, const Memory&) {
+  c.r3.u64 = QueryTimebase();
+  c.r5.u64 = QueryTimebase() >> 32;
+}
+
+// The trap conditions of the TO field: a < b, a > b, a == b signed, a < b, a > b unsigned.
+bool TrapHolds(int to, int64_t a, int64_t b, uint64_t ua, uint64_t ub) {
+  return ((to & 16) && a < b) || ((to & 8) && a > b) || ((to & 4) && a == b) || ((to & 2) && ua < ub) ||
+         ((to & 1) && ua > ub);
+}
+void TrapWord(Ctx& c, const Memory& m, int to, uint64_t a, uint64_t b) {
+  if (TrapHolds(to, int32_t(uint32_t(a)), int32_t(uint32_t(b)), uint32_t(a), uint32_t(b))) Trap(c, m, 0);
+}
+void TrapDouble(Ctx& c, const Memory& m, int to, uint64_t a, uint64_t b) {
+  if (TrapHolds(to, int64_t(a), int64_t(b), a, b)) Trap(c, m, 0);
+}
+void ExpectTrapImmediate(Ctx& c, const Memory& m) {
+  TrapWord(c, m, 6, c.r4.u64, 0);
+  TrapWord(c, m, 5, c.r4.u64, ~0ull);
+  TrapDouble(c, m, 6, c.r4.u64, 0);
+  TrapDouble(c, m, 5, c.r4.u64, ~0ull);
+  c.r6.u64 = 1ull << 32;
+  TrapWord(c, m, 6, c.r6.u64, 0);
+  TrapDouble(c, m, 6, c.r6.u64, 0);
+  TrapWord(c, m, 5, c.r6.u64, ~0ull);
+  TrapDouble(c, m, 5, c.r6.u64, ~0ull);
+}
+void ExpectTrapOther(Ctx& c, const Memory& m) {
+  Trap(c, m, 22);
+  Trap(c, m, 20);
+  Trap(c, m, 0);
+  TrapWord(c, m, 24, c.r4.u64, 5);
+  TrapDouble(c, m, 8, c.r4.u64, 5);
+  TrapDouble(c, m, 3, c.r4.u64, uint64_t(-2));
+}
+void ExpectTrapRegister(Ctx& c, const Memory& m) {
+  TrapWord(c, m, 4, c.r4.u64, c.r5.u64);
+  TrapWord(c, m, 16, c.r4.u64, c.r5.u64);
+  TrapWord(c, m, 3, c.r4.u64, c.r5.u64);
+  TrapDouble(c, m, 16, c.r4.u64, c.r5.u64);
+  TrapDouble(c, m, 9, c.r4.u64, c.r5.u64);
+  Trap(c, m, 0);
+  TrapWord(c, m, 4, c.r3.u64, c.r5.u64);
+}
+void ExpectImports(Ctx& c, const Memory& m) {
+  c.lr = 0x10004;
+  ImportCall(c, m, "xboxkrnl", 304);
+  c.r3.u64 += 1;
+  Compare(c.cr0, int32_t(c.r3.u32), 0, c.xer.so);
+  ImportCall(c, m, c.cr0.eq ? "xam" : "xboxkrnl", c.cr0.eq ? 65 : 179);
+}
+
 // Operand values of the floating-point cases. kSingle and kDouble: frA any edge, frB finite and not zero (no
 // operation makes a new NaN; a NaN operand goes through). kFused: values whose products and sums are exact in a
 // double, so that one rounding and two agree. kCompare: any edge for both.
@@ -466,6 +533,13 @@ const Case kCases[] = {
     {"rotate64", &isa::rotate64, &ExpectRotate64, Case::kAnyValue},
     {"no_effect", &isa::no_effect, &ExpectNoEffect, Case::kAnyValue},
     {"bctrl", &isa::bctrl, &ExpectBctrl, Case::kAnyValue},
+    {"msr", &isa::msr, &ExpectMsr, Case::kAnyValue},
+    {"mtmsrd_mask", &isa::mtmsrd_mask, &ExpectMtmsrdMask, Case::kAnyValue},
+    {"timebase", &isa::timebase, &ExpectTimebase, Case::kAnyValue},
+    {"trap_immediate", &isa::trap_immediate, &ExpectTrapImmediate, Case::kAnyValue},
+    {"trap_other", &isa::trap_other, &ExpectTrapOther, Case::kAnyValue},
+    {"trap_register", &isa::trap_register, &ExpectTrapRegister, Case::kAnyValue},
+    {"imports", &isa::imports, &ExpectImports, Case::kAnyValue},
 };
 
 uint64_t Bits(double x) { return std::bit_cast<uint64_t>(x); }
@@ -499,6 +573,15 @@ void KnownDifferences(const Memory& m) {
   CHECK(stored == std::bit_cast<uint32_t>(float(1.0 / 3.0)));
   std::printf("cpu_isa_tests: stfs of the double 1/3: %08X (rounded to single), the ISA %08X (truncated)\n", stored,
               truncated);
+  c = Ctx{};
+  c.msr = 0, c.r4.u64 = 0xFFFFFFFFu;
+  ResetHooks(0);
+  isa::mtmsrd_mask(c, m);
+  CHECK(c.msr == 0x8020u);
+  CHECK(g_lock_depth == -1);
+  std::printf("cpu_isa_tests: mtmsrd r4,1 of 0xFFFFFFFF: msr %X (EE and IR) and the global lock released (any register "
+              "but r13), the ISA %X (EE and RI), the lock's state not an MSR bit\n",
+              c.msr, 0x8002u);
 }
 
 }  // namespace
@@ -519,14 +602,18 @@ int main() {
       if (c.r4 == Case::kCount) input.r4.u64 = 1 + s % 63;
       DrawFloats(input, c.floats, s);
       Ctx translated = input, expected = input;
+      ResetHooks(s);
       RunFrom([&](Ctx& x) { c.translated(x, translated_memory); }, translated);
+      const uint64_t translated_hooks = g_hook_trace;
+      ResetHooks(s);
       RunFrom([&](Ctx& x) { c.expected(x, expected_memory); }, expected);
       const std::string registers = Differences(translated, expected);
       uint32_t where = 0;
       const bool memory = MemoryDiffers(translated_space, expected_space, &where);
-      if ((!registers.empty() || memory) && failed++ < 3) {
-        std::printf("FAILED %s state %u:%s%s\n", c.name, s, registers.c_str(),
-                    memory ? (" memory at " + std::to_string(where)).c_str() : "");
+      const bool hooks = translated_hooks != g_hook_trace;
+      if ((!registers.empty() || memory || hooks) && failed++ < 3) {
+        std::printf("FAILED %s state %u:%s%s%s\n", c.name, s, registers.c_str(),
+                    memory ? (" memory at " + std::to_string(where)).c_str() : "", hooks ? " runtime hooks" : "");
       }
       translated_space.Reset();
       expected_space.Reset();

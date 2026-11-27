@@ -1,0 +1,22 @@
+11295 sites
+mutant 0 line 2380: 0 -> 1: caught | ctx.cr6.compare<int32_t>(ctx.r11.s32, 0, ctx.xer);
+mutant 1 line 3504: 2 -> 3: MISSED | ctx.r11.s64 = ctx.r10.s64 + 2;
+mutant 2 line 3319: 12 -> 13: caught | ctx.r11.u64 = Load32(base, ctx.r31.u32 + 12u);
+mutant 3 line 12616: 27 -> 28: MISSED | ctx.r9.u64 = std::rotl(uint64_t(ctx.r10.u32) | (uint64_t(ctx.r10.u32) << 32), 27) & 0x7FFFFFFull;
+mutant 4 line 6032: 144 -> 145: caught | ea = ctx.r1.u32 - 144u;
+mutant 5 line 23589: 321 -> 322: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 321);
+mutant 6 line 11065: 0 -> 1: MISSED | ctx.cr0.compare<int32_t>(ctx.r10.s32, 0, ctx.xer);
+mutant 7 line 8838: 96 -> 97: caught | ctx.r1.s64 = ctx.r1.s64 + 96;
+mutant 8 line 21075: 96 -> 97: caught | ctx.cr6.compare<uint32_t>(ctx.r10.u32, 96, ctx.xer);
+mutant 9 line 7422: 9 -> 10: caught | ctx.cr6.compare<int32_t>(ctx.r11.s32, 9, ctx.xer);
+mutant 10 line 21110: 106 -> 107: MISSED | ctx.cr6.compare<uint32_t>(ctx.r10.u32, 106, ctx.xer);
+mutant 11 line 1829: 8 -> 9: caught | ctx.r12.u64 = Load32(base, ctx.r1.u32 - 8u);
+mutant 12 line 20211: 140 -> 141: caught | Store32(base, ctx.r3.u32 + 140u, ctx.r11.u32);
+mutant 13 line 24014: 4 -> 5: MISSED | ctx.r30.s64 = ctx.r11.s64 + 4;
+mutant 14 line 5669: 60 -> 61: caught | ctx.r11.u64 = Load32(base, ctx.r3.u32 + 60u);
+mutant 15 line 14972: 2 -> 3: MISSED | ctx.r9.u64 = std::rotl(uint64_t(ctx.r9.u32) | (uint64_t(ctx.r9.u32) << 32), 2) & 0xFFFFFFFCull;
+mutant 16 line 22332: 0 -> 1: MISSED | if (ctx.ctr.u32 != 0) goto loc_82E76218;
+mutant 17 line 13757: 23316 -> 23317: MISSED | ctx.r11.u64 = Load32(base, ctx.r30.u32 - 23316u);
+mutant 18 line 17737: 112 -> 113: MISSED | ctx.r10.s64 = ctx.r1.s64 + 112;
+mutant 19 line 12966: 0 -> 1: caught | ctx.r4.s64 = 0;
+mutants: 11 of 20 caught

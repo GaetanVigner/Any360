@@ -47,6 +47,7 @@ usage: python -I tools/ppc_model.py [--native] [--promote <label>]... [--promote
            layer/xdk/include/any360/xdk/xaudio_reverb_reference.h 82A4DCF0
 """
 import glob
+import json
 import re
 import sys
 from pathlib import Path
@@ -102,6 +103,10 @@ SUBSTITUTIONS = [
     (r'\bREX_STORE_U(8|16|32|64)\(', r'Store\1(base, '),
     (r'\bREX_RAW_ADDR\(', 'Raw(base, '),
     (r'\bREX_CALL_INDIRECT_FUNC\(', 'ANY360_CPU_CALL_INDIRECT(ctx, base, '),
+    (r'\bREX_(CHECK|ENTER|LEAVE)_GLOBAL_LOCK\(\)', r'ANY360_CPU_\1_GLOBAL_LOCK()'),
+    (r'\bREX_QUERY_TIMEBASE\(\)', 'ANY360_CPU_QUERY_TIMEBASE()'),
+    (r'\bppc_trap\(ctx, base, ', 'ANY360_CPU_TRAP(ctx, base, '),
+    (r'\b__imp__(?!sub_)(\w+)\(ctx, base\)', lambda m: import_call(m.group(1))),
     (r'(?:\brex::ppc::)?\bsimde_mm_vmaddfp\(', 'Vmaddfp('),
     (r'\bsimde_mm_shuffle_epi8\(', 'ShuffleEpi8('),
     (r'\bsimde__m128i\b', '__m128i'),
@@ -846,7 +851,31 @@ def promote_memory(body, label, slots_written):
     return '\n'.join(new), declared, stats
 
 
-UNSUPPORTED = re.compile(r'\b(REX_MM_|PPC_CALL_INDIRECT|__imp__|rex::(?!ppc::simde_mm_vmaddfp)|REX_LOAD_STRING|simde_mm_v(?!maddfp))')
+UNSUPPORTED = re.compile(r'\b(REX_MM_|PPC_CALL_INDIRECT|__imp__(?!sub_)(?!\w+\(ctx, base\))|'
+                         r'rex::(?!ppc::simde_mm_vmaddfp)|REX_LOAD_STRING|simde_mm_v(?!maddfp))')
+IMPORT = re.compile(r'\b__imp__(?!sub_)(\w+)\(ctx, base\)')
+_EXPORTS = {}
+
+
+def exports():
+    """{name: (library, ordinal)} of the system calls db/system_calls.json knows by ordinal."""
+    if not _EXPORTS:
+        rows = json.loads((Path(__file__).resolve().parent.parent / 'db' / 'system_calls.json').read_text(encoding='utf-8'))
+        _EXPORTS.update({r['name']: (r['library'], r['ordinal']) for r in rows if r['ordinal'] is not None})
+    return _EXPORTS
+
+
+def import_call(name):
+    """The recompiled code's call to an import, __imp__<name>(ctx, base), as ANY360_CPU_CALL_IMPORT(ctx, base, library,
+    ordinal): the export's library and ordinal from db/system_calls.json."""
+    library, ordinal = exports()[name]
+    return 'ANY360_CPU_CALL_IMPORT(ctx, base, %s, %d)' % (library, ordinal)
+
+
+def unsupported(line):
+    """Whether a statement of the recompiled code is one the model does not take: an instruction it leaves out, or a
+    call to an import the database does not know by ordinal."""
+    return bool(UNSUPPORTED.search(line)) or any(name not in exports() for name in IMPORT.findall(line))
 
 
 def functions(generated):
@@ -906,7 +935,7 @@ def main():
     for address in order:
         body = found[address]
         for line in body.splitlines():
-            if not line.strip().startswith('//') and UNSUPPORTED.search(line):
+            if not line.strip().startswith('//') and unsupported(line):
                 sys.exit('sub_%s: not supported yet: %s' % (address, line.strip()))
         for pattern, replacement in SUBSTITUTIONS:
             body = re.sub(pattern, replacement, body, flags=re.M)

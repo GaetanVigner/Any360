@@ -1,0 +1,12 @@
+mirrorsedge before (no hooks, no imports) 15,644 of 53,832 (29.1%), instructions 13.9%
+mirrorsedge hooks only 15,652 of 53,832 (29.1%), instructions 13.9%
+mirrorsedge imports only 16,256 of 53,832 (30.2%), instructions 14.7%
+mirrorsedge hooks + imports (this batch) 16,272 of 53,832 (30.2%), instructions 14.7%
+mirrorsedge this batch + lwarx/stwcx assumed 16,330 of 53,832 (30.3%), instructions 14.7%
+mirrorsedge lwarx/stwcx assumed, no hooks/imports 15,644 of 53,832 (29.1%), instructions 13.9%
+crackdown before (no hooks, no imports) 11,567 of 41,219 (28.1%), instructions 10.6%
+crackdown hooks only 11,578 of 41,219 (28.1%), instructions 10.6%
+crackdown imports only 12,133 of 41,219 (29.4%), instructions 11.4%
+crackdown hooks + imports (this batch) 12,156 of 41,219 (29.5%), instructions 11.4%
+crackdown this batch + lwarx/stwcx assumed 12,184 of 41,219 (29.6%), instructions 11.4%
+crackdown lwarx/stwcx assumed, no hooks/imports 11,567 of 41,219 (28.1%), instructions 10.6%

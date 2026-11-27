@@ -1,0 +1,22 @@
+85 sites
+mutant 0 line 7563: 3 -> 4: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 3);
+mutant 1 line 11021: 204 -> 205: MISSED | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 204);
+mutant 2 line 10930: 186 -> 187: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 186);
+mutant 3 line 23553: 293 -> 294: MISSED | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 293);
+mutant 4 line 12061: 204 -> 205: MISSED | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 204);
+mutant 5 line 15262: 405 -> 406: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 405);
+mutant 6 line 12937: 309 -> 310: MISSED | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 309);
+mutant 7 line 24161: 321 -> 322: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 321);
+mutant 8 line 12218: 83 -> 84: MISSED | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 83);
+mutant 9 line 7057: 293 -> 294: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 293);
+mutant 10 line 24097: 304 -> 305: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 304);
+mutant 11 line 11899: 204 -> 205: MISSED | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 204);
+mutant 12 line 23732: 293 -> 294: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 293);
+mutant 13 line 23604: 304 -> 305: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 304);
+mutant 14 line 23974: 321 -> 322: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 321);
+mutant 15 line 23566: 304 -> 305: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 304);
+mutant 16 line 23742: 304 -> 305: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 304);
+mutant 17 line 23947: 304 -> 305: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 304);
+mutant 18 line 13181: 319 -> 320: MISSED | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 319);
+mutant 19 line 24130: 340 -> 341: caught | ANY360_CPU_CALL_IMPORT(ctx, base, xboxkrnl, 340);
+mutants: 13 of 20 caught

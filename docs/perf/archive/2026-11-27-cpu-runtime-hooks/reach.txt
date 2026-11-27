@@ -1,0 +1,15 @@
+11021 NOT reached | inline void sub_829FD938(Ctx& ctx, const Memory& base) {
+23553 NOT reached | inline void sub_82371D00(Ctx& ctx, const Memory& base) {
+12061 NOT reached | inline void sub_829FE898(Ctx& ctx, const Memory& base) {
+12937 NOT reached | inline void sub_82A01290(Ctx& ctx, const Memory& base) {
+12218 NOT reached | inline void sub_829FF3E8(Ctx& ctx, const Memory& base) {
+11899 NOT reached | inline void sub_829FE730(Ctx& ctx, const Memory& base) {
+3504 NOT reached | inline void sub_823625A0(Ctx& ctx, const Memory& base) {
+12616 NOT reached | inline void sub_829FF3E8(Ctx& ctx, const Memory& base) {
+11065 NOT reached | inline void sub_829FD938(Ctx& ctx, const Memory& base) {
+21110 reached | inline void sub_82D6EC50(Ctx& ctx, const Memory& base) {
+24014 reached | inline void sub_823A2A18(Ctx& ctx, const Memory& base) {
+14972 NOT reached | inline void sub_82AF8CF8(Ctx& ctx, const Memory& base) {
+22332 NOT reached | inline void sub_82E761E8(Ctx& ctx, const Memory& base) {
+13757 NOT reached | inline void sub_82A2A450(Ctx& ctx, const Memory& base) {
+17737 NOT reached | inline void sub_82BD6580(Ctx& ctx, const Memory& base) {

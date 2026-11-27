@@ -50,7 +50,7 @@ Counted apart from "ready" and from what remains:
 
 1842 not native, 352 used by a known title. Owner: this toolkit: an Any360 translator from the XEX's PowerPC words (layer/cpu).
 
-Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 117 of them (state `translated`), 96.9% of the occurrences. A function is translated only when all its instructions and callees are, a smaller share of the titles' code (CPU.md gives it by title). No title runs translated code yet, so none is native.
+Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 125 of them (state `translated`), 97.0% of the occurrences. A function is translated only when all its instructions and callees are, a smaller share of the titles' code (CPU.md gives it by title). No title runs translated code yet, so none is native.
 
 | rank | unit | family | state | use | share | cumulative | source | by title |
 |---:|---|---|---|---:|---:|---:|---|---|
@@ -166,8 +166,8 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 117 of 
 | 110 | vrlimi128 | VMX / VMX128 | reference | 3,111 | 0.03% | 99.0% | static occurrences | codbo 72, crackdown 1,692, mirrorsedge 294, simpsons 1,053 |
 | 111 | divw | integer | reference | 2,914 | 0.03% | 99.0% | static occurrences | codbo 697, crackdown 284, mirrorsedge 1,173, simpsons 760 |
 | 112 | divwu | integer | reference | 2,860 | 0.03% | 99.0% | static occurrences | codbo 328, crackdown 577, mirrorsedge 736, simpsons 1,219 |
-| 113 | twllei | branch / trap | reference | 2,621 | 0.03% | 99.0% | static occurrences | codbo 129, crackdown 646, mirrorsedge 764, simpsons 1,082 |
-| 114 | mtmsrd | system | reference | 2,521 | 0.02% | 99.1% | static occurrences | codbo 1,520, crackdown 213, mirrorsedge 465, simpsons 323 |
+| 113 | twllei | branch / trap | reference, translated (not bound) | 2,621 | 0.03% | 99.0% | static occurrences | codbo 129, crackdown 646, mirrorsedge 764, simpsons 1,082 |
+| 114 | mtmsrd | system | reference, translated (not bound) | 2,521 | 0.02% | 99.1% | static occurrences | codbo 1,520, crackdown 213, mirrorsedge 465, simpsons 323 |
 | 115 | vspltw128 | VMX / VMX128 | reference | 2,382 | 0.02% | 99.1% | static occurrences | codbo 692, crackdown 231, mirrorsedge 685, simpsons 774 |
 | 116 | vcfsx | VMX / VMX128 | reference | 2,359 | 0.02% | 99.1% | static occurrences | crackdown 933, mirrorsedge 15, simpsons 1,411 |
 | 117 | fmul | floating point | reference, translated (not bound) | 2,346 | 0.02% | 99.1% | static occurrences | codbo 286, crackdown 517, mirrorsedge 821, simpsons 722 |
@@ -191,10 +191,10 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 117 of 
 | 135 | lvlx128 | VMX / VMX128 | reference | 1,390 | 0.01% | 99.5% | static occurrences | codbo 639, crackdown 36, mirrorsedge 711, simpsons 4 |
 | 136 | rldicl | integer | reference, translated (not bound) | 1,379 | 0.01% | 99.5% | static occurrences | codbo 355, crackdown 799, mirrorsedge 115, simpsons 110 |
 | 137 | vsubfp128 | VMX / VMX128 | reference | 1,338 | 0.01% | 99.5% | static occurrences | codbo 274, crackdown 338, mirrorsedge 250, simpsons 476 |
-| 138 | mftb | system | reference | 1,286 | 0.01% | 99.5% | static occurrences | codbo 26, crackdown 576, mirrorsedge 17, simpsons 667 |
+| 138 | mftb | system | reference, translated (not bound) | 1,286 | 0.01% | 99.5% | static occurrences | codbo 26, crackdown 576, mirrorsedge 17, simpsons 667 |
 | 139 | stwcx. | load / store / cache | reference | 1,284 | 0.01% | 99.5% | static occurrences | codbo 741, crackdown 111, mirrorsedge 261, simpsons 171 |
 | 140 | vcsxwfp128 | VMX / VMX128 | reference | 1,207 | 0.01% | 99.5% | static occurrences | codbo 711, crackdown 77, mirrorsedge 396, simpsons 23 |
-| 141 | mfmsr | system | reference | 1,135 | 0.01% | 99.5% | static occurrences | codbo 690, crackdown 98, mirrorsedge 199, simpsons 148 |
+| 141 | mfmsr | system | reference, translated (not bound) | 1,135 | 0.01% | 99.5% | static occurrences | codbo 690, crackdown 98, mirrorsedge 199, simpsons 148 |
 | 142 | vperm128 | VMX / VMX128 | reference | 1,110 | 0.01% | 99.5% | static occurrences | codbo 462, crackdown 21, mirrorsedge 473, simpsons 154 |
 | 143 | stvlx128 | VMX / VMX128 | reference | 1,105 | 0.01% | 99.6% | static occurrences | codbo 416, crackdown 1, mirrorsedge 396, simpsons 292 |
 | 144 | lwarx | load / store / cache | reference | 1,081 | 0.01% | 99.6% | static occurrences | codbo 643, crackdown 96, mirrorsedge 196, simpsons 146 |
@@ -219,7 +219,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 117 of 
 | 163 | cmpd | compare / CR | reference, translated (not bound) | 618 | 0.01% | 99.7% | static occurrences | codbo 123, crackdown 103, mirrorsedge 186, simpsons 206 |
 | 164 | vupkhsb128 | VMX / VMX128 | reference | 613 | 0.01% | 99.7% | static occurrences | codbo 359, mirrorsedge 254 |
 | 165 | stvewx128 | VMX / VMX128 | reference | 610 | 0.01% | 99.7% | static occurrences | codbo 283, crackdown 3, mirrorsedge 324 |
-| 166 | twlgei | branch / trap | reference | 604 | 0.01% | 99.7% | static occurrences | codbo 18, crackdown 170, mirrorsedge 246, simpsons 170 |
+| 166 | twlgei | branch / trap | reference, translated (not bound) | 604 | 0.01% | 99.7% | static occurrences | codbo 18, crackdown 170, mirrorsedge 246, simpsons 170 |
 | 167 | vcmpgtfp | VMX / VMX128 | reference | 603 | 0.01% | 99.7% | static occurrences | crackdown 92, mirrorsedge 312, simpsons 199 |
 | 168 | fmadd | floating point | reference, translated (not bound) | 587 | 0.01% | 99.7% | static occurrences | codbo 101, crackdown 105, mirrorsedge 233, simpsons 148 |
 | 169 | vand | VMX / VMX128 | reference | 542 | 0.01% | 99.7% | static occurrences | crackdown 166, mirrorsedge 44, simpsons 332 |
@@ -227,7 +227,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 117 of 
 | 171 | vspltisw128 | VMX / VMX128 | reference | 534 | 0.01% | 99.8% | static occurrences | codbo 237, crackdown 100, mirrorsedge 168, simpsons 29 |
 | 172 | cmpdi | compare / CR | reference, translated (not bound) | 532 | 0.01% | 99.8% | static occurrences | codbo 82, crackdown 103, mirrorsedge 161, simpsons 186 |
 | 173 | sraw | integer | reference | 528 | 0.01% | 99.8% | static occurrences | codbo 150, crackdown 92, mirrorsedge 93, simpsons 193 |
-| 174 | twi | branch / trap | reference | 526 | 0.01% | 99.8% | static occurrences | codbo 12, crackdown 16, mirrorsedge 7, simpsons 491 |
+| 174 | twi | branch / trap | reference, translated (not bound) | 526 | 0.01% | 99.8% | static occurrences | codbo 12, crackdown 16, mirrorsedge 7, simpsons 491 |
 | 175 | lfdx | floating point | reference | 503 | 0.00% | 99.8% | static occurrences | codbo 28, crackdown 86, mirrorsedge 180, simpsons 209 |
 | 176 | vctsxs | VMX / VMX128 | reference | 502 | 0.00% | 99.8% | static occurrences | codbo 2, crackdown 84, simpsons 416 |
 | 177 | vmaddfp128 | VMX / VMX128 | reference | 494 | 0.00% | 99.8% | static occurrences | codbo 18, crackdown 148, mirrorsedge 67, simpsons 261 |
@@ -307,7 +307,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 117 of 
 | 251 | xoris | integer | reference | 104 | 0.00% | 100.0% | static occurrences | codbo 26, crackdown 19, mirrorsedge 25, simpsons 34 |
 | 252 | stdcx. | load / store / cache | reference | 102 | 0.00% | 100.0% | static occurrences | codbo 89, crackdown 4, mirrorsedge 5, simpsons 4 |
 | 253 | stvrx128 | VMX / VMX128 | reference | 101 | 0.00% | 100.0% | static occurrences | codbo 60, crackdown 1, mirrorsedge 40 |
-| 254 | tdllei | branch / trap | reference | 98 | 0.00% | 100.0% | static occurrences | codbo 21, crackdown 20, mirrorsedge 25, simpsons 32 |
+| 254 | tdllei | branch / trap | reference, translated (not bound) | 98 | 0.00% | 100.0% | static occurrences | codbo 21, crackdown 20, mirrorsedge 25, simpsons 32 |
 | 255 | ldu | load / store / cache | reference | 95 | 0.00% | 100.0% | static occurrences | codbo 82, crackdown 5, mirrorsedge 3, simpsons 5 |
 | 256 | vupklsb | VMX / VMX128 | reference | 91 | 0.00% | 100.0% | static occurrences | crackdown 30, simpsons 61 |
 | 257 | orc | integer | reference | 89 | 0.00% | 100.0% | static occurrences | codbo 14, crackdown 18, mirrorsedge 37, simpsons 20 |
@@ -344,7 +344,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 117 of 
 | 288 | rotldi | integer | reference, translated (not bound) | 28 | 0.00% | 100.0% | static occurrences | codbo 8, crackdown 5, mirrorsedge 11, simpsons 4 |
 | 289 | lwax | load / store / cache | reference | 27 | 0.00% | 100.0% | static occurrences | codbo 2, crackdown 8, mirrorsedge 7, simpsons 10 |
 | 290 | stwbrx | load / store / cache | reference | 27 | 0.00% | 100.0% | static occurrences | codbo 7, crackdown 5, mirrorsedge 5, simpsons 10 |
-| 291 | tdlgei | branch / trap | reference | 26 | 0.00% | 100.0% | static occurrences | codbo 8, crackdown 5, mirrorsedge 10, simpsons 3 |
+| 291 | tdlgei | branch / trap | reference, translated (not bound) | 26 | 0.00% | 100.0% | static occurrences | codbo 8, crackdown 5, mirrorsedge 10, simpsons 3 |
 | 292 | vlogefp | VMX / VMX128 | reference | 24 | 0.00% | 100.0% | static occurrences | crackdown 4, simpsons 20 |
 | 293 | subfze | integer | reference | 23 | 0.00% | 100.0% | static occurrences | codbo 23 |
 | 294 | addc | integer | reference | 22 | 0.00% | 100.0% | static occurrences | codbo 22 |
@@ -407,7 +407,7 @@ Any360's translator (`tools/ppc_translate.py`, [CPU.md](CPU.md)) decodes 117 of 
 | 351 | stfsux | floating point | reference | 1 | 0.00% | 100.0% | static occurrences | codbo 1 |
 | 352 | vsraw128 | VMX / VMX128 | reference | 1 | 0.00% | 100.0% | static occurrences | mirrorsedge 1 |
 
-Not used by any known title (1490), by family and state: integer (missing) 551, system (missing) 385, branch / trap (missing) 202, load / store / cache (missing) 105, VMX / VMX128 (reference) 59, floating point (missing) 51, branch / trap (reference) 50, VMX / VMX128 (missing) 42, compare / CR (missing) 9, integer (reference) 8, compare / CR (reference) 8, load / store / cache (reference) 7, floating point (reference) 5, system (reference) 5, load / store / cache (reference, translated (not bound)) 1, system (reference, translated (not bound)) 1, integer (reference, translated (not bound)) 1.
+Not used by any known title (1490), by family and state: integer (missing) 551, system (missing) 385, branch / trap (missing) 202, load / store / cache (missing) 105, VMX / VMX128 (reference) 59, floating point (missing) 51, branch / trap (reference) 47, VMX / VMX128 (missing) 42, compare / CR (missing) 9, integer (reference) 8, compare / CR (reference) 8, load / store / cache (reference) 7, floating point (reference) 5, system (reference) 4, branch / trap (reference, translated (not bound)) 3, system (reference, translated (not bound)) 2, load / store / cache (reference, translated (not bound)) 1, integer (reference, translated (not bound)) 1.
 The full list is in db/roadmap.json.
 
 ## XDK library functions

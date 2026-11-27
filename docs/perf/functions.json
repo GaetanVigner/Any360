@@ -216,6 +216,18 @@
 "first":"2026-11-26-cpu-translator-slice1"
 },
 {
+"function":"CPU translation (mirrorsedge)",
+"measure":"319 functions (10,661 instructions), total a call of each",
+"ns":31478.2,
+"bytes":0.0,
+"allocs":0.0,
+"versus":"reference recompilation",
+"versus_ns":28169.6,
+"speed":0.8948923381896041,
+"archive":"2026-11-27-cpu-runtime-hooks",
+"first":"2026-11-27-cpu-runtime-hooks"
+},
+{
 "function":"D3DResource GetType",
 "measure":"D3D native against the title",
 "ns":5.0,
