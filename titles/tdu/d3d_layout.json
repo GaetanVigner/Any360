@@ -1,0 +1,772 @@
+{
+ "_comment": "D3dLayout of tdu (any360::xdk::D3dLayout), read by tools/d3d_layout_map.py from the functions of its D3D runtime paired with those of crackdown (whose values are the defaults). unknown: no evidence; the natives that read those fields are not bound in this title.",
+ "reference": "crackdown",
+ "fields": {
+  "state_dirty": {
+   "value": 16,
+   "evidence": "121 of 143 pairings",
+   "functions": [
+    "sub_82665858",
+    "sub_82665A08",
+    "sub_82665B78",
+    "sub_82665BE8"
+   ],
+   "reference": 16
+  },
+  "constant_dirty": {
+   "value": 32,
+   "evidence": "67 of 75 pairings",
+   "functions": [
+    "sub_82666248",
+    "sub_82666310",
+    "sub_826663E8",
+    "sub_82666F08"
+   ],
+   "reference": 32
+  },
+  "blend_control": {
+   "value": 11584,
+   "evidence": "7 of 7 pairings",
+   "functions": [
+    "sub_82665858",
+    "sub_82665A08",
+    "sub_82665B78",
+    "sub_82665BE8"
+   ],
+   "reference": 11568
+  },
+  "blend_flags": {
+   "value": 11588,
+   "evidence": "6 of 6 pairings",
+   "functions": [
+    "sub_82665858",
+    "sub_82665A08",
+    "sub_82665B78",
+    "sub_82665BE8"
+   ],
+   "reference": 11572
+  },
+  "target_blend[0]": {
+   "value": 10424,
+   "evidence": "4 of 4 pairings",
+   "functions": [
+    "sub_82665858",
+    "sub_82665A08",
+    "sub_82665B78",
+    "sub_82665BE8"
+   ],
+   "reference": 10424
+  },
+  "target_blend[1]": {
+   "value": 10456,
+   "evidence": "4 of 4 pairings",
+   "functions": [
+    "sub_82665858",
+    "sub_82665A08",
+    "sub_82665B78",
+    "sub_82665BE8"
+   ],
+   "reference": 10456
+  },
+  "target_blend[2]": {
+   "value": 10460,
+   "evidence": "4 of 4 pairings",
+   "functions": [
+    "sub_82665858",
+    "sub_82665A08",
+    "sub_82665B78",
+    "sub_82665BE8"
+   ],
+   "reference": 10460
+  },
+  "target_blend[3]": {
+   "value": 10464,
+   "evidence": "4 of 4 pairings",
+   "functions": [
+    "sub_82665858",
+    "sub_82665A08",
+    "sub_82665B78",
+    "sub_82665BE8"
+   ],
+   "reference": 10464
+  },
+  "float_constant_base[0]": {
+   "value": 112,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_826823F0",
+    "sub_82683458"
+   ],
+   "reference": 112
+  },
+  "float_dirty[0]": {
+   "value": 0,
+   "evidence": "487 of 498 pairings",
+   "functions": [
+    "sub_82665460",
+    "sub_82667EA0",
+    "sub_82668050",
+    "sub_82668368"
+   ],
+   "reference": 0
+  },
+  "float_dirty[1]": {
+   "value": 8,
+   "evidence": "142 of 142 pairings",
+   "functions": [
+    "sub_82665460",
+    "sub_82667EA0",
+    "sub_82668050",
+    "sub_82668368"
+   ],
+   "reference": 8
+  },
+  "blend_extent": {
+   "value": 11592,
+   "evidence": "segment +16 (fields 11572 and 11580 of the reference)",
+   "reference": 11576
+  },
+  "fetch_constants": {
+   "value": 1024,
+   "evidence": "segment +0 (fields 836 and 1040 of the reference)",
+   "reference": 1024
+  },
+  "fetch_dirty": {
+   "value": 24,
+   "evidence": "73 of 112 pairings",
+   "functions": [
+    "sub_826664F8",
+    "sub_826665B0",
+    "sub_82667EA0",
+    "sub_826685F8"
+   ],
+   "reference": 24
+  },
+  "stream_bound": {
+   "value": 12196,
+   "evidence": "segment +16 (fields 12176 and 12248 of the reference)",
+   "reference": 12180
+  },
+  "texture_mip_floor": {
+   "value": 11686,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82667750",
+    "sub_82673358"
+   ],
+   "reference": 11670
+  },
+  "texture_mip_ceiling": {
+   "value": 11712,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_826677D0",
+    "sub_82673358"
+   ],
+   "reference": 11696
+  },
+  "stream_stride": {
+   "value": 12264,
+   "evidence": "7 of 7 pairings",
+   "functions": [
+    "sub_82667EA0",
+    "sub_82676778",
+    "sub_82676CA8"
+   ],
+   "reference": 12248
+  },
+  "shader_stream_stride": {
+   "value": 11560,
+   "evidence": "3 of 3 pairings",
+   "functions": [
+    "sub_82667EA0",
+    "sub_82676778",
+    "sub_82676CA8"
+   ],
+   "reference": 11552
+  },
+  "resource_fence": {
+   "value": 10780,
+   "evidence": "18 of 18 pairings",
+   "functions": [
+    "sub_82667EA0",
+    "sub_82668050",
+    "sub_82673358",
+    "sub_82675508"
+   ],
+   "reference": 10780
+  },
+  "resource_busy_mask": {
+   "value": 10784,
+   "evidence": "4 of 4 pairings",
+   "functions": [
+    "sub_82667EA0",
+    "sub_82668050",
+    "sub_82673358",
+    "sub_82675508"
+   ],
+   "reference": 10784
+  },
+  "release_cursor": {
+   "value": 13176,
+   "evidence": "8 of 8 pairings",
+   "functions": [
+    "sub_82667EA0",
+    "sub_82668050",
+    "sub_82673358",
+    "sub_82675508"
+   ],
+   "reference": 13148
+  },
+  "release_end": {
+   "value": 13180,
+   "evidence": "4 of 4 pairings",
+   "functions": [
+    "sub_82667EA0",
+    "sub_82668050",
+    "sub_82673358",
+    "sub_82675508"
+   ],
+   "reference": 13152
+  },
+  "sampler_filter_table": {
+   "value": 2181098160,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82667318",
+    "sub_82667590"
+   ],
+   "reference": 2181996080
+  },
+  "stage_filter_index": {
+   "value": 11660,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82667318",
+    "sub_82667590"
+   ],
+   "reference": 11644
+  },
+  "stage_lod_limit": {
+   "value": 11738,
+   "evidence": "5 of 5 pairings",
+   "functions": [
+    "sub_82667318",
+    "sub_82667408",
+    "sub_826674F8"
+   ],
+   "reference": 11722
+  },
+  "vertex_declaration": {
+   "value": 12172,
+   "evidence": "4 of 4 pairings",
+   "functions": [
+    "sub_82668050",
+    "sub_826776C8",
+    "sub_826795F8"
+   ],
+   "reference": 12156
+  },
+  "shader_flags": {
+   "value": 10801,
+   "evidence": "11 of 11 pairings",
+   "functions": [
+    "sub_826737B8",
+    "sub_82675508",
+    "sub_8267FE48",
+    "sub_826805B8"
+   ],
+   "reference": 10813
+  },
+  "clip_control": {
+   "value": 10436,
+   "evidence": "4 of 4 pairings",
+   "functions": [
+    "sub_82666A50",
+    "sub_8268F290"
+   ],
+   "reference": 10436
+  },
+  "mode_control": {
+   "value": 10440,
+   "evidence": "8 of 8 pairings",
+   "functions": [
+    "sub_82666248",
+    "sub_82666310",
+    "sub_8268F290"
+   ],
+   "reference": 10440
+  },
+  "vte_control": {
+   "value": 10444,
+   "evidence": "1 of 1 pairings",
+   "functions": [
+    "sub_82666A50"
+   ],
+   "reference": 10444
+  },
+  "poly_offset": {
+   "value": 10704,
+   "evidence": "3 of 3 pairings",
+   "functions": [
+    "sub_82666248",
+    "sub_826662F0",
+    "sub_82666310"
+   ],
+   "reference": 10704
+  },
+  "zero_float": {
+   "value": 2181041540,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82666248",
+    "sub_82666310"
+   ],
+   "reference": 2181505756
+  },
+  "surfaces": {
+   "value": 12176,
+   "evidence": "9 of 9 pairings",
+   "functions": [
+    "sub_82665460",
+    "sub_82668798",
+    "sub_82668AA0",
+    "sub_82675508"
+   ],
+   "reference": 12160
+  },
+  "tiled_surfaces": {
+   "value": 12460,
+   "evidence": "6 of 6 pairings",
+   "functions": [
+    "sub_82665460",
+    "sub_82668798",
+    "sub_82668AA0",
+    "sub_82675508"
+   ],
+   "reference": 12448
+  },
+  "surface_info": {
+   "value": 10240,
+   "evidence": "3 of 3 pairings",
+   "functions": [
+    "sub_826686F0",
+    "sub_82668AA0"
+   ],
+   "reference": 10240
+  },
+  "color_info": {
+   "value": 10244,
+   "evidence": "segment +0 (fields 10240 and 10260 of the reference)",
+   "reference": 10244
+  },
+  "color_mask": {
+   "value": 10332,
+   "evidence": "5 of 7 pairings",
+   "functions": [
+    "sub_82668798"
+   ],
+   "reference": 10332
+  },
+  "depth_control": {
+   "value": 10420,
+   "evidence": "4 of 6 pairings",
+   "functions": [
+    "sub_82668AA0"
+   ],
+   "reference": 10420
+  },
+  "depth_word": {
+   "value": 10432,
+   "evidence": "6 of 6 pairings",
+   "functions": [
+    "sub_82667110",
+    "sub_82668AA0",
+    "sub_82675508"
+   ],
+   "reference": 10432
+  },
+  "color_mask_set": {
+   "value": 11596,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82668798"
+   ],
+   "reference": 11580
+  },
+  "depth_enable_set": {
+   "value": 11612,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82668AA0"
+   ],
+   "reference": 11596
+  },
+  "stencil_enable_set": {
+   "value": 11616,
+   "evidence": "2 of 3 pairings",
+   "functions": [
+    "sub_82668AA0"
+   ],
+   "reference": 11600
+  },
+  "target_as_wide": {
+   "value": 11764,
+   "evidence": "segment +16 (fields 11722 and 11842 of the reference)",
+   "reference": 11748
+  },
+  "bin_mask_set": {
+   "value": 12448,
+   "evidence": "5 of 5 pairings",
+   "functions": [
+    "sub_82668798",
+    "sub_82668AA0",
+    "sub_8267D318",
+    "sub_82683458"
+   ],
+   "reference": 12436
+  },
+  "tiling_flags": {
+   "value": 10800,
+   "evidence": "24 of 24 pairings",
+   "functions": [
+    "sub_82665460",
+    "sub_82668798",
+    "sub_82668AA0",
+    "sub_82675508"
+   ],
+   "reference": 10812
+  },
+  "depth_flags": {
+   "value": 10802,
+   "evidence": "16 of 16 pairings",
+   "functions": [
+    "sub_82668AA0",
+    "sub_82675508",
+    "sub_8267B1C0",
+    "sub_8267F7E0"
+   ],
+   "reference": 10814
+  },
+  "tiling_options": {
+   "value": 10803,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82665460",
+    "sub_82668AA0"
+   ],
+   "reference": 10815
+  },
+  "tiling_pending[0]": {
+   "value": 11857,
+   "evidence": "segment +16 (fields 11722 and 11842 of the reference)",
+   "reference": 11841
+  },
+  "tiling_pending[1]": {
+   "value": 11923,
+   "evidence": "4 of 4 pairings",
+   "functions": [
+    "sub_82676778",
+    "sub_82676CA8",
+    "sub_826772C0",
+    "sub_826776C8"
+   ],
+   "reference": 11907
+  },
+  "command_cursor": {
+   "value": 40,
+   "evidence": "78 of 108 pairings",
+   "functions": [
+    "sub_82665460",
+    "sub_826685F8",
+    "sub_82675508",
+    "sub_82676778"
+   ],
+   "reference": 48
+  },
+  "command_end": {
+   "value": 48,
+   "evidence": "30 of 34 pairings",
+   "functions": [
+    "sub_82665460",
+    "sub_82675508",
+    "sub_82676778",
+    "sub_82676CA8"
+   ],
+   "reference": 56
+  },
+  "begin_end": {
+   "value": 13092,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82676778",
+    "sub_82676CA8"
+   ],
+   "reference": 13076
+  },
+  "segment": {
+   "value": 13160,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_826805B8",
+    "sub_82683458"
+   ],
+   "reference": 13140
+  },
+  "segment_top": {
+   "value": 13524,
+   "evidence": "5 of 5 pairings",
+   "functions": [
+    "sub_8267F7E0",
+    "sub_826805B8",
+    "sub_82680CD8"
+   ],
+   "reference": 14540
+  },
+  "color_control": {
+   "value": 10428,
+   "evidence": "segment +0 (fields 10424 and 10432 of the reference)",
+   "reference": 10428
+  },
+  "blend_color": {
+   "value": 10336,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82665D18",
+    "sub_82665DB0"
+   ],
+   "reference": 10336
+  },
+  "clip_plane_flag": {
+   "value": 10292,
+   "evidence": "segment +0 (fields 10268 and 10308 of the reference)",
+   "reference": 10292
+  },
+  "index_buffer": {
+   "value": 11544,
+   "evidence": "2 of 3 pairings",
+   "functions": [
+    "sub_8266E5D8",
+    "sub_826795F8"
+   ],
+   "reference": 11540
+  },
+  "blend_byte_scale": {
+   "value": 2184903660,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82665C80",
+    "sub_82665D18"
+   ],
+   "reference": 2181493716
+  },
+  "blend_float_scale": {
+   "value": 2184903668,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82665CB8",
+    "sub_82665DB0"
+   ],
+   "reference": 2182009956
+  },
+  "blend_rounding": {
+   "value": 2181041536,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82665CB8",
+    "sub_82665DB0"
+   ],
+   "reference": 2181497980
+  },
+  "slope_scale_factor": {
+   "value": 2184904244,
+   "evidence": "2 of 2 pairings",
+   "functions": [
+    "sub_82666248",
+    "sub_826665B0"
+   ],
+   "reference": 2193262132
+  },
+  "window_scissor": {
+   "value": 10308,
+   "evidence": "4 of 4 pairings",
+   "functions": [
+    "sub_826685F8",
+    "sub_82675508",
+    "sub_82683458"
+   ],
+   "reference": 10308
+  },
+  "viewport_scale": {
+   "value": 10376,
+   "evidence": "segment +0 (fields 10372 and 10424 of the reference)",
+   "reference": 10376
+  },
+  "scissor_enable": {
+   "value": 11592,
+   "evidence": "segment +16 (fields 11572 and 11580 of the reference)",
+   "reference": 11576
+  },
+  "tile_count": {
+   "value": 12480,
+   "evidence": "4 of 4 pairings",
+   "functions": [
+    "sub_82665460",
+    "sub_82675508"
+   ],
+   "reference": 12468
+  },
+  "tile_bins": {
+   "value": 12440,
+   "evidence": "8 of 8 pairings",
+   "functions": [
+    "sub_82665460",
+    "sub_826685F8",
+    "sub_82675508",
+    "sub_82679F88"
+   ],
+   "reference": 12428
+  },
+  "sample_control": {
+   "value": 10556,
+   "evidence": "1 of 1 pairings",
+   "functions": [
+    "sub_826686F0"
+   ],
+   "reference": 10556
+  },
+  "reset_index": {
+   "value": 10328,
+   "evidence": "segment +0 (fields 10312 and 10336 of the reference)",
+   "reference": 10328
+  },
+  "wrapping": {
+   "value": 10412,
+   "evidence": "segment +0 (fields 10372 and 10424 of the reference)",
+   "reference": 10412
+  },
+  "stencil_ref_mask": {
+   "value": 10368,
+   "evidence": "segment +0 (fields 10348 and 10372 of the reference)",
+   "reference": 10368
+  },
+  "stencil_ref_mask_back": {
+   "value": 10364,
+   "evidence": "segment +0 (fields 10348 and 10372 of the reference)",
+   "reference": 10364
+  },
+  "query_device": {
+   "value": 0,
+   "evidence": "487 of 498 pairings",
+   "functions": [
+    "sub_82665460",
+    "sub_82667EA0",
+    "sub_82668050",
+    "sub_82668368"
+   ],
+   "reference": 0
+  },
+  "query_type": {
+   "value": 4,
+   "evidence": "872 of 880 pairings",
+   "functions": [
+    "sub_82665460",
+    "sub_82667B10",
+    "sub_82668368",
+    "sub_826685F8"
+   ],
+   "reference": 4
+  },
+  "query_frame": {
+   "value": 20,
+   "evidence": "29 of 35 pairings",
+   "functions": [
+    "sub_82667850",
+    "sub_82667AB8",
+    "sub_8266C250",
+    "sub_826723F0"
+   ],
+   "reference": 20
+  },
+  "query_blocks": {
+   "value": 24,
+   "evidence": "73 of 112 pairings",
+   "functions": [
+    "sub_826664F8",
+    "sub_826665B0",
+    "sub_82667EA0",
+    "sub_826685F8"
+   ],
+   "reference": 24
+  },
+  "query_block_count": {
+   "value": 144,
+   "evidence": "4 of 4 pairings",
+   "functions": [
+    "sub_82679F88",
+    "sub_826823F0"
+   ],
+   "reference": 144
+  },
+  "query_bytes": {
+   "value": 148,
+   "evidence": "3 of 3 pairings",
+   "functions": [
+    "sub_8267AA90",
+    "sub_826823F0"
+   ],
+   "reference": 148
+  },
+  "gpu_done_frame": {
+   "value": 10768,
+   "evidence": "15 of 15 pairings",
+   "functions": [
+    "sub_826737B8",
+    "sub_8267F230",
+    "sub_8267FE48",
+    "sub_826808E0"
+   ],
+   "reference": 10768
+  },
+  "query_flags": {
+   "value": 10801,
+   "evidence": "11 of 11 pairings",
+   "functions": [
+    "sub_826737B8",
+    "sub_82675508",
+    "sub_8267FE48",
+    "sub_826805B8"
+   ],
+   "reference": 10813
+  },
+  "depth_info": {
+   "value": 10248,
+   "evidence": "1 of 1 pairings",
+   "functions": [
+    "sub_82668AA0"
+   ],
+   "reference": 10248
+  }
+ },
+ "unknown": [
+  "bool_constants[0]",
+  "bool_constants[1]",
+  "int_constants[0]",
+  "int_constants[1]",
+  "float_constant_base[1]",
+  "device_bytes",
+  "vertex_fetch_last",
+  "texture_bound",
+  "pixel_shader",
+  "vertex_shader",
+  "tiling_hiz_pitch",
+  "clip_planes",
+  "viewport_set",
+  "scissor_set",
+  "tiled_size",
+  "tile_rects",
+  "tile_offsets",
+  "surface_viewport",
+  "surface_scissor"
+ ]
+}
