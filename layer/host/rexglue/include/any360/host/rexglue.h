@@ -151,7 +151,8 @@ uint64_t TileOpRuns(bool native);
 void SetVblankHz(double hz);
 // For comparison with the runtime's own GPU (the graphics not bound): its VdSwap calls counted, `log` given frames
 // per second and the slowest frame every `seconds`, as the binding's own report does. Call before the title's first
-// VdSwap; null `log`: nothing reported.
+// VdSwap; null `log`: nothing reported. any360_hitch_trace_ms and any360_profile_seconds work there as on the binding's
+// GPU: the hitch tracer on those VdSwap frames, the function profiler from any360_profile_after seconds after this call.
 #define ANY360_REXGLUE_REPORT_RUNTIME_FRAMES 1
 void ReportRuntimeFrames(std::function<void(const std::string&)> log, double seconds = 5.0);
 

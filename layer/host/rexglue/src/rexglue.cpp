@@ -1544,6 +1544,8 @@ GuestFunction ReferenceExport(const char* symbol) {
 namespace {
 std::function<void(const std::string&)> g_runtime_frames_log;
 double g_runtime_frames_seconds = 5.0;
+std::unique_ptr<diagnostics::HitchTracer> g_runtime_hitches;  // any360_hitch_trace_ms on the runtime's GPU
+std::unique_ptr<diagnostics::Profiler> g_runtime_profiler;    // any360_profile_seconds on the runtime's GPU
 
 // The process's private memory (bytes; 0 where the system does not say).
 uint64_t ProcessPrivateBytes() {
@@ -1566,6 +1568,7 @@ void CountRuntimeFrame() {
   static std::vector<float> intervals;
   static std::chrono::steady_clock::time_point since, last;
   const auto now = std::chrono::steady_clock::now();
+  if (g_runtime_hitches) g_runtime_hitches->Frame();
   if (frames++) {
     const double ms = std::chrono::duration<double, std::milli>(now - last).count();
     worst_ms = std::max(worst_ms, ms);
@@ -1660,6 +1663,13 @@ void WatchReferenceCapture(const std::string& trace_path, uint32_t frames, std::
 void ReportRuntimeFrames(std::function<void(const std::string&)> log, double seconds) {
   g_runtime_frames_log = std::move(log);
   g_runtime_frames_seconds = std::max(0.5, seconds);
+  if (const int hitch_ms = HitchTraceMs(); hitch_ms > 0 && !g_runtime_hitches) {
+    g_runtime_hitches = std::make_unique<diagnostics::HitchTracer>(double(hitch_ms), HitchTraceFolder(), 5, g_runtime_frames_log);
+  }
+  if (const int profile = ProfileSeconds(); profile > 0 && !g_runtime_profiler) {
+    g_runtime_profiler = std::make_unique<diagnostics::Profiler>(double(ProfileAfterSeconds()), double(profile),
+                                                                 HitchTraceFolder(), g_runtime_frames_log);
+  }
 }
 
 void CallGraphicsExport(const char* symbol, GuestFunction any360, PPCContext& ctx, uint8_t* base) {
