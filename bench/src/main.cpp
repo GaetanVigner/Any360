@@ -2,7 +2,7 @@
 // any360::gfx the way a recompiled title runs on them, headless or in a window, with the frame report titles give.
 //
 //   any360_bench [--scene city] [--frames N] [--warmup N] [--objects N] [--workers N] [--window] [--gpu NAME]
-//                [--any360_cpu_affinity=MASK] [--any360_gpu_device=NAME] [--sync-renderer] [--sync-pipelines] [--report-seconds S] [--json FILE] [--screenshot FILE.png]
+//                [--any360_cpu_affinity=MASK] [--any360_gpu_device=NAME] [--sync-renderer] [--sync-pipelines] [--report-seconds S] [--json FILE] [--timeout S] [--screenshot FILE.png]
 //                [--check FILE | --write-expected FILE]
 #include <algorithm>
 #include <cmath>
@@ -86,6 +86,7 @@ int main(int argc, char** argv) {
     else if (a == "--sync-pipelines") gpu_options.async_pipelines = false;
     else if (a == "--report-seconds") gpu_options.report_seconds = std::strtod(next(), nullptr);
     else if (a == "--json") json = next();
+    else if (a == "--timeout") title.timeout_seconds = std::strtod(next(), nullptr);
     else if (a == "--screenshot") screenshot = next();
     else if (a == "--check") check = next();
     else if (a == "--write-expected") write_expected = next();

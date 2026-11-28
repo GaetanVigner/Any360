@@ -26,4 +26,4 @@ foreach(_dll rexruntimerd.dll TracyClientrd.dll)
 endforeach()
 # The city scene end to end: every frame swapped, no draw failed, the title deterministic (command stream and audio
 # hashes), the CPU's texture writes seen through the write watch, the last frame against the expected picture.
-add_test(NAME any360_bench_city COMMAND any360_bench --frames 240 --check ${CMAKE_CURRENT_SOURCE_DIR}/expected/city.txt)
+add_test(NAME any360_bench_city COMMAND any360_bench --frames 240 --timeout 120 --check ${CMAKE_CURRENT_SOURCE_DIR}/expected/city.txt)

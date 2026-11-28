@@ -77,8 +77,20 @@ struct Title {
   double main_ns = 0, render_ns = 0;
   std::atomic<uint64_t> vblanks{0};
   std::vector<uint32_t> written;
+  // Where each title thread is (main, render, workers): the wait it is in, or "running".
+  std::atomic<const char*> sites[2 + kMaxWorkers] = {};
 };
 Title* g_title = nullptr;
+
+constexpr uint32_t kMainSite = 0, kRenderSite = 1, kWorkerSite = 2;
+class Site {
+ public:
+  Site(uint32_t slot, const char* what) : slot_(slot) { g_title->sites[slot_].store(what, std::memory_order_relaxed); }
+  ~Site() { g_title->sites[slot_].store("running", std::memory_order_relaxed); }
+
+ private:
+  uint32_t slot_;
+};
 bool TraceOn() {
   char* value = nullptr;
   size_t size = 0;
@@ -142,7 +154,10 @@ void WorkerThread(PPCContext& ctx, uint8_t*) {
   const uint32_t w = ctx.r3.u32, n = t.o.city.objects;
   const uint32_t begin = n * w / t.o.workers, end = n * (w + 1) / t.o.workers;
   for (;;) {
-    Call(ctx, kKeWaitForSingleObject, {kEvJobStart + 16 * w, 0, 1, 0, 0});
+    {
+      const Site site(kWorkerSite + w, "KeWaitForSingleObject(job start event)");
+      Call(ctx, kKeWaitForSingleObject, {kEvJobStart + 16 * w, 0, 1, 0, 0});
+    }
     if (t.stop.load(std::memory_order_acquire)) break;
     const uint32_t frame = t.job_frame.load(std::memory_order_acquire);
     t.city.Animate(frame, begin, end, reinterpret_cast<ObjectSlot*>(G().host(t.slots[frame & 1])));
@@ -155,12 +170,18 @@ void RenderThread(PPCContext& ctx, uint8_t*) {
   constexpr uint32_t kFrameRingDwords = 3 + 64 + 3;
   uint32_t write = 0;
   for (uint32_t frame = 0;; ++frame) {
-    Call(ctx, kKeWaitForSingleObject, {kSemQueued, 0, 1, 0, 0});
+    {
+      const Site site(kRenderSite, "KeWaitForSingleObject(frames queued semaphore)");
+      Call(ctx, kKeWaitForSingleObject, {kSemQueued, 0, 1, 0, 0});
+    }
     if (frame >= t.produced.load(std::memory_order_acquire)) break;
     Trace("render frame", frame);
     const Clock::time_point start = Clock::now();
     // The command buffer this frame reuses was last run two frames ago: wait for that frame's fence.
-    while (frame >= 2 && G().Load32(t.fence) < frame - 1) Yield(ctx);
+    {
+      const Site site(kRenderSite, "yielding until the fence of two frames ago");
+      while (frame >= 2 && G().Load32(t.fence) < frame - 1) Yield(ctx);
+    }
     const uint32_t cb = frame & 1;
     const uint32_t dwords = t.city.WriteFrame(frame, t.mem, reinterpret_cast<const ObjectSlot*>(G().host(t.slots[frame & 1])),
                                               G().host(t.command_buffers[cb]));
@@ -173,13 +194,17 @@ void RenderThread(PPCContext& ctx, uint8_t*) {
       return (read + t.ring_dwords - write - 1) % t.ring_dwords;
     };
     if (write + kFrameRingDwords > t.ring_dwords) {
+      const Site site(kRenderSite, "yielding for ring space to wrap");
       while (room() < t.ring_dwords - write) Yield(ctx);
       while (write < t.ring_dwords) G().Store32(t.ring + 4 * write++, 0x80000000u);
       write = 0;
       sys::Graphics().WriteRegister(kGpuRegisterRbWptr, 0);
     }
     const Clock::time_point waited = Clock::now();
-    while (room() < kFrameRingDwords) Yield(ctx);
+    {
+      const Site site(kRenderSite, "yielding for ring space");
+      while (room() < kFrameRingDwords) Yield(ctx);
+    }
     const Clock::time_point resumed = Clock::now();
     auto put = [&](uint32_t v) { G().Store32(t.ring + 4 * write++, v); };
     put(3u << 30 | (2u - 1) << 16 | 0x3Fu << 8);  // INDIRECT_BUFFER
@@ -200,6 +225,7 @@ void RenderThread(PPCContext& ctx, uint8_t*) {
   }
   // Every frame done on the GPU before the title ends.
   const uint32_t last = t.render_frame.load(std::memory_order_acquire);
+  const Site site(kRenderSite, "yielding until the last frame's fence");
   while (G().Load32(t.fence) < last) Yield(ctx);
 }
 
@@ -276,7 +302,10 @@ void TitleMain(PPCContext& ctx, uint8_t*) {
   for (uint32_t frame = 0; frame < t.o.frames && !t.quit.load(std::memory_order_relaxed); ++frame) {
     if (frame == t.o.warmup && t.o.on_measure) t.o.on_measure();
     Trace("main frame", frame);
-    Call(ctx, kKeWaitForSingleObject, {kSemSlots, 0, 1, 0, 0});
+    {
+      const Site site(kMainSite, "KeWaitForSingleObject(free slots semaphore)");
+      Call(ctx, kKeWaitForSingleObject, {kSemSlots, 0, 1, 0, 0});
+    }
     const Clock::time_point start = Clock::now();
     t.job_frame.store(frame, std::memory_order_release);
     for (uint32_t w = 0; w < t.o.workers; ++w) Call(ctx, kKeSetEvent, {kEvJobStart + 16 * w, 1, 0});
@@ -294,7 +323,10 @@ void TitleMain(PPCContext& ctx, uint8_t*) {
       }
     }
     const Clock::time_point waiting = Clock::now();
-    Call(ctx, kKeWaitForMultipleObjects, {t.o.workers, kDoneArray, 0, 0, 1, 0, 0, 0});
+    {
+      const Site site(kMainSite, "KeWaitForMultipleObjects(job done events)");
+      Call(ctx, kKeWaitForMultipleObjects, {t.o.workers, kDoneArray, 0, 0, 1, 0, 0, 0});
+    }
     const Clock::time_point resumed = Clock::now();
     t.produced.store(frame + 1, std::memory_order_release);
     Call(ctx, kKeReleaseSemaphore, {kSemQueued, 1, 1, 0});
@@ -305,11 +337,17 @@ void TitleMain(PPCContext& ctx, uint8_t*) {
   Call(ctx, kKeReleaseSemaphore, {kSemQueued, 1, 1, 0});
   for (uint32_t i = 0; i <= t.o.workers; ++i) {
     const uint32_t handle = G().Load32(kHandles + 4 * i);
-    Call(ctx, kNtWaitForSingleObjectEx, {handle, 1, 0, 0});
+    {
+      const Site site(kMainSite, i ? "NtWaitForSingleObjectEx(a worker thread)" : "NtWaitForSingleObjectEx(the render thread)");
+      Call(ctx, kNtWaitForSingleObjectEx, {handle, 1, 0, 0});
+    }
     Call(ctx, kNtClose, {handle});
   }
   // The audio the check hashes, mixed whatever the frame rate (a fast run ends before the audio clock reaches it).
-  while (!t.quit.load(std::memory_order_relaxed) && t.audio_frames.load(std::memory_order_acquire) < kAudioHashFrames) Yield(ctx);
+  {
+    const Site site(kMainSite, "yielding until the audio client has submitted its hashed frames");
+    while (!t.quit.load(std::memory_order_relaxed) && t.audio_frames.load(std::memory_order_acquire) < kAudioHashFrames) Yield(ctx);
+  }
   Call(ctx, kXAudioUnregisterRenderDriverClient, {G().Load32(kAudioDriver)});
   t.finished.store(true, std::memory_order_release);
 }
@@ -401,9 +439,25 @@ bool RunTitle(const TitleOptions& options, BenchGpu& gpu, TitleResult& result, s
     error = "the main thread was not created";
     return false;
   }
+  const auto started = std::chrono::steady_clock::now();
   while (!title.finished.load(std::memory_order_acquire)) {
     if (!gpu.PumpWindow()) title.quit = true;
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (options.timeout_seconds > 0 &&
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count() > options.timeout_seconds) {
+      std::printf("any360_bench: TIMEOUT after %.0f s: %u frames produced, %u kicked, fence %u, ring read %u, %llu audio frames, "
+                  "%llu frames swapped\n",
+                  options.timeout_seconds, title.produced.load(), title.render_frame.load(), title.fence ? g.Load32(title.fence) : 0,
+                  title.write_back ? g.Load32(title.write_back) : 0, (unsigned long long)title.audio_frames.load(),
+                  (unsigned long long)gpu.frames());
+      const char* names[] = {"main", "render", "worker 0", "worker 1", "worker 2", "worker 3"};
+      for (uint32_t i = 0; i < 2 + title.o.workers; ++i) {
+        const char* where = title.sites[i].load();
+        std::printf("any360_bench: TIMEOUT: %s thread: %s\n", names[i], where ? where : "not started");
+      }
+      std::fflush(stdout);
+      std::_Exit(3);
+    }
   }
   sys::Graphics().StopVblank();
   sys::Audio().Stop();

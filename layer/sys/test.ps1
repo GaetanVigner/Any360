@@ -129,7 +129,7 @@ try {
     $bench = Join-Path $BuildDir 'bench/any360_bench.exe'
     $benchExpected = Join-Path $Root 'bench/expected'
     if (Test-Path $bench) {
-        & $bench --frames 240 --check (Join-Path $benchExpected 'city.txt') | Select-String 'any360_bench: (check|scene|[0-9.]+ FPS|[0-9]+ failing)' | Out-Host
+        & $bench --frames 240 --timeout 120 --check (Join-Path $benchExpected 'city.txt') | Select-String 'any360_bench: (check|scene|[0-9.]+ FPS|[0-9]+ failing|TIMEOUT)' | Out-Host
         if ($LASTEXITCODE) { throw "any360_bench city failed ($LASTEXITCODE)" }
     }
     $capture = Join-Path $BuildDir 'gfx/gfx_render_tests.a360cap'
@@ -155,7 +155,7 @@ try {
                     if ($errors.Count) { ($out | Select-String -SimpleMatch 'VUID' | Select-Object -First 5) | Out-Host; throw "$($test): validation errors on '$gpu'" }
                 }
                 if (Test-Path $bench) {
-                    $bench_args = @('--frames', '120', '--sync-pipelines'); if ($gpu) { $bench_args = @($gpu) + $bench_args }
+                    $bench_args = @('--frames', '120', '--sync-pipelines', '--timeout', '240'); if ($gpu) { $bench_args = @($gpu) + $bench_args }
                     $out = & $bench @bench_args 2>&1 | ForEach-Object { "$_" }
                     if ($LASTEXITCODE) { $out | Out-Host; throw "any360_bench failed under validation on '$gpu' ($LASTEXITCODE)" }
                     $errors = @($out | Select-String -SimpleMatch 'Validation Error')

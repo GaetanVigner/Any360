@@ -19,6 +19,7 @@ struct TitleOptions {
   uint32_t warmup = 120;  // frames before the measure starts
   uint32_t workers = 2;
   double vblank_hz = 60.0;
+  double timeout_seconds = 0;  // > 0: the run ends with a report of where each title thread waits
   std::function<void()> on_measure;
   std::function<void(const std::string&)> log;
 };
