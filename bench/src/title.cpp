@@ -71,6 +71,7 @@ struct Title {
   std::atomic<uint32_t> job_frame{0}, render_frame{0}, produced{0};
   std::atomic<bool> stop{false}, quit{false}, finished{false};
   uint64_t audio_sample = 0;
+  std::atomic<uint64_t> audio_frames{0};  // frames the audio client submitted
   std::atomic<uint64_t> calls{0};
   uint64_t pm4_hash = 0xCBF29CE484222325ull, pm4_dwords = 0;
   double main_ns = 0, render_ns = 0;
@@ -207,6 +208,7 @@ void AudioCallback(PPCContext& ctx, uint8_t*) {
   City::Mix(t.audio_sample, G().host(kAudioBuffer));
   t.audio_sample += 256;
   Call(ctx, kXAudioSubmitRenderDriverFrame, {G().Load32(kAudioDriver), kAudioBuffer});
+  t.audio_frames.fetch_add(1, std::memory_order_release);
 }
 
 void GraphicsInterrupt(PPCContext&, uint8_t*) { g_title->vblanks.fetch_add(1, std::memory_order_relaxed); }
@@ -306,6 +308,8 @@ void TitleMain(PPCContext& ctx, uint8_t*) {
     Call(ctx, kNtWaitForSingleObjectEx, {handle, 1, 0, 0});
     Call(ctx, kNtClose, {handle});
   }
+  // The audio the check hashes, mixed whatever the frame rate (a fast run ends before the audio clock reaches it).
+  while (!t.quit.load(std::memory_order_relaxed) && t.audio_frames.load(std::memory_order_acquire) < kAudioHashFrames) Yield(ctx);
   Call(ctx, kXAudioUnregisterRenderDriverClient, {G().Load32(kAudioDriver)});
   t.finished.store(true, std::memory_order_release);
 }
