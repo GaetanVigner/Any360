@@ -1,0 +1,61 @@
+﻿# any360_bench --frames 1200, whole, alternating before/after, 6 launches each (2026-11-28T11:42:19)
+[before run 0]
+any360_bench: 466.1 FPS, median 2.05 ms, 10% low 411.3 FPS, 1% low 318.8 FPS, slowest 3.7 ms, 0 over 16.7 ms
+any360_bench: CPU 292% of a core, 18% of the 16 allowed (mask 0xFFFF); GPU 8% (system), 7% (batches); 1.60 FPS per CPU%, 59.85 FPS per GPU%; private 980 MB (peak 980, 755 before the title)
+any360_bench: ms a frame: title main 0.666, title render 2.154, command processor 0.431, renderer thread 2.147, draws 2.003 (textures 0.129, shaders 0.000, pipelines 0.032, guest memory 0.000, submit 0.437), resolves 0.025, swaps 0.000, GPU 0.149
+any360_bench: a frame: 2484 draws, 2.0 resolves, 1.02 texture uploads, 0.00 pipelines, 9583 system calls, 64.0 watched writes, 72487 PM4 dwords; 486 audio frames, 156 vertical blanks, 0 draws failed
+[after run 0]
+any360_bench: 550.0 FPS, median 1.25 ms, 10% low 474.3 FPS, 1% low 109.9 FPS, slowest 149.9 ms, 5 over 16.7 ms
+any360_bench: CPU 278% of a core, 17% of the 16 allowed (mask 0xFFFF); GPU 9% (system), 8% (batches); 1.98 FPS per CPU%, 61.77 FPS per GPU%; private 1008 MB (peak 1008, 754 before the title)
+any360_bench: ms a frame: title main 0.682, title render 1.764, command processor 0.454, renderer thread 1.501, draws 1.338 (textures 0.136, shaders 0.000, pipelines 0.000, guest memory 0.000, submit 0.523), resolves 0.027, swaps 0.000, GPU 0.149
+any360_bench: a frame: 2484 draws, 2.0 resolves, 1.02 texture uploads, 0.00 pipelines, 6123 system calls, 63.9 watched writes, 72487 PM4 dwords; 367 audio frames, 126 vertical blanks, 0 draws failed
+[after run 1]
+any360_bench: 679.6 FPS, median 1.32 ms, 10% low 514.5 FPS, 1% low 417.5 FPS, slowest 3.0 ms, 0 over 16.7 ms
+any360_bench: CPU 338% of a core, 21% of the 16 allowed (mask 0xFFFF); GPU 11% (system), 10% (batches); 2.01 FPS per CPU%, 60.06 FPS per GPU%; private 981 MB (peak 981, 752 before the title)
+any360_bench: ms a frame: title main 0.734, title render 2.041, command processor 0.474, renderer thread 1.473, draws 1.309 (textures 0.140, shaders 0.000, pipelines 0.000, guest memory 0.000, submit 0.490), resolves 0.029, swaps 0.000, GPU 0.151
+any360_bench: a frame: 2484 draws, 2.0 resolves, 1.01 texture uploads, 0.00 pipelines, 6117 system calls, 63.9 watched writes, 72487 PM4 dwords; 383 audio frames, 150 vertical blanks, 0 draws failed
+[before run 1]
+any360_bench: 402.1 FPS, median 2.33 ms, 10% low 320.1 FPS, 1% low 266.8 FPS, slowest 4.0 ms, 0 over 16.7 ms
+any360_bench: CPU 290% of a core, 18% of the 16 allowed (mask 0xFFFF); GPU 7% (system), 6% (batches); 1.39 FPS per CPU%, 57.96 FPS per GPU%; private 980 MB (peak 980, 755 before the title)
+any360_bench: ms a frame: title main 0.713, title render 2.494, command processor 0.463, renderer thread 2.489, draws 2.309 (textures 0.141, shaders 0.000, pipelines 0.037, guest memory 0.000, submit 0.493), resolves 0.031, swaps 0.000, GPU 0.153
+any360_bench: a frame: 2484 draws, 2.0 resolves, 1.02 texture uploads, 0.00 pipelines, 10625 system calls, 64.0 watched writes, 72487 PM4 dwords; 563 audio frames, 181 vertical blanks, 0 draws failed
+[before run 2]
+any360_bench: 435.5 FPS, median 2.18 ms, 10% low 351.6 FPS, 1% low 282.0 FPS, slowest 4.7 ms, 0 over 16.7 ms
+any360_bench: CPU 301% of a core, 19% of the 16 allowed (mask 0xFFFF); GPU 10% (system), 12% (batches); 1.45 FPS per CPU%, 42.25 FPS per GPU%; private 980 MB (peak 980, 754 before the title)
+any360_bench: ms a frame: title main 0.713, title render 2.323, command processor 0.439, renderer thread 2.298, draws 2.127 (textures 0.139, shaders 0.000, pipelines 0.037, guest memory 0.000, submit 0.491), resolves 0.031, swaps 0.000, GPU 0.288
+any360_bench: a frame: 2484 draws, 2.0 resolves, 1.02 texture uploads, 0.00 pipelines, 9742 system calls, 63.9 watched writes, 72487 PM4 dwords; 524 audio frames, 169 vertical blanks, 0 draws failed
+[after run 2]
+any360_bench: 724.3 FPS, median 1.29 ms, 10% low 588.4 FPS, 1% low 419.7 FPS, slowest 3.0 ms, 0 over 16.7 ms
+any360_bench: CPU 358% of a core, 22% of the 16 allowed (mask 0xFFFF); GPU 16% (system), 18% (batches); 2.03 FPS per CPU%, 44.67 FPS per GPU%; private 981 MB (peak 981, 755 before the title)
+any360_bench: ms a frame: title main 0.696, title render 1.395, command processor 0.449, renderer thread 1.381, draws 1.222 (textures 0.135, shaders 0.000, pipelines 0.000, guest memory 0.000, submit 0.465), resolves 0.027, swaps 0.000, GPU 0.252
+any360_bench: a frame: 2484 draws, 2.0 resolves, 1.02 texture uploads, 0.00 pipelines, 5244 system calls, 64.0 watched writes, 72487 PM4 dwords; 315 audio frames, 102 vertical blanks, 0 draws failed
+[after run 3]
+any360_bench: 757.3 FPS, median 1.24 ms, 10% low 625.1 FPS, 1% low 468.1 FPS, slowest 2.7 ms, 0 over 16.7 ms
+any360_bench: CPU 345% of a core, 22% of the 16 allowed (mask 0xFFFF); GPU 17% (system), 18% (batches); 2.20 FPS per CPU%, 44.63 FPS per GPU%; private 979 MB (peak 979, 754 before the title)
+any360_bench: ms a frame: title main 0.676, title render 1.353, command processor 0.447, renderer thread 1.321, draws 1.177 (textures 0.127, shaders 0.000, pipelines 0.000, guest memory 0.000, submit 0.449), resolves 0.026, swaps 0.000, GPU 0.244
+any360_bench: a frame: 2484 draws, 2.0 resolves, 1.02 texture uploads, 0.00 pipelines, 5192 system calls, 63.9 watched writes, 72487 PM4 dwords; 305 audio frames, 99 vertical blanks, 0 draws failed
+[before run 3]
+any360_bench: 450.6 FPS, median 2.04 ms, 10% low 343.0 FPS, 1% low 272.5 FPS, slowest 4.1 ms, 0 over 16.7 ms
+any360_bench: CPU 297% of a core, 19% of the 16 allowed (mask 0xFFFF); GPU 8% (system), 7% (batches); 1.52 FPS per CPU%, 58.39 FPS per GPU%; private 978 MB (peak 978, 755 before the title)
+any360_bench: ms a frame: title main 0.689, title render 2.234, command processor 0.447, renderer thread 2.221, draws 2.081 (textures 0.125, shaders 0.000, pipelines 0.033, guest memory 0.000, submit 0.483), resolves 0.023, swaps 0.000, GPU 0.156
+any360_bench: a frame: 2484 draws, 2.0 resolves, 1.02 texture uploads, 0.00 pipelines, 9722 system calls, 63.9 watched writes, 72487 PM4 dwords; 504 audio frames, 162 vertical blanks, 0 draws failed
+[before run 4]
+any360_bench: 489.9 FPS, median 1.95 ms, 10% low 424.5 FPS, 1% low 328.9 FPS, slowest 3.6 ms, 0 over 16.7 ms
+any360_bench: CPU 297% of a core, 19% of the 16 allowed (mask 0xFFFF); GPU 8% (system), 7% (batches); 1.65 FPS per CPU%, 61.65 FPS per GPU%; private 976 MB (peak 976, 754 before the title)
+any360_bench: ms a frame: title main 0.669, title render 2.067, command processor 0.426, renderer thread 2.043, draws 1.915 (textures 0.123, shaders 0.000, pipelines 0.033, guest memory 0.000, submit 0.433), resolves 0.022, swaps 0.000, GPU 0.148
+any360_bench: a frame: 2484 draws, 2.0 resolves, 1.02 texture uploads, 0.00 pipelines, 8967 system calls, 63.9 watched writes, 72487 PM4 dwords; 466 audio frames, 150 vertical blanks, 0 draws failed
+[after run 4]
+any360_bench: 830.2 FPS, median 1.16 ms, 10% low 782.8 FPS, 1% low 463.8 FPS, slowest 2.4 ms, 0 over 16.7 ms
+any360_bench: CPU 335% of a core, 21% of the 16 allowed (mask 0xFFFF); GPU 13% (system), 12% (batches); 2.48 FPS per CPU%, 62.56 FPS per GPU%; private 978 MB (peak 978, 754 before the title)
+any360_bench: ms a frame: title main 0.622, title render 1.224, command processor 0.416, renderer thread 1.205, draws 1.091 (textures 0.119, shaders 0.000, pipelines 0.000, guest memory 0.000, submit 0.405), resolves 0.019, swaps 0.000, GPU 0.146
+any360_bench: a frame: 2484 draws, 2.0 resolves, 1.02 texture uploads, 0.00 pipelines, 4784 system calls, 63.9 watched writes, 72487 PM4 dwords; 276 audio frames, 89 vertical blanks, 0 draws failed
+[after run 5]
+any360_bench: 812.9 FPS, median 1.16 ms, 10% low 703.6 FPS, 1% low 445.7 FPS, slowest 2.6 ms, 0 over 16.7 ms
+any360_bench: CPU 354% of a core, 22% of the 16 allowed (mask 0xFFFF); GPU 13% (system), 12% (batches); 2.30 FPS per CPU%, 62.36 FPS per GPU%; private 979 MB (peak 979, 755 before the title)
+any360_bench: ms a frame: title main 0.628, title render 1.251, command processor 0.410, renderer thread 1.230, draws 1.112 (textures 0.119, shaders 0.000, pipelines 0.000, guest memory 0.000, submit 0.415), resolves 0.019, swaps 0.000, GPU 0.146
+any360_bench: a frame: 2484 draws, 2.0 resolves, 1.02 texture uploads, 0.00 pipelines, 4870 system calls, 64.0 watched writes, 72487 PM4 dwords; 283 audio frames, 91 vertical blanks, 0 draws failed
+[before run 5]
+any360_bench: 509.7 FPS, median 1.92 ms, 10% low 486.5 FPS, 1% low 337.3 FPS, slowest 3.8 ms, 0 over 16.7 ms
+any360_bench: CPU 299% of a core, 19% of the 16 allowed (mask 0xFFFF); GPU 8% (system), 7% (batches); 1.70 FPS per CPU%, 61.46 FPS per GPU%; private 978 MB (peak 978, 754 before the title)
+any360_bench: ms a frame: title main 0.667, title render 1.981, command processor 0.420, renderer thread 1.964, draws 1.845 (textures 0.118, shaders 0.000, pipelines 0.031, guest memory 0.000, submit 0.404), resolves 0.020, swaps 0.000, GPU 0.147
+any360_bench: a frame: 2484 draws, 2.0 resolves, 1.01 texture uploads, 0.00 pipelines, 8675 system calls, 63.9 watched writes, 72487 PM4 dwords; 447 audio frames, 144 vertical blanks, 0 draws failed

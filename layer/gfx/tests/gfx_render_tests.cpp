@@ -334,6 +334,32 @@ int main(int argc, char** argv) {
     std::printf("gfx_render_tests: MSAA as samples: %u of %u samples\n", p.Count(color), kSize * kSize);
     CHECK(p.Count(color) == kSize * kSize);
   }
+  // Depth over a colour surface's EDRAM below the rows its draws reach: colour at tile 0 (its image spans EDRAM's
+  // rows), depth at tile 64 (pixel row 1024 of the colour surface at pitch 64), a 64-row scissor. Every depth-tested
+  // draw writes depth under the colour surface's far rows, yet the draws after the first take the targets as they
+  // were; the pixels are the same.
+  {
+    const uint32_t reused = renderer.stats().targets_reused, converted = renderer.stats().edram_depth_to_colour;
+    Pixels p = scenario("depth below the scissor", nullptr, [&] {
+      s.Put({Type0(0x2000, 3), kSize, 0u << 16 | 0, 0u << 16 | 64});
+      s.Reg(kRbDepthControl, 1u << 1 | 1u << 2 | 7u << 4);  // z_enable, z_write, ALWAYS
+      s.Vertices(0);
+      for (uint32_t i = 0; i < 8; ++i) {
+        s.Color(uint8_t(30 * i), 255, 0, 255);
+        s.DrawAuto(kTriangleStrip, 4);
+      }
+    });
+    const uint32_t last = Rgba(210, 255, 0, 255);
+    std::printf("gfx_render_tests: depth below the scissor: %u of 8 draws took the targets as they were, %u of %u pixels\n",
+                renderer.stats().targets_reused - reused, p.Count(last), kSize * kSize);
+    CHECK(renderer.stats().targets_reused - reused >= 7);
+    CHECK(p.Count(last) == kSize * kSize);
+    // Nothing converted for the draws; a colour surface read over those rows reads the depth words there.
+    CHECK(renderer.stats().edram_depth_to_colour == converted);
+    std::vector<uint8_t> bytes;
+    CHECK(renderer.ReadBack({64, kSize, 0, 0}, kSize, kSize, bytes));
+    CHECK(renderer.stats().edram_depth_to_colour > converted);
+  }
   // Depth: a quad at 0.5 (LESS, writes), one behind at 0.75 hidden, a triangle in front at 0.25 shown.
   {
     const uint32_t mid = Rgba(0, 255, 0, 255), back = Rgba(255, 0, 0, 255), front = Rgba(0, 0, 255, 255);
@@ -1978,9 +2004,9 @@ int main(int argc, char** argv) {
   // shares k_8_8_8_8_GAMMA's; the three fresh targets read back as zeros (15); the 256-wide half-float one (16);
   // and the 256-wide k_8_8_8_8 one of the screen bands (17); the depth-under-colour checks' three depth and three
   // colour surfaces and the unclipped rectangle's two colour surfaces (25); the depth pre-pass check's shorter
-  // colour target (26).
+  // colour target (26); the depth-below-the-scissor check's depth surface and the colour surface read over it (28).
   // Texture uploads: 14 (the minified patched texture adds its guest image and its patched one).
-  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 26 && stats.texture_uploads == 14 && stats.resolves == 89);
+  CHECK(stats.failed == 0 && stats.skipped == 0 && stats.render_targets == 28 && stats.texture_uploads == 14 && stats.resolves == 89);
   // (The resolved texture is read from the resolve on the GPU, not uploaded; the one read while the cache is walked
   // is, and the patched texture's five (patched, removed, patched over new content, another patch over it, removed over it): 12 uploads. 89 resolves: the four of the scenarios before (one with an exponent bias on the GPU), the six
   // k_16_16_16_16 ones on the GPU, the 70 with one, the two screen bands, the chain's six and the 40-row one.)

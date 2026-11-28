@@ -87,6 +87,7 @@ struct RendererStats {
   uint32_t view_direct_resolves = 0;   // colour resolves averaged straight from the layers (no copy into the rows)
   uint32_t edram_alias_copies = 0;     // copies between surfaces over the same EDRAM (SyncAliases)
   uint32_t edram_depth_to_colour = 0;
+  uint32_t targets_reused = 0;  // draws that took the last draw's targets, scissor and pipeline as they were
   uint32_t extents_estimated = 0;  // draws without clipping whose rows came from their vertices (EstimateVertexMaxY)
   uint64_t ns_extents = 0;         // time running their vertex shaders on the CPU for it  // of them, depth words into a colour surface (SyncDepthIntoColour)
   uint32_t pipeline_waits = 0;  // draws not drawn while their pipeline compiles (SetAsyncPipelines)
@@ -235,8 +236,9 @@ class VulkanRenderer : public gfx::Renderer {
     EdramGroup* group = nullptr;
     uint32_t row0 = 0;
     std::vector<uint64_t> have;
-    // A colour surface: a depth surface wrote over its EDRAM since it last looked (SyncDepthIntoColour).
-    bool depth_over = false;
+    // A colour surface: the first of its tile rows a depth surface wrote over since it last looked at them
+    // (SyncDepthIntoColour); SIZE_MAX when none.
+    size_t depth_over_row = SIZE_MAX;
     // Guest 2x MSAA drawn at the console's sample positions (UseViews): two layers of a pixel each (sample 0, then 1,
     // the pass's views), each drawn with its sample's offset. The image keeps its rows (a pixel's samples one under the
     // other, as EDRAM holds them) for everything else: the layers are copied into them before they are read
@@ -475,9 +477,20 @@ class VulkanRenderer : public gfx::Renderer {
   // Rows within [skip_top, skip_bottom) (host rows) are left: the caller overwrites them whole.
   // `need_bottom`: the host rows the caller uses (depth under the rows below it is converted later, when needed).
   bool SyncAliases(Surface& surface, int32_t skip_top = 0, int32_t skip_bottom = 0, int32_t need_bottom = INT32_MAX);
-  // Whether a surface over shared EDRAM has rows another one wrote since it last held them.
-  bool AliasesNewer(const Surface* surface) const {
-    if (surface && surface->depth_over) return true;
+  // Whether a surface over shared EDRAM has rows another one wrote since it last held them: depth words over a colour
+  // surface's rows above `need_bottom` (host rows), or rows a surface of its group wrote.
+  bool AliasesNewer(const Surface* surface, int32_t need_bottom = INT32_MAX) const {
+    return DepthOver(surface, need_bottom) || GroupNewer(surface);
+  }
+  // The tile rows above host row `bottom` (all of them for INT32_MAX).
+  size_t RowsAbove(const Surface& surface, int32_t bottom) const {
+    const int32_t row_height = 16 * int32_t(scale_);
+    return std::min(surface.have.size(), size_t((int64_t(std::max(bottom, 0)) + row_height - 1) / row_height));
+  }
+  bool DepthOver(const Surface* surface, int32_t need_bottom) const {
+    return surface && surface->depth_over_row < RowsAbove(*surface, need_bottom);
+  }
+  bool GroupNewer(const Surface* surface) const {
     if (!surface || !surface->group || surface->group->members < 2) return false;
     const EdramGroup& g = *surface->group;
     for (size_t i = 0; i < surface->have.size(); ++i) {

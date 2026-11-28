@@ -687,7 +687,7 @@ VulkanRenderer::Surface* VulkanRenderer::GetSurface(const SurfaceKey& requested)
   slot = std::make_unique<Surface>();
   slot->key = key;
   // A colour surface made over EDRAM that depth was written to holds the depth words (SyncDepthIntoColour).
-  slot->depth_over = !key.depth;
+  slot->depth_over_row = key.depth ? SIZE_MAX : 0;
   const VkFormat format = key.depth ? depth_format_ : ColorTargetFormat(key.format);
   if (format == VK_FORMAT_UNDEFINED || key.pitch == 0 || key.base >= 2048) return nullptr;
   // The rows the surface can span from its base to the end of EDRAM (2048 tiles of 80x16 samples at 32 bpp).
@@ -797,14 +797,14 @@ void VulkanRenderer::MarkWritten(Surface* s, int32_t top, int32_t bottom) {
     for (auto& [key, other] : surfaces_) {
       if (!other || key.depth || key.pitch != s->key.pitch || key.base % tiles_per_row != s->key.base % tiles_per_row) continue;
       const int64_t from = int64_t(s->row0) + first - other->row0, to = int64_t(s->row0) + last - other->row0;
-      if (to > 0 && from < int64_t(other->have.size())) other->depth_over = true;
+      if (to > 0 && from < int64_t(other->have.size())) other->depth_over_row = std::min(other->depth_over_row, size_t(std::max<int64_t>(from, 0)));
     }
   }
 }
 
 bool VulkanRenderer::SyncAliases(Surface& s, int32_t skip_top, int32_t skip_bottom, int32_t need_bottom) {
-  const bool from_depth = s.depth_over && SyncDepthIntoColour(s, need_bottom, skip_top, skip_bottom);
-  if (!AliasesNewer(&s)) return from_depth;
+  const bool from_depth = DepthOver(&s, need_bottom) && SyncDepthIntoColour(s, need_bottom, skip_top, skip_bottom);
+  if (!GroupNewer(&s)) return from_depth;
   EdramGroup& g = *s.group;
   const Functions& f = device_.fn();
   const VkImageAspectFlags aspect =
@@ -859,7 +859,7 @@ bool VulkanRenderer::SyncAliases(Surface& s, int32_t skip_top, int32_t skip_bott
 }
 
 bool VulkanRenderer::SyncDepthIntoColour(Surface& s, int32_t need_bottom, int32_t skip_top, int32_t skip_bottom) {
-  s.depth_over = false;
+  s.depth_over_row = SIZE_MAX;
   if (s.key.depth || !s.group) return false;
   // Host texels whose bytes are the EDRAM word: k_8_8_8_8 (R in the low byte) and k_2_10_10_10 (R in the low bits).
   if (s.image.format != VK_FORMAT_R8G8B8A8_UNORM && s.image.format != VK_FORMAT_A2B10G10R10_UNORM_PACK32) return false;
@@ -902,8 +902,10 @@ bool VulkanRenderer::SyncDepthIntoColour(Surface& s, int32_t need_bottom, int32_
   // EDRAM, and depth under its unused rows is converted when something reaches them (Call of Duty's targets sit over
   // its depth there, a conversion every draw otherwise).
   const int32_t row_height = 16 * int32_t(scale_);
-  const size_t needed = std::min(s.have.size(), size_t((int64_t(std::max(need_bottom, 0)) + row_height - 1) / row_height));
-  for (size_t i = needed; i < s.have.size() && !s.depth_over; ++i) s.depth_over = newest(i) != nullptr;
+  const size_t needed = RowsAbove(s, need_bottom);
+  for (size_t i = needed; i < s.have.size() && s.depth_over_row == SIZE_MAX; ++i) {
+    if (newest(i)) s.depth_over_row = i;
+  }
   // Rows the caller overwrites whole are not needed either (they are its own once it has drawn).
   auto overwritten = [&](size_t i) {
     return int32_t(i) * row_height >= skip_top && int32_t(i + 1) * row_height <= skip_bottom;
@@ -1559,7 +1561,7 @@ bool VulkanRenderer::ClearColor(const SurfaceKey& key, const float rgba[4]) {
   WaitIdle();  // and the submitter thread is done with the queue the one-time submit below uses
   if (!s || key.depth) return false;
   if (s->group) MarkWritten(s, 0, int32_t(s->image.height));
-  s->depth_over = false;
+  s->depth_over_row = SIZE_MAX;
   const Functions& f = device_.fn();
   return device_.Submit([&](VkCommandBuffer cb) {
     Transition(cb, s->image, s->layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -2505,12 +2507,19 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
       cover.valid = false;
     }
   }
+  // What the surfaces over the same EDRAM wrote since, in the targets before the draw tests or blends against them:
+  // the rows down to the scissor's bottom (the depth under the rows below is converted when a draw reaches them).
+  const int32_t scissor_rows = std::min(
+      extent_bottom,
+      std::min(int32_t((regs[kPaScWindowScissorBr] >> 16) & 0x3FFF) + (regs[kPaScWindowScissorTl] >> 31 ? 0 : offset_y),
+               int32_t((regs[kPaScScreenScissorBr] >> 16) & 0x7FFF)) * sample_y);
   bool memo_ok = target_memo_.valid && std::memcmp(target_memo_.key, target_key, sizeof(target_key)) == 0;
   if (memo_ok) {
-    for (uint32_t i = 0; i < 4 && memo_ok; ++i) memo_ok = !AliasesNewer(static_cast<Surface*>(target_memo_.colors[i]));
-    memo_ok = memo_ok && !AliasesNewer(static_cast<Surface*>(target_memo_.depth));
+    for (uint32_t i = 0; i < 4 && memo_ok; ++i) memo_ok = !AliasesNewer(static_cast<Surface*>(target_memo_.colors[i]), scissor_rows);
+    memo_ok = memo_ok && !AliasesNewer(static_cast<Surface*>(target_memo_.depth), scissor_rows);
   }
   if (memo_ok) {
+    ++stats_.targets_reused;
     for (uint32_t i = 0; i < 4; ++i) colors[i] = static_cast<Surface*>(target_memo_.colors[i]);
     depth_surface = static_cast<Surface*>(target_memo_.depth);
     width = target_memo_.width, height = target_memo_.height, depth_control = target_memo_.depth_control;
@@ -2555,14 +2564,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     ++stats_.skipped;  // nothing bound: no target this draw could change
     return;
   }
-  // What the surfaces over the same EDRAM wrote since, in the targets before the draw tests or blends against them:
-  // the rows down to the scissor's bottom (the depth under the rows below is converted when a draw reaches them).
   // A colour target a single rectangle overwrites whole (its rows across the full pitch, all channels written, no
-  // blending, no alpha test: a Direct3D 9 clear) does not need those rows first.
-  const int32_t scissor_rows = std::min(
-      extent_bottom,
-      std::min(int32_t((regs[kPaScWindowScissorBr] >> 16) & 0x3FFF) + (regs[kPaScWindowScissorTl] >> 31 ? 0 : offset_y),
-               int32_t((regs[kPaScScreenScissorBr] >> 16) & 0x7FFF)) * sample_y);
+  // blending, no alpha test: a Direct3D 9 clear) does not need the rows other surfaces wrote first.
   const bool covers_rows = cover.valid && cover.left <= 0 && cover.right >= int32_t(surface_info & 0x3FFF) && !alpha_tested;
   for (uint32_t i = 0; i < 4; ++i) {
     if (!colors[i]) continue;
