@@ -4766,7 +4766,41 @@ void CryptStep12SeventhTests() {
   CHECK((ThreadAllocations() - before).count == 0);
 }
 
+// Process-wide host allocations (alloc_meter.h): another thread's allocations count while it runs and after it
+// ends; the calling thread's own count is its part only; a sum costs no allocation.
+void ProcessAllocationTests() {
+  using any360::sys::AllocCounts;
+  using any360::sys::ProcessAllocations;
+  using any360::sys::ThreadAllocations;
+  const AllocCounts before = ProcessAllocations(), mine_before = ThreadAllocations();
+  std::atomic<int> stage{0};
+  std::thread other([&] {
+    std::vector<std::unique_ptr<char[]>> blocks;
+    blocks.reserve(10);
+    for (int i = 0; i < 10; ++i) blocks.emplace_back(new char[100]);
+    for (auto& b : blocks) b[0] = char(blocks.size());
+    stage = 1;
+    while (stage.load() != 2) std::this_thread::yield();
+  });
+  while (stage.load() != 1) std::this_thread::yield();
+  const AllocCounts running = ProcessAllocations() - before;
+  stage = 2;
+  other.join();
+  const AllocCounts ended = ProcessAllocations() - before;
+  const AllocCounts mine = ThreadAllocations() - mine_before;
+  std::printf("sys_object_tests: process allocations: %llu calls and %llu bytes while the other thread runs, %llu and %llu "
+              "after it ends; this thread's own %llu\n", (unsigned long long)running.count, (unsigned long long)running.bytes,
+              (unsigned long long)ended.count, (unsigned long long)ended.bytes, (unsigned long long)mine.count);
+  CHECK(running.count >= 11 && running.bytes >= 1000);
+  CHECK(ended.count >= running.count && ended.bytes >= running.bytes);
+  CHECK(mine.count <= ended.count - 10);
+  const AllocCounts quiet = ThreadAllocations();
+  (void)ProcessAllocations();
+  CHECK((ThreadAllocations() - quiet).count == 0);
+}
+
 int main() {
+  ProcessAllocationTests();
   LinkConcurrencyTests();
   U32MapTests();
   ObjectBookkeepingTests();

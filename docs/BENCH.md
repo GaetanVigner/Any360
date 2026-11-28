@@ -63,8 +63,14 @@ compiled before its draw), `--report-seconds S`, `--json FILE`, `--check FILE`, 
   of the allowed processors, GPU% as the system counts it and as the renderer's batches measure it), FPS per CPU% and per GPU%, private memory; ms a frame of
   the title's main and render threads (their waits excluded), the command processor, the renderer's thread, the
   renderer's draws (textures, shaders, pipelines, guest memory, submit), resolves, swaps and the GPU; per frame the
-  draws, resolves, texture uploads, pipelines, system calls and watched writes; the hashes of the command stream and
-  the audio. `--json` writes the same figures.
+  draws, resolves, texture uploads, pipelines, system calls, watched writes and host allocations; the hashes of the
+  command stream and the audio. `--json` writes the same figures (`per_frame.host_allocations`,
+  `per_frame.host_allocated_bytes`).
+- Host allocations: `operator new` calls and their requested bytes, every thread of the process (the title's, the
+  command processor's, the renderer's, audio), per frame over the measured frames, and per frame in each period's
+  first line (`<n> host allocations (<bytes> bytes)`, warm-up included in the first periods). They come from
+  `any360/sys/alloc_meter.h` (`ProcessAllocations`). The C runtime's `malloc` called directly and the Vulkan driver's
+  own allocations are not counted.
 - A/B runs follow `docs/perf/` and the `any360-perf-step` skill: 5 or more runs a variant, alternating, the same
   options, on the resources the session was given, and also on the small configuration (2 cores, the Radeon iGPU).
 

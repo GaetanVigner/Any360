@@ -148,9 +148,9 @@ int main(int argc, char** argv) {
               result.main_ms, result.render_ms, s.cp_ms, s.renderer_thread_ms, s.draws_ms, s.textures_ms, s.shaders_ms,
               s.pipelines_ms, s.memory_ms, s.submit_ms, s.resolves_ms, s.swaps_ms, s.gpu_ms);
   std::printf("any360_bench: a frame: %.0f draws, %.1f resolves, %.2f texture uploads, %.2f pipelines, %.0f system calls, %.1f watched "
-              "writes, %.0f PM4 dwords; %llu audio frames, %llu vertical blanks, %llu draws failed\n",
+              "writes, %.0f PM4 dwords, %.1f host allocations (%.0f bytes); %llu audio frames, %llu vertical blanks, %llu draws failed\n",
               s.draws, s.resolves, s.texture_uploads, s.pipelines, result.kernel_calls, double(result.write_faults) / n,
-              double(result.pm4_dwords) / n, (unsigned long long)result.audio_frames, (unsigned long long)result.vblanks,
+              double(result.pm4_dwords) / n, s.allocations, s.allocated_bytes, (unsigned long long)result.audio_frames, (unsigned long long)result.vblanks,
               (unsigned long long)s.total_failed);
   std::printf("any360_bench: hashes: command stream %s, audio %s\n", Hex(result.pm4_hash).c_str(), Hex(result.audio_hash).c_str());
 
@@ -168,7 +168,8 @@ int main(int argc, char** argv) {
         << ", \"submit\": " << s.submit_ms << ", \"resolves\": " << s.resolves_ms << ", \"swaps\": " << s.swaps_ms
         << ", \"gpu\": " << s.gpu_ms << "},\n  \"per_frame\": {\"draws\": " << s.draws << ", \"resolves\": " << s.resolves
         << ", \"texture_uploads\": " << s.texture_uploads << ", \"system_calls\": " << result.kernel_calls
-        << ", \"watched_writes\": " << double(result.write_faults) / n << "},\n  \"pm4_hash\": \"" << Hex(result.pm4_hash)
+        << ", \"watched_writes\": " << double(result.write_faults) / n << ", \"host_allocations\": " << s.allocations
+        << ", \"host_allocated_bytes\": " << s.allocated_bytes << "},\n  \"pm4_hash\": \"" << Hex(result.pm4_hash)
         << "\", \"audio_hash\": \"" << Hex(result.audio_hash) << "\"\n}\n";
   }
 

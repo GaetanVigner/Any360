@@ -19,5 +19,8 @@ struct AllocCounts {
 
 // The calling thread's allocations since it started.
 AllocCounts ThreadAllocations();
+// Every thread's allocations since the process started, the threads that have ended included (any thread). Each
+// thread counts into its own block, which this sums: no shared counter on the allocation path.
+AllocCounts ProcessAllocations();
 
 }  // namespace any360::sys

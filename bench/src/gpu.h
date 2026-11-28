@@ -44,6 +44,8 @@ struct RunSummary {
   double draws_ms = 0, textures_ms = 0, shaders_ms = 0, pipelines_ms = 0, memory_ms = 0, submit_ms = 0, resolves_ms = 0,
          swaps_ms = 0, cp_ms = 0, gpu_ms = 0, renderer_thread_ms = 0;
   double draws = 0, resolves = 0, texture_uploads = 0, pipelines = 0, failed = 0;
+  // Host heap allocations a frame, every thread of the process (any360/sys/alloc_meter.h): calls and bytes.
+  double allocations = 0, allocated_bytes = 0;
   uint64_t total_failed = 0;
   std::string device;
 };

@@ -13,6 +13,7 @@
 #include "any360/gfx/vulkan/presenter.h"
 #include "any360/gfx/vulkan/renderer.h"
 #include "any360/host/usage.h"
+#include "any360/sys/alloc_meter.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -80,6 +81,7 @@ struct BenchGpu::State {
   uint32_t period_slow = 0;
   vk::RendererStats period_stats{};
   uint64_t period_cp_busy = 0;
+  sys::AllocCounts period_allocs = sys::ProcessAllocations(), run_allocs{};
   host::UsageMeter period_usage;
   std::unique_ptr<host::UsageMeter> run_usage;
   std::atomic<bool> measure_requested{false};
@@ -138,6 +140,7 @@ void BenchGpu::State::OnSwap(vk::VulkanRenderer& r) {
     run_usage = std::make_unique<host::UsageMeter>();
     run_stats = r.stats();
     run_cp_busy = cp->ns_busy();
+    run_allocs = sys::ProcessAllocations();
     run_async_busy = async ? async->busy_ns() : 0;
     run_ms.clear();
     run_ms.reserve(1 << 16);
@@ -159,13 +162,16 @@ void BenchGpu::State::Report(const vk::RendererStats& s, Clock::time_point t) {
   const std::string usage = host::FormatUsage(period_usage.Take(int64_t(s.ns_gpu - l.ns_gpu)));
   const double private_mb = double(PrivateBytes()) / 1e6;
   peak_private = std::max(peak_private, private_mb);
+  const sys::AllocCounts allocs_now = sys::ProcessAllocations(), allocs = allocs_now - period_allocs;
+  period_allocs = allocs_now;
   char line[1024];
   std::snprintf(line, sizeof(line),
                 "Any360: %.1f FPS; per frame: %.0f draws, %.0f skipped, %.0f failed, %.0f resolves, %.1f texture uploads, "
-                "%.1f pipelines; ms: draws %.2f (textures %.2f, shaders %.2f, pipelines %.2f, guest memory %.2f, submit %.2f), "
-                "resolves %.2f, swaps %.2f; command processor %.2f, GPU %.2f; %s",
+                "%.1f pipelines, %.1f host allocations (%.0f bytes); ms: draws %.2f (textures %.2f, shaders %.2f, pipelines %.2f, "
+                "guest memory %.2f, submit %.2f), resolves %.2f, swaps %.2f; command processor %.2f, GPU %.2f; %s",
                 fps, (s.draws - l.draws) / n, (s.skipped - l.skipped) / n, (s.failed - l.failed) / n, (s.resolves - l.resolves) / n,
-                (s.texture_uploads - l.texture_uploads) / n, (s.pipelines - l.pipelines) / n, (s.ns_draws - l.ns_draws) / ms,
+                (s.texture_uploads - l.texture_uploads) / n, (s.pipelines - l.pipelines) / n, double(allocs.count) / n,
+                double(allocs.bytes) / n, (s.ns_draws - l.ns_draws) / ms,
                 (s.ns_textures - l.ns_textures) / ms, (s.ns_shaders - l.ns_shaders) / ms, (s.ns_pipelines - l.ns_pipelines) / ms,
                 (s.ns_memory - l.ns_memory) / ms, (s.ns_submit - l.ns_submit) / ms, (s.ns_resolves - l.ns_resolves) / ms,
                 (s.ns_swaps - l.ns_swaps) / ms, cp_busy / ms, double(s.ns_gpu - l.ns_gpu) / ms, usage.c_str());
@@ -340,6 +346,8 @@ RunSummary BenchGpu::Summary() {
   r.texture_uploads = (b.texture_uploads - a.texture_uploads) / n, r.pipelines = (b.pipelines - a.pipelines) / n;
   r.failed = (b.failed - a.failed) / n;
   r.total_failed = b.failed;
+  const sys::AllocCounts allocs = sys::ProcessAllocations() - s.run_allocs;
+  r.allocations = double(allocs.count) / n, r.allocated_bytes = double(allocs.bytes) / n;
   return r;
 }
 
