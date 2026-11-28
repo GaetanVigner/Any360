@@ -40,10 +40,11 @@ int g_failures = 0;
 std::atomic<uint64_t> g_spins{0};
 
 // The function the tracer must find: busy (and allocating, as a title's code may, to catch a sampler that would
-// deadlock on the heap lock) for `ms` milliseconds.
-__attribute__((noinline)) void SpinInKnownFunction(int ms) {
-  const auto end = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-  while (std::chrono::steady_clock::now() < end) {
+// deadlock on the heap lock) until `stop` is set. Until the sampling ends, not for a fixed time: on a loaded machine
+// the sampler's sleeps run long, and a spin of a fixed 120 ms had ended before most of the rounds (the test failed
+// now and then under a suite run beside game builds).
+__attribute__((noinline)) void SpinInKnownFunction(const std::atomic<bool>& stop) {
+  while (!stop.load(std::memory_order_relaxed)) {
     std::string s(64, char('a' + g_spins.load() % 26));
     g_spins += s.size();
   }
@@ -137,6 +138,7 @@ void TestUsage() {
   CHECK(ParseAffinityMask("7-0") == 0 && ParseAffinityMask("0-64") == 0 && ParseAffinityMask("1,,2") == 0);
   CHECK(ParseAffinityMask("0x1FFFFFFFFFFFFFFFF") == 0 && ParseAffinityMask("0") == 0);
 
+  const auto meter_start = std::chrono::steady_clock::now();
   UsageMeter meter;
   std::atomic<bool> stop{false};
   std::thread spinner([&] {
@@ -144,9 +146,23 @@ void TestUsage() {
   });
   std::this_thread::sleep_for(std::chrono::milliseconds(400));
   stop = true;
+  double spinner_core_pct = 100.0;  // what the spinner got of a core; all of it where the system cannot say
+#if defined(_WIN32)
+  {
+    FILETIME created, exited, kernel, user;
+    if (GetThreadTimes(static_cast<HANDLE>(spinner.native_handle()), &created, &exited, &kernel, &user)) {
+      const auto ticks = [](const FILETIME& f) { return (uint64_t(f.dwHighDateTime) << 32) | f.dwLowDateTime; };
+      const double ms = (ticks(kernel) + ticks(user)) / 1e4;
+      spinner_core_pct = 100.0 * ms / std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - meter_start).count();
+    }
+  }
+#endif
   spinner.join();
   const auto spun = meter.Take();
-  CHECK(spun.cpu_core_pct > 70 && spun.cpu_core_pct < 160);
+  // About the core the spinner got: on a loaded machine (a suite run beside game builds) it got 39% of one, so the
+  // reading is checked against the thread's own processor time, not against a whole core.
+  CHECK(spun.cpu_core_pct > 0.7 * spinner_core_pct && spun.cpu_core_pct < 1.3 * spinner_core_pct + 20);
+  CHECK(spinner_core_pct > 5);  // it ran
   CHECK(spun.cores >= 1 && spun.cores == UsageMeter::AllowedProcessors());
   std::printf("host_diagnostics_tests: one thread spinning 400 ms reads as %s\n", FormatUsage(spun).c_str());
 #if defined(_WIN32)
@@ -187,7 +203,10 @@ void TestUsage() {
   const double counted_ns = worked.gpu_pct / 100.0 * wall_ns;
   CHECK(timed > 20000000);  // the work took the GPU 20 ms or more
   CHECK(worked.gpu_pct >= 0 && worked.gpu_pct <= 101);
-  CHECK(counted_ns > 0.5 * double(timed) && counted_ns < 2.0 * double(timed) + 5e6);
+  // Counted at least half of what the device timed. No tighter upper bound than the period itself (gpu_pct <= 101
+  // above): with other processes on the GPU, the system counted this process 3x the device's timestamps (590 ms for
+  // 189 ms) on a suite run beside game launches.
+  CHECK(counted_ns > 0.5 * double(timed));
   std::printf("host_diagnostics_tests: GPU work the device timed at %.1f ms, the system counted %.1f ms (%s)\n",
               double(timed) / 1e6, counted_ns / 1e6, FormatUsage(worked).c_str());
 #endif
@@ -197,22 +216,25 @@ void TestUsage() {
 
 // A title function as the recompiled code names them, spinning through the known function.
 // (A frame of its own: work after the call keeps it from being a tail jump.)
-extern "C" __attribute__((noinline)) void sub_8200ABCD(int ms) {
-  SpinInKnownFunction(ms);
+extern "C" __attribute__((noinline)) void sub_8200ABCD(const std::atomic<bool>& stop) {
+  SpinInKnownFunction(stop);
   g_spins.fetch_add(1);
 }
 
 int main() {
 #if defined(_WIN32)
   namespace diag = any360::host::diagnostics;
-  std::atomic<bool> go{false};
+  timeBeginPeriod(1);  // sleeps of 2 ms, not the default 15.6
+  std::atomic<bool> go{false}, stop{false};
   std::thread spinner([&] {
     SetThreadDescription(GetCurrentThread(), L"spinner");
     while (!go) std::this_thread::yield();
-    SpinInKnownFunction(120);
+    SpinInKnownFunction(stop);
   });
   go = true;
-  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  // Sampled once it spins in the known function: on a loaded machine a fixed 10 ms was not always enough for it to
+  // get there, and every sample caught it on its way in.
+  while (g_spins.load() < 64 * 1000) std::this_thread::yield();
   diag::HitchSampler sampler;
   const auto start = std::chrono::steady_clock::now();
   sampler.Refresh();
@@ -223,6 +245,7 @@ int main() {
   }
   const std::string report = sampler.End(60.0);
   const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+  stop = true;
   spinner.join();
   // The busiest thread is the spinner, and its samples are in the known function.
   const size_t first = report.find("\nThread "), second = report.find("\nThread ", first + 1);
@@ -230,19 +253,22 @@ int main() {
   CHECK(first != std::string::npos);
   CHECK(busiest.find("\"spinner\"") != std::string::npos);
   CHECK(busiest.find("SpinInKnownFunction") != std::string::npos);
-  CHECK(g_spins.load() > 0 && ms < 2000);  // the spinner ran on; the sampling did not stall
+  // The spinner ran on and the sampling did not stall. A sampler that deadlocked on the suspended spinner never
+  // returns; a loaded machine (a suite run beside game builds) only stretches the rounds' sleeps, past 3 s at times.
+  CHECK(g_spins.load() > 0 && ms < 20000);
   std::printf("host_diagnostics_tests: sampled 30 rounds in %.0f ms; the busiest thread %s\n", ms,
               busiest.find("SpinInKnownFunction") != std::string::npos ? "found in SpinInKnownFunction" : "NOT found");
   if (g_failures) std::printf("%s\n", report.c_str());
 
   // The profiler: 100 rounds 2 ms apart over a thread spinning under sub_8200ABCD and one asleep.
-  std::atomic<bool> go2{false};
-  timeBeginPeriod(1);  // sleeps of 2 ms, not the default 15.6
+  std::atomic<bool> go2{false}, stop2{false};
   std::thread title([&] {
     while (!go2) std::this_thread::yield();
-    sub_8200ABCD(400);
+    sub_8200ABCD(stop2);
   });
-  std::thread sleeper([] { std::this_thread::sleep_for(std::chrono::milliseconds(400)); });
+  std::thread sleeper([&] {
+    while (!stop2) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  });
   go2 = true;
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
   const double cycles_per_ms = diag::MeasureCyclesPerMs();
@@ -257,6 +283,7 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
   }
   const double sampled_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - pstart).count();
+  stop2 = true;
   title.join();
   sleeper.join();
   timeEndPeriod(1);
@@ -274,7 +301,9 @@ int main() {
   CHECK(row != std::string::npos && row == csv.find("title,"));
   CHECK(text.find("SpinInKnownFunction") != std::string::npos);
   CHECK(text.find("under 8200ABCD") != std::string::npos);  // the host function it calls, under it
-  CHECK(own_ms > 0.6 * sampled_s * 1000 && own_ms < 1.2 * sampled_s * 1000);  // it ran the whole stretch
+  // It ran the whole stretch: its own time is processor time, which a loaded machine shares out (a quarter at
+  // least on a suite run beside game builds), and never more than the stretch.
+  CHECK(own_ms > 0.25 * sampled_s * 1000 && own_ms < 1.2 * sampled_s * 1000);
   std::printf("host_diagnostics_tests: profiled %llu samples in %.0f ms (%.0f cycles a ms); sub_8200ABCD's own time "
               "%.0f ms\n",
               static_cast<unsigned long long>(profile.samples()), sampled_s * 1000, cycles_per_ms, own_ms);
