@@ -52,6 +52,7 @@
 #include <vector>
 
 #include "any360/gfx/command_processor.h"
+#include "any360/gfx/flat_key_map.h"
 #include "device.h"
 #include "textures.h"
 
@@ -884,14 +885,7 @@ class VulkanRenderer : public gfx::Renderer {
   uint32_t draw_sets_ = 0, draw_images_ = 0, draw_samplers_ = 0;
   // Texture sets of the open batch by their contents (layout, views, samplers): draws with the same textures share
   // one, written once.
-  struct SetKeyHash {
-    size_t operator()(const std::vector<uint64_t>& key) const {
-      uint64_t h = 0xCBF29CE484222325ull;
-      for (uint64_t v : key) h = (h ^ v) * 0x100000001B3ull;
-      return size_t(h ^ (h >> 29));
-    }
-  };
-  std::unordered_map<std::vector<uint64_t>, VkDescriptorSet, SetKeyHash> batch_sets_;
+  FlatKeyMap batch_sets_;
   // Reused by each draw (thousands a frame): each stage's views and samplers, a texture set's key and writes.
   struct StageTextures {
     std::vector<VkImageView> views;
@@ -997,7 +991,7 @@ class VulkanRenderer : public gfx::Renderer {
     // Texture sets: pools by batch (another when one is full), the sets made in the batch by their contents.
     std::vector<VkDescriptorPool> set_pools[8];
     uint32_t set_pool_used[8] = {};
-    std::unordered_map<std::vector<uint64_t>, VkDescriptorSet, SetKeyHash> sets[8];
+    FlatKeyMap sets[8];
     std::vector<uint64_t> key;
     std::vector<VkDescriptorImageInfo> infos;
     std::vector<VkWriteDescriptorSet> writes;
@@ -1063,7 +1057,7 @@ class VulkanRenderer : public gfx::Renderer {
   VkFormat segment_depth_ = VK_FORMAT_UNDEFINED;
   VkSampleCountFlagBits segment_samples_ = VK_SAMPLE_COUNT_1_BIT;
   uint32_t segment_view_mask_ = 0;
-  static constexpr uint32_t kChunkDraws = 32;
+  static constexpr uint32_t kChunkDraws = 128;
   // By texture fetch constant (32), view type (3) and signedness: the last view and swizzled signs for its six words,
   // reused while the texture cache says views stay valid (no search by the fetch constant's words then).
   struct TextureMemo {

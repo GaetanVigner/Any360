@@ -12,6 +12,12 @@ target_link_libraries(gfx_cp_tests PRIVATE any360_gfx)
 target_compile_options(gfx_cp_tests PRIVATE -Wall -Wextra)
 add_test(NAME gfx_cp_tests COMMAND gfx_cp_tests)
 
+# The renderer's descriptor-set caches (flat_key_map.h) against std::map, their allocations; --bench times a batch.
+add_executable(gfx_flat_key_map_tests tests/gfx_flat_key_map_tests.cpp)
+target_link_libraries(gfx_flat_key_map_tests PRIVATE any360_gfx)
+target_compile_options(gfx_flat_key_map_tests PRIVATE -Wall -Wextra)
+add_test(NAME gfx_flat_key_map_tests COMMAND gfx_flat_key_map_tests)
+
 # Texture patches (texture_patches.h): the registry, the composed host image and its mips against reference models;
 # --bench times a 4x glyph page.
 add_executable(gfx_patch_tests tests/gfx_patch_tests.cpp)

@@ -97,6 +97,8 @@ try {
     }
     & (Join-Path $BuildDir 'gfx/gfx_cp_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "gfx_cp_tests failed ($LASTEXITCODE)" }
+    & (Join-Path $BuildDir 'gfx/gfx_flat_key_map_tests.exe') | Out-Host
+    if ($LASTEXITCODE) { throw "gfx_flat_key_map_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_patch_tests.exe') | Out-Host
     if ($LASTEXITCODE) { throw "gfx_patch_tests failed ($LASTEXITCODE)" }
     & (Join-Path $BuildDir 'gfx/gfx_write_back_tests.exe') | Out-Host

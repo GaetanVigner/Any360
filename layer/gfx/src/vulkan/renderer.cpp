@@ -2984,8 +2984,8 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
     set_key.push_back(uint64_t(layout));
     for (VkImageView v : st.views) set_key.push_back(uint64_t(v));
     for (VkSampler s : st.samplers) set_key.push_back(uint64_t(s));
-    if (const auto known = batch_sets_.find(set_key); known != batch_sets_.end()) {
-      texture_sets[stage] = known->second;
+    if (const uint64_t* known = batch_sets_.Find(set_key.data(), uint32_t(set_key.size()))) {
+      texture_sets[stage] = VkDescriptorSet(*known);
       continue;
     }
     VkDescriptorSetAllocateInfo alloc{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
@@ -3009,7 +3009,7 @@ void VulkanRenderer::Draw(const DrawCall& draw) {
                    is_image ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLER, &infos[i], nullptr, nullptr};
     }
     f.vkUpdateDescriptorSets(device_.device(), uint32_t(writes.size()), writes.data(), 0, nullptr);
-    batch_sets_.emplace(set_key, texture_sets[stage]);  // a copy: the key's buffer stays for the next draw
+    batch_sets_.Insert(set_key.data(), uint32_t(set_key.size()), uint64_t(texture_sets[stage]));
   }
 
   if (query_open_) {
@@ -3574,8 +3574,8 @@ void VulkanRenderer::MakeTextureSets(RecordWorker& w, uint32_t batch, DrawJob& j
     key.push_back(uint64_t(layout));
     for (uint32_t i = 0; i < views; ++i) key.push_back(uint64_t(job.views[stage][i]));
     for (uint32_t i = 0; i < samplers; ++i) key.push_back(uint64_t(job.samplers[stage][i]));
-    if (const auto known = w.sets[batch].find(key); known != w.sets[batch].end()) {
-      job.sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex + stage] = known->second;
+    if (const uint64_t* known = w.sets[batch].Find(key.data(), uint32_t(key.size()))) {
+      job.sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex + stage] = VkDescriptorSet(*known);
       continue;
     }
     VkDescriptorSet set = VK_NULL_HANDLE;
@@ -3608,7 +3608,7 @@ void VulkanRenderer::MakeTextureSets(RecordWorker& w, uint32_t batch, DrawJob& j
                      is_image ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLER, &w.infos[i], nullptr, nullptr};
     }
     f.vkUpdateDescriptorSets(device_.device(), views + samplers, w.writes.data(), 0, nullptr);
-    w.sets[batch].emplace(key, set);
+    w.sets[batch].Insert(key.data(), uint32_t(key.size()), uint64_t(set));
     job.sets[SpirvShaderTranslator::kDescriptorSetTexturesVertex + stage] = set;
   }
 }
@@ -4209,10 +4209,10 @@ void VulkanRenderer::Flush() {
       f.vkResetDescriptorPool(d, w->set_pools[current_][i], 0);
     }
     w->set_pool_used[current_] = 0;
-    w->sets[current_].clear();
+    w->sets[current_].Clear();
   }
   f.vkResetDescriptorPool(d, next.draw_pool, 0);
-  batch_sets_.clear();
+  batch_sets_.Clear();
   if (next.depth_pool) f.vkResetDescriptorPool(d, next.depth_pool, 0);
   depth_sets_ = 0;
   constant_head_ = index_head_ = 0;
