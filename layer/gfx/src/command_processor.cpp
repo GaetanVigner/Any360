@@ -1099,6 +1099,10 @@ void CommandProcessor::SubmitDraw(DrawCall& draw) {
 
 void CommandProcessor::LoadShader(uint32_t type, uint32_t address, uint32_t dwords, const uint32_t* words) {
   if (type > 1) return;
+  if (!words && uint64_t(address & 0x1FFFFFFF) + 4 * uint64_t(dwords) > physical_bytes_) {
+    ++declined_shader_loads_;
+    return;
+  }
   Shader& shader = shaders_[type];
   shader.type = type;
   shader.address = address & 0x1FFFFFFF;

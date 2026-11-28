@@ -176,6 +176,11 @@ class CommandProcessor : public sys::GpuBackend {
   uint32_t read_pointer() const { return read_index_; }
   uint32_t ring_dwords() const { return ring_dwords_; }
   const Shader& shader(uint32_t type) const { return shaders_[type & 1]; }
+  // The guest physical memory's size (512 MB on the console): a shader load whose microcode would run past it is
+  // declined (the slot keeps its shader) and counted. A test with a smaller memory sets its size.
+  static constexpr uint32_t kPhysicalBytes = 0x20000000;
+  void SetPhysicalBytes(uint32_t bytes) { physical_bytes_ = bytes; }
+  uint64_t declined_shader_loads() const { return declined_shader_loads_; }
 
   // Frame captures (capture.h): each kick of the ring is recorded into `writer` before it runs (null: none). With
   // `kicks`, the command processor lets go of the writer itself once that many kicks have run (CaptureDone()), so the
@@ -308,6 +313,8 @@ class CommandProcessor : public sys::GpuBackend {
   uint32_t wait_traces_taken_ = 0;
 
   uint8_t* physical_;
+  uint32_t physical_bytes_ = kPhysicalBytes;
+  uint64_t declined_shader_loads_ = 0;
   Renderer* renderer_ = nullptr;
   std::function<void(uint32_t, uint32_t)> memory_written_;
   InterruptHandler interrupt_;

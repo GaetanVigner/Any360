@@ -238,6 +238,31 @@ void IndirectAndShaders() {
   ring.Put({Type3(pm4::IM_LOAD_IMMEDIATE, 6), 1, 4, 0x7000, 0x7001, 0x7002, 0x7003});
   ring.Run();
   CHECK(cp.shader(1).microcode == std::vector<uint32_t>({0x7000, 0x7001, 0x7002, 0x7003}));
+  // IM_LOAD whose microcode would run past physical memory (an address near its end, or a size past it): declined,
+  // the slot keeping its shader, nothing read; at its very end, loaded. With the console's 512 MB the same: the size
+  // check is on the address and the size together.
+  cp.SetPhysicalBytes(uint32_t(g_physical.size()));
+  const std::vector<uint32_t> kept = cp.shader(0).microcode;
+  const int shaders_before = recorder.shaders;
+  const uint32_t last = uint32_t(g_physical.size()) - 8;
+  SetBig(last, 0x5100);
+  SetBig(last + 4, 0x5101);
+  ring.Put({Type3(pm4::IM_LOAD, 2), last | 0, 3});              // 12 bytes from 8 before the end
+  ring.Put({Type3(pm4::IM_LOAD, 2), (last - 0x10000) | 0, 0xFFFF});  // 256 KB from 64 KB before the end
+  ring.Put({Type3(pm4::IM_LOAD, 2), 0x1FFFFF00u | 0, 0x100});   // past 512 MB, any memory
+  ring.Run();
+  CHECK(cp.declined_shader_loads() == 3);
+  CHECK(cp.shader(0).microcode == kept && cp.shader(0).address == kData && recorder.shaders == shaders_before);
+  ring.Put({Type3(pm4::IM_LOAD, 2), last | 0, 2});              // the last 8 bytes exactly
+  ring.Run();
+  CHECK(cp.declined_shader_loads() == 3 && cp.shader(0).microcode == std::vector<uint32_t>({0x5100, 0x5101}));
+  cp.SetPhysicalBytes(CommandProcessor::kPhysicalBytes);
+  ring.Put({Type3(pm4::IM_LOAD, 2), 0x1FFFFFF8u | 0, 3});       // 12 bytes from 8 before 512 MB
+  ring.Run();
+  CHECK(cp.declined_shader_loads() == 4);
+  ring.Put({Type3(pm4::IM_LOAD, 2), kData | 0, 3});
+  ring.Run();
+  CHECK(cp.declined_shader_loads() == 4 && cp.shader(0).microcode == std::vector<uint32_t>({0x5000, 0x5001, 0x5002}));
   // Draws by EDRAM mode: colour+depth draws, copy resolves, ignore does nothing.
   const uint32_t dma_initiator = 6u << 16 | 0u << 6 | 4;            // 6 indices, DMA, 16-bit, triangle list
   const uint32_t auto_initiator = 4u << 16 | 2u << 6 | 1u << 11 | 8;  // 4 indices, auto, rect list
