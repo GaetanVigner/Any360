@@ -1,0 +1,62 @@
+
+=== before (crackdown_534.log)
+mask at end: 0xFF; private at end: 2803 MB; hangs: 0; errors: 0
+Crackdown: guest frames: 190.4 FPS over 10.0 s; frame times: median 5.17 ms (193.3 FPS), 10% low 156.2 FPS, 1% low 115.6 FPS; slowest frame 19.2 ms; 2800 MB private
+Crackdown: guest frames: 204.9 FPS over 10.0 s; frame times: median 4.80 ms (208.4 FPS), 10% low 169.2 FPS, 1% low 132.4 FPS; slowest frame 19.5 ms; 2801 MB private
+Crackdown: guest frames: 218.3 FPS over 10.0 s; frame times: median 4.51 ms (221.9 FPS), 10% low 177.5 FPS, 1% low 150.0 FPS; slowest frame 27.9 ms; 2804 MB private
+lock kept
+=== after (crackdown_535.log)
+mask at end: 0xFF; private at end: 2530 MB; hangs: 0; errors: 0
+Crackdown: guest frames: 86.6 FPS over 10.0 s; frame times: median 5.45 ms (183.5 FPS), 10% low 32.6 FPS, 1% low 26.2 FPS; slowest frame 39.8 ms; 2527 MB private
+Crackdown: guest frames: 90.4 FPS over 10.0 s; frame times: median 7.39 ms (135.3 FPS), 10% low 39.4 FPS, 1% low 30.4 FPS; slowest frame 128.5 ms; 2527 MB private
+Crackdown: guest frames: 90.1 FPS over 10.0 s; frame times: median 7.89 ms (126.7 FPS), 10% low 40.9 FPS, 1% low 31.5 FPS; slowest frame 37.5 ms; 2530 MB private
+lock kept
+=== before (crackdown_536.log)
+mask at end: 0xFF; private at end: 2760 MB; hangs: 0; errors: 0
+Crackdown: guest frames: 179.0 FPS over 10.0 s; frame times: median 5.55 ms (180.2 FPS), 10% low 156.5 FPS, 1% low 140.1 FPS; slowest frame 18.5 ms; 2759 MB private
+Crackdown: guest frames: 178.5 FPS over 10.0 s; frame times: median 5.55 ms (180.2 FPS), 10% low 157.6 FPS, 1% low 138.6 FPS; slowest frame 17.2 ms; 2759 MB private
+Crackdown: guest frames: 175.2 FPS over 10.0 s; frame times: median 5.63 ms (177.6 FPS), 10% low 154.8 FPS, 1% low 136.6 FPS; slowest frame 32.4 ms; 2761 MB private
+lock kept
+=== after (crackdown_537.log)
+mask at end: 0xFF; private at end: 2468 MB; hangs: 0; errors: 0
+Crackdown: guest frames: 196.3 FPS over 10.0 s; frame times: median 4.74 ms (211.1 FPS), 10% low 157.2 FPS, 1% low 126.5 FPS; slowest frame 16.2 ms; 2456 MB private
+Crackdown: guest frames: 192.0 FPS over 10.0 s; frame times: median 4.82 ms (207.4 FPS), 10% low 153.2 FPS, 1% low 118.8 FPS; slowest frame 17.0 ms; 2457 MB private
+Crackdown: guest frames: 190.2 FPS over 10.0 s; frame times: median 4.95 ms (202.0 FPS), 10% low 154.7 FPS, 1% low 114.0 FPS; slowest frame 32.6 ms; 2459 MB private
+lock kept
+=== before (crackdown_538.log)
+mask at end: 0xFF; private at end: 2781 MB; hangs: 0; errors: 0
+Crackdown: guest frames: 187.6 FPS over 10.0 s; frame times: median 5.32 ms (187.9 FPS), 10% low 169.2 FPS, 1% low 151.1 FPS; slowest frame 16.1 ms; 2774 MB private
+Crackdown: guest frames: 186.4 FPS over 10.0 s; frame times: median 5.32 ms (188.0 FPS), 10% low 166.3 FPS, 1% low 132.9 FPS; slowest frame 21.5 ms; 2777 MB private
+Crackdown: guest frames: 178.8 FPS over 10.0 s; frame times: median 5.51 ms (181.5 FPS), 10% low 160.5 FPS, 1% low 135.3 FPS; slowest frame 29.2 ms; 2786 MB private
+lock kept
+=== after (crackdown_539.log)
+mask at end: 0xFF; private at end: 2460 MB; hangs: 0; errors: 0
+Crackdown: guest frames: 196.7 FPS over 10.0 s; frame times: median 5.03 ms (198.9 FPS), 10% low 183.6 FPS, 1% low 161.3 FPS; slowest frame 18.0 ms; 2456 MB private
+Crackdown: guest frames: 202.8 FPS over 10.0 s; frame times: median 4.95 ms (201.9 FPS), 10% low 186.2 FPS, 1% low 168.6 FPS; slowest frame 16.9 ms; 2457 MB private
+Crackdown: guest frames: 221.8 FPS over 10.0 s; frame times: median 4.51 ms (221.7 FPS), 10% low 201.8 FPS, 1% low 178.3 FPS; slowest frame 30.1 ms; 2463 MB private
+lock kept
+=== before (crackdown_540.log)
+mask at end: 0xFF; private at end: 2775 MB; hangs: 0; errors: 0
+Crackdown: guest frames: 188.0 FPS over 10.0 s; frame times: median 5.36 ms (186.6 FPS), 10% low 158.7 FPS, 1% low 141.3 FPS; slowest frame 17.4 ms; 2772 MB private
+Crackdown: guest frames: 187.3 FPS over 10.0 s; frame times: median 5.36 ms (186.7 FPS), 10% low 163.0 FPS, 1% low 148.7 FPS; slowest frame 17.7 ms; 2772 MB private
+Crackdown: guest frames: 185.2 FPS over 10.0 s; frame times: median 5.38 ms (185.9 FPS), 10% low 158.6 FPS, 1% low 130.4 FPS; slowest frame 26.7 ms; 2779 MB private
+lock kept
+=== after (crackdown_541.log)
+mask at end: 0xFF; private at end: 2452 MB; hangs: 0; errors: 0
+Crackdown: guest frames: 222.0 FPS over 10.0 s; frame times: median 4.57 ms (219.0 FPS), 10% low 203.1 FPS, 1% low 185.9 FPS; slowest frame 16.1 ms; 2444 MB private
+Crackdown: guest frames: 216.1 FPS over 10.0 s; frame times: median 4.65 ms (214.9 FPS), 10% low 193.7 FPS, 1% low 174.7 FPS; slowest frame 40.1 ms; 2444 MB private
+Crackdown: guest frames: 222.5 FPS over 10.0 s; frame times: median 4.53 ms (220.6 FPS), 10% low 201.7 FPS, 1% low 180.1 FPS; slowest frame 27.3 ms; 2455 MB private
+lock kept
+=== before (crackdown_542.log)
+mask at end: 0xFF; private at end: 2770 MB; hangs: 0; errors: 0
+Crackdown: guest frames: 197.8 FPS over 10.0 s; frame times: median 4.95 ms (202.0 FPS), 10% low 162.4 FPS, 1% low 141.8 FPS; slowest frame 19.2 ms; 2768 MB private
+Crackdown: guest frames: 204.8 FPS over 10.0 s; frame times: median 4.75 ms (210.5 FPS), 10% low 167.1 FPS, 1% low 142.3 FPS; slowest frame 14.8 ms; 2768 MB private
+Crackdown: guest frames: 205.3 FPS over 10.0 s; frame times: median 4.75 ms (210.6 FPS), 10% low 167.6 FPS, 1% low 146.1 FPS; slowest frame 27.8 ms; 2773 MB private
+lock kept
+=== after (crackdown_543.log)
+mask at end: 0xFF; private at end: 2466 MB; hangs: 0; errors: 0
+Crackdown: guest frames: 201.2 FPS over 10.0 s; frame times: median 4.91 ms (203.7 FPS), 10% low 172.5 FPS, 1% low 147.5 FPS; slowest frame 16.5 ms; 2462 MB private
+Crackdown: guest frames: 212.1 FPS over 10.0 s; frame times: median 4.65 ms (215.2 FPS), 10% low 188.5 FPS, 1% low 160.4 FPS; slowest frame 17.0 ms; 2463 MB private
+Crackdown: guest frames: 216.6 FPS over 10.0 s; frame times: median 4.56 ms (219.1 FPS), 10% low 193.9 FPS, 1% low 159.7 FPS; slowest frame 28.1 ms; 2468 MB private
+lock kept
+lock released 2026-11-28T12:23:18

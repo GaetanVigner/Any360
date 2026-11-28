@@ -1,0 +1,18 @@
+launch log                     variant   periods  steady-mean-FPS  median-ms  p10  p1   dip-p1  private-end
+crackdown_534.log              before      9         198.3          4.94  162.1 112.4   88.7  2803
+crackdown_535.log              after      11         183.7          4.73  129.8  72.5   21.4  2530
+crackdown_536.log              before      9         189.6          5.25  164.2 135.8   85.8  2760
+crackdown_537.log              after      10         209.8          4.59  181.7 133.8   90.5  2468
+crackdown_538.log              before      9         189.7          5.22  170.4 136.2   86.3  2781
+crackdown_539.log              after      11         229.9          4.52  190.3 145.1   61.4  2460
+crackdown_540.log              before     10         190.3          5.21  159.7 131.5   60.8  2775
+crackdown_541.log              after      10         224.7          4.46  200.6 161.7   86.9  2452
+crackdown_542.log              before      9         201.1          4.91  165.5 139.8   93.9  2770
+crackdown_543.log              after       9         222.1          4.48  192.4 155.5  108.9  2466
+
+before: 5 launches; avg FPS 190.3 (range 189.6-201.1), median frame 5.21 ms (191.8 FPS), 10% low 164.2, 1% low 135.8, dip 1% low 86.3, private 2765 MB (log), 2775 MB (process at end)
+after: 5 launches; avg FPS 222.1 (range 183.7-229.9), median frame 4.52 ms (221.1 FPS), 10% low 190.3, 1% low 145.1, dip 1% low 86.9, private 2444 MB (log), 2466 MB (process at end)
+   fps: z = +1.57 against before
+   p10: z = +1.57 against before
+   p1: z = +0.94 against before
+   private: z = -2.61 against before
