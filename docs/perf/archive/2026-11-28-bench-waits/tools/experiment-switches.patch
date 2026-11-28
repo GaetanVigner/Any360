@@ -1,0 +1,216 @@
+commit eec02559880fa157158518924ba5acd9d7232f83
+Author: gaetan vigner <gaetan.vigner@gmail.Com>
+Date:   Sat Nov 28 12:32:54 2026 +0100
+
+    WIP bench-waits experiments (local, not for push)
+
+diff --git a/layer/sys/CMakeLists.txt b/layer/sys/CMakeLists.txt
+index 5ca3436..e4f5a42 100644
+--- a/layer/sys/CMakeLists.txt
++++ b/layer/sys/CMakeLists.txt
+@@ -27,6 +27,7 @@ target_include_directories(any360_sys PUBLIC include)
+ if(WIN32)
+   target_link_libraries(any360_sys PUBLIC ws2_32)  # the host's sockets (src/host_sockets.cpp)
+   target_link_libraries(any360_sys PUBLIC bcrypt)  # the host's hashes, CNG (src/crypt_host.cpp)
++  target_link_libraries(any360_sys PUBLIC winmm)  # the host timer period (src/precise_sleep.cpp)
+ endif()
+ # std::thread and the condition variables (the scheduler, objects): libpthread on older glibc (Ubuntu 20.04's 2.31).
+ find_package(Threads REQUIRED)
+diff --git a/layer/sys/include/any360/sys/spin_pacer.h b/layer/sys/include/any360/sys/spin_pacer.h
+index a22905c..e5a3fe1 100644
+--- a/layer/sys/include/any360/sys/spin_pacer.h
++++ b/layer/sys/include/any360/sys/spin_pacer.h
+@@ -38,6 +38,12 @@ namespace any360::sys {
+ // nanosleep). False: no precise sleep on this host (the caller yields instead). precise_sleep.cpp.
+ bool PreciseSleep(std::chrono::nanoseconds d);
+ 
++// The process's host timer period set to the finest the host offers (Windows: timeBeginPeriod with the timer's
++// minimum period, 1 ms; elsewhere sleeps and timed waits are already precise), once a process. The scheduler calls it
++// when it creates its first thread, so that delays, timed waits and condition-variable timeouts sleep about what they
++// ask instead of a 15.6 ms tick. precise_sleep.cpp.
++void RaiseHostTimerResolution();
++
+ class SpinPacer {
+  public:
+   using Clock = std::chrono::steady_clock;
+@@ -80,7 +86,7 @@ class SpinPacer {
+     sleep_started_ = now;
+     if (!predicted_) {
+       const Duration waited = now - idle_start_;
+-      if (!idle_backoff_ || aperiodic_ends_ < kAperiodicEnds || waited < kIdleAfter) return Duration::zero();
++      if (!idle_backoff_ || aperiodic_ends_ < exp_aperiodic_ || waited < exp_idle_after_) return Duration::zero();
+       idle_asked_ = std::clamp(waited / kIdleShare, kMinIdleSleep, kMaxIdleSleep);
+       return idle_asked_;
+     }
+@@ -182,6 +188,9 @@ class SpinPacer {
+   Clock::time_point last_return_{}, last_end_{}, next_end_{}, sleep_started_{}, idle_start_{};
+   Duration sleep_asked_{0}, idle_asked_{0}, period_{0}, margin_{kMinMargin}, margin_floor_{kMinMargin};
+   bool idle_backoff_ = false;
++ public:
++  Duration exp_idle_after_ = kIdleAfter; uint32_t exp_aperiodic_ = kAperiodicEnds;
++ private:
+   std::array<Duration, kPeriods> periods_{};
+   std::array<Duration, 16> overshoots_{};
+   uint32_t count_ = 0, overshoot_next_ = 0, clean_ends_ = 0, aperiodic_ends_ = 0;
+diff --git a/layer/sys/src/precise_sleep.cpp b/layer/sys/src/precise_sleep.cpp
+index 9eb72a8..4dd5fdb 100644
+--- a/layer/sys/src/precise_sleep.cpp
++++ b/layer/sys/src/precise_sleep.cpp
+@@ -14,6 +14,9 @@
+ #define NOMINMAX
+ #endif
+ #include <windows.h>
++#include <timeapi.h>
++#include <cstdlib>
++#include <mutex>
+ #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+ #define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+ #endif
+@@ -43,4 +46,48 @@ bool PreciseSleep(std::chrono::nanoseconds d) {
+ #endif
+ }
+ 
++void RaiseHostTimerResolution() {
++#if defined(_WIN32)
++  static std::once_flag once;
++  std::call_once(once, [] {
++    if (const char* v = std::getenv("ANY360_EXP_NOTIMER"); v && *v == '1') return;  // EXPERIMENT
++    TIMECAPS caps{};
++    const UINT period = timeGetDevCaps(&caps, sizeof caps) == MMSYSERR_NOERROR ? std::max<UINT>(1, caps.wPeriodMin) : 1;
++    timeBeginPeriod(period);
++  });
++#endif
++}
++
++}  // namespace any360::sys
++
++#if defined(_WIN32)
++#include <cstdio>
++namespace any360::sys {
++int ExpEnv(const char* name) {
++  const char* v = std::getenv(name);
++  return v ? std::atoi(v) : 0;
++}
++bool ExpYield(int mode) {
++  if (mode == 1) { Sleep(0); return true; }
++  const bool sw = SwitchToThread() != 0;
++  if (!sw && mode == 2) Sleep(0);
++  return sw;
++}
++void ExpYieldStats(bool switched, int64_t ns) {
++  struct S { uint64_t calls = 0, sw = 0, b[7] = {}; int64_t next = 0; };
++  static thread_local S s;
++  ++s.calls; s.sw += switched;
++  const int64_t us = ns / 1000;
++  s.b[us < 5 ? 0 : us < 20 ? 1 : us < 100 ? 2 : us < 1000 ? 3 : us < 4000 ? 4 : us < 16000 ? 5 : 6]++;
++  const int64_t now = GetTickCount64();
++  if (s.next == 0) s.next = now + 2000;
++  if (now < s.next) return;
++  s.next = now + 2000;
++  std::fprintf(stderr, "yieldstats tid %lu: %llu calls, %llu switched; <5us %llu, <20 %llu, <100 %llu, <1ms %llu, <4ms %llu, <16ms %llu, more %llu\n",
++               GetCurrentThreadId(), (unsigned long long)s.calls, (unsigned long long)s.sw,
++               (unsigned long long)s.b[0], (unsigned long long)s.b[1], (unsigned long long)s.b[2], (unsigned long long)s.b[3],
++               (unsigned long long)s.b[4], (unsigned long long)s.b[5], (unsigned long long)s.b[6]);
++  s = S{}; s.next = now + 2000;
++}
+ }  // namespace any360::sys
++#endif
+diff --git a/layer/sys/src/scheduler.cpp b/layer/sys/src/scheduler.cpp
+index 2ae4ef7..538ef51 100644
+--- a/layer/sys/src/scheduler.cpp
++++ b/layer/sys/src/scheduler.cpp
+@@ -368,6 +368,7 @@ uint32_t Scheduler::CreateThread(Guest g, uint32_t handle_out, uint32_t stack_si
+ uint32_t Scheduler::CreateThreadHandle(Guest g, uint32_t* handle, uint32_t stack_size, uint32_t thread_id_out, uint32_t xapi_startup,
+                                  uint32_t start_address, uint32_t start_context, uint32_t creation_flags) {
+   if (!dispatcher_) return kStatusInvalidParameter;
++  RaiseHostTimerResolution();
+   GuestContext context;
+   if (const uint32_t status = CreateContext(g, stack_size, context, creation_flags, true); status != kStatusSuccess) {
+     return status;
+@@ -550,9 +551,27 @@ void Scheduler::SetSpinPacing(bool on, std::function<void(const std::string&)> l
+   spin_pacing_.store(on, std::memory_order_relaxed);
+ }
+ 
++int ExpEnv(const char* name);
++bool ExpYield(int mode);
++void ExpYieldStats(bool switched, int64_t ns);
++
+ void Scheduler::ZeroDelay(Guest g, uint32_t kthread) {
++  static const int exp_mode = ExpEnv("ANY360_EXP_YIELD"), exp_stats = ExpEnv("ANY360_EXP_YIELDSTATS");
++  static const bool exp_pacing = [this] {
++    if (ExpEnv("ANY360_EXP_PACING")) { SetIdleBackoff(true); SetSpinPacing(true); }
++    return true;
++  }();
++  (void)exp_pacing;
+   if (!spin_pacing_.load(std::memory_order_relaxed)) {
+-    std::this_thread::yield();
++    if (exp_stats) {
++      const auto t0 = std::chrono::steady_clock::now();
++      const bool sw = ExpYield(exp_mode);
++      ExpYieldStats(sw, (std::chrono::steady_clock::now() - t0).count());
++    } else if (exp_mode) {
++      ExpYield(exp_mode);
++    } else {
++      std::this_thread::yield();
++    }
+     return;
+   }
+   struct Local {
+@@ -571,6 +590,9 @@ void Scheduler::ZeroDelay(Guest g, uint32_t kthread) {
+   if (local.no_timer) {
+     std::this_thread::yield();
+   } else {
++    static const int exp_after = ExpEnv("ANY360_EXP_IDLEAFTER_US"), exp_aper = ExpEnv("ANY360_EXP_APERIODIC");
++    if (exp_after) local.pacer.exp_idle_after_ = std::chrono::microseconds(exp_after);
++    if (exp_aper) local.pacer.exp_aperiodic_ = uint32_t(exp_aper == -1 ? 0 : exp_aper);
+     local.pacer.set_idle_backoff(idle_backoff_.load(std::memory_order_relaxed));
+     const std::chrono::nanoseconds sleep = local.pacer.Delay(start);
+     if (sleep > std::chrono::nanoseconds::zero()) {
+@@ -654,7 +676,7 @@ uint32_t Scheduler::Delay(Guest g, uint32_t pcr, int64_t interval, bool alertabl
+       ZeroDelay(g, kthread);
+     }
+   } else if (!alertable) {
+-    std::this_thread::sleep_for(duration);
++    if (!PreciseSleep(duration)) std::this_thread::sleep_for(duration);
+   } else {
+     // Sleeps in slices short enough for a queued APC to end the delay.
+     const auto end = std::chrono::steady_clock::now() + duration;
+diff --git a/layer/sys/tests/sys_object_tests.cpp b/layer/sys/tests/sys_object_tests.cpp
+index 761ebdf..c1b84c2 100644
+--- a/layer/sys/tests/sys_object_tests.cpp
++++ b/layer/sys/tests/sys_object_tests.cpp
+@@ -677,6 +677,34 @@ void StackTests() {
+   CHECK(Threads().CreateThread(gm, out, 0x6000, 0, 0, 0x5200, 0, 0) == 0);
+   CHECK(Objects().WaitForHandle(gm, gm.Load32(out), kMainThread, &second) == 0);
+   CHECK(count("used 22 of its 24 KB stack") == 1);
++  // Short delays and timed waits sleep about what they ask once the scheduler has made a thread (the host timer
++  // period raised for the process), not a whole default timer tick (15.6 ms on Windows): the median of 20 one
++  // millisecond delays, and of 20 one millisecond timeouts on an event nobody sets, stays under 3 ms.
++  g_code_args[0x5300] = [&](uint32_t pcr, uint32_t, std::vector<uint64_t>) {
++    auto median_ms = [](auto&& wait) {
++      std::vector<double> ms;
++      for (int i = 0; i < 20; ++i) {
++        const auto t0 = std::chrono::steady_clock::now();
++        wait();
++        ms.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
++      }
++      std::sort(ms.begin(), ms.end());
++      return ms[ms.size() / 2];
++    };
++    const double delay = median_ms([&] { Threads().Delay(gm, pcr, -10000); });
++    const uint32_t event_out = out + 0x40;
++    CHECK(Objects().CreateEvent(gm, event_out, 0, 0, 0) == 0);
++    const uint32_t event = gm.Load32(event_out);
++    const int64_t one_ms = -10000;
++    const double wait = median_ms([&] { CHECK(Objects().WaitForHandle(gm, event, kMainThread, &one_ms) == kStatusTimeout); });
++    CHECK(Objects().Close(event) == 0);
++    std::printf("sys_object_tests: 1 ms delay %.2f ms, 1 ms timed wait %.2f ms (medians)\n", delay, wait);
++    CHECK(delay >= 0.9 && delay < 3.0);
++    CHECK(wait >= 0.9 && wait < 3.0);
++    return 0;
++  };
++  CHECK(Threads().CreateThread(gm, out, 0x6000, 0, 0, 0x5300, 0, 0) == 0);
++  CHECK(Objects().WaitForHandle(gm, gm.Load32(out), kMainThread, &second) == 0);
+   {
+     GuestContext a{}, b{};
+     CHECK(Threads().CreateContext(gm, 0x4000, a) == 0 && Threads().CreateContext(gm, 0x4000, b) == 0);

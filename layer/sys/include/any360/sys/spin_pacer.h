@@ -50,11 +50,13 @@ class SpinPacer {
   static constexpr int kPeriods = 8;
   static constexpr uint32_t kCleanEnds = 64;
   // Idle back-off: a thread whose waits have no cadence (kAperiodicEnds streak ends in a row not even roughly
-  // periodic: a thread waiting for work another thread writes into memory at no steady time), in a streak that has gone on for kIdleAfter, sleeps a slice of what it has waited so far, 1/kIdleShare of
-  // it within [kMinIdleSleep, kMaxIdleSleep]; a wait shorter than kIdleAfter keeps yielding. The work it waits for is
-  // seen at most one slice later. Windows' high-resolution timer sleeps in 0.5 ms steps (sys_abi_bench: 50-200 us
-  // asked take ~513 us, 500 us ~1 ms): a slice is 0.5-1 ms there, which kIdleAfter keeps to waits already longer.
-  static constexpr Duration kIdleAfter = std::chrono::milliseconds(2);
+  // periodic: a thread waiting for work another thread writes into memory at no steady time), in a streak that has
+  // gone on for kIdleAfter, sleeps a slice of what it has waited so far, 1/kIdleShare of it within [kMinIdleSleep,
+  // kMaxIdleSleep]; a wait shorter than kIdleAfter keeps yielding. The sleep gives its processor to the process's
+  // other threads, which a yield does not (the host's yield only hands over to a thread waiting on the same
+  // processor). The work it waits for is seen at most one slice later: Windows' high-resolution timer sleeps in
+  // 0.5 ms steps (sys_abi_bench: 50-200 us asked take ~513 us, 500 us ~1 ms), so a slice is 0.5-1 ms there.
+  static constexpr Duration kIdleAfter = std::chrono::microseconds(200);
   static constexpr Duration kMinIdleSleep = std::chrono::microseconds(100), kMaxIdleSleep = std::chrono::microseconds(500);
   static constexpr int kIdleShare = 8;
   static constexpr Duration kLooseJitter = std::chrono::milliseconds(2);

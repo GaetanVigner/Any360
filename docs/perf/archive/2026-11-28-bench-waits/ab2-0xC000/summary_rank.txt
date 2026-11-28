@@ -1,0 +1,7 @@
+base: 5 runs; fps median 195.5 (min 191.9, max 204.7), median median 5.0 (min 4.7, max 5.3), p10 median 178.9 (min 166.5, max 181.7), p1 median 129.0 (min 114.6, max 153.3), slowest median 16.5 (min 8.7, max 20.2), over median 0.0 (min 0.0, max 2.0)
+timer: 5 runs; fps median 201.7 (min 180.7, max 208.9), median median 5.1 (min 4.6, max 5.4), p10 median 181.8 (min 158.4, max 189.0), p1 median 147.8 (min 86.5, max 167.4), slowest median 11.1 (min 9.2, max 52.0), over median 0.0 (min 0.0, max 7.0)
+pacing: 4 runs; fps median 215.2 (min 203.3, max 220.8), median median 4.5 (min 4.4, max 4.6), p10 median 186.8 (min 173.9, max 192.7), p1 median 156.7 (min 97.1, max 165.8), slowest median 22.8 (min 10.5, max 56.7), over median 1.0 (min 0.0, max 9.0)
+pacing_short: 5 runs; fps median 246.9 (min 242.3, max 257.7), median median 4.0 (min 3.9, max 4.0), p10 median 226.0 (min 216.9, max 245.9), p1 median 177.6 (min 148.7, max 218.0), slowest median 7.3 (min 6.1, max 17.9), over median 0.0 (min 0.0, max 1.0)
+base against timer: fps z -0.94, median z -0.10, p10 z -1.15, p1 z -0.52, slowest z -0.10, over z +0.31
+base against pacing: fps z -2.20, median z +2.45, p10 z -1.47, p1 z -1.22, slowest z -0.98, over z -0.61
+base against pacing_short: fps z -2.61, median z +2.61, p10 z -2.61, p1 z -2.19, slowest z +1.98, over z +0.63

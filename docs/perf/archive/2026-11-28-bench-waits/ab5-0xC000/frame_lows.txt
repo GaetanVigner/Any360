@@ -1,0 +1,28 @@
+base: 6 launches
+  base-1.log: dip 1% low 194 FPS, slowest 12.0 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  base-2.log: dip 1% low 186 FPS, slowest 7.5 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  base-3.log: dip 1% low 164 FPS, slowest 8.0 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  base-4.log: dip 1% low 180 FPS, slowest 6.3 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 270-270
+  base-5.log: dip 1% low 190 FPS, slowest 7.4 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  base-6.log: dip 1% low 212 FPS, slowest 5.4 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  steady (1 periods): FPS mean 269.7 (median 269.7, min 269.7), 10% low mean 208.0 (median 208.0, min 208.0), 1% low mean 184.3 (median 184.3, min 184.3); process private memory mean 909 MB, max 909 MB
+  usage: CPU% of a core mean 197 (median 197) [2 processors allowed, mask 0xC000]; CPU% of the allowed mean 99 (median 99); GPU% mean 36 (median 36); FPS per CPU% mean 1.37 (median 1.37); FPS per GPU% mean 7.49 (median 7.49)
+  dips (6): 1% low mean 187.8, slowest frame mean 7.8 ms, over 16.7 ms mean 0.0, texture loading mean 0.00 ms a frame
+after200: 6 launches
+  after200-1.log: dip 1% low 216 FPS, slowest 6.2 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  after200-2.log: dip 1% low 199 FPS, slowest 7.6 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  after200-3.log: dip 1% low 182 FPS, slowest 28.6 ms, 1 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  after200-4.log: dip 1% low 214 FPS, slowest 5.0 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  after200-5.log: dip 1% low 225 FPS, slowest 4.8 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  after200-6.log: dip 1% low 225 FPS, slowest 5.5 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  dips (6): 1% low mean 210.1, slowest frame mean 9.6 ms, over 16.7 ms mean 0.2, texture loading mean 0.00 ms a frame
+short: 6 launches
+  short-1.log: dip 1% low 252 FPS, slowest 4.8 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  short-2.log: dip 1% low 228 FPS, slowest 6.7 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  short-3.log: dip 1% low 236 FPS, slowest 5.1 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  short-4.log: dip 1% low 228 FPS, slowest 7.3 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  short-5.log: dip 1% low 221 FPS, slowest 8.4 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  short-6.log: dip 1% low 240 FPS, slowest 5.3 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 0-0
+  dips (6): 1% low mean 234.4, slowest frame mean 6.3 ms, over 16.7 ms mean 0.0, texture loading mean 0.00 ms a frame
+base against after200: steady fps z +0.00, p10 z +0.00, p1 z +0.00; dips 1% low z -2.08, slowest z +0.96
+base against short: steady fps z +0.00, p10 z +0.00, p1 z +0.00; dips 1% low z -2.88, slowest z +1.44

@@ -1,0 +1,5 @@
+base: 6 runs; fps median 288.5 (min 265.4, max 293.8), median median 3.6 (min 3.5, max 3.9), p10 median 232.7 (min 216.1, max 238.7), p1 median 186.9 (min 137.1, max 210.3), slowest median 8.0 (min 5.6, max 12.0), over median 0.0 (min 0.0, max 0.0)
+after200: 6 runs; fps median 327.8 (min 311.3, max 355.0), median median 2.9 (min 2.7, max 3.0), p10 median 266.3 (min 237.1, max 286.6), p1 median 212.8 (min 141.8, max 224.7), slowest median 7.6 (min 5.6, max 28.6), over median 0.0 (min 0.0, max 1.0)
+short: 6 runs; fps median 345.8 (min 341.1, max 358.9), median median 2.8 (min 2.8, max 2.9), p10 median 310.2 (min 303.1, max 333.4), p1 median 225.8 (min 208.2, max 251.6), slowest median 6.8 (min 4.8, max 32.8), over median 0.0 (min 0.0, max 1.0)
+base against after200: fps z -2.88, median z +2.88, p10 z -2.56, p1 z -1.60, slowest z +0.40, over z -0.48
+base against short: fps z -2.88, median z +2.88, p10 z -2.88, p1 z -2.72, slowest z +0.80, over z -0.48

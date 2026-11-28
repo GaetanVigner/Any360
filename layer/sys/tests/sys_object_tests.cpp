@@ -878,27 +878,29 @@ void SpinPacerTests() {
     CHECK(late == 0 && !pacer.predicting() && !pacer.backing_off());
   }
   // A thread polling memory for work with no cadence (a render thread waiting for its commands): work is posted
-  // after random gaps (most under 2 ms, some 2-8 ms, a few 20-150 ms of idleness). With the back-off it sleeps most
-  // of its long waits in slices and sees the work at most a slice late (Windows' sleeps: ~1 ms); waits under 2 ms
-  // still yield (seen at once). Without it, it only yields.
+  // after random gaps (a fifth under 0.2 ms, most under 2 ms, some 2-8 ms, a few 20-150 ms of idleness). With the
+  // back-off it sleeps most of its waits past SpinPacer::kIdleAfter in slices and sees the work at most a slice late
+  // (Windows' sleeps: ~1 ms); waits under kIdleAfter still yield (seen at once). Without it, it only yields.
   for (const bool backoff : {false, true}) {
     Pacer pacer(backoff);
     auto t = start;
     double idle_ns = 0, slept_ns = 0;
     nanoseconds worst_short{0}, worst{0};
-    uint32_t jobs = 0;
+    uint32_t jobs = 0, long_waits = 0, long_sliced = 0;
     for (int job = 0; job < 4000; ++job) {
       const uint32_t kind = random(100);
-      const nanoseconds gap = kind < 70 ? microseconds(100 + random(1400))
+      const nanoseconds gap = kind < 20 ? microseconds(10 + random(180))
+                              : kind < 70 ? microseconds(100 + random(1400))
                               : kind < 95 ? microseconds(2000 + random(6000))
                                           : milliseconds(20 + random(130));
       const auto posted = t + gap;
       const auto idle_start = t;
+      bool sliced = false;
       while (t < posted) {
         const nanoseconds d = pacer.Delay(t);
         const auto before = t;
         t += d > nanoseconds::zero() ? d + windows_sleep(d) : yield_cost;
-        if (d > nanoseconds::zero()) slept_ns += double((t - before).count());
+        if (d > nanoseconds::zero()) slept_ns += double((t - before).count()), sliced = true;
         pacer.Returned(t);
       }
       const nanoseconds late = t - posted;
@@ -906,16 +908,20 @@ void SpinPacerTests() {
         ++jobs;
         idle_ns += double((t - idle_start).count());
         worst = std::max(worst, late);
-        if (gap < milliseconds(2)) worst_short = std::max(worst_short, late);
+        if (gap + yield_cost < Pacer::kIdleAfter) worst_short = std::max(worst_short, late);
+        if (gap >= 2 * Pacer::kIdleAfter) ++long_waits, long_sliced += sliced;
       }
       t += microseconds(200);  // the work
     }
     std::printf("sys_object_tests: idle back-off %s: %u jobs, %.0f%% of the idle time slept, work seen at worst %.3f "
-                "ms late (%.3f ms after waits under 2 ms), %llu slices over %llu zero delays\n",
+                "ms late (%.3f ms after waits under 0.2 ms), %u of %u waits over 0.4 ms sliced, %llu slices over %llu "
+                "zero delays\n",
                 backoff ? "on" : "off", jobs, 100 * slept_ns / idle_ns, worst.count() / 1e6, worst_short.count() / 1e6,
-                (unsigned long long)pacer.stats().idle_sleeps, (unsigned long long)pacer.stats().calls);
+                long_sliced, long_waits, (unsigned long long)pacer.stats().idle_sleeps,
+                (unsigned long long)pacer.stats().calls);
     if (backoff) {
-      CHECK(pacer.backing_off() && slept_ns / idle_ns > 0.7 && worst <= microseconds(1600) && worst_short <= yield_cost);
+      CHECK(pacer.backing_off() && slept_ns / idle_ns > 0.7 && worst <= microseconds(1600) && worst_short <= yield_cost &&
+            long_sliced * 10 >= long_waits * 9);
     } else {
       CHECK(pacer.stats().idle_sleeps == 0 && slept_ns == 0 && worst <= yield_cost);
     }

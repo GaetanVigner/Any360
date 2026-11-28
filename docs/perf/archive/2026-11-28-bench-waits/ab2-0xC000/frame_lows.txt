@@ -1,0 +1,42 @@
+base: 5 launches
+  base-1.log: dip 1% low 145 FPS, slowest 8.7 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 190-195
+  base-2.log: dip 1% low 162 FPS, slowest 7.4 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 208-208
+  base-3.log: dip 1% low 94 FPS, slowest 16.5 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 207-207
+  base-4.log: dip 1% low 117 FPS, slowest 11.7 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 191-197
+  base-5.log: dip 1% low 114 FPS, slowest 15.1 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 192-201
+  steady (8 periods): FPS mean 197.6 (median 196.4, min 189.8), 10% low mean 179.3 (median 180.3, min 167.4), 1% low mean 143.2 (median 140.7, min 121.1); process private memory mean 1393 MB, max 1434 MB
+  usage: CPU% of a core mean 194 (median 193) [2 processors allowed, mask 0xC000]; CPU% of the allowed mean 97 (median 96); GPU% mean 40 (median 42); FPS per CPU% mean 1.02 (median 1.01); FPS per GPU% mean 5.07 (median 4.74)
+  dips (5): 1% low mean 126.4, slowest frame mean 11.9 ms, over 16.7 ms mean 0.0, texture loading mean 0.00 ms a frame
+timer: 5 launches
+  timer-1.log: dip 1% low 164 FPS, slowest 6.6 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 209-209
+  timer-2.log: dip 1% low 148 FPS, slowest 8.9 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 210-210
+  timer-3.log: dip 1% low 143 FPS, slowest 12.7 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 201-204
+  timer-4.log: dip 1% low 79 FPS, slowest 24.5 ms, 4 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 182-187
+  timer-5.log: dip 1% low 154 FPS, slowest 7.7 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 204-204
+  steady (7 periods): FPS mean 199.6 (median 203.6, min 181.6), 10% low mean 178.7 (median 183.1, min 161.1), 1% low mean 146.4 (median 158.5, min 93.1); process private memory mean 1381 MB, max 1426 MB
+  usage: CPU% of a core mean 190 (median 196) [2 processors allowed, mask 0xC000]; CPU% of the allowed mean 95 (median 98); GPU% mean 42 (median 42); FPS per CPU% mean 1.05 (median 1.04); FPS per GPU% mean 4.73 (median 4.76)
+  dips (5): 1% low mean 137.7, slowest frame mean 12.1 ms, over 16.7 ms mean 0.8, texture loading mean 0.00 ms a frame
+pacing: 5 launches
+  pacing-1.log: dip 1% low 160 FPS, slowest 9.2 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 224-224
+  pacing-2.log: dip 1% low 159 FPS, slowest 10.5 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 222-222
+  pacing-3.log: dip 1% low 60 FPS, slowest 56.7 ms, 7 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 212-212
+  pacing-4.log: dip 1% low 82 FPS, slowest 15.9 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 184-201
+  pacing-5.log: dip 1% low 158 FPS, slowest 9.2 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 216-216
+  steady (6 periods): FPS mean 209.7 (median 213.8, min 183.8), 10% low mean 176.8 (median 184.5, min 138.6), 1% low mean 136.8 (median 142.4, min 86.7); process private memory mean 1419 MB, max 1458 MB
+  usage: CPU% of a core mean 176 (median 182) [2 processors allowed, mask 0xC000]; CPU% of the allowed mean 88 (median 90); GPU% mean 42 (median 43); FPS per CPU% mean 1.19 (median 1.20); FPS per GPU% mean 4.95 (median 4.97)
+  dips (5): 1% low mean 123.8, slowest frame mean 20.3 ms, over 16.7 ms mean 1.4, texture loading mean 0.00 ms a frame
+pacing_short: 5 launches
+  pacing_short-1.log: dip 1% low 198 FPS, slowest 7.1 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 261-261
+  pacing_short-2.log: dip 1% low 210 FPS, slowest 5.1 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 263-263
+  pacing_short-3.log: dip 1% low 144 FPS, slowest 10.0 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 242-242
+  pacing_short-4.log: dip 1% low 170 FPS, slowest 7.9 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 253-253
+  pacing_short-5.log: dip 1% low 161 FPS, slowest 6.8 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 249-249
+  steady (5 periods): FPS mean 253.5 (median 252.6, min 241.9), 10% low mean 235.9 (median 232.6, min 214.3), 1% low mean 188.8 (median 175.2, min 145.6); process private memory mean 1384 MB, max 1407 MB
+  usage: CPU% of a core mean 161 (median 162) [2 processors allowed, mask 0xC000]; CPU% of the allowed mean 81 (median 81); GPU% mean 44 (median 44); FPS per CPU% mean 1.57 (median 1.56); FPS per GPU% mean 5.76 (median 5.74)
+  dips (5): 1% low mean 176.8, slowest frame mean 7.4 ms, over 16.7 ms mean 0.0, texture loading mean 0.00 ms a frame
+base against timer: steady fps z -0.69, p10 z +0.06, p1 z -0.69; dips 1% low z -0.73, slowest z +0.31
+base against timer: usage cpu z +0.00, gpu z -0.58, fps_per_cpu z -1.39, fps_per_gpu z +0.35
+base against pacing: steady fps z -1.81, p10 z -0.39, p1 z +0.26; dips 1% low z +0.10, slowest z -0.52
+base against pacing: usage cpu z +2.78, gpu z -1.42, fps_per_cpu z -3.10, fps_per_gpu z -0.90
+base against pacing_short: steady fps z -2.93, p10 z -2.93, p1 z -2.49; dips 1% low z -1.98, slowest z +1.98
+base against pacing_short: usage cpu z +2.93, gpu z -2.93, fps_per_cpu z -2.93, fps_per_gpu z -1.76

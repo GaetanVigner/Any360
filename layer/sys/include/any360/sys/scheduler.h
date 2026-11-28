@@ -101,13 +101,13 @@ class Scheduler {
   uint32_t Yield(Guest g, uint32_t pcr);
   // Spin pacing (spin_pacer.h): a thread's non-alertable zero delays that wait at a steady cadence (a frame limiter's
   // Sleep(0) loop) sleep until shortly before the predicted end of the wait instead of yielding all through it. Off:
-  // every zero delay yields. The log gets, every 10 s while any thread paces, the zero delays, sleeps, time slept and
+  // every zero delay yields. On by default (as titles run). The log gets, every 10 s while any thread paces, the zero delays, sleeps, time slept and
   // waits that ended at a sleep's return (when the margin grew).
   void SetSpinPacing(bool on, std::function<void(const std::string&)> log = nullptr);
   bool spin_pacing() const { return spin_pacing_.load(std::memory_order_relaxed); }
   // With spin pacing on: a thread whose zero delays have no cadence (a thread polling memory for work, such as a
   // render thread waiting for its commands) sleeps in short slices once a wait has gone on for SpinPacer::kIdleAfter
-  // (spin_pacer.h); off: it yields.
+  // (spin_pacer.h); off: it yields. On by default.
   void SetIdleBackoff(bool on) { idle_backoff_.store(on, std::memory_order_relaxed); }
 
   // KeSetCurrentStackPointers: the thread's stack allocation base, base and limit, and the PCR's stack base and end,
@@ -188,7 +188,7 @@ class Scheduler {
   std::chrono::milliseconds stack_interval_{0};
   bool log_creation_ = false;
   std::atomic<int64_t> next_stack_report_{0};  // steady-clock milliseconds
-  std::atomic<bool> spin_pacing_{false}, idle_backoff_{false};
+  std::atomic<bool> spin_pacing_{true}, idle_backoff_{true};
   std::atomic<uint64_t> spin_idle_sleeps_{0}, spin_idle_ns_{0};
   std::function<void(const std::string&)> spin_log_;
   // Totals over every thread since the last report (each thread adds its own once a second).

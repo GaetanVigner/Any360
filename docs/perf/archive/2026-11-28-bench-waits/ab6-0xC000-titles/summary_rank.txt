@@ -1,0 +1,3 @@
+pacing: 5 runs; fps median 319.8 (min 317.6, max 325.5), median median 3.2 (min 3.1, max 3.3), p10 median 233.5 (min 226.7, max 236.9), p1 median 196.2 (min 190.5, max 197.7), slowest median 6.4 (min 5.5, max 7.7), over median 0.0 (min 0.0, max 0.0)
+after200: 5 runs; fps median 346.5 (min 339.4, max 347.8), median median 2.7 (min 2.7, max 2.8), p10 median 277.2 (min 270.5, max 279.1), p1 median 222.3 (min 219.1, max 223.6), slowest median 6.3 (min 5.5, max 16.7), over median 0.0 (min 0.0, max 0.0)
+pacing against after200: fps z -2.61, median z +2.61, p10 z -2.61, p1 z -2.61, slowest z +0.10, over z +0.00

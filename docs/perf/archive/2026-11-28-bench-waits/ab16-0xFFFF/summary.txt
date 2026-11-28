@@ -1,0 +1,10 @@
+pacing 1 [load before: _Total=72 14=11 15=22] any360_bench: 513.5 FPS, median 1.94 ms, 10% low 454.7 FPS, 1% low 412.2 FPS, slowest 32.6 ms, 1 over 16.7 ms
+after200 1 [load before: _Total=77 14=23 15=41] any360_bench: 501.7 FPS, median 1.99 ms, 10% low 418.7 FPS, 1% low 368.9 FPS, slowest 29.9 ms, 1 over 16.7 ms
+pacing 2 [load before: _Total=51 14=4 15=0] any360_bench: 587.3 FPS, median 1.72 ms, 10% low 509.0 FPS, 1% low 456.9 FPS, slowest 8.2 ms, 0 over 16.7 ms
+after200 2 [load before: _Total=51 14=28 15=5] any360_bench: 588.7 FPS, median 1.68 ms, 10% low 494.2 FPS, 1% low 422.7 FPS, slowest 3.8 ms, 0 over 16.7 ms
+pacing 3 [load before: _Total=59 14=11 15=17] any360_bench: 574.2 FPS, median 1.77 ms, 10% low 487.9 FPS, 1% low 429.7 FPS, slowest 3.9 ms, 0 over 16.7 ms
+after200 3 [load before: _Total=55 14=5 15=5] any360_bench: 576.8 FPS, median 1.73 ms, 10% low 490.7 FPS, 1% low 413.4 FPS, slowest 3.6 ms, 0 over 16.7 ms
+pacing 4 [load before: _Total=49 14=0 15=13] any360_bench: 532.3 FPS, median 1.91 ms, 10% low 471.7 FPS, 1% low 423.5 FPS, slowest 3.5 ms, 0 over 16.7 ms
+after200 4 [load before: _Total=50 14=11 15=17] any360_bench: 516.3 FPS, median 1.91 ms, 10% low 408.5 FPS, 1% low 347.3 FPS, slowest 5.0 ms, 0 over 16.7 ms
+pacing 5 [load before: _Total=59 14=27 15=15] any360_bench: 485.3 FPS, median 2.05 ms, 10% low 423.5 FPS, 1% low 379.0 FPS, slowest 3.8 ms, 0 over 16.7 ms
+after200 5 [load before: _Total=23 14=0 15=2] any360_bench: 602.0 FPS, median 1.64 ms, 10% low 489.6 FPS, 1% low 414.5 FPS, slowest 15.9 ms, 0 over 16.7 ms

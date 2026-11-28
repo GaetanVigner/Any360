@@ -1,0 +1,20 @@
+pacing: 5 launches
+  pacing-1.log: dip 1% low 406 FPS, slowest 32.6 ms, 1 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 525-525
+  pacing-2.log: dip 1% low 450 FPS, slowest 8.2 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 578-578
+  pacing-3.log: dip 1% low 415 FPS, slowest 3.9 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 566-566
+  pacing-4.log: dip 1% low 414 FPS, slowest 3.5 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 509-509
+  pacing-5.log: dip 1% low 362 FPS, slowest 3.8 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 466-499
+  steady (6 periods): FPS mean 524.0 (median 517.2, min 466.2), 10% low mean 464.6 (median 464.8, min 416.5), 1% low mean 416.8 (median 417.0, min 374.8); process private memory mean 959 MB, max 961 MB
+  usage: CPU% of a core mean 314 (median 312) [16 processors allowed, mask 0xFFFF]; CPU% of the allowed mean 20 (median 20); GPU% mean 9 (median 9); FPS per CPU% mean 1.67 (median 1.68); FPS per GPU% mean 58.33 (median 58.03)
+  dips (5): 1% low mean 409.4, slowest frame mean 10.4 ms, over 16.7 ms mean 0.2, texture loading mean 0.00 ms a frame
+after200: 5 launches
+  after200-1.log: dip 1% low 373 FPS, slowest 4.7 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 529-529
+  after200-2.log: dip 1% low 427 FPS, slowest 3.1 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 585-585
+  after200-3.log: dip 1% low 412 FPS, slowest 3.6 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 581-581
+  after200-4.log: dip 1% low 304 FPS, slowest 5.0 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 535-535
+  after200-5.log: dip 1% low 393 FPS, slowest 3.7 ms, 0 over 16.7 ms, texture loading up to 0.00 ms a frame; steady FPS 566-566
+  steady (5 periods): FPS mean 559.0 (median 566.2, min 528.6), 10% low mean 480.2 (median 485.9, min 434.6), 1% low mean 420.4 (median 423.8, min 401.3); process private memory mean 959 MB, max 961 MB
+  usage: CPU% of a core mean 261 (median 261) [16 processors allowed, mask 0xFFFF]; CPU% of the allowed mean 16 (median 16); GPU% mean 9 (median 9); FPS per CPU% mean 2.14 (median 2.17); FPS per GPU% mean 61.10 (median 58.73)
+  dips (5): 1% low mean 381.6, slowest frame mean 4.0 ms, over 16.7 ms mean 0.0, texture loading mean 0.00 ms a frame
+pacing against after200: steady fps z -1.64, p10 z -0.73, p1 z -0.55; dips 1% low z +0.94, slowest z +0.94
+pacing against after200: usage cpu z +2.74, gpu z -0.37, fps_per_cpu z -2.74, fps_per_gpu z -1.64

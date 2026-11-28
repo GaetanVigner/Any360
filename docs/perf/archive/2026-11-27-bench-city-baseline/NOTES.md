@@ -18,7 +18,10 @@ The bench title's first scene (docs/BENCH.md), measured as it lands. Raw lines i
   device), 1,367 MB at the end.
 - The small configuration (`--any360_cpu_affinity=0x3 --any360_gpu_device=Radeon`, 600 frames, 2026-11-28): 100 and
   157 FPS in two launches, median 7.5 / 5.4 ms, 1% lows 23 / 27 FPS, 65 and 15 frames over 16.7 ms; the process used
-  only 33-75% of its 2 processors: threads sleep while frames are late (the title's yields, the renderer's waits).
+  only 33-75% of its 2 processors. Corrected 2026-11-28 (docs/perf/archive/2026-11-28-bench-waits/): the bench's
+  threads did not oversleep; processors 0-1 were busy with other processes (other sessions' builds and tests, some
+  pinned to 0x3), and its threads sat ready without a processor. On two idle processors (0xC000, the same shape: one
+  core's two SMT threads) the same run uses 97% of them, with 0 frames over 16.7 ms.
   Texture uploads fall to 1.0 a frame there (8.5 on 16 processors): the extra uploads come from uploads racing the
   CPU's rewrite.
 - Not measured yet: windowed mode.

@@ -71,7 +71,7 @@ REXCVAR_DEFINE_BOOL(any360_sys_spin_pacing, true, "Kernel",
 REXCVAR_DEFINE_BOOL(any360_sys_idle_backoff, true, "Kernel",
                     "Any360 threads group, with any360_sys_spin_pacing: a thread whose Sleep(0) waits have no cadence "
                     "(polling memory for work, as a render thread waits for its commands) sleeps in slices once a wait "
-                    "has gone on for 2 ms (1/8 of what it has waited, 100-500 us asked: 0.5-1 ms with Windows' timer) "
+                    "has gone on for 0.2 ms (1/8 of what it has waited, 100-500 us asked: 0.5-1 ms with Windows' timer) "
                     "instead of yielding; the work is seen at most a slice later");
 REXCVAR_DEFINE_BOOL(any360_sys_log_files, false, "Kernel",
                     "Any360: every file the title opens and closes and every read that gives fewer bytes than asked, by "
