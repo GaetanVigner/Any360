@@ -430,7 +430,8 @@
   "library": "D3D",
   "any360": "todo",
   "titles": {
-   "simpsons": "0x82440578"
+   "simpsons": "0x82440578",
+   "tdu": "0x82672FF0"
   },
   "note": ""
  },
@@ -461,7 +462,8 @@
   "titles": {
    "simpsons": "0x8244C910",
    "crackdown": "0x826B9688",
-   "mirrorsedge": "0x82804DD0"
+   "mirrorsedge": "0x82804DD0",
+   "tdu": "0x82676C48"
   },
   "note": "DrawPrimitiveUP's body: BeginVertices, the vertices copied into its block, EndVertices"
  },
@@ -498,7 +500,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826AFE00"
+   "crackdown": "0x826AFE00",
+   "tdu": "0x82665D08"
   },
   "note": "RB_COLORCONTROL bits 0-2"
  },
@@ -507,7 +510,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826AF940"
+   "crackdown": "0x826AF940",
+   "tdu": "0x826657D0"
   },
   "note": "RB_COLORCONTROL bit 3"
  },
@@ -516,7 +520,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0F08"
+   "crackdown": "0x826B0F08",
+   "tdu": "0x82666FB0"
   },
   "note": "returns ALPHA_TO_MASK_ENABLE (RB_COLORCONTROL)"
  },
@@ -525,7 +530,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826AFEB0"
+   "crackdown": "0x826AFEB0",
+   "tdu": "0x82665DB0"
   },
   "note": "RB_BLEND_RED-ALPHA back to a D3DCOLOR (fmadds, fctidz)"
  },
@@ -552,7 +558,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0220"
+   "crackdown": "0x826B0220",
+   "tdu": "0x826660B0"
   },
   "note": "returns STENCILFAIL_BF (RB_DEPTHCONTROL)"
  },
@@ -561,7 +568,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B01E8"
+   "crackdown": "0x826B01E8",
+   "tdu": "0x82666070"
   },
   "note": "returns STENCILFUNC_BF (RB_DEPTHCONTROL)"
  },
@@ -570,7 +578,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0288"
+   "crackdown": "0x826B0288",
+   "tdu": "0x82666120"
   },
   "note": "returns STENCILZPASS_BF (RB_DEPTHCONTROL)"
  },
@@ -579,7 +588,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0258"
+   "crackdown": "0x826B0258",
+   "tdu": "0x826660F0"
   },
   "note": "returns STENCILZFAIL_BF (RB_DEPTHCONTROL)"
  },
@@ -615,7 +625,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0678"
+   "crackdown": "0x826B0678",
+   "tdu": "0x82666240"
   },
   "note": "returns as set (the word as set)"
  },
@@ -624,7 +635,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826AF8D8"
+   "crackdown": "0x826AF8D8",
+   "tdu": "0x82665760"
   },
   "note": "PA_SU_SC_MODE_CNTL bits 0-2"
  },
@@ -642,7 +654,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826AF908"
+   "crackdown": "0x826AF908",
+   "tdu": "0x82665790"
   },
   "note": "returns POLYMODE, FRONT_PTYPE, BACK_PTYPE (PA_SU_SC_MODE_CNTL)"
  },
@@ -687,7 +700,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0550"
+   "crackdown": "0x826B0550",
+   "tdu": "0x826663D8"
   },
   "note": "returns MSAA_ENABLE (PA_SU_SC_MODE_CNTL)"
  },
@@ -696,7 +710,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0EB0"
+   "crackdown": "0x826B0EB0",
+   "tdu": "0x82666F60"
   },
   "note": "returns MULTI_PRIM_IB_ENA (PA_SU_SC_MODE_CNTL)"
  },
@@ -705,7 +720,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0EE0"
+   "crackdown": "0x826B0EE0",
+   "tdu": "0x82666F88"
   },
   "note": "returns the whole register (VGT_MULTI_PRIM_IB_RESET_INDX)"
  },
@@ -732,7 +748,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B00B8"
+   "crackdown": "0x826B00B8",
+   "tdu": "0x82666470"
   },
   "note": "returns as set (the word as set)"
  },
@@ -741,7 +758,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0150"
+   "crackdown": "0x826B0150",
+   "tdu": "0x82665FD0"
   },
   "note": "returns STENCILFAIL (RB_DEPTHCONTROL)"
  },
@@ -750,7 +768,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0118"
+   "crackdown": "0x826B0118",
+   "tdu": "0x82665F90"
   },
   "note": "returns STENCILFUNC (RB_DEPTHCONTROL)"
  },
@@ -759,7 +778,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B01B8"
+   "crackdown": "0x826B01B8",
+   "tdu": "0x82666040"
   },
   "note": "returns STENCILZPASS (RB_DEPTHCONTROL)"
  },
@@ -768,7 +788,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0188"
+   "crackdown": "0x826B0188",
+   "tdu": "0x82666010"
   },
   "note": "returns STENCILZFAIL (RB_DEPTHCONTROL)"
  },
@@ -777,7 +798,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B00E8"
+   "crackdown": "0x826B00E8",
+   "tdu": "0x82665F60"
   },
   "note": "returns BACKFACE_ENABLE (RB_DEPTHCONTROL)"
  },
@@ -786,7 +808,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0A10"
+   "crackdown": "0x826B0A10",
+   "tdu": "0x82666990"
   },
   "note": "returns PARAM_WRAP_1 (SQ_WRAPPING_0/1)"
  },
@@ -795,7 +818,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0A20"
+   "crackdown": "0x826B0A20",
+   "tdu": "0x826669A0"
   },
   "note": "returns PARAM_WRAP_2 (SQ_WRAPPING_0/1)"
  },
@@ -804,7 +828,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0A30"
+   "crackdown": "0x826B0A30",
+   "tdu": "0x826669B0"
   },
   "note": "returns PARAM_WRAP_3 (SQ_WRAPPING_0/1)"
  },
@@ -813,7 +838,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0A50"
+   "crackdown": "0x826B0A50",
+   "tdu": "0x826669D0"
   },
   "note": "returns PARAM_WRAP_5 (SQ_WRAPPING_0/1)"
  },
@@ -822,7 +848,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0A70"
+   "crackdown": "0x826B0A70",
+   "tdu": "0x826669F0"
   },
   "note": "returns PARAM_WRAP_7 (SQ_WRAPPING_0/1)"
  },
@@ -831,7 +858,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0010"
+   "crackdown": "0x826B0010",
+   "tdu": "0x82666438"
   },
   "note": "returns as set (the word as set)"
  },
@@ -840,7 +868,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0070"
+   "crackdown": "0x826B0070",
+   "tdu": "0x82665ED8"
   },
   "note": "returns ZFUNC (RB_DEPTHCONTROL)"
  },
@@ -849,7 +878,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0038"
+   "crackdown": "0x826B0038",
+   "tdu": "0x82665E98"
   },
   "note": "RB_DEPTHCONTROL bit 2"
  },
@@ -858,7 +888,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B18E8"
+   "crackdown": "0x826B18E8",
+   "tdu": "0x826678F8"
   },
   "note": "returns CLAMP_X (the stage's fetch constant)"
  },
@@ -867,7 +898,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B1938"
+   "crackdown": "0x826B1938",
+   "tdu": "0x82667948"
   },
   "note": "returns CLAMP_Y (the stage's fetch constant)"
  },
@@ -876,7 +908,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B1988"
+   "crackdown": "0x826B1988",
+   "tdu": "0x82667998"
   },
   "note": "returns CLAMP_Z (the stage's fetch constant)"
  },
@@ -885,7 +918,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B1890"
+   "crackdown": "0x826B1890",
+   "tdu": "0x826678A0"
   },
   "note": "returns border_color (the stage's fetch constant)"
  },
@@ -912,7 +946,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B14D0"
+   "crackdown": "0x826B14D0",
+   "tdu": "0x826674E0"
   },
   "note": "returns mip_filter (the stage's fetch constant)"
  },
@@ -921,7 +956,8 @@
   "library": "D3D",
   "any360": "todo",
   "titles": {
-   "simpsons": "0x82444BD8"
+   "simpsons": "0x82444BD8",
+   "tdu": "0x8266B6D0"
   },
   "note": ""
  },
@@ -940,7 +976,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B2698"
+   "crackdown": "0x826B2698",
+   "tdu": "0x82668368"
   },
   "note": "a user clip plane (16 bytes at +10144); dirty bit 54 - index of +32"
  },
@@ -1023,7 +1060,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826AFDE0"
+   "crackdown": "0x826AFDE0",
+   "tdu": "0x82665CE8"
   },
   "note": "RB_COLORCONTROL bits 0-2; dirty 0x200"
  },
@@ -1041,7 +1079,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0EE8"
+   "crackdown": "0x826B0EE8",
+   "tdu": "0x82666F90"
   },
   "note": "sets ALPHA_TO_MASK_ENABLE (RB_COLORCONTROL) and its dirty bits"
  },
@@ -1050,7 +1089,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0F18"
+   "crackdown": "0x826B0F18",
+   "tdu": "0x82666FC0"
   },
   "note": "sets ALPHA_TO_MASK_OFFSET0-3 (RB_COLORCONTROL) and its dirty bits"
  },
@@ -1095,7 +1135,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B01C8"
+   "crackdown": "0x826B01C8",
+   "tdu": "0x82666050"
   },
   "note": "sets STENCILFUNC_BF (RB_DEPTHCONTROL) and its dirty bits"
  },
@@ -1113,7 +1154,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0268"
+   "crackdown": "0x826B0268",
+   "tdu": "0x82666100"
   },
   "note": "sets STENCILZPASS_BF (RB_DEPTHCONTROL) and its dirty bits"
  },
@@ -1158,7 +1200,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826AF8B8"
+   "crackdown": "0x826AF8B8",
+   "tdu": "0x82665740"
   },
   "note": "PA_SU_SC_MODE_CNTL bits 0-2; dirty 0x40"
  },
@@ -1167,7 +1210,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0488"
+   "crackdown": "0x826B0488",
+   "tdu": "0x82666310"
   },
   "note": "both polygon offsets and their enables"
  },
@@ -1194,7 +1238,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826AF8E8"
+   "crackdown": "0x826AF8E8",
+   "tdu": "0x82665770"
   },
   "note": "sets POLYMODE, FRONT_PTYPE, BACK_PTYPE (PA_SU_SC_MODE_CNTL) and its dirty bits"
  },
@@ -1203,7 +1248,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0530"
+   "crackdown": "0x826B0530",
+   "tdu": "0x826663B8"
   },
   "note": "sets MSAA_ENABLE (PA_SU_SC_MODE_CNTL) and its dirty bits"
  },
@@ -1212,7 +1258,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0E90"
+   "crackdown": "0x826B0E90",
+   "tdu": "0x82666F40"
   },
   "note": "sets MULTI_PRIM_IB_ENA (PA_SU_SC_MODE_CNTL) and its dirty bits"
  },
@@ -1230,7 +1277,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826AFCE0"
+   "crackdown": "0x826AFCE0",
+   "tdu": "0x82665BE8"
   },
   "note": "blend flags bit 30; render targets' blend words"
  },
@@ -1239,7 +1287,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B03C0"
+   "crackdown": "0x826B03C0",
+   "tdu": "0x82666248"
   },
   "note": "both polygon offset scales (times the runtime factor) and their enables; dirty bits 45, 43, 0x40"
  },
@@ -1275,7 +1324,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B00F8"
+   "crackdown": "0x826B00F8",
+   "tdu": "0x82665F70"
   },
   "note": "sets STENCILFUNC (RB_DEPTHCONTROL) and its dirty bits"
  },
@@ -1293,7 +1343,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0198"
+   "crackdown": "0x826B0198",
+   "tdu": "0x82666020"
   },
   "note": "sets STENCILZPASS (RB_DEPTHCONTROL) and its dirty bits"
  },
@@ -1339,7 +1390,8 @@
   "any360": "native",
   "titles": {
    "crackdown": "0x826B0AA0",
-   "mirrorsedge": "0x82801570"
+   "mirrorsedge": "0x82801570",
+   "tdu": "0x82666A50"
   },
   "note": "PA_CL_VTE_CNTL and the clip disable"
  },
@@ -1510,7 +1562,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B0018"
+   "crackdown": "0x826B0018",
+   "tdu": "0x82665E78"
   },
   "note": "RB_DEPTHCONTROL bit 2; dirty 0x800"
  },
@@ -1645,7 +1698,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B1D30"
+   "crackdown": "0x826B1D30",
+   "tdu": "0x82667EA0"
   },
   "note": "stream's vertex fetch constant, stride byte; old buffer released"
  },
@@ -1655,7 +1709,8 @@
   "any360": "native",
   "titles": {
    "simpsons": "0x824408E0",
-   "crackdown": "0x826AF038"
+   "crackdown": "0x826AF038",
+   "tdu": "0x82673358"
   },
   "note": ""
  },
@@ -1664,7 +1719,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B1E50"
+   "crackdown": "0x826B1E50",
+   "tdu": "0x82668050"
   },
   "note": "declaration kept at +12156; old one released"
  },
@@ -1738,7 +1794,8 @@
   "any360": "native",
   "titles": {
    "crackdown": "0x826ACC90",
-   "mirrorsedge": "0x827FEAE0"
+   "mirrorsedge": "0x827FEAE0",
+   "tdu": "0x82679150"
   },
   "note": "reference count + 1, a type-4 resource's parent too at 1"
  },
@@ -1748,7 +1805,8 @@
   "any360": "native",
   "titles": {
    "crackdown": "0x826ACDB0",
-   "mirrorsedge": "0x827FEC40"
+   "mirrorsedge": "0x827FEC40",
+   "tdu": "0x826786D0"
   },
   "note": "the resource's type: textures by dimension (line, 2D, array, volume, cube), a volume texture's surface a volume"
  },
@@ -1767,7 +1825,8 @@
   "any360": "native",
   "titles": {
    "crackdown": "0x826ACD08",
-   "mirrorsedge": "0x827FEB58"
+   "mirrorsedge": "0x827FEB58",
+   "tdu": "0x826791C8"
   },
   "note": "reference count - 1; at 0 the parent released, the resource destroyed"
  },
@@ -1785,7 +1844,8 @@
   "library": "D3D",
   "any360": "todo",
   "titles": {
-   "simpsons": "0x824419A0"
+   "simpsons": "0x824419A0",
+   "tdu": "0x82679470"
   },
   "note": ""
  },
@@ -1794,7 +1854,8 @@
   "library": "D3D",
   "any360": "todo",
   "titles": {
-   "simpsons": "0x82456E68"
+   "simpsons": "0x82456E68",
+   "tdu": "0x8267FAD0"
   },
   "note": ""
  },
@@ -1884,7 +1945,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826C6618"
+   "crackdown": "0x826C6618",
+   "tdu": "0x8268E638"
   },
   "note": "an unread output's export instructions emptied"
  },
@@ -1911,7 +1973,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826C4C70"
+   "crackdown": "0x826C4C70",
+   "tdu": "0x8268F160"
   },
   "note": "dcbf over [r3, r4) then sync (no-ops recompiled)"
  },
@@ -1920,7 +1983,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826C5D40"
+   "crackdown": "0x826C5D40",
+   "tdu": "0x8268DD90"
   },
   "note": "the draws' fetch constants (6 dwords a slot) and 0x5000-0x5002"
  },
@@ -1947,7 +2011,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826C5BC0"
+   "crackdown": "0x826C5BC0",
+   "tdu": "0x8268DC10"
   },
   "note": "the draws' wait group: VGT 0x2007, the copy registers, a wait, the group's registers"
  },
@@ -1956,7 +2021,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B10F0"
+   "crackdown": "0x826B10F0",
+   "tdu": "0x82667100"
   },
   "note": "returns bit 2 (RB_HIZCONTROL)"
  },
@@ -1965,7 +2031,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B10C0"
+   "crackdown": "0x826B10C0",
+   "tdu": "0x826670D0"
   },
   "note": "returns bit 3 (RB_HIZCONTROL)"
  },
@@ -1974,7 +2041,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B1120"
+   "crackdown": "0x826B1120",
+   "tdu": "0x82667130"
   },
   "note": "returns bit 5 (RB_HIZCONTROL)"
  },
@@ -1984,7 +2052,8 @@
   "any360": "native",
   "titles": {
    "crackdown": "0x826ACFE8",
-   "mirrorsedge": "0x828106A0"
+   "mirrorsedge": "0x828106A0",
+   "tdu": "0x82670E48"
   },
   "note": "a GPU texture format's block in texels (4x4 compressed, 4x1, 2x1, 1x1)"
  },
@@ -2031,7 +2100,8 @@
   "any360": "native",
   "titles": {
    "crackdown": "0x826C67A0",
-   "mirrorsedge": "0x82816A00"
+   "mirrorsedge": "0x82816A00",
+   "tdu": "0x8268E7C0"
   },
   "note": "the vertex shader's exports matched to the pixel shader's inputs (unread ones emptied, registers remapped)"
  },
@@ -2050,7 +2120,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826C05C8"
+   "crackdown": "0x826C05C8",
+   "tdu": "0x82679F88"
   },
   "note": "an occlusion query's begin or end: its result address per tile, EVENT_WRITE_ZPD"
  },
@@ -2086,7 +2157,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826C66E8"
+   "crackdown": "0x826C66E8",
+   "tdu": "0x8268E708"
   },
   "note": "an output's export instructions given the input's register"
  },
@@ -2140,7 +2212,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826BB0C0"
+   "crackdown": "0x826BB0C0",
+   "tdu": "0x8267FE48"
   },
   "note": "a segment's end packets: INVALIDATE_STATE, the segment's end and count into the device's scratch (EVENT_WRITE_SHD)"
  },
@@ -2149,7 +2222,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826BB348"
+   "crackdown": "0x826BB348",
+   "tdu": "0x8267FF28"
   },
   "note": "a segment submitted: straight to the ring's submit, or chained after the pending ones under the kernel's lock"
  },
@@ -2158,7 +2232,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B10D0"
+   "crackdown": "0x826B10D0",
+   "tdu": "0x826670E0"
   },
   "note": "sets bit 2 (RB_HIZCONTROL) and its dirty bits"
  },
@@ -2167,7 +2242,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B10A0"
+   "crackdown": "0x826B10A0",
+   "tdu": "0x826670B0"
   },
   "note": "sets bit 3 (RB_HIZCONTROL) and its dirty bits"
  },
@@ -2176,7 +2252,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B1100"
+   "crackdown": "0x826B1100",
+   "tdu": "0x82667110"
   },
   "note": "sets bit 5 (RB_HIZCONTROL) and its dirty bits"
  },
@@ -2185,7 +2262,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826B1130"
+   "crackdown": "0x826B1130",
+   "tdu": "0x82667140"
   },
   "note": "sets bits 8-15 (RB_HIZCONTROL) and its dirty bits"
  },
@@ -2230,7 +2308,8 @@
   "library": "D3D",
   "any360": "native",
   "titles": {
-   "crackdown": "0x826AD598"
+   "crackdown": "0x826AD598",
+   "tdu": "0x82670A80"
   },
   "note": "a texture's width, height and depth in texels from its fetch constant, by dimension"
  },

@@ -16318,7 +16318,8 @@
 "uses":78,
 "source":"static call sites",
 "titles":{
-"simpsons":78
+"simpsons":78,
+"tdu":0
 }
 },
 {
@@ -16328,7 +16329,8 @@
 "uses":44,
 "source":"static call sites",
 "titles":{
-"simpsons":44
+"simpsons":44,
+"tdu":0
 }
 },
 {
@@ -16368,7 +16370,8 @@
 "uses":11,
 "source":"static call sites",
 "titles":{
-"simpsons":11
+"simpsons":11,
+"tdu":0
 }
 },
 {
@@ -16432,7 +16435,8 @@
 "uses":4,
 "source":"static call sites",
 "titles":{
-"simpsons":4
+"simpsons":4,
+"tdu":0
 }
 },
 {

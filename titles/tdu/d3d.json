@@ -1,0 +1,5515 @@
+{
+ "title": "tdu",
+ "range": [
+  "0x82664770",
+  "0x82692CE0"
+ ],
+ "note": "Phase D0 of docs/D3D.md, written by tools/d3d_roles.py; names from d3d_names.json, roles of unnamed functions made from their device accesses and PM4. args are approximate.",
+ "functions": [
+  {
+   "address": "0x82664770",
+   "class": "entry",
+   "name": "sub_82664770",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 6,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82664788",
+   "class": "entry",
+   "name": "sub_82664788",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 6,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x826647A0",
+   "class": "entry",
+   "name": "sub_826647A0",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 6,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82664800",
+   "class": "entry",
+   "name": "sub_82664800",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 117,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x826649D8",
+   "class": "entry",
+   "name": "sub_826649D8",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 112,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82664B98",
+   "class": "entry",
+   "name": "sub_82664B98",
+   "named": false,
+   "role": "reads r3 +0",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 18,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+0 (1)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82664C48",
+   "class": "entry",
+   "name": "sub_82664C48",
+   "named": false,
+   "role": "writes r3 +0, +4, +12, +24",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 121,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+4 (4)",
+    "+8 (4)",
+    "+12 (4)",
+    "+24 (4)"
+   ],
+   "r3_writes": [
+    "+0 (4)",
+    "+4 (4)",
+    "+12 (4)",
+    "+24 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82665460",
+   "class": "flush",
+   "name": "sub_82665460",
+   "named": false,
+   "role": "flush: builds SET_BIN_MASK_HI, SET_BIN_MASK_LO, SET_CONSTANT",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 184,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10800 (1)",
+    "+10803 (1)",
+    "+12176 (4)",
+    "+12180 (4)",
+    "+12184 (4)",
+    "+12188 (4)",
+    "+12192 (4)",
+    "+12440 (4)",
+    "+12444 (4)",
+    "+12460 (4)",
+    "+12464 (4)",
+    "+12468 (4)",
+    "+12472 (4)",
+    "+12476 (4)",
+    "+12480 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "SET_BIN_MASK_HI",
+    "SET_BIN_MASK_LO",
+    "SET_CONSTANT"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82665740",
+   "class": "entry",
+   "name": "D3DDevice_SetRenderState_CullMode",
+   "named": true,
+   "role": "PA_SU_SC_MODE_CNTL bits 0-2; dirty 0x40 (matched to Crackdown 0x826AF8B8: the same instructions)",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 7,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+10440 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+10440 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82665770",
+   "class": "entry",
+   "name": "D3DDevice_SetRenderState_FillMode",
+   "named": true,
+   "role": "sets POLYMODE, FRONT_PTYPE, BACK_PTYPE (PA_SU_SC_MODE_CNTL) and its dirty bits (matched to Crackdown 0x826AF8E8: the same instructions)",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 7,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+10440 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+10440 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x826657A0",
+   "class": "entry",
+   "name": "sub_826657A0",
+   "named": false,
+   "role": "writes r3 +16, +10428",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 11,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+10428 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+10428 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82665858",
+   "class": "entry",
+   "name": "sub_82665858",
+   "named": false,
+   "role": "writes r3 +16, +10424, +10456, +10460, +10464, +11588",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 32,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+11584 (4)",
+    "+11588 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+10424 (4)",
+    "+10456 (4)",
+    "+10460 (4)",
+    "+10464 (4)",
+    "+11588 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82665978",
+   "class": "entry",
+   "name": "sub_82665978",
+   "named": false,
+   "role": "writes r3 +16, +10424, +10456, +10460, +10464, +11584",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 31,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+11584 (4)",
+    "+11588 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+10424 (4)",
+    "+10456 (4)",
+    "+10460 (4)",
+    "+10464 (4)",
+    "+11584 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82665A08",
+   "class": "entry",
+   "name": "sub_82665A08",
+   "named": false,
+   "role": "writes r3 +16, +10424, +10456, +10460, +10464, +11584",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 31,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+11584 (4)",
+    "+11588 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+10424 (4)",
+    "+10456 (4)",
+    "+10460 (4)",
+    "+10464 (4)",
+    "+11584 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82665C80",
+   "class": "entry",
+   "name": "sub_82665C80",
+   "named": false,
+   "role": "writes r3 +24, +10372",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 13,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+24 (8)"
+   ],
+   "r3_writes": [
+    "+24 (8)",
+    "+10372 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82665CE8",
+   "class": "entry",
+   "name": "D3DDevice_SetRenderState_AlphaFunc",
+   "named": true,
+   "role": "RB_COLORCONTROL bits 0-2; dirty 0x200 (matched to Crackdown 0x826AFDE0: the same instructions)",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 7,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+10428 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+10428 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82665E30",
+   "class": "entry",
+   "name": "sub_82665E30",
+   "named": false,
+   "role": "writes r3 +16, +10420, +11612",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 16,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+10420 (4)",
+    "+12192 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+10420 (4)",
+    "+11612 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82666F08",
+   "class": "entry",
+   "name": "sub_82666F08",
+   "named": false,
+   "role": "writes r3 +32, +10560",
+   "bound": false,
+   "outside_sites": 4,
+   "instructions": 9,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+32 (8)",
+    "+10560 (4)"
+   ],
+   "r3_writes": [
+    "+32 (8)",
+    "+10560 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82667170",
+   "class": "entry",
+   "name": "sub_82667170",
+   "named": false,
+   "role": "writes r3 +11588",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 4,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+11588 (4)"
+   ],
+   "r3_writes": [
+    "+11588 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82667190",
+   "class": "entry",
+   "name": "sub_82667190",
+   "named": false,
+   "role": "writes r3 +16",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 48,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+16 (8)"
+   ],
+   "r3_writes": [
+    "+16 (8)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82667318",
+   "class": "entry",
+   "name": "sub_82667318",
+   "named": false,
+   "role": "writes r3 +16",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 48,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+16 (8)"
+   ],
+   "r3_writes": [
+    "+16 (8)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82667B70",
+   "class": "entry",
+   "name": "sub_82667B70",
+   "named": false,
+   "role": "writes r3 +10308, +10312, +12408, +12412, +12416, +12420",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 49,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+10308 (4)",
+    "+10312 (4)",
+    "+11592 (4)",
+    "+12384 (4)",
+    "+12388 (4)",
+    "+12392 (4)",
+    "+12396 (4)"
+   ],
+   "r3_writes": [
+    "+10308 (4)",
+    "+10312 (4)",
+    "+12408 (4)",
+    "+12412 (4)",
+    "+12416 (4)",
+    "+12420 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82665460"
+   ]
+  },
+  {
+   "address": "0x82667C60",
+   "class": "entry",
+   "name": "sub_82667C60",
+   "named": false,
+   "role": "writes r3 +24, +10376, +10380, +10384, +10388, +10392, +10396, +12384 ...",
+   "bound": false,
+   "outside_sites": 5,
+   "instructions": 138,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+24 (8)",
+    "+10800 (1)",
+    "+12176 (4)",
+    "+12180 (4)",
+    "+12184 (4)",
+    "+12188 (4)",
+    "+12192 (4)",
+    "+12460 (4)",
+    "+12464 (4)",
+    "+12468 (4)",
+    "+12472 (4)",
+    "+12476 (4)",
+    "+12908 (4)",
+    "+12912 (4)"
+   ],
+   "r3_writes": [
+    "+24 (8)",
+    "+10376 (4)",
+    "+10380 (4)",
+    "+10384 (4)",
+    "+10388 (4)",
+    "+10392 (4)",
+    "+10396 (4)",
+    "+12384 (4)",
+    "+12388 (4)",
+    "+12392 (4)",
+    "+12396 (4)",
+    "+12400 (4)",
+    "+12404 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82667B70"
+   ]
+  },
+  {
+   "address": "0x82667EA0",
+   "class": "entry",
+   "name": "D3DDevice_SetStreamSource",
+   "named": true,
+   "role": "stream's vertex fetch constant, stride byte; old buffer released (matched to Crackdown 0x826B1D30: 86% the same instructions, the next closest 17%)",
+   "bound": false,
+   "outside_sites": 6,
+   "instructions": 73,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+10780 (4)",
+    "+10784 (4)",
+    "+13176 (4)",
+    "+13180 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+13176 (4)"
+   ],
+   "indexed": true,
+   "pm4": [],
+   "calls": [
+    "0x82682268"
+   ]
+  },
+  {
+   "address": "0x82668050",
+   "class": "entry",
+   "name": "D3DDevice_SetVertexDeclaration",
+   "named": true,
+   "role": "declaration kept at +12156; old one released (matched to Crackdown 0x826B1E50: 86% the same instructions, the next closest 65%)",
+   "bound": false,
+   "outside_sites": 4,
+   "instructions": 36,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+10780 (4)",
+    "+10784 (4)",
+    "+12172 (4)",
+    "+13176 (4)",
+    "+13180 (4)"
+   ],
+   "r3_writes": [
+    "+12172 (4)",
+    "+13176 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82682268"
+   ]
+  },
+  {
+   "address": "0x82668228",
+   "class": "entry",
+   "name": "sub_82668228",
+   "named": false,
+   "role": "no access through r3 (calls 0x826856A8, 0x826859D0)",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 34,
+   "args": [
+    "r3",
+    "r5"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x826856A8",
+    "0x826859D0"
+   ]
+  },
+  {
+   "address": "0x82668368",
+   "class": "entry",
+   "name": "D3DDevice_SetClipPlane",
+   "named": true,
+   "role": "a user clip plane (16 bytes at +10144); dirty bit 54 - index of +32 (matched to Crackdown 0x826B2698: the same instructions)",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 20,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+32 (8)"
+   ],
+   "r3_writes": [
+    "+32 (8)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x826685F8",
+   "class": "flush",
+   "name": "sub_826685F8",
+   "named": false,
+   "role": "flush: builds SET_BIN_MASK_HI, SET_BIN_MASK_LO, SET_BIN_SELECT_HI, SET_BIN_SELECT_LO",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 61,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10308 (4)",
+    "+10312 (4)",
+    "+10788 (4)",
+    "+12440 (4)",
+    "+12444 (4)"
+   ],
+   "r3_writes": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "SET_BIN_MASK_HI",
+    "SET_BIN_MASK_LO",
+    "SET_BIN_SELECT_HI",
+    "SET_BIN_SELECT_LO"
+   ],
+   "calls": [
+    "0x82665460",
+    "0x8267B140",
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82668AA0",
+   "class": "entry",
+   "name": "sub_82668AA0",
+   "named": false,
+   "role": "writes r3 +16, +24, +10240, +10248, +10420, +10432, +10800, +10802 ...",
+   "bound": false,
+   "outside_sites": 4,
+   "instructions": 174,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+24 (8)",
+    "+10240 (4)",
+    "+10420 (4)",
+    "+10432 (4)",
+    "+10800 (1)",
+    "+10802 (1)",
+    "+10803 (1)",
+    "+11612 (4)",
+    "+11616 (4)",
+    "+12176 (4)",
+    "+12180 (4)",
+    "+12184 (4)",
+    "+12188 (4)",
+    "+12192 (4)",
+    "+12448 (4)",
+    "+12460 (4)",
+    "+12464 (4)",
+    "+12468 (4)",
+    "+12472 (4)",
+    "+12476 (4)",
+    "+12904 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+24 (8)",
+    "+10240 (4)",
+    "+10248 (4)",
+    "+10420 (4)",
+    "+10432 (4)",
+    "+10800 (1)",
+    "+10802 (1)",
+    "+11612 (4)",
+    "+11616 (4)",
+    "+12192 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x826686F0"
+   ]
+  },
+  {
+   "address": "0x82669368",
+   "class": "entry",
+   "name": "sub_82669368",
+   "named": false,
+   "role": "no access through r3 (calls 0x82668798)",
+   "bound": false,
+   "outside_sites": 6,
+   "instructions": 1,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82668798"
+   ]
+  },
+  {
+   "address": "0x8266B808",
+   "class": "entry",
+   "name": "D3DDevice_SetVertexShaderConstantF",
+   "named": true,
+   "role": "16-byte registers at (first + 112) * 16, dirty bits at +0 (Crackdown 0x826B2F68; bound native in this title, checked in game: db/xdk_seed.json)",
+   "bound": true,
+   "outside_sites": 5,
+   "instructions": 67,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266B918",
+   "class": "entry",
+   "name": "sub_8266B918",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 67,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266BA68",
+   "class": "entry",
+   "name": "sub_8266BA68",
+   "named": false,
+   "role": "writes r3 +24",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 21,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+24 (8)"
+   ],
+   "r3_writes": [
+    "+24 (8)"
+   ],
+   "indexed": true,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266BAC0",
+   "class": "entry",
+   "name": "sub_8266BAC0",
+   "named": false,
+   "role": "writes r3 +24",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 21,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+24 (8)"
+   ],
+   "r3_writes": [
+    "+24 (8)"
+   ],
+   "indexed": true,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266BBA8",
+   "class": "entry",
+   "name": "sub_8266BBA8",
+   "named": false,
+   "role": "writes r3 +24",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 19,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+24 (8)"
+   ],
+   "r3_writes": [
+    "+24 (8)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266BBF8",
+   "class": "entry",
+   "name": "sub_8266BBF8",
+   "named": false,
+   "role": "writes r3 +24",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 19,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+24 (8)"
+   ],
+   "r3_writes": [
+    "+24 (8)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266BCD8",
+   "class": "entry",
+   "name": "sub_8266BCD8",
+   "named": false,
+   "role": "reads r3 +0, +4, +8",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 20,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+4 (4)",
+    "+8 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266BDB0",
+   "class": "entry",
+   "name": "sub_8266BDB0",
+   "named": false,
+   "role": "writes r3 +0, +4, +20, +24",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 23,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [],
+   "r3_writes": [
+    "+0 (4)",
+    "+4 (4)",
+    "+20 (4)",
+    "+24 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266BE10",
+   "class": "entry",
+   "name": "sub_8266BE10",
+   "named": false,
+   "role": "writes r3 +8, +16, +24, +12424",
+   "bound": false,
+   "outside_sites": 8,
+   "instructions": 74,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)"
+   ],
+   "r3_writes": [
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+12424 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266BF80",
+   "class": "entry",
+   "name": "sub_8266BF80",
+   "named": false,
+   "role": "writes r3 +0, +4, +20, +24, +48, +60",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 49,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+612 (4)"
+   ],
+   "r3_writes": [
+    "+0 (4)",
+    "+4 (4)",
+    "+20 (4)",
+    "+24 (4)",
+    "+48 (4)",
+    "+60 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266C198",
+   "class": "entry",
+   "name": "sub_8266C198",
+   "named": false,
+   "role": "writes r3 +13156",
+   "bound": false,
+   "outside_sites": 8,
+   "instructions": 2,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [],
+   "r3_writes": [
+    "+13156 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x8266C048"
+   ]
+  },
+  {
+   "address": "0x8266C1F0",
+   "class": "entry",
+   "name": "sub_8266C1F0",
+   "named": false,
+   "role": "writes r3 +16, +11544",
+   "bound": false,
+   "outside_sites": 6,
+   "instructions": 7,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+16 (8)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+11544 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266C250",
+   "class": "entry",
+   "name": "D3DDevice_CreateVertexDeclaration",
+   "named": true,
+   "role": "builds a declaration object (matched to Crackdown 0x826B3AE8: the same instructions)",
+   "bound": false,
+   "outside_sites": 10,
+   "instructions": 56,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+0 (2)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266E318",
+   "class": "entry",
+   "name": "sub_8266E318",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 16,
+   "args": [
+    "r3",
+    "r5"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266E358",
+   "class": "entry",
+   "name": "sub_8266E358",
+   "named": false,
+   "role": "reads r3 +0, +4, +8",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 59,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+4 (4)",
+    "+8 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266E488",
+   "class": "entry",
+   "name": "sub_8266E488",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 16,
+   "args": [
+    "r3",
+    "r5"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8266E4C8",
+   "class": "entry",
+   "name": "sub_8266E4C8",
+   "named": false,
+   "role": "reads r3 +0, +4, +8",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 51,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+4 (4)",
+    "+8 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x8266BF80"
+   ]
+  },
+  {
+   "address": "0x8266E5D8",
+   "class": "entry",
+   "name": "sub_8266E5D8",
+   "named": false,
+   "role": "writes r3 +16, +11544, +12168",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 20,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+16 (8)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+11544 (4)",
+    "+12168 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82669378"
+   ]
+  },
+  {
+   "address": "0x82670A80",
+   "class": "entry",
+   "name": "D3D_TextureDimensions",
+   "named": true,
+   "role": "the width, height and depth from the fetch constant's +36 by its dimension (+48), +1 (or +3 with +40 bit 31), to *r4, *r5, *r6 (matched to Crackdown 0x826AD598: the same instructions)",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 38,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+36 (4)",
+    "+40 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82670C00",
+   "class": "entry",
+   "name": "sub_82670C00",
+   "named": false,
+   "role": "reads r3 +32, +48",
+   "bound": false,
+   "outside_sites": 7,
+   "instructions": 5,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+32 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82678F30"
+   ]
+  },
+  {
+   "address": "0x82670C58",
+   "class": "entry",
+   "name": "sub_82670C58",
+   "named": false,
+   "role": "reads r3 +32, +48",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 5,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+32 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82678F30"
+   ]
+  },
+  {
+   "address": "0x82670E48",
+   "class": "entry",
+   "name": "D3D_GpuFormatBlock",
+   "named": true,
+   "role": "a GPU texture format's block width and height in texels, to *r4 then *r5 (matched to Crackdown 0x826ACFE8: the same instructions)",
+   "bound": false,
+   "outside_sites": 4,
+   "instructions": 38,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82670F40",
+   "class": "entry",
+   "name": "sub_82670F40",
+   "named": false,
+   "role": "reads r3 +28, +32, +40",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 33,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+28 (4)",
+    "+32 (4)",
+    "+40 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x826710D0",
+   "class": "entry",
+   "name": "sub_826710D0",
+   "named": false,
+   "role": "writes r3 +0",
+   "bound": false,
+   "outside_sites": 4,
+   "instructions": 67,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9"
+   ],
+   "r3_reads": [
+    "+0 (4)"
+   ],
+   "r3_writes": [
+    "+0 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82670E48"
+   ]
+  },
+  {
+   "address": "0x826716B0",
+   "class": "entry",
+   "name": "sub_826716B0",
+   "named": false,
+   "role": "no access through r3 (calls 0x82670E48)",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 86,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9",
+    "r10"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82670E48"
+   ]
+  },
+  {
+   "address": "0x82671D30",
+   "class": "entry",
+   "name": "sub_82671D30",
+   "named": false,
+   "role": "reads r3 +28, +32, +36, +40, +44, +48",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 303,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9",
+    "r10"
+   ],
+   "r3_reads": [
+    "+28 (4)",
+    "+32 (4)",
+    "+36 (4)",
+    "+40 (4)",
+    "+44 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82670A80",
+    "0x82670E48",
+    "0x826710D0",
+    "0x826716B0",
+    "0x826786D0"
+   ]
+  },
+  {
+   "address": "0x826723F0",
+   "class": "entry",
+   "name": "sub_826723F0",
+   "named": false,
+   "role": "no access through r3 (calls 0x82670FD8, 0x826711E0)",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 193,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9",
+    "r10"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82670FD8",
+    "0x826711E0"
+   ]
+  },
+  {
+   "address": "0x826726F8",
+   "class": "entry",
+   "name": "sub_826726F8",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 149,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9",
+    "r10"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82672950",
+   "class": "entry",
+   "name": "sub_82672950",
+   "named": false,
+   "role": "reads r3 +44",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 4,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+44 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82672BF0",
+   "class": "entry",
+   "name": "sub_82672BF0",
+   "named": false,
+   "role": "no access through r3 (calls 0x82671C10)",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 1,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82671C10"
+   ]
+  },
+  {
+   "address": "0x82672BF8",
+   "class": "entry",
+   "name": "sub_82672BF8",
+   "named": false,
+   "role": "reads r3 +0",
+   "bound": false,
+   "outside_sites": 6,
+   "instructions": 46,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+0 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82671D30",
+    "0x82679150"
+   ]
+  },
+  {
+   "address": "0x82672CB0",
+   "class": "entry",
+   "name": "sub_82672CB0",
+   "named": false,
+   "role": "no access through r3 (calls 0x826722B8)",
+   "bound": false,
+   "outside_sites": 6,
+   "instructions": 6,
+   "args": [
+    "r4",
+    "r5",
+    "r6",
+    "r7"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x826722B8"
+   ]
+  },
+  {
+   "address": "0x82672CC8",
+   "class": "entry",
+   "name": "sub_82672CC8",
+   "named": false,
+   "role": "no access through r3 (calls 0x82671C10)",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 1,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82671C10"
+   ]
+  },
+  {
+   "address": "0x82672D90",
+   "class": "entry",
+   "name": "sub_82672D90",
+   "named": false,
+   "role": "no access through r3 (calls 0x82671C10)",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 1,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82671C10"
+   ]
+  },
+  {
+   "address": "0x82672E58",
+   "class": "entry",
+   "name": "sub_82672E58",
+   "named": false,
+   "role": "no access through r3 (calls 0x82671CA0)",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 1,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82671CA0"
+   ]
+  },
+  {
+   "address": "0x82672F10",
+   "class": "entry",
+   "name": "sub_82672F10",
+   "named": false,
+   "role": "no access through r3 (calls 0x82672348)",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 1,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82672348"
+   ]
+  },
+  {
+   "address": "0x82672F18",
+   "class": "entry",
+   "name": "sub_82672F18",
+   "named": false,
+   "role": "no access through r3 (calls 0x82671C10)",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 1,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82671C10"
+   ]
+  },
+  {
+   "address": "0x82672FF0",
+   "class": "entry",
+   "name": "D3DDevice_CreateTexture",
+   "named": true,
+   "role": "D3DDevice_CreateTexture (matched to The Simpsons Game 0x82440578: the same instructions)",
+   "bound": false,
+   "outside_sites": 7,
+   "instructions": 72,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r10"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x826723F0"
+   ]
+  },
+  {
+   "address": "0x82673110",
+   "class": "entry",
+   "name": "sub_82673110",
+   "named": false,
+   "role": "no access through r3 (calls 0x826726F8, 0x82685F70, 0x82685FC0)",
+   "bound": false,
+   "outside_sites": 4,
+   "instructions": 74,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x826726F8",
+    "0x82685F70",
+    "0x82685FC0"
+   ]
+  },
+  {
+   "address": "0x82673238",
+   "class": "entry",
+   "name": "sub_82673238",
+   "named": false,
+   "role": "reads r3 +0, +24, +28",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 38,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+24 (4)",
+    "+28 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82671C10"
+   ]
+  },
+  {
+   "address": "0x826732F0",
+   "class": "entry",
+   "name": "sub_826732F0",
+   "named": false,
+   "role": "reads r3 +24, +28",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 17,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+24 (4)",
+    "+28 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82671CA0"
+   ]
+  },
+  {
+   "address": "0x82673358",
+   "class": "entry",
+   "name": "D3DDevice_SetTexture",
+   "named": true,
+   "role": "stage's fetch constant from the texture's, mip range clamped; old texture released (fence or release list) (matched to Crackdown 0x826AF038: 90% the same instructions, the next closest 11%)",
+   "bound": false,
+   "outside_sites": 12,
+   "instructions": 94,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+10780 (4)",
+    "+10784 (4)",
+    "+13176 (4)",
+    "+13180 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+13176 (4)"
+   ],
+   "indexed": true,
+   "pm4": [],
+   "calls": [
+    "0x82682268"
+   ]
+  },
+  {
+   "address": "0x82673890",
+   "class": "entry",
+   "name": "sub_82673890",
+   "named": false,
+   "role": "writes r3 +52",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 21,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+-4 (4)",
+    "+52 (4)"
+   ],
+   "r3_writes": [
+    "+52 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82687420"
+   ]
+  },
+  {
+   "address": "0x82673958",
+   "class": "entry",
+   "name": "sub_82673958",
+   "named": false,
+   "role": "writes r3 +10760",
+   "bound": false,
+   "outside_sites": 7,
+   "instructions": 16,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+10760 (4)"
+   ],
+   "r3_writes": [
+    "+10760 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82673998",
+   "class": "entry",
+   "name": "sub_82673998",
+   "named": false,
+   "role": "writes r3 +10760",
+   "bound": false,
+   "outside_sites": 6,
+   "instructions": 4,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [],
+   "r3_writes": [
+    "+10760 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82673AE8",
+   "class": "flush",
+   "name": "sub_82673AE8",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 31,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82673CC8",
+   "class": "entry",
+   "name": "sub_82673CC8",
+   "named": false,
+   "role": "no access through r3 (calls 0x826736F0, 0x82673890, 0x8267F778, 0x826871B0)",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 45,
+   "args": [
+    "r4",
+    "r6",
+    "r7",
+    "r8"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x826736F0",
+    "0x82673890",
+    "0x8267F778",
+    "0x826871B0",
+    "0x826873C0"
+   ]
+  },
+  {
+   "address": "0x82673E40",
+   "class": "flush",
+   "name": "sub_82673E40",
+   "named": false,
+   "role": "flush: builds REG_RMW",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 55,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "REG_RMW"
+   ],
+   "calls": [
+    "0x82680758",
+    "0x826859D0",
+    "0x82685AB0",
+    "0x82685BA0",
+    "0x82685BF8"
+   ]
+  },
+  {
+   "address": "0x82673FB0",
+   "class": "flush",
+   "name": "sub_82673FB0",
+   "named": false,
+   "role": "flush: builds WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 91,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10772 (4)",
+    "+10801 (1)",
+    "+11588 (4)",
+    "+13248 (4)",
+    "+13484 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)",
+    "+10801 (1)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x826801A0",
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82674120",
+   "class": "flush",
+   "name": "sub_82674120",
+   "named": false,
+   "role": "flush: builds REG_RMW, WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 364,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10768 (4)",
+    "+10780 (4)",
+    "+10801 (1)",
+    "+10802 (1)",
+    "+10803 (1)",
+    "+13260 (4)",
+    "+13264 (4)",
+    "+13520 (4)",
+    "+13548 (4)",
+    "+19956 (4)",
+    "+19980 (4)",
+    "+20048 (4)",
+    "+20052 (4)",
+    "+20056 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)",
+    "+10801 (1)",
+    "+10802 (1)",
+    "+10803 (1)",
+    "+13548 (4)",
+    "+13552 (4)",
+    "+19980 (4)",
+    "+20052 (4)",
+    "+20092 (4)",
+    "+20408 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "REG_RMW",
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x826685F8",
+    "0x82673E40",
+    "0x82680408",
+    "0x82680758",
+    "0x826809C8",
+    "0x82686FD0",
+    "0x826886A8",
+    "0x82688788",
+    "0x82689698",
+    "0x8268B630",
+    "0x8268B960",
+    "0x8268D450"
+   ]
+  },
+  {
+   "address": "0x826746D0",
+   "class": "entry",
+   "name": "sub_826746D0",
+   "named": false,
+   "role": "reads r3 +13436, +13440",
+   "bound": false,
+   "outside_sites": 4,
+   "instructions": 75,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+13436 (4)",
+    "+13440 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82667B70",
+    "0x82667C60",
+    "0x82668798",
+    "0x82673FB0",
+    "0x82674120",
+    "0x82675508",
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82675428",
+   "class": "flush",
+   "name": "sub_82675428",
+   "named": false,
+   "role": "flush: builds SET_BIN_MASK_LO",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 55,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+12440 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "SET_BIN_MASK_LO"
+   ],
+   "calls": []
+  },
+  {
+   "address": "0x82675508",
+   "class": "flush",
+   "name": "sub_82675508",
+   "named": false,
+   "role": "flush: builds DRAW_INDX_2, EVENT_WRITE, IM_LOAD_IMMEDIATE, SET_BIN_MASK_HI, SET_BIN_MASK_LO, SET_CONSTANT, WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 834,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9",
+    "r10"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+10268 (4)",
+    "+10308 (4)",
+    "+10312 (4)",
+    "+10432 (4)",
+    "+10560 (4)",
+    "+10780 (4)",
+    "+10784 (4)",
+    "+10800 (1)",
+    "+10801 (1)",
+    "+10802 (1)",
+    "+12176 (4)",
+    "+12180 (4)",
+    "+12184 (4)",
+    "+12188 (4)",
+    "+12192 (4)",
+    "+12440 (4)",
+    "+12444 (4)",
+    "+12460 (4)",
+    "+12464 (4)",
+    "+12468 (4)",
+    "+12472 (4)",
+    "+12476 (4)",
+    "+12480 (4)",
+    "+13176 (4)",
+    "+13180 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+10648 (4)",
+    "+10652 (4)",
+    "+10656 (4)",
+    "+10660 (4)",
+    "+10692 (4)",
+    "+10801 (1)",
+    "+10802 (1)",
+    "+13176 (4)"
+   ],
+   "indexed": true,
+   "pm4": [
+    "DRAW_INDX_2",
+    "EVENT_WRITE",
+    "IM_LOAD_IMMEDIATE",
+    "SET_BIN_MASK_HI",
+    "SET_BIN_MASK_LO",
+    "SET_CONSTANT",
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x82665460",
+    "0x82671D30",
+    "0x82674A10",
+    "0x82674EE8",
+    "0x82675350",
+    "0x82675428",
+    "0x8267F9E8",
+    "0x82680758",
+    "0x82682268",
+    "0x8268D928",
+    "0x8268DB50"
+   ]
+  },
+  {
+   "address": "0x82676778",
+   "class": "flush",
+   "name": "sub_82676778",
+   "named": false,
+   "role": "flush: builds DRAW_INDX, EVENT_WRITE, EVENT_WRITE_EXT, SET_BIN_MASK_LO",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 299,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+10432 (4)",
+    "+10800 (1)",
+    "+11560 (1)",
+    "+11923 (1)",
+    "+12264 (1)"
+   ],
+   "r3_writes": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+11576 (8)",
+    "+12264 (1)",
+    "+12984 (4)",
+    "+13092 (4)",
+    "+13096 (4)",
+    "+13104 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX",
+    "EVENT_WRITE",
+    "EVENT_WRITE_EXT",
+    "SET_BIN_MASK_LO"
+   ],
+   "calls": [
+    "0x8267F9E8",
+    "0x82680318",
+    "0x82680758",
+    "0x8268D928",
+    "0x8268DB50",
+    "0x8268DC10",
+    "0x8268DD90",
+    "0x8268DEF0",
+    "0x8268EA38"
+   ]
+  },
+  {
+   "address": "0x82676C48",
+   "class": "entry",
+   "name": "D3DDevice_DrawVerticesUP",
+   "named": true,
+   "role": "BeginVertices (Crackdown's sub_826B91E0), the vertices memcpy'd into its block, the cursor moved past the draw (+48 = +13076) (matched to Crackdown 0x826B9688: 87% the same instructions, the next closest 41%)",
+   "bound": false,
+   "outside_sites": 8,
+   "instructions": 23,
+   "args": [
+    "r3",
+    "r5",
+    "r6",
+    "r7"
+   ],
+   "r3_reads": [
+    "+10800 (1)",
+    "+13092 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82676778",
+    "0x82687898"
+   ]
+  },
+  {
+   "address": "0x82676CA8",
+   "class": "flush",
+   "name": "sub_82676CA8",
+   "named": false,
+   "role": "flush: builds DRAW_INDX, EVENT_WRITE, EVENT_WRITE_EXT, SET_BIN_MASK_LO",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 336,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9",
+    "r10"
+   ],
+   "r3_reads": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+10432 (4)",
+    "+10800 (1)",
+    "+11560 (1)",
+    "+11923 (1)",
+    "+12264 (1)"
+   ],
+   "r3_writes": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+11576 (8)",
+    "+12264 (1)",
+    "+12984 (4)",
+    "+13092 (4)",
+    "+13096 (4)",
+    "+13100 (4)",
+    "+13104 (4)",
+    "+13108 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX",
+    "EVENT_WRITE",
+    "EVENT_WRITE_EXT",
+    "SET_BIN_MASK_LO"
+   ],
+   "calls": [
+    "0x8267F9E8",
+    "0x82680318",
+    "0x82680758",
+    "0x8268D928",
+    "0x8268DB50",
+    "0x8268DC10",
+    "0x8268DD90",
+    "0x8268DEF0",
+    "0x8268EA38"
+   ]
+  },
+  {
+   "address": "0x826772C0",
+   "class": "flush",
+   "name": "sub_826772C0",
+   "named": false,
+   "role": "flush: builds DRAW_INDX, EVENT_WRITE, EVENT_WRITE_EXT, SET_BIN_MASK_LO",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 257,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+10432 (4)",
+    "+10800 (1)",
+    "+11923 (1)"
+   ],
+   "r3_writes": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+11576 (8)",
+    "+12984 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX",
+    "EVENT_WRITE",
+    "EVENT_WRITE_EXT",
+    "SET_BIN_MASK_LO"
+   ],
+   "calls": [
+    "0x82680318",
+    "0x82680758",
+    "0x8268D928",
+    "0x8268DB50",
+    "0x8268DC10",
+    "0x8268DD90",
+    "0x8268DEF0",
+    "0x8268EA38"
+   ]
+  },
+  {
+   "address": "0x826776C8",
+   "class": "flush",
+   "name": "sub_826776C8",
+   "named": false,
+   "role": "flush: builds DRAW_INDX, EVENT_WRITE, EVENT_WRITE_EXT, SET_BIN_MASK_LO",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 285,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7"
+   ],
+   "r3_reads": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+10432 (4)",
+    "+10800 (1)",
+    "+11923 (1)",
+    "+12172 (4)"
+   ],
+   "r3_writes": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+11576 (8)",
+    "+12984 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX",
+    "EVENT_WRITE",
+    "EVENT_WRITE_EXT",
+    "SET_BIN_MASK_LO"
+   ],
+   "calls": [
+    "0x82680318",
+    "0x82680758",
+    "0x8268D928",
+    "0x8268DB50",
+    "0x8268DC10",
+    "0x8268DD90",
+    "0x8268DEF0",
+    "0x8268EA38"
+   ]
+  },
+  {
+   "address": "0x82677B40",
+   "class": "flush",
+   "name": "sub_82677B40",
+   "named": false,
+   "role": "flush: builds DRAW_INDX, EVENT_WRITE, EVENT_WRITE_EXT, SET_BIN_MASK_LO",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 293,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+10432 (4)",
+    "+10484 (4)",
+    "+10800 (1)",
+    "+11923 (1)"
+   ],
+   "r3_writes": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+10484 (4)",
+    "+10504 (4)",
+    "+10508 (4)",
+    "+10512 (4)",
+    "+10516 (4)",
+    "+10520 (4)",
+    "+10524 (4)",
+    "+10528 (4)",
+    "+11576 (8)",
+    "+12984 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX",
+    "EVENT_WRITE",
+    "EVENT_WRITE_EXT",
+    "SET_BIN_MASK_LO"
+   ],
+   "calls": [
+    "0x82680318",
+    "0x82680758",
+    "0x8268D928",
+    "0x8268DB50",
+    "0x8268DC10",
+    "0x8268DD90",
+    "0x8268DEF0",
+    "0x8268EA38"
+   ]
+  },
+  {
+   "address": "0x82677FD8",
+   "class": "flush",
+   "name": "sub_82677FD8",
+   "named": false,
+   "role": "flush: builds DRAW_INDX, EVENT_WRITE, EVENT_WRITE_EXT, SET_BIN_MASK_LO",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 381,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7"
+   ],
+   "r3_reads": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+10432 (4)",
+    "+10484 (4)",
+    "+10488 (4)",
+    "+10800 (1)",
+    "+11923 (1)",
+    "+12172 (4)"
+   ],
+   "r3_writes": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+10484 (4)",
+    "+10504 (4)",
+    "+10508 (4)",
+    "+10512 (4)",
+    "+10516 (4)",
+    "+10520 (4)",
+    "+10524 (4)",
+    "+10528 (4)",
+    "+11576 (8)",
+    "+12984 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX",
+    "EVENT_WRITE",
+    "EVENT_WRITE_EXT",
+    "SET_BIN_MASK_LO"
+   ],
+   "calls": [
+    "0x82680318",
+    "0x82680758",
+    "0x8268D928",
+    "0x8268DB50",
+    "0x8268DC10",
+    "0x8268DD90",
+    "0x8268DEF0",
+    "0x8268EA38"
+   ]
+  },
+  {
+   "address": "0x826785D0",
+   "class": "flush",
+   "name": "sub_826785D0",
+   "named": false,
+   "role": "flush: builds WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 45,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x826786D0",
+   "class": "entry",
+   "name": "D3DResource_GetType",
+   "named": true,
+   "role": "the common word's type, a texture's refined by its dimension (+48 bits 9-10, the array bit at +32), a surface of a volume texture 16 (matched to Crackdown 0x826ACDB0: the same instructions)",
+   "bound": false,
+   "outside_sites": 5,
+   "instructions": 35,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+24 (4)",
+    "+32 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x826789B0",
+   "class": "flush",
+   "name": "sub_826789B0",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE, WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 81,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+24 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+10292 (4)"
+   ],
+   "r3_writes": [
+    "+24 (8)",
+    "+40 (4)"
+   ],
+   "indexed": true,
+   "pm4": [
+    "EVENT_WRITE",
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82678CF8",
+   "class": "flush",
+   "name": "sub_82678CF8",
+   "named": false,
+   "role": "flush: builds WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 141,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9",
+    "r10"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+24 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x8267F380",
+    "0x826800D8",
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82679090",
+   "class": "flush",
+   "name": "sub_82679090",
+   "named": false,
+   "role": "flush: builds WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 48,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82679150",
+   "class": "entry",
+   "name": "D3DResource_AddRef",
+   "named": true,
+   "role": "atomic increment of the resource's count (+4); at 1, a parent resource of type 4 is referenced too (matched to Crackdown 0x826ACC90: the same instructions)",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 29,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+24 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x826791C8",
+   "class": "entry",
+   "name": "D3DResource_Release",
+   "named": true,
+   "role": "atomic decrement of the count; at 0, the parent released and the resource destroyed (Crackdown's sub_826AC6C8) (matched to Crackdown 0x826ACD08: the same instructions)",
+   "bound": false,
+   "outside_sites": 14,
+   "instructions": 32,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+24 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82678AF8"
+   ]
+  },
+  {
+   "address": "0x82679298",
+   "class": "entry",
+   "name": "sub_82679298",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 4,
+   "instructions": 50,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82679360",
+   "class": "entry",
+   "name": "sub_82679360",
+   "named": false,
+   "role": "reads r3 +24, +28",
+   "bound": false,
+   "outside_sites": 5,
+   "instructions": 24,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+24 (4)",
+    "+28 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82678CF8"
+   ]
+  },
+  {
+   "address": "0x82679470",
+   "class": "entry",
+   "name": "D3DVertexBuffer_Unlock",
+   "named": true,
+   "role": "D3DVertexBuffer_Unlock (matched to The Simpsons Game 0x824419A0: the same instructions)",
+   "bound": false,
+   "outside_sites": 5,
+   "instructions": 4,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+24 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82678F30"
+   ]
+  },
+  {
+   "address": "0x826794D8",
+   "class": "entry",
+   "name": "sub_826794D8",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 43,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82679588",
+   "class": "entry",
+   "name": "sub_82679588",
+   "named": false,
+   "role": "reads r3 +24, +28",
+   "bound": false,
+   "outside_sites": 5,
+   "instructions": 23,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+24 (4)",
+    "+28 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82678CF8"
+   ]
+  },
+  {
+   "address": "0x826795E8",
+   "class": "entry",
+   "name": "sub_826795E8",
+   "named": false,
+   "role": "reads r3 +24",
+   "bound": false,
+   "outside_sites": 5,
+   "instructions": 3,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+24 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82678F30"
+   ]
+  },
+  {
+   "address": "0x82679788",
+   "class": "flush",
+   "name": "sub_82679788",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 120,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10780 (4)",
+    "+10784 (4)",
+    "+13152 (4)",
+    "+13176 (4)",
+    "+13180 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)",
+    "+13152 (4)",
+    "+13176 (4)"
+   ],
+   "indexed": true,
+   "pm4": [
+    "EVENT_WRITE"
+   ],
+   "calls": [
+    "0x82671D30",
+    "0x82679090",
+    "0x82680758",
+    "0x82682268"
+   ]
+  },
+  {
+   "address": "0x82679968",
+   "class": "flush",
+   "name": "sub_82679968",
+   "named": false,
+   "role": "flush: builds WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 61,
+   "args": [
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x8267F380",
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82679F88",
+   "class": "flush",
+   "name": "D3D_OcclusionQueryBeginEnd",
+   "named": true,
+   "role": "an occlusion query's begin or end: its result address per tile, EVENT_WRITE_ZPD (matched to Crackdown 0x826C05C8: 87% the same instructions, the next closest 15%)",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 114,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+12440 (4)",
+    "+12444 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE_ZPD",
+    "SET_BIN_MASK_HI",
+    "SET_BIN_MASK_LO",
+    "SET_CONSTANT"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x8267A1B8",
+   "class": "entry",
+   "name": "sub_8267A1B8",
+   "named": false,
+   "role": "no access through r3 (calls 0x82679AC8, 0x82679B80, 0x82679CC0, 0x82679F18)",
+   "bound": false,
+   "outside_sites": 7,
+   "instructions": 127,
+   "args": [
+    "r4",
+    "r5",
+    "r6",
+    "r8"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82679AC8",
+    "0x82679B80",
+    "0x82679CC0",
+    "0x82679F18"
+   ]
+  },
+  {
+   "address": "0x8267A530",
+   "class": "entry",
+   "name": "sub_8267A530",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 2,
+   "instructions": 18,
+   "args": [
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8267AC58",
+   "class": "flush",
+   "name": "sub_8267AC58",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE, EVENT_WRITE_EXT",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 105,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+4 (4)",
+    "+24 (4)",
+    "+144 (4)"
+   ],
+   "r3_writes": [
+    "+16 (4)",
+    "+20 (4)",
+    "+144 (4)"
+   ],
+   "indexed": true,
+   "pm4": [
+    "EVENT_WRITE",
+    "EVENT_WRITE_EXT"
+   ],
+   "calls": [
+    "0x82679F88",
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x8267B1C0",
+   "class": "flush",
+   "name": "sub_8267B1C0",
+   "named": false,
+   "role": "flush: builds REG_RMW",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 57,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10802 (1)"
+   ],
+   "r3_writes": [
+    "+40 (4)",
+    "+10802 (1)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "REG_RMW"
+   ],
+   "calls": [
+    "0x82680758",
+    "0x82680AF8"
+   ]
+  },
+  {
+   "address": "0x8267BA00",
+   "class": "flush",
+   "name": "sub_8267BA00",
+   "named": false,
+   "role": "flush: builds REG_TO_MEM, VIZ_QUERY",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 1421,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10780 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "REG_TO_MEM",
+    "VIZ_QUERY"
+   ],
+   "calls": [
+    "0x826802D8",
+    "0x82680758",
+    "0x826809C8"
+   ]
+  },
+  {
+   "address": "0x8267D318",
+   "class": "flush",
+   "name": "sub_8267D318",
+   "named": false,
+   "role": "flush: builds SET_BIN_MASK_LO",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 87,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10800 (1)",
+    "+12176 (4)",
+    "+12180 (4)",
+    "+12184 (4)",
+    "+12188 (4)",
+    "+12192 (4)",
+    "+12440 (4)",
+    "+12460 (4)",
+    "+12464 (4)",
+    "+12468 (4)",
+    "+12472 (4)",
+    "+12476 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)",
+    "+10800 (1)",
+    "+12440 (4)",
+    "+12444 (4)",
+    "+12448 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "SET_BIN_MASK_LO"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x8267D480",
+   "class": "flush",
+   "name": "sub_8267D480",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 306,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r9"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10240 (2)",
+    "+10800 (1)",
+    "+10803 (1)",
+    "+12176 (4)",
+    "+12180 (4)",
+    "+12184 (4)",
+    "+12188 (4)",
+    "+12192 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)",
+    "+10800 (1)",
+    "+10803 (1)",
+    "+12440 (4)",
+    "+12444 (4)",
+    "+12448 (4)",
+    "+12452 (4)",
+    "+12456 (4)",
+    "+12460 (4)",
+    "+12464 (4)",
+    "+12468 (4)",
+    "+12472 (4)",
+    "+12476 (4)",
+    "+12480 (4)",
+    "+12904 (4)",
+    "+12908 (4)",
+    "+12912 (4)",
+    "+12916 (4)",
+    "+12928 (8)",
+    "+12936 (8)",
+    "+12944 (4)",
+    "+12948 (4)",
+    "+13024 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE"
+   ],
+   "calls": [
+    "0x82667B70",
+    "0x82667C60",
+    "0x826685F8",
+    "0x8267E738",
+    "0x82680318",
+    "0x82680758",
+    "0x826907F0"
+   ]
+  },
+  {
+   "address": "0x8267D948",
+   "class": "entry",
+   "name": "sub_8267D948",
+   "named": false,
+   "role": "writes r3 +10800, +10803, +12440, +12444, +12448, +12456, +13024",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 230,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r9",
+    "r10"
+   ],
+   "r3_reads": [
+    "+10800 (1)",
+    "+10803 (1)",
+    "+11200 (4)",
+    "+12176 (4)",
+    "+12180 (4)",
+    "+12184 (4)",
+    "+12188 (4)",
+    "+12192 (4)",
+    "+12456 (4)",
+    "+12460 (4)",
+    "+12464 (4)",
+    "+12468 (4)",
+    "+12472 (4)",
+    "+12476 (4)",
+    "+12480 (4)",
+    "+12916 (4)",
+    "+12944 (4)",
+    "+12948 (4)",
+    "+13016 (4)"
+   ],
+   "r3_writes": [
+    "+10800 (1)",
+    "+10803 (1)",
+    "+12440 (4)",
+    "+12444 (4)",
+    "+12448 (4)",
+    "+12456 (4)",
+    "+13024 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82667C60",
+    "0x826685F8",
+    "0x82675508",
+    "0x8267D318",
+    "0x82680318",
+    "0x82680758",
+    "0x82680B70",
+    "0x82690910"
+   ]
+  },
+  {
+   "address": "0x8267DCE0",
+   "class": "entry",
+   "name": "sub_8267DCE0",
+   "named": false,
+   "role": "writes r3 +16, +10800, +10801, +12432, +12436, +12452, +13024",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 138,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+10420 (4)",
+    "+10800 (1)",
+    "+10801 (1)",
+    "+10803 (1)",
+    "+12480 (4)",
+    "+12908 (4)",
+    "+12912 (4)",
+    "+12916 (4)",
+    "+12944 (4)",
+    "+12948 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+10800 (1)",
+    "+10801 (1)",
+    "+12432 (4)",
+    "+12436 (4)",
+    "+12452 (4)",
+    "+13024 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82667B70",
+    "0x82667C60",
+    "0x826685F8",
+    "0x8267D318",
+    "0x8267E738",
+    "0x82680318",
+    "0x82680758",
+    "0x826907F0"
+   ]
+  },
+  {
+   "address": "0x8267DFD0",
+   "class": "entry",
+   "name": "sub_8267DFD0",
+   "named": false,
+   "role": "writes r3 +16, +10800, +13024",
+   "bound": false,
+   "outside_sites": 3,
+   "instructions": 49,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+10800 (1)",
+    "+10801 (1)",
+    "+10803 (1)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+10800 (1)",
+    "+13024 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82667B70",
+    "0x8267DF08",
+    "0x82680318",
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x8267E178",
+   "class": "flush",
+   "name": "sub_8267E178",
+   "named": false,
+   "role": "flush: builds DRAW_INDX_2, IM_LOAD_IMMEDIATE",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 368,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+10308 (4)",
+    "+10312 (4)",
+    "+10432 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX_2",
+    "IM_LOAD_IMMEDIATE"
+   ],
+   "calls": [
+    "0x82665460",
+    "0x82675428",
+    "0x8267F9E8",
+    "0x82680758",
+    "0x8268D928",
+    "0x8268DB50"
+   ]
+  },
+  {
+   "address": "0x8267E738",
+   "class": "flush",
+   "name": "sub_8267E738",
+   "named": false,
+   "role": "flush: builds DRAW_INDX_2, IM_LOAD_IMMEDIATE",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 558,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r8"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+10432 (4)",
+    "+10560 (4)",
+    "+10800 (1)",
+    "+10801 (1)",
+    "+11592 (4)",
+    "+12176 (4)",
+    "+12180 (4)",
+    "+12184 (4)",
+    "+12188 (4)",
+    "+12192 (4)",
+    "+12384 (4)",
+    "+12388 (4)",
+    "+12392 (4)",
+    "+12396 (4)",
+    "+12408 (4)",
+    "+12412 (4)",
+    "+12416 (4)",
+    "+12420 (4)",
+    "+12460 (4)",
+    "+12464 (4)",
+    "+12468 (4)",
+    "+12472 (4)",
+    "+12476 (4)",
+    "+12908 (4)",
+    "+12912 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+10801 (1)"
+   ],
+   "indexed": true,
+   "pm4": [
+    "DRAW_INDX_2",
+    "IM_LOAD_IMMEDIATE"
+   ],
+   "calls": [
+    "0x82675428",
+    "0x8267F9E8",
+    "0x82680758",
+    "0x8268D928",
+    "0x8268DB50"
+   ]
+  },
+  {
+   "address": "0x8267EFF0",
+   "class": "entry",
+   "name": "sub_8267EFF0",
+   "named": false,
+   "role": "no access through r3 (calls 0x8267E738)",
+   "bound": false,
+   "outside_sites": 4,
+   "instructions": 44,
+   "args": [
+    "r3",
+    "r5",
+    "r6",
+    "r7",
+    "r9"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x8267E738"
+   ]
+  },
+  {
+   "address": "0x8267F478",
+   "class": "flush",
+   "name": "sub_8267F478",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 69,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82686138"
+   ]
+  },
+  {
+   "address": "0x8267FAD0",
+   "class": "flush",
+   "name": "D3D_AddCallsToPrimaryBuffer",
+   "named": true,
+   "role": "D3D_AddCallsToPrimaryBuffer (matched to The Simpsons Game 0x82456E68: 88% the same instructions, the next closest 11%)",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 119,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+10801 (1)",
+    "+10812 (4)",
+    "+13504 (4)",
+    "+13508 (4)",
+    "+19956 (4)",
+    "+20096 (4)"
+   ],
+   "r3_writes": [
+    "+10812 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "INDIRECT_BUFFER"
+   ],
+   "calls": [
+    "0x8267F230"
+   ]
+  },
+  {
+   "address": "0x8267FCB0",
+   "class": "flush",
+   "name": "sub_8267FCB0",
+   "named": false,
+   "role": "flush: builds WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 102,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+10802 (1)",
+    "+13512 (4)",
+    "+13516 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x8267F3F8",
+    "0x8267F9E8"
+   ]
+  },
+  {
+   "address": "0x8267FE48",
+   "class": "flush",
+   "name": "D3D_SegmentEnd",
+   "named": true,
+   "role": "a segment's end packets: INVALIDATE_STATE, the segment's end and count into the device's scratch (EVENT_WRITE_SHD) (matched to Crackdown 0x826BB0C0: 88% the same instructions, the next closest 16%)",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 56,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+10768 (4)",
+    "+10780 (4)",
+    "+10801 (1)",
+    "+13528 (4)",
+    "+19956 (4)"
+   ],
+   "r3_writes": [
+    "+10780 (4)",
+    "+12968 (4)",
+    "+12972 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE_SHD",
+    "INVALIDATE_STATE"
+   ],
+   "calls": []
+  },
+  {
+   "address": "0x826801A0",
+   "class": "flush",
+   "name": "sub_826801A0",
+   "named": false,
+   "role": "flush: builds INTERRUPT, WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 72,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7"
+   ],
+   "r3_reads": [
+    "+10772 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [
+    "INTERRUPT",
+    "WAIT_REG_MEM"
+   ],
+   "calls": []
+  },
+  {
+   "address": "0x82680A88",
+   "class": "flush",
+   "name": "sub_82680A88",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE_SHD",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 28,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE_SHD"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82680AF8",
+   "class": "entry",
+   "name": "sub_82680AF8",
+   "named": false,
+   "role": "writes r3 +40",
+   "bound": false,
+   "outside_sites": 5,
+   "instructions": 29,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10780 (4)",
+    "+10860 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x826800D8",
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82680C58",
+   "class": "flush",
+   "name": "sub_82680C58",
+   "named": false,
+   "role": "flush: builds NOP",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 32,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "NOP"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82680CD8",
+   "class": "flush",
+   "name": "sub_82680CD8",
+   "named": false,
+   "role": "flush: builds ME_INIT",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 255,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10768 (4)",
+    "+10772 (4)",
+    "+10780 (4)",
+    "+13444 (4)",
+    "+13448 (4)",
+    "+13512 (4)",
+    "+13516 (4)",
+    "+13528 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)",
+    "+44 (4)",
+    "+48 (4)",
+    "+10768 (4)",
+    "+10772 (4)",
+    "+10780 (4)",
+    "+10812 (4)",
+    "+13444 (4)",
+    "+13448 (4)",
+    "+13504 (4)",
+    "+13508 (4)",
+    "+13512 (4)",
+    "+13516 (4)",
+    "+13520 (4)",
+    "+13524 (4)",
+    "+13532 (4)",
+    "+13536 (4)",
+    "+13544 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "ME_INIT"
+   ],
+   "calls": [
+    "0x8267F2E0",
+    "0x82680758",
+    "0x82680960",
+    "0x82680AF8",
+    "0x8268F160"
+   ]
+  },
+  {
+   "address": "0x82681530",
+   "class": "flush",
+   "name": "sub_82681530",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 2,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x826831D8",
+   "class": "flush",
+   "name": "sub_826831D8",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 62,
+   "args": [
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x826832D0",
+   "class": "flush",
+   "name": "sub_826832D0",
+   "named": false,
+   "role": "flush: builds SET_BIN_MASK_HI, SET_BIN_MASK_LO",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 98,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10800 (1)",
+    "+12176 (4)",
+    "+12180 (4)",
+    "+12184 (4)",
+    "+12188 (4)",
+    "+12192 (4)",
+    "+12440 (4)",
+    "+12444 (4)",
+    "+12460 (4)",
+    "+12464 (4)",
+    "+12468 (4)",
+    "+12472 (4)",
+    "+12476 (4)",
+    "+13160 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)",
+    "+10800 (1)",
+    "+12440 (4)",
+    "+12444 (4)",
+    "+12448 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "SET_BIN_MASK_HI",
+    "SET_BIN_MASK_LO"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82683458",
+   "class": "flush",
+   "name": "sub_82683458",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE, EVENT_WRITE_EXT, INDIRECT_BUFFER, SET_BIN_MASK_HI, SET_BIN_MASK_LO, SET_BIN_SELECT_HI",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 382,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+10308 (4)",
+    "+10312 (4)",
+    "+10432 (4)",
+    "+10780 (4)",
+    "+10800 (1)",
+    "+12440 (4)",
+    "+12444 (4)",
+    "+12448 (4)",
+    "+13160 (4)"
+   ],
+   "r3_writes": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+11576 (8)",
+    "+12984 (4)",
+    "+13004 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE",
+    "EVENT_WRITE_EXT",
+    "INDIRECT_BUFFER",
+    "SET_BIN_MASK_HI",
+    "SET_BIN_MASK_LO",
+    "SET_BIN_SELECT_HI"
+   ],
+   "calls": [
+    "0x82665460",
+    "0x82680318",
+    "0x82680758",
+    "0x82681A08",
+    "0x8268D928",
+    "0x8268DB50",
+    "0x8268DC10",
+    "0x8268DD90",
+    "0x8268DEF0",
+    "0x8268EA38"
+   ]
+  },
+  {
+   "address": "0x826856A8",
+   "class": "flush",
+   "name": "sub_826856A8",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 103,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82685510",
+    "0x826855C0"
+   ]
+  },
+  {
+   "address": "0x82685848",
+   "class": "flush",
+   "name": "sub_82685848",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 97,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x826854A0",
+    "0x82685510",
+    "0x826855C0"
+   ]
+  },
+  {
+   "address": "0x826859D0",
+   "class": "flush",
+   "name": "sub_826859D0",
+   "named": false,
+   "role": "flush: builds COND_WRITE",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 56,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "COND_WRITE"
+   ],
+   "calls": [
+    "0x826809C8"
+   ]
+  },
+  {
+   "address": "0x82685AB0",
+   "class": "flush",
+   "name": "sub_82685AB0",
+   "named": false,
+   "role": "flush: builds COND_WRITE",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 60,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "COND_WRITE"
+   ],
+   "calls": [
+    "0x826809C8"
+   ]
+  },
+  {
+   "address": "0x82686730",
+   "class": "flush",
+   "name": "sub_82686730",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 10,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82686D20",
+   "class": "flush",
+   "name": "sub_82686D20",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 110,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+10801 (1)"
+   ],
+   "r3_writes": [
+    "+10801 (1)",
+    "+13260 (4)",
+    "+13432 (4)",
+    "+13436 (4)",
+    "+13440 (4)",
+    "+19964 (4)",
+    "+19968 (4)",
+    "+19972 (4)",
+    "+19976 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82668798",
+    "0x82668AA0",
+    "0x82672FF0",
+    "0x82673110",
+    "0x8268B960"
+   ]
+  },
+  {
+   "address": "0x82686FD0",
+   "class": "flush",
+   "name": "sub_82686FD0",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 56,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [],
+   "r3_writes": [
+    "+19964 (4)",
+    "+19968 (4)",
+    "+19972 (4)",
+    "+19976 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82668228",
+    "0x826682C8",
+    "0x82685BA0",
+    "0x82685BF8"
+   ]
+  },
+  {
+   "address": "0x826870B0",
+   "class": "flush",
+   "name": "sub_826870B0",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 36,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x826871B0",
+   "class": "flush",
+   "name": "sub_826871B0",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 132,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+10802 (1)"
+   ],
+   "r3_writes": [
+    "+10802 (1)",
+    "+13164 (4)",
+    "+13168 (4)",
+    "+19984 (4)",
+    "+19988 (4)",
+    "+20016 (4)",
+    "+20020 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x826685F8",
+    "0x82680758",
+    "0x82680CD8",
+    "0x82686138",
+    "0x82686AE0",
+    "0x82686D20",
+    "0x826870B0",
+    "0x82687140",
+    "0x826885B0",
+    "0x82689698",
+    "0x8268BA50",
+    "0x8268F290",
+    "0x82690A88"
+   ]
+  },
+  {
+   "address": "0x82687420",
+   "class": "flush",
+   "name": "sub_82687420",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 94,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+10800 (1)",
+    "+15152 (4)",
+    "+19996 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82673B68",
+    "0x8267D038",
+    "0x82680AF8",
+    "0x82680CD8",
+    "0x82686ED8",
+    "0x82686F78",
+    "0x8268D1A0",
+    "0x8268F8B0"
+   ]
+  },
+  {
+   "address": "0x826886A8",
+   "class": "flush",
+   "name": "sub_826886A8",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE_SHD",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 35,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE_SHD"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82688FA0",
+   "class": "flush",
+   "name": "sub_82688FA0",
+   "named": false,
+   "role": "flush: builds IM_LOAD_IMMEDIATE",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 55,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "IM_LOAD_IMMEDIATE"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82689080",
+   "class": "flush",
+   "name": "sub_82689080",
+   "named": false,
+   "role": "flush: builds IM_LOAD_IMMEDIATE",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 53,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "IM_LOAD_IMMEDIATE"
+   ],
+   "calls": [
+    "0x82680758",
+    "0x826809C8"
+   ]
+  },
+  {
+   "address": "0x826892F0",
+   "class": "flush",
+   "name": "sub_826892F0",
+   "named": false,
+   "role": "flush: builds DRAW_INDX_2",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 26,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX_2"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82689358",
+   "class": "flush",
+   "name": "sub_82689358",
+   "named": false,
+   "role": "flush: builds DRAW_INDX_2, IM_LOAD_IMMEDIATE, WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 207,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10268 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX_2",
+    "IM_LOAD_IMMEDIATE",
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82689698",
+   "class": "flush",
+   "name": "sub_82689698",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 58,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x826809C8",
+    "0x82680AF8"
+   ]
+  },
+  {
+   "address": "0x82689808",
+   "class": "flush",
+   "name": "sub_82689808",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 73,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7"
+   ],
+   "r3_reads": [
+    "+13240 (4)",
+    "+19964 (4)",
+    "+19968 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x826899A8",
+   "class": "flush",
+   "name": "sub_826899A8",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 23,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+19964 (4)",
+    "+19968 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82689808"
+   ]
+  },
+  {
+   "address": "0x8268B0C8",
+   "class": "flush",
+   "name": "sub_8268B0C8",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 346,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9",
+    "r10"
+   ],
+   "r3_reads": [
+    "+19968 (4)",
+    "+19972 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x8268ADE8"
+   ]
+  },
+  {
+   "address": "0x8268B630",
+   "class": "flush",
+   "name": "sub_8268B630",
+   "named": false,
+   "role": "flush: builds WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 156,
+   "args": [
+    "r3",
+    "r4",
+    "r5"
+   ],
+   "r3_reads": [
+    "+19964 (4)",
+    "+19968 (4)",
+    "+19972 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x826809C8",
+    "0x82689808",
+    "0x8268B0C8"
+   ]
+  },
+  {
+   "address": "0x8268BEA0",
+   "class": "flush",
+   "name": "sub_8268BEA0",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 32,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8268BF20",
+   "class": "flush",
+   "name": "sub_8268BF20",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 8,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8268BF48",
+   "class": "flush",
+   "name": "sub_8268BF48",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 61,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82680AF8"
+   ]
+  },
+  {
+   "address": "0x8268C7F0",
+   "class": "flush",
+   "name": "sub_8268C7F0",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 189,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x826802D8",
+    "0x826856A8",
+    "0x82685848",
+    "0x8268BF48",
+    "0x8268C758"
+   ]
+  },
+  {
+   "address": "0x8268CAE8",
+   "class": "flush",
+   "name": "sub_8268CAE8",
+   "named": false,
+   "role": "flush: builds DRAW_INDX_2, EVENT_WRITE, IM_LOAD_IMMEDIATE",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 429,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+48 (4)",
+    "+10432 (4)",
+    "+13152 (4)"
+   ],
+   "r3_writes": [
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+10264 (4)",
+    "+13152 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX_2",
+    "EVENT_WRITE",
+    "IM_LOAD_IMMEDIATE"
+   ],
+   "calls": [
+    "0x8266C3B0",
+    "0x82675428",
+    "0x826802D8",
+    "0x82680758",
+    "0x826808A8",
+    "0x826809C8",
+    "0x8268C758",
+    "0x8268D928",
+    "0x8268DB50"
+   ]
+  },
+  {
+   "address": "0x8268D928",
+   "class": "flush",
+   "name": "sub_8268D928",
+   "named": false,
+   "role": "flush: builds SET_BIN_MASK_HI, SET_BIN_MASK_LO, SET_CONSTANT",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 137,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10800 (1)",
+    "+10803 (1)",
+    "+12176 (4)",
+    "+12180 (4)",
+    "+12184 (4)",
+    "+12188 (4)",
+    "+12192 (4)",
+    "+12440 (4)",
+    "+12444 (4)",
+    "+12460 (4)",
+    "+12464 (4)",
+    "+12468 (4)",
+    "+12472 (4)",
+    "+12476 (4)",
+    "+12480 (4)",
+    "+12844 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "SET_BIN_MASK_HI",
+    "SET_BIN_MASK_LO",
+    "SET_CONSTANT"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x8268DC10",
+   "class": "flush",
+   "name": "D3D_FlushWaitGroup",
+   "named": true,
+   "role": "the draws' wait group: VGT 0x2007, the copy registers, a wait, the group's registers (matched to Crackdown 0x826C5BC0: 95% the same instructions, the next closest 20%)",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 95,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+44 (4)",
+    "+48 (4)",
+    "+10268 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x82680758",
+    "0x8268D870"
+   ]
+  },
+  {
+   "address": "0x8268E910",
+   "class": "flush",
+   "name": "sub_8268E910",
+   "named": false,
+   "role": "flush: builds IM_LOAD_IMMEDIATE",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 73,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8",
+    "r9"
+   ],
+   "r3_reads": [
+    "+10802 (1)",
+    "+12272 (8)"
+   ],
+   "r3_writes": [
+    "+40 (4)",
+    "+10802 (1)",
+    "+11560 (8)",
+    "+11568 (8)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "IM_LOAD_IMMEDIATE"
+   ],
+   "calls": [
+    "0x826809C8",
+    "0x8268E060",
+    "0x8268E7C0",
+    "0x8268F160"
+   ]
+  },
+  {
+   "address": "0x8268EA38",
+   "class": "flush",
+   "name": "sub_8268EA38",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE, IM_LOAD, SET_BIN_MASK_HI, SET_BIN_MASK_LO, SET_CONSTANT",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 377,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10420 (4)",
+    "+10428 (4)",
+    "+10432 (4)",
+    "+10452 (4)",
+    "+10768 (4)",
+    "+10780 (4)",
+    "+10784 (4)",
+    "+10800 (1)",
+    "+10801 (1)",
+    "+10802 (1)",
+    "+11544 (4)",
+    "+12264 (8)",
+    "+12272 (8)",
+    "+12424 (4)",
+    "+12428 (4)",
+    "+12432 (4)",
+    "+12440 (4)",
+    "+12444 (4)",
+    "+13176 (4)",
+    "+13180 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)",
+    "+10400 (4)",
+    "+10404 (4)",
+    "+10408 (4)",
+    "+10432 (4)",
+    "+10452 (4)",
+    "+10801 (1)",
+    "+10802 (1)",
+    "+11560 (8)",
+    "+11568 (8)",
+    "+12432 (4)",
+    "+13176 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE",
+    "IM_LOAD",
+    "SET_BIN_MASK_HI",
+    "SET_BIN_MASK_LO",
+    "SET_CONSTANT"
+   ],
+   "calls": [
+    "0x82680758",
+    "0x82682268",
+    "0x8268D748",
+    "0x8268D7B8",
+    "0x8268E060",
+    "0x8268E910"
+   ]
+  },
+  {
+   "address": "0x8268F290",
+   "class": "flush",
+   "name": "sub_8268F290",
+   "named": false,
+   "role": "flush: builds REG_RMW",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 112,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10436 (4)",
+    "+10440 (4)"
+   ],
+   "r3_writes": [
+    "+0 (8)",
+    "+8 (8)",
+    "+16 (8)",
+    "+24 (8)",
+    "+32 (8)",
+    "+40 (4)",
+    "+10300 (4)",
+    "+10316 (4)",
+    "+10436 (4)",
+    "+10440 (4)",
+    "+10452 (4)",
+    "+10476 (4)",
+    "+10500 (4)",
+    "+10560 (4)",
+    "+10580 (4)",
+    "+10584 (4)",
+    "+10640 (4)",
+    "+10644 (4)",
+    "+10696 (4)",
+    "+10788 (4)",
+    "+11552 (8)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "REG_RMW"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x8268F5F0",
+   "class": "flush",
+   "name": "sub_8268F5F0",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 21,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8268F648",
+   "class": "flush",
+   "name": "sub_8268F648",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 2,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8268F690",
+   "class": "flush",
+   "name": "sub_8268F690",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 48,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+48 (4)",
+    "+56 (4)"
+   ],
+   "r3_writes": [
+    "+0 (4)",
+    "+36 (4)",
+    "+48 (4)",
+    "+52 (4)",
+    "+56 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8268F8B0",
+   "class": "flush",
+   "name": "sub_8268F8B0",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 33,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [],
+   "r3_writes": [
+    "+10808 (4)"
+   ],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x8268FB60",
+   "class": "flush",
+   "name": "sub_8268FB60",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE_SHD",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 72,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+4 (4)",
+    "+8 (4)",
+    "+16 (4)",
+    "+20 (4)",
+    "+24 (4)",
+    "+32 (4)",
+    "+48 (4)",
+    "+56 (4)"
+   ],
+   "r3_writes": [
+    "+16 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE_SHD"
+   ],
+   "calls": [
+    "0x8267FAD0"
+   ]
+  },
+  {
+   "address": "0x8268FC80",
+   "class": "flush",
+   "name": "sub_8268FC80",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE_SHD",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 62,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+4 (4)",
+    "+8 (4)",
+    "+16 (4)",
+    "+20 (4)",
+    "+32 (4)",
+    "+56 (4)"
+   ],
+   "r3_writes": [
+    "+16 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE_SHD"
+   ],
+   "calls": [
+    "0x8267FAD0"
+   ]
+  },
+  {
+   "address": "0x8268FD78",
+   "class": "flush",
+   "name": "sub_8268FD78",
+   "named": false,
+   "role": "flush: builds DRAW_INDX_2, WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 86,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+16 (4)"
+   ],
+   "r3_writes": [
+    "+16 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX_2",
+    "WAIT_REG_MEM"
+   ],
+   "calls": []
+  },
+  {
+   "address": "0x8268FED0",
+   "class": "flush",
+   "name": "sub_8268FED0",
+   "named": false,
+   "role": "flush: builds DRAW_INDX, WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 109,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+16 (4)"
+   ],
+   "r3_writes": [
+    "+16 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX",
+    "WAIT_REG_MEM"
+   ],
+   "calls": []
+  },
+  {
+   "address": "0x82690088",
+   "class": "flush",
+   "name": "sub_82690088",
+   "named": false,
+   "role": "flush: builds SET_BIN_SELECT_LO",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 76,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+44 (4)",
+    "+368 (4)"
+   ],
+   "r3_writes": [
+    "+368 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "SET_BIN_SELECT_LO"
+   ],
+   "calls": [
+    "0x8267F2E0"
+   ]
+  },
+  {
+   "address": "0x82690240",
+   "class": "flush",
+   "name": "sub_82690240",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 149,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+0 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x8267FAD0",
+    "0x8268F5F0",
+    "0x82690088",
+    "0x826901B8"
+   ]
+  },
+  {
+   "address": "0x826906C0",
+   "class": "flush",
+   "name": "sub_826906C0",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 51,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+4 (4)"
+   ],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": [
+    "0x82673FB0",
+    "0x82674120",
+    "0x82690498"
+   ]
+  },
+  {
+   "address": "0x82690790",
+   "class": "flush",
+   "name": "sub_82690790",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 11,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x826907C0",
+   "class": "flush",
+   "name": "sub_826907C0",
+   "named": false,
+   "role": "flush: builds ",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 11,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82690A88",
+   "class": "flush",
+   "name": "sub_82690A88",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE_SHD",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 106,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+40 (4)",
+    "+48 (4)",
+    "+10912 (4)",
+    "+13504 (4)",
+    "+13508 (4)",
+    "+20416 (4)"
+   ],
+   "r3_writes": [
+    "+40 (4)",
+    "+10808 (4)",
+    "+10816 (4)",
+    "+10864 (4)",
+    "+10896 (4)",
+    "+10912 (4)",
+    "+11200 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE_SHD"
+   ],
+   "calls": [
+    "0x82680758"
+   ]
+  },
+  {
+   "address": "0x82690C30",
+   "class": "flush",
+   "name": "sub_82690C30",
+   "named": false,
+   "role": "flush: builds DRAW_INDX_2, EVENT_WRITE_SHD, WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 157,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+8 (4)",
+    "+12 (4)",
+    "+16 (4)",
+    "+20 (4)",
+    "+24 (4)",
+    "+28 (4)"
+   ],
+   "r3_writes": [
+    "+8 (4)",
+    "+12 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX_2",
+    "EVENT_WRITE_SHD",
+    "WAIT_REG_MEM"
+   ],
+   "calls": [
+    "0x82673520",
+    "0x82673550",
+    "0x826737B8",
+    "0x8267FAD0"
+   ]
+  },
+  {
+   "address": "0x82691008",
+   "class": "flush",
+   "name": "sub_82691008",
+   "named": false,
+   "role": "flush: builds DRAW_INDX_2, WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 86,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+16 (4)"
+   ],
+   "r3_writes": [
+    "+16 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX_2",
+    "WAIT_REG_MEM"
+   ],
+   "calls": []
+  },
+  {
+   "address": "0x82691160",
+   "class": "flush",
+   "name": "sub_82691160",
+   "named": false,
+   "role": "flush: builds DRAW_INDX, WAIT_REG_MEM",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 109,
+   "args": [
+    "r3",
+    "r4",
+    "r5",
+    "r6",
+    "r7",
+    "r8"
+   ],
+   "r3_reads": [
+    "+0 (4)",
+    "+16 (4)"
+   ],
+   "r3_writes": [
+    "+16 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "DRAW_INDX",
+    "WAIT_REG_MEM"
+   ],
+   "calls": []
+  },
+  {
+   "address": "0x82691318",
+   "class": "flush",
+   "name": "sub_82691318",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE_SHD",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 62,
+   "args": [
+    "r3"
+   ],
+   "r3_reads": [
+    "+4 (4)",
+    "+8 (4)",
+    "+16 (4)",
+    "+20 (4)",
+    "+32 (4)",
+    "+56 (4)"
+   ],
+   "r3_writes": [
+    "+16 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE_SHD"
+   ],
+   "calls": [
+    "0x8267FAD0"
+   ]
+  },
+  {
+   "address": "0x82691410",
+   "class": "flush",
+   "name": "sub_82691410",
+   "named": false,
+   "role": "flush: builds EVENT_WRITE_SHD",
+   "bound": false,
+   "outside_sites": 0,
+   "instructions": 72,
+   "args": [
+    "r3",
+    "r4"
+   ],
+   "r3_reads": [
+    "+4 (4)",
+    "+8 (4)",
+    "+16 (4)",
+    "+20 (4)",
+    "+24 (4)",
+    "+32 (4)",
+    "+48 (4)",
+    "+56 (4)"
+   ],
+   "r3_writes": [
+    "+16 (4)"
+   ],
+   "indexed": false,
+   "pm4": [
+    "EVENT_WRITE_SHD"
+   ],
+   "calls": [
+    "0x8267FAD0"
+   ]
+  },
+  {
+   "address": "0x82692CA0",
+   "class": "entry",
+   "name": "sub_82692CA0",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 1,
+   "instructions": 13,
+   "args": [
+    "r4"
+   ],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  },
+  {
+   "address": "0x82692CD8",
+   "class": "entry",
+   "name": "sub_82692CD8",
+   "named": false,
+   "role": "no access through r3",
+   "bound": false,
+   "outside_sites": 24,
+   "instructions": 2,
+   "args": [],
+   "r3_reads": [],
+   "r3_writes": [],
+   "indexed": false,
+   "pm4": [],
+   "calls": []
+  }
+ ]
+}
